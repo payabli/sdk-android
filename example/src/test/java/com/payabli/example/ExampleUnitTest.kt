@@ -1,4 +1,4 @@
-package com.payabli.sdk
+package com.payabli.example
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

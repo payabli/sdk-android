@@ -1,4 +1,4 @@
-package com.payabli.sdk.ui.theme
+package com.payabli.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
