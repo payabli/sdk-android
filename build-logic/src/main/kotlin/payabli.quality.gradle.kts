@@ -1,3 +1,4 @@
+import com.android.build.api.dsl.LibraryExtension
 import org.jlleitschuh.gradle.ktlint.reporter.ReporterType
 
 // Convention plugin: formatting and static-analysis gates shared by every module.
@@ -20,5 +21,15 @@ ktlint {
     }
     filter {
         exclude { it.file.path.contains("${File.separator}build${File.separator}") }
+    }
+}
+
+// Coverage for library modules, so analysis reports on measured code rather than
+// nothing. Guarded: this plugin is also applied to the BOM, which has no Android block.
+plugins.withId("com.android.library") {
+    extensions.configure<LibraryExtension> {
+        buildTypes.named("debug") {
+            enableUnitTestCoverage = true
+        }
     }
 }
