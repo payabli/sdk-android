@@ -45,11 +45,13 @@ jobs:
         run: ./gradlew :core:test :payin:test :telemetry:test :example:test
 
       - name: Format
-        run: ./gradlew ktlintCheck
+        run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
+          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
 
       - name: Android Lint
         run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
 
+      # The aggregate module has no tests of its own, so it has no coverage task.
       - name: Coverage
         run: ./gradlew :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
@@ -89,6 +91,9 @@ jobs:
 
       - name: Unit tests
         run: ./gradlew :taptopay:test
+
+      - name: Format
+        run: ./gradlew :taptopay:ktlintCheck
 
       - name: Android Lint
         run: ./gradlew :taptopay:lint

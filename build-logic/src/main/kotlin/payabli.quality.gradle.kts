@@ -24,12 +24,17 @@ ktlint {
     }
 }
 
-// Coverage for library modules, so analysis reports on measured code rather than
-// nothing. Guarded: this plugin is also applied to the BOM, which has no Android block.
+// Coverage for library modules, so analysis reports on measured code rather than nothing.
+// Guarded twice: this plugin also applies to the BOM, which has no Android block, and to the
+// aggregate module, which has no tests of its own. Requesting a coverage report where nothing
+// ran fails the task outright rather than reporting zero, so it is enabled only where tests
+// exist. A module gains coverage automatically as soon as it gains a test source set.
 plugins.withId("com.android.library") {
-    extensions.configure<LibraryExtension> {
-        buildTypes.named("debug") {
-            enableUnitTestCoverage = true
+    if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
+        extensions.configure<LibraryExtension> {
+            buildTypes.named("debug") {
+                enableUnitTestCoverage = true
+            }
         }
     }
 }
