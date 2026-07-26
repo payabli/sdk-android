@@ -122,9 +122,23 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Analysis reads the reports these tasks emit, so they run first.
+      # Analysis reads the reports these tasks emit, so they run first. Scoped to the
+      # credential-free modules so analysis does not depend on the card reader registry:
+      # `sonar` itself analyses every module's sources regardless, and the card-present
+      # module's external reports are simply absent until its credential is available.
       - name: Produce reports
-        run: ./gradlew ktlintCheck lint createDebugUnitTestCoverageReport
+        run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
+          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
+          :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
+          :core:createDebugUnitTestCoverageReport
+          :payin:createDebugUnitTestCoverageReport
+          :telemetry:createDebugUnitTestCoverageReport
+
+      # Card-present reports, only when the registry credential is available.
+      - name: Produce card-present reports
+        if: env.GPR_TOKEN != ''
+        run: ./gradlew :taptopay:ktlintCheck :taptopay:lint
+          :taptopay:createDebugUnitTestCoverageReport
 
       - name: Analyze
         run: ./gradlew sonar
