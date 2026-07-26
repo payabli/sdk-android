@@ -1,14 +1,16 @@
 plugins {
     alias(libs.plugins.android.library)
     id("payabli.publish")
+    id("payabli.quality")
 }
 
 android {
     namespace = "com.payabli.sdk.taptopay"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version =
+            release(36) {
+                minorApiLevel = 1
+            }
     }
 
     defaultConfig {
@@ -21,7 +23,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-
 }
 
 dependencies {

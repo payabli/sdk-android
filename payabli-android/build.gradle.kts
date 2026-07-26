@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     id("payabli.publish")
+    id("payabli.quality")
 }
 
 // Dev module is :payabli-android; it releases as the umbrella artifact "sdk-android".
@@ -13,9 +14,10 @@ extra["payabliArtifactId"] = "sdk-android"
 android {
     namespace = "com.payabli.sdk.bundle"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version =
+            release(36) {
+                minorApiLevel = 1
+            }
     }
 
     defaultConfig {
@@ -34,5 +36,4 @@ dependencies {
     api(project(":core"))
     api(project(":payin"))
     api(project(":telemetry"))
-
 }
