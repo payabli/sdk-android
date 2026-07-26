@@ -21,17 +21,37 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven{
+        // Card reader dependency. Requires a login: gpr.user/gpr.token, or GPR_USER/GPR_TOKEN.
+        // See CLAUDE.md for setup.
+        maven {
             url = uri("https://maven.pkg.github.com/Fiserv/ch-ttp-androidsdk")
+            content {
+                includeGroup("com.fiserv.ch")
+                includeGroup("com")
+            }
             credentials {
                 username = providers.gradleProperty("gpr.user").orNull
-                    ?: System.getenv("GITHUB_ACTOR")
+                    ?: System.getenv("GPR_USER")
                 password = providers.gradleProperty("gpr.token").orNull
-                    ?: System.getenv("GITHUB_TOKEN")
+                    ?: System.getenv("GPR_TOKEN")
             }
         }
     }
+}
 
+// Only :taptopay resolves from that registry, so a missing credential is not fatal to the rest of
+// the build. Say so, rather than leaving a bare 401.
+if (providers.gradleProperty("gpr.user").orNull.isNullOrBlank() &&
+    System.getenv("GPR_USER").isNullOrBlank()
+) {
+    logger.lifecycle(
+        """
+        Payabli: no credentials for the card reader registry. :taptopay will not resolve;
+        every other module builds normally. Add to ~/.gradle/gradle.properties (not to this repo):
+          gpr.user=<github-username>
+          gpr.token=<classic PAT with read:packages>
+        """.trimIndent(),
+    )
 }
 
 rootProject.name = "PayabliSDK"

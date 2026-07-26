@@ -12,7 +12,8 @@ android {
     }
 
     defaultConfig {
-        minSdk = 19
+        // Card-not-present floor; see :core.
+        minSdk = 23
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -24,7 +25,7 @@ android {
 }
 
 dependencies {
-    // Capability artifact depends on core only, never on a sibling capability (SEC-001 §5).
+    // Capability modules depend on :core only, never on a sibling capability.
     api(project(":core"))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)

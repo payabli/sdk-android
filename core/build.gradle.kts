@@ -12,7 +12,8 @@ android {
     }
 
     defaultConfig {
-        minSdk = 19
+        // Card-not-present floor. Card-present carries a higher floor of its own; see :taptopay.
+        minSdk = 23
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
