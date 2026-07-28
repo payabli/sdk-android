@@ -49,6 +49,12 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 
 ## Testing
 
-- Unit tests in `src/test`, instrumented in `src/androidTest` (JUnit4, Espresso). Only template tests exist so far.
+- Unit tests in `src/test`, instrumented in `src/androidTest` (JUnit4, Espresso). `:core`'s network,
+  error-mapping and logging layers are covered; the other modules are still template-only.
+- `LoopbackServer` in `:core`'s tests is a real HTTP server on `java.net.ServerSocket`, so transport
+  tests exercise `HttpURLConnection` itself rather than a stub. It uses no `com.sun.*` package, so it
+  also runs in `src/androidTest` unchanged.
+- Three transport behaviours cannot be shown on the JVM and need an instrumented test: transparent
+  gzip, `PATCH` acceptance, and cancellation unblocking a blocked read.
 - There is no shared fixtures module yet (PLA-2192).
 - Card-present and attestation paths need a physical device or mocks rather than an emulator.
