@@ -14,6 +14,7 @@ import com.payabli.sdk.core.model.PayabliRetryAfter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Runs an operation with bounded, jittered retries.
@@ -56,7 +57,10 @@ public object Retry {
                 // withTimeoutOrNull rather than a TimeoutCancellationException catch: catching that type
                 // would also swallow a timeout the operation raised with its own withTimeout, and retry an
                 // operation whose own deadline had passed. A null here can only be our deadline.
-                val holder = withTimeoutOrNull(attemptBudget(policy, startedAt)) { Holder(operation(attempt)) }
+                val holder =
+                    withTimeoutOrNull(attemptBudget(policy, startedAt).milliseconds) {
+                        Holder(operation(attempt))
+                    }
                 if (holder != null) return holder.value
                 val timedOut = PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_ATTEMPT_TIMEOUT)
                 attempt = nextAttemptOrThrow(timedOut, attempt, policy, logger, route, startedAt)

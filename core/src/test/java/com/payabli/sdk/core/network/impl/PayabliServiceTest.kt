@@ -127,10 +127,11 @@ class PayabliServiceTest {
     fun `a redirect is returned to the caller, never followed`() =
         runTest {
             LoopbackServer().use { server ->
-                server.respondWith { exchange ->
-                    exchange.responseHeaders.add("Location", "https://example.invalid/elsewhere")
-                    exchange.sendResponseHeaders(302, LoopbackServer.NO_BODY)
-                }
+                server.respondWith(
+                    302,
+                    "",
+                    headers = mapOf("Location" to "https://example.invalid/elsewhere"),
+                )
 
                 val response = service(server).execute(PayabliRequest(HttpMethod.GET, "/api/moved"))
 
