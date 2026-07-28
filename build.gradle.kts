@@ -37,16 +37,23 @@ subprojects {
             val reports = layout.buildDirectory.dir("reports").get().asFile
 
             // Enumerated rather than globbed: this property takes a comma-separated list
-            // of paths and does not expand wildcards. A module that lacks one of these
-            // source sets simply has no file there.
+            // of paths and does not expand wildcards. Listed per source set that exists,
+            // so the scanner is never pointed at a report that cannot be produced.
+            val ktlintTasks = buildList {
+                add("ktlintKotlinScriptCheck")
+                if (layout.projectDirectory.dir("src/main").asFile.isDirectory) {
+                    add("ktlintMainSourceSetCheck")
+                }
+                if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
+                    add("ktlintTestSourceSetCheck")
+                }
+                if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
+                    add("ktlintAndroidTestSourceSetCheck")
+                }
+            }
             property(
                 "sonar.kotlin.ktlint.reportPaths",
-                listOf(
-                    "ktlintMainSourceSetCheck",
-                    "ktlintTestSourceSetCheck",
-                    "ktlintAndroidTestSourceSetCheck",
-                    "ktlintKotlinScriptCheck",
-                ).joinToString(",") { "$reports/ktlint/$it/$it.xml" },
+                ktlintTasks.joinToString(",") { "$reports/ktlint/$it/$it.xml" },
             )
 
             // Only set where the producing task exists, so the scanner is not pointed at
