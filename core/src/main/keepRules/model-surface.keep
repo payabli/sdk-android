@@ -1,0 +1,10 @@
+# App-facing public data surface. Unlike com.payabli.sdk.core.network.*, these types carry NO
+# @RestrictTo: a host app catches PayabliException and reads PayabliErrorCode, so the annotation
+# would make the app's own catch block a Lint RestrictedApi error.
+#
+# -keepnames, not -keep: name stability, not retention. Names must survive the app's own R8 run so a
+# crash report names PayabliDeclineException rather than a.b.c.
+#
+# A single '*' does not cross the package separator, so a sub-package of core.model would need its own
+# line here. Keep app-facing types flat in core.model instead.
+-keepnames class com.payabli.sdk.core.model.* { *; }
