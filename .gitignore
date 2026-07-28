@@ -36,7 +36,10 @@ proguard/
 *.iml
 *.ipr
 *.iws
-.idea
+# .idea/* rather than .idea: git cannot re-include a path whose parent directory is
+# excluded, so the negation below only works if the directory itself stays listed.
+.idea/*
+!.idea/dictionaries/
 
 # Cursor IDE
 .cursor/
