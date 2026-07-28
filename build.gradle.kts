@@ -11,6 +11,22 @@ sonar {
         property("sonar.projectKey", "payabli_sdk-android")
         property("sonar.organization", "payabli")
         property("sonar.host.url", "https://sonarcloud.io")
+        property("sonar.sourceEncoding", "UTF-8")
+        // Binary resources are not source. Without this the scanner tries to read
+        // launcher icons as UTF-8 text and warns on every one.
+        property(
+            "sonar.exclusions",
+            listOf(
+                "**/build/**",
+                "**/*.webp",
+                "**/*.png",
+                "**/*.jpg",
+                "**/*.jpeg",
+                "**/*.gif",
+                "**/*.ttf",
+                "**/*.otf",
+            ).joinToString(","),
+        )
     }
 }
 
@@ -19,9 +35,35 @@ subprojects {
     sonar {
         properties {
             val reports = layout.buildDirectory.dir("reports").get().asFile
-            property("sonar.kotlin.ktlint.reportPaths", "$reports/ktlint/**/*.xml")
-            property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
-            property("sonar.coverage.jacoco.xmlReportPaths", "$reports/coverage/test/debug/report.xml")
+
+            // Enumerated rather than globbed: this property takes a comma-separated list
+            // of paths and does not expand wildcards. A module that lacks one of these
+            // source sets simply has no file there.
+            property(
+                "sonar.kotlin.ktlint.reportPaths",
+                listOf(
+                    "ktlintMainSourceSetCheck",
+                    "ktlintTestSourceSetCheck",
+                    "ktlintAndroidTestSourceSetCheck",
+                    "ktlintKotlinScriptCheck",
+                ).joinToString(",") { "$reports/ktlint/$it/$it.xml" },
+            )
+
+            // Only set where the producing task exists, so the scanner is not pointed at
+            // files that can never appear: the BOM has no Android block, and coverage is
+            // enabled only for modules with tests (see payabli.quality).
+            plugins.withId("com.android.library") {
+                property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
+            }
+            plugins.withId("com.android.application") {
+                property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
+            }
+            if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
+                property(
+                    "sonar.coverage.jacoco.xmlReportPaths",
+                    "$reports/coverage/test/debug/report.xml",
+                )
+            }
         }
     }
 }
