@@ -1,0 +1,11 @@
+# Cross-artifact network surface. These types are public at the bytecode level and gated by
+# @RestrictTo(LIBRARY_GROUP) rather than `internal`, because `internal` is module-scoped and
+# :payin / :taptopay / :telemetry each compile as their own module.
+#
+# -keepnames, not -keep: the requirement is name stability, not retention, so shrinking still
+# removes anything an app never reaches.
+#
+# A single '*' does not cross the package separator, so com.payabli.sdk.core.network.impl.** stays
+# fully shrinkable and obfuscatable. Nested classes are still matched,
+# because '$' is not a package separator.
+-keepnames class com.payabli.sdk.core.network.* { *; }

@@ -13,6 +13,11 @@ material = "1.10.0"
 fiservTtp = "1.1.4.1"
 ktlintGradle = "14.2.0"
 sonarqube = "7.3.1.8318"
+# Newest releases of these three all require a kotlin-stdlib newer than AGP's built-in Kotlin
+# (2.2.10), and a 2.2 compiler cannot read 2.3 metadata. See reference/tooling.md.
+annotation = "1.10.0"
+kotlinxSerialization = "1.9.0"
+kotlinxCoroutines = "1.10.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -32,10 +37,15 @@ androidx-compose-material3 = { group = "androidx.compose.material3", name = "mat
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 fiserv-ttp = { group ="com.fiserv.ch", name ="ttp-payment", version.ref = "fiservTtp" }
+androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
+kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
 sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
