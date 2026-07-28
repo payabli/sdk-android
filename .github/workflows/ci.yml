@@ -14,8 +14,7 @@ permissions:
   contents: read
 
 env:
-  # Never raise this to --info or --debug: verbose Gradle logs can print repository
-  # credentials, and this repository is public.
+  # Never --info or --debug here: verbose Gradle logs can print repository credentials.
   GRADLE_OPTS: -Dorg.gradle.console=plain
 
 jobs:
@@ -25,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history so analysis can attribute new code correctly.
+          # Full history so analysis can attribute new code.
           fetch-depth: 0
 
       - uses: actions/setup-java@v4
@@ -35,8 +34,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # :taptopay is excluded here: it needs a credential the fork case cannot have.
-      # It is covered by the card-present job below.
+      # :taptopay needs a credential fork PRs cannot have; see the card-present job.
       - name: Build
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
           :payabli-android:assembleDebug :example:assembleDebug
@@ -51,7 +49,7 @@ jobs:
       - name: Android Lint
         run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
 
-      # The aggregate module has no tests of its own, so it has no coverage task.
+      # The aggregate module has no tests, so no coverage task.
       - name: Coverage
         run: ./gradlew :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
@@ -68,8 +66,7 @@ jobs:
   card-present:
     name: Build & Test (card-present)
     runs-on: ubuntu-latest
-    # Pull requests from forks never receive secrets, so this job is skipped there
-    # rather than failing on an authentication error the contributor cannot fix.
+    # Fork PRs never receive secrets, so skip rather than fail on auth.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     env:
       GPR_USER: ${{ secrets.GPR_USER }}
@@ -122,10 +119,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      # Analysis reads the reports these tasks emit, so they run first. Scoped to the
-      # credential-free modules so analysis does not depend on the card reader registry:
-      # `sonar` itself analyses every module's sources regardless, and the card-present
-      # module's external reports are simply absent until its credential is available.
+      # Analysis reads these reports, so they run first. Scoped to credential-free
+      # modules; see mobile-sdk brain, reference/tooling.md.
       - name: Produce reports
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
           :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
@@ -134,7 +129,7 @@ jobs:
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
 
-      # Card-present reports, only when the registry credential is available.
+      # Card-present reports, only when the credential is available.
       - name: Produce card-present reports
         if: env.GPR_TOKEN != ''
         run: ./gradlew :taptopay:ktlintCheck :taptopay:lint

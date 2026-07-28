@@ -12,8 +12,7 @@ sonar {
         property("sonar.organization", "payabli")
         property("sonar.host.url", "https://sonarcloud.io")
         property("sonar.sourceEncoding", "UTF-8")
-        // Binary resources are not source. Without this the scanner tries to read
-        // launcher icons as UTF-8 text and warns on every one.
+        // Binary resources are not source.
         property(
             "sonar.exclusions",
             listOf(
@@ -30,15 +29,13 @@ sonar {
     }
 }
 
-// Reports produced by ktlintCheck, lint and the unit-test coverage task.
+// Report paths for analysis. See mobile-sdk brain, reference/tooling.md.
 subprojects {
     sonar {
         properties {
             val reports = layout.buildDirectory.dir("reports").get().asFile
 
-            // Enumerated rather than globbed: this property takes a comma-separated list
-            // of paths and does not expand wildcards. Listed per source set that exists,
-            // so the scanner is never pointed at a report that cannot be produced.
+            // Enumerated: this property is a comma-separated list, not a glob.
             val ktlintTasks = buildList {
                 add("ktlintKotlinScriptCheck")
                 if (layout.projectDirectory.dir("src/main").asFile.isDirectory) {
@@ -56,9 +53,7 @@ subprojects {
                 ktlintTasks.joinToString(",") { "$reports/ktlint/$it/$it.xml" },
             )
 
-            // Only set where the producing task exists, so the scanner is not pointed at
-            // files that can never appear: the BOM has no Android block, and coverage is
-            // enabled only for modules with tests (see payabli.quality).
+            // Set only where the producing task exists.
             plugins.withId("com.android.library") {
                 property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
             }

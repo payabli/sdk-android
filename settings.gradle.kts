@@ -21,8 +21,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Card reader dependency. Requires a login: gpr.user/gpr.token, or GPR_USER/GPR_TOKEN.
-        // See CLAUDE.md for setup.
+        // Card reader dependency. Requires a login; see CLAUDE.md for setup.
         maven {
             url = uri("https://maven.pkg.github.com/Fiserv/ch-ttp-androidsdk")
             content {
@@ -39,8 +38,7 @@ dependencyResolutionManagement {
     }
 }
 
-// Only :taptopay resolves from that registry, so a missing credential is not fatal to the rest of
-// the build. Say so, rather than leaving a bare 401.
+// Only :taptopay needs this, so say so rather than leaving a bare 401.
 if (providers.gradleProperty("gpr.user").orNull.isNullOrBlank() &&
     System.getenv("GPR_USER").isNullOrBlank()
 ) {
