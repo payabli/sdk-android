@@ -32,7 +32,7 @@ internal object LogFieldRenderer {
         when (field) {
             is LogField.Safe -> "${field.name}=${renderSafe(field)}"
             is LogField.Redacted -> "${field.name}=" + if (field.wasNull) NULL else REDACTED
-            is LogField.LastFour -> "${field.name}=" + renderLastFour(field.tail)
+            is LogField.LastFour -> "${field.name}=" + renderLastFour(field)
         }
 
     private fun renderSafe(field: LogField.Safe): String {
@@ -41,5 +41,16 @@ internal object LogFieldRenderer {
         return if (scrubbed.any { it.isWhitespace() }) "\"$scrubbed\"" else scrubbed
     }
 
-    private fun renderLastFour(tail: String?): String = if (tail == null) REDACTED else REDACTED + ELLIPSIS + tail
+    /**
+     * A tail is emitted only for an allowlisted name. `LastFour` never holds more than four characters,
+     * so this is not about how much is held; it is that a fragment of an unlisted field is still a
+     * fragment of a value nobody reviewed. A name whose whole value may be emitted can certainly show
+     * four characters of it, so reusing the same set is strictly the safer direction.
+     */
+    private fun renderLastFour(field: LogField.LastFour): String =
+        if (field.tail == null || normalize(field.name) !in LoggableFieldNames.ALLOWED) {
+            REDACTED
+        } else {
+            REDACTED + ELLIPSIS + field.tail
+        }
 }

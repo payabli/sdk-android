@@ -141,6 +141,19 @@ class PayabliLoggerRedactionTest {
     }
 
     @Test
+    fun lastFourEmitsNoTailForAnUnlistedFieldName() {
+        // The allowlist governs LastFour too, not just Safe. Without that check a call site could emit a
+        // fragment of any field by choosing lastFour, which is the one decision the renderer exists to
+        // take away from call sites.
+        logger.info(LogField.lastFour("cardNumber", "abcdefgh")) { "correlated" }
+
+        val message = sink.single().message
+        assertTrue(message.contains("cardNumber=[REDACTED]"))
+        assertFalse("no tail may follow an unlisted name", message.contains("efgh"))
+        assertFalse("and no ellipsis, which would imply one", message.contains("…"))
+    }
+
+    @Test
     fun luhnValidityIsNotAccidental() {
         // A Luhn-valid digit run of PAN-plausible length would be a plausible PAN. Assert none of the
         // fixtures is, so a future edit to LogFixtures fails the build rather than quietly creating
