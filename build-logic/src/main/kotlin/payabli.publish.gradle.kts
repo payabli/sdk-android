@@ -15,9 +15,8 @@ import org.gradle.api.publish.maven.MavenPublication
 
 // Shared POM metadata (esp. the license). Applied to every publication so each
 // artifact declares the PayabliSDK Commercial License in its Maven metadata.
-// Third-party attribution (OSS deps + the proprietary Fiserv component) lives in
-// THIRD-PARTY-NOTICES.md, not here — a POM <license> states this artifact's own
-// license only.
+// Third-party attribution lives in THIRD-PARTY-NOTICES.md, not here: a POM <license>
+// states this artifact's own license only.
 fun MavenPublication.applyPayabliPom() = pom {
     name.set(artifactId)
     description.set("Payabli Android SDK — $artifactId")

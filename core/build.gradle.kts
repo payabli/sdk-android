@@ -1,18 +1,21 @@
 plugins {
     alias(libs.plugins.android.library)
     id("payabli.publish")
+    id("payabli.quality")
 }
 
 android {
     namespace = "com.payabli.sdk.core"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version =
+            release(36) {
+                minorApiLevel = 1
+            }
     }
 
     defaultConfig {
-        minSdk = 19
+        // Card-not-present floor. Card-present carries a higher floor of its own; see :taptopay.
+        minSdk = 23
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -20,7 +23,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-
 }
 
 dependencies {

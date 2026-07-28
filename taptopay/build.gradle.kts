@@ -1,18 +1,21 @@
 plugins {
     alias(libs.plugins.android.library)
     id("payabli.publish")
+    id("payabli.quality")
 }
 
 android {
     namespace = "com.payabli.sdk.taptopay"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version =
+            release(36) {
+                minorApiLevel = 1
+            }
     }
 
     defaultConfig {
-        minSdk = 19
+        // Card-present floor, required by the card reader dependency.
+        minSdk = 30
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -20,11 +23,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-
 }
 
 dependencies {
-    // Capability artifact depends on core only, never on a sibling capability (SEC-001 §5).
+    // Capability modules depend on :core only, never on a sibling capability.
     api(project(":core"))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)

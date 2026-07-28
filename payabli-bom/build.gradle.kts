@@ -1,6 +1,7 @@
 plugins {
     `java-platform`
     id("payabli.publish")
+    id("payabli.quality")
 }
 
 // Dev module is :payabli-bom; it releases as the BOM artifact "sdk-android-bom".
