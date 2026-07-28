@@ -158,7 +158,12 @@ internal class PayabliService private constructor(
         } catch (e: SerializationException) {
             // SerializationException extends IllegalArgumentException; catching the supertype would
             // swallow genuine programming errors raised from inside a serializer.
-            throw PayabliGenericException(PayabliErrorCode.DECODING_ERROR, REASON_DECODE_FAILED, cause = e)
+            // RedactedCause, not e: the message would carry the response body verbatim.
+            throw PayabliGenericException(
+                PayabliErrorCode.DECODING_ERROR,
+                REASON_DECODE_FAILED,
+                cause = RedactedCause(e),
+            )
         }
     }
 

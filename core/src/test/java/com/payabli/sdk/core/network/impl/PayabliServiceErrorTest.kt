@@ -10,7 +10,6 @@ import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -95,7 +94,43 @@ class PayabliServiceErrorTest {
                     }
 
                 assertEquals(PayabliErrorCode.DECODING_ERROR, failure.code)
-                assertTrue("cause was ${failure.cause}", failure.cause is SerializationException)
+                // The failure type survives, so the cause still says what went wrong.
+                assertTrue("cause was ${failure.cause}", failure.cause is RedactedCause)
+                assertTrue(
+                    "the cause should name the original type, got ${failure.cause?.message}",
+                    failure.cause?.message?.contains("serialization", ignoreCase = true) == true,
+                )
+            }
+        }
+
+    @Test
+    fun `a decoding failure never carries the response body out with it`() =
+        runTest {
+            LoopbackServer().use { server ->
+                // Stands in for anything a malformed response could echo. kotlinx.serialization appends
+                // the input it could not parse to its own message, and a host crash reporter renders the
+                // whole cause chain, which this SDK cannot scrub.
+                val sentinel = "SENTINEL-PAYLOAD-CONTENT"
+                // Non-JSON on purpose, standing in for a proxy error page that echoes request data.
+                // Only that path leaks: kotlinx appends `JSON input: <body>` to a JsonDecodingException,
+                // whereas well-formed JSON missing a field raises MissingFieldException, which names the
+                // field and echoes nothing. A well-formed body here would pass with or without the fix.
+                server.respondWith(200, "<html>error processing $sentinel</html>")
+
+                val failure =
+                    failureFrom {
+                        service(server.baseUrl).execute(
+                            PayabliRequest(HttpMethod.POST, "/api/v2/MoneyIn/initiate"),
+                            Payload.serializer(),
+                        )
+                    }
+
+                assertEquals(PayabliErrorCode.DECODING_ERROR, failure.code)
+                val causeMessage = failure.cause?.message.orEmpty()
+                assertFalse("message leaked the body", failure.message.orEmpty().contains(sentinel))
+                assertFalse("cause message leaked the body", causeMessage.contains(sentinel))
+                // The whole rendered chain, which is what a crash reporter writes.
+                assertFalse("stack trace leaked the body", failure.stackTraceToString().contains(sentinel))
             }
         }
 
