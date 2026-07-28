@@ -80,6 +80,33 @@ class PayabliServiceErrorTest {
         }
 
     @Test
+    fun `a rejected path never travels out inside the cause`() =
+        runTest {
+            LoopbackServer().use { server ->
+                // Both shapes resolve can reject, because they throw different types and only one echoes
+                // its input: a raw space raises URISyntaxException, which quotes the whole reference,
+                // while an authority fails our own require, whose message is path-free. The invariant has
+                // to hold either way, because the type is not a reliable signal of which is which.
+                val identifier = "9999999999"
+                val cases =
+                    listOf(
+                        PayabliRequest(HttpMethod.GET, "/api/v2/MoneyIn/capture/$identifier/a b"),
+                        PayabliRequest(HttpMethod.GET, "//attacker.example/$identifier"),
+                    )
+
+                for (request in cases) {
+                    val failure = failureFrom { service(server.baseUrl).execute(request) }
+
+                    assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+                    assertFalse(
+                        "the identifier reached the cause for path ${request.route ?: "n/a"}",
+                        failure.stackTraceToString().contains(identifier),
+                    )
+                }
+            }
+        }
+
+    @Test
     fun `a non-envelope body on the decoding overload becomes a decoding error`() =
         runTest {
             LoopbackServer().use { server ->

@@ -88,7 +88,9 @@ internal class PayabliService private constructor(
                 require(!it.host.isNullOrEmpty()) { "base URL must have a host" }
             }
         } catch (e: IllegalArgumentException) {
-            throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_INVALID_URL, cause = e)
+            // Redacted like the path causes: URI.create echoes its input, and a misconfigured base URL
+            // can carry userinfo, so the message could hold `user:password@host`.
+            throw invalidUrl(e)
         }
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse =
@@ -202,7 +204,14 @@ internal class PayabliService private constructor(
         return connection
     }
 
-    /** A bad base URL or path is configuration, not a network failure, so it maps differently. */
+    /**
+     * A bad base URL or path is configuration, not a network failure, so it maps differently.
+     *
+     * Every cause here is redacted, because all three shapes can carry the rejected path. A
+     * `URISyntaxException` echoes its input verbatim, and the `IllegalArgumentException` from
+     * `URI.create` at the query step carries the whole resolved URL, query values included. Type is
+     * therefore not a way to tell a safe cause from an unsafe one, so none is trusted.
+     */
     private fun resolveOrThrow(request: PayabliRequest): URL =
         try {
             resolve(request)
@@ -216,7 +225,11 @@ internal class PayabliService private constructor(
         }
 
     private fun invalidUrl(cause: Throwable): PayabliGenericException =
-        PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_INVALID_URL, cause = cause)
+        PayabliGenericException(
+            PayabliErrorCode.INVALID_CONFIGURATION,
+            REASON_INVALID_URL,
+            cause = RedactedCause(cause),
+        )
 
     /**
      * Resolves [PayabliRequest.path] against the configured base, pinned to the base's origin.
