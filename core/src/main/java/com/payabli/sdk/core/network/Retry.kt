@@ -11,9 +11,8 @@ import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRetryAfter
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.TimeUnit
 
 /**
@@ -54,12 +53,12 @@ public object Retry {
         var attempt = 1
         while (true) {
             try {
-                return withTimeout(attemptBudget(policy, startedAt)) { operation(attempt) }
-            } catch (e: TimeoutCancellationException) {
-                // withTimeout's own cancellation, not the caller's: this attempt overran its budget, which
-                // is the same condition as a socket timeout and classifies the same way.
-                val timedOut =
-                    PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_ATTEMPT_TIMEOUT, cause = e)
+                // withTimeoutOrNull rather than a TimeoutCancellationException catch: catching that type
+                // would also swallow a timeout the operation raised with its own withTimeout, and retry an
+                // operation whose own deadline had passed. A null here can only be our deadline.
+                val holder = withTimeoutOrNull(attemptBudget(policy, startedAt)) { Holder(operation(attempt)) }
+                if (holder != null) return holder.value
+                val timedOut = PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_ATTEMPT_TIMEOUT)
                 attempt = nextAttemptOrThrow(timedOut, attempt, policy, logger, route, startedAt)
             } catch (e: PayabliException) {
                 attempt = nextAttemptOrThrow(e, attempt, policy, logger, route, startedAt)
@@ -143,4 +142,9 @@ public object Retry {
         route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", null)
 
     private const val REASON_ATTEMPT_TIMEOUT = "Attempt exceeded its timeout"
+
+    /** Lets `withTimeoutOrNull` distinguish "timed out" from an operation that legitimately returned null. */
+    private class Holder<out T>(
+        val value: T,
+    )
 }

@@ -46,6 +46,16 @@ public class RetryPolicy(
 ) {
     init {
         require(maxAttempts >= 1) { "maxAttempts must be at least 1" }
+        // Every timing input, not just the attempt count: a negative delay reaches `delay()` and throws,
+        // masking the network error it was retrying, and an unchecked jitter bound overflows below.
+        require(baseDelayMillis >= 0) { "baseDelayMillis must not be negative" }
+        require(maxDelayMillis >= baseDelayMillis) { "maxDelayMillis must be at least baseDelayMillis" }
+        require(multiplier >= 1.0 && multiplier.isFinite()) { "multiplier must be finite and at least 1" }
+        require(maxJitterMillis >= 0) { "maxJitterMillis must not be negative" }
+        require(maxJitterMillis < Long.MAX_VALUE) { "maxJitterMillis must leave room for the jitter bound" }
+        require(attemptTimeoutMillis > 0) { "attemptTimeoutMillis must be positive" }
+        require(totalTimeoutMillis == null || totalTimeoutMillis > 0) { "totalTimeoutMillis must be positive" }
+        require(maxRetryAfterMillis >= 0) { "maxRetryAfterMillis must not be negative" }
     }
 
     /** Backoff before [attempt], 1-indexed. Attempt 1 does not wait. */

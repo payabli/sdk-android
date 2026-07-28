@@ -15,19 +15,25 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.MalformedURLException
+import java.net.ProtocolException
 import java.net.URI
 import java.net.URISyntaxException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.coroutineContext
 
 /**
  * [PayabliTransport] over `HttpURLConnection`, the platform HTTP client.
@@ -57,6 +63,14 @@ internal class PayabliService private constructor(
     private val logger: PayabliLogger,
     private val connectTimeoutMillis: Int,
     private val readTimeoutMillis: Int,
+    /**
+     * Injected rather than hardcoded so a test can substitute one. Held per instance because it
+     * describes how this implementation works and never varies per call; putting it on the interface
+     * would push the choice onto every caller, which is what main-safety exists to avoid.
+     */
+    private val dispatcher: CoroutineDispatcher,
+    /** Ceiling on a response body, so a hostile or misconfigured server cannot exhaust the app's heap. */
+    private val maxResponseBytes: Long,
 ) : PayabliTransport {
     /**
      * Kept with a trailing slash so [URI.resolve] appends to it rather than replacing its last segment.
@@ -66,18 +80,32 @@ internal class PayabliService private constructor(
      */
     private val base: URI =
         try {
-            URI.create(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/")
+            URI.create(if (baseUrl.endsWith("/")) baseUrl else "$baseUrl/").also {
+                // Syntax alone is not enough: `file:///tmp` parses, then fails the HttpURLConnection cast
+                // with a ClassCastException that no mapping catches.
+                require(it.isAbsolute) { "base URL must be absolute" }
+                require(it.scheme.lowercase() in ALLOWED_SCHEMES) { "base URL must be http or https" }
+                require(!it.host.isNullOrEmpty()) { "base URL must have a host" }
+            }
         } catch (e: IllegalArgumentException) {
             throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_INVALID_URL, cause = e)
         }
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse =
-        withContext(Dispatchers.IO) {
+        withContext(dispatcher) {
             // The choke-point. First statement, so no path through this method skips it.
             val decorated = decorations.applyTo(request)
             val connection = openConnection(decorated)
             var completed = false
             val startedAt = System.nanoTime()
+            // withContext cannot interrupt a blocking socket read, and readTimeout only bounds the wait for
+            // the *next* byte, so a server dribbling bytes outlives any coroutine deadline. Disconnecting
+            // from the cancellation handler is what tears the socket down. Documented as effective on
+            // Android; the JVM leaves asynchronous close unspecified, so this is not a guarantee there.
+            val onCancel =
+                coroutineContext[Job]?.invokeOnCompletion { cause ->
+                    if (cause != null) connection.disconnect()
+                }
             try {
                 logger.debug(methodField(decorated), routeField(decorated)) { "request" }
                 ensureActive()
@@ -107,6 +135,7 @@ internal class PayabliService private constructor(
                 ) { "request failed" }
                 throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
             } finally {
+                onCancel?.dispose()
                 // disconnect() signals that further requests are unlikely, which forfeits the pooled
                 // socket, so it is only correct when bailing out with the stream unread.
                 if (!completed) connection.disconnect()
@@ -142,11 +171,19 @@ internal class PayabliService private constructor(
         val url = resolveOrThrow(request)
         val connection =
             try {
-                url.openConnection() as HttpURLConnection
+                url.openConnection() as? HttpURLConnection
+                    ?: throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_INVALID_URL)
             } catch (e: IOException) {
                 throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
             }
-        connection.requestMethod = request.method.wireName
+        try {
+            connection.requestMethod = request.method.wireName
+        } catch (e: ProtocolException) {
+            // Caught ahead of IOException, which it extends. An unsupported verb is configuration, not a
+            // network fault. Note PATCH: Android's implementation accepts it, the JVM's does not, so a
+            // PATCH route works on a device and cannot be exercised by a JVM unit test.
+            throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_METHOD_UNSUPPORTED, cause = e)
+        }
         connection.connectTimeout = connectTimeoutMillis
         connection.readTimeout = readTimeoutMillis
         connection.useCaches = false
@@ -176,15 +213,43 @@ internal class PayabliService private constructor(
     private fun invalidUrl(cause: Throwable): PayabliGenericException =
         PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_INVALID_URL, cause = cause)
 
+    /**
+     * Resolves [PayabliRequest.path] against the configured base, pinned to the base's origin.
+     *
+     * `URI.resolve` returns the reference unchanged when it is already absolute, and takes the
+     * reference's authority when it has one, so an unchecked path could redirect a request — headers and
+     * all — to another host. Both a syntactic reject and an origin comparison, because the second stays
+     * correct if the first is ever loosened.
+     */
     private fun resolve(request: PayabliRequest): URL {
-        val resolved = base.resolve(request.path.removePrefix("/")).toString()
-        if (request.query.isEmpty()) return URI.create(resolved).toURL()
+        val reference = request.path
+        require(!reference.startsWith("//")) { "path must not carry an authority" }
+        require(URI(reference).scheme == null) { "path must be relative to the configured base URL" }
+
+        val resolved = base.resolve(reference.removePrefix("/"))
+        require(sameOrigin(resolved)) { "path must not leave the configured origin" }
+        require(
+            resolved
+                .normalize()
+                .path
+                .orEmpty()
+                .startsWith(base.path.orEmpty()),
+        ) {
+            "path must not escape the configured base path"
+        }
+
+        if (request.query.isEmpty()) return resolved.toURL()
         val query =
             request.query.joinToString("&") { (name, value) ->
                 "${urlEncode(name)}=${urlEncode(value)}"
             }
         return URI.create("$resolved?$query").toURL()
     }
+
+    private fun sameOrigin(candidate: URI): Boolean =
+        candidate.scheme.equals(base.scheme, ignoreCase = true) &&
+            candidate.host.equals(base.host, ignoreCase = true) &&
+            candidate.port == base.port
 
     private fun writeBody(
         connection: HttpURLConnection,
@@ -208,17 +273,51 @@ internal class PayabliService private constructor(
             } else {
                 connection.errorStream
             }
-        val body = stream?.use { it.readBytes() } ?: ByteArray(0)
+        val body = stream?.use { readBounded(it) } ?: ByteArray(0)
         return PayabliResponse(statusCode, readHeaders(connection), body)
     }
 
+    /**
+     * Reads at most [maxResponseBytes], failing rather than growing without limit: an unbounded read lets a
+     * misconfigured or hostile server exhaust the host app's heap before any status mapping runs.
+     *
+     * Hand-rolled because there is no usable alternative at this module's floor. `InputStream.readNBytes`
+     * is the right primitive but it is API 33, and it is absent from R8's desugar configuration, so
+     * desugaring cannot backfill it. Do not "simplify" this to `readBytes()`.
+     */
+    private fun readBounded(stream: InputStream): ByteArray {
+        val sink = ByteArrayOutputStream()
+        val buffer = ByteArray(READ_CHUNK_BYTES)
+        var total = 0L
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > maxResponseBytes) {
+                throw PayabliGenericException(
+                    PayabliErrorCode.NETWORK_ERROR,
+                    REASON_RESPONSE_TOO_LARGE,
+                    detail = "limit $maxResponseBytes bytes",
+                )
+            }
+            sink.write(buffer, 0, read)
+        }
+        return sink.toByteArray()
+    }
+
     /** Drops the null-keyed entry, which carries the status line rather than a header. */
-    private fun readHeaders(connection: HttpURLConnection): Map<String, String> =
-        buildMap {
-            connection.headerFields?.forEach { (name, values) ->
+    private fun readHeaders(connection: HttpURLConnection): Map<String, String> {
+        // Bound to a read-only type first: the platform hands back a Map whose mutability Kotlin cannot
+        // prove, and nothing here mutates it.
+        // Nullable key and value on purpose: the platform really does return a null-keyed entry for the
+        // status line, so a non-null type here would compile and then admit a null key at runtime.
+        val fields: Map<String?, List<String>?> = connection.headerFields ?: return emptyMap()
+        return buildMap {
+            fields.forEach { (name, values) ->
                 if (name != null && values != null) put(name, values.joinToString(", "))
             }
         }
+    }
 
     private fun methodField(request: PayabliRequest): LogField = LogField.safe("method", request.method.wireName)
 
@@ -236,6 +335,14 @@ internal class PayabliService private constructor(
         internal const val REASON_NETWORK_FAILED: String = "Network request failed"
         internal const val REASON_DECODE_FAILED: String = "Failed to decode response envelope"
         internal const val REASON_INVALID_URL: String = "Invalid request URL"
+        internal const val REASON_RESPONSE_TOO_LARGE: String = "Response body exceeded the allowed size"
+        internal const val REASON_METHOD_UNSUPPORTED: String = "HTTP method not supported on this platform"
+
+        private val ALLOWED_SCHEMES = setOf("http", "https")
+
+        /** Generous for a JSON API and far below anything that would strain a device. */
+        internal const val DEFAULT_MAX_RESPONSE_BYTES: Long = 10L * 1024 * 1024
+        private const val READ_CHUNK_BYTES: Int = 8 * 1024
 
         internal const val DEFAULT_CONNECT_TIMEOUT_MILLIS: Int = 10_000
 
@@ -257,6 +364,8 @@ internal class PayabliService private constructor(
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
             connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MILLIS,
             readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MILLIS,
+            dispatcher: CoroutineDispatcher = Dispatchers.IO,
+            maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
             PayabliService(
                 baseUrl,
@@ -264,6 +373,8 @@ internal class PayabliService private constructor(
                 logger,
                 connectTimeoutMillis,
                 readTimeoutMillis,
+                dispatcher,
+                maxResponseBytes,
             )
 
         /**
@@ -278,6 +389,8 @@ internal class PayabliService private constructor(
             baseUrl: String,
             decorations: List<PayabliRequestDecoration>,
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+            dispatcher: CoroutineDispatcher = Dispatchers.IO,
+            maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
             PayabliService(
                 baseUrl,
@@ -285,6 +398,8 @@ internal class PayabliService private constructor(
                 logger,
                 DEFAULT_CONNECT_TIMEOUT_MILLIS,
                 DEFAULT_READ_TIMEOUT_MILLIS,
+                dispatcher,
+                maxResponseBytes,
             )
     }
 }

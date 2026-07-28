@@ -29,6 +29,9 @@ private const val HTTP_GONE = 410
 private const val HTTP_TOO_MANY_REQUESTS = 429
 private const val HTTP_INTERNAL_ERROR = 500
 
+/** RFC 9110: valid status codes are 100..599. `getResponseCode` reports -1 for an unparseable line. */
+private const val HTTP_MIN_VALID = 100
+
 private const val RETRY_AFTER_HEADER = "Retry-After"
 private const val MILLIS_PER_SECOND = 1_000L
 
@@ -115,7 +118,17 @@ public object PayabliHttpErrors {
             status == HTTP_FORBIDDEN -> PayabliGenericException(PayabliErrorCode.PERMISSION_DENIED, "Forbidden (403)")
             status == HTTP_GONE -> PayabliGenericException(PayabliErrorCode.SESSION_BURNED, "Session burned (410)")
             status == HTTP_TOO_MANY_REQUESTS -> PayabliRateLimitException(retryAfterMillis(response))
+            // Anything at or above 500, including the 6xx-plus codes a proxy may invent: RFC 9110 says a
+            // client "SHOULD process the response as if it had a 5xx (Server Error) status code". Do not
+            // narrow this to 500..599.
             status >= HTTP_INTERNAL_ERROR -> server(status, body, retryAfterMillis(response))
+            // getResponseCode returns -1 when no status line could be parsed, which is a broken response
+            // rather than an unclassified one, so it is retryable.
+            status < HTTP_MIN_VALID ->
+                PayabliGenericException(
+                    PayabliErrorCode.NETWORK_ERROR,
+                    "Malformed HTTP response",
+                )
             else -> PayabliGenericException(PayabliErrorCode.UNKNOWN, "HTTP $status")
         }
     }

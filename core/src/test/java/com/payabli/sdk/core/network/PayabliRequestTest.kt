@@ -60,13 +60,28 @@ class PayabliRequestTest {
     }
 
     @Test
-    fun `toString carries the method and path but never headers or body`() {
+    fun `toString carries the method but never headers, body, or the resolved path`() {
         val request = jsonRequest(Body(amount = 999), headers = mapOf("Authorization" to "Bearer secret-value"))
         val rendered = request.toString()
         assertTrue(rendered.contains("POST"))
-        assertTrue(rendered.contains("/pay"))
         assertFalse(rendered.contains("Bearer"))
         assertFalse(rendered.contains("secret-value"))
         assertFalse(rendered.contains("999"))
+        // The path may embed an identifier and toString reaches exception messages the logger cannot redact.
+        assertFalse(rendered.contains("/pay"))
+        assertTrue(rendered.contains("[REDACTED]"))
+    }
+
+    @Test
+    fun `toString renders the route template when one was supplied`() {
+        val request =
+            PayabliRequest(
+                method = HttpMethod.GET,
+                path = "/api/v2/MoneyIn/capture/9999999999",
+                route = "/api/v2/MoneyIn/capture/{id}",
+            )
+        val rendered = request.toString()
+        assertTrue(rendered.contains("/api/v2/MoneyIn/capture/{id}"))
+        assertFalse(rendered.contains("9999999999"))
     }
 }

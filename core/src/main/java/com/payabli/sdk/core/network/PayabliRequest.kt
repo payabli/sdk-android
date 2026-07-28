@@ -24,8 +24,11 @@ public class PayabliRequest(
     public val headers: Map<String, String> = emptyMap(),
     public val body: ByteArray? = null,
 ) {
-    /** Never includes headers or body: either may carry a bearer token or cardholder data. */
-    override fun toString(): String = "PayabliRequest(${method.wireName} $path)"
+    /**
+     * Never includes headers, body, or the resolved [path] — a path may embed an identifier, which is why
+     * [route] exists. `toString` reaches exception messages and diagnostics, which the logger cannot redact.
+     */
+    override fun toString(): String = "PayabliRequest(${method.wireName} ${route ?: "[REDACTED]"})"
 
     public companion object {
         public const val CONTENT_TYPE_HEADER: String = "Content-Type"

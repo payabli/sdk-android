@@ -5,13 +5,21 @@ import androidx.annotation.RestrictTo
 /**
  * The raw result of a transport call. Carries no interpretation: [PayabliHttpErrors] maps a non-2xx
  * status to a typed error, and the caller decides when to apply it.
+ *
+ * [headers] and [body] are copied at construction, so the producer cannot mutate a response after
+ * handing it over. The parameters are deliberately not `val`: exposing them alongside the copies would
+ * publish the uncopied originals and defeat the copy. A consumer can still mutate the array it reads
+ * from [body], which copying on every access would cost more than it is worth.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class PayabliResponse(
     public val statusCode: Int,
-    public val headers: Map<String, String> = emptyMap(),
-    public val body: ByteArray = ByteArray(0),
+    headers: Map<String, String> = emptyMap(),
+    body: ByteArray = ByteArray(0),
 ) {
+    public val headers: Map<String, String> = headers.toMap()
+    public val body: ByteArray = body.copyOf()
+
     /** True for 2xx. */
     public val isSuccessful: Boolean get() = statusCode in SUCCESS_RANGE
 
