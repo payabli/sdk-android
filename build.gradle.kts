@@ -35,19 +35,6 @@ subprojects {
     sonar {
         properties {
             val reports = layout.buildDirectory.dir("reports").get().asFile
-            val dir = { path: String -> layout.projectDirectory.dir(path).asFile }
-
-            // Stated explicitly rather than inferred from Gradle source sets. Source-set
-            // detection is unreliable under AGP's built-in Kotlin, and if test directories
-            // are read as production sources they count toward coverage on new code, which
-            // reports test files as uncovered code.
-            if (dir("src/main").isDirectory) {
-                property("sonar.sources", "src/main")
-            }
-            listOf("src/test", "src/androidTest")
-                .filter { dir(it).isDirectory }
-                .takeIf { it.isNotEmpty() }
-                ?.let { property("sonar.tests", it.joinToString(",")) }
 
             // Enumerated rather than globbed: this property takes a comma-separated list
             // of paths and does not expand wildcards. Listed per source set that exists,
