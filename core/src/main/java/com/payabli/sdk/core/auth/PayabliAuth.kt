@@ -35,7 +35,12 @@ private const val REASON_PROVIDER_TIMEOUT = "the tokenProvider did not return in
 private const val REASON_REFRESH_CANCELLED = "the refresh was cancelled"
 private const val REASON_BLANK_TOKEN = "the tokenProvider returned a blank token"
 
-/** A host provider that never returns must not wedge every reader, so its call is bounded. */
+/**
+ * Bounds a provider that never returns, so it cannot wedge every reader.
+ *
+ * Only binds cancellation-cooperative code. A provider blocking a thread outside a suspension point
+ * cannot be interrupted by any timeout, which is why the contract asks for cooperation.
+ */
 private const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
 
 /**
@@ -147,7 +152,8 @@ public class PayabliAuth(
                 // would make their own scope look like it is unwinding.
                 finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_CANCELLED))
                 throw cancellation
-            } catch (failure: Throwable) {
+            } catch (failure: Exception) {
+                // Exception, not Throwable: an OutOfMemoryError or LinkageError is not a token failure.
                 fail(shared, providerFailure(failure))
             }
 
@@ -218,7 +224,8 @@ public class PayabliAuth(
     /**
      * Marks the provider call so a re-entrant read or refresh returns the last known token instead of
      * awaiting the claim its own caller has to complete. Follows `withContext` and child coroutines; a
-     * provider that hops to an unrelated scope escapes it and is bounded by [providerTimeoutMillis].
+     * provider that hops to an unrelated scope escapes it, and is then bounded by
+     * [providerTimeoutMillis] only as far as that deadline reaches, which is cooperative code.
      */
     private class RefreshInProgress(
         val auth: PayabliAuth,

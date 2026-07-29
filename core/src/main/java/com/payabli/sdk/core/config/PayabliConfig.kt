@@ -24,7 +24,7 @@ public class PayabliConfig(
     public val entryPoint: String,
     /** Selects the base URL for every request. */
     public val environment: PayabliEnvironment,
-    /** Reserved for the refresh path. Stored only; nothing calls it yet. */
+    /** Called by the auth holder when a token is rejected. Null makes a rejection terminal. */
     public val tokenProvider: PayabliTokenProvider? = null,
     /** Read by the telemetry module when it lands. On by default, so switching it off is deliberate. */
     public val telemetryEnabled: Boolean = true,

@@ -12,6 +12,7 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
@@ -403,6 +404,43 @@ class PayabliAuthTest {
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
             assertEquals("the tokenProvider did not return in time", failure.reason)
+        }
+
+    @Test
+    fun `a cancelled refresh leaves the holder usable`() =
+        runTest {
+            val calls = AtomicInteger()
+            val entered = CompletableDeferred<Unit>()
+            val subject =
+                auth {
+                    if (calls.incrementAndGet() == 1) {
+                        entered.complete(Unit)
+                        CompletableDeferred<String>().await()
+                    } else {
+                        "recovered"
+                    }
+                }
+
+            val initiator = async { subject.invalidateAndRefresh("initial-token") }
+            entered.await()
+            // cancelAndJoin, not cancel: a caller arriving mid-cancellation correctly shares the dying
+            // claim's outcome, so asserting liveness means waiting for the cleanup to finish first.
+            initiator.cancelAndJoin()
+
+            // The liveness property the NonCancellable cleanup exists for: the claim was released, so the
+            // holder still works rather than wedging every later caller on an abandoned deferred.
+            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
+            assertEquals("recovered", subject.accessToken())
+        }
+
+    @Test
+    fun `a fatal error is not disguised as a token failure`() =
+        runTest {
+            val subject = auth { throw OutOfMemoryError("not a refresh problem") }
+
+            val thrown = runCatching { subject.invalidateAndRefresh("initial-token") }.exceptionOrNull()
+
+            assertTrue("got $thrown", thrown is OutOfMemoryError)
         }
 
     @Test
