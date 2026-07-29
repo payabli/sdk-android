@@ -15,7 +15,8 @@ import com.payabli.sdk.core.network.impl.PayabliService
  * not reimplement the network and auth layers.
  *
  * `PayabliService` and `AuthenticatedTransport` stay `internal`: a caller receives something already correct
- * rather than the parts to assemble it. See `reference/module-map.md` for why nothing weaker works.
+ * rather than the parts to assemble it, so no capability can assemble a request path with the bearer or the
+ * recovery missing.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object PayabliTransports {
