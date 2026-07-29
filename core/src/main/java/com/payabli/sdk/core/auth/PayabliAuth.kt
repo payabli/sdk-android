@@ -179,8 +179,12 @@ public class PayabliAuth(
     }
 
     /**
-     * Cleanup runs under [NonCancellable]: on the cancellation path the caller is already cancelled, and a
-     * claim left set with nobody to complete it would wedge every later reader and refresh.
+     * Cleanup runs under [NonCancellable] because liveness depends on it: a claim left set with nobody to
+     * complete it wedges every later reader and refresh.
+     *
+     * Whether `withLock` observes an already-cancelled job depends on whether it has to suspend, since a
+     * cancellable function only checks at a suspension point and the uncontended path does not suspend.
+     * Correctness must not rest on which path it happens to take.
      */
     private suspend fun finish(
         shared: CompletableDeferred<String>,
