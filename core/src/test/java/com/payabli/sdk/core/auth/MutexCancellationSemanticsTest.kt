@@ -13,6 +13,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert
 import org.junit.Test
+import kotlin.time.Duration.Companion.seconds
+
+private val TEST_TIMEOUT = 5.seconds
 
 /**
  * Documents the cancellation semantics behind PayabliAuth's NonCancellable cleanup.
@@ -24,7 +27,7 @@ import org.junit.Test
 class MutexCancellationSemanticsTest {
     @Test
     fun `uncontended withLock in an already cancelled coroutine may acquire on the fast path`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val mutex = Mutex()
             val ready = CompletableDeferred<Unit>()
 
@@ -58,7 +61,7 @@ class MutexCancellationSemanticsTest {
 
     @Test
     fun `contended withLock in an already cancelled coroutine observes cancellation`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val mutex = Mutex(locked = true)
             val ready = CompletableDeferred<Unit>()
 
@@ -96,7 +99,7 @@ class MutexCancellationSemanticsTest {
 
     @Test
     fun `NonCancellable contended withLock waits instead of throwing cancellation`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val mutex = Mutex(locked = true)
             val ready = CompletableDeferred<Unit>()
             val waitingForLock = CompletableDeferred<Unit>()

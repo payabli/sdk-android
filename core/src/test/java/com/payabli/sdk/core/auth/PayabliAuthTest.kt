@@ -23,6 +23,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.seconds
+
+private val TEST_TIMEOUT = 5.seconds
+private const val COMPLETION_MILLIS = 2_000L
 
 /** The 2.2 auth holder: refresh de-duplication, the change flow, and how a provider failure surfaces. */
 class PayabliAuthTest {
@@ -39,6 +43,17 @@ class PayabliAuthTest {
             DefaultPayabliLogger(LogCategory.AUTH, sink),
         )
 
+    /**
+     * Bounded so a stranded claim fails with what went wrong, rather than hanging until the test
+     * framework gives up and reports an uncompleted coroutine.
+     */
+    private suspend fun completing(
+        what: String,
+        block: suspend () -> String,
+    ): String =
+        withTimeoutOrNull(COMPLETION_MILLIS) { block() }
+            ?: throw AssertionError("$what never completed: the refresh claim was stranded")
+
     private suspend fun failureFrom(block: suspend () -> Unit): PayabliException {
         val thrown = runCatching { block() }.exceptionOrNull()
         assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
@@ -47,13 +62,13 @@ class PayabliAuthTest {
 
     @Test
     fun `the initial token comes from the config`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             assertEquals("initial-token", auth().accessToken())
         }
 
     @Test
     fun `concurrent refreshes invoke the provider exactly once`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val gate = CompletableDeferred<Unit>()
             val subject =
@@ -75,7 +90,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a later refresh invokes the provider again`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject = auth { "token-${calls.incrementAndGet()}" }
 
@@ -87,7 +102,7 @@ class PayabliAuthTest {
 
     @Test
     fun `the change flow emits once per successful refresh`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject = auth { "token-${calls.incrementAndGet()}" }
             val seen = mutableListOf<String>()
@@ -105,7 +120,7 @@ class PayabliAuthTest {
 
     @Test
     fun `de-duplicated waiters see one emission, not one each`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val gate = CompletableDeferred<Unit>()
             val calls = AtomicInteger()
             val subject =
@@ -130,7 +145,7 @@ class PayabliAuthTest {
 
     @Test
     fun `no provider makes an expired token terminal`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val subject = auth(tokenProvider = null)
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
@@ -141,7 +156,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a provider failure surfaces as token expired without its own message`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val sentinel = "SENTINEL-BACKEND-BODY"
             val subject = auth { throw IOException("host backend said: $sentinel") }
 
@@ -156,7 +171,7 @@ class PayabliAuthTest {
 
     @Test
     fun `waiters receive the same failure as the initiator, not the raw provider error`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val gate = CompletableDeferred<Unit>()
             val calls = AtomicInteger()
             val subject =
@@ -180,7 +195,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a failed refresh does not wedge the next attempt`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject =
                 auth {
@@ -188,13 +203,13 @@ class PayabliAuthTest {
                 }
 
             failureFrom { subject.invalidateAndRefresh("initial-token") }
-            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
+            assertEquals("recovered", completing("the retry") { subject.invalidateAndRefresh("initial-token") })
             assertEquals("recovered", subject.accessToken())
         }
 
     @Test
     fun `a provider that reads the token does not deadlock`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             var holder: PayabliAuth? = null
             val subject = auth { holder!!.accessToken() }
             holder = subject
@@ -205,7 +220,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a provider that refreshes again does not deadlock`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             var holder: PayabliAuth? = null
             val subject = auth { holder!!.invalidateAndRefresh("initial-token") }
             holder = subject
@@ -215,7 +230,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a provider that never returns fails on the deadline and frees the claim`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject =
                 auth {
@@ -226,12 +241,15 @@ class PayabliAuthTest {
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
 
             // The claim was released, so the next attempt is not wedged behind the stuck one.
-            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
+            assertEquals(
+                "recovered",
+                completing("the attempt after a timeout") { subject.invalidateAndRefresh("initial-token") },
+            )
         }
 
     @Test
     fun `a cancelled initiator gives waiters a token failure, not its cancellation`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val entered = CompletableDeferred<Unit>()
             val subject =
@@ -255,7 +273,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a provider error carrying another code still surfaces as token expired`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val subject =
                 auth {
                     throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "provider used our own type")
@@ -267,7 +285,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a read during a refresh returns the fresh token`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val gate = CompletableDeferred<Unit>()
             val calls = AtomicInteger()
             val subject =
@@ -289,7 +307,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a staggered rejection on an already-rotated token does not refresh again`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject = auth { "T${calls.incrementAndGet()}" }
 
@@ -306,7 +324,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a rejection on the current token still refreshes`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject = auth { "T${calls.incrementAndGet()}" }
 
@@ -318,7 +336,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a blank refreshed token is refused and the old one survives`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val subject = auth { "   " }
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
@@ -329,7 +347,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a provider throwing our own token-expired type is still redacted`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val sentinel = "SENTINEL-BACKEND-DETAIL"
             val subject =
                 auth {
@@ -349,7 +367,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a stale rejection joins a refresh of the token that replaced it`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val gate = CompletableDeferred<Unit>()
             val calls = AtomicInteger()
             val subject =
@@ -376,7 +394,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a provider raising cancellation of its own is a provider failure`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val subject = auth { throw CancellationException("the provider's own nested timeout") }
 
             // Our caller was never cancelled, so this must not masquerade as caller cancellation.
@@ -388,7 +406,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a timeout reports the deadline, not a generic failure`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val subject =
                 PayabliAuth(
                     PayabliConfig(
@@ -408,7 +426,7 @@ class PayabliAuthTest {
 
     @Test
     fun `a cancelled refresh leaves the holder usable`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val entered = CompletableDeferred<Unit>()
             val subject =
@@ -429,13 +447,18 @@ class PayabliAuthTest {
 
             // The liveness property the NonCancellable cleanup exists for: the claim was released, so the
             // holder still works rather than wedging every later caller on an abandoned deferred.
-            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
+            assertEquals(
+                "recovered",
+                completing("the refresh after cancellation") {
+                    subject.invalidateAndRefresh("initial-token")
+                },
+            )
             assertEquals("recovered", subject.accessToken())
         }
 
     @Test
     fun `a fatal error reaches the caller and still frees the claim`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject =
                 auth {
@@ -446,12 +469,17 @@ class PayabliAuthTest {
             assertTrue("got $thrown", thrown is OutOfMemoryError)
 
             // Letting the Error through must not strand the claim, or every later caller waits forever.
-            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
+            assertEquals(
+                "recovered",
+                completing("the refresh after a fatal error") {
+                    subject.invalidateAndRefresh("initial-token")
+                },
+            )
         }
 
     @Test
     fun `a non-positive provider deadline is refused at construction`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             for (invalid in listOf(0L, -1L)) {
                 val thrown =
                     runCatching {
@@ -467,7 +495,7 @@ class PayabliAuthTest {
 
     @Test
     fun `the log records the refresh without the token`() =
-        runTest {
+        runTest(timeout = TEST_TIMEOUT) {
             val subject = auth { "SENTINEL-FRESH-TOKEN" }
 
             subject.invalidateAndRefresh("initial-token")
