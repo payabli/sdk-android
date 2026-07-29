@@ -20,6 +20,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -103,8 +104,10 @@ public class PayabliAuth(
             mutex.withLock {
                 val existing = inFlight
                 when {
-                    currentToken != rejectedToken -> RefreshPlan.AlreadyRotated(currentToken)
+                    // Before AlreadyRotated: the current token may itself be the one under refresh, and
+                    // handing it back would return a credential already known to be rejected.
                     existing != null -> RefreshPlan.Join(existing)
+                    currentToken != rejectedToken -> RefreshPlan.AlreadyRotated(currentToken)
                     else -> RefreshPlan.Own(CompletableDeferred<String>().also { inFlight = it })
                 }
             }
@@ -129,27 +132,29 @@ public class PayabliAuth(
             config.tokenProvider
                 ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER))
 
-        val fresh =
+        val minted: String? =
             try {
                 withTimeoutOrNull(providerTimeoutMillis.milliseconds) {
                     withContext(RefreshInProgress(this@PayabliAuth)) { provider.freshToken() }
-                } ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT))
+                }
             } catch (cancellation: CancellationException) {
+                // A provider can raise cancellation of its own, from a nested timeout for instance, while
+                // this coroutine is still active. That is a provider failure, not our caller withdrawing.
+                if (currentCoroutineContext().isActive) {
+                    fail(shared, providerFailure(cancellation))
+                }
                 // Waiters were not cancelled, so they get a token failure; a foreign CancellationException
                 // would make their own scope look like it is unwinding.
                 finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_CANCELLED))
                 throw cancellation
             } catch (failure: Throwable) {
-                // Always redacted: anything from here is host code, whatever type it chose to throw.
-                fail(
-                    shared,
-                    PayabliGenericException(
-                        PayabliErrorCode.TOKEN_EXPIRED,
-                        REASON_REFRESH_FAILED,
-                        cause = RedactedCause(failure),
-                    ),
-                )
+                fail(shared, providerFailure(failure))
             }
+
+        // Outside the try on purpose: raised inside it, this was caught below and re-wrapped, so the
+        // initiator saw a different reason from the waiters.
+        val fresh =
+            minted ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT))
 
         // PayabliConfig rejects a blank token at construction, so a refresh must not install one either.
         if (fresh.isBlank()) {
@@ -171,6 +176,14 @@ public class PayabliAuth(
         logger.info(LogField.safe("event", "token_refreshed")) { "access token refreshed" }
         return fresh
     }
+
+    /** Anything the provider raised, redacted: it is host code, whatever type it chose to throw. */
+    private fun providerFailure(failure: Throwable): PayabliGenericException =
+        PayabliGenericException(
+            PayabliErrorCode.TOKEN_EXPIRED,
+            REASON_REFRESH_FAILED,
+            cause = RedactedCause(failure),
+        )
 
     /** Releases the claim and hands [outcome] to the waiters, then throws it. */
     private suspend fun fail(

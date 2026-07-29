@@ -9,6 +9,7 @@ import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -343,6 +344,65 @@ class PayabliAuthTest {
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
             assertFalse("the provider's reason reached the caller", failure.reason.contains(sentinel))
             assertFalse("it leaked through the chain", failure.stackTraceToString().contains(sentinel))
+        }
+
+    @Test
+    fun `a stale rejection joins a refresh of the token that replaced it`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val calls = AtomicInteger()
+            val subject =
+                auth {
+                    val n = calls.incrementAndGet()
+                    if (n > 1) gate.await()
+                    "T$n"
+                }
+
+            // T1 is current, and is itself rejected, so a refresh to T2 is in flight.
+            assertEquals("T1", subject.invalidateAndRefresh("initial-token"))
+            val pending = async { subject.invalidateAndRefresh("T1") }
+            while (calls.get() < 2) yield()
+
+            // A long-delayed rejection of the original token must not be handed T1, which is being replaced.
+            val stale = async { subject.invalidateAndRefresh("initial-token") }
+            yield()
+            gate.complete(Unit)
+
+            assertEquals("T2", pending.await())
+            assertEquals("the stale caller joined the pending refresh", "T2", stale.await())
+            assertEquals("no extra provider call", 2, calls.get())
+        }
+
+    @Test
+    fun `a provider raising cancellation of its own is a provider failure`() =
+        runTest {
+            val subject = auth { throw CancellationException("the provider's own nested timeout") }
+
+            // Our caller was never cancelled, so this must not masquerade as caller cancellation.
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals("token refresh failed", failure.reason)
+        }
+
+    @Test
+    fun `a timeout reports the deadline, not a generic failure`() =
+        runTest {
+            val subject =
+                PayabliAuth(
+                    PayabliConfig(
+                        accessToken = "initial-token",
+                        entryPoint = "entry",
+                        environment = PayabliEnvironment.SANDBOX,
+                        tokenProvider = { CompletableDeferred<String>().await() },
+                    ),
+                    DefaultPayabliLogger(LogCategory.AUTH, sink),
+                    providerTimeoutMillis = 50,
+                )
+
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+            assertEquals("the tokenProvider did not return in time", failure.reason)
         }
 
     @Test
