@@ -15,14 +15,24 @@ import com.payabli.sdk.core.network.impl.RedactedCause
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 
 private const val REASON_NO_TOKEN_PROVIDER = "no tokenProvider was supplied"
 private const val REASON_REFRESH_FAILED = "token refresh failed"
+private const val REASON_PROVIDER_TIMEOUT = "the tokenProvider did not return in time"
+private const val REASON_REFRESH_CANCELLED = "the refresh was cancelled"
+
+/** A host provider that never returns must not wedge every reader, so its call is bounded. */
+private const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
 
 /**
  * Holds the access token and refreshes it through the host's provider.
@@ -37,6 +47,7 @@ private const val REASON_REFRESH_FAILED = "token refresh failed"
 public class PayabliAuth(
     private val config: PayabliConfig,
     private val logger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
+    private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
 ) {
     private val mutex = Mutex()
     private var currentToken: String = config.accessToken
@@ -54,7 +65,23 @@ public class PayabliAuth(
     public val tokenChanges: SharedFlow<String> = tokenChangeSink.asSharedFlow()
 
     /** The token to send now. Never refreshes on its own; call [invalidateAndRefresh] after a rejection. */
-    public suspend fun currentAccessToken(): String = mutex.withLock { currentToken }
+    public suspend fun accessToken(): String {
+        reentrantToken()?.let { return it }
+        val read =
+            mutex.withLock {
+                val refresh = inFlight
+                if (refresh != null) {
+                    TokenRead.Refreshing(refresh)
+                } else {
+                    TokenRead.Ready(currentToken)
+                }
+            }
+
+        return when (read) {
+            is TokenRead.Ready -> read.token
+            is TokenRead.Refreshing -> read.refresh.await()
+        }
+    }
 
     /**
      * Marks the current token rejected and returns a fresh one.
@@ -63,6 +90,7 @@ public class PayabliAuth(
      * and receive the same outcome, including the same failure.
      */
     public suspend fun invalidateAndRefresh(): String {
+        reentrantToken()?.let { return it }
         val (shared, isInitiator) =
             mutex.withLock {
                 val existing = inFlight
@@ -91,19 +119,25 @@ public class PayabliAuth(
             val provider =
                 config.tokenProvider
                     ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER)
-            val fresh = provider.freshToken()
+            val fresh =
+                withTimeoutOrNull(providerTimeoutMillis) {
+                    withContext(RefreshInProgress(this@PayabliAuth)) { provider.freshToken() }
+                } ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT)
             mutex.withLock {
                 currentToken = fresh
                 inFlight = null
             }
-            shared.complete(fresh)
             tokenChangeSink.tryEmit(fresh)
+            shared.complete(fresh)
             logger.info(LogField.safe("event", "token_refreshed")) { "access token refreshed" }
             return fresh
         } catch (cancellation: CancellationException) {
-            // Hand the cancellation to the waiters rather than leaving them awaiting a claim nobody owns.
+            // Waiters were not cancelled, so they get a token failure; a foreign CancellationException
+            // would make their own scope look like it is unwinding.
             release()
-            shared.completeExceptionally(cancellation)
+            shared.completeExceptionally(
+                PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_CANCELLED),
+            )
             throw cancellation
         } catch (failure: Throwable) {
             release()
@@ -121,10 +155,35 @@ public class PayabliAuth(
      * redacted for the same reason a decode failure's is.
      */
     private fun mapFailure(failure: Throwable): PayabliGenericException =
-        failure as? PayabliGenericException
+        (failure as? PayabliGenericException)?.takeIf { it.code == PayabliErrorCode.TOKEN_EXPIRED }
             ?: PayabliGenericException(
                 PayabliErrorCode.TOKEN_EXPIRED,
                 REASON_REFRESH_FAILED,
                 cause = RedactedCause(failure),
             )
+
+    /** Non-null only when this coroutine is already inside this instance's provider call. */
+    private suspend fun reentrantToken(): String? =
+        if (currentCoroutineContext()[RefreshInProgress]?.auth === this) mutex.withLock { currentToken } else null
+
+    /**
+     * Marks the provider call so a re-entrant read or refresh returns the last known token instead of
+     * awaiting the claim its own caller has to complete. Follows `withContext` and child coroutines; a
+     * provider that hops to an unrelated scope escapes it and is bounded by [providerTimeoutMillis].
+     */
+    private class RefreshInProgress(
+        val auth: PayabliAuth,
+    ) : AbstractCoroutineContextElement(Key) {
+        companion object Key : CoroutineContext.Key<RefreshInProgress>
+    }
+
+    private sealed interface TokenRead {
+        data class Ready(
+            val token: String,
+        ) : TokenRead
+
+        data class Refreshing(
+            val refresh: CompletableDeferred<String>,
+        ) : TokenRead
+    }
 }

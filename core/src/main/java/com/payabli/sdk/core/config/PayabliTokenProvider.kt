@@ -5,6 +5,9 @@ package com.payabli.sdk.core.config
  *
  * Not called yet; the authenticated transport will call it.
  *
+ * Must return: the call is bounded by a deadline, and must not call back into the SDK, which returns
+ * the last known token rather than waiting.
+ *
  * A `fun interface` rather than a lambda type alias, so it names the type in a stack frame and stays
  * implementable from Java.
  */

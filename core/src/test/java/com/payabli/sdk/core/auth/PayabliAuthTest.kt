@@ -8,10 +8,12 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -44,7 +46,7 @@ class PayabliAuthTest {
     @Test
     fun `the initial token comes from the config`() =
         runTest {
-            assertEquals("initial-token", auth().currentAccessToken())
+            assertEquals("initial-token", auth().accessToken())
         }
 
     @Test
@@ -66,7 +68,7 @@ class PayabliAuthTest {
 
             assertEquals(List(5) { "fresh-token" }, waiters.map { it.await() })
             assertEquals("exactly one provider invocation", 1, calls.get())
-            assertEquals("fresh-token", subject.currentAccessToken())
+            assertEquals("fresh-token", subject.accessToken())
         }
 
     @Test
@@ -131,7 +133,7 @@ class PayabliAuthTest {
             val failure = failureFrom { subject.invalidateAndRefresh() }
 
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
-            assertEquals("the token is unchanged", "initial-token", subject.currentAccessToken())
+            assertEquals("the token is unchanged", "initial-token", subject.accessToken())
         }
 
     @Test
@@ -184,7 +186,101 @@ class PayabliAuthTest {
 
             failureFrom { subject.invalidateAndRefresh() }
             assertEquals("recovered", subject.invalidateAndRefresh())
-            assertEquals("recovered", subject.currentAccessToken())
+            assertEquals("recovered", subject.accessToken())
+        }
+
+    @Test
+    fun `a provider that reads the token does not deadlock`() =
+        runTest {
+            var holder: PayabliAuth? = null
+            val subject = auth { holder!!.accessToken() }
+            holder = subject
+
+            // Returns the last known token: a re-entrant caller cannot wait for itself.
+            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh() })
+        }
+
+    @Test
+    fun `a provider that refreshes again does not deadlock`() =
+        runTest {
+            var holder: PayabliAuth? = null
+            val subject = auth { holder!!.invalidateAndRefresh() }
+            holder = subject
+
+            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh() })
+        }
+
+    @Test
+    fun `a provider that never returns fails on the deadline and frees the claim`() =
+        runTest {
+            val calls = AtomicInteger()
+            val subject =
+                auth {
+                    if (calls.incrementAndGet() == 1) CompletableDeferred<String>().await() else "recovered"
+                }
+
+            val failure = failureFrom { subject.invalidateAndRefresh() }
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+
+            // The claim was released, so the next attempt is not wedged behind the stuck one.
+            assertEquals("recovered", subject.invalidateAndRefresh())
+        }
+
+    @Test
+    fun `a cancelled initiator gives waiters a token failure, not its cancellation`() =
+        runTest {
+            val calls = AtomicInteger()
+            val entered = CompletableDeferred<Unit>()
+            val subject =
+                auth {
+                    calls.incrementAndGet()
+                    entered.complete(Unit)
+                    CompletableDeferred<String>().await()
+                }
+
+            val initiator = async { subject.invalidateAndRefresh() }
+            entered.await()
+            val waiter = async { runCatching { subject.accessToken() } }
+            yield()
+            initiator.cancel()
+
+            val outcome = waiter.await().exceptionOrNull()
+            assertTrue("got $outcome", outcome is PayabliException)
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (outcome as PayabliException).code)
+            assertEquals("exactly one provider invocation", 1, calls.get())
+        }
+
+    @Test
+    fun `a provider error carrying another code still surfaces as token expired`() =
+        runTest {
+            val subject =
+                auth {
+                    throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "provider used our own type")
+                }
+
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failureFrom { subject.invalidateAndRefresh() }.code)
+        }
+
+    @Test
+    fun `a read during a refresh returns the fresh token`() =
+        runTest {
+            val gate = CompletableDeferred<Unit>()
+            val calls = AtomicInteger()
+            val subject =
+                auth {
+                    calls.incrementAndGet()
+                    gate.await()
+                    "fresh-token"
+                }
+
+            val refresh = async { subject.invalidateAndRefresh() }
+            while (calls.get() == 0) yield()
+            val read = async { subject.accessToken() }
+            yield()
+            gate.complete(Unit)
+
+            assertEquals("fresh-token", refresh.await())
+            assertEquals("the read waited for the rotation", "fresh-token", read.await())
         }
 
     @Test
