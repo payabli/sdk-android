@@ -184,35 +184,53 @@ class AuthenticatedTransportTest {
         }
 
     /**
-     * The subject is de-duplication: five rejections, one provider call.
+     * The subject is de-duplication, so all five callers must hold the stale token before any of them is
+     * answered. A barrier after the bearer decoration forces that.
      *
-     * Responses are chosen from the request rather than scripted by position. A positional script encodes an
-     * interleaving the scheduler does not promise: one caller can finish its refresh and replay before another
-     * has sent anything, so "the first five are initial attempts" is not a fact. That assumption made this
-     * test fail on CI while passing eight times locally.
+     * Two ways this test has been wrong. First it inferred which requests were retries from their position,
+     * which five concurrent callers do not promise, and it failed on CI while passing locally. Fixing that by
+     * asserting only order-independent facts then made it pass with no concurrency at all: one caller could
+     * refresh and the other four sail through on the new token, still one provider call. The count of
+     * stale-token attempts is the assertion that distinguishes the two, and it was the one missing.
      */
     @Test
-    fun `concurrent 401s share one refresh, and only the stale token is ever refused`() =
+    fun `five callers holding the stale token share a single refresh`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
+                val callers = 5
                 val calls = AtomicInteger()
                 val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
-                // Intent, not order: the old credential is refused and the new one is accepted, whenever
-                // either happens to arrive.
                 server.respondPerRequest { request ->
                     if (request.header(AUTHORIZATION) == "Bearer $TEST_TOKEN") UNAUTHORIZED to "" else OK to ""
                 }
-                val transport = stack(server, auth)
 
-                val callers = List(5) { async { transport.execute(ping()) } }
-                val statuses = completing("five concurrent authenticated calls") { callers.map { it.await() } }
+                // Parks after the bearer is stamped, so every caller is holding the stale token at once.
+                val arrived = AtomicInteger()
+                val allStamped = CompletableDeferred<Unit>()
+                val barrier =
+                    PayabliRequestDecoration { request ->
+                        if (arrived.incrementAndGet() >= callers) allStamped.complete(Unit)
+                        if (request.headers[AUTHORIZATION] == "Bearer $TEST_TOKEN") allStamped.await()
+                        request
+                    }
+                val transport =
+                    AuthenticatedTransport(
+                        base =
+                            PayabliService.createWithDecorations(
+                                baseUrl = server.baseUrl,
+                                decorations = listOf(BearerDecoration(auth), barrier),
+                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                            ),
+                        auth = auth,
+                    )
 
-                assertEquals("one provider call for five rejections", 1, calls.get())
+                val results = List(callers) { async { transport.execute(ping()) } }
+                val statuses = completing("five concurrent authenticated calls") { results.map { it.await() } }
+
+                val stale = server.recorded.count { it.header(AUTHORIZATION) == "Bearer $TEST_TOKEN" }
+                assertEquals("all five held the stale token before any refresh", callers, stale)
+                assertEquals("and they shared one provider call", 1, calls.get())
                 assertTrue("every caller recovered", statuses.all { it.statusCode == OK })
-                val byToken = server.recorded.groupBy { it.header(AUTHORIZATION) }
-                assertEquals("both tokens reached the wire", 2, byToken.size)
-                assertTrue("the stale token was sent at least once", byToken.containsKey("Bearer $TEST_TOKEN"))
-                assertTrue("the refreshed token was sent at least once", byToken.containsKey("Bearer $REFRESHED"))
             }
         }
 
