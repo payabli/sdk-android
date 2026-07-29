@@ -13,6 +13,7 @@ import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.Retry
 import com.payabli.sdk.core.network.RetryPolicy
 import kotlinx.coroutines.CompletableDeferred
@@ -21,6 +22,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -41,6 +43,14 @@ private const val AUTHORIZATION = "Authorization"
 private const val UNAUTHORIZED = 401
 private const val OK = 200
 
+/** A status the default policy ignores, so only a widened one reaches the replay decision. */
+private const val WIDENED = 419
+
+/** Distinctive so a log assertion can tell a resolved path apart from the route template. */
+private const val ID_SENTINEL = "PAY-9f3c1d-SENTINEL"
+private const val ROUTE = "/api/pay/{id}"
+private const val BODY_SENTINEL = """{"amount":"1.00","pan":"SENTINEL-NEVER-LOG"}"""
+
 /**
  * The 2.3 pair: `BearerDecoration` inside the chain, and `AuthenticatedTransport` over it for the 401 dance.
  *
@@ -60,6 +70,7 @@ class AuthenticatedTransportTest {
         server: LoopbackServer,
         auth: PayabliAuth,
         callTimeout: Duration = PayabliService.DEFAULT_CALL_TIMEOUT,
+        recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
     ): PayabliTransport =
         AuthenticatedTransport(
             base =
@@ -70,9 +81,67 @@ class AuthenticatedTransportTest {
                     callTimeout = callTimeout,
                 ),
             auth = auth,
+            recovery = recovery,
+            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
         )
 
     private fun ping() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
+
+    /** A capability's own rule, of the shape [PayabliTransports] exists to accept. */
+    private fun widenedTo419() =
+        object : AuthRecoveryPolicy() {
+            override fun isCredentialRejection(response: PayabliResponse): Boolean =
+                super.isCredentialRejection(response) || response.statusCode == WIDENED
+        }
+
+    private fun guardedReplayRequest(method: HttpMethod): PayabliRequest =
+        PayabliRequest(
+            method = method,
+            path = "/api/pay/$ID_SENTINEL",
+            route = ROUTE,
+            body =
+                if (method == HttpMethod.POST || method == HttpMethod.PATCH) {
+                    BODY_SENTINEL.toByteArray(Charsets.UTF_8)
+                } else {
+                    null
+                },
+        )
+
+    private fun authWithCountingRefresh(calls: AtomicInteger): PayabliAuth =
+        PayabliAuth(
+            PayabliConfig(
+                accessToken = "initial-token",
+                entryPoint = "entry",
+                environment = PayabliEnvironment.SANDBOX,
+                tokenProvider = { REFRESHED.also { calls.incrementAndGet() } },
+            ),
+        )
+
+    /**
+     * Answers [WIDENED] once, then [OK], counting sends.
+     *
+     * A fake base rather than the loopback server, for the one property where that is the *better* level:
+     * the replay decision belongs to [AuthenticatedTransport] and never touches the HTTP client. It is also
+     * the only level where `PATCH` can be observed, because the JVM's `HttpURLConnection` rejects that verb
+     * in `PayabliService.openConnection` before any I/O, as the comment there records. The socket-backed
+     * paths stay covered by `the retry re-sends the body unchanged` and by `PayabliTransportsTest`.
+     */
+    private class CountingBase(
+        private val firstStatus: Int = WIDENED,
+    ) : PayabliTransport {
+        var sends = 0
+            private set
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            sends++
+            return PayabliResponse(if (sends == 1) firstStatus else OK)
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = execute(request).asV2Envelope(payloadSerializer)
+    }
 
     /**
      * Bounded so a wedge fails with what stalled rather than hanging.
@@ -577,5 +646,220 @@ class AuthenticatedTransportTest {
                 assertEquals("the provider ran more than once", 1, calls.get())
                 assertEquals(OK, outcome.getOrThrow().statusCode)
             }
+        }
+
+    // ---- what a widened policy may and may not replay --------------------------------------------
+    //
+    // The policy is `open` and the factory accepts a replacement, so widening is supported. Replaying is
+    // not the policy's call: RFC 9110 Section 9.2.2 makes PUT, DELETE and the safe methods idempotent, and
+    // only a 401 carries the separate argument that the request was refused before processing. A POST or
+    // PATCH on any other status has neither, so replaying one could charge twice.
+    //
+    // A 401 on a POST still replaying is `the retry re-sends the body unchanged` above.
+
+    /** Asserts one method's replay outcome under a policy widened to [WIDENED]. */
+    private suspend fun assertWidened(
+        method: HttpMethod,
+        expectedSends: Int,
+    ) {
+        val base = CountingBase()
+        val refreshes = AtomicInteger()
+        val auth = testAuth(tokenProvider = { REFRESHED.also { refreshes.incrementAndGet() } })
+        val transport =
+            AuthenticatedTransport(
+                base = base,
+                auth = auth,
+                recovery = widenedTo419(),
+                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+            )
+
+        val response = transport.execute(PayabliRequest(method, "/api/pay/$ID_SENTINEL", route = ROUTE))
+
+        val verb = method.wireName
+        assertEquals("$verb sent the wrong number of times", expectedSends, base.sends)
+        // Declining to replay must not also decline to refresh: the credential was rejected either way.
+        assertEquals("$verb did not refresh exactly once", 1, refreshes.get())
+        assertEquals(
+            "$verb returned the wrong status",
+            if (expectedSends == 2) OK else WIDENED,
+            response.statusCode,
+        )
+    }
+
+    @Test
+    fun `a widened rejection replays GET, PUT and DELETE`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // All three, so GET cannot stand in for the idempotent set and hide a misclassification.
+            for (method in listOf(HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE)) {
+                assertWidened(method, expectedSends = 2)
+            }
+        }
+
+    @Test
+    fun `a widened rejection refuses to replay a POST`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The case that would double-charge: a widened status carries no promise the server refused the
+            // request before processing it, and a POST is not idempotent.
+            assertWidened(HttpMethod.POST, expectedSends = 1)
+        }
+
+    @Test
+    fun `a widened rejection refuses to replay a PATCH`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Its own case rather than folded in with POST: PATCH reads like a sibling of PUT and RFC 9110
+            // omits it from the idempotent set, so this is the classification most likely to be got wrong.
+            assertWidened(HttpMethod.PATCH, expectedSends = 1)
+        }
+
+    @Test
+    fun `a declined replay says why, without the token, the body or the resolved path`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(WIDENED to "", OK to "")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+
+                completing("the declined replay") {
+                    stack(server, auth, recovery = widenedTo419()).execute(
+                        PayabliRequest(
+                            HttpMethod.POST,
+                            "/api/pay/$ID_SENTINEL",
+                            route = ROUTE,
+                            body = BODY_SENTINEL.toByteArray(Charsets.UTF_8),
+                        ),
+                    )
+                }
+
+                val logged = sink.records.joinToString("\n") { it.message }
+                // Presence first: a gutted log would satisfy every absence assertion below on its own.
+                assertTrue("no record explains the declined replay", logged.contains("replay declined"))
+                assertTrue("the method is what makes it explicable", logged.contains("method=POST"))
+                assertTrue("so is the status", logged.contains("statusCode=$WIDENED"))
+                assertTrue("the route template is loggable", logged.contains("route=$ROUTE"))
+
+                assertFalse("the resolved path was logged", logged.contains(ID_SENTINEL))
+                assertFalse("the body was logged", logged.contains("SENTINEL-NEVER-LOG"))
+                assertFalse("the initial token was logged", logged.contains(TEST_TOKEN))
+                assertFalse("the refreshed token was logged", logged.contains(REFRESHED))
+            }
+        }
+
+    @Test
+    fun `a 401 on POST still refreshes and replays`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase(firstStatus = UNAUTHORIZED)
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(guardedReplayRequest(HttpMethod.POST))
+
+            assertEquals(OK, response.statusCode)
+            assertEquals("one refresh", 1, calls.get())
+            assertEquals("401 is replayable even for POST", 2, base.sends)
+        }
+
+    @Test
+    fun `a widened rejection on GET refreshes and replays`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = widenedTo419(),
+                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(guardedReplayRequest(HttpMethod.GET))
+
+            assertEquals(OK, response.statusCode)
+            assertEquals("one refresh", 1, calls.get())
+            assertEquals("GET is safe and therefore replayable", 2, base.sends)
+        }
+
+    @Test
+    fun `a widened rejection on PUT refreshes and replays`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = widenedTo419(),
+                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(guardedReplayRequest(HttpMethod.PUT))
+
+            assertEquals(OK, response.statusCode)
+            assertEquals("one refresh", 1, calls.get())
+            assertEquals("PUT is idempotent and therefore replayable", 2, base.sends)
+        }
+
+    @Test
+    fun `a widened rejection on DELETE refreshes and replays`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = widenedTo419(),
+                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(guardedReplayRequest(HttpMethod.DELETE))
+
+            assertEquals(OK, response.statusCode)
+            assertEquals("one refresh", 1, calls.get())
+            assertEquals("DELETE is idempotent and therefore replayable", 2, base.sends)
+        }
+
+    @Test
+    fun `a widened rejection on POST refreshes but returns the original response without replay`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = widenedTo419(),
+                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(guardedReplayRequest(HttpMethod.POST))
+
+            assertEquals(WIDENED, response.statusCode)
+            assertEquals("the token was still refreshed for the next request", 1, calls.get())
+            assertEquals("POST is not replayable for widened non-401 statuses", 1, base.sends)
+        }
+
+    @Test
+    fun `a widened rejection on PATCH refreshes but returns the original response without replay`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = widenedTo419(),
+                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(guardedReplayRequest(HttpMethod.PATCH))
+
+            assertEquals(WIDENED, response.statusCode)
+            assertEquals("the token was still refreshed for the next request", 1, calls.get())
+            assertEquals("PATCH is not replayable for widened non-401 statuses", 1, base.sends)
         }
 }

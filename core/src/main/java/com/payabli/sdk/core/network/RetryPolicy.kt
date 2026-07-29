@@ -12,10 +12,14 @@ import kotlin.random.Random
  * `Retry-After` honoured on 429 and 503 ahead of the computed backoff. The **numbers** are deployment
  * tuning, so the defaults below are a starting point rather than a contract.
  *
- * **No per-attempt timeout here.** Bounding one attempt means bounding one HTTP call, and only the transport
- * knows where a call begins and ends; this layer holds an opaque operation. So the whole-call budget is the
- * transport's, mirroring iOS's `timeoutIntervalForResource`, and this class keeps only the budget for the
- * operation as a whole in [totalTimeoutMillis].
+ * **No per-attempt timeout here**, meaning no attempt gets a budget of its own. Bounding one call is the
+ * transport's job, mirroring iOS's `timeoutIntervalForResource`, because only it knows where a call begins
+ * and ends; this layer holds an opaque operation.
+ *
+ * That is not the same as leaving an attempt unbounded. When [totalTimeoutMillis] is set it is **one deadline
+ * for the whole operation**, attempt execution and backoff waits together, and each attempt starts with
+ * whatever is left of it. Null means this layer imposes no deadline at all and the transport's own call
+ * timeout is the only bound.
  *
  * **Not this policy's business: a refused credential.** That is [AuthRecoveryPolicy], which is why
  * [PayabliErrorCode.TOKEN_EXPIRED] is absent from [RETRYABLE_CODES] below. The two sit at different layers,
@@ -34,8 +38,11 @@ public class RetryPolicy(
     public val multiplier: Double = DEFAULT_MULTIPLIER,
     public val maxJitterMillis: Long = DEFAULT_MAX_JITTER_MILLIS,
     /**
-     * Budget for the whole operation including backoff waits. Null means unbounded, which is the default
-     * because a total budget is a caller-flow concern and a wrong default would truncate a legitimate call.
+     * One deadline for the whole operation: every attempt and every backoff wait between them. An attempt
+     * that would outlive it is cut short and the operation ends, rather than a further attempt starting.
+     *
+     * Null means unbounded, which is the default because a total budget is a caller-flow concern and a wrong
+     * default would truncate a legitimate call.
      */
     public val totalTimeoutMillis: Long? = null,
     /**

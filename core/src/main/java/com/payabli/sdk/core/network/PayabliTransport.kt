@@ -16,9 +16,11 @@ import kotlinx.serialization.KSerializer
  * that decides whether the whole operation runs again, so it wraps a call to this seam rather than
  * living inside it. See `RetryPolicy`.
  *
- * Implementations must be safe to call from any coroutine on any dispatcher and must hold no mutable
- * shared state. Kotlin cannot express that in the type system, so it is a documented contract that
- * every implementation honours.
+ * Implementations must be safe to call from any coroutine on any dispatcher, concurrently. Shared state is
+ * allowed, and both implementations hold some: the bearer comes from `PayabliAuth`, which `PayabliService`
+ * reaches through its decoration chain and `AuthenticatedTransport` holds directly. What the contract
+ * requires is that any such state be thread-safe in its own right, as that holder is. Kotlin cannot express
+ * this in the type system, so it is a documented contract that every implementation honours.
  *
  * Failures throw rather than returning a result type, the only shape that composes with coroutine
  * cancellation. Implementations throw `PayabliException`; a non-2xx *response* is not a failure and

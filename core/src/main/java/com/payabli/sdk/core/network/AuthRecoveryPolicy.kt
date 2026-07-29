@@ -14,8 +14,13 @@ private const val REASON_REFRESH_REJECTED = "the refreshed token was rejected as
  * Inside retry rather than around it, which is where a 401 is still a [PayabliResponse]: outside, the
  * operation has already turned it into a thrown error and [isCredentialRejection] would have nothing to read.
  *
- * Fixed rather than tunable: one 401, one refresh, one replay, then [PayabliErrorCode.TOKEN_EXPIRED]. A token
- * minted seconds ago and refused again is an authorization fact, not a transient one.
+ * **The default is fixed to 401**, and a subclass may widen it: one rejection, one refresh, one replay, then
+ * [PayabliErrorCode.TOKEN_EXPIRED]. A token minted seconds ago and refused again is an authorization fact,
+ * not a transient one.
+ *
+ * Widening changes what gets refreshed, never what gets replayed. `AuthenticatedTransport` decides that
+ * separately, and only replays when the status was 401 or the method is idempotent, so a widened status on a
+ * POST refreshes without a replay. A policy cannot authorize a replay its status does not justify.
  *
  * `@RestrictTo` rather than `internal` so a capability in its own artifact can subclass it. That is Lint, not
  * access control, so nothing credential-bearing belongs here.

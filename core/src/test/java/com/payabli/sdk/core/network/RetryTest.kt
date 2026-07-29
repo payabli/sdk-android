@@ -11,9 +11,11 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliServerException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
@@ -229,22 +231,6 @@ class RetryTest {
         }
 
     @Test
-    fun `a non-Payabli failure propagates untouched and unretried`() =
-        runTest {
-            var attempts = 0
-            val thrown =
-                runCatching {
-                    Retry.run(policy = policy(), logger = logger) {
-                        attempts++
-                        throw IllegalStateException("programming error")
-                    }
-                }.exceptionOrNull()
-
-            assertTrue(thrown is IllegalStateException)
-            assertEquals(1, attempts)
-        }
-
-    @Test
     fun `cancellation during a backoff delay propagates as cancellation`() =
         runTest {
             val entered = CompletableDeferred<Unit>()
@@ -279,5 +265,165 @@ class RetryTest {
             assertTrue(logged.contains("maxAttempts=2"))
             assertTrue(logged.contains("errorCode=SERVER_ERROR"))
             assertTrue(logged.contains("route=/api/v2/MoneyIn/capture/{id}"))
+        }
+
+    // ---- the total budget bounds the attempt, not just the decision to sleep again ----------------
+
+    /**
+     * The regression this pins: with the attempt clamp gone, nothing bounded a running attempt, so a policy
+     * with a 1-second total budget returned successfully from a 5-second attempt.
+     *
+     * `attempts` is the load-bearing assertion. A budget expiry that were retryable would show up here as 3,
+     * and that is exactly the storm the removed per-attempt timeout used to cause.
+     */
+    @Test
+    fun `an attempt that outlives the total budget fails, and no second attempt starts`() =
+        runTest {
+            var attempts = 0
+
+            val thrown =
+                failureFrom {
+                    Retry.run(policy = policy(maxAttempts = 3, totalTimeoutMillis = 1_000), logger = logger) {
+                        attempts++
+                        delay(5_000)
+                        "never returned"
+                    }
+                }
+
+            assertEquals(PayabliErrorCode.NETWORK_ERROR, thrown.code)
+            // The reason, not just the code: NETWORK_ERROR is also what a refused socket produces, so without
+            // this the test would pass against an unrelated network failure.
+            assertEquals("Operation exceeded its total timeout", thrown.reason)
+            assertEquals("the expiry was retried", 1, attempts)
+            assertEquals("the budget was not what ended it", 1_000, currentTime)
+        }
+
+    /** Null is not "some large deadline": this layer must install none at all. */
+    @Test
+    fun `an unbounded policy imposes no deadline of its own`() =
+        runTest {
+            var attempts = 0
+
+            val result =
+                Retry.run(policy = policy(totalTimeoutMillis = null), logger = logger) {
+                    attempts++
+                    delay(300_000)
+                    "ok"
+                }
+
+            assertEquals("ok", result)
+            assertEquals(1, attempts)
+            assertEquals(300_000, currentTime)
+        }
+
+    /**
+     * A budget larger than the nanosecond range behaves like a long one, not like an expired one.
+     *
+     * Passes against both the current `Duration` arithmetic and the nanosecond arithmetic it replaced, and
+     * that is worth recording rather than hiding: the overflow a review raised is real but cancels, because
+     * two's complement subtraction is exact modulo 2^64. Kept as a cheap guard on the boundary, not as
+     * evidence of a fix.
+     */
+    @Test
+    fun `a budget too large to hold in nanoseconds does not expire immediately`() =
+        runTest {
+            var attempts = 0
+
+            val result =
+                Retry.run(policy = policy(totalTimeoutMillis = Long.MAX_VALUE), logger = logger) {
+                    attempts++
+                    "ok"
+                }
+
+            assertEquals("ok", result)
+            assertEquals(1, attempts)
+        }
+
+    @Test
+    fun `the total budget cuts off an in-flight attempt and does not retry`() =
+        runTest {
+            val started = currentTime
+            var attempts = 0
+
+            val failure =
+                failureFrom {
+                    Retry.run(policy = policy(maxAttempts = 3, totalTimeoutMillis = 1_000), logger = logger) {
+                        attempts++
+                        delay(5_000)
+                        "ok"
+                    }
+                }
+
+            assertEquals(PayabliErrorCode.NETWORK_ERROR, failure.code)
+            assertEquals("Operation exceeded its total timeout", failure.reason)
+            assertEquals("the total timeout is terminal, not retryable", 1, attempts)
+            assertEquals(1_000L, currentTime - started)
+        }
+
+    @Test
+    fun `caller cancellation during a total-budgeted attempt remains cancellation`() =
+        runTest {
+            val entered = CompletableDeferred<Unit>()
+
+            val job =
+                launch {
+                    Retry.run(policy = policy(maxAttempts = 3, totalTimeoutMillis = 10_000), logger = logger) {
+                        entered.complete(Unit)
+                        CompletableDeferred<String>().await()
+                    }
+                }
+
+            entered.await()
+            job.cancelAndJoin()
+
+            assertTrue(job.isCancelled)
+        }
+
+    @Test
+    fun `a non-Payabli failure propagates untouched and unretried`() =
+        runTest {
+            var attempts = 0
+            val thrown =
+                runCatching {
+                    Retry.run(policy = policy(), logger = logger) {
+                        attempts++
+                        throw IllegalStateException("programming error")
+                    }
+                }.exceptionOrNull()
+
+            assertTrue(thrown is IllegalStateException)
+            assertEquals(1, attempts)
+        }
+
+    /**
+     * The deadline must not swallow the caller's own cancellation.
+     *
+     * Converting a timeout by catching `TimeoutCancellationException` is what would break this, which is why
+     * the implementation converts a null result from `withTimeoutOrNull` instead and catches nothing.
+     */
+    @Test
+    fun `cancelling the caller stays cancellation rather than becoming a budget failure`() =
+        runTest {
+            val started = CompletableDeferred<Unit>()
+            var failure: Throwable? = null
+
+            val job =
+                launch {
+                    try {
+                        Retry.run(policy = policy(totalTimeoutMillis = 60_000), logger = logger) {
+                            started.complete(Unit)
+                            delay(30_000)
+                            "never returned"
+                        }
+                    } catch (t: Throwable) {
+                        failure = t
+                        throw t
+                    }
+                }
+
+            started.await()
+            job.cancelAndJoin()
+
+            assertTrue("expected cancellation, got $failure", failure is CancellationException)
         }
 }

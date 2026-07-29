@@ -64,6 +64,7 @@ public object PayabliTransports {
             base = PayabliService.create(baseUrl = baseUrl, auth = auth, logger = logger),
             auth = auth,
             recovery = recovery,
+            logger = logger,
         )
     }
 }

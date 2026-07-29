@@ -7,11 +7,18 @@ import com.payabli.sdk.core.logging.PayabliLogger
 import com.payabli.sdk.core.logging.PayabliLoggers
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRetryAfter
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * Runs an operation with bounded, jittered retries.
@@ -30,10 +37,8 @@ import kotlin.time.Duration.Companion.milliseconds
  * Outside the transport rather than a decoration inside it, so each attempt re-enters
  * [PayabliTransport.execute] and re-runs the decoration chain.
  *
- * **It imposes no deadline of its own on an attempt**, beyond [RetryPolicy.totalTimeoutMillis] for the
- * operation as a whole. The transport bounds each call it makes, which is the only layer that can: a budget
- * here would wrap an opaque operation, and anything the operation does underneath, a credential refresh
- * included, would be cut short and then repeated by the next attempt.
+ * No attempt gets a deadline of its own. [RetryPolicy.totalTimeoutMillis], when set, is one deadline for the
+ * whole operation; each call is otherwise bounded by the transport.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object Retry {
@@ -52,15 +57,52 @@ public object Retry {
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
         operation: suspend (attempt: Int) -> T,
     ): T {
-        val startedAt = System.nanoTime()
+        // One origin, with every remainder derived from it, so the attempt bound and the backoff gate read
+        // the same number.
+        val startedAt = TimeSource.Monotonic.markNow()
+        val total = policy.totalTimeoutMillis?.milliseconds
         var attempt = 1
         while (true) {
-            try {
-                return operation(attempt)
-            } catch (e: PayabliException) {
-                attempt = nextAttemptOrThrow(e, attempt, policy, logger, route, startedAt)
+            val remaining = total?.minus(startedAt.elapsedNow())
+            if (remaining != null && remaining <= Duration.ZERO) {
+                currentCoroutineContext().ensureActive()
+                throw budgetExhausted(logger, route, policy)
             }
+            val outcome =
+                try {
+                    // Nothing catches a CancellationException here, so the caller's cancellation and the
+                    // operation's own deadline both pass through. Result distinguishes a null return.
+                    if (remaining == null) {
+                        Result.success(operation(attempt))
+                    } else {
+                        withTimeoutOrNull(remaining) { Result.success(operation(attempt)) }
+                    }
+                } catch (e: PayabliException) {
+                    attempt = nextAttemptOrThrow(e, attempt, policy, logger, route, startedAt)
+                    continue
+                }
+            // Outside the catch, so a budget expiry is never offered to the retry decision.
+            if (outcome == null) {
+                // Cancellation can land between the null and this throw with nothing suspending in between,
+                // and a cancelled caller must not be told its operation timed out.
+                currentCoroutineContext().ensureActive()
+                throw budgetExhausted(logger, route, policy)
+            }
+            return outcome.getOrThrow()
         }
+    }
+
+    /** The whole operation ran out of time. Terminal: every throw site sits outside the retry decision. */
+    private fun budgetExhausted(
+        logger: PayabliLogger,
+        route: String?,
+        policy: RetryPolicy,
+    ): PayabliException {
+        logger.warn(
+            routeField(route),
+            LogField.safe("totalTimeoutMs", policy.totalTimeoutMillis ?: -1L),
+        ) { "total budget exhausted mid-attempt; not retrying" }
+        return PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_TOTAL_TIMEOUT)
     }
 
     /**
@@ -75,7 +117,7 @@ public object Retry {
         policy: RetryPolicy,
         logger: PayabliLogger,
         route: String?,
-        startedAt: Long,
+        startedAt: TimeMark,
     ): Int {
         if (attempt >= policy.maxAttempts || !policy.isRetryable(failure)) throw failure
 
@@ -93,7 +135,7 @@ public object Retry {
         // The server's instruction wins over the computed backoff (RFC 9110).
         val wait = serverHint ?: policy.delayMillisFor(attempt + 1)
         val remaining = remainingBudget(policy, startedAt)
-        if (remaining != null && wait >= remaining) {
+        if (remaining != null && wait.milliseconds >= remaining) {
             // Sleeping past the total budget only delays the same failure.
             logger.warn(routeField(route), LogField.safe("errorCode", failure.code)) {
                 "total budget exhausted; not retrying"
@@ -118,14 +160,12 @@ public object Retry {
     /** Null when no total budget is set. Monotonic, so a wall-clock change cannot distort it. */
     private fun remainingBudget(
         policy: RetryPolicy,
-        startedAt: Long,
-    ): Long? {
-        val total = policy.totalTimeoutMillis ?: return null
-        val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-        return total - elapsed
-    }
+        startedAt: TimeMark,
+    ): Duration? = policy.totalTimeoutMillis?.milliseconds?.minus(startedAt.elapsedNow())
 
     /** Only a template is loggable; a resolved path may embed an identifier. */
     private fun routeField(route: String?): LogField =
         route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", null)
+
+    private const val REASON_TOTAL_TIMEOUT = "Operation exceeded its total timeout"
 }
