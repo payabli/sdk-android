@@ -237,4 +237,52 @@ class PayabliTransportsTest {
                 assertEquals("one rejection and one replay", 2, server.recorded.size)
             }
         }
+
+    /**
+     * The override is wired through to the holder, not merely accepted.
+     *
+     * Both halves matter: a provider slower than a supplied short deadline must fail, and the *same* provider
+     * under the default must succeed. Without the second half the test would pass against a factory that
+     * ignored the parameter and simply had a short default.
+     */
+    @Test
+    fun `a supplied provider timeout reaches the holder, and the default does not use it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val slowProvider =
+                    PayabliTokenProvider {
+                        Thread.sleep(400)
+                        REFRESHED
+                    }
+                server.respondPerRequest { request ->
+                    if (request.header(AUTHORIZATION) == "Bearer initial-token") 401 to "" else 200 to ""
+                }
+
+                val tooTight =
+                    PayabliTransports.authenticatedAgainst(
+                        server.baseUrl,
+                        config(slowProvider),
+                        logger = logger(),
+                        authLogger = authLogger(),
+                        providerTimeoutMillis = 50,
+                    )
+                val failure =
+                    withContext(Dispatchers.IO) {
+                        runCatching { tooTight.execute(ping()) }.exceptionOrNull()
+                    }
+                assertTrue("expected a PayabliException, got $failure", failure is PayabliException)
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+
+                val roomy =
+                    PayabliTransports.authenticatedAgainst(
+                        server.baseUrl,
+                        config(slowProvider),
+                        logger = logger(),
+                        authLogger = authLogger(),
+                    )
+                val response =
+                    withContext(Dispatchers.IO) { roomy.execute(ping()) }
+                assertEquals("the same provider under the default must succeed", 200, response.statusCode)
+            }
+        }
 }

@@ -94,17 +94,16 @@ class AuthenticatedTransportTest {
                 super.isCredentialRejection(response) || response.statusCode == WIDENED
         }
 
+    /**
+     * No body, deliberately. [CountingBase] ignores its request, so a body here would be read by nothing and
+     * would look like coverage that does not exist. Body preservation across a replay is covered on a real
+     * socket by `the retry re-sends the body unchanged`.
+     */
     private fun guardedReplayRequest(method: HttpMethod): PayabliRequest =
         PayabliRequest(
             method = method,
             path = "/api/pay/$ID_SENTINEL",
             route = ROUTE,
-            body =
-                if (method == HttpMethod.POST || method == HttpMethod.PATCH) {
-                    BODY_SENTINEL.toByteArray(Charsets.UTF_8)
-                } else {
-                    null
-                },
         )
 
     private fun authWithCountingRefresh(calls: AtomicInteger): PayabliAuth =
@@ -658,59 +657,6 @@ class AuthenticatedTransportTest {
     // A 401 on a POST still replaying is `the retry re-sends the body unchanged` above.
 
     /** Asserts one method's replay outcome under a policy widened to [WIDENED]. */
-    private suspend fun assertWidened(
-        method: HttpMethod,
-        expectedSends: Int,
-    ) {
-        val base = CountingBase()
-        val refreshes = AtomicInteger()
-        val auth = testAuth(tokenProvider = { REFRESHED.also { refreshes.incrementAndGet() } })
-        val transport =
-            AuthenticatedTransport(
-                base = base,
-                auth = auth,
-                recovery = widenedTo419(),
-                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
-            )
-
-        val response = transport.execute(PayabliRequest(method, "/api/pay/$ID_SENTINEL", route = ROUTE))
-
-        val verb = method.wireName
-        assertEquals("$verb sent the wrong number of times", expectedSends, base.sends)
-        // Declining to replay must not also decline to refresh: the credential was rejected either way.
-        assertEquals("$verb did not refresh exactly once", 1, refreshes.get())
-        assertEquals(
-            "$verb returned the wrong status",
-            if (expectedSends == 2) OK else WIDENED,
-            response.statusCode,
-        )
-    }
-
-    @Test
-    fun `a widened rejection replays GET, PUT and DELETE`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // All three, so GET cannot stand in for the idempotent set and hide a misclassification.
-            for (method in listOf(HttpMethod.GET, HttpMethod.PUT, HttpMethod.DELETE)) {
-                assertWidened(method, expectedSends = 2)
-            }
-        }
-
-    @Test
-    fun `a widened rejection refuses to replay a POST`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // The case that would double-charge: a widened status carries no promise the server refused the
-            // request before processing it, and a POST is not idempotent.
-            assertWidened(HttpMethod.POST, expectedSends = 1)
-        }
-
-    @Test
-    fun `a widened rejection refuses to replay a PATCH`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // Its own case rather than folded in with POST: PATCH reads like a sibling of PUT and RFC 9110
-            // omits it from the idempotent set, so this is the classification most likely to be got wrong.
-            assertWidened(HttpMethod.PATCH, expectedSends = 1)
-        }
-
     @Test
     fun `a declined replay says why, without the token, the body or the resolved path`() =
         runTest(timeout = TEST_TIMEOUT) {

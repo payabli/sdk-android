@@ -45,10 +45,14 @@ private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejec
  * cannot be interrupted by any timeout, which is why the contract asks for cooperation.
  *
  * Ten seconds rather than thirty: a provider that never returns holds every reader waiting on the same
- * refresh, and half a minute of that is most of a user's patience. It stands on its own, with no relation to
- * any other budget to maintain, because nothing above wraps a deadline around a refresh.
+ * refresh, and half a minute of that is most of a user's patience.
+ *
+ * A default rather than a rule. It is deliberately shorter than the transport's own whole-call budget even
+ * though a broker callback also makes a network round trip, so `PayabliTransports.authenticated` takes an
+ * override for an integrator whose broker is legitimately slower. `internal` for that default parameter to
+ * reference; nothing outside `:core` reads it.
  */
-private const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
+internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
 
 /**
  * Holds the access token and refreshes it through the host's provider.

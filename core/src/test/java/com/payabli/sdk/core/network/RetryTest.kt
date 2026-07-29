@@ -14,7 +14,9 @@ import com.payabli.sdk.core.model.PayabliServerException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
@@ -273,11 +275,11 @@ class RetryTest {
      * The regression this pins: with the attempt clamp gone, nothing bounded a running attempt, so a policy
      * with a 1-second total budget returned successfully from a 5-second attempt.
      *
-     * `attempts` is the load-bearing assertion. A budget expiry that were retryable would show up here as 3,
+     * `attempts` is the load-bearing assertion. A budget expiry that was retryable would show up here as 3,
      * and that is exactly the storm the removed per-attempt timeout used to cause.
      */
     @Test
-    fun `an attempt that outlives the total budget fails, and no second attempt starts`() =
+    fun `the total budget cuts off an in-flight attempt and does not retry`() =
         runTest {
             var attempts = 0
 
@@ -317,6 +319,29 @@ class RetryTest {
         }
 
     /**
+     * Cancellation raised *inside* the operation escapes rather than being converted.
+     *
+     * It does **not** reach the `outcome == null` branch, proven with a sentinel there: cancelling the
+     * innermost job makes `delay` throw a plain `CancellationException`, and `withTimeoutOrNull` returns null
+     * only for its own `TimeoutCancellationException`, so this propagates before `outcome` is assigned. What
+     * it guards is the shape: swapping in `withTimeout` plus a broad catch would convert this to a timeout.
+     */
+    @Test
+    fun `cancellation inside the operation escapes instead of becoming a total-timeout error`() =
+        runTest {
+            val thrown =
+                runCatching {
+                    Retry.run(policy = policy(maxAttempts = 1, totalTimeoutMillis = 1), logger = logger) {
+                        currentCoroutineContext().cancel()
+                        delay(Long.MAX_VALUE)
+                    }
+                }.exceptionOrNull()
+
+            assertTrue("got $thrown", thrown is CancellationException)
+            assertTrue("got $thrown", thrown !is PayabliException)
+        }
+
+    /**
      * A budget larger than the nanosecond range behaves like a long one, not like an expired one.
      *
      * Passes against both the current `Duration` arithmetic and the nanosecond arithmetic it replaced, and
@@ -339,27 +364,7 @@ class RetryTest {
             assertEquals(1, attempts)
         }
 
-    @Test
-    fun `the total budget cuts off an in-flight attempt and does not retry`() =
-        runTest {
-            val started = currentTime
-            var attempts = 0
-
-            val failure =
-                failureFrom {
-                    Retry.run(policy = policy(maxAttempts = 3, totalTimeoutMillis = 1_000), logger = logger) {
-                        attempts++
-                        delay(5_000)
-                        "ok"
-                    }
-                }
-
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, failure.code)
-            assertEquals("Operation exceeded its total timeout", failure.reason)
-            assertEquals("the total timeout is terminal, not retryable", 1, attempts)
-            assertEquals(1_000L, currentTime - started)
-        }
-
+    /** Cancelled from outside while parked on a `Deferred`, so no timer is involved in the delivery. */
     @Test
     fun `caller cancellation during a total-budgeted attempt remains cancellation`() =
         runTest {
@@ -400,6 +405,9 @@ class RetryTest {
      *
      * Converting a timeout by catching `TimeoutCancellationException` is what would break this, which is why
      * the implementation converts a null result from `withTimeoutOrNull` instead and catches nothing.
+     *
+     * Cancelled from outside while parked on a timer, and asserts the exception type rather than the job's
+     * state, so the failure message names what escaped.
      */
     @Test
     fun `cancelling the caller stays cancellation rather than becoming a budget failure`() =

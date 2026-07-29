@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
+import com.payabli.sdk.core.auth.DEFAULT_PROVIDER_TIMEOUT_MILLIS
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.logging.LogCategory
@@ -24,13 +25,27 @@ public object PayabliTransports {
      * refresh domains, which loses the de-duplication [PayabliAuth] exists to provide.
      *
      * [recovery] lets a capability widen what counts as a rejection on its own routes.
+     *
+     * [providerTimeoutMillis] is the escape hatch for a slow broker. The default protects every reader,
+     * because one provider holds them all while the refresh is de-duplicated, but the transport allows its own
+     * calls longer than the host's callback, and that callback usually makes a network round trip too. An
+     * integrator whose broker is legitimately slower widens it here.
      */
     public fun authenticated(
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
         authLogger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
-    ): PayabliTransport = authenticated(config.environment.baseUrl, config, recovery, logger, authLogger)
+        providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
+    ): PayabliTransport =
+        authenticated(
+            config.environment.baseUrl,
+            config,
+            recovery,
+            logger,
+            authLogger,
+            providerTimeoutMillis,
+        )
 
     /**
      * Same, against an explicit [baseUrl], for `:core`'s own tests.
@@ -47,7 +62,8 @@ public object PayabliTransports {
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
         authLogger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
-    ): PayabliTransport = authenticated(baseUrl, config, recovery, logger, authLogger)
+        providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
+    ): PayabliTransport = authenticated(baseUrl, config, recovery, logger, authLogger, providerTimeoutMillis)
 
     private fun authenticated(
         baseUrl: String,
@@ -55,11 +71,12 @@ public object PayabliTransports {
         recovery: AuthRecoveryPolicy,
         logger: PayabliLogger,
         authLogger: PayabliLogger,
+        providerTimeoutMillis: Long,
     ): PayabliTransport {
         // One holder for both the chain that reads the token and the wrapper that refreshes it, which is what
         // makes a replay carry the token the refresh minted. Its own category, so a refresh is filterable as
         // auth rather than buried under network.
-        val auth = PayabliAuth(config, authLogger)
+        val auth = PayabliAuth(config, authLogger, providerTimeoutMillis)
         return AuthenticatedTransport(
             base = PayabliService.create(baseUrl = baseUrl, auth = auth, logger = logger),
             auth = auth,
