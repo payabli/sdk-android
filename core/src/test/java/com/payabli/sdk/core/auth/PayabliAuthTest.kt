@@ -143,6 +143,45 @@ class PayabliAuthTest {
             collector.cancel()
         }
 
+    /**
+     * The sink buffers one and drops the oldest so an emit never suspends. Both other flow tests yield
+     * after each refresh, so the collector always drains the slot and the overflow branch is never taken.
+     * A collector stalled across several rotations is what makes the buffering load-bearing: with a
+     * suspending sink the refresh itself would block behind the host's collector.
+     *
+     * Asserts the two properties the strategy guarantees rather than an exact list, because how many
+     * survive depends on when the collector happens to retrieve a value.
+     */
+    @Test
+    fun `rotations while a collector is stalled complete, keeping the newest and dropping the rest`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val subject = auth { "token-${calls.incrementAndGet()}" }
+            val release = CompletableDeferred<Unit>()
+            val seen = mutableListOf<String>()
+
+            val collector =
+                launch {
+                    subject.tokenChanges.collect {
+                        release.await()
+                        seen += it
+                    }
+                }
+            yield()
+
+            // Nobody is draining the sink for the second and third of these.
+            completing("the first rotation") { subject.invalidateAndRefresh("initial-token") }
+            completing("the second rotation") { subject.invalidateAndRefresh("token-1") }
+            completing("the third rotation") { subject.invalidateAndRefresh("token-2") }
+
+            release.complete(Unit)
+            yield()
+
+            assertEquals("the newest rotation must survive", "token-3", seen.lastOrNull())
+            assertFalse("an intermediate rotation must be dropped, not queued", seen.contains("token-2"))
+            collector.cancel()
+        }
+
     @Test
     fun `no provider makes an expired token terminal`() =
         runTest(timeout = TEST_TIMEOUT) {
