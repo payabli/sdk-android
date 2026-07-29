@@ -1,7 +1,6 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
-import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.logging.LogCategory
@@ -34,11 +33,15 @@ public object PayabliTransports {
     ): PayabliTransport = authenticated(config.environment.baseUrl, config, recovery, logger, authLogger)
 
     /**
-     * Same, against an explicit [baseUrl]. Widens where a **test** can point, never what shipped
-     * configuration can reach; [PayabliEnvironment] still offers no tunnel origin. Not for `src/main`.
+     * Same, against an explicit [baseUrl], for `:core`'s own tests.
+     *
+     * `internal` rather than annotated. `@VisibleForTesting` is a Lint hint and leaves the member public in
+     * bytecode, so as published API this was an origin override: a caller could send [PayabliConfig.accessToken]
+     * to any origin it liked, which is exactly what [PayabliEnvironment] promises shipped configuration cannot
+     * do, "not even behind a debug flag". A capability that needs a live-server test wants a fixtures artifact,
+     * not a hole here.
      */
-    @VisibleForTesting
-    public fun authenticatedAgainst(
+    internal fun authenticatedAgainst(
         baseUrl: String,
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
