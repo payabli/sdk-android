@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
-private const val COMPLETION_MILLIS = 2_000L
+private val COMPLETION_TIMEOUT = 2.seconds
 
 /** The 2.2 auth holder: refresh de-duplication, the change flow, and how a provider failure surfaces. */
 class PayabliAuthTest {
@@ -51,7 +51,7 @@ class PayabliAuthTest {
         what: String,
         block: suspend () -> String,
     ): String =
-        withTimeoutOrNull(COMPLETION_MILLIS) { block() }
+        withTimeoutOrNull(COMPLETION_TIMEOUT) { block() }
             ?: throw AssertionError("$what never completed: the refresh claim was stranded")
 
     private suspend fun failureFrom(block: suspend () -> Unit): PayabliException {
@@ -546,6 +546,89 @@ class PayabliAuthTest {
             assertEquals(
                 "recovered",
                 completing("the refresh after a fatal error") {
+                    subject.invalidateAndRefresh("initial-token")
+                },
+            )
+        }
+
+    /**
+     * The two `NonCancellable` guards in the holder were unprotected: both could be deleted with every
+     * other test still green. Neither can be reached by an uncontended lock, because a cancellable suspend
+     * function only observes cancellation at a suspension point and acquiring a free mutex is not one.
+     *
+     * So the test holds the lock itself, forcing the cleanup to suspend, and cancels only once the refresh
+     * is waiting there. Order matters: cancelling any earlier cancels the provider's own await instead and
+     * exercises the cancellation branch, which is a different path.
+     */
+    @Test
+    fun `a cancelled commit waits for a contended lock and still releases the claim`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val gate = CompletableDeferred<Unit>()
+            val subject =
+                auth {
+                    if (calls.incrementAndGet() == 1) {
+                        gate.await()
+                        "fresh-token"
+                    } else {
+                        "recovered"
+                    }
+                }
+
+            val job = launch { runCatching { subject.invalidateAndRefresh("initial-token") } }
+            while (calls.get() == 0) yield()
+
+            subject.mutex.lock()
+            gate.complete(Unit)
+            // One yield is enough on the test dispatcher: the provider's continuation runs to the
+            // refresh's next suspension point, which is the lock the test is holding.
+            yield()
+
+            job.cancel()
+            subject.mutex.unlock()
+            job.join()
+
+            // Rejecting what the commit installed, so this is a genuine second refresh rather than the
+            // already-rotated shortcut. A stranded claim makes it join a deferred nobody will complete.
+            assertEquals(
+                "recovered",
+                completing("a refresh after a cancelled commit") {
+                    subject.invalidateAndRefresh("fresh-token")
+                },
+            )
+        }
+
+    @Test
+    fun `a cancelled failure cleanup waits for a contended lock and still releases the claim`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val gate = CompletableDeferred<Unit>()
+            val subject =
+                auth {
+                    if (calls.incrementAndGet() == 1) {
+                        gate.await()
+                        throw IOException("the provider failed")
+                    } else {
+                        "recovered"
+                    }
+                }
+
+            val job = launch { runCatching { subject.invalidateAndRefresh("initial-token") } }
+            while (calls.get() == 0) yield()
+
+            subject.mutex.lock()
+            gate.complete(Unit)
+            // One yield is enough on the test dispatcher: the provider's continuation runs to the
+            // refresh's next suspension point, which is the lock the test is holding.
+            yield()
+
+            job.cancel()
+            subject.mutex.unlock()
+            job.join()
+
+            assertEquals(
+                "recovered",
+                completing("a refresh after a cancelled failure cleanup") {
                     subject.invalidateAndRefresh("initial-token")
                 },
             )

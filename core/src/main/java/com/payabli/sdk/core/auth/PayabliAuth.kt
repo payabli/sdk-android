@@ -65,7 +65,10 @@ public class PayabliAuth(
         require(providerTimeoutMillis > 0) { "providerTimeoutMillis must be positive" }
     }
 
-    private val mutex = Mutex()
+    // Not private so a test can hold it and force the cleanup and commit paths to contend. Both run under
+    // NonCancellable precisely for that case, and an uncontended lock cannot demonstrate it.
+    @VisibleForTesting
+    internal val mutex = Mutex()
     private var currentToken: String = config.accessToken
     private var inFlight: CompletableDeferred<String>? = null
 

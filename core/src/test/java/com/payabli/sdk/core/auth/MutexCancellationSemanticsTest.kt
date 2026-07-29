@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
@@ -23,6 +24,10 @@ private val TEST_TIMEOUT = 5.seconds
  * The important distinction is not "withLock always observes cancellation". It does not: an uncontended
  * mutex can be acquired on the fast path without suspending. The dangerous case is a cancelled coroutine
  * trying to acquire a contended mutex, because that acquisition must suspend and Mutex.lock is cancellable.
+ *
+ * This file pins the primitive contract, which is why the guards exist. It does not pin the guards
+ * themselves: that is PayabliAuthTest's two "waits for a contended lock and still releases the claim"
+ * tests, which fail if either NonCancellable is removed.
  */
 class MutexCancellationSemanticsTest {
     @Test
@@ -131,7 +136,7 @@ class MutexCancellationSemanticsTest {
             waitingForLock.await()
 
             val stillWaiting =
-                withTimeoutOrNull(100) {
+                withTimeoutOrNull(100.milliseconds) {
                     job.join()
                     "completed"
                 }
