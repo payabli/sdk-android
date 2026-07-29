@@ -1,0 +1,438 @@
+package com.payabli.sdk.core.network.impl
+
+import com.payabli.sdk.core.auth.PayabliAuth
+import com.payabli.sdk.core.logging.LogCategory
+import com.payabli.sdk.core.logging.RecordingLogSink
+import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.network.AuthRecoveryPolicy
+import com.payabli.sdk.core.network.HttpMethod
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.Retry
+import com.payabli.sdk.core.network.RetryPolicy
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.Serializable
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.seconds
+
+private val TEST_TIMEOUT = 5.seconds
+private val COMPLETION_TIMEOUT = 2.seconds
+
+private const val REFRESHED = "refreshed-token"
+private const val AUTHORIZATION = "Authorization"
+private const val UNAUTHORIZED = 401
+private const val OK = 200
+
+/**
+ * The 2.3 pair: `BearerDecoration` inside the chain, and `AuthenticatedTransport` over it for the 401 dance.
+ *
+ * Exercised through the real [PayabliService] and a real socket rather than a fake base, because the
+ * property that matters most is not expressible against a fake: the retry carries the refreshed token only
+ * because re-entering the transport re-runs the chain. A fake base has no chain to re-run.
+ */
+class AuthenticatedTransportTest {
+    @Serializable
+    private class Payload(
+        val paymentTransId: String,
+    )
+
+    private val sink = RecordingLogSink()
+
+    private fun stack(
+        server: LoopbackServer,
+        auth: PayabliAuth,
+    ): PayabliTransport =
+        AuthenticatedTransport(
+            base =
+                PayabliService.create(
+                    baseUrl = server.baseUrl,
+                    auth = auth,
+                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                ),
+            auth = auth,
+        )
+
+    private fun ping() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
+
+    /**
+     * Bounded so a wedge fails with what stalled rather than hanging.
+     *
+     * On a real dispatcher: `runTest`'s virtual clock expires the moment the scheduler runs dry, which is
+     * while the socket call is still outstanding, so it would bound nothing.
+     */
+    private suspend fun <T : Any> completing(
+        what: String,
+        block: suspend () -> T,
+    ): T =
+        withContext(Dispatchers.IO) {
+            withTimeoutOrNull(COMPLETION_TIMEOUT) { block() }
+        } ?: throw AssertionError("$what never completed")
+
+    private suspend fun failureFrom(block: suspend () -> Unit): PayabliException {
+        val thrown = runCatching { block() }.exceptionOrNull()
+        assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
+        return thrown as PayabliException
+    }
+
+    // ---- acceptance -------------------------------------------------------------------------------
+
+    @Test
+    fun `the bearer is on every request`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(OK, "")
+                val auth = testAuth()
+
+                // Through the base, not the wrapper: the chain is where this happens now, so asserting it
+                // through the wrapper would pass even if the wrapper were the one injecting.
+                PayabliService
+                    .create(server.baseUrl, auth, DefaultPayabliLogger(LogCategory.NETWORK, sink))
+                    .execute(ping())
+
+                assertEquals("Bearer $TEST_TOKEN", server.onlyRequest.header(AUTHORIZATION))
+            }
+        }
+
+    @Test
+    fun `one 401 triggers one refresh and one retry carrying the new token`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "", OK to "second")
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+
+                val response = completing("the authenticated call") { stack(server, auth).execute(ping()) }
+
+                assertEquals(OK, response.statusCode)
+                assertEquals("exactly one refresh", 1, calls.get())
+                assertEquals("exactly two attempts", 2, server.recorded.size)
+                assertEquals("Bearer $TEST_TOKEN", server.recorded[0].header(AUTHORIZATION))
+                assertEquals("Bearer $REFRESHED", server.recorded[1].header(AUTHORIZATION))
+            }
+        }
+
+    @Test
+    fun `a second 401 is terminal and there is no third attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                // The script's last entry repeats, so a third attempt is served and counted rather than
+                // hanging. The count is what fails if the retry-once bound were lost.
+                server.respondInOrder(UNAUTHORIZED to "")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+
+                val failure = failureFrom { stack(server, auth).execute(ping()) }
+
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                assertEquals("retry once, so two attempts and no more", 2, server.recorded.size)
+            }
+        }
+
+    // ---- adversarial ------------------------------------------------------------------------------
+
+    /**
+     * End to end: a caller supplying its own bearer does not get it honoured.
+     *
+     * It does **not** prove the merge removes the caller's header rather than shadowing it, and the first
+     * draft of this test claimed that it did. Sabotaging the removal leaves this green, because
+     * `setRequestProperty` replaces case-insensitively and the decoration's value is merged last, so the
+     * wire looks identical either way. The removal is pinned where it is observable, on the map:
+     * `PayabliRequestDecorationTest.a differently-cased caller header is removed, not shadowed`.
+     *
+     * What this one does catch is the bearer not being applied at all, which the chain sabotage confirms.
+     */
+    @Test
+    fun `a caller-supplied bearer is not what reaches the wire`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(OK, "")
+                val auth = testAuth()
+
+                PayabliService
+                    .create(server.baseUrl, auth, DefaultPayabliLogger(LogCategory.NETWORK, sink))
+                    .execute(
+                        PayabliRequest(
+                            HttpMethod.GET,
+                            "/api/ping",
+                            // Lower-cased on purpose: the merge is case-insensitive, so a same-cased key
+                            // would not exercise the interesting half.
+                            headers = mapOf("authorization" to "Bearer attacker-supplied"),
+                        ),
+                    )
+
+                assertEquals("Bearer $TEST_TOKEN", server.onlyRequest.header(AUTHORIZATION))
+                assertFalse(
+                    "the caller's value must not survive anywhere in the request",
+                    server.onlyRequest.headers.values
+                        .flatten()
+                        .any { it.contains("attacker-supplied") },
+                )
+            }
+        }
+
+    @Test
+    fun `concurrent 401s share one refresh and every retry carries the new token`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+                // Every request 401s until the fifth, so all five callers reach the refresh path.
+                server.respondInOrder(
+                    UNAUTHORIZED to "",
+                    UNAUTHORIZED to "",
+                    UNAUTHORIZED to "",
+                    UNAUTHORIZED to "",
+                    UNAUTHORIZED to "",
+                    OK to "",
+                )
+                val transport = stack(server, auth)
+
+                val callers = List(5) { async { runCatching { transport.execute(ping()) } } }
+                completing("five concurrent authenticated calls") { callers.map { it.await() } }
+
+                assertEquals("one provider call for five rejections", 1, calls.get())
+                val retried = server.recorded.drop(5)
+                assertTrue("the retries should have happened", retried.isNotEmpty())
+                assertTrue(
+                    "every retry carries the refreshed token, got ${retried.map { it.header(AUTHORIZATION) }}",
+                    retried.all { it.header(AUTHORIZATION) == "Bearer $REFRESHED" },
+                )
+            }
+        }
+
+    @Test
+    fun `the decoding overload refreshes and retries too`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val body = """{"code":"A01","data":{"paymentTransId":"txn-9"}}"""
+                server.respondInOrder(UNAUTHORIZED to "", OK to body)
+                val auth = testAuth(tokenProvider = { REFRESHED })
+
+                val envelope =
+                    completing("the decoded authenticated call") {
+                        stack(server, auth).execute(ping(), Payload.serializer())
+                    }
+
+                // Would be a decode failure, or a raw 401, if the overload delegated to the base's.
+                assertEquals("txn-9", envelope.payload?.paymentTransId)
+                assertEquals(2, server.recorded.size)
+                assertEquals("Bearer $REFRESHED", server.recorded[1].header(AUTHORIZATION))
+            }
+        }
+
+    @Test
+    fun `a decoded route ending in two 401s reports token expired, not a decode failure`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                // An empty body would not decode, so a mapper running after the decode would report the
+                // wrong code and bury the real cause.
+                server.respondInOrder(UNAUTHORIZED to "")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+
+                val failure = failureFrom { stack(server, auth).execute(ping(), Payload.serializer()) }
+
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            }
+        }
+
+    @Test
+    fun `the retry re-sends the body unchanged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "", OK to "")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+                val payload = """{"amount":"1.00"}"""
+
+                completing("the authenticated POST") {
+                    stack(server, auth).execute(
+                        PayabliRequest(
+                            HttpMethod.POST,
+                            "/api/pay",
+                            body = payload.toByteArray(Charsets.UTF_8),
+                        ),
+                    )
+                }
+
+                assertEquals(2, server.recorded.size)
+                assertEquals("the first attempt sent the body", payload, server.recorded[0].body)
+                assertEquals("the retry sent the same body", payload, server.recorded[1].body)
+            }
+        }
+
+    @Test
+    fun `a 401 with no provider is terminal and is not retried`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val auth = testAuth(tokenProvider = null)
+
+                val failure = failureFrom { stack(server, auth).execute(ping()) }
+
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                assertEquals("nothing to refresh with, so no second attempt", 1, server.recorded.size)
+            }
+        }
+
+    @Test
+    fun `a failing provider is terminal, not retried, and does not leak its own message`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val sentinel = "SENTINEL-PROVIDER-DETAIL"
+                val auth = testAuth(tokenProvider = { throw IOException(sentinel) })
+
+                val failure = failureFrom { stack(server, auth).execute(ping()) }
+
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                assertEquals("the refresh failed, so no second attempt", 1, server.recorded.size)
+                assertFalse(
+                    "the provider's own message must not reach the caller",
+                    (failure.message ?: "").contains(sentinel),
+                )
+            }
+        }
+
+    @Test
+    fun `a non-401 failure is returned untouched and triggers no refresh`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                server.respondInOrder(500 to "boom")
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+
+                val response = completing("the authenticated call") { stack(server, auth).execute(ping()) }
+
+                assertEquals(500, response.statusCode)
+                assertEquals("only a 401 means the credential was refused", 0, calls.get())
+                assertEquals(1, server.recorded.size)
+            }
+        }
+
+    @Test
+    fun `a provider that issues its own request through the SDK does not deadlock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                // The bearer decoration reads the token per request, so a provider that reaches the
+                // transport re-enters the holder while its own refresh is in flight.
+                server.respondInOrder(UNAUTHORIZED to "", OK to "", OK to "")
+                lateinit var transport: PayabliTransport
+                var nested: Int? = null
+                val auth =
+                    testAuth(
+                        tokenProvider = {
+                            nested = transport.execute(ping()).statusCode
+                            REFRESHED
+                        },
+                    )
+                transport = stack(server, auth)
+
+                val response = completing("a refresh whose provider calls back in") { transport.execute(ping()) }
+
+                assertEquals(OK, response.statusCode)
+                assertNotNull("the nested request should have completed", nested)
+            }
+        }
+
+    /**
+     * The two retry layers must not compound. `RetryPolicy` excludes `TOKEN_EXPIRED` from
+     * `RETRYABLE_CODES` on purpose, deferring it to "a different mechanism", so a terminal 401 escaping
+     * this class has to stop at `Retry` rather than be replayed three more times.
+     *
+     * On a real dispatcher: `Retry`'s per-attempt `withTimeout` would expire instantly against virtual
+     * time while the socket work is still outstanding.
+     */
+    @Test
+    fun `a terminal 401 stops at the retry layer instead of being replayed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+                val transport = stack(server, auth)
+
+                val failure =
+                    failureFrom {
+                        withContext(Dispatchers.IO) {
+                            Retry.run(
+                                policy =
+                                    RetryPolicy(
+                                        maxAttempts = 3,
+                                        baseDelayMillis = 0,
+                                        maxJitterMillis = 0,
+                                        jitter = RetryPolicy.Jitter.None,
+                                    ),
+                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                            ) { transport.execute(ping()) }
+                        }
+                    }
+
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                // Two: the original and the one retry after refresh. Retry contributed none of its three.
+                assertEquals("the retry layer must not replay a terminal 401", 2, server.recorded.size)
+            }
+        }
+
+    /**
+     * The policy is a seam only if the mechanism actually asks it. A policy that reports no rejection must
+     * make a 401 pass straight through untouched: no refresh, no replay, no failure.
+     *
+     * This is the test that fails if `AuthenticatedTransport` goes back to testing `statusCode == 401`
+     * itself, which is the difference between a seam and decoration that resembles one.
+     */
+    @Test
+    fun `the mechanism obeys the policy rather than re-deriving the status`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "body")
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
+                val neverRecovers =
+                    object : AuthRecoveryPolicy() {
+                        override fun isCredentialRejection(response: PayabliResponse): Boolean = false
+                    }
+                val transport =
+                    AuthenticatedTransport(
+                        base =
+                            PayabliService.create(
+                                baseUrl = server.baseUrl,
+                                auth = auth,
+                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                            ),
+                        auth = auth,
+                        recovery = neverRecovers,
+                    )
+
+                val response = completing("the unrecovered call") { transport.execute(ping()) }
+
+                assertEquals("the 401 is passed through, not raised", UNAUTHORIZED, response.statusCode)
+                assertEquals("no refresh, because the policy saw no rejection", 0, calls.get())
+                assertEquals("no replay either", 1, server.recorded.size)
+            }
+        }
+
+    @Test
+    fun `no token reaches the log, before or after a refresh`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "", OK to "")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+
+                completing("the authenticated call") { stack(server, auth).execute(ping()) }
+
+                val logged = sink.records.joinToString("\n") { it.message }
+                assertFalse("the initial token was logged", logged.contains(TEST_TOKEN))
+                assertFalse("the refreshed token was logged", logged.contains(REFRESHED))
+            }
+        }
+}

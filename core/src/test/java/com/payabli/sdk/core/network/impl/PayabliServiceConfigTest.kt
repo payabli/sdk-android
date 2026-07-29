@@ -23,7 +23,11 @@ class PayabliServiceConfigTest {
     }
 
     private fun create(baseUrl: String) =
-        PayabliService.create(baseUrl = baseUrl, logger = DefaultPayabliLogger(LogCategory.NETWORK, sink))
+        PayabliService.create(
+            baseUrl = baseUrl,
+            auth = testAuth(),
+            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+        )
 
     @Test
     fun `a non-http scheme is rejected at construction, not at the connection cast`() {

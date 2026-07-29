@@ -27,7 +27,11 @@ class PayabliServiceErrorTest {
     private val sink = RecordingLogSink()
 
     private fun service(baseUrl: String) =
-        PayabliService.create(baseUrl = baseUrl, logger = DefaultPayabliLogger(LogCategory.NETWORK, sink))
+        PayabliService.create(
+            baseUrl = baseUrl,
+            auth = testAuth(),
+            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+        )
 
     /** A port that accepted then closed, so a connection attempt is refused rather than hanging. */
     private fun closedPortBaseUrl(): String {

@@ -33,7 +33,11 @@ class PayabliServiceTest {
     private fun service(
         server: LoopbackServer,
         baseUrl: String = server.baseUrl,
-    ) = PayabliService.create(baseUrl = baseUrl, logger = DefaultPayabliLogger(LogCategory.NETWORK, sink))
+    ) = PayabliService.create(
+        baseUrl = baseUrl,
+        auth = testAuth(),
+        logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+    )
 
     private fun loggedLines(): String = sink.records.joinToString("\n") { it.message }
 

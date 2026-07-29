@@ -33,6 +33,10 @@ internal class LoopbackServer : AutoCloseable {
     @Volatile
     private var responder: Response = Response(HTTP_OK, ByteArray(0))
 
+    /** Non-empty means scripted: entry N answers request N, and the last entry answers everything after. */
+    @Volatile
+    private var script: List<Response> = emptyList()
+
     @Volatile
     private var failure: Throwable? = null
 
@@ -59,6 +63,23 @@ internal class LoopbackServer : AutoCloseable {
         return this
     }
 
+    /**
+     * Scripts one response per request, in order, for a test whose subject is a sequence: a 401 followed
+     * by a 200 is not expressible with a single canned response.
+     *
+     * **The last entry answers every request after it, deliberately.** Running out and hanging would make
+     * "no third attempt" fail as a timeout instead of as a count, and a test that hangs is not a test that
+     * goes in. So an extra attempt gets served and the assertion on [recorded] size is what fails.
+     */
+    fun respondInOrder(vararg responses: Pair<Int, String>): LoopbackServer {
+        require(responses.isNotEmpty()) { "a script needs at least one response" }
+        script = responses.map { (status, body) -> Response(status, body.toByteArray(Charsets.UTF_8), emptyMap()) }
+        return this
+    }
+
+    /** The response for the request now being served, by its position. */
+    private fun responseFor(index: Int): Response = script.getOrNull(index) ?: script.lastOrNull() ?: responder
+
     override fun close() {
         socket.close()
         worker.join(SHUTDOWN_TIMEOUT_MILLIS)
@@ -79,9 +100,11 @@ internal class LoopbackServer : AutoCloseable {
                 connection.soTimeout = READ_TIMEOUT_MILLIS
                 val request = readRequest(BufferedInputStream(connection.getInputStream()))
                 if (request != null) {
+                    // Index before appending, so the first request reads entry 0.
+                    val answer = responseFor(requests.size)
                     requests += request
                     connection.getOutputStream().apply {
-                        write(responder.encode())
+                        write(answer.encode())
                         flush()
                     }
                     connection.shutdownOutput()

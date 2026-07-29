@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.network.impl
 
 import androidx.annotation.VisibleForTesting
+import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.PayabliLogger
@@ -10,7 +11,6 @@ import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliHttpErrors
-import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -21,7 +21,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationException
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -38,10 +37,13 @@ import kotlin.coroutines.coroutineContext
 /**
  * [PayabliTransport] over `HttpURLConnection`, the platform HTTP client.
  *
- * Pure transport: it holds no auth state and interprets nothing. `execute` returns a non-2xx response
- * as a [PayabliResponse] rather than an exception, leaving the status to [PayabliHttpErrors]; only the
- * decoding overload maps it, because it has to before committing to a decode. Bearer injection is the
- * authenticated decorator that arrives with the session.
+ * Interprets nothing: `execute` returns a non-2xx response as a [PayabliResponse] rather than an
+ * exception, leaving the status to [PayabliHttpErrors]; only the decoding overload maps it, because it
+ * has to before committing to a decode. A 401 is a status like any other here, and
+ * `AuthenticatedTransport` is what turns one into a refresh and a retry.
+ *
+ * It holds no auth state of its own. The bearer is stamped by `BearerDecoration` inside the chain, so
+ * every request that leaves this class is authenticated and there is no undecorated path to forget.
  *
  * Transport and configuration failures do surface as a [PayabliException]: an `IOException` becomes
  * [PayabliErrorCode.NETWORK_ERROR], a malformed URL [PayabliErrorCode.INVALID_CONFIGURATION], and a
@@ -51,11 +53,12 @@ import kotlin.coroutines.coroutineContext
  * `internal`, and deliberately so: nothing outside `:core` names this type. Capability modules depend
  * on the [PayabliTransport] interface and receive an instance from the session.
  *
- * **The decoration chain is applied here, not by a wrapping layer.** Non-bypassability is a construction
- * property rather than a layering one: a wrapper would leave a working undecorated transport in the graph
- * for anyone in `:core` to pick up, which is the "one forgotten call ships unauthenticated" failure
- * this design exists to prevent. So the constructor is private, [create] is the only production path, and it
- * does not accept a chain — no caller chooses the decorations, so none can choose an empty set.
+ * **The decoration chain is applied here, not by a wrapping layer.** Decorating in a wrapper would leave a
+ * working undecorated transport for a `:core` caller to pick up. So the constructor is private, [create] is
+ * the only production path, and it takes no chain.
+ *
+ * `AuthenticatedTransport` and `Retry` do wrap this, and are control flow rather than decorations: forgetting
+ * either loses a retry, never a credential.
  */
 internal class PayabliService private constructor(
     baseUrl: String,
@@ -147,27 +150,7 @@ internal class PayabliService private constructor(
     override suspend fun <T> execute(
         request: PayabliRequest,
         payloadSerializer: KSerializer<T>,
-    ): PayabliV2Envelope<T> {
-        val response = execute(request)
-        // Map the status before committing to a decode, so a proxy's HTML error page becomes a typed
-        // error rather than a decode failure.
-        PayabliHttpErrors.from(response)?.let { throw it }
-        return try {
-            PayabliJson.format.decodeFromString(
-                PayabliV2Envelope.serializer(payloadSerializer),
-                response.bodyAsText(),
-            )
-        } catch (e: SerializationException) {
-            // SerializationException extends IllegalArgumentException; catching the supertype would
-            // swallow genuine programming errors raised from inside a serializer.
-            // RedactedCause, not e: the message would carry the response body verbatim.
-            throw PayabliGenericException(
-                PayabliErrorCode.DECODING_ERROR,
-                REASON_DECODE_FAILED,
-                cause = RedactedCause(e),
-            )
-        }
-    }
+    ): PayabliV2Envelope<T> = execute(request).asV2Envelope(payloadSerializer)
 
     /**
      * Wraps its own failures rather than letting the caller do it: this runs before `execute`'s `try`,
@@ -351,7 +334,6 @@ internal class PayabliService private constructor(
     internal companion object {
         /** Deliberately generic: these reach a host app, so they carry no host, path or server text. */
         internal const val REASON_NETWORK_FAILED: String = "Network request failed"
-        internal const val REASON_DECODE_FAILED: String = "Failed to decode response envelope"
         internal const val REASON_INVALID_URL: String = "Invalid request URL"
         internal const val REASON_RESPONSE_TOO_LARGE: String = "Response body exceeded the allowed size"
         internal const val REASON_METHOD_UNSUPPORTED: String = "HTTP method not supported on this platform"
@@ -376,9 +358,14 @@ internal class PayabliService private constructor(
          * It does not take a decoration list, deliberately: no caller anywhere chooses the chain, so no
          * caller can choose an empty one. Returns the interface, so nothing
          * accumulates a dependency on the concrete class.
+         *
+         * [auth] is what the chain needs, not what this transport interprets: it reaches
+         * `BearerDecoration` and nothing else here reads it. Passing the holder rather than a token is what
+         * lets the bearer be read per request, so a rotation needs no cache to be invalidated.
          */
         internal fun create(
             baseUrl: String,
+            auth: PayabliAuth,
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
             connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MILLIS,
             readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MILLIS,
@@ -387,7 +374,7 @@ internal class PayabliService private constructor(
         ): PayabliTransport =
             PayabliService(
                 baseUrl,
-                PayabliRequestDecorations.chain,
+                PayabliRequestDecorations.chainFor(auth),
                 logger,
                 connectTimeoutMillis,
                 readTimeoutMillis,

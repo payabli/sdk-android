@@ -6,11 +6,19 @@ import com.payabli.sdk.core.model.PayabliException
 import kotlin.random.Random
 
 /**
- * How [Retry] backs off and what it is willing to retry.
+ * How [Retry] backs off and what it is willing to retry, for **transient infrastructure failures**.
  *
  * The **shape** is fixed: jittered exponential backoff, a capped maximum, bounded attempts, a per-attempt
  * timeout, and `Retry-After` honoured on 429 and 503 ahead of the computed backoff. The **numbers** are
  * deployment tuning, so the defaults below are a starting point rather than a contract.
+ *
+ * **Not this policy's business: a refused credential.** That is [AuthRecoveryPolicy], which is why
+ * [PayabliErrorCode.TOKEN_EXPIRED] is absent from [RETRYABLE_CODES] below. The two sit at different layers,
+ * outermost first, and a credential decision belongs in the other one rather than as a code added here:
+ *
+ * ```
+ * Service  ->  Retry  ->  AuthRecovery  ->  Transport
+ * ```
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class RetryPolicy(

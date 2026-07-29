@@ -7,12 +7,15 @@ import org.junit.Test
  * The golden-order test. It exists so that inserting or reordering a decoration cannot happen without a
  * deliberate edit here, which is what keeps CONTRIBUTORS-before-BINDERS from being violated silently.
  *
- * When the first decoration lands, replace the expectation with the exact class sequence rather than
- * loosening the assertion.
+ * The expectation is the exact class sequence, never a loosened assertion: a chain that is merely
+ * non-empty would not catch a binder inserted ahead of a contributor.
  */
 class PayabliRequestDecorationsTest {
     @Test
     fun `the declared chain is exactly what is expected`() {
-        assertEquals(emptyList<Class<*>>(), PayabliRequestDecorations.chain.map { it.javaClass })
+        assertEquals(
+            listOf(BearerDecoration::class.java),
+            PayabliRequestDecorations.chainFor(testAuth()).map { it.javaClass },
+        )
     }
 }
