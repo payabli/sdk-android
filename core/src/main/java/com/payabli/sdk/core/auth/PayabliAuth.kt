@@ -58,6 +58,12 @@ public class PayabliAuth(
     private val logger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
     private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
 ) {
+    init {
+        // RetryPolicy validates its timings the same way. Zero or negative would time out before the
+        // provider was ever called and report that as a token failure.
+        require(providerTimeoutMillis > 0) { "providerTimeoutMillis must be positive" }
+    }
+
     private val mutex = Mutex()
     private var currentToken: String = config.accessToken
     private var inFlight: CompletableDeferred<String>? = null
@@ -155,6 +161,11 @@ public class PayabliAuth(
             } catch (failure: Exception) {
                 // Exception, not Throwable: an OutOfMemoryError or LinkageError is not a token failure.
                 fail(shared, providerFailure(failure))
+            } catch (fatal: Throwable) {
+                // It still reaches the caller unchanged, but the claim cannot outlive it or every later
+                // reader waits on a deferred nobody owns. No cause attached: it would pin whatever died.
+                finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_FAILED))
+                throw fatal
             }
 
         // Outside the try on purpose: raised inside it, this was caught below and re-wrapped, so the

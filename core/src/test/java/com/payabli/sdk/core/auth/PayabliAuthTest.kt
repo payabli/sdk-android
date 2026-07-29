@@ -434,13 +434,35 @@ class PayabliAuthTest {
         }
 
     @Test
-    fun `a fatal error is not disguised as a token failure`() =
+    fun `a fatal error reaches the caller and still frees the claim`() =
         runTest {
-            val subject = auth { throw OutOfMemoryError("not a refresh problem") }
+            val calls = AtomicInteger()
+            val subject =
+                auth {
+                    if (calls.incrementAndGet() == 1) throw OutOfMemoryError("not a refresh problem") else "recovered"
+                }
 
             val thrown = runCatching { subject.invalidateAndRefresh("initial-token") }.exceptionOrNull()
-
             assertTrue("got $thrown", thrown is OutOfMemoryError)
+
+            // Letting the Error through must not strand the claim, or every later caller waits forever.
+            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
+        }
+
+    @Test
+    fun `a non-positive provider deadline is refused at construction`() =
+        runTest {
+            for (invalid in listOf(0L, -1L)) {
+                val thrown =
+                    runCatching {
+                        PayabliAuth(
+                            PayabliConfig("t", "e", PayabliEnvironment.SANDBOX),
+                            DefaultPayabliLogger(LogCategory.AUTH, sink),
+                            providerTimeoutMillis = invalid,
+                        )
+                    }.exceptionOrNull()
+                assertTrue("$invalid should be refused, got $thrown", thrown is IllegalArgumentException)
+            }
         }
 
     @Test
