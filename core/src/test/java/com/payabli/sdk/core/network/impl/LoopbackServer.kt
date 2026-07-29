@@ -37,6 +37,10 @@ internal class LoopbackServer : AutoCloseable {
     @Volatile
     private var script: List<Response> = emptyList()
 
+    /** Set means the response is chosen from the request rather than from its position. */
+    @Volatile
+    private var chooser: ((Recorded) -> Response)? = null
+
     @Volatile
     private var failure: Throwable? = null
 
@@ -77,8 +81,24 @@ internal class LoopbackServer : AutoCloseable {
         return this
     }
 
-    /** The response for the request now being served, by its position. */
-    private fun responseFor(index: Int): Response = script.getOrNull(index) ?: script.lastOrNull() ?: responder
+    /**
+     * Chooses the response from the request, so a test with concurrent callers does not depend on the order
+     * they happen to arrive in. Prefer this over [respondInOrder] whenever more than one caller is in flight:
+     * a positional script silently encodes an interleaving the scheduler does not promise.
+     */
+    fun respondPerRequest(choose: (Recorded) -> Pair<Int, String>): LoopbackServer {
+        chooser = { request ->
+            val (status, body) = choose(request)
+            Response(status, body.toByteArray(Charsets.UTF_8), emptyMap())
+        }
+        return this
+    }
+
+    /** By request if a chooser is set, otherwise by position. */
+    private fun responseFor(
+        index: Int,
+        request: Recorded,
+    ): Response = chooser?.invoke(request) ?: script.getOrNull(index) ?: script.lastOrNull() ?: responder
 
     override fun close() {
         socket.close()
@@ -101,7 +121,7 @@ internal class LoopbackServer : AutoCloseable {
                 val request = readRequest(BufferedInputStream(connection.getInputStream()))
                 if (request != null) {
                     // Index before appending, so the first request reads entry 0.
-                    val answer = responseFor(requests.size)
+                    val answer = responseFor(requests.size, request)
                     requests += request
                     connection.getOutputStream().apply {
                         write(answer.encode())

@@ -182,33 +182,36 @@ class AuthenticatedTransportTest {
             }
         }
 
+    /**
+     * The subject is de-duplication: five rejections, one provider call.
+     *
+     * Responses are chosen from the request rather than scripted by position. A positional script encodes an
+     * interleaving the scheduler does not promise: one caller can finish its refresh and replay before another
+     * has sent anything, so "the first five are initial attempts" is not a fact. That assumption made this
+     * test fail on CI while passing eight times locally.
+     */
     @Test
-    fun `concurrent 401s share one refresh and every retry carries the new token`() =
+    fun `concurrent 401s share one refresh, and only the stale token is ever refused`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 val calls = AtomicInteger()
                 val auth = testAuth(tokenProvider = { REFRESHED.also { calls.incrementAndGet() } })
-                // Every request 401s until the fifth, so all five callers reach the refresh path.
-                server.respondInOrder(
-                    UNAUTHORIZED to "",
-                    UNAUTHORIZED to "",
-                    UNAUTHORIZED to "",
-                    UNAUTHORIZED to "",
-                    UNAUTHORIZED to "",
-                    OK to "",
-                )
+                // Intent, not order: the old credential is refused and the new one is accepted, whenever
+                // either happens to arrive.
+                server.respondPerRequest { request ->
+                    if (request.header(AUTHORIZATION) == "Bearer $TEST_TOKEN") UNAUTHORIZED to "" else OK to ""
+                }
                 val transport = stack(server, auth)
 
-                val callers = List(5) { async { runCatching { transport.execute(ping()) } } }
-                completing("five concurrent authenticated calls") { callers.map { it.await() } }
+                val callers = List(5) { async { transport.execute(ping()) } }
+                val statuses = completing("five concurrent authenticated calls") { callers.map { it.await() } }
 
                 assertEquals("one provider call for five rejections", 1, calls.get())
-                val retried = server.recorded.drop(5)
-                assertTrue("the retries should have happened", retried.isNotEmpty())
-                assertTrue(
-                    "every retry carries the refreshed token, got ${retried.map { it.header(AUTHORIZATION) }}",
-                    retried.all { it.header(AUTHORIZATION) == "Bearer $REFRESHED" },
-                )
+                assertTrue("every caller recovered", statuses.all { it.statusCode == OK })
+                val byToken = server.recorded.groupBy { it.header(AUTHORIZATION) }
+                assertEquals("both tokens reached the wire", 2, byToken.size)
+                assertTrue("the stale token was sent at least once", byToken.containsKey("Bearer $TEST_TOKEN"))
+                assertTrue("the refreshed token was sent at least once", byToken.containsKey("Bearer $REFRESHED"))
             }
         }
 
