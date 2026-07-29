@@ -1,6 +1,8 @@
 package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.auth.PayabliAuth
+import com.payabli.sdk.core.config.PayabliConfig
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
@@ -520,6 +522,56 @@ class AuthenticatedTransportTest {
                 val logged = sink.records.joinToString("\n") { it.message }
                 assertFalse("the initial token was logged", logged.contains(TEST_TOKEN))
                 assertFalse("the refreshed token was logged", logged.contains(REFRESHED))
+            }
+        }
+
+    /**
+     * Why an attempt budget must contain the provider deadline, at millisecond scale.
+     *
+     * A budget smaller than the deadline cancels the refresh, the cancellation surfaces as a retryable
+     * NETWORK_ERROR, and the next attempt starts with the same rejected token and calls the provider again.
+     * Explicit budgets in the ratio the shipped defaults used to have, because 15s against 30s would mean a
+     * fifteen-second test.
+     */
+    @Test
+    fun `an attempt budget under the provider deadline retries the rejected token`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                val auth =
+                    PayabliAuth(
+                        PayabliConfig(
+                            accessToken = TEST_TOKEN,
+                            entryPoint = "entry",
+                            environment = PayabliEnvironment.SANDBOX,
+                            tokenProvider = {
+                                Thread.sleep(400)
+                                REFRESHED.also { calls.incrementAndGet() }
+                            },
+                        ),
+                        DefaultPayabliLogger(LogCategory.AUTH, sink),
+                        providerTimeoutMillis = 5_000,
+                    )
+                server.respondPerRequest { request ->
+                    if (request.header(AUTHORIZATION) == "Bearer $TEST_TOKEN") UNAUTHORIZED to "" else OK to ""
+                }
+
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        Retry.run(
+                            policy =
+                                RetryPolicy(
+                                    maxAttempts = 3,
+                                    baseDelayMillis = 0,
+                                    maxJitterMillis = 0,
+                                    attemptTimeoutMillis = 150,
+                                ),
+                            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                        ) { stack(server, auth).execute(ping()) }
+                    }
+                }
+
+                assertTrue("the provider ran once per attempt, got ${calls.get()}", calls.get() > 1)
             }
         }
 }

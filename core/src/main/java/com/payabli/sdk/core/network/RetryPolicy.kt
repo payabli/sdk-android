@@ -31,6 +31,9 @@ public class RetryPolicy(
     /**
      * Budget for one attempt. This is the whole-resource bound; the socket-level connect and read timeouts
      * on the transport bound reads, and a call can stall indefinitely while making slow per-read progress.
+     *
+     * It must also contain any credential recovery underneath it. A refresh this budget cancels surfaces as a
+     * retryable timeout, so the next attempt repeats with the credential that was already rejected.
      */
     public val attemptTimeoutMillis: Long = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
     /**

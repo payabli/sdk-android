@@ -192,4 +192,49 @@ class PayabliTransportsTest {
                 }
             }
         }
+
+    /**
+     * The documented layering, with a provider slower than an attempt would previously tolerate.
+     *
+     * The outer attempt budget must contain the refresh. When it did not, the timeout surfaced as a retryable
+     * NETWORK_ERROR, the next attempt started with the same rejected token, and the provider was invoked once
+     * per attempt. This asserts one provider call and one replay for the whole operation.
+     *
+     * On a real dispatcher: Retry's per-attempt budget is a wall-clock deadline, and the socket work is real.
+     */
+    @Test
+    fun `Retry around the authenticated transport does not preempt a slow refresh`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                // Slower than a token mint should be, and well inside the attempt budget.
+                val slowProvider =
+                    config {
+                        Thread.sleep(600)
+                        REFRESHED.also { calls.incrementAndGet() }
+                    }
+                server.respondPerRequest { request ->
+                    if (request.header(AUTHORIZATION) == "Bearer initial-token") 401 to "" else 200 to ""
+                }
+                val transport =
+                    PayabliTransports.authenticatedAgainst(
+                        server.baseUrl,
+                        slowProvider,
+                        logger = logger(),
+                        authLogger = authLogger(),
+                    )
+
+                val response =
+                    completing("the retried authenticated call") {
+                        Retry.run(
+                            policy = RetryPolicy(maxAttempts = 3, baseDelayMillis = 0, maxJitterMillis = 0),
+                            logger = logger(),
+                        ) { transport.execute(ping()) }
+                    }
+
+                assertEquals(200, response.statusCode)
+                assertEquals("one refresh for the whole operation, not one per attempt", 1, calls.get())
+                assertEquals("one rejection and one replay", 2, server.recorded.size)
+            }
+        }
 }

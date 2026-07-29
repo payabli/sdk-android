@@ -11,6 +11,10 @@ private const val REASON_REFRESH_REJECTED = "the refreshed token was rejected as
  * Credential rejection, as opposed to [RetryPolicy]'s transient failures. Layered
  * `Service -> Retry -> AuthRecovery -> Transport`, and `AuthenticatedTransport` runs it.
  *
+ * That layering requires [RetryPolicy.attemptTimeoutMillis] to exceed the provider deadline. An attempt
+ * timeout is retryable, so a shorter budget cancels the refresh and the next attempt repeats with the same
+ * rejected token, once per attempt. The defaults satisfy it and `RetryPolicyTest` keeps them that way.
+ *
  * Fixed rather than tunable: one 401, one refresh, one replay, then [PayabliErrorCode.TOKEN_EXPIRED]. A token
  * minted seconds ago and refused again is an authorization fact, not a transient one.
  *

@@ -2,6 +2,7 @@
 
 package com.payabli.sdk.core.network
 
+import com.payabli.sdk.core.auth.DEFAULT_PROVIDER_TIMEOUT_MILLIS
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
@@ -299,4 +300,17 @@ class RetryTest {
             assertTrue(logged.contains("errorCode=SERVER_ERROR"))
             assertTrue(logged.contains("route=/api/v2/MoneyIn/capture/{id}"))
         }
+
+    /**
+     * The two budgets are tuned independently but compose in one layering, and an attempt timeout is
+     * retryable. If the provider deadline ever exceeds the attempt budget, a refresh gets cancelled and
+     * retried with the rejected token once per attempt. This fails the moment either constant moves.
+     */
+    @Test
+    fun `the default attempt budget contains the default provider deadline`() {
+        assertTrue(
+            "attempt ${RetryPolicy.DEFAULT_ATTEMPT_TIMEOUT_MILLIS}ms must exceed the provider deadline",
+            RetryPolicy.DEFAULT_ATTEMPT_TIMEOUT_MILLIS > DEFAULT_PROVIDER_TIMEOUT_MILLIS,
+        )
+    }
 }
