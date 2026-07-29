@@ -419,6 +419,26 @@ class PayabliAuthTest {
             collector.cancel()
         }
 
+    /**
+     * A refreshed token that cannot be a header value is refused before it is installed.
+     *
+     * Left unchecked it reaches `setRequestProperty`, which throws an unchecked `IllegalArgumentException`
+     * from inside the transport, so the caller sees the wrong type and the transport contract that
+     * implementations throw `PayabliException` is broken. A CR or LF is also header injection.
+     */
+    @Test
+    fun `a refreshed token that cannot be a header value is refused`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            for (bad in listOf("fresh\rtoken", "fresh\ntoken", "fresh\u0000token")) {
+                val subject = auth { bad }
+
+                val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+                assertEquals("$bad should be malformed", PayabliErrorCode.TOKEN_MALFORMED, failure.code)
+                assertEquals("the usable token is untouched", "initial-token", subject.accessToken())
+            }
+        }
+
     @Test
     fun `a provider throwing our own token-expired type is still redacted`() =
         runTest(timeout = TEST_TIMEOUT) {

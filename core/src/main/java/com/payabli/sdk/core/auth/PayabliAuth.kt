@@ -3,6 +3,7 @@ package com.payabli.sdk.core.auth
 import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
+import com.payabli.sdk.core.config.isHeaderSafe
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.PayabliLogger
@@ -34,6 +35,7 @@ private const val REASON_REFRESH_FAILED = "token refresh failed"
 private const val REASON_PROVIDER_TIMEOUT = "the tokenProvider did not return in time"
 private const val REASON_REFRESH_CANCELLED = "the refresh was cancelled"
 private const val REASON_BLANK_TOKEN = "the tokenProvider returned a blank token"
+private const val REASON_UNUSABLE_TOKEN = "the tokenProvider returned a token that cannot be a header value"
 private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejected token"
 
 /**
@@ -183,6 +185,12 @@ public class PayabliAuth(
         // PayabliConfig rejects a blank token at construction, so a refresh must not install one either.
         if (fresh.isBlank()) {
             fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_BLANK_TOKEN))
+        }
+
+        // A CR or LF here would be header injection, and the platform would throw an unchecked exception from
+        // inside the transport rather than a PayabliException. Refused for the same reason blank is.
+        if (!fresh.isHeaderSafe()) {
+            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_MALFORMED, REASON_UNUSABLE_TOKEN))
         }
 
         // The same credential the server just refused. Committing it would publish a rotation that did not
