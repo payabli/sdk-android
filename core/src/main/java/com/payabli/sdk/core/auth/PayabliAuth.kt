@@ -14,6 +14,7 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.impl.RedactedCause
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -31,6 +32,7 @@ private const val REASON_NO_TOKEN_PROVIDER = "no tokenProvider was supplied"
 private const val REASON_REFRESH_FAILED = "token refresh failed"
 private const val REASON_PROVIDER_TIMEOUT = "the tokenProvider did not return in time"
 private const val REASON_REFRESH_CANCELLED = "the refresh was cancelled"
+private const val REASON_BLANK_TOKEN = "the tokenProvider returned a blank token"
 
 /** A host provider that never returns must not wedge every reader, so its call is bounded. */
 private const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
@@ -123,52 +125,70 @@ public class PayabliAuth(
     }
 
     private suspend fun runRefresh(shared: CompletableDeferred<String>): String {
-        try {
-            val provider =
-                config.tokenProvider
-                    ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER)
-            val fresh =
+        val provider =
+            config.tokenProvider
+                ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER))
+
+        val fresh =
+            try {
                 withTimeoutOrNull(providerTimeoutMillis.milliseconds) {
                     withContext(RefreshInProgress(this@PayabliAuth)) { provider.freshToken() }
-                } ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT)
-            mutex.withLock {
-                currentToken = fresh
-                inFlight = null
+                } ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT))
+            } catch (cancellation: CancellationException) {
+                // Waiters were not cancelled, so they get a token failure; a foreign CancellationException
+                // would make their own scope look like it is unwinding.
+                finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_CANCELLED))
+                throw cancellation
+            } catch (failure: Throwable) {
+                // Always redacted: anything from here is host code, whatever type it chose to throw.
+                fail(
+                    shared,
+                    PayabliGenericException(
+                        PayabliErrorCode.TOKEN_EXPIRED,
+                        REASON_REFRESH_FAILED,
+                        cause = RedactedCause(failure),
+                    ),
+                )
             }
-            tokenChangeSink.tryEmit(fresh)
-            shared.complete(fresh)
-            logger.info(LogField.safe("event", "token_refreshed")) { "access token refreshed" }
-            return fresh
-        } catch (cancellation: CancellationException) {
-            // Waiters were not cancelled, so they get a token failure; a foreign CancellationException
-            // would make their own scope look like it is unwinding.
-            release()
-            shared.completeExceptionally(
-                PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_CANCELLED),
-            )
-            throw cancellation
-        } catch (failure: Throwable) {
-            release()
-            val mapped = mapFailure(failure)
-            shared.completeExceptionally(mapped)
-            logger.error(mapped, LogField.safe("errorCode", mapped.code)) { "token refresh failed" }
-            throw mapped
+
+        // PayabliConfig rejects a blank token at construction, so a refresh must not install one either.
+        if (fresh.isBlank()) {
+            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_BLANK_TOKEN))
         }
+
+        // Emitted under the same lock that commits and releases, so a second refresh cannot publish its
+        // newer token first and leave collectors seeing rotations out of order.
+        mutex.withLock {
+            currentToken = fresh
+            tokenChangeSink.tryEmit(fresh)
+            inFlight = null
+        }
+        shared.complete(fresh)
+        logger.info(LogField.safe("event", "token_refreshed")) { "access token refreshed" }
+        return fresh
     }
 
-    private suspend fun release() = mutex.withLock { inFlight = null }
+    /** Releases the claim and hands [outcome] to the waiters, then throws it. */
+    private suspend fun fail(
+        shared: CompletableDeferred<String>,
+        outcome: PayabliGenericException,
+    ): Nothing {
+        finish(shared, outcome)
+        logger.error(outcome, LogField.safe("errorCode", outcome.code)) { "token refresh failed" }
+        throw outcome
+    }
 
     /**
-     * The provider is host code, so its message can carry anything its backend returned. The cause is
-     * redacted for the same reason a decode failure's is.
+     * Cleanup runs under [NonCancellable]: on the cancellation path the caller is already cancelled, and a
+     * claim left set with nobody to complete it would wedge every later reader and refresh.
      */
-    private fun mapFailure(failure: Throwable): PayabliGenericException =
-        (failure as? PayabliGenericException)?.takeIf { it.code == PayabliErrorCode.TOKEN_EXPIRED }
-            ?: PayabliGenericException(
-                PayabliErrorCode.TOKEN_EXPIRED,
-                REASON_REFRESH_FAILED,
-                cause = RedactedCause(failure),
-            )
+    private suspend fun finish(
+        shared: CompletableDeferred<String>,
+        outcome: PayabliGenericException,
+    ) = withContext(NonCancellable) {
+        mutex.withLock { inFlight = null }
+        shared.completeExceptionally(outcome)
+    }
 
     /** Non-null only when this coroutine is already inside this instance's provider call. */
     private suspend fun reentrantToken(): String? =

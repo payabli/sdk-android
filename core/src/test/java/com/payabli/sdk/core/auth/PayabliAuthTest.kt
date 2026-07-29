@@ -315,6 +315,37 @@ class PayabliAuthTest {
         }
 
     @Test
+    fun `a blank refreshed token is refused and the old one survives`() =
+        runTest {
+            val subject = auth { "   " }
+
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals("the usable token is untouched", "initial-token", subject.accessToken())
+        }
+
+    @Test
+    fun `a provider throwing our own token-expired type is still redacted`() =
+        runTest {
+            val sentinel = "SENTINEL-BACKEND-DETAIL"
+            val subject =
+                auth {
+                    throw PayabliGenericException(
+                        PayabliErrorCode.TOKEN_EXPIRED,
+                        "backend said $sentinel",
+                        detail = sentinel,
+                    )
+                }
+
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertFalse("the provider's reason reached the caller", failure.reason.contains(sentinel))
+            assertFalse("it leaked through the chain", failure.stackTraceToString().contains(sentinel))
+        }
+
+    @Test
     fun `the log records the refresh without the token`() =
         runTest {
             val subject = auth { "SENTINEL-FRESH-TOKEN" }
