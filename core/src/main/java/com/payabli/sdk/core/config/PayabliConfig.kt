@@ -7,22 +7,28 @@ private const val REASON_MISSING_ACCESS_TOKEN = "accessToken must not be blank"
 private const val REASON_MISSING_ENTRY_POINT = "entryPoint must not be blank"
 
 /**
- * Shared configuration for every Payabli SDK component. One instance is reused across components, which
- * is how they end up sharing one auth session rather than authenticating separately.
+ * The values a host supplies once, in one place, for every Payabli SDK component.
+ *
+ * **Nothing reads this type yet.** It is the configuration surface by itself: the auth session, the
+ * authenticated transport, and the components that consume it all arrive later in this phase. What is
+ * settled here is the shape a host has to satisfy, not any behaviour behind it.
  *
  * ## The host holds the token in this phase, and that is temporary
  *
  * [accessToken] is minted by the host app's **own backend** against Payabli's server-side token
- * endpoint, so the client secret never reaches the app binary. The SDK sends it as a bearer credential
- * and holds it in memory only.
+ * endpoint, so the client secret never reaches the app binary. It is held on this object and nowhere
+ * else: never logged, never persisted.
  *
  * This mirrors the shipping iOS SDK so both platforms share one baseline. It is not the intended end
  * state: the target design moves token custody inside the SDK, where the host names and observes but
  * never holds a credential. A host passing a token here is a property of this phase, not the contract to
  * build against long term.
  *
- * Supplying a [tokenProvider] is what lets the SDK recover from an expired token. Without one, an
- * expired token surfaces as [PayabliErrorCode.TOKEN_EXPIRED] and the caller has to start again.
+ * ## Refresh is reserved, not implemented
+ *
+ * [tokenProvider] is accepted and stored, and nothing calls it. Every 401 surfaces as
+ * [PayabliErrorCode.TOKEN_EXPIRED] whether or not a provider was supplied, so supplying one currently
+ * changes nothing. Refresh-and-retry arrives with the authenticated transport that wraps this config.
  */
 public class PayabliConfig(
     /** Pre-minted bearer token from the host app's backend. Never logged, never persisted. */
@@ -31,9 +37,9 @@ public class PayabliConfig(
     public val entryPoint: String,
     /** Selects the base URL for every request. */
     public val environment: PayabliEnvironment,
-    /** Called when a token is rejected. Null means an expired token is terminal for the caller. */
+    /** Reserved for the refresh path. Stored only; nothing calls it yet. */
     public val tokenProvider: PayabliTokenProvider? = null,
-    /** Emits SDK telemetry. On by default, so switching it off is the host's explicit choice. */
+    /** Read by the telemetry module when it lands. On by default, so switching it off is deliberate. */
     public val telemetryEnabled: Boolean = true,
 ) {
     init {
