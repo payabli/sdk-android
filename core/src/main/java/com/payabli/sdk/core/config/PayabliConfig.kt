@@ -9,9 +9,8 @@ private const val REASON_MISSING_ENTRY_POINT = "entryPoint must not be blank"
 /**
  * The values a host supplies once, in one place, for every Payabli SDK component.
  *
- * Nothing reads this type yet; the session and transport that consume it arrive later in this phase.
- * [tokenProvider] is stored and never called, so every 401 surfaces as
- * [PayabliErrorCode.TOKEN_EXPIRED] whether one was supplied or not.
+ * The auth holder reads this and calls [tokenProvider] when a token is rejected. The transport that
+ * detects a rejection arrives later in this phase, so nothing reaches that path yet.
  *
  * The host holding [accessToken] is temporary. It is minted by the host's own backend, so the client
  * secret never reaches the app binary, and it lives here and nowhere else: never logged, never
@@ -25,7 +24,7 @@ public class PayabliConfig(
     public val entryPoint: String,
     /** Selects the base URL for every request. */
     public val environment: PayabliEnvironment,
-    /** Reserved for the refresh path. Stored only; nothing calls it yet. */
+    /** Called by the auth holder when a token is rejected. Null makes a rejection terminal. */
     public val tokenProvider: PayabliTokenProvider? = null,
     /** Read by the telemetry module when it lands. On by default, so switching it off is deliberate. */
     public val telemetryEnabled: Boolean = true,
