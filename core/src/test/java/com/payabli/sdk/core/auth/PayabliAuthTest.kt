@@ -62,7 +62,7 @@ class PayabliAuthTest {
                 }
 
             // Five callers, all arriving while the first provider call is still parked on the gate.
-            val waiters = List(5) { async { subject.invalidateAndRefresh() } }
+            val waiters = List(5) { async { subject.invalidateAndRefresh("initial-token") } }
             while (calls.get() == 0) yield()
             gate.complete(Unit)
 
@@ -77,8 +77,9 @@ class PayabliAuthTest {
             val calls = AtomicInteger()
             val subject = auth { "token-${calls.incrementAndGet()}" }
 
-            assertEquals("token-1", subject.invalidateAndRefresh())
-            assertEquals("token-2", subject.invalidateAndRefresh())
+            assertEquals("token-1", subject.invalidateAndRefresh("initial-token"))
+            // Rejected on what is now current, so this is a genuine second rotation.
+            assertEquals("token-2", subject.invalidateAndRefresh("token-1"))
             assertEquals(2, calls.get())
         }
 
@@ -91,9 +92,9 @@ class PayabliAuthTest {
             val collector = launch { subject.tokenChanges.collect { seen += it } }
             yield()
 
-            subject.invalidateAndRefresh()
+            subject.invalidateAndRefresh("initial-token")
             yield()
-            subject.invalidateAndRefresh()
+            subject.invalidateAndRefresh("token-1")
             yield()
 
             assertEquals(listOf("token-1", "token-2"), seen)
@@ -115,7 +116,7 @@ class PayabliAuthTest {
             val collector = launch { subject.tokenChanges.collect { seen += it } }
             yield()
 
-            val waiters = List(3) { async { subject.invalidateAndRefresh() } }
+            val waiters = List(3) { async { subject.invalidateAndRefresh("initial-token") } }
             while (calls.get() == 0) yield()
             gate.complete(Unit)
             waiters.forEach { it.await() }
@@ -130,7 +131,7 @@ class PayabliAuthTest {
         runTest {
             val subject = auth(tokenProvider = null)
 
-            val failure = failureFrom { subject.invalidateAndRefresh() }
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
             assertEquals("the token is unchanged", "initial-token", subject.accessToken())
@@ -142,7 +143,7 @@ class PayabliAuthTest {
             val sentinel = "SENTINEL-BACKEND-BODY"
             val subject = auth { throw IOException("host backend said: $sentinel") }
 
-            val failure = failureFrom { subject.invalidateAndRefresh() }
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
             assertFalse(
@@ -163,7 +164,7 @@ class PayabliAuthTest {
                     throw IOException("provider down")
                 }
 
-            val waiters = List(3) { async { runCatching { subject.invalidateAndRefresh() } } }
+            val waiters = List(3) { async { runCatching { subject.invalidateAndRefresh("initial-token") } } }
             while (calls.get() == 0) yield()
             gate.complete(Unit)
 
@@ -184,8 +185,8 @@ class PayabliAuthTest {
                     if (calls.incrementAndGet() == 1) throw IOException("first attempt fails") else "recovered"
                 }
 
-            failureFrom { subject.invalidateAndRefresh() }
-            assertEquals("recovered", subject.invalidateAndRefresh())
+            failureFrom { subject.invalidateAndRefresh("initial-token") }
+            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
             assertEquals("recovered", subject.accessToken())
         }
 
@@ -197,17 +198,17 @@ class PayabliAuthTest {
             holder = subject
 
             // Returns the last known token: a re-entrant caller cannot wait for itself.
-            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh() })
+            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh("initial-token") })
         }
 
     @Test
     fun `a provider that refreshes again does not deadlock`() =
         runTest {
             var holder: PayabliAuth? = null
-            val subject = auth { holder!!.invalidateAndRefresh() }
+            val subject = auth { holder!!.invalidateAndRefresh("initial-token") }
             holder = subject
 
-            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh() })
+            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh("initial-token") })
         }
 
     @Test
@@ -219,11 +220,11 @@ class PayabliAuthTest {
                     if (calls.incrementAndGet() == 1) CompletableDeferred<String>().await() else "recovered"
                 }
 
-            val failure = failureFrom { subject.invalidateAndRefresh() }
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
 
             // The claim was released, so the next attempt is not wedged behind the stuck one.
-            assertEquals("recovered", subject.invalidateAndRefresh())
+            assertEquals("recovered", subject.invalidateAndRefresh("initial-token"))
         }
 
     @Test
@@ -238,7 +239,7 @@ class PayabliAuthTest {
                     CompletableDeferred<String>().await()
                 }
 
-            val initiator = async { subject.invalidateAndRefresh() }
+            val initiator = async { subject.invalidateAndRefresh("initial-token") }
             entered.await()
             val waiter = async { runCatching { subject.accessToken() } }
             yield()
@@ -258,7 +259,8 @@ class PayabliAuthTest {
                     throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "provider used our own type")
                 }
 
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failureFrom { subject.invalidateAndRefresh() }.code)
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
         }
 
     @Test
@@ -273,7 +275,7 @@ class PayabliAuthTest {
                     "fresh-token"
                 }
 
-            val refresh = async { subject.invalidateAndRefresh() }
+            val refresh = async { subject.invalidateAndRefresh("initial-token") }
             while (calls.get() == 0) yield()
             val read = async { subject.accessToken() }
             yield()
@@ -284,11 +286,40 @@ class PayabliAuthTest {
         }
 
     @Test
+    fun `a staggered rejection on an already-rotated token does not refresh again`() =
+        runTest {
+            val calls = AtomicInteger()
+            val subject = auth { "T${calls.incrementAndGet()}" }
+
+            // Request A was rejected on the initial token and rotates it.
+            val first = subject.invalidateAndRefresh("initial-token")
+            // Request B's rejection for that same token arrives afterwards.
+            val second = subject.invalidateAndRefresh("initial-token")
+
+            assertEquals("T1", first)
+            assertEquals("B is handed the rotation A obtained", "T1", second)
+            assertEquals("one provider invocation, not two", 1, calls.get())
+            assertEquals("T1", subject.accessToken())
+        }
+
+    @Test
+    fun `a rejection on the current token still refreshes`() =
+        runTest {
+            val calls = AtomicInteger()
+            val subject = auth { "T${calls.incrementAndGet()}" }
+
+            assertEquals("T1", subject.invalidateAndRefresh("initial-token"))
+            // Rejected on what is now current, so this is a genuine second rotation.
+            assertEquals("T2", subject.invalidateAndRefresh("T1"))
+            assertEquals(2, calls.get())
+        }
+
+    @Test
     fun `the log records the refresh without the token`() =
         runTest {
             val subject = auth { "SENTINEL-FRESH-TOKEN" }
 
-            subject.invalidateAndRefresh()
+            subject.invalidateAndRefresh("initial-token")
 
             val logged = sink.records.joinToString("\n") { it.message }
             assertTrue(logged.contains("token_refreshed"))

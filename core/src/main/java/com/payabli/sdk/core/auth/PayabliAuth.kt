@@ -85,25 +85,32 @@ public class PayabliAuth(
     }
 
     /**
-     * Marks the current token rejected and returns a fresh one.
+     * Reports [rejectedToken] as refused and returns the token to use instead.
      *
-     * The first caller runs the provider; callers arriving while it is in flight await that same result
-     * and receive the same outcome, including the same failure.
+     * Passing the token that was actually rejected is what makes a staggered rejection cheap: two
+     * requests sent with the same token can have their 401s arrive far apart, and the later one must not
+     * refresh again on a token that has already rotated. That would discard the rotation the first one
+     * obtained.
+     *
+     * So: already rotated returns the current token untouched, a refresh in flight joins it and shares
+     * its outcome, and otherwise this caller runs the provider.
      */
-    public suspend fun invalidateAndRefresh(): String {
+    public suspend fun invalidateAndRefresh(rejectedToken: String): String {
         reentrantToken()?.let { return it }
-        val (shared, isInitiator) =
+        val plan =
             mutex.withLock {
                 val existing = inFlight
-                if (existing != null) {
-                    existing to false
-                } else {
-                    val claim = CompletableDeferred<String>()
-                    inFlight = claim
-                    claim to true
+                when {
+                    currentToken != rejectedToken -> RefreshPlan.AlreadyRotated(currentToken)
+                    existing != null -> RefreshPlan.Join(existing)
+                    else -> RefreshPlan.Own(CompletableDeferred<String>().also { inFlight = it })
                 }
             }
-        return if (isInitiator) runRefresh(shared) else shared.await()
+        return when (plan) {
+            is RefreshPlan.AlreadyRotated -> plan.token
+            is RefreshPlan.Join -> plan.claim.await()
+            is RefreshPlan.Own -> runRefresh(plan.claim)
+        }
     }
 
     /** Restores the token from [PayabliConfig] and drops any in-flight claim. */
@@ -176,6 +183,20 @@ public class PayabliAuth(
         val auth: PayabliAuth,
     ) : AbstractCoroutineContextElement(Key) {
         companion object Key : CoroutineContext.Key<RefreshInProgress>
+    }
+
+    private sealed interface RefreshPlan {
+        data class AlreadyRotated(
+            val token: String,
+        ) : RefreshPlan
+
+        data class Join(
+            val claim: CompletableDeferred<String>,
+        ) : RefreshPlan
+
+        data class Own(
+            val claim: CompletableDeferred<String>,
+        ) : RefreshPlan
     }
 
     private sealed interface TokenRead {
