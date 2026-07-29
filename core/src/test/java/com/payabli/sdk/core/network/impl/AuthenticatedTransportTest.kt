@@ -13,6 +13,7 @@ import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.Retry
 import com.payabli.sdk.core.network.RetryPolicy
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -212,6 +213,71 @@ class AuthenticatedTransportTest {
                 assertEquals("both tokens reached the wire", 2, byToken.size)
                 assertTrue("the stale token was sent at least once", byToken.containsKey("Bearer $TEST_TOKEN"))
                 assertTrue("the refreshed token was sent at least once", byToken.containsKey("Bearer $REFRESHED"))
+            }
+        }
+
+    /**
+     * A rotation landing between the wrapper reading the token and the chain reading it again.
+     *
+     * The two reads are separate, so they can disagree. If the wrapper then reports the token it *remembers*
+     * as rejected, `invalidateAndRefresh` sees it is not current, takes the already-rotated branch, and hands
+     * back the token that was actually just refused, without calling the provider. The replay then repeats a
+     * known-bad credential and a recoverable failure is reported terminal.
+     *
+     * Forced rather than raced: a gate decoration parks the request before the bearer is read, the token is
+     * rotated while it is parked, and the server refuses whatever the chain finally stamps.
+     */
+    @Test
+    fun `a rotation between the two reads still refreshes the token that was actually sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                val minted = listOf("rotated-by-other", "minted-for-us")
+                val auth = testAuth(tokenProvider = { minted[calls.getAndIncrement()] })
+                val parked = CompletableDeferred<Unit>()
+                val release = CompletableDeferred<Unit>()
+
+                // Only "minted-for-us" is accepted, so a replay of anything else is visible as a failure.
+                server.respondPerRequest { request ->
+                    if (request.header(AUTHORIZATION) == "Bearer minted-for-us") OK to "" else UNAUTHORIZED to ""
+                }
+
+                val gate =
+                    PayabliRequestDecoration { request ->
+                        if (parked.isCompleted) {
+                            request
+                        } else {
+                            parked.complete(Unit)
+                            release.await()
+                            request
+                        }
+                    }
+                val transport =
+                    AuthenticatedTransport(
+                        base =
+                            PayabliService.createWithDecorations(
+                                baseUrl = server.baseUrl,
+                                decorations = listOf(gate, BearerDecoration(auth)),
+                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                            ),
+                        auth = auth,
+                    )
+
+                val caller = async { transport.execute(ping()) }
+                parked.await()
+                // Someone else rotates while our request is parked before the bearer is read.
+                auth.invalidateAndRefresh(TEST_TOKEN)
+                release.complete(Unit)
+
+                val response = completing("the call whose token rotated mid-flight") { caller.await() }
+
+                assertEquals(OK, response.statusCode)
+                assertEquals("the provider ran again for the token actually sent", 2, calls.get())
+                assertEquals(
+                    "the replay carried a freshly minted token, not the one just refused",
+                    "Bearer minted-for-us",
+                    server.recorded.last().header(AUTHORIZATION),
+                )
             }
         }
 

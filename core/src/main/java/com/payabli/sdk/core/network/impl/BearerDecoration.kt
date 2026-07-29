@@ -2,6 +2,7 @@ package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.network.PayabliRequest
+import kotlinx.coroutines.currentCoroutineContext
 
 private const val AUTHORIZATION_HEADER = "Authorization"
 private const val BEARER_PREFIX = "Bearer "
@@ -17,6 +18,10 @@ private const val BEARER_PREFIX = "Bearer "
 internal class BearerDecoration(
     private val auth: PayabliAuth,
 ) : PayabliRequestDecoration {
-    override suspend fun decorate(request: PayabliRequest): PayabliRequest =
-        request.withHeaders(mapOf(AUTHORIZATION_HEADER to BEARER_PREFIX + auth.accessToken()))
+    override suspend fun decorate(request: PayabliRequest): PayabliRequest {
+        val token = auth.accessToken()
+        // Record what actually goes on the wire, so a rejection names this token and not an earlier read.
+        currentCoroutineContext()[SentToken]?.value = token
+        return request.withHeaders(mapOf(AUTHORIZATION_HEADER to BEARER_PREFIX + token))
+    }
 }

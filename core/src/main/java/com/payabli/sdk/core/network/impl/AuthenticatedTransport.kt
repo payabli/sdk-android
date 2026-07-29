@@ -6,6 +6,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 
 /**
@@ -29,16 +30,15 @@ internal class AuthenticatedTransport(
     private val recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
 ) : PayabliTransport {
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
-        // Read before the chain reads it, so a rotation in between makes them differ. Handing the stale one on
-        // is the point of that parameter: it takes the already-rotated branch instead of spending a call.
-        val sent = auth.accessToken()
-
-        val first = base.execute(request)
+        val stamped = SentToken()
+        val first = withContext(stamped) { base.execute(request) }
         if (!recovery.isCredentialRejection(first)) return first
 
-        auth.invalidateAndRefresh(sent)
+        // The token the chain stamped, not one this class read earlier: a rotation between the two reads would
+        // make them disagree, and reporting the earlier one replays the credential just refused.
+        auth.invalidateAndRefresh(stamped.value ?: auth.accessToken())
         // No re-authorizing: re-entering the transport re-runs the chain, which reads the token again.
-        val second = base.execute(request)
+        val second = withContext(SentToken()) { base.execute(request) }
         if (recovery.isCredentialRejection(second)) throw recovery.exhausted()
         return second
     }
