@@ -34,6 +34,7 @@ private const val REASON_REFRESH_FAILED = "token refresh failed"
 private const val REASON_PROVIDER_TIMEOUT = "the tokenProvider did not return in time"
 private const val REASON_REFRESH_CANCELLED = "the refresh was cancelled"
 private const val REASON_BLANK_TOKEN = "the tokenProvider returned a blank token"
+private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejected token"
 
 /**
  * Bounds a provider that never returns, so it cannot wedge every reader.
@@ -125,7 +126,7 @@ public class PayabliAuth(
         return when (plan) {
             is RefreshPlan.AlreadyRotated -> plan.token
             is RefreshPlan.Join -> plan.claim.await()
-            is RefreshPlan.Own -> runRefresh(plan.claim)
+            is RefreshPlan.Own -> runRefresh(plan.claim, rejectedToken)
         }
     }
 
@@ -138,7 +139,10 @@ public class PayabliAuth(
         }
     }
 
-    private suspend fun runRefresh(shared: CompletableDeferred<String>): String {
+    private suspend fun runRefresh(
+        shared: CompletableDeferred<String>,
+        rejectedToken: String,
+    ): String {
         val provider =
             config.tokenProvider
                 ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER))
@@ -176,6 +180,14 @@ public class PayabliAuth(
         // PayabliConfig rejects a blank token at construction, so a refresh must not install one either.
         if (fresh.isBlank()) {
             fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_BLANK_TOKEN))
+        }
+
+        // The same credential the server just refused. Committing it would publish a rotation that did not
+        // happen and hand the caller a token that is going to be rejected again, and because currentToken
+        // would be unchanged, the next rejection starts another provider call instead of taking the
+        // already-rotated shortcut: one provider call per 401, for as long as the provider keeps doing it.
+        if (fresh == rejectedToken) {
+            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_UNCHANGED_TOKEN))
         }
 
         // Emitted under the same lock that commits and releases, so a second refresh cannot publish its

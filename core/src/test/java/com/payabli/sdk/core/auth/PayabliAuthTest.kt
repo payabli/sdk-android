@@ -250,21 +250,34 @@ class PayabliAuthTest {
     fun `a provider that reads the token does not deadlock`() =
         runTest(timeout = TEST_TIMEOUT) {
             var holder: PayabliAuth? = null
-            val subject = auth { holder!!.accessToken() }
+            var reentrantRead: String? = null
+            val subject =
+                auth {
+                    reentrantRead = holder!!.accessToken()
+                    "fresh-token"
+                }
             holder = subject
 
-            // Returns the last known token: a re-entrant caller cannot wait for itself.
-            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh("initial-token") })
+            assertEquals("fresh-token", completing("the refresh") { subject.invalidateAndRefresh("initial-token") })
+            // Observed directly rather than through the outer result: a re-entrant caller cannot wait for
+            // itself, so it is served the last known token.
+            assertEquals("initial-token", reentrantRead)
         }
 
     @Test
     fun `a provider that refreshes again does not deadlock`() =
         runTest(timeout = TEST_TIMEOUT) {
             var holder: PayabliAuth? = null
-            val subject = auth { holder!!.invalidateAndRefresh("initial-token") }
+            var reentrantRefresh: String? = null
+            val subject =
+                auth {
+                    reentrantRefresh = holder!!.invalidateAndRefresh("initial-token")
+                    "fresh-token"
+                }
             holder = subject
 
-            assertEquals("initial-token", withTimeoutOrNull(5_000) { subject.invalidateAndRefresh("initial-token") })
+            assertEquals("fresh-token", completing("the refresh") { subject.invalidateAndRefresh("initial-token") })
+            assertEquals("initial-token", reentrantRefresh)
         }
 
     @Test
@@ -382,6 +395,28 @@ class PayabliAuthTest {
 
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
             assertEquals("the usable token is untouched", "initial-token", subject.accessToken())
+        }
+
+    /**
+     * A provider handing back a cached value is the realistic way this happens. Committing it would
+     * publish a rotation that did not occur and return a credential the server already refused, and since
+     * the current token would be unchanged, each later rejection starts another provider call.
+     */
+    @Test
+    fun `a refreshed token identical to the rejected one is refused`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val subject = auth { "initial-token".also { calls.incrementAndGet() } }
+            val seen = mutableListOf<String>()
+            val collector = launch { subject.tokenChanges.collect { seen += it } }
+            yield()
+
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals("the provider is called once, not once per rejection", 1, calls.get())
+            assertEquals("no rotation happened, so none is published", emptyList<String>(), seen)
+            collector.cancel()
         }
 
     @Test
