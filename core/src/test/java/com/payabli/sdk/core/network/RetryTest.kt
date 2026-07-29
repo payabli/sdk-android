@@ -2,7 +2,6 @@
 
 package com.payabli.sdk.core.network
 
-import com.payabli.sdk.core.auth.DEFAULT_PROVIDER_TIMEOUT_MILLIS
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
@@ -15,7 +14,6 @@ import com.payabli.sdk.core.model.PayabliServerException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
@@ -25,8 +23,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Timing is asserted on `TestScope.currentTime`, which is exact because `runTest` runs `delay` and
- * `withTimeout` in virtual time. That only holds because [Retry] never switches dispatcher.
+ * Timing is asserted on `TestScope.currentTime`, which is exact because `runTest` runs `delay` in virtual
+ * time. That only holds because [Retry] never switches dispatcher.
  */
 class RetryTest {
     private val sink = RecordingLogSink()
@@ -36,12 +34,10 @@ class RetryTest {
     private fun policy(
         maxAttempts: Int = 3,
         totalTimeoutMillis: Long? = null,
-        attemptTimeoutMillis: Long = RetryPolicy.DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
         maxRetryAfterMillis: Long = RetryPolicy.DEFAULT_MAX_RETRY_AFTER_MILLIS,
     ) = RetryPolicy(
         maxAttempts = maxAttempts,
         totalTimeoutMillis = totalTimeoutMillis,
-        attemptTimeoutMillis = attemptTimeoutMillis,
         maxRetryAfterMillis = maxRetryAfterMillis,
         jitter = RetryPolicy.Jitter.None,
     )
@@ -214,22 +210,6 @@ class RetryTest {
     }
 
     @Test
-    fun `an attempt that overruns its budget becomes a retryable network error`() =
-        runTest {
-            var attempts = 0
-
-            val result =
-                Retry.run(policy = policy(attemptTimeoutMillis = 1_000), logger = logger) {
-                    attempts++
-                    if (attempts == 1) delay(5_000)
-                    "ok"
-                }
-
-            assertEquals("ok", result)
-            assertEquals(2, attempts)
-        }
-
-    @Test
     fun `the total budget declines a further attempt and throws the last error`() =
         runTest {
             var attempts = 0
@@ -300,17 +280,4 @@ class RetryTest {
             assertTrue(logged.contains("errorCode=SERVER_ERROR"))
             assertTrue(logged.contains("route=/api/v2/MoneyIn/capture/{id}"))
         }
-
-    /**
-     * The two budgets are tuned independently but compose in one layering, and an attempt timeout is
-     * retryable. If the provider deadline ever exceeds the attempt budget, a refresh gets cancelled and
-     * retried with the rejected token once per attempt. This fails the moment either constant moves.
-     */
-    @Test
-    fun `the default attempt budget contains the default provider deadline`() {
-        assertTrue(
-            "attempt ${RetryPolicy.DEFAULT_ATTEMPT_TIMEOUT_MILLIS}ms must exceed the provider deadline",
-            RetryPolicy.DEFAULT_ATTEMPT_TIMEOUT_MILLIS > DEFAULT_PROVIDER_TIMEOUT_MILLIS,
-        )
-    }
 }

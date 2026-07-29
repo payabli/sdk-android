@@ -12,7 +12,6 @@ import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
-import com.payabli.sdk.core.network.RetryPolicy
 import com.payabli.sdk.core.network.impl.RedactedCause
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -45,11 +44,11 @@ private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejec
  * Only binds cancellation-cooperative code. A provider blocking a thread outside a suspension point
  * cannot be interrupted by any timeout, which is why the contract asks for cooperation.
  *
- * Must stay under [RetryPolicy.DEFAULT_ATTEMPT_TIMEOUT_MILLIS]: an attempt timeout is retryable, so a larger
- * value here means a cancelled refresh retried with the rejected token. `internal` so `RetryTest` can assert
- * the relation.
+ * Ten seconds rather than thirty: a provider that never returns holds every reader waiting on the same
+ * refresh, and half a minute of that is most of a user's patience. It stands on its own, with no relation to
+ * any other budget to maintain, because nothing above wraps a deadline around a refresh.
  */
-internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
+private const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
 
 /**
  * Holds the access token and refreshes it through the host's provider.
@@ -64,7 +63,6 @@ internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
 public class PayabliAuth(
     private val config: PayabliConfig,
     private val logger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
-    /** Must stay under the attempt budget of any `Retry` wrapped around the transport. */
     private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
 ) {
     init {

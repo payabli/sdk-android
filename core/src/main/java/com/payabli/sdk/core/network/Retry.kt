@@ -7,12 +7,9 @@ import com.payabli.sdk.core.logging.PayabliLogger
 import com.payabli.sdk.core.logging.PayabliLoggers
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
-import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRetryAfter
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -32,6 +29,11 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * Outside the transport rather than a decoration inside it, so each attempt re-enters
  * [PayabliTransport.execute] and re-runs the decoration chain.
+ *
+ * **It imposes no deadline of its own on an attempt**, beyond [RetryPolicy.totalTimeoutMillis] for the
+ * operation as a whole. The transport bounds each call it makes, which is the only layer that can: a budget
+ * here would wrap an opaque operation, and anything the operation does underneath, a credential refresh
+ * included, would be cut short and then repeated by the next attempt.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object Retry {
@@ -54,16 +56,7 @@ public object Retry {
         var attempt = 1
         while (true) {
             try {
-                // withTimeoutOrNull rather than a TimeoutCancellationException catch: catching that type
-                // would also swallow a timeout the operation raised with its own withTimeout, and retry an
-                // operation whose own deadline had passed. A null here can only be our deadline.
-                val holder =
-                    withTimeoutOrNull(attemptBudget(policy, startedAt).milliseconds) {
-                        Holder(operation(attempt))
-                    }
-                if (holder != null) return holder.value
-                val timedOut = PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_ATTEMPT_TIMEOUT)
-                attempt = nextAttemptOrThrow(timedOut, attempt, policy, logger, route, startedAt)
+                return operation(attempt)
             } catch (e: PayabliException) {
                 attempt = nextAttemptOrThrow(e, attempt, policy, logger, route, startedAt)
             }
@@ -118,17 +111,8 @@ public object Retry {
             LogField.safe("timeoutMs", wait),
         ) { "retrying" }
 
-        delay(wait)
+        delay(wait.milliseconds)
         return attempt + 1
-    }
-
-    /** The attempt budget, clamped so the last attempt cannot overrun the total. */
-    private fun attemptBudget(
-        policy: RetryPolicy,
-        startedAt: Long,
-    ): Long {
-        val remaining = remainingBudget(policy, startedAt) ?: return policy.attemptTimeoutMillis
-        return policy.attemptTimeoutMillis.coerceAtMost(remaining.coerceAtLeast(1))
     }
 
     /** Null when no total budget is set. Monotonic, so a wall-clock change cannot distort it. */
@@ -144,11 +128,4 @@ public object Retry {
     /** Only a template is loggable; a resolved path may embed an identifier. */
     private fun routeField(route: String?): LogField =
         route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", null)
-
-    private const val REASON_ATTEMPT_TIMEOUT = "Attempt exceeded its timeout"
-
-    /** Lets `withTimeoutOrNull` distinguish "timed out" from an operation that legitimately returned null. */
-    private class Holder<out T>(
-        val value: T,
-    )
 }

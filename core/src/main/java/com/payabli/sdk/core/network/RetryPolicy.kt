@@ -8,9 +8,14 @@ import kotlin.random.Random
 /**
  * How [Retry] backs off and what it is willing to retry, for **transient infrastructure failures**.
  *
- * The **shape** is fixed: jittered exponential backoff, a capped maximum, bounded attempts, a per-attempt
- * timeout, and `Retry-After` honoured on 429 and 503 ahead of the computed backoff. The **numbers** are
- * deployment tuning, so the defaults below are a starting point rather than a contract.
+ * The **shape** is fixed: jittered exponential backoff, a capped maximum, bounded attempts, and
+ * `Retry-After` honoured on 429 and 503 ahead of the computed backoff. The **numbers** are deployment
+ * tuning, so the defaults below are a starting point rather than a contract.
+ *
+ * **No per-attempt timeout here.** Bounding one attempt means bounding one HTTP call, and only the transport
+ * knows where a call begins and ends; this layer holds an opaque operation. So the whole-call budget is the
+ * transport's, mirroring iOS's `timeoutIntervalForResource`, and this class keeps only the budget for the
+ * operation as a whole in [totalTimeoutMillis].
  *
  * **Not this policy's business: a refused credential.** That is [AuthRecoveryPolicy], which is why
  * [PayabliErrorCode.TOKEN_EXPIRED] is absent from [RETRYABLE_CODES] below. The two sit at different layers,
@@ -28,14 +33,6 @@ public class RetryPolicy(
     public val maxDelayMillis: Long = DEFAULT_MAX_DELAY_MILLIS,
     public val multiplier: Double = DEFAULT_MULTIPLIER,
     public val maxJitterMillis: Long = DEFAULT_MAX_JITTER_MILLIS,
-    /**
-     * Budget for one attempt. This is the whole-resource bound; the socket-level connect and read timeouts
-     * on the transport bound reads, and a call can stall indefinitely while making slow per-read progress.
-     *
-     * It must also contain any credential recovery underneath it. A refresh this budget cancels surfaces as a
-     * retryable timeout, so the next attempt repeats with the credential that was already rejected.
-     */
-    public val attemptTimeoutMillis: Long = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
     /**
      * Budget for the whole operation including backoff waits. Null means unbounded, which is the default
      * because a total budget is a caller-flow concern and a wrong default would truncate a legitimate call.
@@ -64,7 +61,6 @@ public class RetryPolicy(
         require(multiplier >= 1.0 && multiplier.isFinite()) { "multiplier must be finite and at least 1" }
         require(maxJitterMillis >= 0) { "maxJitterMillis must not be negative" }
         require(maxJitterMillis < Long.MAX_VALUE) { "maxJitterMillis must leave room for the jitter bound" }
-        require(attemptTimeoutMillis > 0) { "attemptTimeoutMillis must be positive" }
         require(totalTimeoutMillis == null || totalTimeoutMillis > 0) { "totalTimeoutMillis must be positive" }
         require(maxRetryAfterMillis >= 0) { "maxRetryAfterMillis must not be negative" }
     }
@@ -97,7 +93,6 @@ public class RetryPolicy(
         public const val DEFAULT_MAX_DELAY_MILLIS: Long = 8_000
         public const val DEFAULT_MULTIPLIER: Double = 2.0
         public const val DEFAULT_MAX_JITTER_MILLIS: Long = 500
-        public const val DEFAULT_ATTEMPT_TIMEOUT_MILLIS: Long = 15_000
         public const val DEFAULT_MAX_RETRY_AFTER_MILLIS: Long = 30_000
 
         /**

@@ -3,6 +3,8 @@ package com.payabli.sdk.core.network.impl
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import kotlinx.coroutines.test.runTest
@@ -12,6 +14,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Exercises the real `HttpURLConnection` against a loopback server, so URL assembly, header handling,
@@ -33,10 +37,12 @@ class PayabliServiceTest {
     private fun service(
         server: LoopbackServer,
         baseUrl: String = server.baseUrl,
+        callTimeout: Duration = PayabliService.DEFAULT_CALL_TIMEOUT,
     ) = PayabliService.create(
         baseUrl = baseUrl,
         auth = testAuth(),
         logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+        callTimeout = callTimeout,
     )
 
     private fun loggedLines(): String = sink.records.joinToString("\n") { it.message }
@@ -259,6 +265,33 @@ class PayabliServiceTest {
                 assertEquals("GET", server.onlyRequest.method)
                 assertEquals("", server.onlyRequest.body)
                 assertNull(server.onlyRequest.header("Content-Type"))
+            }
+        }
+
+    /**
+     * The whole-call bound, which no socket-level timeout provides: the read timeout only ever bounds the
+     * wait for the next byte.
+     *
+     * Millisecond scale, and the stall sits well under the 10s read timeout so that timeout cannot be what
+     * ended the call. Without the bound the server's answer arrives and this returns 200 instead.
+     */
+    @Test
+    fun `a call that outlives its budget fails as a network error`() =
+        runTest {
+            LoopbackServer().use { server ->
+                server.respondWith(200, "").stallBeforeResponding(800)
+
+                val thrown =
+                    runCatching {
+                        service(server, callTimeout = 200.milliseconds)
+                            .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
+                    }.exceptionOrNull()
+
+                assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
+                assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
+                // The request did reach the server, so the budget ended a call in flight rather than one
+                // that never started.
+                assertEquals("/api/ping", server.onlyRequest.path)
             }
         }
 }

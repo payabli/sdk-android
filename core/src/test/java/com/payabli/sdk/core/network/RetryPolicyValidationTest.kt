@@ -33,9 +33,6 @@ class RetryPolicyValidationTest {
         rejects { RetryPolicy(maxJitterMillis = Long.MAX_VALUE) }
 
     @Test
-    fun `a non-positive attempt timeout is rejected`() = rejects { RetryPolicy(attemptTimeoutMillis = 0) }
-
-    @Test
     fun `a non-positive total timeout is rejected`() = rejects { RetryPolicy(totalTimeoutMillis = 0) }
 
     @Test

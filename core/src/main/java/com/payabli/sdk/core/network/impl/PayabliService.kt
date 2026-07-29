@@ -18,8 +18,11 @@ import com.payabli.sdk.core.network.PayabliV2Envelope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.KSerializer
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -32,7 +35,8 @@ import java.net.URISyntaxException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.coroutineContext
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * [PayabliTransport] over `HttpURLConnection`, the platform HTTP client.
@@ -67,6 +71,17 @@ internal class PayabliService private constructor(
     private val connectTimeoutMillis: Int,
     private val readTimeoutMillis: Int,
     /**
+     * Budget for one whole call, the counterpart to iOS's `timeoutIntervalForResource`. Needed because
+     * [readTimeoutMillis] bounds only the wait for the next byte, so a server dribbling bytes never trips it.
+     *
+     * A [Duration] rather than millis like its neighbours: those are `Int` because `HttpURLConnection` takes
+     * milliseconds, whereas this one is ours and `withTimeout` takes a duration.
+     *
+     * It bounds **one** exchange, never a sequence of them. That is what keeps it clear of a credential
+     * refresh: a refresh is its own call through this class and gets its own budget.
+     */
+    private val callTimeout: Duration,
+    /**
      * Injected rather than hardcoded so a test can substitute one. Held per instance because it
      * describes how this implementation works and never varies per call; putting it on the interface
      * would push the choice onto every caller, which is what main-safety exists to avoid.
@@ -100,52 +115,82 @@ internal class PayabliService private constructor(
         withContext(dispatcher) {
             // The choke-point. First statement, so no path through this method skips it.
             val decorated = decorations.applyTo(request)
-            val connection = openConnection(decorated)
-            var completed = false
-            val startedAt = System.nanoTime()
-            // withContext cannot interrupt a blocking socket read, and readTimeout only bounds the wait for
-            // the *next* byte, so a server dribbling bytes outlives any coroutine deadline. Disconnecting
-            // from the cancellation handler is what tears the socket down. Documented as effective on
-            // Android; the JVM leaves asynchronous close unspecified, so this is not a guarantee there.
-            val onCancel =
-                coroutineContext[Job]?.invokeOnCompletion { cause ->
-                    if (cause != null) connection.disconnect()
-                }
             try {
-                logger.debug(methodField(decorated), routeField(decorated)) { "request" }
-                ensureActive()
-                writeBody(connection, decorated)
-                ensureActive()
-                readResponse(connection).also { response ->
-                    completed = true
-                    logger.debug(
-                        methodField(decorated),
-                        routeField(decorated),
-                        LogField.safe("statusCode", response.statusCode),
-                        LogField.safe("durationMs", elapsedMillis(startedAt)),
-                        LogField.safe("contentLength", response.body.size),
-                    ) { "response" }
-                }
-            } catch (e: IOException) {
-                // Cancellation can surface as an IOException when the socket is torn down under us, so
-                // re-check first: it must propagate as cancellation, not as a spurious network error.
-                // Only IOException is caught, never Exception: CancellationException is a
-                // RuntimeException, and swallowing it would leave a cancelled coroutine looking complete.
-                ensureActive()
+                withTimeout(callTimeout) { exchange(decorated) }
+            } catch (e: TimeoutCancellationException) {
+                // Converted, not propagated: `Retry` never catches a CancellationException, so this would
+                // abandon the whole operation rather than fail one attempt. Checked first, because a caller
+                // cancelling at the same moment must stay cancelled instead of reading as a network failure.
+                currentCoroutineContext().ensureActive()
                 logger.error(
                     e,
                     methodField(decorated),
                     routeField(decorated),
                     LogField.safe("errorCode", PayabliErrorCode.NETWORK_ERROR),
-                ) { "request failed" }
-                throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
-            } finally {
-                onCancel?.dispose()
-                // disconnect() signals that further requests are unlikely, which forfeits the pooled
-                // socket, so it is only correct when bailing out with the stream unread.
-                if (!completed) connection.disconnect()
+                    LogField.safe("callTimeoutMs", callTimeout.inWholeMilliseconds),
+                ) { "call exceeded its timeout" }
+                throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_CALL_TIMED_OUT, cause = e)
             }
         }
+
+    /**
+     * One request and one response, bounded by whatever deadline the caller installed.
+     *
+     * Separate from [execute] so that deadline owns this body's [Job], which is what makes the cancellation
+     * handler below fire on a timeout and not only on a caller's cancellation.
+     */
+    private suspend fun exchange(decorated: PayabliRequest): PayabliResponse {
+        val connection = openConnection(decorated)
+        var completed = false
+        val startedAt = System.nanoTime()
+        // Cancelling cannot interrupt a blocking socket read, and readTimeout only bounds the wait for the
+        // *next* byte, so a server dribbling bytes outlives any coroutine deadline. Disconnecting from the
+        // cancellation handler is what tears the socket down. Documented as effective on Android; the JVM
+        // leaves asynchronous close unspecified, so this is not a guarantee there.
+        val onCancel =
+            currentCoroutineContext()[Job]?.invokeOnCompletion { cause ->
+                if (cause != null) connection.disconnect()
+            }
+        try {
+            logger.debug(methodField(decorated), routeField(decorated)) { "request" }
+            currentCoroutineContext().ensureActive()
+            writeBody(connection, decorated)
+            currentCoroutineContext().ensureActive()
+            return readResponse(connection).also { response ->
+                // The deadline is only observable here. Everything above blocks a thread rather than
+                // suspending, so a coroutine cancelled mid-read reaches this point without noticing and
+                // would return a response it is no longer entitled to.
+                currentCoroutineContext().ensureActive()
+                completed = true
+                logger.debug(
+                    methodField(decorated),
+                    routeField(decorated),
+                    LogField.safe("statusCode", response.statusCode),
+                    LogField.safe("durationMs", elapsedMillis(startedAt)),
+                    LogField.safe("contentLength", response.body.size),
+                ) { "response" }
+            }
+        } catch (e: IOException) {
+            // Cancellation can surface as an IOException when the socket is torn down under us, so
+            // re-check first: it must propagate as cancellation, not as a spurious network error. That
+            // covers the deadline too, which reaches here as a disconnected socket mid-read.
+            // Only IOException is caught, never Exception: CancellationException is a
+            // RuntimeException, and swallowing it would leave a cancelled coroutine looking complete.
+            currentCoroutineContext().ensureActive()
+            logger.error(
+                e,
+                methodField(decorated),
+                routeField(decorated),
+                LogField.safe("errorCode", PayabliErrorCode.NETWORK_ERROR),
+            ) { "request failed" }
+            throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
+        } finally {
+            onCancel?.dispose()
+            // disconnect() signals that further requests are unlikely, which forfeits the pooled
+            // socket, so it is only correct when bailing out with the stream unread.
+            if (!completed) connection.disconnect()
+        }
+    }
 
     override suspend fun <T> execute(
         request: PayabliRequest,
@@ -337,6 +382,7 @@ internal class PayabliService private constructor(
         internal const val REASON_INVALID_URL: String = "Invalid request URL"
         internal const val REASON_RESPONSE_TOO_LARGE: String = "Response body exceeded the allowed size"
         internal const val REASON_METHOD_UNSUPPORTED: String = "HTTP method not supported on this platform"
+        internal const val REASON_CALL_TIMED_OUT: String = "Network request exceeded its timeout"
 
         private val ALLOWED_SCHEMES = setOf("http", "https")
 
@@ -346,11 +392,15 @@ internal class PayabliService private constructor(
 
         internal const val DEFAULT_CONNECT_TIMEOUT_MILLIS: Int = 10_000
 
-        /**
-         * Per-read budget, bounding a single socket read rather than the whole call. `RetryPolicy`'s
-         * per-attempt timeout is what bounds the resource.
-         */
+        /** Per-read budget, bounding a single socket read rather than the whole call. */
         internal const val DEFAULT_READ_TIMEOUT_MILLIS: Int = 10_000
+
+        /**
+         * Three times the per-read budget, landing on the same 10s and 30s pair iOS sets as
+         * `timeoutIntervalForRequest` and `timeoutIntervalForResource`. Room for a few slow reads, not for an
+         * indefinite dribble.
+         */
+        internal val DEFAULT_CALL_TIMEOUT: Duration = (3 * DEFAULT_READ_TIMEOUT_MILLIS).milliseconds
 
         /**
          * The only production way to obtain a transport.
@@ -369,6 +419,7 @@ internal class PayabliService private constructor(
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
             connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MILLIS,
             readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MILLIS,
+            callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
@@ -378,6 +429,7 @@ internal class PayabliService private constructor(
                 logger,
                 connectTimeoutMillis,
                 readTimeoutMillis,
+                callTimeout,
                 dispatcher,
                 maxResponseBytes,
             )
@@ -394,6 +446,7 @@ internal class PayabliService private constructor(
             baseUrl: String,
             decorations: List<PayabliRequestDecoration>,
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+            callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
@@ -403,6 +456,7 @@ internal class PayabliService private constructor(
                 logger,
                 DEFAULT_CONNECT_TIMEOUT_MILLIS,
                 DEFAULT_READ_TIMEOUT_MILLIS,
+                callTimeout,
                 dispatcher,
                 maxResponseBytes,
             )

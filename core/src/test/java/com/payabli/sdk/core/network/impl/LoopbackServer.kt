@@ -42,6 +42,9 @@ internal class LoopbackServer : AutoCloseable {
     private var chooser: ((Recorded) -> Response)? = null
 
     @Volatile
+    private var stallMillis: Long = 0
+
+    @Volatile
     private var failure: Throwable? = null
 
     private val worker =
@@ -94,6 +97,18 @@ internal class LoopbackServer : AutoCloseable {
         return this
     }
 
+    /**
+     * Reads the request, then waits [millis] before answering, for a test whose subject is a deadline.
+     *
+     * A stall rather than silence: a server that never answers is indistinguishable from one that is slow,
+     * and the socket-level read timeout would eventually end either. Set this above the deadline under test
+     * and below that read timeout, so the deadline is provably what fired.
+     */
+    fun stallBeforeResponding(millis: Long): LoopbackServer {
+        stallMillis = millis
+        return this
+    }
+
     /** By request if a chooser is set, otherwise by position. */
     private fun responseFor(
         index: Int,
@@ -123,6 +138,9 @@ internal class LoopbackServer : AutoCloseable {
                     // Index before appending, so the first request reads entry 0.
                     val answer = responseFor(requests.size, request)
                     requests += request
+                    // Recorded before stalling, so a test can assert the request arrived even when the
+                    // client gave up waiting for its response.
+                    if (stallMillis > 0) Thread.sleep(stallMillis)
                     connection.getOutputStream().apply {
                         write(answer.encode())
                         flush()

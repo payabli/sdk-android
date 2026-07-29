@@ -29,6 +29,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
@@ -57,6 +59,7 @@ class AuthenticatedTransportTest {
     private fun stack(
         server: LoopbackServer,
         auth: PayabliAuth,
+        callTimeout: Duration = PayabliService.DEFAULT_CALL_TIMEOUT,
     ): PayabliTransport =
         AuthenticatedTransport(
             base =
@@ -64,6 +67,7 @@ class AuthenticatedTransportTest {
                     baseUrl = server.baseUrl,
                     auth = auth,
                     logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    callTimeout = callTimeout,
                 ),
             auth = auth,
         )
@@ -526,15 +530,17 @@ class AuthenticatedTransportTest {
         }
 
     /**
-     * Why an attempt budget must contain the provider deadline, at millisecond scale.
+     * A refresh slower than one call's whole-call budget still runs exactly once.
      *
-     * A budget smaller than the deadline cancels the refresh, the cancellation surfaces as a retryable
-     * NETWORK_ERROR, and the next attempt starts with the same rejected token and calls the provider again.
-     * Explicit budgets in the ratio the shipped defaults used to have, because 15s against 30s would mean a
-     * fifteen-second test.
+     * The budget belongs to the transport and bounds one exchange, so the refresh between the two calls is
+     * not inside it and cannot be cut short. Were the budget instead wrapped around the whole operation, the
+     * refresh would be cancelled and each further attempt would call the provider again with the token that
+     * was already rejected.
+     *
+     * Millisecond scale, in the ratio the shipped defaults have: 10s against 30s would be a 30-second test.
      */
     @Test
-    fun `an attempt budget under the provider deadline retries the rejected token`() =
+    fun `a refresh slower than one call budget runs once and still recovers`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 val calls = AtomicInteger()
@@ -545,7 +551,7 @@ class AuthenticatedTransportTest {
                             entryPoint = "entry",
                             environment = PayabliEnvironment.SANDBOX,
                             tokenProvider = {
-                                Thread.sleep(400)
+                                Thread.sleep(600)
                                 REFRESHED.also { calls.incrementAndGet() }
                             },
                         ),
@@ -556,22 +562,20 @@ class AuthenticatedTransportTest {
                     if (request.header(AUTHORIZATION) == "Bearer $TEST_TOKEN") UNAUTHORIZED to "" else OK to ""
                 }
 
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        Retry.run(
-                            policy =
-                                RetryPolicy(
-                                    maxAttempts = 3,
-                                    baseDelayMillis = 0,
-                                    maxJitterMillis = 0,
-                                    attemptTimeoutMillis = 150,
-                                ),
-                            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
-                        ) { stack(server, auth).execute(ping()) }
+                val outcome =
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            Retry.run(
+                                policy = RetryPolicy(maxAttempts = 3, baseDelayMillis = 0, maxJitterMillis = 0),
+                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                            ) { stack(server, auth, callTimeout = 300.milliseconds).execute(ping()) }
+                        }
                     }
-                }
 
-                assertTrue("the provider ran once per attempt, got ${calls.get()}", calls.get() > 1)
+                // Asserted before the outcome so a budget that does reach the refresh is reported as the
+                // repeated provider call it is, rather than as whatever the exhausted retry threw.
+                assertEquals("the provider ran more than once", 1, calls.get())
+                assertEquals(OK, outcome.getOrThrow().statusCode)
             }
         }
 }
