@@ -25,6 +25,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val REASON_NO_TOKEN_PROVIDER = "no tokenProvider was supplied"
 private const val REASON_REFRESH_FAILED = "token refresh failed"
@@ -120,7 +121,7 @@ public class PayabliAuth(
                 config.tokenProvider
                     ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER)
             val fresh =
-                withTimeoutOrNull(providerTimeoutMillis) {
+                withTimeoutOrNull(providerTimeoutMillis.milliseconds) {
                     withContext(RefreshInProgress(this@PayabliAuth)) { provider.freshToken() }
                 } ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT)
             mutex.withLock {
