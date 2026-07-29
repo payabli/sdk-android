@@ -33,6 +33,7 @@ private const val REFRESHED = "refreshed-token"
  */
 class PayabliTransportsTest {
     private val sink = RecordingLogSink()
+    private val authSink = RecordingLogSink()
 
     private fun config(provider: PayabliTokenProvider? = null) =
         PayabliConfig(
@@ -43,6 +44,8 @@ class PayabliTransportsTest {
         )
 
     private fun logger() = DefaultPayabliLogger(LogCategory.NETWORK, sink)
+
+    private fun authLogger() = DefaultPayabliLogger(LogCategory.AUTH, authSink)
 
     private suspend fun <T : Any> completing(
         what: String,
@@ -160,7 +163,7 @@ class PayabliTransportsTest {
         }
 
     @Test
-    fun `no token reaches the log through the factory path`() =
+    fun `no token reaches either log, and the refresh is logged under auth`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondInOrder(401 to "", 200 to "")
@@ -170,13 +173,23 @@ class PayabliTransportsTest {
                         server.baseUrl,
                         config { REFRESHED },
                         logger = logger(),
+                        authLogger = authLogger(),
                     )
                 completing("the call") { transport.execute(ping()) }
 
-                val logged = sink.records.joinToString("\n") { it.message }
-                assertTrue("something was logged", logged.isNotEmpty())
-                assertEquals("no token in the log", false, logged.contains("initial-token"))
-                assertEquals("no refreshed token either", false, logged.contains(REFRESHED))
+                val network = sink.records.joinToString("\n") { it.message }
+                val auth = authSink.records.joinToString("\n") { it.message }
+
+                // Positive first. Asserting only absence lets the test pass when nothing was logged at all,
+                // which is exactly what happened when the holder stopped sharing the network logger.
+                assertTrue("the refresh is logged under auth, not network: $auth", auth.contains("token_refreshed"))
+                assertTrue("the request is logged under network", network.contains("route=/api/ping"))
+                assertEquals("the refresh does not land under network", false, network.contains("token_refreshed"))
+
+                for ((name, log) in listOf("network" to network, "auth" to auth)) {
+                    assertEquals("initial token in the $name log", false, log.contains("initial-token"))
+                    assertEquals("refreshed token in the $name log", false, log.contains(REFRESHED))
+                }
             }
         }
 }

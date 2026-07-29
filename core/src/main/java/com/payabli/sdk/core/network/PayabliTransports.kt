@@ -29,7 +29,8 @@ public object PayabliTransports {
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
-    ): PayabliTransport = authenticated(config.environment.baseUrl, config, recovery, logger)
+        authLogger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
+    ): PayabliTransport = authenticated(config.environment.baseUrl, config, recovery, logger, authLogger)
 
     /**
      * Same, against an explicit [baseUrl]. Widens where a **test** can point, never what shipped
@@ -41,17 +42,20 @@ public object PayabliTransports {
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
-    ): PayabliTransport = authenticated(baseUrl, config, recovery, logger)
+        authLogger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
+    ): PayabliTransport = authenticated(baseUrl, config, recovery, logger, authLogger)
 
     private fun authenticated(
         baseUrl: String,
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy,
         logger: PayabliLogger,
+        authLogger: PayabliLogger,
     ): PayabliTransport {
         // One holder for both the chain that reads the token and the wrapper that refreshes it, which is what
-        // makes a replay carry the token the refresh minted.
-        val auth = PayabliAuth(config, logger)
+        // makes a replay carry the token the refresh minted. Its own category, so a refresh is filterable as
+        // auth rather than buried under network.
+        val auth = PayabliAuth(config, authLogger)
         return AuthenticatedTransport(
             base = PayabliService.create(baseUrl = baseUrl, auth = auth, logger = logger),
             auth = auth,
