@@ -9,26 +9,14 @@ private const val REASON_MISSING_ENTRY_POINT = "entryPoint must not be blank"
 /**
  * The values a host supplies once, in one place, for every Payabli SDK component.
  *
- * **Nothing reads this type yet.** It is the configuration surface by itself: the auth session, the
- * authenticated transport, and the components that consume it all arrive later in this phase. What is
- * settled here is the shape a host has to satisfy, not any behaviour behind it.
+ * Nothing reads this type yet; the session and transport that consume it arrive later in this phase.
+ * [tokenProvider] is stored and never called, so every 401 surfaces as
+ * [PayabliErrorCode.TOKEN_EXPIRED] whether one was supplied or not.
  *
- * ## The host holds the token in this phase, and that is temporary
- *
- * [accessToken] is minted by the host app's **own backend** against Payabli's server-side token
- * endpoint, so the client secret never reaches the app binary. It is held on this object and nowhere
- * else: never logged, never persisted.
- *
- * This mirrors the shipping iOS SDK so both platforms share one baseline. It is not the intended end
- * state: the target design moves token custody inside the SDK, where the host names and observes but
- * never holds a credential. A host passing a token here is a property of this phase, not the contract to
- * build against long term.
- *
- * ## Refresh is reserved, not implemented
- *
- * [tokenProvider] is accepted and stored, and nothing calls it. Every 401 surfaces as
- * [PayabliErrorCode.TOKEN_EXPIRED] whether or not a provider was supplied, so supplying one currently
- * changes nothing. Refresh-and-retry arrives with the authenticated transport that wraps this config.
+ * The host holding [accessToken] is temporary. It is minted by the host's own backend, so the client
+ * secret never reaches the app binary, and it lives here and nowhere else: never logged, never
+ * persisted. This mirrors the shipping iOS SDK for one shared baseline; the target design moves token
+ * custody inside the SDK.
  */
 public class PayabliConfig(
     /** Pre-minted bearer token from the host app's backend. Never logged, never persisted. */
