@@ -158,12 +158,16 @@ public class PayabliAuth(
 
         // Emitted under the same lock that commits and releases, so a second refresh cannot publish its
         // newer token first and leave collectors seeing rotations out of order.
-        mutex.withLock {
-            currentToken = fresh
-            tokenChangeSink.tryEmit(fresh)
-            inFlight = null
+        // NonCancellable for the same reason as the failure path: the token is already minted, and
+        // cancellation arriving while this lock is contended would leave the claim set with no owner.
+        withContext(NonCancellable) {
+            mutex.withLock {
+                currentToken = fresh
+                tokenChangeSink.tryEmit(fresh)
+                inFlight = null
+            }
+            shared.complete(fresh)
         }
-        shared.complete(fresh)
         logger.info(LogField.safe("event", "token_refreshed")) { "access token refreshed" }
         return fresh
     }
