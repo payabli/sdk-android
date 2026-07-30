@@ -71,6 +71,14 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
   a parked `HttpURLConnection` read on this JVM within about two milliseconds, and the whole-call timeout
   tests assert exactly that. The entry was not describing a platform limit; it was shielding a defect from
   scrutiny, since the teardown had never fired at all. Before adding a behaviour to this list, measure it.
+- **A `platform` package is the instrumented tier, and the boundary is structural rather than a list.** A file
+  belongs there when it calls an Android API with no JVM implementation — Keystore, `android.util.*`, a
+  `Context`. Nothing else does: "hard to test" is not a reason to move a file, and moving one to quiet a
+  coverage number is how the boundary stops meaning anything. `sonar.coverage.exclusions` is `**/platform/**`,
+  coverage only, so those files still get issue detection; their tests live in the mirroring package under
+  `src/androidTest`. This exists because Sonar gates **introduced** code: `:core`'s module total read 81.5%
+  line while the same commit measured 41% on its new lines, because `KeystoreValueCipher` was 121 of 261
+  measured units and unreachable from any unit test. Read both numbers, not one.
 - **Three test tiers, and the third is excluded from CI rather than skipped.** JVM unit tests; instrumented
   tests the nightly runs on an emulator; and `@ManualDeviceTest`, which needs real hardware. The exclusion is
   `notAnnotation`, verified to leave `skipped="0"` in the results XML with the manual tests absent from it

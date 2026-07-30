@@ -1,4 +1,4 @@
-package com.payabli.sdk.core.storage.impl
+package com.payabli.sdk.core.storage.platform
 
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
@@ -12,6 +12,7 @@ import com.payabli.sdk.core.logging.PayabliLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.core.storage.impl.ValueCipher
 import java.security.GeneralSecurityException
 import java.security.KeyStore
 import java.security.UnrecoverableKeyException
@@ -24,6 +25,9 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * AES-256-GCM under a key held in the Android Keystore. Only ciphertext leaves this class.
+ *
+ * In `platform` because Keystore and `android.util.Base64` have no JVM implementation, so no unit test can
+ * reach a line of this file and the instrumented suite is what covers it.
  *
  * `androidx.security:security-crypto` is deliberately absent: it was deprecated in 2025 in favour of the
  * platform APIs used here.
@@ -77,6 +81,14 @@ internal class KeystoreValueCipher(
             throw asFailure(e)
         }
     }
+
+    /**
+     * Whether the alias is present, so a write can tell a fresh install from a lost key.
+     *
+     * Without it both look identical from the write side and [keyForWriting] mints a replacement for either,
+     * which silently strands every value already on disk under the key that is gone.
+     */
+    override fun hasKey(): Boolean = existingKey() != null
 
     /**
      * Maps a platform failure by **blast radius**, which is the whole point of the split.

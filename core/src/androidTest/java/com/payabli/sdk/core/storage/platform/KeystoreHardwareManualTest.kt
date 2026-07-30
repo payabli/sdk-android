@@ -1,4 +1,4 @@
-package com.payabli.sdk.core.storage.impl
+package com.payabli.sdk.core.storage.platform
 
 import android.os.Build
 import android.security.keystore.KeyInfo
@@ -9,6 +9,7 @@ import com.payabli.sdk.core.ManualDeviceTest
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.storage.impl.FileSecureStorage
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals

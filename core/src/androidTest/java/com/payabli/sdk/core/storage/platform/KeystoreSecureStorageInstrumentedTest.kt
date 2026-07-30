@@ -1,4 +1,4 @@
-package com.payabli.sdk.core.storage.impl
+package com.payabli.sdk.core.storage.platform
 
 import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.core.storage.impl.FileSecureStorage
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -264,5 +265,35 @@ class KeystoreSecureStorageInstrumentedTest {
             assertNull("the unreadable value should have been discarded", subject.get("refresh"))
             subject.set("refresh", "fresh-value".toCharArray())
             assertArrayEquals("the store should be usable again", "fresh-value".toCharArray(), subject.get("refresh"))
+        }
+
+    /**
+     * Writing after the alias is deleted, with no read in between, must report the loss rather than mint a key.
+     *
+     * The ordering is what makes this its own test: a write cannot tell a fresh install from a lost key, and
+     * creating one is right for the first and wrong for the second. Left to create, the new blob lands beside
+     * ciphertext sealed under the key that is gone, nothing reports the loss, and each old value fails alone
+     * on some later read as though it were individually corrupt.
+     */
+    @Test
+    fun deletingTheAliasThenWritingReportsInvalidationRatherThanMintingAKey() =
+        runTest(timeout = 30.seconds) {
+            val subject = storage()
+            subject.set("first", "one".toCharArray())
+            subject.set("second", "two".toCharArray())
+
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(keyAlias)
+
+            val thrown = runCatching { subject.set("third", "three".toCharArray()) }.exceptionOrNull()
+            assertTrue(
+                "expected KeyInvalidated on a write into a store whose key is gone, got $thrown",
+                thrown is SecureStorageException.KeyInvalidated,
+            )
+
+            // Cleared, so the next write starts from nothing rather than mixing a new key with old blobs.
+            assertNull("the stranded entry should be gone", subject.get("first"))
+            assertNull("the stranded entry should be gone", subject.get("second"))
+            subject.set("third", "three".toCharArray())
+            assertArrayEquals("the store should be usable again", "three".toCharArray(), subject.get("third"))
         }
 }

@@ -24,4 +24,13 @@ internal interface ValueCipher {
         aad: String,
         blob: String,
     ): ByteArray
+
+    /**
+     * Whether a key exists to encrypt under, without creating one.
+     *
+     * A write cannot otherwise tell a fresh install from a lost key, and both would have [encrypt] create
+     * one. With entries already stored, creating is the wrong answer: the new blob would sit beside
+     * ciphertext sealed under the key that is gone.
+     */
+    fun hasKey(): Boolean
 }

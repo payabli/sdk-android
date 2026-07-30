@@ -1,9 +1,8 @@
 package com.payabli.sdk.core.storage.impl
 
-import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.SecureStorageException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -25,8 +24,7 @@ import java.io.IOException
  * plain [File] keeps this constructible without any of those, which is what lets the persistence layer be
  * unit-tested on the JVM against a fake cipher.
  *
- * **Give it a directory excluded from backup.** `Context.noBackupFilesDir` is the intended argument, and
- * it keeps the ciphertext out of backup and device transfer without the host app adding manifest rules.
+ * `PayabliSecureStorages.create` is how production builds one, and it decides the directory.
  */
 internal class FileSecureStorage(
     private val file: File,
@@ -35,7 +33,7 @@ internal class FileSecureStorage(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : PayabliSecureStorage {
     /**
-     * Keyed by path, not per instance, because `create()` hands out a new object for the same file and
+     * Keyed by path, not per instance, because the factory hands out a new object for the same file and
      * reopening one is supported usage. Two instances with private locks both read the old map and
      * overwrite each other, and worse, both generate a first-use key, where the loser's ciphertext becomes
      * unreadable. Single process only: this is not an OS file lock.
@@ -76,8 +74,18 @@ internal class FileSecureStorage(
                 val current = read()
                 var plaintext: ByteArray? = null
                 try {
+                    // A write cannot otherwise tell a fresh install from a lost alias, and the cipher creates
+                    // a key for either. With entries already on disk it is the second case: the new blob
+                    // would sit beside ciphertext sealed under the key that is gone, nothing would report the
+                    // loss, and each old value would instead fail alone on some later read.
+                    if (current.isNotEmpty() && !cipher.hasKey()) throw SecureStorageException.KeyInvalidated()
                     plaintext = SecretBuffers.toBytes(value)
                     write(current + (key to cipher.encrypt(key, plaintext)))
+                } catch (e: SecureStorageException.KeyInvalidated) {
+                    // As on the read path: the remaining blobs are unreadable, and leaving them lets a retry
+                    // mix a fresh key with stale ciphertext.
+                    write(emptyMap())
+                    throw e
                 } finally {
                     SecretBuffers.wipe(plaintext)
                 }
@@ -109,12 +117,15 @@ internal class FileSecureStorage(
         return try {
             Json.decodeFromString(SERIALIZER, text)
         } catch (e: IllegalArgumentException) {
+            // RedactedCause, not e: kotlinx.serialization appends the input it could not parse to its own
+            // message, so the cause would carry the file's contents into whatever renders the chain.
+            val cause = RedactedCause(e)
             // Persisted, not just returned: otherwise the corrupt file survives and every later read
             // reparses it and warns again. Safe from here because write() neither reads nor locks.
             if (runCatching { write(emptyMap()) }.isSuccess) {
-                logger.warn(e) { "secure storage file was unreadable and has been reset" }
+                logger.warn(cause) { "secure storage file was unreadable and has been reset" }
             } else {
-                logger.warn(e) { "secure storage file was unreadable and the reset could not be persisted" }
+                logger.warn(cause) { "secure storage file was unreadable and the reset could not be persisted" }
             }
             emptyMap()
         }
@@ -136,7 +147,8 @@ internal class FileSecureStorage(
         val parent = file.parentFile ?: throw SecureStorageException.StorageUnavailable()
         try {
             if (!parent.exists() && !parent.mkdirs()) throw SecureStorageException.StorageUnavailable()
-            val temp = File.createTempFile(file.name, ".tmp", parent)
+            sweepOrphans(parent)
+            val temp = File.createTempFile(file.name, TEMP_SUFFIX, parent)
             try {
                 FileOutputStream(temp).use { out ->
                     out.write(Json.encodeToString(SERIALIZER, values).toByteArray(Charsets.UTF_8))
@@ -145,7 +157,12 @@ internal class FileSecureStorage(
                 }
                 if (!temp.renameTo(file)) throw SecureStorageException.StorageUnavailable()
             } finally {
-                temp.delete()
+                // A successful rename leaves nothing here, so absence is the ordinary case. Checked rather
+                // than ignored because the failure that lands here, a directory that cannot be written, is
+                // also the one that stops the cleanup, and what stays behind is ciphertext.
+                if (temp.exists() && !temp.delete()) {
+                    logger.warn { "a secure storage temporary file could not be removed" }
+                }
             }
         } catch (e: IOException) {
             throw SecureStorageException.StorageUnavailable(e)
@@ -154,7 +171,29 @@ internal class FileSecureStorage(
         }
     }
 
-    internal companion object {
+    /**
+     * Removes temporary files left by writes that never finished.
+     *
+     * Nothing else looks for them. Process death between creating the temp and renaming it orphans one
+     * permanently, and it holds ciphertext for every entry present at that moment: under the same key alias
+     * those blobs still open, so an entry a later [remove] deleted would survive inside it. An orphan is
+     * therefore reclaimed here, on the next write, rather than at the moment it is created.
+     *
+     * Deleting every match is safe because the caller holds the per-path lock and this is a single-process
+     * store, so no other write of this file is in flight, and the sweep runs before this write's own temp
+     * exists.
+     */
+    private fun sweepOrphans(parent: File) {
+        parent
+            .listFiles { candidate -> candidate.name.startsWith(file.name) && candidate.name.endsWith(TEMP_SUFFIX) }
+            ?.forEach { orphan ->
+                if (orphan.delete()) logger.warn { "discarded an unfinished secure storage write" }
+            }
+    }
+
+    private companion object {
+        private const val TEMP_SUFFIX = ".tmp"
+
         private val SERIALIZER = MapSerializer(String.serializer(), String.serializer())
 
         /** One lock per backing file, shared by every instance over it. */
@@ -167,29 +206,5 @@ internal class FileSecureStorage(
             // this module's floor of 23. Lint caught that; contention here is one lookup per instance.
             return synchronized(locks) { locks.getOrPut(path) { Mutex() } }
         }
-
-        /**
-         * One alias for the whole store. Every value shares the key; each write still gets its own IV, and
-         * each blob is bound to its entry name so blobs cannot be swapped.
-         *
-         * Reverse-DNS to avoid colliding with the **host app's** aliases, not with other apps': the
-         * Keystore is scoped per app by UID, so this key lives in the embedding app's namespace. Uninstall
-         * takes it, so a reinstall starts clean.
-         */
-        const val DEFAULT_KEY_ALIAS: String = "com.payabli.sdk.core.storage.v1"
-        const val DEFAULT_FILE_NAME: String = "payabli-secure-store.json"
-
-        /** Pass `Context.noBackupFilesDir` for [directory]. */
-        internal fun create(
-            directory: File,
-            keyAlias: String = DEFAULT_KEY_ALIAS,
-            fileName: String = DEFAULT_FILE_NAME,
-            logger: PayabliLogger = PayabliLoggers.of(LogCategory.CORE),
-        ): PayabliSecureStorage =
-            FileSecureStorage(
-                file = File(directory, fileName),
-                cipher = KeystoreValueCipher(keyAlias, logger),
-                logger = logger,
-            )
     }
 }

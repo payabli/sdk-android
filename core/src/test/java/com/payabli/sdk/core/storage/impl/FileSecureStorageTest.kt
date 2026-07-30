@@ -11,6 +11,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -38,6 +39,9 @@ class FileSecureStorageTest {
      */
     private class CountingCipher(
         var failNextDecrypt: SecureStorageException? = null,
+        var failNextEncrypt: SecureStorageException? = null,
+        /** Stands for the Keystore alias: a write into a non-empty store must not create one. */
+        var keyPresent: Boolean = true,
         /**
          * Widens the read-modify-write window, for the concurrency tests only.
          *
@@ -55,10 +59,16 @@ class FileSecureStorageTest {
             aad: String,
             plaintext: ByteArray,
         ): String {
+            failNextEncrypt?.let {
+                failNextEncrypt = null
+                throw it
+            }
             val ordinal = synchronized(this) { ++encryptions }
             if (delayMillis > 0) Thread.sleep(delayMillis)
             return "$ordinal|$aad|${String(plaintext, Charsets.UTF_8)}"
         }
+
+        override fun hasKey(): Boolean = keyPresent
 
         override fun decrypt(
             aad: String,
@@ -321,6 +331,8 @@ class FileSecureStorageTest {
                         aad: String,
                         blob: String,
                     ): ByteArray = ByteArray(0)
+
+                    override fun hasKey(): Boolean = true
                 }
 
             storage(cipher = capturing).set("refresh", "secret-value".toCharArray())
@@ -340,6 +352,214 @@ class FileSecureStorageTest {
             storage().set("refresh", value)
 
             assertArrayEquals("secret-value".toCharArray(), value)
+        }
+
+    /**
+     * A write into a store that already holds entries must not create a key.
+     *
+     * With no read first, a lost alias and a fresh install look identical from the write side. Creating a key
+     * is right for the second and wrong for the first: the new blob would land beside ciphertext sealed under
+     * the key that is gone, nothing would report the loss, and each old value would fail alone on some later
+     * read as though it were individually corrupt.
+     */
+    @Test
+    fun `a write into a non-empty store whose key is gone reports invalidation`() =
+        runTest(timeout = 5.seconds) {
+            val cipher = CountingCipher()
+            val subject = storage(cipher = cipher)
+            subject.set("first", "one".toCharArray())
+
+            cipher.keyPresent = false
+            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+
+            assertTrue("expected KeyInvalidated, got $thrown", thrown is SecureStorageException.KeyInvalidated)
+            cipher.keyPresent = true
+            assertNull("the stranded entry should have been cleared", subject.get("first"))
+            assertNull("the rejected write should not have been stored", subject.get("second"))
+        }
+
+    /** The other half of the same check: no key and no entries is a fresh install, which does create one. */
+    @Test
+    fun `a write into an empty store creates the key`() =
+        runTest(timeout = 5.seconds) {
+            val subject = storage(cipher = CountingCipher(keyPresent = false))
+            subject.set("refresh", "secret-value".toCharArray())
+
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+        }
+
+    /**
+     * A key lost while encrypting clears the store first, as the read path does.
+     *
+     * Leaving the old blobs lets a retry create a fresh key and mix it with ciphertext sealed under the
+     * previous one, which is the state this subtype exists to prevent.
+     */
+    @Test
+    fun `a key lost while encrypting clears the store before propagating`() =
+        runTest(timeout = 5.seconds) {
+            val cipher = CountingCipher()
+            val subject = storage(cipher = cipher)
+            subject.set("first", "one".toCharArray())
+
+            cipher.failNextEncrypt = SecureStorageException.KeyInvalidated()
+            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+
+            assertTrue("expected KeyInvalidated, got $thrown", thrown is SecureStorageException.KeyInvalidated)
+            assertNull("the store should have been cleared", subject.get("first"))
+        }
+
+    /** The bound on the clause above: a failure that is not key loss must leave the store alone. */
+    @Test
+    fun `a cipher failure that is not key loss leaves the store intact`() =
+        runTest(timeout = 5.seconds) {
+            val cipher = CountingCipher()
+            val subject = storage(cipher = cipher)
+            subject.set("first", "one".toCharArray())
+
+            cipher.failNextEncrypt = SecureStorageException.CryptoUnavailable()
+            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+
+            assertTrue("expected CryptoUnavailable, got $thrown", thrown is SecureStorageException.CryptoUnavailable)
+            assertArrayEquals("an unrelated failure destroyed the store", "one".toCharArray(), subject.get("first"))
+        }
+
+    /**
+     * A temp file from a write that never finished must be reclaimed.
+     *
+     * Process death between creating the temp and renaming it orphans one, and nothing else looks for it. It
+     * holds ciphertext for every entry present at that moment, still openable under the same key alias, so an
+     * entry a later `remove` deleted would survive inside it.
+     */
+    @Test
+    fun `an orphaned temporary file is discarded by the next write`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val orphan =
+                File(folder.root, "${file.name}4242.tmp").apply { writeText("""{"stale":"ciphertext"}""") }
+
+            storage(file).set("refresh", "secret-value".toCharArray())
+
+            assertFalse("an unfinished write's temp file survived", orphan.exists())
+        }
+
+    /**
+     * A write that cannot create its temp file must leave the previous store complete.
+     *
+     * What matters is not the exception but what survives it. Injected by taking write permission off the
+     * directory, which is the real cause rather than a stub, and restored in a `finally` so the rule can
+     * still delete the folder.
+     *
+     * **This does not prove the rename ordering.** An unwritable directory also stops a stray `file.delete()`
+     * from succeeding, so reintroducing the pre-delete this suite once had leaves the test green. Nor is the
+     * `renameTo` false branch reachable: every entry point reads before it writes, and the states that make a
+     * rename fail, a directory at the path or an unwritable parent, fail the read or the temp creation first.
+     * Both are held by inspection and by the instrumented suite, not by this test.
+     */
+    @Test
+    fun `a write that cannot create its temporary file leaves the previous store intact`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val subject = storage(file)
+            subject.set("refresh", "secret-value".toCharArray())
+            val before = file.readText()
+
+            assertTrue("the directory stayed writable, so nothing was tested", folder.root.setWritable(false))
+            val thrown =
+                try {
+                    runCatching { subject.set("another", "value".toCharArray()) }.exceptionOrNull()
+                } finally {
+                    folder.root.setWritable(true)
+                }
+
+            assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
+            assertEquals("the previous store was not left intact", before, file.readText())
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+        }
+
+    /** The directory need not exist yet: production is handed one, not asked to guarantee it. */
+    @Test
+    fun `a store whose directory does not exist yet is created on first write`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "nested/deeper/store.json")
+            val subject = storage(file)
+
+            subject.set("refresh", "secret-value".toCharArray())
+
+            assertTrue("the directory was not created", file.exists())
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+        }
+
+    /** A store that cannot be read at all is reported rather than swallowed as an empty store. */
+    @Test
+    fun `an unreadable store file reports storage as unavailable`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json").apply { mkdirs() }
+
+            val thrown = runCatching { storage(file).get("refresh") }.exceptionOrNull()
+
+            assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
+        }
+
+    /**
+     * The reset of a corrupt file is best effort, and failing to persist it must not fail the call.
+     *
+     * The alternative is that one bad write makes every later call throw, and everything in the file is
+     * ciphertext the caller can obtain again.
+     */
+    @Test
+    fun `a corrupt file whose reset cannot be persisted still reads as empty`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            file.writeText("{ this is not json")
+            val subject = storage(file)
+
+            assertTrue("the directory stayed writable, so nothing was tested", folder.root.setWritable(false))
+            try {
+                assertNull(subject.get("refresh"))
+            } finally {
+                folder.root.setWritable(true)
+            }
+
+            assertTrue(
+                "a reset that could not be persisted should say so",
+                sink.records.any { it.message.contains("could not be persisted") },
+            )
+        }
+
+    /**
+     * The rejected input must not reach the log.
+     *
+     * `kotlinx.serialization` appends what it could not parse to its own message and the logger renders the
+     * cause chain, so passing the original exception publishes the file's contents. `RedactedCause` keeps the
+     * type and the frames and drops the text.
+     */
+    @Test
+    fun `the decode failure is logged without the rejected input`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            file.writeText("""{ "refresh": "do-not-log-this-blob" """)
+
+            assertNull(storage(file).get("refresh"))
+
+            val logged = sink.records.joinToString("\n") { it.message }
+            assertTrue("the reset warning is missing:\n$logged", logged.contains("unreadable"))
+            assertFalse("the rejected file contents reached the log:\n$logged", logged.contains("do-not-log-this-blob"))
+        }
+
+    /** Production takes the default dispatcher, so one test has to exercise it rather than substitute one. */
+    @Test
+    fun `the default dispatcher is used when none is given`() =
+        runTest(timeout = 5.seconds) {
+            val subject =
+                FileSecureStorage(
+                    file = File(folder.root, "store.json"),
+                    cipher = CountingCipher(),
+                    logger = DefaultPayabliLogger(LogCategory.CORE, sink),
+                )
+
+            subject.set("refresh", "secret-value".toCharArray())
+
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
         }
 
     /** A crash-safe write leaves no debris, so the directory does not fill with temp files. */

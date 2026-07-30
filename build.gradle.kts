@@ -26,6 +26,12 @@ sonar {
                 "**/*.otf",
             ).joinToString(","),
         )
+        // Coverage only, so these files still get issue detection. A `platform` package binds directly to an
+        // Android API with no JVM implementation, Keystore and `android.util.*`, so no unit test can reach a
+        // line of it and the instrumented tier is what covers it. Kept as a package rule rather than a list
+        // of files, so the boundary is something the code states rather than something this file remembers.
+        // See CLAUDE.md "Testing" for what belongs there.
+        property("sonar.coverage.exclusions", "**/platform/**")
     }
 }
 
