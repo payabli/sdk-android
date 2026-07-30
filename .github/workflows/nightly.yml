@@ -42,8 +42,11 @@ jobs:
   nightly:
     name: Unit + instrumented tests
     runs-on: ubuntu-latest
-    # A wedged emulator should fail rather than sit until the six-hour default ceiling.
-    timeout-minutes: 60
+    # Generous on purpose, and deliberately not the real bound. The step timeouts below do the work, so a
+    # wedge fails one step and the job carries on to report it. A tight job-level timeout would cancel the
+    # job instead, taking the `if: always()` Slack step with it, and the one-message-per-run contract would
+    # break in precisely the wedged-emulator case the timeout exists for.
+    timeout-minutes: 90
     env:
       # One place for the image coordinates, because the AVD cache key has to agree with the two emulator
       # steps below or the cache silently never hits.
@@ -91,6 +94,7 @@ jobs:
       - name: Unit tests and coverage
         id: unit
         continue-on-error: true
+        timeout-minutes: 25
         run: ./gradlew --continue
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
@@ -107,6 +111,7 @@ jobs:
       - name: Unit tests and coverage (card-present)
         id: unit_card_present
         continue-on-error: true
+        timeout-minutes: 15
         if: env.HAS_GPR_CREDENTIALS == 'true'
         env:
           GPR_USER: ${{ secrets.GPR_USER }}
@@ -137,6 +142,7 @@ jobs:
       # because this step exists to write the snapshot rather than to run anything.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 20
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -150,6 +156,8 @@ jobs:
       - name: Instrumented tests
         id: instrumented
         continue-on-error: true
+        # The wedge this guards against. A step timeout fails the step; the job survives to report it.
+        timeout-minutes: 25
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
