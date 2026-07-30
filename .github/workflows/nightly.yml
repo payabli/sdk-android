@@ -188,6 +188,10 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           UNIT_OUTCOME: ${{ steps.unit.outcome }}
           INSTRUMENTED_OUTCOME: ${{ steps.instrumented.outcome }}
+          # The gate below checks this, so the report has to as well. Without it a :taptopay failure that
+          # happens before any JUnit XML is written, during dependency resolution or compilation, left the
+          # other suites looking green while the run went red.
+          CARD_PRESENT_OUTCOME: ${{ steps.unit_card_present.outcome }}
         run: |
           if [ -z "$SLACK_WEBHOOK_URL" ]; then
             echo "::warning::SLACK_WEBHOOK_URL is not set, so no nightly report was posted."

@@ -174,17 +174,30 @@ def main() -> int:
     sha = os.environ.get("GITHUB_SHA", "")[:7]
     ref = os.environ.get("GITHUB_REF_NAME", "")
     run_url = f"{server}/{repo}/actions/runs/{run_id}" if run_id else f"{server}/{repo}/actions"
-    # Set by the workflow from the earlier steps' outcome, so a step that never ran is not read as a pass.
+    # Set by the workflow from the earlier steps' outcomes, so a step that never ran is not read as a pass.
     unit_step = os.environ.get("UNIT_OUTCOME", "unknown")
     inst_step = os.environ.get("INSTRUMENTED_OUTCOME", "unknown")
+    card_step = os.environ.get("CARD_PRESENT_OUTCOME", "skipped")
 
-    steps_bad = {"failure", "cancelled", "timed_out"}
-    red = bool(unit_failed or inst_failed) or unit_step in steps_bad or inst_step in steps_bad
-    # A green claim requires results to exist. Zero tests found means the run died before writing any,
-    # which is a redder signal than a failure, not a green one.
-    no_results = unit_total == 0 and inst_total == 0
-    if no_results:
-        red = True
+    # Only `success` is green for a required suite. Everything else, `skipped` included, is red.
+    #
+    # `skipped` mattered most and was the subtle one: neither required step has an intentional skip
+    # condition, so the only way either is skipped is that something before it failed. Treating it as
+    # benign meant a broken KVM or AVD step produced "Instrumented skipped" under a green headline while
+    # the run itself was red.
+    #
+    # The card-present step is the exception, because its skip is intentional: no credential, no run. So it
+    # is red on failure and green on a deliberate skip.
+    required_bad = unit_step != "success" or inst_step != "success"
+    card_bad = card_step not in {"success", "skipped"}
+
+    # A green claim also requires results to exist, per suite rather than in total. Checking the sum let a
+    # suite that wrote nothing hide behind another that did, and report "all 0 passed" as a pass, which is
+    # the exact regression this nightly exists to catch.
+    unit_missing = unit_step == "success" and unit_total == 0
+    inst_missing = inst_step == "success" and inst_total == 0
+
+    red = bool(unit_failed or inst_failed) or required_bad or card_bad or unit_missing or inst_missing
 
     # Named by the workflow rather than inferred from the repo. Both platform SDKs can report into the same
     # channel, and a copy of this script that guesses would eventually guess wrong.
@@ -197,20 +210,26 @@ def main() -> int:
     # of ticket slug, which pushes the thing you actually need to read off the first line.
     lines.append(f"{icon} *{platform} · {verdict}*")
 
-    if no_results:
-        lines.append("*No test results were written at all* - the run died before any suite reported.")
+    def suite_label(failed: int, total: int, outcome: str, missing: bool) -> str:
+        if outcome != "success":
+            # Names the step state rather than a count, because a count from a step that did not finish
+            # describes whatever it managed before dying.
+            return f"step {outcome}" + (f", {failed} failed so far" if failed else "")
+        if missing:
+            return "no results written"
+        if failed:
+            return f"{failed} failed / {total} tests"
+        return f"all {total} passed"
 
-    unit_label = f"{unit_failed} failed / {unit_total} tests" if unit_failed else f"all {unit_total} passed"
-    if unit_step in steps_bad and not unit_failed:
-        unit_label += f" (step {unit_step})"
+    unit_label = suite_label(unit_failed, unit_total, unit_step, unit_missing)
     lines.append(f"*Unit* {unit_label}" + (f", {unit_skipped} skipped" if unit_skipped else ""))
 
-    inst_label = f"{inst_failed} failed / {inst_total} tests" if inst_failed else f"all {inst_total} passed"
-    if inst_step in steps_bad and not inst_failed:
-        inst_label += f" (step {inst_step})"
-    elif inst_step == "skipped":
-        inst_label = "skipped"
+    inst_label = suite_label(inst_failed, inst_total, inst_step, inst_missing)
     lines.append(f"*Instrumented* {inst_label}")
+
+    # Only worth a line when it is not the ordinary intentional skip.
+    if card_step != "skipped":
+        lines.append(f"*Card-present unit* step {card_step}")
 
     coverage = line_coverage()
     if coverage:
