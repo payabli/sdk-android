@@ -198,10 +198,19 @@ def probable_culprit(failure: Failure) -> str:
 
 
 def main() -> int:
-    unit_patterns = ["*/build/test-results/test*UnitTest/TEST-*.xml"]
+    # Card-present is excluded from the unit patterns because it is a separate step with a separate outcome.
+    # Sharing one glob let :taptopay results make the unit total non-zero when the unit step had written
+    # nothing, which defeated the missing-results guard, and left no way to notice a card-present step that
+    # succeeded while writing nothing.
+    unit_patterns = [
+        f"{module}/build/test-results/test*UnitTest/TEST-*.xml"
+        for module in ("core", "payin", "telemetry", "example", "payabli-android")
+    ]
+    card_patterns = ["taptopay/build/test-results/test*UnitTest/TEST-*.xml"]
     android_patterns = ["*/build/outputs/androidTest-results/connected/**/TEST-*.xml"]
 
     unit_total, unit_failed, unit_skipped, unit_details = parse_results(unit_patterns)
+    card_total, card_failed, card_skipped, card_details = parse_results(card_patterns)
     inst_total, inst_failed, inst_skipped, inst_details = parse_results(android_patterns)
 
     repo = os.environ.get("GITHUB_REPOSITORY", "payabli/sdk-android")
@@ -232,8 +241,17 @@ def main() -> int:
     # the exact regression this nightly exists to catch.
     unit_missing = unit_step == "success" and unit_total == 0
     inst_missing = inst_step == "success" and inst_total == 0
+    # A card-present step that ran and wrote nothing is as suspect as either of the required suites.
+    card_missing = card_step == "success" and card_total == 0
 
-    red = bool(unit_failed or inst_failed) or required_bad or card_bad or unit_missing or inst_missing
+    red = (
+        bool(unit_failed or inst_failed or card_failed)
+        or required_bad
+        or card_bad
+        or unit_missing
+        or inst_missing
+        or card_missing
+    )
 
     # Named by the workflow rather than inferred from the repo. Both platform SDKs can report into the same
     # channel, and a copy of this script that guesses would eventually guess wrong.
@@ -275,7 +293,8 @@ def main() -> int:
 
     # Only worth a line when it is not the ordinary intentional skip.
     if card_step != "skipped":
-        lines.append(f"*Card-present unit* step {card_step}")
+        card_label = suite_label(card_failed, card_skipped, card_total, card_step, card_missing)
+        lines.append(f"*Card-present unit* {card_label}")
 
     # Branch first, then line. Branch is the stricter number and the one that moves when a test stops
     # exercising a path, so it leads; line sits under it for the easier comparison against history.
@@ -289,7 +308,7 @@ def main() -> int:
 
     blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}]
 
-    all_failures = unit_details + inst_details
+    all_failures = unit_details + card_details + inst_details
     if all_failures:
         # One rendered entry per failure, so trimming can drop whole failures rather than cut through one.
         entries: list[str] = []
@@ -308,11 +327,14 @@ def main() -> int:
         # the list could be cut mid-failure while the omitted count was zero and the message therefore
         # claimed to be complete. Drop whole entries until the text and its notice fit, and always say how
         # many are missing, counting both limits together.
+        # Drops to zero entries if it has to. Stopping at one left the contract broken in the case it was
+        # meant to cover: a single entry longer than the limit, from a parameterized test name or a long
+        # commit subject, was sliced mid-entry with no notice. Header plus notice is always short enough.
         while True:
             hidden = len(all_failures) - len(entries)
             notice = f"\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""
             text = f"*Failures* ({len(all_failures)})" + "".join(entries) + notice
-            if len(text) <= SLACK_BLOCK_LIMIT or len(entries) <= 1:
+            if len(text) <= SLACK_BLOCK_LIMIT or not entries:
                 break
             entries.pop()
 
