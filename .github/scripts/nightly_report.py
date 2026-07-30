@@ -97,11 +97,15 @@ def parse_results(patterns: list[str]) -> tuple[int, int, int, list[Failure]]:
     return tests, failures, skipped, details
 
 
-def line_coverage() -> list[tuple[str, float | None]]:
-    """Line coverage per module, from the JaCoCo XML the coverage task writes.
+def coverage(counter_type: str) -> list[tuple[str, float | None]]:
+    """Coverage of one JaCoCo counter type per module, from the XML the coverage task writes.
 
-    A module with no classes yet reports None rather than being left out. Omitting it silently would read
-    as "core is the only module we measure", when the truth is that the others have nothing to measure.
+    `counter_type` is a JaCoCo counter name: BRANCH and LINE are the two reported here. Branch coverage is
+    the stricter of the two, since a fully executed line with an untaken branch counts as covered by line
+    and uncovered by branch.
+
+    A module with no classes yet reports None rather than being left out. Omitting it silently would read as
+    "core is the only module we measure", when the truth is the others have nothing to measure.
     """
     out: list[tuple[str, float | None]] = []
     for path in sorted(REPO_ROOT.glob("*/build/reports/coverage/test/debug/report.xml")):
@@ -114,7 +118,7 @@ def line_coverage() -> list[tuple[str, float | None]]:
         # and summing those double-counts. An empty module has no such counters at all.
         percent: float | None = None
         for counter in root.findall("counter"):
-            if counter.get("type") != "LINE":
+            if counter.get("type") != counter_type:
                 continue
             missed, covered = _int(counter, "missed"), _int(counter, "covered")
             total = missed + covered
@@ -251,12 +255,15 @@ def main() -> int:
     if card_step != "skipped":
         lines.append(f"*Card-present unit* step {card_step}")
 
-    coverage = line_coverage()
-    if coverage:
-        rendered = [f"{m} {p:.1f}%" if p is not None else f"{m} no classes yet" for m, p in coverage]
-        lines.append("*Coverage (line)* " + " · ".join(rendered))
-    else:
-        lines.append("*Coverage (line)* no report found")
+    # Branch first, then line. Branch is the stricter number and the one that moves when a test stops
+    # exercising a path, so it leads; line sits under it for the easier comparison against history.
+    for label, counter_type in (("branch", "BRANCH"), ("line", "LINE")):
+        measured = coverage(counter_type)
+        if measured:
+            rendered = [f"{m} {p:.1f}%" if p is not None else f"{m} no classes yet" for m, p in measured]
+            lines.append(f"*Coverage ({label})* " + " · ".join(rendered))
+        else:
+            lines.append(f"*Coverage ({label})* no report found")
 
     blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}]
 
