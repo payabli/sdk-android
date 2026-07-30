@@ -102,7 +102,20 @@ internal class FileSecureStorage(
         return try {
             Json.decodeFromString(SERIALIZER, text)
         } catch (e: IllegalArgumentException) {
-            logger.warn(e) { "secure storage file was unreadable and is being reset" }
+            // Persisted, not only returned. Returning an empty map alone left the corrupt file in place, so a
+            // read-only caller reparsed it and warned again on every single get, and the message claimed a
+            // reset that had not happened.
+            //
+            // Safe to write from inside read(): write() neither calls read() nor takes the mutex, and Mutex is
+            // not reentrant, so doing this while the lock is held only works because of that second point.
+            val persisted = runCatching { write(emptyMap()) }.isSuccess
+            if (persisted) {
+                logger.warn(e) { "secure storage file was unreadable and has been reset" }
+            } else {
+                // Kept honest rather than tidy: if the reset could not be written, saying it was would be the
+                // same false claim in a different place. The read still succeeds as empty.
+                logger.warn(e) { "secure storage file was unreadable and the reset could not be persisted" }
+            }
             emptyMap()
         }
     }

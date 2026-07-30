@@ -213,6 +213,31 @@ class FileSecureStorageTest {
             )
         }
 
+    /**
+     * The reset must reach disk, not only the return value.
+     *
+     * Two `get` calls with no write between them. Without persisting, the corrupt file survives, so the second
+     * `get` reparses it and warns again, and the log claim that the file "has been reset" is false. Asserting
+     * the warning fired exactly once is what distinguishes a persisted reset from a per-call one.
+     */
+    @Test
+    fun `a corrupt file is reset on disk, not only in memory`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            file.writeText("{ this is not json")
+
+            val subject = storage(file)
+            assertNull(subject.get("refresh"))
+            assertNull(subject.get("refresh"))
+
+            assertEquals(
+                "the reset should be persisted, so the warning fires once rather than per read",
+                1,
+                sink.records.count { it.message.contains("unreadable") },
+            )
+            assertEquals("the corrupt file should have been replaced with an empty store", "{}", file.readText())
+        }
+
     /** A crash-safe write leaves no debris, so the directory does not fill with temp files. */
     @Test
     fun `no temporary files are left behind`() =
