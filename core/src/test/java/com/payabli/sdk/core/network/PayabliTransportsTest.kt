@@ -194,20 +194,22 @@ class PayabliTransportsTest {
         }
 
     /**
-     * The documented layering, with a provider slower than an attempt would previously tolerate.
+     * The documented layering: a slow refresh under `Retry` still costs one provider call and one replay.
      *
-     * The outer attempt budget must contain the refresh. When it did not, the timeout surfaced as a retryable
-     * NETWORK_ERROR, the next attempt started with the same rejected token, and the provider was invoked once
-     * per attempt. This asserts one provider call and one replay for the whole operation.
+     * This began as a regression test for a per-attempt wall-clock budget that cancelled a refresh and then
+     * repeated it once per attempt. That budget is gone, and with `totalTimeoutMillis` unset there is now no
+     * deadline in `Retry` at all, so what remains under test is the composition rather than the old defect:
+     * `Retry` must not turn one slow refresh into several. Kept because that property is still worth pinning,
+     * relabelled because claiming to cover a removed mechanism is worse than covering nothing.
      *
-     * On a real dispatcher: Retry's per-attempt budget is a wall-clock deadline, and the socket work is real.
+     * On a real dispatcher because the socket work is real, not because of any deadline being measured.
      */
     @Test
     fun `Retry around the authenticated transport does not preempt a slow refresh`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 val calls = AtomicInteger()
-                // Slower than a token mint should be, and well inside the attempt budget.
+                // Slower than a token mint should be, which is the point: nothing above it may cut it short.
                 val slowProvider =
                     config {
                         Thread.sleep(600)

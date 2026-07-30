@@ -511,8 +511,9 @@ class AuthenticatedTransportTest {
      * `RETRYABLE_CODES` on purpose, deferring it to "a different mechanism", so a terminal 401 escaping
      * this class has to stop at `Retry` rather than be replayed three more times.
      *
-     * On a real dispatcher: `Retry`'s per-attempt `withTimeout` would expire instantly against virtual
-     * time while the socket work is still outstanding.
+     * On a real dispatcher because the socket work is real: `runTest`'s virtual clock advances the moment
+     * the scheduler runs dry, so a bound taken against it would elapse while the call is still outstanding.
+     * Not because of any deadline inside `Retry`, which has none per attempt.
      */
     @Test
     fun `a terminal 401 stops at the retry layer instead of being replayed`() =
