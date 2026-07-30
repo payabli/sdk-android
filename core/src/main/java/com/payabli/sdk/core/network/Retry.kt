@@ -66,7 +66,7 @@ public object Retry {
             val remaining = total?.minus(startedAt.elapsedNow())
             if (remaining != null && remaining <= Duration.ZERO) {
                 currentCoroutineContext().ensureActive()
-                throw budgetExhausted(logger, route, policy)
+                throw budgetExhausted(logger, route, policy, PHASE_BEFORE_ATTEMPT)
             }
             val outcome =
                 try {
@@ -86,7 +86,7 @@ public object Retry {
                 // Cancellation can land between the null and this throw with nothing suspending in between,
                 // and a cancelled caller must not be told its operation timed out.
                 currentCoroutineContext().ensureActive()
-                throw budgetExhausted(logger, route, policy)
+                throw budgetExhausted(logger, route, policy, PHASE_IN_ATTEMPT)
             }
             return outcome.getOrThrow()
         }
@@ -97,11 +97,15 @@ public object Retry {
         logger: PayabliLogger,
         route: String?,
         policy: RetryPolicy,
+        phase: String,
     ): PayabliException {
         logger.warn(
             routeField(route),
+            // Which site. The budget can run out before an attempt starts or during one, and an incident
+            // reads differently either way. This said "mid-attempt" from both, which was wrong from one.
+            LogField.safe("phase", phase),
             LogField.safe("totalTimeoutMs", policy.totalTimeoutMillis ?: -1L),
-        ) { "total budget exhausted mid-attempt; not retrying" }
+        ) { "total budget exhausted; not retrying" }
         return PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_TOTAL_TIMEOUT)
     }
 
@@ -168,4 +172,10 @@ public object Retry {
         route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", null)
 
     private const val REASON_TOTAL_TIMEOUT = "Operation exceeded its total timeout"
+
+    /** No attempt was in flight: the remainder was gone before one could start. */
+    private const val PHASE_BEFORE_ATTEMPT = "before-attempt"
+
+    /** An attempt was cut short by the deadline. */
+    private const val PHASE_IN_ATTEMPT = "in-attempt"
 }

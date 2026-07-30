@@ -440,6 +440,10 @@ internal class PayabliService private constructor(
          * caller can choose an empty one. Returns the interface, so nothing
          * accumulates a dependency on the concrete class.
          *
+         * The socket-level connect and read timeouts are not parameters. No caller has ever overridden them,
+         * production or test, so they were flexibility nobody used and one more way to get a call wrong; the
+         * whole-call bound is the one worth varying. Add them back only with a caller that needs them.
+         *
          * [auth] is what the chain needs, not what this transport interprets: it reaches
          * `BearerDecoration` and nothing else here reads it. Passing the holder rather than a token is what
          * lets the bearer be read per request, so a rotation needs no cache to be invalidated.
@@ -448,8 +452,6 @@ internal class PayabliService private constructor(
             baseUrl: String,
             auth: PayabliAuth,
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
-            connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MILLIS,
-            readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MILLIS,
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
@@ -458,8 +460,8 @@ internal class PayabliService private constructor(
                 baseUrl,
                 PayabliRequestDecorations.chainFor(auth),
                 logger,
-                connectTimeoutMillis,
-                readTimeoutMillis,
+                DEFAULT_CONNECT_TIMEOUT_MILLIS,
+                DEFAULT_READ_TIMEOUT_MILLIS,
                 callTimeout,
                 dispatcher,
                 maxResponseBytes,
