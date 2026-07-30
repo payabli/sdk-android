@@ -45,6 +45,18 @@ class Failure:
         return self.suite.rsplit(".", 1)[-1]
 
 
+def mrkdwn(text: str) -> str:
+    """Escape text that came from a test result before it reaches a Slack block.
+
+    Two reasons, and the second is the serious one. Slack mrkdwn treats `&`, `<` and `>` specially, and a
+    JUnit ComparisonFailure is written as `expected:<a> but was:<b>`, so ordinary assertion output would
+    misrender. And Slack control sequences are written the same way, so an assertion message or a test name
+    containing `<!channel>` would broadcast to everyone in the channel. Test data is untrusted input here,
+    even when we wrote the test.
+    """
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _int(element: ET.Element, name: str) -> int:
     try:
         return int(element.get(name, "0"))
@@ -190,7 +202,7 @@ def main() -> int:
     android_patterns = ["*/build/outputs/androidTest-results/connected/**/TEST-*.xml"]
 
     unit_total, unit_failed, unit_skipped, unit_details = parse_results(unit_patterns)
-    inst_total, inst_failed, _, inst_details = parse_results(android_patterns)
+    inst_total, inst_failed, inst_skipped, inst_details = parse_results(android_patterns)
 
     repo = os.environ.get("GITHUB_REPOSITORY", "payabli/sdk-android")
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
@@ -234,21 +246,31 @@ def main() -> int:
     # of ticket slug, which pushes the thing you actually need to read off the first line.
     lines.append(f"{icon} *{platform} · {verdict}*")
 
-    def suite_label(failed: int, total: int, outcome: str, missing: bool) -> str:
+    def suite_label(failed: int, skipped: int, total: int, outcome: str, missing: bool) -> str:
+        """A suite line that never overstates what passed.
+
+        JUnit's `tests` attribute counts skipped cases: measured, an ignored test and a failing one produce
+        `tests="2" skipped="1" failures="1"`. So passed has to be derived, or a suite with one pass and one
+        skip reads as "all 2 passed" and then contradicts itself by appending the skip count.
+        """
         if outcome != "success":
             # Names the step state rather than a count, because a count from a step that did not finish
             # describes whatever it managed before dying.
             return f"step {outcome}" + (f", {failed} failed so far" if failed else "")
         if missing:
             return "no results written"
+        passed = max(total - failed - skipped, 0)
+        parts = []
         if failed:
-            return f"{failed} failed / {total} tests"
-        return f"all {total} passed"
+            parts.append(f"{failed} failed")
+        parts.append(f"{passed} passed" if failed or skipped else f"all {passed} passed")
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        return ", ".join(parts) + (f" / {total} tests" if failed or skipped else "")
 
-    unit_label = suite_label(unit_failed, unit_total, unit_step, unit_missing)
-    lines.append(f"*Unit* {unit_label}" + (f", {unit_skipped} skipped" if unit_skipped else ""))
-
-    inst_label = suite_label(inst_failed, inst_total, inst_step, inst_missing)
+    unit_label = suite_label(unit_failed, unit_skipped, unit_total, unit_step, unit_missing)
+    inst_label = suite_label(inst_failed, inst_skipped, inst_total, inst_step, inst_missing)
+    lines.append(f"*Unit* {unit_label}")
     lines.append(f"*Instrumented* {inst_label}")
 
     # Only worth a line when it is not the ordinary intentional skip.
@@ -272,10 +294,13 @@ def main() -> int:
         # One rendered entry per failure, so trimming can drop whole failures rather than cut through one.
         entries: list[str] = []
         for failure in all_failures[:MAX_LISTED_FAILURES]:
-            entry = f"\n• `{failure.simple_class} > {failure.case}`\n  {failure.detail}"
+            # Every field here originates in a test result, so all of it is escaped. The culprit line is
+            # built from git output, which carries commit subjects and author names, and is escaped too.
+            name = mrkdwn(f"{failure.simple_class} > {failure.case}")
+            entry = f"\n• `{name}`\n  {mrkdwn(failure.detail)}"
             culprit = probable_culprit(failure)
             if culprit:
-                entry += f"\n  probable cause: {culprit}"
+                entry += f"\n  probable cause: {mrkdwn(culprit)}"
             entries.append(entry)
 
         # Two independent limits, and the character one used to be applied silently by slicing the finished
