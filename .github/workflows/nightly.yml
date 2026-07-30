@@ -21,8 +21,10 @@ name: Nightly
 on:
   workflow_dispatch:
   schedule:
-    # 08:00 UTC daily. Cron is always UTC here; GitHub applies no repository time zone.
-    - cron: '0 8 * * *'
+    # 03:00 Pacific, expressed as 10:00 UTC. GitHub cron is UTC only and has no time zone setting, so this
+    # is 3am during PDT and 2am during PST: it shifts by an hour twice a year rather than following the
+    # clock. Change the hour to 11 if the winter time matters more than the summer one.
+    - cron: '0 10 * * *'
 
 concurrency:
   # A manual dispatch landing during a nightly must not boot a second emulator on the same ref.
@@ -54,6 +56,9 @@ jobs:
       EMULATOR_ARCH: x86_64
       GPR_USER: ${{ secrets.GPR_USER }}
       GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+      # Leads the Slack report. Stated rather than inferred, because both platform SDKs can post into the
+      # same channel and a script that guesses the platform would eventually guess wrong.
+      PLATFORM: Android
     steps:
       - uses: actions/checkout@v7
 

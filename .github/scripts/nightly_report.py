@@ -186,12 +186,16 @@ def main() -> int:
     if no_results:
         red = True
 
+    # Named by the workflow rather than inferred from the repo. Both platform SDKs can report into the same
+    # channel, and a copy of this script that guesses would eventually guess wrong.
+    platform = os.environ.get("PLATFORM", "").strip() or repo.rsplit("/", 1)[-1]
+
     lines: list[str] = []
-    if red:
-        header = ":red_circle: *Nightly failed*"
-    else:
-        header = ":white_check_mark: *Nightly green*"
-    lines.append(f"{header} · `{ref}` @ `{sha}`")
+    verdict = "Nightly failed" if red else "Nightly green"
+    icon = ":red_circle:" if red else ":white_check_mark:"
+    # The ref and sha live in the context line at the bottom, not here. A branch name can be 60 characters
+    # of ticket slug, which pushes the thing you actually need to read off the first line.
+    lines.append(f"{icon} *{platform} · {verdict}*")
 
     if no_results:
         lines.append("*No test results were written at all* - the run died before any suite reported.")
@@ -232,14 +236,15 @@ def main() -> int:
         text = "\n".join(detail_lines)
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text[:2900]}})
 
-    blocks.append(
-        {
-            "type": "context",
-            "elements": [{"type": "mrkdwn", "text": f"<{run_url}|Open the run> for logs and report artifacts"}],
-        }
-    )
+    # Traceability, kept small and out of the headline. The sha is a link so it stays one short token.
+    trail = f"<{run_url}|Open the run>"
+    if sha:
+        trail += f" · <{server}/{repo}/commit/{sha}|`{sha}`>"
+    if ref:
+        trail += f" on `{ref}`"
+    blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": trail}]})
 
-    fallback = f"{'Nightly failed' if red else 'Nightly green'}: {unit_label} unit, {inst_label} instrumented"
+    fallback = f"{platform} {verdict.lower()}: {unit_label} unit, {inst_label} instrumented"
     json.dump({"text": fallback, "blocks": blocks}, sys.stdout)
     return 0
 
