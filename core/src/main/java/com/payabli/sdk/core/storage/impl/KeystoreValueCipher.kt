@@ -81,19 +81,25 @@ internal class KeystoreValueCipher(
      */
     private fun asFailure(cause: GeneralSecurityException): SecureStorageException =
         when {
-            // AEADBadTagException included on purpose. It arrives when the bytes cannot be authenticated
-            // under the current key, which is what a replaced or rotated key looks like from the read side,
-            // and the caller's required response is identical to invalidation: the value is gone, re-obtain it.
-            cause is AEADBadTagException ||
-                cause is UnrecoverableKeyException ||
-                cause::class.java.name == KEY_INVALIDATED -> {
-                // Regenerate now so the next write succeeds. The old bytes stay unreadable either way, and
-                // leaving a dead alias in place would fail every future call for the same reason.
-                logger.warn(LogField.safe("keyAlias", keyAlias)) { "storage key invalidated, regenerating" }
+            // The key itself cannot be used, so the alias is dead and has to go. Without deleting it,
+            // keyForWriting would keep failing on the same broken entry and no future write could succeed.
+            cause is UnrecoverableKeyException || cause::class.java.name == KEY_INVALIDATED -> {
+                logger.warn(LogField.safe("keyAlias", keyAlias)) { "storage key unusable, discarding alias" }
+                // No eager createKey: keyForWriting already creates one when the alias is absent, so
+                // generating a key on a read path would buy nothing.
                 runCatching { keyStore().deleteEntry(keyAlias) }
-                runCatching { createKey() }
                 SecureStorageException.KeyInvalidated(cause)
             }
+
+            // The bytes could not be authenticated under a key that is otherwise fine. Reported as
+            // invalidation, because this value is unrecoverable and the caller must re-obtain it, but the
+            // alias is deliberately left alone.
+            //
+            // Deleting it here was a data-loss bug. Every value in this store shares one alias, and a tag
+            // failure can mean a single truncated or corrupted blob rather than a bad key, so deleting on
+            // this path made one damaged entry destroy every other entry. During a genuine rotation it
+            // deleted the replacement key. Reporting and key lifecycle are separate concerns.
+            cause is AEADBadTagException -> SecureStorageException.KeyInvalidated(cause)
 
             else -> SecureStorageException.CryptoUnavailable(cause)
         }

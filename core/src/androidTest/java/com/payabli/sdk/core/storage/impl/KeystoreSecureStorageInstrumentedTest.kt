@@ -16,6 +16,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.security.KeyStore
 import kotlin.time.Duration.Companion.seconds
@@ -75,6 +78,48 @@ class KeystoreSecureStorageInstrumentedTest {
             assertTrue(
                 "expected KeyInvalidated for a replaced key, got $thrown",
                 thrown is SecureStorageException.KeyInvalidated,
+            )
+        }
+
+    /**
+     * One damaged entry must not take the others with it.
+     *
+     * Every value in this store shares a single key alias, so a tag failure that deletes the alias destroys
+     * everything, not just the entry that failed. A truncated or corrupted blob is a realistic cause of a tag
+     * failure and says nothing about the key, which is why reporting and key lifecycle are separate concerns.
+     *
+     * The corruption is applied to the file rather than through the API, because there is no legitimate way to
+     * produce a bad blob: it models a partial write, a bit flip or a hand edit.
+     */
+    @Test
+    fun aCorruptBlobDoesNotDestroyTheOtherEntries() =
+        runTest(timeout = 30.seconds) {
+            val file = File(directory, "store.json")
+            val subject = storage()
+            subject.set("damaged", "first-value")
+            subject.set("intact", "second-value")
+
+            // Flip the payload of one entry only, leaving its base64 valid so it reaches the tag check.
+            val map = Json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), file.readText())
+            val damaged = map.getValue("damaged")
+            val flipped = damaged.dropLast(4) + if (damaged.endsWith("AAAA")) "BBBB" else "AAAA"
+            file.writeText(
+                Json.encodeToString(
+                    MapSerializer(String.serializer(), String.serializer()),
+                    map + ("damaged" to flipped),
+                ),
+            )
+
+            val thrown = runCatching { subject.get("damaged") }.exceptionOrNull()
+            assertTrue(
+                "a corrupt blob should report invalidation, got $thrown",
+                thrown is SecureStorageException.KeyInvalidated,
+            )
+
+            assertEquals(
+                "the other entry was destroyed by a failure that had nothing to do with it",
+                "second-value",
+                subject.get("intact"),
             )
         }
 
