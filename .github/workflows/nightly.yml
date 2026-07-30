@@ -151,15 +151,25 @@ jobs:
       #
       # Note what is absent: no -no-snapshot-save, and disable-animations left false. Both are deliberate,
       # because this step exists to write the snapshot rather than to run anything.
-      # Pinned to a commit, not to @v2, and the reason is the Slack secret rather than reproducibility.
-      # This action runs before the reporting step and can write to the checkout or to runner state, so a
-      # retargeted mutable tag could alter nightly_report.py and read the webhook when that step executes.
-      # Step-scoping a secret does not isolate it from code that ran earlier in the same job. The trailing
-      # comment is the human-readable version; bump both together and read the diff when doing so.
+      # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin.
+      #
+      # The threat is real: this action runs before the reporting step, so it could write to the checkout or
+      # to runner state and read the webhook when that step executes. Step-scoping a secret does not isolate
+      # it from code that ran earlier in the same job.
+      #
+      # It is not worth a pin here. This repository has no Dependabot or Renovate configuration, so a pinned
+      # SHA would never be bumped, and this action is the one most coupled to Android tooling churn, with two
+      # to six releases a year. The trade is a low-probability tag compromise against a nightly that
+      # silently stops receiving upstream fixes. What is exposed is a webhook that can post to one channel
+      # and a read:packages token, so the blast radius does not justify that.
+      #
+      # The fix that would remove the exposure without brittleness is structural: report from a separate job
+      # that needs this one and downloads the artifact, so the webhook never exists in a job that runs a
+      # third-party action. Worth doing on its own, not as a version-pin side effect.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -174,7 +184,7 @@ jobs:
         continue-on-error: true
         # The wedge this guards against. A step timeout fails the step; the job survives to report it.
         timeout-minutes: 20
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
