@@ -1,11 +1,13 @@
 package com.payabli.sdk.core.network.impl
 
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.zip.GZIPOutputStream
 
 private const val CRLF = "\r\n"
 private const val HTTP_OK = 200
@@ -27,7 +29,14 @@ private const val SHUTDOWN_TIMEOUT_MILLIS = 2_000L
  * Chunked encoding fails loudly rather than reading an empty body and passing.
  */
 internal class LoopbackServer : AutoCloseable {
-    private val socket = ServerSocket(EPHEMERAL_PORT, DEFAULT_BACKLOG, InetAddress.getLoopbackAddress())
+    /**
+     * Pinned to the IPv4 loopback rather than `getLoopbackAddress()`, which lets the platform pick the
+     * family: this Android emulator answers `::1` where the JVM answers `127.0.0.1`. That difference is not
+     * cosmetic. An IPv6 literal is not a URL authority unbracketed, so the base URL parses to no host and
+     * the transport rejects it as invalid configuration, and the bracketed form then has to be matched by a
+     * cleartext exemption keyed on the literal. Choosing the family here keeps both problems from existing.
+     */
+    private val socket = ServerSocket(EPHEMERAL_PORT, DEFAULT_BACKLOG, InetAddress.getByName("127.0.0.1"))
     private val requests = CopyOnWriteArrayList<Recorded>()
 
     @Volatile
@@ -47,6 +56,19 @@ internal class LoopbackServer : AutoCloseable {
     /** Non-zero means the body is written in chunks with this gap between them. */
     @Volatile
     private var dribbleGapMillis: Long = 0
+
+    /** Set means the body is deflated and labelled, so the client has to undo it. */
+    @Volatile
+    private var compressResponses = false
+
+    /**
+     * Body bytes of the last response as they went onto the wire, so a test can show compression happened
+     * rather than assume it. Asserting only on the decoded body cannot: an uncompressed round trip produces
+     * the same result, so the test would still pass with compression switched off.
+     */
+    @Volatile
+    var lastResponseBodyBytes: Int = -1
+        private set
 
     @Volatile
     private var failure: Throwable? = null
@@ -123,6 +145,19 @@ internal class LoopbackServer : AutoCloseable {
         return this
     }
 
+    /**
+     * Deflates the body and labels it `Content-Encoding: gzip`, with `Content-Length` counting the
+     * compressed bytes as a real server would.
+     *
+     * Only meaningful in an instrumented test. The transport leaves `Accept-Encoding` unset so the platform
+     * can negotiate and decompress on its own; Android's implementation does that, the JVM's does not, so on
+     * the JVM this delivers compressed bytes the caller never asked for and would have to undo by hand.
+     */
+    fun gzipBody(): LoopbackServer {
+        compressResponses = true
+        return this
+    }
+
     /** By request if a chooser is set, otherwise by position. */
     private fun responseFor(
         index: Int,
@@ -155,15 +190,17 @@ internal class LoopbackServer : AutoCloseable {
                     // Recorded before stalling, so a test can assert the request arrived even when the
                     // client gave up waiting for its response.
                     if (stallMillis > 0) Thread.sleep(stallMillis)
+                    val encoded = answer.encode(compressResponses)
+                    lastResponseBodyBytes = encoded.bodyBytes
                     connection.getOutputStream().apply {
                         if (dribbleGapMillis > 0) {
-                            for (byte in answer.encode()) {
+                            for (byte in encoded.bytes) {
                                 write(byte.toInt())
                                 flush()
                                 Thread.sleep(dribbleGapMillis)
                             }
                         } else {
-                            write(answer.encode())
+                            write(encoded.bytes)
                             flush()
                         }
                     }
@@ -228,17 +265,33 @@ internal class LoopbackServer : AutoCloseable {
         private val body: ByteArray,
         private val headers: Map<String, String> = emptyMap(),
     ) {
-        fun encode(): ByteArray =
-            buildString {
-                // The reason phrase is not read back by any test, so one neutral token serves every code.
-                append("HTTP/1.1 ").append(statusCode).append(" Status").append(CRLF)
-                headers.forEach { (name, value) -> append(name).append(": ").append(value).append(CRLF) }
-                append("Content-Length: ").append(body.size).append(CRLF)
-                // Closed after every response, so the client must not return this socket to its pool.
-                append("Connection: close").append(CRLF).append(CRLF)
-            }.toByteArray(Charsets.ISO_8859_1) + body
+        /** The wire bytes, paired with the body's own length so the caller can record what it sent. */
+        class Encoded(
+            val bytes: ByteArray,
+            val bodyBytes: Int,
+        )
+
+        fun encode(compress: Boolean): Encoded {
+            val payload = if (compress) gzip(body) else body
+            val head =
+                buildString {
+                    // The reason phrase is not read back by any test, so one neutral token serves every code.
+                    append("HTTP/1.1 ").append(statusCode).append(" Status").append(CRLF)
+                    headers.forEach { (name, value) -> append(name).append(": ").append(value).append(CRLF) }
+                    if (compress) append("Content-Encoding: gzip").append(CRLF)
+                    // The compressed length, as a real server sends: a client that decompresses transparently
+                    // must not trust this as the size of what it hands back.
+                    append("Content-Length: ").append(payload.size).append(CRLF)
+                    // Closed after every response, so the client must not return this socket to its pool.
+                    append("Connection: close").append(CRLF).append(CRLF)
+                }.toByteArray(Charsets.ISO_8859_1)
+            return Encoded(head + payload, payload.size)
+        }
     }
 }
+
+private fun gzip(bytes: ByteArray): ByteArray =
+    ByteArrayOutputStream().also { sink -> GZIPOutputStream(sink).use { it.write(bytes) } }.toByteArray()
 
 private fun Map<String, List<String>>.contentLength(): Int =
     entries

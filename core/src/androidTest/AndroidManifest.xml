@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Test APK only. This manifest is never merged into a consumer, so the library manifest stays empty and
+  the host-declares-INTERNET position is unaffected: an app embedding :core still declares its own
+  permission. The loopback harness is a real socket, so the test process genuinely needs INTERNET.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>
