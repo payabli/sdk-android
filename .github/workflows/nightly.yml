@@ -83,10 +83,15 @@ jobs:
       #
       # continue-on-error throughout, so a failure still reaches Slack with its detail instead of aborting
       # the job at the first red suite. The final step turns any failure back into a red run.
+      # --continue is load-bearing, not tidiness. `continue-on-error` is a GitHub step setting and does
+      # nothing inside a Gradle invocation: without it Gradle abandons the task graph at the first failure,
+      # so a broken :core would stop :payin, :telemetry and :example from running at all and the report
+      # would describe part of the suite as though it were the whole of it.
       - name: Unit tests and coverage
         id: unit
         continue-on-error: true
-        run: ./gradlew :core:createDebugUnitTestCoverageReport
+        run: ./gradlew --continue
+          :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
           :example:test
