@@ -95,9 +95,13 @@ def parse_results(patterns: list[str]) -> tuple[int, int, int, list[Failure]]:
     return tests, failures, skipped, details
 
 
-def line_coverage() -> list[tuple[str, float]]:
-    """Line coverage per module, from the JaCoCo XML the coverage task writes."""
-    out: list[tuple[str, float]] = []
+def line_coverage() -> list[tuple[str, float | None]]:
+    """Line coverage per module, from the JaCoCo XML the coverage task writes.
+
+    A module with no classes yet reports None rather than being left out. Omitting it silently would read
+    as "core is the only module we measure", when the truth is that the others have nothing to measure.
+    """
+    out: list[tuple[str, float | None]] = []
     for path in sorted(REPO_ROOT.glob("*/build/reports/coverage/test/debug/report.xml")):
         module = path.relative_to(REPO_ROOT).parts[0]
         try:
@@ -105,14 +109,16 @@ def line_coverage() -> list[tuple[str, float]]:
         except ET.ParseError:
             continue
         # Only counters that are direct children of <report>. Nested ones are per-package and per-class,
-        # and summing those double-counts.
+        # and summing those double-counts. An empty module has no such counters at all.
+        percent: float | None = None
         for counter in root.findall("counter"):
             if counter.get("type") != "LINE":
                 continue
             missed, covered = _int(counter, "missed"), _int(counter, "covered")
             total = missed + covered
             if total:
-                out.append((module, 100.0 * covered / total))
+                percent = 100.0 * covered / total
+        out.append((module, percent))
     return out
 
 
@@ -204,7 +210,8 @@ def main() -> int:
 
     coverage = line_coverage()
     if coverage:
-        lines.append("*Coverage (line)* " + " · ".join(f"{m} {p:.1f}%" for m, p in coverage))
+        rendered = [f"{m} {p:.1f}%" if p is not None else f"{m} no classes yet" for m, p in coverage]
+        lines.append("*Coverage (line)* " + " · ".join(rendered))
     else:
         lines.append("*Coverage (line)* no report found")
 
