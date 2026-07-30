@@ -49,10 +49,14 @@ jobs:
   nightly:
     name: Unit + instrumented tests
     runs-on: ubuntu-latest
-    # Generous on purpose, and deliberately not the real bound. The step timeouts below do the work, so a
-    # wedge fails one step and the job carries on to report it. A tight job-level timeout would cancel the
-    # job instead, taking the `if: always()` Slack step with it, and the one-message-per-run contract would
-    # break in precisely the wedged-emulator case the timeout exists for.
+    # A backstop that must stay well above the sum of the step bounds below, currently 65 minutes. If the
+    # job bound is close to that sum, steps running near their limits let the job time out first, and a job
+    # timeout cancels the job and takes the `if: always()` Slack step with it. That is the failure this whole
+    # arrangement exists to avoid, so the headroom is the point rather than slack. Raise this whenever a step
+    # bound goes up.
+    #
+    # For scale, the observed run is a few minutes: unit tests under a minute, instrumented around two and a
+    # half. The bounds are set to catch a wedge, not to be tight.
     timeout-minutes: 90
     env:
       # One place for the image coordinates, because the AVD cache key has to agree with the two emulator
@@ -101,7 +105,7 @@ jobs:
       - name: Unit tests and coverage
         id: unit
         continue-on-error: true
-        timeout-minutes: 25
+        timeout-minutes: 20
         run: ./gradlew --continue
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
@@ -118,7 +122,7 @@ jobs:
       - name: Unit tests and coverage (card-present)
         id: unit_card_present
         continue-on-error: true
-        timeout-minutes: 15
+        timeout-minutes: 10
         if: env.HAS_GPR_CREDENTIALS == 'true'
         env:
           GPR_USER: ${{ secrets.GPR_USER }}
@@ -149,7 +153,7 @@ jobs:
       # because this step exists to write the snapshot rather than to run anything.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 20
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -164,7 +168,7 @@ jobs:
         id: instrumented
         continue-on-error: true
         # The wedge this guards against. A step timeout fails the step; the job survives to report it.
-        timeout-minutes: 25
+        timeout-minutes: 20
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
