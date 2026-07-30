@@ -246,8 +246,13 @@ jobs:
       # build/test-results is listed explicitly: unit JUnit XML lives there, not under build/reports, so the
       # artifact previously shipped the HTML and coverage while omitting the very files the Slack reporter
       # parsed. Anyone diagnosing a red nightly from the artifact would have been missing them.
+      # Non-blocking, for the same reason the Slack post is. An artifact-service error is infrastructure, not
+      # a suite result, and without this it would fail the run after the report had already published a green
+      # verdict, which is the run-versus-notification disagreement this workflow is built to avoid. Losing
+      # the artifact costs diagnosis material and the step is still marked failed, so it stays visible.
       - name: Upload reports
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: nightly-reports
