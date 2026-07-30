@@ -8,6 +8,9 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
@@ -155,12 +158,45 @@ class KeystoreSecureStorageInstrumentedTest {
             )
         }
 
-    private fun storage() =
+    private fun storage(fileName: String = "store.json") =
         FileSecureStorage(
-            file = File(directory, "store.json"),
+            file = File(directory, fileName),
             cipher = KeystoreValueCipher(keyAlias, logger),
             logger = logger,
         )
+
+    /**
+     * Two stores sharing one alias must both survive their first write.
+     *
+     * `PayabliSecureStorages.create` takes `fileName` while defaulting `keyAlias`, so this configuration is
+     * legitimate, and the two take different locks because locks are keyed by path. Left unsynchronized both
+     * see no key and both generate: the second generation replaces the first key and the first store's blob
+     * becomes permanently unreadable, reported as a corrupt value on something that was never corrupt.
+     *
+     * A real dispatcher, not `Unconfined`, which runs each `async` to completion in turn so nothing interleaves.
+     */
+    @Test
+    fun twoStoresSharingAnAliasBothSurviveAConcurrentFirstWrite() =
+        runTest(timeout = 30.seconds) {
+            val first = storage("first.json")
+            val second = storage("second.json")
+
+            listOf(
+                async(Dispatchers.IO) { first.set("refresh", "first-value".toCharArray()) },
+                async(Dispatchers.IO) { second.set("refresh", "second-value".toCharArray()) },
+            ).awaitAll()
+
+            assertArrayEquals(
+                "the first store's value was sealed under a key that was then replaced",
+                "first-value".toCharArray(),
+                first.get("refresh"),
+            )
+            assertArrayEquals(
+                "the second store's value was sealed under a key that was then replaced",
+                "second-value".toCharArray(),
+                second.get("refresh"),
+            )
+        }
 
     @Test
     fun aValueRoundTripsThroughTheRealKeystore() =

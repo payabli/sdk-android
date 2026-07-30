@@ -79,6 +79,10 @@ class KeystoreHardwareManualTest {
      * one without it has to produce a TEE-backed key. Both are correct outcomes and each is checked against
      * what the device actually claims, so there is no case left where the test has nothing to say.
      *
+     * The round trip is folded in for the same reason. As its own test it duplicated the emulator suite's, which
+     * contradicts what [ManualDeviceTest] is for; here it asserts the one thing the emulator cannot, that a
+     * value written under a hardware-backed key reads back through hardware.
+     *
      * `KeyInfo.getSecurityLevel` is API 31, so 23 to 30 falls back to `isInsideSecureHardware`, the same
      * question at lower resolution: it cannot tell StrongBox from a TEE. The failure it catches is the same
      * one either way, a software-backed key.
@@ -87,7 +91,14 @@ class KeystoreHardwareManualTest {
     @Test
     fun theStorageKeyLivesInSecureHardwareAtTheDevicesBestLevel() =
         runTest(timeout = 30.seconds) {
-            storage().set("refresh", "secret-value".toCharArray())
+            val subject = storage()
+            subject.set("refresh", "secret-value".toCharArray())
+            // Before the level assertions, so both the pre-31 and post-31 paths cover the read back.
+            assertArrayEquals(
+                "the value did not survive a hardware round trip",
+                "secret-value".toCharArray(),
+                subject.get("refresh"),
+            )
             val info = keyInfo()
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -115,16 +126,6 @@ class KeystoreHardwareManualTest {
                 expected,
                 info.securityLevel,
             )
-        }
-
-    /** A round trip on real hardware, so the hardware path is exercised end to end and not only inspected. */
-    @ManualDeviceTest
-    @Test
-    fun aValueRoundTripsOnRealHardware() =
-        runTest(timeout = 30.seconds) {
-            val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
         }
 
     private fun keyInfo(): KeyInfo {

@@ -148,7 +148,7 @@ internal class FileSecureStorage(
         try {
             if (!parent.exists() && !parent.mkdirs()) throw SecureStorageException.StorageUnavailable()
             sweepOrphans(parent)
-            val temp = File.createTempFile(file.name, TEMP_SUFFIX, parent)
+            val temp = File.createTempFile(tempPrefix(), TEMP_SUFFIX, parent)
             try {
                 FileOutputStream(temp).use { out ->
                     out.write(Json.encodeToString(SERIALIZER, values).toByteArray(Charsets.UTF_8))
@@ -179,20 +179,45 @@ internal class FileSecureStorage(
      * those blobs still open, so an entry a later [remove] deleted would survive inside it. An orphan is
      * therefore reclaimed here, on the next write, rather than at the moment it is created.
      *
-     * Deleting every match is safe because the caller holds the per-path lock and this is a single-process
-     * store, so no other write of this file is in flight, and the sweep runs before this write's own temp
-     * exists.
+     * **The match is a shape, not a prefix**, because the lock only covers this store's own file. `fileName` is
+     * a parameter, so a sibling store on `store.json2` is legitimate, and a prefix match would delete its temp
+     * mid-write and fail its rename. It would also reach an unrelated host-app file in a directory the host app
+     * owns too. Requiring the delimiter and an all-digit middle means only this store's own temp names match:
+     * `store.json2...` fails the prefix, and `store.json.backup.7.tmp` fails the shape.
+     *
+     * Deleting a match is then safe, because the caller holds this file's lock, the store is single-process, and
+     * the sweep runs before this write's own temp exists.
      */
     private fun sweepOrphans(parent: File) {
+        val prefix = tempPrefix()
         parent
-            .listFiles { candidate -> candidate.name.startsWith(file.name) && candidate.name.endsWith(TEMP_SUFFIX) }
+            .listFiles { candidate -> isOwnTemp(candidate.name, prefix) }
             ?.forEach { orphan ->
                 if (orphan.delete()) logger.warn { "discarded an unfinished secure storage write" }
             }
     }
 
+    /** `<fileName>.` so the digits `createTempFile` appends cannot run into another store's name. */
+    private fun tempPrefix(): String = file.name + TEMP_DELIMITER
+
+    /**
+     * The exact shape [tempPrefix] plus `createTempFile` produces: prefix, digits, suffix.
+     *
+     * Digits are that method's own contract rather than an observation: it fills the middle from
+     * `Long.toUnsignedString`.
+     */
+    private fun isOwnTemp(
+        name: String,
+        prefix: String,
+    ): Boolean {
+        if (!name.startsWith(prefix) || !name.endsWith(TEMP_SUFFIX)) return false
+        val middle = name.substring(prefix.length, name.length - TEMP_SUFFIX.length)
+        return middle.isNotEmpty() && middle.all { it.isDigit() }
+    }
+
     private companion object {
         private const val TEMP_SUFFIX = ".tmp"
+        private const val TEMP_DELIMITER = "."
 
         private val SERIALIZER = MapSerializer(String.serializer(), String.serializer())
 

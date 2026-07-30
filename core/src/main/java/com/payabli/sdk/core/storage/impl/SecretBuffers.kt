@@ -20,7 +20,7 @@ internal object SecretBuffers {
     fun toBytes(chars: CharArray): ByteArray {
         val byteBuffer = Charsets.UTF_8.encode(CharBuffer.wrap(chars))
         return try {
-            ByteArray(byteBuffer.remaining()).also { byteBuffer.get(it) }
+            ByteArray(byteBuffer.remaining()).also { byteBuffer.get(it) } // NOSONAR S6518: bulk get, not index
         } finally {
             // The encoder's buffer holds a full copy of the plaintext, so it has to go too. `array()` is
             // safe because `encode` returns a heap buffer.
@@ -32,7 +32,7 @@ internal object SecretBuffers {
     fun toChars(bytes: ByteArray): CharArray {
         val charBuffer = Charsets.UTF_8.decode(ByteBuffer.wrap(bytes))
         return try {
-            CharArray(charBuffer.remaining()).also { charBuffer.get(it) }
+            CharArray(charBuffer.remaining()).also { charBuffer.get(it) } // NOSONAR S6518: bulk get, not index
         } finally {
             if (charBuffer.hasArray()) charBuffer.array().fill(ZERO_CHAR)
         }

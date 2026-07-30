@@ -130,8 +130,22 @@ internal class KeystoreValueCipher(
             throw SecureStorageException.CryptoUnavailable(e)
         }
 
-    /** Writing may create the key: a first write on a fresh install has nothing to reuse. */
-    private fun keyForWriting(): SecretKey = existingKey() ?: createKey()
+    /**
+     * Writing may create the key: a first write on a fresh install has nothing to reuse.
+     *
+     * Double-checked under a per-alias monitor, because the alias is shared more widely than any one store's
+     * lock. `PayabliSecureStorages.create` takes `fileName` while defaulting `keyAlias`, so two stores over
+     * different files legitimately share an alias, and their locks are keyed by path. Left unsynchronized, both
+     * first writes see no key and both generate: the second generation replaces the first key and the first
+     * store's already-written blob becomes permanently unreadable, reported later as a corrupt value on
+     * something that was never corrupt.
+     *
+     * The window that remains is harmless. A store that sees no key while a sibling creates one encrypts under
+     * the sibling's key, and nothing is lost, because there is only ever one key per alias. Two *creations* are
+     * the loss, and that is what this removes.
+     */
+    private fun keyForWriting(): SecretKey =
+        existingKey() ?: synchronized(monitorFor(keyAlias)) { existingKey() ?: createKey() }
 
     /**
      * Reading may not create one, and that is the correctness of the invalidation path: a key minted here
@@ -215,6 +229,14 @@ internal class KeystoreValueCipher(
         }
 
     private companion object {
+        /** One monitor per alias, shared by every cipher over it, mirroring `FileSecureStorage`'s path locks. */
+        private val monitors = HashMap<String, Any>()
+
+        private fun monitorFor(keyAlias: String): Any =
+            // A plain map under a monitor, not ConcurrentHashMap.computeIfAbsent, which is API 24 against this
+            // module's floor of 23. Contention is one lookup per first write.
+            synchronized(monitors) { monitors.getOrPut(keyAlias) { Any() } }
+
         const val PROVIDER = "AndroidKeyStore"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
         const val KEY_BITS = 256

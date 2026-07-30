@@ -434,12 +434,65 @@ class FileSecureStorageTest {
     fun `an orphaned temporary file is discarded by the next write`() =
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
+            // The shape createTempFile produces for this store: name, delimiter, digits, suffix.
             val orphan =
-                File(folder.root, "${file.name}4242.tmp").apply { writeText("""{"stale":"ciphertext"}""") }
+                File(folder.root, "${file.name}.4242.tmp").apply { writeText("""{"stale":"ciphertext"}""") }
 
             storage(file).set("refresh", "secret-value".toCharArray())
 
             assertFalse("an unfinished write's temp file survived", orphan.exists())
+        }
+
+    /**
+     * The sweep must not reach a sibling store's temp file.
+     *
+     * `fileName` is a parameter, so a second store on `store.json2` is legitimate, and it takes a different
+     * lock because locks are keyed by path. A prefix match deletes its temp **while that write is in progress**
+     * and fails its rename, which is why the sweep requires the delimiter rather than the bare name.
+     */
+    @Test
+    fun `the sweep leaves another store's temporary file alone`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val sibling = File(folder.root, "store.json2.4242.tmp").apply { writeText("in flight") }
+
+            storage(file).set("refresh", "secret-value".toCharArray())
+
+            assertTrue("a sibling store's in-flight temp file was deleted", sibling.exists())
+        }
+
+    /**
+     * The delimiter's own case, which neither test above isolates.
+     *
+     * A file named this store's name followed by digits and the suffix reads, to a bare prefix match, as one of
+     * our own temp files: the digits check cannot separate them because the extra characters *are* digits. The
+     * delimiter is the only thing that does, and this is the shape that proves it. Which matters because the
+     * directory is the host app's, so a name we did not create is not ours to delete.
+     */
+    @Test
+    fun `the sweep leaves a file whose name is this store's name followed by digits`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store")
+            val theirs = File(folder.root, "store24242.tmp").apply { writeText("not ours") }
+
+            storage(file).set("refresh", "secret-value".toCharArray())
+
+            assertTrue("a file the store never created was deleted", theirs.exists())
+        }
+
+    /**
+     * Nor a file that merely looks like one. The directory belongs to the host app too, so anything not of the
+     * exact shape this store produces, prefix then digits then suffix, is somebody else's.
+     */
+    @Test
+    fun `the sweep leaves a file that is not one of its temporaries alone`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val theirs = File(folder.root, "store.json.backup.7.tmp").apply { writeText("not ours") }
+
+            storage(file).set("refresh", "secret-value".toCharArray())
+
+            assertTrue("an unrelated file matching the prefix was deleted", theirs.exists())
         }
 
     /**
