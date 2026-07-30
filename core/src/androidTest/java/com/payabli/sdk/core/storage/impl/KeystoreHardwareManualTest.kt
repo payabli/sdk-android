@@ -11,6 +11,7 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -36,10 +37,9 @@ import kotlin.time.Duration.Companion.seconds
  *   -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.core.ManualDeviceTest
  * ```
  *
- * **Not covered here, and deliberately not faked: `KeyPermanentlyInvalidatedException` from a real credential
- * change.** Nothing a test can call changes biometric enrollment, so there is no honest automated assertion.
- * The written procedure is in `android/CLAUDE.md`; the emulator suite covers the same *outcome* by deleting
- * the key, which is the closest a machine can get.
+ * **Not covered here: `KeyPermanentlyInvalidatedException`.** This key is not bound to user authentication,
+ * so an enrollment or credential change does not invalidate it, and there is no procedure that would. The
+ * reachable lost-key outcomes, a deleted alias and a replaced one, are covered by the emulator suite.
  */
 @RunWith(AndroidJUnit4::class)
 class KeystoreHardwareManualTest {
@@ -86,7 +86,7 @@ class KeystoreHardwareManualTest {
     @Test
     fun theStorageKeyLivesInSecureHardwareAtTheDevicesBestLevel() =
         runTest(timeout = 30.seconds) {
-            storage().set("refresh", "secret-value")
+            storage().set("refresh", "secret-value".toCharArray())
             val info = keyInfo()
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -122,8 +122,8 @@ class KeystoreHardwareManualTest {
     fun aValueRoundTripsOnRealHardware() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value")
-            assertEquals("secret-value", subject.get("refresh"))
+            subject.set("refresh", "secret-value".toCharArray())
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
         }
 
     private fun keyInfo(): KeyInfo {

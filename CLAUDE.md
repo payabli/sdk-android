@@ -6,8 +6,9 @@
 - `./gradlew :MODULE:assembleRelease` - Single module (e.g. `:core`, `:taptopay`)
 - `./gradlew test` - All unit tests
 - `./gradlew :MODULE:testDebugUnitTest` - Single module unit tests
-- `./gradlew connectedAndroidTest` - Instrumentation tests (requires device). CI and the nightly append
-  `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest`; see
+- `./gradlew connectedAndroidTest` - Instrumentation tests (requires device). **The per-PR CI runs none of
+  these**; only the nightly workflow does, and it appends
+  `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest`. See
   **Testing** for why, and for the command that runs the excluded tier
 - `./gradlew ktlintCheck` - Formatting
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
@@ -85,11 +86,14 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
   Put a test there only when an emulator cannot answer the question. The current ones assert the storage key
   is in secure hardware at the device's best level, which on an emulator fails with `SECURITY_LEVEL_SOFTWARE`:
   excluding them is load-bearing, not housekeeping.
-- **`KeyPermanentlyInvalidatedException` is not covered by any automated test, and cannot be.** Nothing a test
-  can call changes biometric enrollment. The emulator suite covers the same *outcome* by deleting the key
-  underneath a stored value. To check the real path by hand: run the manual tier to write a value, enrol or
-  remove a fingerprint or change the lockscreen credential, then read it back and confirm the failure arrives
-  as `SecureStorageException.KeyInvalidated` rather than as a crash or a silent null.
+- **`KeyPermanentlyInvalidatedException` is handled defensively, not reachably, and there is no manual
+  procedure for it.** An earlier version of this file described one: write a value, change a credential, read
+  it back. That cannot work. The storage key deliberately omits `setUserAuthenticationRequired`, because the
+  refresh secret is read during background refresh with nobody present, so enrollment and lockscreen changes
+  do not invalidate it. The manual tier also deletes key and file in `tearDown`, so nothing would survive the
+  credential change anyway. What **is** covered, on an emulator, is both reachable lost-key outcomes: a
+  deleted alias reports `KeyInvalidated` and clears the store, a replaced alias reports `ValueUnreadable` for
+  the entry read. Do not reintroduce the credential-change instruction.
 - Two traps in the instrumented setup, both of which fail in a way that does not name its cause.
   `androidx.test.ext:junit` does **not** bring `androidx.test:runner`, so without it the test APK installs and
   dies with `ClassNotFoundException` on `AndroidJUnitRunner` before any test runs. And the harness pins
