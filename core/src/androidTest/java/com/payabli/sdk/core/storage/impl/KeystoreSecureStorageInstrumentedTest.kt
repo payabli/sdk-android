@@ -1,5 +1,6 @@
 package com.payabli.sdk.core.storage.impl
 
+import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.logging.LogCategory
@@ -11,6 +12,7 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -64,20 +66,23 @@ class KeystoreSecureStorageInstrumentedTest {
      * transient, and a caller would retry forever instead of re-authenticating.
      */
     @Test
-    fun aReplacedKeyAlsoReportsInvalidation() =
+    fun aReplacedKeyReportsTheValueAsUnreadable() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value")
+            subject.set("refresh", "secret-value".toCharArray())
 
             // Delete and recreate under the same alias: from the read side the key simply changed.
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             store.deleteEntry(keyAlias)
-            KeystoreValueCipher(keyAlias, logger).encrypt("forces a new key under the same alias")
+            KeystoreValueCipher(keyAlias, logger).encrypt("unrelated", "forces a new key".toByteArray())
 
             val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
+            // ValueUnreadable rather than KeyInvalidated: the alias exists, so the read reaches the tag
+            // check, and a replaced key is indistinguishable from a corrupted blob there. Discarding only
+            // the entry asked for is the conservative choice.
             assertTrue(
-                "expected KeyInvalidated for a replaced key, got $thrown",
-                thrown is SecureStorageException.KeyInvalidated,
+                "expected ValueUnreadable for a replaced key, got $thrown",
+                thrown is SecureStorageException.ValueUnreadable,
             )
         }
 
@@ -96,8 +101,8 @@ class KeystoreSecureStorageInstrumentedTest {
         runTest(timeout = 30.seconds) {
             val file = File(directory, "store.json")
             val subject = storage()
-            subject.set("damaged", "first-value")
-            subject.set("intact", "second-value")
+            subject.set("damaged", "first-value".toCharArray())
+            subject.set("intact", "second-value".toCharArray())
 
             // Flip the payload of one entry only, leaving its base64 valid so it reaches the tag check.
             val map = Json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), file.readText())
@@ -112,14 +117,40 @@ class KeystoreSecureStorageInstrumentedTest {
 
             val thrown = runCatching { subject.get("damaged") }.exceptionOrNull()
             assertTrue(
-                "a corrupt blob should report invalidation, got $thrown",
-                thrown is SecureStorageException.KeyInvalidated,
+                "a corrupt blob is a bad value, not a lost key, got $thrown",
+                thrown is SecureStorageException.ValueUnreadable,
             )
 
-            assertEquals(
+            assertArrayEquals(
                 "the other entry was destroyed by a failure that had nothing to do with it",
-                "second-value",
+                "second-value".toCharArray(),
                 subject.get("intact"),
+            )
+        }
+
+    /**
+     * A truncated blob is corruption, not a bad value and not a lost key.
+     *
+     * Twenty bytes is longer than the 12-byte IV but shorter than IV plus the 16-byte tag. Without a guard
+     * on the full minimum it is valid base64 that reaches `doFinal`, throws a tag failure, and gets reported
+     * as an unreadable value, which contradicts the classification the code itself claims.
+     */
+    @Test
+    fun aTruncatedBlobReportsStorageCorruption() =
+        runTest(timeout = 30.seconds) {
+            val file = File(directory, "store.json")
+            val subject = storage()
+            subject.set("refresh", "secret-value".toCharArray())
+
+            val serializer = MapSerializer(String.serializer(), String.serializer())
+            val map = Json.decodeFromString(serializer, file.readText())
+            val truncated = Base64.encodeToString(ByteArray(20), Base64.NO_WRAP)
+            file.writeText(Json.encodeToString(serializer, map + ("refresh" to truncated)))
+
+            val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
+            assertTrue(
+                "a truncated blob is corruption, got $thrown",
+                thrown is SecureStorageException.StorageUnavailable,
             )
         }
 
@@ -134,8 +165,8 @@ class KeystoreSecureStorageInstrumentedTest {
     fun aValueRoundTripsThroughTheRealKeystore() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value")
-            assertEquals("secret-value", subject.get("refresh"))
+            subject.set("refresh", "secret-value".toCharArray())
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
             assertNull(subject.get("never-written"))
         }
 
@@ -155,15 +186,15 @@ class KeystoreSecureStorageInstrumentedTest {
             val file = File(directory, "store.json")
             val subject = storage()
 
-            subject.set("refresh", "the-secret")
+            subject.set("refresh", "the-secret".toCharArray())
             val first = file.readText()
-            subject.set("refresh", "the-secret")
+            subject.set("refresh", "the-secret".toCharArray())
             val second = file.readText()
 
             assertNotEquals("the same IV was reused across writes", first, second)
             assertFalse("the plaintext reached the file", first.contains("the-secret"))
             assertFalse("the plaintext reached the file", second.contains("the-secret"))
-            assertEquals("the-secret", subject.get("refresh"))
+            assertArrayEquals("the-secret".toCharArray(), subject.get("refresh"))
         }
 
     /**
@@ -173,8 +204,8 @@ class KeystoreSecureStorageInstrumentedTest {
     @Test
     fun aNewInstanceDecryptsWhatAnEarlierOneWrote() =
         runTest(timeout = 30.seconds) {
-            storage().set("refresh", "secret-value")
-            assertEquals("secret-value", storage().get("refresh"))
+            storage().set("refresh", "secret-value".toCharArray())
+            assertArrayEquals("secret-value".toCharArray(), storage().get("refresh"))
         }
 
     /**
@@ -190,7 +221,7 @@ class KeystoreSecureStorageInstrumentedTest {
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             assertFalse("the alias existed before first use", store.containsAlias(keyAlias))
 
-            storage().set("refresh", "secret-value")
+            storage().set("refresh", "secret-value".toCharArray())
 
             val after = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             assertTrue("no key was created", after.containsAlias(keyAlias))
@@ -200,10 +231,10 @@ class KeystoreSecureStorageInstrumentedTest {
     /**
      * A lost key must report as invalidation, not as a generic crypto failure.
      *
-     * A genuine `KeyPermanentlyInvalidatedException` needs a biometric or credential change that no automated
-     * test can trigger, so this takes the one route a test can: delete the alias under a stored value. The
-     * caller-visible contract is identical either way, and asserting the **subtype** rather than merely
-     * "some storage exception" is what makes it a test.
+     * `KeyPermanentlyInvalidatedException` is handled defensively rather than reachably: this key is not
+     * bound to user authentication, so an enrollment or credential change does not invalidate it. Deleting
+     * and replacing the alias are the reachable lost-key outcomes, and both are covered. Asserting the
+     * **subtype** rather than merely "some storage exception" is what makes these tests.
      *
      * The looser version of this assertion hid a real defect. Reading used to mint a key when the alias was
      * missing, so the tag check failed and the caller was told `CryptoUnavailable`, meaning transient, when
@@ -216,7 +247,7 @@ class KeystoreSecureStorageInstrumentedTest {
     fun aLostKeyReportsInvalidationAndLeavesTheStoreUsable() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value")
+            subject.set("refresh", "secret-value".toCharArray())
 
             KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(keyAlias)
 
@@ -231,7 +262,7 @@ class KeystoreSecureStorageInstrumentedTest {
             assertNull("the missing alias should be detected before decrypting", thrown?.cause)
 
             assertNull("the unreadable value should have been discarded", subject.get("refresh"))
-            subject.set("refresh", "fresh-value")
-            assertEquals("the store should be usable again", "fresh-value", subject.get("refresh"))
+            subject.set("refresh", "fresh-value".toCharArray())
+            assertArrayEquals("the store should be usable again", "fresh-value".toCharArray(), subject.get("refresh"))
         }
 }
