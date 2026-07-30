@@ -25,9 +25,11 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# Slack hard-limits a text block at 3000 characters, so the failure list is bounded. When it is cut, the
-# message says so: a silently truncated list reads as "that was all of them".
+# Slack hard-limits a text block at 3000 characters. Two separate bounds therefore apply to the failure
+# list, a count and a length, and both must announce themselves: a silently truncated list reads as "that
+# was all of them". The length bound sits under 3000 to leave room for the notice that reports it.
 MAX_LISTED_FAILURES = 12
+SLACK_BLOCK_LIMIT = 2900
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -260,18 +262,29 @@ def main() -> int:
 
     all_failures = unit_details + inst_details
     if all_failures:
-        shown = all_failures[:MAX_LISTED_FAILURES]
-        detail_lines = [f"*Failures* ({len(all_failures)})"]
-        for failure in shown:
-            detail_lines.append(f"\n• `{failure.simple_class} > {failure.case}`\n  {failure.detail}")
+        # One rendered entry per failure, so trimming can drop whole failures rather than cut through one.
+        entries: list[str] = []
+        for failure in all_failures[:MAX_LISTED_FAILURES]:
+            entry = f"\n• `{failure.simple_class} > {failure.case}`\n  {failure.detail}"
             culprit = probable_culprit(failure)
             if culprit:
-                detail_lines.append(f"  probable cause: {culprit}")
-        omitted = len(all_failures) - len(shown)
-        if omitted:
-            detail_lines.append(f"\n_{omitted} further failure(s) not listed here; see the run._")
-        text = "\n".join(detail_lines)
-        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text[:2900]}})
+                entry += f"\n  probable cause: {culprit}"
+            entries.append(entry)
+
+        # Two independent limits, and the character one used to be applied silently by slicing the finished
+        # string. Twelve failures at 300 characters each exceed the block limit before any culprit text, so
+        # the list could be cut mid-failure while the omitted count was zero and the message therefore
+        # claimed to be complete. Drop whole entries until the text and its notice fit, and always say how
+        # many are missing, counting both limits together.
+        while True:
+            hidden = len(all_failures) - len(entries)
+            notice = f"\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""
+            text = f"*Failures* ({len(all_failures)})" + "".join(entries) + notice
+            if len(text) <= SLACK_BLOCK_LIMIT or len(entries) <= 1:
+                break
+            entries.pop()
+
+        blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text[:SLACK_BLOCK_LIMIT]}})
 
     # Traceability, kept small and out of the headline. The sha is a link so it stays one short token.
     trail = f"<{run_url}|Open the run>"
