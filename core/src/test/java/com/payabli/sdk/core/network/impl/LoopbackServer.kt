@@ -44,6 +44,10 @@ internal class LoopbackServer : AutoCloseable {
     @Volatile
     private var stallMillis: Long = 0
 
+    /** Non-zero means the body is written in chunks with this gap between them. */
+    @Volatile
+    private var dribbleGapMillis: Long = 0
+
     @Volatile
     private var failure: Throwable? = null
 
@@ -109,6 +113,16 @@ internal class LoopbackServer : AutoCloseable {
         return this
     }
 
+    /**
+     * Sends the body one byte at a time with [gapMillis] between bytes, so a peer makes slow but continuous
+     * progress. This is the case a socket read timeout cannot catch: every individual read completes well
+     * inside it, so only a whole-call bound can end the exchange.
+     */
+    fun dribbleBody(gapMillis: Long): LoopbackServer {
+        dribbleGapMillis = gapMillis
+        return this
+    }
+
     /** By request if a chooser is set, otherwise by position. */
     private fun responseFor(
         index: Int,
@@ -142,8 +156,16 @@ internal class LoopbackServer : AutoCloseable {
                     // client gave up waiting for its response.
                     if (stallMillis > 0) Thread.sleep(stallMillis)
                     connection.getOutputStream().apply {
-                        write(answer.encode())
-                        flush()
+                        if (dribbleGapMillis > 0) {
+                            for (byte in answer.encode()) {
+                                write(byte.toInt())
+                                flush()
+                                Thread.sleep(dribbleGapMillis)
+                            }
+                        } else {
+                            write(answer.encode())
+                            flush()
+                        }
                     }
                     connection.shutdownOutput()
                 }

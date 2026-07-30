@@ -15,11 +15,13 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.KSerializer
@@ -34,6 +36,7 @@ import java.net.URISyntaxException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -133,29 +136,63 @@ internal class PayabliService private constructor(
     /**
      * One request and one response, under whatever deadline the caller installed.
      *
-     * Separate from [execute] so that deadline owns this body's [Job], so the handler below fires on a
-     * timeout as well as on a cancellation.
+     * `suspendCancellableCoroutine` rather than `Job.invokeOnCompletion`, and that choice is the whole point:
+     * a completion handler runs only once this body finishes, and a body parked in a blocking read never
+     * finishes, so the disconnect it was meant to perform could not happen at the deadline. Measured before
+     * the change: a 200ms deadline against an 800ms read fired the handler **never** and returned after
+     * 849ms. `invokeOnCancellation` fires at cancellation request time, on the canceller's thread.
+     *
+     * The blocking work stays inline rather than moving to a worker. `suspendCancellableCoroutine` calls
+     * `initCancellability()` before the block for exactly this case, so no handoff is needed, and adding one
+     * would introduce a worker to leak and a second resume to guard against.
      */
     private suspend fun exchange(decorated: PayabliRequest): PayabliResponse {
         val connection = openConnection(decorated)
-        var completed = false
+
+        // Exactly once, not idempotently. The cancellation handler runs on the canceller's thread and the
+        // failure path below runs on ours, so both can reach it, and the platform documents neither
+        // idempotency nor the effect on a blocked read. Nothing here may rely on a second call being free.
+        val disconnected = AtomicBoolean(false)
+        val disconnectOnce = { if (disconnected.compareAndSet(false, true)) connection.disconnect() }
+
+        return suspendCancellableCoroutine { continuation ->
+            // Before any blocking work, so no read can begin without a teardown path.
+            continuation.invokeOnCancellation { disconnectOnce() }
+
+            // runCatching also captures a CancellationException, which would normally be a defect. It is
+            // benign here: the only source is throwIfCancelled, and a resume after cancellation is dropped,
+            // so cancellation still wins over any value or error this produces.
+            val outcome = runCatching { exchangeBlocking(decorated, connection, continuation) }
+
+            // Forfeits the pooled socket, so it is only correct when bailing out with the stream unread.
+            if (outcome.isFailure) disconnectOnce()
+            continuation.resumeWith(outcome)
+        }
+    }
+
+    /**
+     * Blocking by design, and never suspends.
+     *
+     * Activity is therefore read off [continuation] rather than the coroutine context: this runs inside the
+     * `suspendCancellableCoroutine` block, where there is no suspension point to observe cancellation at.
+     */
+    private fun exchangeBlocking(
+        decorated: PayabliRequest,
+        connection: HttpURLConnection,
+        continuation: CancellableContinuation<PayabliResponse>,
+    ): PayabliResponse {
         val startedAt = System.nanoTime()
-        // Disconnecting is what tears down a blocking read, which cancellation alone cannot interrupt.
-        // Effective on Android; the JVM leaves asynchronous close unspecified.
-        val onCancel =
-            currentCoroutineContext()[Job]?.invokeOnCompletion { cause ->
-                if (cause != null) connection.disconnect()
-            }
         try {
             logger.debug(methodField(decorated), routeField(decorated)) { "request" }
-            currentCoroutineContext().ensureActive()
+            throwIfCancelled(continuation)
             writeBody(connection, decorated)
-            currentCoroutineContext().ensureActive()
+            throwIfCancelled(continuation)
             return readResponse(connection).also { response ->
-                // The first observable point: everything above blocks rather than suspends, so a cancelled
-                // coroutine would otherwise return a response it is no longer entitled to.
-                currentCoroutineContext().ensureActive()
-                completed = true
+                // For the race where the read completes just as cancellation lands, so a cancelled call
+                // cannot return a response it is no longer entitled to. Not covered by a test and not
+                // coverable: removing it leaves the suite green, because with the teardown working the read
+                // throws instead of completing, and the window is too narrow to schedule.
+                throwIfCancelled(continuation)
                 logger.debug(
                     methodField(decorated),
                     routeField(decorated),
@@ -165,12 +202,11 @@ internal class PayabliService private constructor(
                 ) { "response" }
             }
         } catch (e: IOException) {
-            // Cancellation can surface as an IOException when the socket is torn down under us, so
-            // re-check first: it must propagate as cancellation, not as a spurious network error. That
-            // covers the deadline too, which reaches here as a disconnected socket mid-read.
-            // Only IOException is caught, never Exception: CancellationException is a
-            // RuntimeException, and swallowing it would leave a cancelled coroutine looking complete.
-            currentCoroutineContext().ensureActive()
+            // The deadline's disconnect arrives here as a torn-down socket, so re-check first: it must
+            // propagate as cancellation rather than be logged and mapped as a spurious network error.
+            // Only IOException is caught, never Exception, since swallowing a CancellationException would
+            // leave a cancelled call looking complete.
+            throwIfCancelled(continuation)
             logger.error(
                 e,
                 methodField(decorated),
@@ -178,12 +214,12 @@ internal class PayabliService private constructor(
                 LogField.safe("errorCode", PayabliErrorCode.NETWORK_ERROR),
             ) { "request failed" }
             throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
-        } finally {
-            onCancel?.dispose()
-            // disconnect() signals that further requests are unlikely, which forfeits the pooled
-            // socket, so it is only correct when bailing out with the stream unread.
-            if (!completed) connection.disconnect()
         }
+    }
+
+    /** Named apart from `kotlinx.coroutines.ensureActive`, imported here, which reads a context instead. */
+    private fun throwIfCancelled(continuation: CancellableContinuation<*>) {
+        if (!continuation.isActive) throw CancellationException(REASON_EXCHANGE_CANCELLED)
     }
 
     override suspend fun <T> execute(
@@ -377,6 +413,7 @@ internal class PayabliService private constructor(
         internal const val REASON_RESPONSE_TOO_LARGE: String = "Response body exceeded the allowed size"
         internal const val REASON_METHOD_UNSUPPORTED: String = "HTTP method not supported on this platform"
         internal const val REASON_CALL_TIMED_OUT: String = "Network request exceeded its timeout"
+        private const val REASON_EXCHANGE_CANCELLED: String = "the exchange was cancelled"
 
         private val ALLOWED_SCHEMES = setOf("http", "https")
 
