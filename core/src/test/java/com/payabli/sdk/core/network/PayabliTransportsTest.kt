@@ -203,6 +203,11 @@ class PayabliTransportsTest {
      * relabelled because claiming to cover a removed mechanism is worse than covering nothing.
      *
      * On a real dispatcher because the socket work is real, not because of any deadline being measured.
+     *
+     * The guard against a per-attempt deadline returning is `RetryTest`'s
+     * `an unbounded policy imposes no deadline of its own`, which drives a 300 second virtual delay, twenty
+     * times the budget that was removed. It belongs there rather than here: a virtual-time bound cannot be
+     * asserted against real socket work, because the clock advances the moment the scheduler drains.
      */
     @Test
     fun `Retry around the authenticated transport does not preempt a slow refresh`() =

@@ -300,6 +300,43 @@ class RetryTest {
             assertEquals("the budget was not what ended it", 1_000, currentTime)
         }
 
+    /**
+     * Backoff spends the same budget the attempts do, which is what "one deadline for the whole operation"
+     * means and what could not previously be tested.
+     *
+     * The scheduler's own time source is passed in because `TimeSource.Monotonic` reads real time while
+     * `runTest` advances `delay` virtually: without it a virtual backoff consumed none of the budget, so this
+     * assertion would hold no matter what the implementation did.
+     *
+     * 1,200ms of budget against a 1,000ms first backoff. Attempt one fails immediately, the wait leaves 200ms,
+     * and attempt two is then cut off well before the 5,000ms it wants rather than being handed a fresh 1,200.
+     */
+    @Test
+    fun `a backoff wait consumes the budget the next attempt gets`() =
+        runTest {
+            var attempts = 0
+
+            val thrown =
+                failureFrom {
+                    Retry.run(
+                        policy = policy(maxAttempts = 3, totalTimeoutMillis = 1_200),
+                        logger = logger,
+                        timeSource = testScheduler.timeSource,
+                    ) {
+                        attempts++
+                        if (attempts == 1) throw serverError()
+                        delay(5_000)
+                        "never returned"
+                    }
+                }
+
+            assertEquals(PayabliErrorCode.NETWORK_ERROR, thrown.code)
+            assertEquals("Operation exceeded its total timeout", thrown.reason)
+            assertEquals("the second attempt was allowed to start and be cut off", 2, attempts)
+            // 1,000ms of backoff plus the 200ms remainder. A budget that reset per attempt would reach 6,000.
+            assertEquals(1_200, currentTime)
+        }
+
     /** Null is not "some large deadline": this layer must install none at all. */
     @Test
     fun `an unbounded policy imposes no deadline of its own`() =

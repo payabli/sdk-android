@@ -24,7 +24,15 @@ import kotlinx.serialization.KSerializer
  *
  * Failures throw rather than returning a result type, the only shape that composes with coroutine
  * cancellation. Implementations throw `PayabliException`; a non-2xx *response* is not a failure and
- * comes back from [execute] intact, for the caller to pass through [PayabliHttpErrors].
+ * comes back from [execute] intact, for the caller to pass through [PayabliHttpErrors]. That is what keeps
+ * status interpretation out of the transport, and `PayabliService`, the implementation a capability writes
+ * against, honours it without exception.
+ *
+ * **One carve-out, and only for credential recovery.** `AuthenticatedTransport` may convert a *credential*
+ * rejection into `TOKEN_EXPIRED` rather than return it, but only one it has already tried
+ * and failed to recover: one rejection, one refresh, one replay, then the throw. By that point the status
+ * carries nothing a caller could act on, since the only remedy has been attempted and did not work. A
+ * rejection on the first response is still returned intact, and no other status is ever converted.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface PayabliTransport {

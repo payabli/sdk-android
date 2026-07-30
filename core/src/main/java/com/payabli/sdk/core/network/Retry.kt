@@ -55,11 +55,20 @@ public object Retry {
         route: String? = null,
         policy: RetryPolicy = RetryPolicy(),
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+        /**
+         * Injected so a test can drive it, exactly as [RetryPolicy.jitter] is. Production never passes this.
+         *
+         * It has to be injectable because `runTest` advances `delay` and coroutine timeouts on a virtual
+         * scheduler while [TimeSource.Monotonic] keeps reading real time. Left fixed, a virtual backoff
+         * consumed none of the budget under test, so the "every attempt and every backoff wait" guarantee
+         * could not be verified however many tests were pointed at it.
+         */
+        timeSource: TimeSource = TimeSource.Monotonic,
         operation: suspend (attempt: Int) -> T,
     ): T {
         // One origin, with every remainder derived from it, so the attempt bound and the backoff gate read
         // the same number.
-        val startedAt = TimeSource.Monotonic.markNow()
+        val startedAt = timeSource.markNow()
         val total = policy.totalTimeoutMillis?.milliseconds
         var attempt = 1
         while (true) {
