@@ -65,14 +65,28 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
 
       # Cheap and emulator-free, so it runs first: a compile or unit-test break should not wait on a boot.
-      - name: Unit tests
-        run: ./gradlew :core:test :payin:test :telemetry:test :example:test
+      #
+      # The coverage task rather than the plain test task, because it depends on it: this writes both the
+      # JUnit results and the JaCoCo report, and the Slack summary reports coverage as well as failures.
+      # :example has no coverage task, matching ci.yml, so it runs its tests directly.
+      #
+      # continue-on-error throughout, so a failure still reaches Slack with its detail instead of aborting
+      # the job at the first red suite. The final step turns any failure back into a red run.
+      - name: Unit tests and coverage
+        id: unit
+        continue-on-error: true
+        run: ./gradlew :core:createDebugUnitTestCoverageReport
+          :payin:createDebugUnitTestCoverageReport
+          :telemetry:createDebugUnitTestCoverageReport
+          :example:test
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
       # when the credential is absent, matching the card-present job in ci.yml.
-      - name: Unit tests (card-present)
+      - name: Unit tests and coverage (card-present)
+        id: unit_card_present
+        continue-on-error: true
         if: env.GPR_TOKEN != ''
-        run: ./gradlew :taptopay:test
+        run: ./gradlew :taptopay:createDebugUnitTestCoverageReport
 
       # Required on ubuntu-latest, and the step most often left out. Without it the emulator runs
       # unaccelerated, which is the one condition that makes the call-budget assertion flaky.
@@ -109,6 +123,8 @@ jobs:
           script: echo "Generated AVD snapshot for caching."
 
       - name: Instrumented tests
+        id: instrumented
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -122,6 +138,33 @@ jobs:
           # for attestation and the card reader, so an emulator cannot run them; see PLA-2193.
           script: ./gradlew :core:connectedAndroidTest
 
+      # Posts to #mobile-sdk-nightly-build. Reads the reports Gradle already wrote and sends coverage, a
+      # green or red verdict with the exact failure count, only the tests that failed, a probable culprit
+      # per failure from git history, and a link to this run.
+      #
+      # curl rather than a Slack action, on purpose: this repo just moved five actions off a deprecated Node
+      # runtime, and a curl post has nothing to pin and no runtime to deprecate.
+      #
+      # Skipped rather than failed when the webhook secret is absent, so the suite result is never lost to a
+      # reporting problem. The URL is passed by env and never echoed; --data @- keeps the payload off the
+      # command line too.
+      - name: Report to Slack
+        id: slack
+        if: always()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          UNIT_OUTCOME: ${{ steps.unit.outcome }}
+          INSTRUMENTED_OUTCOME: ${{ steps.instrumented.outcome }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "::warning::SLACK_WEBHOOK_URL is not set, so no nightly report was posted."
+            exit 0
+          fi
+          python3 .github/scripts/nightly_report.py > "$RUNNER_TEMP/slack.json"
+          curl --silent --show-error --fail-with-body \
+            -X POST -H 'Content-Type: application/json' \
+            --data @"$RUNNER_TEMP/slack.json" "$SLACK_WEBHOOK_URL"
+
       # The XML results are the only way to read a failure once the runner is gone, and the emulator is not
       # reproducible locally, so upload on failure too.
       - name: Upload reports
@@ -133,3 +176,19 @@ jobs:
             **/build/reports/**
             **/build/outputs/androidTest-results/**
           retention-days: 7
+
+      # continue-on-error above keeps the job alive long enough to report. Without this the run would end
+      # green with failing tests, which is worse than no nightly at all.
+      - name: Fail if any suite failed
+        if: always()
+        run: |
+          failed=0
+          for outcome in "${{ steps.unit.outcome }}" "${{ steps.unit_card_present.outcome }}" \
+                         "${{ steps.instrumented.outcome }}"; do
+            case "$outcome" in failure|cancelled|timed_out) failed=1 ;; esac
+          done
+          if [ "$failed" -eq 1 ]; then
+            echo "::error::A test suite failed. See the Slack report and the step logs above."
+            exit 1
+          fi
+          echo "All suites passed."
