@@ -5,16 +5,15 @@
   compileSdk. The implicit loopback exemption arrives only in API 37, so at this module's floor of 23 an
   explicit entry is required rather than merely tidy.
 
-  Scoped to the loopback names instead of a blanket usesCleartextTraffic, so nothing but the harness is
-  reachable in cleartext and a test cannot accidentally exercise a plaintext route to a real host.
+  Scoped to the single address the harness binds instead of a blanket usesCleartextTraffic, so nothing but
+  the harness is reachable in cleartext and a test cannot accidentally exercise a plaintext route to a
+  real host.
 -->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
-        <!-- LoopbackServer binds InetAddress.getLoopbackAddress() and builds its base URL from the
-             resulting literal, so the address form is what has to match, not the name. Both families
-             are listed because which one that call yields is a platform choice, not ours. -->
+        <!-- One entry, matching the one address LoopbackServer binds. It pins 127.0.0.1 and builds its
+             base URL from that literal, so the address form is what has to match and no name is
+             involved. Widen this only alongside the bind, never ahead of it. -->
         <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">::1</domain>
-        <domain includeSubdomains="false">localhost</domain>
     </domain-config>
 </network-security-config>
