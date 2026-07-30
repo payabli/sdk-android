@@ -151,10 +151,15 @@ jobs:
       #
       # Note what is absent: no -no-snapshot-save, and disable-animations left false. Both are deliberate,
       # because this step exists to write the snapshot rather than to run anything.
+      # Pinned to a commit, not to @v2, and the reason is the Slack secret rather than reproducibility.
+      # This action runs before the reporting step and can write to the checkout or to runner state, so a
+      # retargeted mutable tag could alter nightly_report.py and read the webhook when that step executes.
+      # Step-scoping a secret does not isolate it from code that ran earlier in the same job. The trailing
+      # comment is the human-readable version; bump both together and read the diff when doing so.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -169,7 +174,7 @@ jobs:
         continue-on-error: true
         # The wedge this guards against. A step timeout fails the step; the job survives to report it.
         timeout-minutes: 20
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -195,6 +200,7 @@ jobs:
       - name: Report to Slack
         id: slack
         if: always()
+        timeout-minutes: 5
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           UNIT_OUTCOME: ${{ steps.unit.outcome }}
@@ -209,7 +215,11 @@ jobs:
             exit 0
           fi
           python3 .github/scripts/nightly_report.py > "$RUNNER_TEMP/slack.json"
+          # Bounded on purpose. An unbounded curl against a stalled endpoint would hold this step until the
+          # job bound, which would take the report upload and the suite gate down with it: a Slack outage
+          # must not cost the run's result.
           curl --silent --show-error --fail-with-body \
+            --connect-timeout 10 --max-time 30 --retry 2 --retry-connrefused \
             -X POST -H 'Content-Type: application/json' \
             --data @"$RUNNER_TEMP/slack.json" "$SLACK_WEBHOOK_URL"
 
