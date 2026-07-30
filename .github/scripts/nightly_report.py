@@ -132,9 +132,24 @@ def git_one_line(*args: str) -> str:
     return result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
 
 
-def find_source(class_name: str) -> Path | None:
+def find_source(class_name: str, package: str = "") -> Path | None:
+    """The file for a class, disambiguated by package, or None when the answer would be a guess.
+
+    Taking the first filename match was wrong and quietly so: `ExampleUnitTest.kt` exists five times in
+    this repo, so every non-core failure was attributed to core's history. A package-qualified path is
+    checked first, and an ambiguous bare filename yields nothing rather than a plausible wrong answer.
+    """
+    if package:
+        suffix = f"{package.replace('.', '/')}/{class_name}.kt"
+        qualified = sorted(p for p in REPO_ROOT.glob(f"*/src/*/**/{class_name}.kt") if str(p).endswith(suffix))
+        if len(qualified) == 1:
+            return qualified[0].relative_to(REPO_ROOT)
+        if qualified:
+            return None
+
     matches = sorted(REPO_ROOT.glob(f"*/src/*/**/{class_name}.kt"))
-    return matches[0].relative_to(REPO_ROOT) if matches else None
+    # Exactly one, or nothing. Several means the name alone cannot identify the file.
+    return matches[0].relative_to(REPO_ROOT) if len(matches) == 1 else None
 
 
 def probable_culprit(failure: Failure) -> str:
@@ -144,16 +159,19 @@ def probable_culprit(failure: Failure) -> str:
     printing; it is not evidence, and the run log is linked for that.
     """
     notes: list[str] = []
-    test_file = find_source(failure.simple_class)
+    package = failure.suite.rsplit(".", 1)[0] if "." in failure.suite else ""
+
+    test_file = find_source(failure.simple_class, package)
     if test_file:
         line = git_one_line("log", "-1", "--format=%h %an: %s", "--", str(test_file))
         if line:
             notes.append(f"test last touched by `{line}`")
 
-    # PayabliServiceInstrumentedTest -> PayabliService, FooTest -> Foo.
+    # PayabliServiceInstrumentedTest -> PayabliService, FooTest -> Foo. The class under test usually sits in
+    # the same package as its test, so the package qualifies this lookup too.
     subject = re.sub(r"(Instrumented)?Tests?$", "", failure.simple_class)
     if subject and subject != failure.simple_class:
-        subject_file = find_source(subject)
+        subject_file = find_source(subject, package)
         if subject_file:
             line = git_one_line("log", "-1", "--format=%h %an: %s", "--", str(subject_file))
             if line:
