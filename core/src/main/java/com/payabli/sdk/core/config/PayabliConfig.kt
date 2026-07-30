@@ -5,6 +5,7 @@ import com.payabli.sdk.core.model.PayabliGenericException
 
 private const val REASON_MISSING_ACCESS_TOKEN = "accessToken must not be blank"
 private const val REASON_MISSING_ENTRY_POINT = "entryPoint must not be blank"
+private const val REASON_UNUSABLE_ACCESS_TOKEN = "accessToken must be usable as an HTTP header value"
 
 /**
  * The values a host supplies once, in one place, for every Payabli SDK component.
@@ -32,6 +33,9 @@ public class PayabliConfig(
     init {
         if (accessToken.isBlank()) {
             throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_MISSING_ACCESS_TOKEN)
+        }
+        if (!accessToken.isHeaderSafe()) {
+            throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_UNUSABLE_ACCESS_TOKEN)
         }
         if (entryPoint.isBlank()) {
             throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_MISSING_ENTRY_POINT)

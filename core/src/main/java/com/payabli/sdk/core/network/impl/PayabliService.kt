@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.network.impl
 
 import androidx.annotation.VisibleForTesting
+import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.PayabliLogger
@@ -10,18 +11,20 @@ import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliHttpErrors
-import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.KSerializer
-import kotlinx.serialization.SerializationException
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -33,15 +36,20 @@ import java.net.URISyntaxException
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
-import kotlin.coroutines.coroutineContext
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * [PayabliTransport] over `HttpURLConnection`, the platform HTTP client.
  *
- * Pure transport: it holds no auth state and interprets nothing. `execute` returns a non-2xx response
- * as a [PayabliResponse] rather than an exception, leaving the status to [PayabliHttpErrors]; only the
- * decoding overload maps it, because it has to before committing to a decode. Bearer injection is the
- * authenticated decorator that arrives with the session.
+ * Interprets nothing: `execute` returns a non-2xx response as a [PayabliResponse] rather than an
+ * exception, leaving the status to [PayabliHttpErrors]; only the decoding overload maps it, because it
+ * has to before committing to a decode. A 401 is a status like any other here, and
+ * `AuthenticatedTransport` is what turns one into a refresh and a retry.
+ *
+ * It holds no auth state of its own. The bearer is stamped by `BearerDecoration` inside the chain, so
+ * every request that leaves this class is authenticated and there is no undecorated path to forget.
  *
  * Transport and configuration failures do surface as a [PayabliException]: an `IOException` becomes
  * [PayabliErrorCode.NETWORK_ERROR], a malformed URL [PayabliErrorCode.INVALID_CONFIGURATION], and a
@@ -51,11 +59,12 @@ import kotlin.coroutines.coroutineContext
  * `internal`, and deliberately so: nothing outside `:core` names this type. Capability modules depend
  * on the [PayabliTransport] interface and receive an instance from the session.
  *
- * **The decoration chain is applied here, not by a wrapping layer.** Non-bypassability is a construction
- * property rather than a layering one: a wrapper would leave a working undecorated transport in the graph
- * for anyone in `:core` to pick up, which is the "one forgotten call ships unauthenticated" failure
- * this design exists to prevent. So the constructor is private, [create] is the only production path, and it
- * does not accept a chain — no caller chooses the decorations, so none can choose an empty set.
+ * **The decoration chain is applied here, not by a wrapping layer.** Decorating in a wrapper would leave a
+ * working undecorated transport for a `:core` caller to pick up. So the constructor is private, [create] is
+ * the only production path, and it takes no chain.
+ *
+ * `AuthenticatedTransport` and `Retry` do wrap this, and are control flow rather than decorations: forgetting
+ * either loses a retry, never a credential.
  */
 internal class PayabliService private constructor(
     baseUrl: String,
@@ -63,6 +72,14 @@ internal class PayabliService private constructor(
     private val logger: PayabliLogger,
     private val connectTimeoutMillis: Int,
     private val readTimeoutMillis: Int,
+    /**
+     * Budget for one whole call. [readTimeoutMillis] bounds only the wait for the next byte, so a server
+     * dribbling bytes never trips it.
+     *
+     * It bounds **one** exchange, never a sequence, which is what keeps it clear of a credential refresh: a
+     * refresh is its own call here with its own budget.
+     */
+    private val callTimeout: Duration,
     /**
      * Injected rather than hardcoded so a test can substitute one. Held per instance because it
      * describes how this implementation works and never varies per call; putting it on the interface
@@ -97,77 +114,118 @@ internal class PayabliService private constructor(
         withContext(dispatcher) {
             // The choke-point. First statement, so no path through this method skips it.
             val decorated = decorations.applyTo(request)
-            val connection = openConnection(decorated)
-            var completed = false
-            val startedAt = System.nanoTime()
-            // withContext cannot interrupt a blocking socket read, and readTimeout only bounds the wait for
-            // the *next* byte, so a server dribbling bytes outlives any coroutine deadline. Disconnecting
-            // from the cancellation handler is what tears the socket down. Documented as effective on
-            // Android; the JVM leaves asynchronous close unspecified, so this is not a guarantee there.
-            val onCancel =
-                coroutineContext[Job]?.invokeOnCompletion { cause ->
-                    if (cause != null) connection.disconnect()
-                }
-            try {
-                logger.debug(methodField(decorated), routeField(decorated)) { "request" }
-                ensureActive()
-                writeBody(connection, decorated)
-                ensureActive()
-                readResponse(connection).also { response ->
-                    completed = true
-                    logger.debug(
-                        methodField(decorated),
-                        routeField(decorated),
-                        LogField.safe("statusCode", response.statusCode),
-                        LogField.safe("durationMs", elapsedMillis(startedAt)),
-                        LogField.safe("contentLength", response.body.size),
-                    ) { "response" }
-                }
-            } catch (e: IOException) {
-                // Cancellation can surface as an IOException when the socket is torn down under us, so
-                // re-check first: it must propagate as cancellation, not as a spurious network error.
-                // Only IOException is caught, never Exception: CancellationException is a
-                // RuntimeException, and swallowing it would leave a cancelled coroutine looking complete.
-                ensureActive()
+            // Nothing catches a CancellationException here, so cancellation passes through. Result
+            // distinguishes a timeout from a call that returned normally.
+            val outcome = withTimeoutOrNull(callTimeout) { Result.success(exchange(decorated)) }
+            if (outcome == null) {
+                // Converted rather than propagated: a `Retry` above never catches cancellation, so a timeout
+                // left as one would end the whole operation instead of one attempt. Cancellation can also land
+                // between the null and this throw, and must win over reporting a timeout.
+                currentCoroutineContext().ensureActive()
                 logger.error(
-                    e,
                     methodField(decorated),
                     routeField(decorated),
                     LogField.safe("errorCode", PayabliErrorCode.NETWORK_ERROR),
-                ) { "request failed" }
-                throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
-            } finally {
-                onCancel?.dispose()
-                // disconnect() signals that further requests are unlikely, which forfeits the pooled
-                // socket, so it is only correct when bailing out with the stream unread.
-                if (!completed) connection.disconnect()
+                    LogField.safe("callTimeoutMs", callTimeout.inWholeMilliseconds),
+                ) { "call exceeded its timeout" }
+                throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_CALL_TIMED_OUT)
             }
+            outcome.getOrThrow()
         }
+
+    /**
+     * One request and one response, under whatever deadline the caller installed.
+     *
+     * `suspendCancellableCoroutine` rather than `Job.invokeOnCompletion`, and that choice is the whole point:
+     * a completion handler runs only once this body finishes, and a body parked in a blocking read never
+     * finishes, so the disconnect it was meant to perform could not happen at the deadline. Measured before
+     * the change: a 200ms deadline against an 800ms read fired the handler **never** and returned after
+     * 849ms. `invokeOnCancellation` fires at cancellation request time, on the canceller's thread.
+     *
+     * The blocking work stays inline rather than moving to a worker. `suspendCancellableCoroutine` calls
+     * `initCancellability()` before the block for exactly this case, so no handoff is needed, and adding one
+     * would introduce a worker to leak and a second resume to guard against.
+     */
+    private suspend fun exchange(decorated: PayabliRequest): PayabliResponse {
+        val connection = openConnection(decorated)
+
+        // Exactly once, not idempotently. The cancellation handler runs on the canceller's thread and the
+        // failure path below runs on ours, so both can reach it, and the platform documents neither
+        // idempotency nor the effect on a blocked read. Nothing here may rely on a second call being free.
+        val disconnected = AtomicBoolean(false)
+        val disconnectOnce = { if (disconnected.compareAndSet(false, true)) connection.disconnect() }
+
+        return suspendCancellableCoroutine { continuation ->
+            // Before any blocking work, so no read can begin without a teardown path.
+            continuation.invokeOnCancellation { disconnectOnce() }
+
+            // runCatching also captures a CancellationException, which would normally be a defect. It is
+            // benign here: the only source is throwIfCancelled, and a resume after cancellation is dropped,
+            // so cancellation still wins over any value or error this produces.
+            val outcome = runCatching { exchangeBlocking(decorated, connection, continuation) }
+
+            // Forfeits the pooled socket, so it is only correct when bailing out with the stream unread.
+            if (outcome.isFailure) disconnectOnce()
+            continuation.resumeWith(outcome)
+        }
+    }
+
+    /**
+     * Blocking by design, and never suspends.
+     *
+     * Activity is therefore read off [continuation] rather than the coroutine context: this runs inside the
+     * `suspendCancellableCoroutine` block, where there is no suspension point to observe cancellation at.
+     */
+    private fun exchangeBlocking(
+        decorated: PayabliRequest,
+        connection: HttpURLConnection,
+        continuation: CancellableContinuation<PayabliResponse>,
+    ): PayabliResponse {
+        val startedAt = System.nanoTime()
+        try {
+            logger.debug(methodField(decorated), routeField(decorated)) { "request" }
+            throwIfCancelled(continuation)
+            writeBody(connection, decorated)
+            throwIfCancelled(continuation)
+            return readResponse(connection).also { response ->
+                // For the race where the read completes just as cancellation lands, so a cancelled call
+                // cannot return a response it is no longer entitled to. Not covered by a test and not
+                // coverable: removing it leaves the suite green, because with the teardown working the read
+                // throws instead of completing, and the window is too narrow to schedule.
+                throwIfCancelled(continuation)
+                logger.debug(
+                    methodField(decorated),
+                    routeField(decorated),
+                    LogField.safe("statusCode", response.statusCode),
+                    LogField.safe("durationMs", elapsedMillis(startedAt)),
+                    LogField.safe("contentLength", response.body.size),
+                ) { "response" }
+            }
+        } catch (e: IOException) {
+            // The deadline's disconnect arrives here as a torn-down socket, so re-check first: it must
+            // propagate as cancellation rather than be logged and mapped as a spurious network error.
+            // Only IOException is caught, never Exception, since swallowing a CancellationException would
+            // leave a cancelled call looking complete.
+            throwIfCancelled(continuation)
+            logger.error(
+                e,
+                methodField(decorated),
+                routeField(decorated),
+                LogField.safe("errorCode", PayabliErrorCode.NETWORK_ERROR),
+            ) { "request failed" }
+            throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
+        }
+    }
+
+    /** Named apart from `kotlinx.coroutines.ensureActive`, imported here, which reads a context instead. */
+    private fun throwIfCancelled(continuation: CancellableContinuation<*>) {
+        if (!continuation.isActive) throw CancellationException(REASON_EXCHANGE_CANCELLED)
+    }
 
     override suspend fun <T> execute(
         request: PayabliRequest,
         payloadSerializer: KSerializer<T>,
-    ): PayabliV2Envelope<T> {
-        val response = execute(request)
-        // Map the status before committing to a decode, so a proxy's HTML error page becomes a typed
-        // error rather than a decode failure.
-        PayabliHttpErrors.from(response)?.let { throw it }
-        return try {
-            PayabliJson.format.decodeFromString(
-                PayabliV2Envelope.serializer(payloadSerializer),
-                response.bodyAsText(),
-            )
-        } catch (e: SerializationException) {
-            // SerializationException extends IllegalArgumentException; catching the supertype would
-            // swallow genuine programming errors raised from inside a serializer.
-            // RedactedCause, not e: the message would carry the response body verbatim.
-            throw PayabliGenericException(
-                PayabliErrorCode.DECODING_ERROR,
-                REASON_DECODE_FAILED,
-                cause = RedactedCause(e),
-            )
-        }
-    }
+    ): PayabliV2Envelope<T> = execute(request).asV2Envelope(payloadSerializer)
 
     /**
      * Wraps its own failures rather than letting the caller do it: this runs before `execute`'s `try`,
@@ -351,10 +409,11 @@ internal class PayabliService private constructor(
     internal companion object {
         /** Deliberately generic: these reach a host app, so they carry no host, path or server text. */
         internal const val REASON_NETWORK_FAILED: String = "Network request failed"
-        internal const val REASON_DECODE_FAILED: String = "Failed to decode response envelope"
         internal const val REASON_INVALID_URL: String = "Invalid request URL"
         internal const val REASON_RESPONSE_TOO_LARGE: String = "Response body exceeded the allowed size"
         internal const val REASON_METHOD_UNSUPPORTED: String = "HTTP method not supported on this platform"
+        internal const val REASON_CALL_TIMED_OUT: String = "Network request exceeded its timeout"
+        private const val REASON_EXCHANGE_CANCELLED: String = "the exchange was cancelled"
 
         private val ALLOWED_SCHEMES = setOf("http", "https")
 
@@ -364,11 +423,15 @@ internal class PayabliService private constructor(
 
         internal const val DEFAULT_CONNECT_TIMEOUT_MILLIS: Int = 10_000
 
-        /**
-         * Per-read budget, bounding a single socket read rather than the whole call. `RetryPolicy`'s
-         * per-attempt timeout is what bounds the resource.
-         */
+        /** Per-read budget, bounding a single socket read rather than the whole call. */
         internal const val DEFAULT_READ_TIMEOUT_MILLIS: Int = 10_000
+
+        /**
+         * Three times the per-read budget, landing on the same 10s and 30s pair iOS sets as
+         * `timeoutIntervalForRequest` and `timeoutIntervalForResource`. Room for a few slow reads, not for an
+         * indefinite dribble.
+         */
+        internal val DEFAULT_CALL_TIMEOUT: Duration = (3 * DEFAULT_READ_TIMEOUT_MILLIS).milliseconds
 
         /**
          * The only production way to obtain a transport.
@@ -376,21 +439,30 @@ internal class PayabliService private constructor(
          * It does not take a decoration list, deliberately: no caller anywhere chooses the chain, so no
          * caller can choose an empty one. Returns the interface, so nothing
          * accumulates a dependency on the concrete class.
+         *
+         * The socket-level connect and read timeouts are not parameters. No caller has ever overridden them,
+         * production or test, so they were flexibility nobody used and one more way to get a call wrong; the
+         * whole-call bound is the one worth varying. Add them back only with a caller that needs them.
+         *
+         * [auth] is what the chain needs, not what this transport interprets: it reaches
+         * `BearerDecoration` and nothing else here reads it. Passing the holder rather than a token is what
+         * lets the bearer be read per request, so a rotation needs no cache to be invalidated.
          */
         internal fun create(
             baseUrl: String,
+            auth: PayabliAuth,
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
-            connectTimeoutMillis: Int = DEFAULT_CONNECT_TIMEOUT_MILLIS,
-            readTimeoutMillis: Int = DEFAULT_READ_TIMEOUT_MILLIS,
+            callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
             PayabliService(
                 baseUrl,
-                PayabliRequestDecorations.chain,
+                PayabliRequestDecorations.chainFor(auth),
                 logger,
-                connectTimeoutMillis,
-                readTimeoutMillis,
+                DEFAULT_CONNECT_TIMEOUT_MILLIS,
+                DEFAULT_READ_TIMEOUT_MILLIS,
+                callTimeout,
                 dispatcher,
                 maxResponseBytes,
             )
@@ -407,6 +479,7 @@ internal class PayabliService private constructor(
             baseUrl: String,
             decorations: List<PayabliRequestDecoration>,
             logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+            callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
@@ -416,6 +489,7 @@ internal class PayabliService private constructor(
                 logger,
                 DEFAULT_CONNECT_TIMEOUT_MILLIS,
                 DEFAULT_READ_TIMEOUT_MILLIS,
+                callTimeout,
                 dispatcher,
                 maxResponseBytes,
             )

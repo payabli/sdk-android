@@ -3,6 +3,7 @@ package com.payabli.sdk.core.auth
 import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
+import com.payabli.sdk.core.config.isHeaderSafe
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.PayabliLogger
@@ -34,6 +35,7 @@ private const val REASON_REFRESH_FAILED = "token refresh failed"
 private const val REASON_PROVIDER_TIMEOUT = "the tokenProvider did not return in time"
 private const val REASON_REFRESH_CANCELLED = "the refresh was cancelled"
 private const val REASON_BLANK_TOKEN = "the tokenProvider returned a blank token"
+private const val REASON_UNUSABLE_TOKEN = "the tokenProvider returned a token that cannot be a header value"
 private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejected token"
 
 /**
@@ -41,8 +43,16 @@ private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejec
  *
  * Only binds cancellation-cooperative code. A provider blocking a thread outside a suspension point
  * cannot be interrupted by any timeout, which is why the contract asks for cooperation.
+ *
+ * Ten seconds rather than thirty: a provider that never returns holds every reader waiting on the same
+ * refresh, and half a minute of that is most of a user's patience.
+ *
+ * A default rather than a rule. It is deliberately shorter than the transport's own whole-call budget even
+ * though a broker callback also makes a network round trip, so `PayabliTransports.authenticated` takes an
+ * override for an integrator whose broker is legitimately slower. `internal` for that default parameter to
+ * reference; nothing outside `:core` reads it.
  */
-private const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
+internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
 
 /**
  * Holds the access token and refreshes it through the host's provider.
@@ -183,6 +193,12 @@ public class PayabliAuth(
         // PayabliConfig rejects a blank token at construction, so a refresh must not install one either.
         if (fresh.isBlank()) {
             fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_BLANK_TOKEN))
+        }
+
+        // A CR or LF here would be header injection, and the platform would throw an unchecked exception from
+        // inside the transport rather than a PayabliException. Refused for the same reason blank is.
+        if (!fresh.isHeaderSafe()) {
+            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_MALFORMED, REASON_UNUSABLE_TOKEN))
         }
 
         // The same credential the server just refused. Committing it would publish a rotation that did not

@@ -6,11 +6,28 @@ import com.payabli.sdk.core.model.PayabliException
 import kotlin.random.Random
 
 /**
- * How [Retry] backs off and what it is willing to retry.
+ * How [Retry] backs off and what it is willing to retry, for **transient infrastructure failures**.
  *
- * The **shape** is fixed: jittered exponential backoff, a capped maximum, bounded attempts, a per-attempt
- * timeout, and `Retry-After` honoured on 429 and 503 ahead of the computed backoff. The **numbers** are
- * deployment tuning, so the defaults below are a starting point rather than a contract.
+ * The **shape** is fixed: jittered exponential backoff, a capped maximum, bounded attempts, and
+ * `Retry-After` honoured on 429 and 503 ahead of the computed backoff. The **numbers** are deployment
+ * tuning, so the defaults below are a starting point rather than a contract.
+ *
+ * **No per-attempt timeout here**, meaning no attempt gets a budget of its own. Bounding one call is the
+ * transport's job, mirroring iOS's `timeoutIntervalForResource`, because only it knows where a call begins
+ * and ends; this layer holds an opaque operation.
+ *
+ * That is not the same as leaving an attempt unbounded. When [totalTimeoutMillis] is set it is **one deadline
+ * for the whole operation**, attempt execution and backoff waits together, and each attempt starts with
+ * whatever is left of it. Null means this layer imposes no deadline at all and the transport's own call
+ * timeout is the only bound.
+ *
+ * **Not this policy's business: a refused credential.** That is [AuthRecoveryPolicy], which is why
+ * [PayabliErrorCode.TOKEN_EXPIRED] is absent from [RETRYABLE_CODES] below. The two sit at different layers,
+ * outermost first, and a credential decision belongs in the other one rather than as a code added here:
+ *
+ * ```
+ * Service  ->  Retry  ->  AuthRecovery  ->  Transport
+ * ```
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class RetryPolicy(
@@ -21,13 +38,11 @@ public class RetryPolicy(
     public val multiplier: Double = DEFAULT_MULTIPLIER,
     public val maxJitterMillis: Long = DEFAULT_MAX_JITTER_MILLIS,
     /**
-     * Budget for one attempt. This is the whole-resource bound; the socket-level connect and read timeouts
-     * on the transport bound reads, and a call can stall indefinitely while making slow per-read progress.
-     */
-    public val attemptTimeoutMillis: Long = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
-    /**
-     * Budget for the whole operation including backoff waits. Null means unbounded, which is the default
-     * because a total budget is a caller-flow concern and a wrong default would truncate a legitimate call.
+     * One deadline for the whole operation: every attempt and every backoff wait between them. An attempt
+     * that would outlive it is cut short and the operation ends, rather than a further attempt starting.
+     *
+     * Null means unbounded, which is the default because a total budget is a caller-flow concern and a wrong
+     * default would truncate a legitimate call.
      */
     public val totalTimeoutMillis: Long? = null,
     /**
@@ -53,7 +68,6 @@ public class RetryPolicy(
         require(multiplier >= 1.0 && multiplier.isFinite()) { "multiplier must be finite and at least 1" }
         require(maxJitterMillis >= 0) { "maxJitterMillis must not be negative" }
         require(maxJitterMillis < Long.MAX_VALUE) { "maxJitterMillis must leave room for the jitter bound" }
-        require(attemptTimeoutMillis > 0) { "attemptTimeoutMillis must be positive" }
         require(totalTimeoutMillis == null || totalTimeoutMillis > 0) { "totalTimeoutMillis must be positive" }
         require(maxRetryAfterMillis >= 0) { "maxRetryAfterMillis must not be negative" }
     }
@@ -86,7 +100,6 @@ public class RetryPolicy(
         public const val DEFAULT_MAX_DELAY_MILLIS: Long = 8_000
         public const val DEFAULT_MULTIPLIER: Double = 2.0
         public const val DEFAULT_MAX_JITTER_MILLIS: Long = 500
-        public const val DEFAULT_ATTEMPT_TIMEOUT_MILLIS: Long = 15_000
         public const val DEFAULT_MAX_RETRY_AFTER_MILLIS: Long = 30_000
 
         /**

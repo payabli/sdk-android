@@ -105,4 +105,23 @@ class PayabliConfigTest {
     fun `telemetry can be switched off explicitly`() {
         assertFalse(config(telemetryEnabled = false).telemetryEnabled)
     }
+
+    @Test
+    fun `an access token that cannot be a header value is refused at construction`() {
+        // CR and LF are header injection; the rest would make setRequestProperty throw from inside the
+        // transport, which is the wrong exception type for the wrong reason.
+        for (bad in listOf("tok\ren", "tok\nen", "tok en\u0000", "tok\u00e9n", "tok\ten")) {
+            val thrown = runCatching { config(accessToken = bad) }.exceptionOrNull()
+            assertTrue("$bad should be refused, got $thrown", thrown is PayabliException)
+            assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, (thrown as PayabliException).code)
+        }
+    }
+
+    @Test
+    fun `an ordinary bearer credential is accepted`() {
+        // Base64url and JWT shapes must keep working; the check must not be so strict it rejects real tokens.
+        for (good in listOf("abcDEF123", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", "a-b_c.d~e=", "tok en")) {
+            assertEquals(good, config(accessToken = good).accessToken)
+        }
+    }
 }

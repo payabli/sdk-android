@@ -3,6 +3,8 @@ package com.payabli.sdk.core.network.impl
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import kotlinx.coroutines.test.runTest
@@ -12,6 +14,8 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Exercises the real `HttpURLConnection` against a loopback server, so URL assembly, header handling,
@@ -33,7 +37,13 @@ class PayabliServiceTest {
     private fun service(
         server: LoopbackServer,
         baseUrl: String = server.baseUrl,
-    ) = PayabliService.create(baseUrl = baseUrl, logger = DefaultPayabliLogger(LogCategory.NETWORK, sink))
+        callTimeout: Duration = PayabliService.DEFAULT_CALL_TIMEOUT,
+    ) = PayabliService.create(
+        baseUrl = baseUrl,
+        auth = testAuth(),
+        logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+        callTimeout = callTimeout,
+    )
 
     private fun loggedLines(): String = sink.records.joinToString("\n") { it.message }
 
@@ -255,6 +265,69 @@ class PayabliServiceTest {
                 assertEquals("GET", server.onlyRequest.method)
                 assertEquals("", server.onlyRequest.body)
                 assertNull(server.onlyRequest.header("Content-Type"))
+            }
+        }
+
+    /**
+     * The whole-call bound, which no socket-level timeout provides: the read timeout only ever bounds the
+     * wait for the next byte.
+     *
+     * **Asserts the elapsed time, not only the error.** An earlier version checked the error alone and passed
+     * at 810ms against a 200ms budget, because the call waited out the whole stall and failed afterwards. That
+     * is what a test looks like when the mechanism it covers does not work.
+     */
+    @Test
+    fun `a call that outlives its budget fails as a network error`() =
+        runTest {
+            LoopbackServer().use { server ->
+                server.respondWith(200, "").stallBeforeResponding(800)
+
+                val startedAt = System.currentTimeMillis()
+                val thrown =
+                    runCatching {
+                        service(server, callTimeout = 200.milliseconds)
+                            .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
+                    }.exceptionOrNull()
+                val elapsed = System.currentTimeMillis() - startedAt
+
+                assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
+                assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
+                // The request did reach the server, so the budget ended a call in flight rather than one
+                // that never started.
+                assertEquals("/api/ping", server.onlyRequest.path)
+                // The load-bearing assertion. Compared against the stall rather than a fixed number, so slow
+                // hardware cannot make it flaky, and so it fails if the deadline stops tearing the socket down.
+                assertTrue(
+                    "the call waited out the stall instead of being cut off: ${elapsed}ms of an 800ms stall",
+                    elapsed < 500,
+                )
+            }
+        }
+
+    /**
+     * The case the whole-call bound exists for, and the one with no coverage until now.
+     *
+     * A peer that sends a byte at a time makes continuous progress, so every individual read completes far
+     * inside the 10s socket read timeout and that timeout never fires. Only the whole-call deadline can end
+     * this, and before the deadline actually tore the socket down it could not: the call ran to completion.
+     */
+    @Test
+    fun `a dribbling peer is cut off by the call budget, which a read timeout cannot do`() =
+        runTest {
+            LoopbackServer().use { server ->
+                server.respondWith(200, "0123456789").dribbleBody(60)
+
+                val startedAt = System.currentTimeMillis()
+                val thrown =
+                    runCatching {
+                        service(server, callTimeout = 250.milliseconds)
+                            .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
+                    }.exceptionOrNull()
+                val elapsed = System.currentTimeMillis() - startedAt
+
+                assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
+                assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
+                assertTrue("the dribble was never cut off: ${elapsed}ms", elapsed < 1_500)
             }
         }
 }

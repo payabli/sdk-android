@@ -1,20 +1,19 @@
 package com.payabli.sdk.core.network.impl
 
+import com.payabli.sdk.core.auth.PayabliAuth
+
 /**
- * The declared decoration chain, applied to every outbound request in this order.
+ * The chain applied to every outbound request, in order: **CONTRIBUTORS** add a header or body field, then
+ * **BINDERS** sign over what they emitted, so a binder is always last. `PayabliRequestDecorationsTest` pins
+ * the sequence.
  *
- * **Empty on purpose.** A security header stamped with a placeholder value would establish that an empty
- * value is acceptable, so a decoration arrives only with the server contract it satisfies.
- *
- * Order is two segments, by convention rather than by type: **CONTRIBUTORS** add a header or body field,
- * then **BINDERS** digest or sign over what the contributors emitted, so a binder is always last.
- * `PayabliRequestDecorationsTest` pins the sequence, so a misplaced insertion fails the build.
+ * A function rather than a value so [PayabliService.create] can take the auth holder without taking a chain.
  */
 internal object PayabliRequestDecorations {
-    /** Index 0 runs first. */
-    internal val chain: List<PayabliRequestDecoration> =
+    internal fun chainFor(auth: PayabliAuth): List<PayabliRequestDecoration> =
         listOf(
-            // -- CONTRIBUTORS -- (none yet)
+            // -- CONTRIBUTORS --
+            BearerDecoration(auth),
             // -- BINDERS -- (none yet, and always last)
         )
 }

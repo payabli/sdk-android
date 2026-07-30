@@ -33,6 +33,21 @@ internal class LoopbackServer : AutoCloseable {
     @Volatile
     private var responder: Response = Response(HTTP_OK, ByteArray(0))
 
+    /** Non-empty means scripted: entry N answers request N, and the last entry answers everything after. */
+    @Volatile
+    private var script: List<Response> = emptyList()
+
+    /** Set means the response is chosen from the request rather than from its position. */
+    @Volatile
+    private var chooser: ((Recorded) -> Response)? = null
+
+    @Volatile
+    private var stallMillis: Long = 0
+
+    /** Non-zero means the body is written in chunks with this gap between them. */
+    @Volatile
+    private var dribbleGapMillis: Long = 0
+
     @Volatile
     private var failure: Throwable? = null
 
@@ -59,6 +74,61 @@ internal class LoopbackServer : AutoCloseable {
         return this
     }
 
+    /**
+     * Scripts one response per request, in order, for a test whose subject is a sequence: a 401 followed
+     * by a 200 is not expressible with a single canned response.
+     *
+     * **The last entry answers every request after it, deliberately.** Running out and hanging would make
+     * "no third attempt" fail as a timeout instead of as a count, and a test that hangs is not a test that
+     * goes in. So an extra attempt gets served and the assertion on [recorded] size is what fails.
+     */
+    fun respondInOrder(vararg responses: Pair<Int, String>): LoopbackServer {
+        require(responses.isNotEmpty()) { "a script needs at least one response" }
+        script = responses.map { (status, body) -> Response(status, body.toByteArray(Charsets.UTF_8), emptyMap()) }
+        return this
+    }
+
+    /**
+     * Chooses the response from the request, so a test with concurrent callers does not depend on the order
+     * they happen to arrive in. Prefer this over [respondInOrder] whenever more than one caller is in flight:
+     * a positional script silently encodes an interleaving the scheduler does not promise.
+     */
+    fun respondPerRequest(choose: (Recorded) -> Pair<Int, String>): LoopbackServer {
+        chooser = { request ->
+            val (status, body) = choose(request)
+            Response(status, body.toByteArray(Charsets.UTF_8), emptyMap())
+        }
+        return this
+    }
+
+    /**
+     * Reads the request, then waits [millis] before answering, for a test whose subject is a deadline.
+     *
+     * A stall rather than silence: a server that never answers is indistinguishable from one that is slow,
+     * and the socket-level read timeout would eventually end either. Set this above the deadline under test
+     * and below that read timeout, so the deadline is provably what fired.
+     */
+    fun stallBeforeResponding(millis: Long): LoopbackServer {
+        stallMillis = millis
+        return this
+    }
+
+    /**
+     * Sends the body one byte at a time with [gapMillis] between bytes, so a peer makes slow but continuous
+     * progress. This is the case a socket read timeout cannot catch: every individual read completes well
+     * inside it, so only a whole-call bound can end the exchange.
+     */
+    fun dribbleBody(gapMillis: Long): LoopbackServer {
+        dribbleGapMillis = gapMillis
+        return this
+    }
+
+    /** By request if a chooser is set, otherwise by position. */
+    private fun responseFor(
+        index: Int,
+        request: Recorded,
+    ): Response = chooser?.invoke(request) ?: script.getOrNull(index) ?: script.lastOrNull() ?: responder
+
     override fun close() {
         socket.close()
         worker.join(SHUTDOWN_TIMEOUT_MILLIS)
@@ -79,10 +149,23 @@ internal class LoopbackServer : AutoCloseable {
                 connection.soTimeout = READ_TIMEOUT_MILLIS
                 val request = readRequest(BufferedInputStream(connection.getInputStream()))
                 if (request != null) {
+                    // Index before appending, so the first request reads entry 0.
+                    val answer = responseFor(requests.size, request)
                     requests += request
+                    // Recorded before stalling, so a test can assert the request arrived even when the
+                    // client gave up waiting for its response.
+                    if (stallMillis > 0) Thread.sleep(stallMillis)
                     connection.getOutputStream().apply {
-                        write(responder.encode())
-                        flush()
+                        if (dribbleGapMillis > 0) {
+                            for (byte in answer.encode()) {
+                                write(byte.toInt())
+                                flush()
+                                Thread.sleep(dribbleGapMillis)
+                            }
+                        } else {
+                            write(answer.encode())
+                            flush()
+                        }
                     }
                     connection.shutdownOutput()
                 }

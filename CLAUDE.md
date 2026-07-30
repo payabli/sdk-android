@@ -54,7 +54,11 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - `LoopbackServer` in `:core`'s tests is a real HTTP server on `java.net.ServerSocket`, so transport
   tests exercise `HttpURLConnection` itself rather than a stub. It uses no `com.sun.*` package, so it
   also runs in `src/androidTest` unchanged.
-- Three transport behaviours cannot be shown on the JVM and need an instrumented test: transparent
-  gzip, `PATCH` acceptance, and cancellation unblocking a blocked read.
+- Two transport behaviours cannot be shown on the JVM and need an instrumented test: transparent
+  gzip and `PATCH` acceptance. **"Cancellation unblocking a blocked read" used to be listed here and was
+  wrong.** Measured, `disconnect()` from another thread unblocks a parked `HttpURLConnection` read on this
+  JVM within about two milliseconds, and the whole-call timeout tests assert exactly that. The entry was not
+  describing a platform limit; it was shielding a defect from scrutiny, since the teardown had never fired at
+  all. Before adding a behaviour to this list, measure it.
 - There is no shared fixtures module yet (PLA-2192).
 - Card-present and attestation paths need a physical device or mocks rather than an emulator.

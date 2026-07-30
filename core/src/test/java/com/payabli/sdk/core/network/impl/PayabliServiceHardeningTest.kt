@@ -23,6 +23,7 @@ class PayabliServiceHardeningTest {
         baseUrl: String,
         maxResponseBytes: Long = PayabliService.DEFAULT_MAX_RESPONSE_BYTES,
     ) = PayabliService.create(
+        auth = testAuth(),
         baseUrl = baseUrl,
         logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
         maxResponseBytes = maxResponseBytes,
