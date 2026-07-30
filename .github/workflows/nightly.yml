@@ -54,8 +54,9 @@ jobs:
       API_LEVEL: '34'
       EMULATOR_TARGET: google_apis
       EMULATOR_ARCH: x86_64
-      GPR_USER: ${{ secrets.GPR_USER }}
-      GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+      # A boolean, not the credential. The token itself is scoped to the one step that needs it, but a step
+      # `if:` cannot read the secrets context, so the presence check has to live here as a rendered string.
+      HAS_GPR_CREDENTIALS: ${{ secrets.GPR_TOKEN != '' }}
       # Leads the Slack report. Stated rather than inferred, because both platform SDKs can post into the
       # same channel and a script that guesses the platform would eventually guess wrong.
       PLATFORM: Android
@@ -98,10 +99,18 @@ jobs:
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
       # when the credential is absent, matching the card-present job in ci.yml.
+      #
+      # The credential is declared on this step and nowhere else. Job-level env would put a classic PAT with
+      # read:packages into the environment of every other step, including two invocations of a third-party
+      # action on a mutable @v2 tag that have no use for it. Least privilege matters more here than symmetry
+      # with ci.yml, whose card-present work is a separate job with no third-party action in it.
       - name: Unit tests and coverage (card-present)
         id: unit_card_present
         continue-on-error: true
-        if: env.GPR_TOKEN != ''
+        if: env.HAS_GPR_CREDENTIALS == 'true'
+        env:
+          GPR_USER: ${{ secrets.GPR_USER }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
         run: ./gradlew :taptopay:createDebugUnitTestCoverageReport
 
       # Required on ubuntu-latest, and the step most often left out. Without it the emulator runs
