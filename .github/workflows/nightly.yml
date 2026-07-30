@@ -60,7 +60,13 @@ jobs:
       # same channel and a script that guesses the platform would eventually guess wrong.
       PLATFORM: Android
     steps:
+      # Full history, because the Slack report attributes each failure with `git log -1 -- <file>`. On the
+      # action's default depth of 1 that does not merely come back empty: git attributes the single grafted
+      # commit to every path, so every failure would name whatever landed last. A confidently wrong culprit
+      # is worse than none. Measured on a --depth 1 clone before changing this.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v5
         with:
