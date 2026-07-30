@@ -51,14 +51,30 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 
 - Unit tests in `src/test`, instrumented in `src/androidTest` (JUnit4, Espresso). `:core`'s network,
   error-mapping and logging layers are covered; the other modules are still template-only.
-- `LoopbackServer` in `:core`'s tests is a real HTTP server on `java.net.ServerSocket`, so transport
-  tests exercise `HttpURLConnection` itself rather than a stub. It uses no `com.sun.*` package, so it
-  also runs in `src/androidTest` unchanged.
-- Two transport behaviours cannot be shown on the JVM and need an instrumented test: transparent
-  gzip and `PATCH` acceptance. **"Cancellation unblocking a blocked read" used to be listed here and was
-  wrong.** Measured, `disconnect()` from another thread unblocks a parked `HttpURLConnection` read on this
-  JVM within about two milliseconds, and the whole-call timeout tests assert exactly that. The entry was not
-  describing a platform limit; it was shielding a defect from scrutiny, since the teardown had never fired at
-  all. Before adding a behaviour to this list, measure it.
-- There is no shared fixtures module yet (PLA-2192).
+- `LoopbackServer` is a real HTTP server on `java.net.ServerSocket`, so transport tests exercise
+  `HttpURLConnection` itself rather than a stub. It uses no `com.sun.*` package, so it runs in both test
+  source sets.
+- **`src/sharedTest/java` is compiled into both `test` and `androidTest`**, wired in `core/build.gradle.kts`,
+  and holds `LoopbackServer` with the fixtures it needs (`TestAuth`, `RecordingLogSink`). Add to `kotlin`
+  srcDirs, not `java`: AGP's built-in Kotlin keeps its own source directories and `java` alone leaves `.kt`
+  files out of the compilation. This is not a stand-in for a fixtures module and cannot become one: `LogSink`
+  and `DefaultPayabliLogger` are `internal`, and only compilations of `:core` itself see those. Moving these
+  fixtures to a sibling module or to AGP `testFixtures` would mean widening a published security SDK's API to
+  suit a test layout. Do not re-propose it. The separate cross-module fixtures module (PLA-2192) is a
+  different thing and still does not exist.
+- Two transport behaviours cannot be shown on the JVM, and both are now covered on-device in
+  `PayabliServiceInstrumentedTest`: transparent gzip and `PATCH` acceptance. **"Cancellation unblocking a
+  blocked read" used to be listed here and was wrong.** Measured, `disconnect()` from another thread unblocks
+  a parked `HttpURLConnection` read on this JVM within about two milliseconds, and the whole-call timeout
+  tests assert exactly that. The entry was not describing a platform limit; it was shielding a defect from
+  scrutiny, since the teardown had never fired at all. Before adding a behaviour to this list, measure it.
+- Two traps in the instrumented setup, both of which fail in a way that does not name its cause.
+  `androidx.test.ext:junit` does **not** bring `androidx.test:runner`, so without it the test APK installs and
+  dies with `ClassNotFoundException` on `AndroidJUnitRunner` before any test runs. And the harness pins
+  `127.0.0.1` rather than `InetAddress.getLoopbackAddress()`, which answers `::1` on an emulator: an
+  unbracketed IPv6 literal is not a URL authority, so the base URL parses to no host and every instrumented
+  test fails as invalid configuration while every unit test still passes.
+- **CI runs no instrumented test.** All jobs are `ubuntu-latest` with no emulator, so `connectedAndroidTest`
+  is a deliberate local step and a regression in the three device-only behaviours will not turn a pull
+  request red. PLA-2306 adds a manual and nightly emulator job, deliberately not a required per-PR check.
 - Card-present and attestation paths need a physical device or mocks rather than an emulator.

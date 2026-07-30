@@ -279,13 +279,19 @@ class PayabliServiceTest {
     @Test
     fun `a call that outlives its budget fails as a network error`() =
         runTest {
+            val budgetMillis = 200L
+            val stallMillis = 800L
+            // The midpoint, which is what "ended nearer its budget than the stall" means. Derived rather
+            // than written as a number, so it cannot drift from the two values it sits between.
+            val cutoffMillis = (budgetMillis + stallMillis) / 2
+
             LoopbackServer().use { server ->
-                server.respondWith(200, "").stallBeforeResponding(800)
+                server.respondWith(200, "").stallBeforeResponding(stallMillis)
 
                 val startedAt = System.currentTimeMillis()
                 val thrown =
                     runCatching {
-                        service(server, callTimeout = 200.milliseconds)
+                        service(server, callTimeout = budgetMillis.milliseconds)
                             .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
                     }.exceptionOrNull()
                 val elapsed = System.currentTimeMillis() - startedAt
@@ -295,11 +301,11 @@ class PayabliServiceTest {
                 // The request did reach the server, so the budget ended a call in flight rather than one
                 // that never started.
                 assertEquals("/api/ping", server.onlyRequest.path)
-                // The load-bearing assertion. Compared against the stall rather than a fixed number, so slow
-                // hardware cannot make it flaky, and so it fails if the deadline stops tearing the socket down.
+                // The load-bearing assertion, and it fails if the deadline stops tearing the socket down.
                 assertTrue(
-                    "the call waited out the stall instead of being cut off: ${elapsed}ms of an 800ms stall",
-                    elapsed < 500,
+                    "the call waited out the stall instead of being cut off: ${elapsed}ms of a " +
+                        "${stallMillis}ms stall, over a ${cutoffMillis}ms bound on a ${budgetMillis}ms budget",
+                    elapsed < cutoffMillis,
                 )
             }
         }
