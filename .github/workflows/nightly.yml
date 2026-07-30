@@ -3,9 +3,16 @@ name: Nightly
 # The full suite once a day, plus on demand. Deliberately neither on push nor on pull_request, and
 # deliberately not a required check.
 #
-# `ci.yml` is the per-PR gate and stays fast. This is the complete signal: every unit test including the
-# card-present module, and the instrumented tests that only an emulator can run. The unit tests overlap with
-# ci.yml on purpose, so a nightly failure is readable on its own without cross-referencing another run.
+# `ci.yml` is the per-PR gate and stays fast. This runs every unit test, the card-present module included,
+# and :core's instrumented tests. The unit tests overlap with ci.yml on purpose, so a nightly failure is
+# readable on its own without cross-referencing another run.
+#
+# Instrumented coverage is :core only, and that is a scope statement rather than an oversight. Every module
+# has a src/androidTest directory, but outside :core they hold the generated ExampleInstrumentedTest and none
+# of them declares androidx.test:runner, so those tasks would die with ClassNotFoundException before running
+# a thing. :taptopay is further out of reach: minSdk 30, and attestation and card-reader paths that need a
+# physical device (PLA-2193). Wiring the runner into template-only modules to run generated tests is not
+# worth a line in this file, so the claim is narrowed instead.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
@@ -202,8 +209,12 @@ jobs:
             -X POST -H 'Content-Type: application/json' \
             --data @"$RUNNER_TEMP/slack.json" "$SLACK_WEBHOOK_URL"
 
-      # The XML results are the only way to read a failure once the runner is gone, and the emulator is not
+      # The XML is the only way to read a failure once the runner is gone, and the emulator is not
       # reproducible locally, so upload on failure too.
+      #
+      # build/test-results is listed explicitly: unit JUnit XML lives there, not under build/reports, so the
+      # artifact previously shipped the HTML and coverage while omitting the very files the Slack reporter
+      # parsed. Anyone diagnosing a red nightly from the artifact would have been missing them.
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v7
@@ -211,6 +222,7 @@ jobs:
           name: nightly-reports
           path: |
             **/build/reports/**
+            **/build/test-results/**
             **/build/outputs/androidTest-results/**
           retention-days: 7
 
