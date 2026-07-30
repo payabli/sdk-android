@@ -114,9 +114,9 @@ class PayabliServiceInstrumentedTest {
     /**
      * The whole-call budget, on the implementation whose `disconnect()` behaviour it depends on.
      *
-     * Asserts elapsed time against the stall rather than a fixed number, so slow hardware cannot make it
-     * flaky: what is being claimed is that the call ended nearer its budget than the stall, and any machine
-     * fast enough to run the test at all can show that.
+     * The bound is derived from the budget and the stall rather than written as a number, so it states the
+     * claim instead of approximating it: the call ended nearer the budget it was given than the stall it was
+     * cut out of. Any machine fast enough to run the test can show that.
      */
     @Test
     fun theCallBudgetTearsTheSocketDownRatherThanWaitingOutTheStall() =
@@ -127,7 +127,7 @@ class PayabliServiceInstrumentedTest {
                 val startedAt = System.currentTimeMillis()
                 val thrown =
                     runCatching {
-                        service(server, callTimeout = 200.milliseconds)
+                        service(server, callTimeout = CALL_BUDGET_MILLIS.milliseconds)
                             .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
                     }.exceptionOrNull()
                 val elapsed = System.currentTimeMillis() - startedAt
@@ -137,16 +137,29 @@ class PayabliServiceInstrumentedTest {
                 // The request arrived, so the budget ended a call in flight rather than one that never began.
                 assertEquals("/api/ping", server.onlyRequest.path)
                 assertTrue(
-                    "the call waited out the stall instead of being cut off: " +
-                        "${elapsed}ms of a ${STALL_MILLIS}ms stall",
-                    elapsed < STALL_MILLIS / 2,
+                    "the call waited out the stall instead of being cut off: ${elapsed}ms of a " +
+                        "${STALL_MILLIS}ms stall, over a ${CUTOFF_MILLIS}ms bound on a " +
+                        "${CALL_BUDGET_MILLIS}ms budget",
+                    elapsed < CUTOFF_MILLIS,
                 )
             }
         }
 
     private companion object {
-        /** Well above the 200ms budget under test and well below the socket read timeout, so the
-         * budget is provably what fired. */
+        /** The budget under test, named so the bound below is derived from it rather than tracking it. */
+        const val CALL_BUDGET_MILLIS = 200L
+
+        /** Well above the budget and well below the socket read timeout, so the budget is provably
+         * what fired. */
         const val STALL_MILLIS = 800L
+
+        /**
+         * The midpoint, which is what "nearer the budget than the stall" means.
+         *
+         * A tighter bound catches nothing extra, since the behaviour it guards against is waiting out the
+         * whole stall, and it spends slack that a loaded emulator needs. PLA-2306 runs this on a hosted
+         * runner, so the slack is the difference between a signal and a retry habit.
+         */
+        const val CUTOFF_MILLIS = (CALL_BUDGET_MILLIS + STALL_MILLIS) / 2
     }
 }
