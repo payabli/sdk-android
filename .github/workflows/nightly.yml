@@ -1,19 +1,23 @@
-name: Instrumented tests
+name: Nightly
 
-# Deliberately neither on push nor on pull_request, and deliberately not a required check.
+# The full suite once a day, plus on demand. Deliberately neither on push nor on pull_request, and
+# deliberately not a required check.
 #
-# The call-budget test in :core asserts elapsed wall-clock time against a stalling server, and a hosted
-# emulator is exactly where that kind of assertion goes flaky. A flaky required check teaches people to
-# re-run rather than to read, which costs more than the coverage is worth. These are also platform
-# properties that move when the platform or AGP moves, not per commit, so a nightly catches the class of
-# regression that exists and a per-PR run mostly re-proves the same thing on every contribution.
+# `ci.yml` is the per-PR gate and stays fast. This is the complete signal: every unit test including the
+# card-present module, and the instrumented tests that only an emulator can run. The unit tests overlap with
+# ci.yml on purpose, so a nightly failure is readable on its own without cross-referencing another run.
 #
-# Promote to pull_request only after the nightly has been stable for a stretch, and then consider a paths
-# filter on core/** and the build files. See PLA-2306.
+# Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
+# against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
+# required check teaches people to re-run rather than to read. These are also platform properties that move
+# when the platform or AGP moves, not per commit.
+#
+# Promote to pull_request only after this has been stable for a stretch, and then consider a paths filter on
+# core/** and the build files. See PLA-2306.
 #
 # Note both triggers below only work from the default branch: a scheduled run never fires from a feature
-# branch, and this workflow does not appear in the Run workflow menu until it is on main. So a branch
-# cannot be validated by dispatching it.
+# branch, and this workflow does not appear in the Run workflow menu until it is on main. So a branch cannot
+# be validated by dispatching it; use a short-lived probe branch with a temporary push trigger instead.
 on:
   workflow_dispatch:
   schedule:
@@ -22,7 +26,7 @@ on:
 
 concurrency:
   # A manual dispatch landing during a nightly must not boot a second emulator on the same ref.
-  group: instrumented-${{ github.ref }}
+  group: nightly-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -33,21 +37,23 @@ env:
   GRADLE_OPTS: -Dorg.gradle.console=plain
 
 jobs:
-  instrumented:
-    name: Instrumented tests (:core)
+  nightly:
+    name: Unit + instrumented tests
     runs-on: ubuntu-latest
     # A wedged emulator should fail rather than sit until the six-hour default ceiling.
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
-      # One place for the image coordinates, because the AVD cache key has to agree with the two
-      # emulator steps below or the cache silently never hits.
+      # One place for the image coordinates, because the AVD cache key has to agree with the two emulator
+      # steps below or the cache silently never hits.
       #
-      # 34 is a documented api-level for this action; plain "35" is not, and the accepted values are
-      # 23, 29, 33, 34, 35-ext15 and Baklava. google_apis rather than default, because default images
-      # are not published for every recent level. x86_64 needs API 21 or above, which is satisfied.
+      # 34 is a documented api-level for this action; plain "35" is not, and the accepted values are 23, 29,
+      # 33, 34, 35-ext15 and Baklava. google_apis rather than default, because default images are not
+      # published for every recent level. x86_64 needs API 21 or above, which is satisfied.
       API_LEVEL: '34'
       EMULATOR_TARGET: google_apis
       EMULATOR_ARCH: x86_64
+      GPR_USER: ${{ secrets.GPR_USER }}
+      GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -57,6 +63,16 @@ jobs:
           java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v4
+
+      # Cheap and emulator-free, so it runs first: a compile or unit-test break should not wait on a boot.
+      - name: Unit tests
+        run: ./gradlew :core:test :payin:test :telemetry:test :example:test
+
+      # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
+      # when the credential is absent, matching the card-present job in ci.yml.
+      - name: Unit tests (card-present)
+        if: env.GPR_TOKEN != ''
+        run: ./gradlew :taptopay:test
 
       # Required on ubuntu-latest, and the step most often left out. Without it the emulator runs
       # unaccelerated, which is the one condition that makes the call-budget assertion flaky.
@@ -75,11 +91,11 @@ jobs:
             ~/.android/adb*
           key: avd-${{ env.API_LEVEL }}-${{ env.EMULATOR_TARGET }}-${{ env.EMULATOR_ARCH }}
 
-      # Cache miss only. Boots once to write a snapshot the test step then reuses, which is the
-      # difference between a tolerable nightly and an irritating one.
+      # Cache miss only. Boots once to write a snapshot the test step then reuses, which measured about
+      # 80 seconds off a warm run.
       #
-      # Note what is absent: no -no-snapshot-save, and disable-animations left false. Both are
-      # deliberate, because this step exists to write the snapshot rather than to run anything.
+      # Note what is absent: no -no-snapshot-save, and disable-animations left false. Both are deliberate,
+      # because this step exists to write the snapshot rather than to run anything.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@v2
@@ -102,19 +118,17 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Scoped to :core, never bare connectedAndroidTest. :taptopay resolves from the Fiserv GitHub
-          # Packages repo and needs gpr.user / gpr.token, and carries minSdk 30. Only :core has
-          # instrumented tests, and scoping keeps this job credential-free, which is why it needs no
-          # fork skip like the card-present and sonar jobs in ci.yml.
+          # Scoped to :core. :taptopay carries minSdk 30 and its instrumented paths need a physical device
+          # for attestation and the card reader, so an emulator cannot run them; see PLA-2193.
           script: ./gradlew :core:connectedAndroidTest
 
-      # The XML results are the only way to read a failure after the runner is gone, and the emulator
-      # is not reproducible locally, so upload on failure too.
+      # The XML results are the only way to read a failure once the runner is gone, and the emulator is not
+      # reproducible locally, so upload on failure too.
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: instrumented-reports
+          name: nightly-reports
           path: |
             **/build/reports/**
             **/build/outputs/androidTest-results/**
