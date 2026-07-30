@@ -28,11 +28,15 @@ import kotlinx.serialization.KSerializer
  * status interpretation out of the transport, and `PayabliService`, the implementation a capability writes
  * against, honours it without exception.
  *
- * **One carve-out, and only for credential recovery.** `AuthenticatedTransport` may convert a *credential*
- * rejection into `TOKEN_EXPIRED` rather than return it, but only one it has already tried
- * and failed to recover: one rejection, one refresh, one replay, then the throw. By that point the status
- * carries nothing a caller could act on, since the only remedy has been attempted and did not work. A
- * rejection on the first response is still returned intact, and no other status is ever converted.
+ * **One carve-out, and only for credential recovery.** `AuthenticatedTransport` does not hand back a
+ * credential rejection at all. It consumes the first one: refresh, then either replay the request and return
+ * the replay's response, or, where the method makes a replay unsafe, return the original instead. A second
+ * consecutive rejection becomes `TOKEN_EXPIRED`, because by then the only remedy has been tried and failed,
+ * so the status carries nothing a caller could act on.
+ *
+ * **So do not expect to observe an initial 401.** The single case where the original response surfaces is a
+ * widened, non-401 rejection on a method that cannot be safely replayed. Anything that is not a credential
+ * rejection comes back intact, always.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface PayabliTransport {
