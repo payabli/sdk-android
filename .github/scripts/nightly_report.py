@@ -54,7 +54,12 @@ def mrkdwn(text: str) -> str:
     containing `<!channel>` would broadcast to everyone in the channel. Test data is untrusted input here,
     even when we wrote the test.
     """
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # Backticks are not escapable in mrkdwn, and several of these values are rendered inside a code span, so
+    # one would end the span early. With the angle brackets already neutralised that is cosmetic rather than
+    # a broadcast route, but the substitution costs nothing and closes the class. An apostrophe rather than a
+    # deletion, so a test name that legitimately contains one still reads.
+    return escaped.replace("`", "'")
 
 
 def _int(element: ET.Element, name: str) -> int:
@@ -341,12 +346,24 @@ def main() -> int:
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": text[:SLACK_BLOCK_LIMIT]}})
 
     # Traceability, kept small and out of the headline. The sha is a link so it stays one short token.
+    #
+    # The ref is escaped like everything else dynamic. Git allows backticks and angle brackets in a refname,
+    # and a manual dispatch chooses the ref, so an unescaped one could close this code span and inject a
+    # Slack control sequence. It was the last dynamic field bypassing the escape.
     trail = f"<{run_url}|Open the run>"
     if sha:
         trail += f" · <{server}/{repo}/commit/{sha}|`{sha}`>"
     if ref:
-        trail += f" on `{ref}`"
+        trail += f" on `{mrkdwn(ref)}`"
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": trail}]})
+
+    # Publish the verdict so the workflow gate can honour it. Step outcomes alone cannot see a task that
+    # succeeded while discovering no tests, so without this the run could stay green while this very message
+    # said red. The run and the notification must not be able to disagree.
+    step_output = os.environ.get("GITHUB_OUTPUT")
+    if step_output:
+        with open(step_output, "a", encoding="utf-8") as handle:
+            handle.write(f"verdict={'red' if red else 'green'}\n")
 
     fallback = f"{platform} {verdict.lower()}: {unit_label} unit, {inst_label} instrumented"
     json.dump({"text": fallback, "blocks": blocks}, sys.stdout)

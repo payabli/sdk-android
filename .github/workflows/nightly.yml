@@ -220,18 +220,25 @@ jobs:
           # other suites looking green while the run went red.
           CARD_PRESENT_OUTCOME: ${{ steps.unit_card_present.outcome }}
         run: |
+          # The payload is built first and unconditionally, so the verdict output below exists even when
+          # there is no webhook to post it to.
+          python3 .github/scripts/nightly_report.py > "$RUNNER_TEMP/slack.json"
           if [ -z "$SLACK_WEBHOOK_URL" ]; then
             echo "::warning::SLACK_WEBHOOK_URL is not set, so no nightly report was posted."
             exit 0
           fi
-          python3 .github/scripts/nightly_report.py > "$RUNNER_TEMP/slack.json"
           # Bounded on purpose. An unbounded curl against a stalled endpoint would hold this step until the
           # job bound, which would take the report upload and the suite gate down with it: a Slack outage
           # must not cost the run's result.
-          curl --silent --show-error --fail-with-body \
+          # Warn rather than fail. The comment above promises a reporting outage will not cost the suite
+          # result, and letting a non-zero curl fail this step would have broken that promise: an otherwise
+          # green nightly would go red because Slack was unreachable. The gate below owns the run result.
+          if ! curl --silent --show-error --fail-with-body \
             --connect-timeout 10 --max-time 30 --retry 2 --retry-connrefused \
             -X POST -H 'Content-Type: application/json' \
-            --data @"$RUNNER_TEMP/slack.json" "$SLACK_WEBHOOK_URL"
+            --data @"$RUNNER_TEMP/slack.json" "$SLACK_WEBHOOK_URL"; then
+            echo "::warning::Posting the nightly report to Slack failed. The suite result is unaffected."
+          fi
 
       # The XML is the only way to read a failure once the runner is gone, and the emulator is not
       # reproducible locally, so upload on failure too.
@@ -260,8 +267,14 @@ jobs:
                          "${{ steps.instrumented.outcome }}"; do
             case "$outcome" in failure|cancelled|timed_out) failed=1 ;; esac
           done
+          # The reporter's own verdict, so the run and the notification cannot disagree. Step outcomes alone
+          # miss a task that succeeded while discovering no tests: the report calls that red, and without
+          # this the run would stay green and contradict the message it just sent.
+          if [ "${{ steps.slack.outputs.verdict }}" = "red" ]; then
+            failed=1
+          fi
           if [ "$failed" -eq 1 ]; then
-            echo "::error::A test suite failed. See the Slack report and the step logs above."
+            echo "::error::A test suite failed or reported no results. See the Slack report and the logs."
             exit 1
           fi
           echo "All suites passed."
