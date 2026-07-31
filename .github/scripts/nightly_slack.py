@@ -74,10 +74,14 @@ LOOKUP_BUDGET_SECONDS = 60
 # has occurred in 60 days" applies and GitHub documents no notification when it happens; and "if the load is
 # sufficiently high enough, some queued jobs may be dropped". Neither produces an error to report.
 #
-# So every run arms a message in Slack's own future and cancels the one the previous run armed. If the nightly
-# stops for any reason, nobody cancels it and Slack posts it. The clock lives outside GitHub, which is the
-# whole point: a watcher hosted on the thing it watches dies with it. That is also why this is not a weekly
-# digest job.
+# So the scheduled run on the default branch arms a message in Slack's own future and cancels the one the
+# previous scheduled run armed. If that nightly stops for any reason, nobody cancels it and Slack posts it. The
+# clock lives outside GitHub, which is the whole point: a watcher hosted on the thing it watches dies with it.
+# That is also why this is not a weekly digest job.
+#
+# Only that run, and see owns_liveness_switch() for why. A manual dispatch or a probe branch reports normally
+# and leaves the alarm untouched, because the switch answers "is the schedule alive" and those runs are not
+# evidence of a schedule. A non-owner going quiet is the design, not a broken path.
 #
 # 26 hours rather than 25. Measured on this repo, scheduled runs fire 42 to 53 minutes after the cron, which
 # is the documented load delay, so a tighter window would cry wolf nightly.

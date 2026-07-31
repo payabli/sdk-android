@@ -71,9 +71,16 @@ has to be decided there because that is where the gate reads it.
 **A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
 missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
 stop reading a channel. Silence would be ambiguous on its own, because "green" and "the workflow stopped
-firing" look identical, so every run arms a Slack scheduled message about 26 hours out and cancels the one
-the previous run armed. If the nightly stops for any reason, nobody cancels it and Slack posts the alarm on
-its own clock. The clock has to live outside GitHub: a watcher hosted on the thing it watches dies with it,
+firing" look identical, so the scheduled run on the default branch arms a Slack scheduled message about 26
+hours out and cancels the one the previous scheduled run armed. If that nightly stops for any reason, nobody
+cancels it and Slack posts the alarm on its own clock.
+
+**Only that run owns the alarm, and that restriction is load-bearing.** A manual dispatch or a probe branch
+reports as normal and leaves the alarm alone; a non-owner going quiet is the design rather than a broken path.
+Letting any run reset it would measure "somebody ran the nightly at some point", which a dead schedule could
+satisfy indefinitely through the occasional dispatch, and that is the exact failure the switch exists to catch.
+The marker is also scoped per platform, so a sibling platform reporting into the same channel cannot cancel
+this one's alarm. The clock has to live outside GitHub: a watcher hosted on the thing it watches dies with it,
 which is why this is not a scheduled digest job.
 
 Three reasons the window is 26 hours rather than 25: scheduled runs here fire 42 to 53 minutes after the
