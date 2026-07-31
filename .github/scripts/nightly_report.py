@@ -158,14 +158,23 @@ def coverage(counter_type: str) -> list[tuple[str, float | None, str]]:
     the stricter of the two, since a fully executed line with an untaken branch counts as covered by line
     and uncovered by branch.
 
-    Returns one row per module in COVERAGE_MODULES, always, with a state that distinguishes three answers
-    that must not be conflated. `measured` carries a percentage. `empty` means the report exists with no
-    counters, which is a module that has no classes yet, and is different from 0%. `missing` means no
-    readable report was written at all, which is what a failed or skipped coverage task leaves behind.
+    Returns one row per module in COVERAGE_MODULES, always, with a state that distinguishes four answers
+    that must not be conflated:
 
-    Every one of them is named. Reporting only what is on disk lets a module disappear on the nights the
-    report matters most, and a silent omission reads as "this module is not measured" rather than "this
-    module was not measured tonight".
+      * `measured` carries a percentage
+      * `empty` is a module with nothing to measure at all, which is different from 0%
+      * `inapplicable` is a module that has classes but none of *this* counter. A class with no conditionals
+        has a BRANCH total of zero while its LINE counter reads normally
+      * `missing` is no readable report, which is what a failed or skipped coverage task leaves behind
+
+    `inapplicable` exists because deriving emptiness from the selected counter conflated the first two, and
+    visibly: a module with lines and no branches reported `core no classes yet` on the branch row directly
+    above `core 90.0%` on the line row, in one message, about one module. Emptiness is a property of the
+    report, so it is read from every counter, and applicability is a property of the counter asked for.
+
+    Every module is named in every case. Reporting only what is on disk lets a module disappear on the
+    nights the report matters most, and a silent omission reads as "this module is not measured" rather than
+    "this module was not measured tonight".
     """
     out: list[tuple[str, float | None, str]] = []
     for module in COVERAGE_MODULES:
@@ -180,16 +189,26 @@ def coverage(counter_type: str) -> list[tuple[str, float | None, str]]:
             out.append((module, None, "missing"))
             continue
         # Only counters that are direct children of <report>. Nested ones are per-package and per-class,
-        # and summing those double-counts. An empty module has no such counters at all.
-        percent: float | None = None
+        # and summing those double-counts.
+        totals = {
+            counter.get("type", ""): _int(counter, "missed") + _int(counter, "covered")
+            for counter in root.findall("counter")
+        }
+        if not totals or not any(totals.values()):
+            # No counters, or every counter empty: nothing in this module has been compiled into anything
+            # measurable, which is what "no classes yet" means.
+            out.append((module, None, "empty"))
+            continue
+        total = totals.get(counter_type, 0)
+        if not total:
+            # Other counters carry values, so the module is not empty. It simply has none of this kind.
+            out.append((module, None, "inapplicable"))
+            continue
+        covered = 0
         for counter in root.findall("counter"):
-            if counter.get("type") != counter_type:
-                continue
-            missed, covered = _int(counter, "missed"), _int(counter, "covered")
-            total = missed + covered
-            if total:
-                percent = 100.0 * covered / total
-        out.append((module, percent, "measured" if percent is not None else "empty"))
+            if counter.get("type") == counter_type:
+                covered = _int(counter, "covered")
+        out.append((module, 100.0 * covered / total, "measured"))
     return out
 
 
@@ -454,10 +473,11 @@ def main() -> int:
     facts = {
         # Bumped whenever a consumer would misread an older file. The poster refuses an unknown version
         # rather than rendering half a message from fields it does not recognise.
+        # 4: coverage rows can carry state `inapplicable`, a module with classes but none of this counter.
         # 3: the run block is gone. The poster rebuilds those URLs from its own GITHUB_* environment, since
         # this file crosses a job boundary out of the job that runs a third-party action, and a URL carried
         # across it is untrusted input landing inside Slack link syntax.
-        "schema": 3,
+        "schema": 4,
         "verdict": "red" if red else "green",
         "platform": platform,
         "suites": [{"name": name, "label": label} for name, label in suites],

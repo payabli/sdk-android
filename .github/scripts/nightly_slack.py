@@ -52,9 +52,10 @@ SLACK_API = "https://slack.com/api"
 # Slack hard-limits a text block at 3000 characters. Two separate bounds therefore apply to the failure
 # list, a count and a length, and both must announce themselves: a silently truncated list reads as "that
 # was all of them". The length bound sits under 3000 to leave room for the notice that reports it.
+INAPPLICABLE = {"branch": "no branches", "line": "no lines"}
 MAX_LISTED_FAILURES = 12
 SLACK_BLOCK_LIMIT = 2900
-SUPPORTED_SCHEMA = 3
+SUPPORTED_SCHEMA = 4
 
 # Mention lookups are bounded twice, and the second bound is the one that matters. Twelve listed failures can
 # each name two distinct commits with two distinct authors, so the worst case is 24 sequential lookups. At the
@@ -217,6 +218,11 @@ def summary_blocks(facts: dict) -> tuple[list[dict], str]:
                 rendered.append(f"{name} {module['percent']:.1f}%")
             elif module["state"] == "empty":
                 rendered.append(f"{name} no classes yet")
+            elif module["state"] == "inapplicable":
+                # Has classes, has none of this counter. Saying "no classes yet" here contradicted the line
+                # row directly beneath it, about the same module, in the same message.
+                label = group["label"]
+                rendered.append(f"{name} {INAPPLICABLE.get(label, 'no ' + label + ' data')}")
             else:
                 rendered.append(f"{name} no report written")
         measured = " · ".join(rendered) if rendered else "no modules configured"
