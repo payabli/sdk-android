@@ -13,6 +13,10 @@ package com.payabli.sdk.core.storage
  *
  * **Not encrypted, and that is the point.** Never construct one outside a test.
  *
+ * It enforces the same key rule as the shipping store, through the shared [requireRepresentableKey]. A fixture
+ * that accepts what production rejects lets a consumer's test pass here and fail in production, which is the one
+ * thing a fixture must not do.
+ *
  * Deliberately just the three contract methods. A write counter and a text `snapshot()` were here for a consumer
  * that does not exist yet, and the snapshot was actively wrong: decoding stored bytes as UTF-8 put back the text
  * assumption the contract dropped, so a test asserting on it would have mangled any value that is not valid
@@ -24,16 +28,21 @@ package com.payabli.sdk.core.storage
 internal class InMemorySecureStorage : PayabliSecureStorage {
     private val values: MutableMap<String, ByteArray> = mutableMapOf()
 
-    override suspend fun get(key: String): ByteArray? = values[key]?.copyOf()
+    override suspend fun get(key: String): ByteArray? {
+        requireRepresentableKey(key)
+        return values[key]?.copyOf()
+    }
 
     override suspend fun set(
         key: String,
         value: ByteArray,
     ) {
+        requireRepresentableKey(key)
         values[key] = value.copyOf()
     }
 
     override suspend fun remove(key: String) {
+        requireRepresentableKey(key)
         values.remove(key)
     }
 }

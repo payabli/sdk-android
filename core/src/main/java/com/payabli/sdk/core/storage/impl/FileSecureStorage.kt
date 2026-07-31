@@ -5,6 +5,7 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.core.storage.requireRepresentableKey
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -42,7 +43,7 @@ internal class FileSecureStorage(
 
     override suspend fun get(key: String): ByteArray? =
         withContext(dispatcher) {
-            requireRepresentable(key)
+            requireRepresentableKey(key)
             mutex.withLock {
                 val blob = read()[key] ?: return@withLock null
                 try {
@@ -67,7 +68,7 @@ internal class FileSecureStorage(
         value: ByteArray,
     ) {
         withContext(dispatcher) {
-            requireRepresentable(key)
+            requireRepresentableKey(key)
             mutex.withLock {
                 // Read before encrypting, so the whole read-modify-write sits inside one critical section
                 // and a test can widen the window from the cipher. Encrypting first put the seam outside it.
@@ -97,7 +98,7 @@ internal class FileSecureStorage(
 
     override suspend fun remove(key: String) {
         withContext(dispatcher) {
-            requireRepresentable(key)
+            requireRepresentableKey(key)
             mutex.withLock {
                 val current = read()
                 // Sweeping on the absent-key path too, because deletion is what remove promises. A set
@@ -184,29 +185,6 @@ internal class FileSecureStorage(
     }
 
     /**
-     * A key must survive a UTF-8 round trip, and every entry point checks it rather than one of them.
-     *
-     * The name is the only thing binding a blob to its entry, as GCM AAD, and `String.toByteArray` replaces
-     * malformed UTF-16 rather than refusing it. Measured, `"\uD800"`, `"\uD801"` and a literal `"?"` all encode
-     * to the single byte `0x3f`, so entries whose names collapse can open each other's blob with the tag check
-     * passing. That is the substitution attack the AAD exists to stop, reached by naming instead of by editing
-     * the file. The same string is also the persisted map key, so a name that cannot round-trip makes an entry's
-     * identity ambiguous in two places at once.
-     *
-     * `require`, not a [SecureStorageException]: a key is a plaintext name chosen by calling code, so one that
-     * is not representable is a caller bug rather than a storage outcome. Rejecting also keeps the file's keys
-     * readable, which matters for a field somebody will look at during an incident.
-     *
-     * The check asserts the property directly rather than configuring an encoder to report, because the property
-     * *is* "this name means the same thing after being written and read back".
-     */
-    private fun requireRepresentable(key: String) {
-        require(String(key.toByteArray(Charsets.UTF_8), Charsets.UTF_8) == key) {
-            "a storage key must be representable as UTF-8 without loss"
-        }
-    }
-
-    /**
      * Removes temporary files left by writes that never finished.
      *
      * Nothing else looks for them. Process death between creating the temp and renaming it orphans one
@@ -224,14 +202,30 @@ internal class FileSecureStorage(
      *
      * Deleting a match is then safe, because the caller holds this file's lock, the store is single-process, and
      * the sweep runs before this write's own temp exists.
+     *
+     * **A sweep that cannot do its job fails.** Both of its silent outcomes, a directory that cannot be listed and
+     * an orphan that cannot be deleted, used to leave the caller believing the entry was gone.
      */
     private fun sweepOrphans() {
+        // A missing parent is nothing to sweep. A parent that exists but cannot be listed is a failure, and the
+        // two are the same null from listFiles, which is why they are separated before it is called.
+        val parent = file.parentFile ?: return
+        if (!parent.isDirectory) return
+
         val prefix = tempPrefix()
-        file.parentFile
-            .listFiles { candidate -> isOwnTemp(candidate.name, prefix) }
-            ?.forEach { orphan ->
-                if (orphan.delete()) logger.warn { "discarded an unfinished secure storage write" }
+        val orphans =
+            parent.listFiles { candidate -> isOwnTemp(candidate.name, prefix) }
+                ?: throw SecureStorageException.StorageUnavailable()
+
+        orphans.forEach { orphan ->
+            when {
+                orphan.delete() -> logger.warn { "discarded an unfinished secure storage write" }
+                // Reported, not swallowed: remove promises deletion, and returning normally with a decryptable
+                // blob still on disk is the case this sweep exists to prevent.
+                orphan.exists() -> throw SecureStorageException.StorageUnavailable()
+                // Otherwise it vanished between the listing and the delete, which costs nothing.
             }
+        }
     }
 
     /**

@@ -759,6 +759,68 @@ class FileSecureStorageTest {
         }
 
     /**
+     * A sweep that cannot delete an orphan must say so, or `remove` lies again.
+     *
+     * The whole point of sweeping on `remove` is that deletion means deletion. `delete()` returning false used to
+     * be simply not the `if` branch, so the caller was told the entry was gone while a decryptable blob for it was
+     * still on disk. Injected by taking write permission off the directory, which is a real cause rather than a
+     * stub, with the orphan already present.
+     */
+    @Test
+    fun `remove reports failure when an orphan cannot be deleted`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val subject = storage(file)
+            subject.set("present", "value".toByteArray())
+            File(folder.root, "pbl${StoreIdentity.of(file)}.4242.tmp").writeText("""{"interrupted":"ciphertext"}""")
+
+            assertTrue("the directory stayed writable, so nothing was tested", folder.root.setWritable(false))
+            val thrown =
+                try {
+                    runCatching { subject.remove("never-written") }.exceptionOrNull()
+                } finally {
+                    folder.root.setWritable(true)
+                }
+
+            assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
+        }
+
+    /**
+     * A directory that exists but cannot be listed is a failure, not an empty directory.
+     *
+     * `listFiles` answers null for both a missing parent and a listing failure, and treating them alike meant
+     * `remove` reported success without ever having looked. Injected by removing read permission from the
+     * directory: measured, that leaves `isDirectory` true with `listFiles` null, while a known path inside stays
+     * readable, so the store still loads and only the sweep is blinded.
+     */
+    @Test
+    fun `remove reports failure when the directory cannot be listed`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val subject = storage(file)
+            subject.set("present", "value".toByteArray())
+
+            assertTrue("the directory stayed readable, so nothing was tested", folder.root.setReadable(false))
+            val thrown =
+                try {
+                    runCatching { subject.remove("never-written") }.exceptionOrNull()
+                } finally {
+                    folder.root.setReadable(true)
+                }
+
+            assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
+        }
+
+    /** And an absent directory is nothing to sweep rather than a failure, so absence did not become an error. */
+    @Test
+    fun `remove succeeds when the store's directory does not exist`() =
+        runTest(timeout = 5.seconds) {
+            val subject = storage(File(folder.root, "absent/store.json"))
+
+            subject.remove("never-written")
+        }
+
+    /**
      * A write that cannot create its temp file must leave the previous store complete.
      *
      * What matters is not the exception but what survives it. Injected by taking write permission off the

@@ -16,6 +16,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,9 +45,14 @@ import kotlin.time.Duration.Companion.seconds
  *   -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.core.ManualDeviceTest
  * ```
  *
- * **A gap worth naming rather than hiding:** both phones available here advertise StrongBox, so the
- * `TRUSTED_ENVIRONMENT` branch of [theStorageKeyUsesTheBestLevelTheDeviceAdvertises] has no hardware to execute
- * it. It is asserted by construction, not by a run.
+ * **The tier adapts to what the device claims rather than assuming a secure element.** `minSdk` is 23 and
+ * `createKey` accepts a software key when the platform offers nothing better, so the two hardware-only questions
+ * skip on a phone advertising no hardware keystore instead of failing a correct implementation. A skip here costs
+ * nothing: the manual tier is not in the nightly, so it pollutes no reported count.
+ *
+ * **Gaps worth naming rather than hiding:** both phones available here advertise StrongBox *and* a hardware
+ * keystore, so neither the `TRUSTED_ENVIRONMENT` branch nor the software branch of
+ * [theStorageKeyUsesTheBestLevelTheDeviceAdvertises] is executed, and neither `Assume` has been observed to skip.
  *
  * **Not covered here: `KeyPermanentlyInvalidatedException`.** This key is not bound to user authentication,
  * so an enrollment or credential change does not invalidate it, and there is no procedure that would. The
@@ -93,6 +99,10 @@ class KeystoreHardwareManualTest {
     @Test
     fun theStorageKeyIsHardwareBacked() =
         runTest(timeout = 30.seconds) {
+            Assume.assumeTrue(
+                "this device advertises no hardware keystore, so there is no hardware backing to assert",
+                advertisesHardwareKeystore(),
+            )
             storage().set("refresh", "secret-value".toByteArray())
             val info = keyInfo()
 
@@ -141,11 +151,13 @@ class KeystoreHardwareManualTest {
                     .targetContext
                     .packageManager
                     .hasSystemFeature(STRONGBOX_FEATURE)
+            // No skip here, because "the best level this device advertises" is answerable on any device: software
+            // is the honest expectation when the device claims no hardware keystore at all.
             val expected =
-                if (hasStrongBox) {
-                    KeyProperties.SECURITY_LEVEL_STRONGBOX
-                } else {
-                    KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
+                when {
+                    hasStrongBox -> KeyProperties.SECURITY_LEVEL_STRONGBOX
+                    advertisesHardwareKeystore() -> KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
+                    else -> KeyProperties.SECURITY_LEVEL_SOFTWARE
                 }
 
             assertEquals(
@@ -167,6 +179,10 @@ class KeystoreHardwareManualTest {
     @Test
     fun aValueRoundTripsUnderAHardwareBackedKey() =
         runTest(timeout = 30.seconds) {
+            Assume.assumeTrue(
+                "this device advertises no hardware keystore, so there is no hardware backing to assert",
+                advertisesHardwareKeystore(),
+            )
             val subject = storage()
             subject.set("refresh", "secret-value".toByteArray())
 
@@ -189,6 +205,20 @@ class KeystoreHardwareManualTest {
             }
         }
 
+    /**
+     * What the device claims, rather than what the tier hopes.
+     *
+     * `minSdk` is 23 and `createKey` deliberately accepts a software key when the platform offers nothing better,
+     * so a phone advertising no hardware keystore would fail a correct implementation. Both phones on hand
+     * advertise it, at version 400 and 100, so the software branch is unexecuted here.
+     */
+    private fun advertisesHardwareKeystore(): Boolean =
+        InstrumentationRegistry
+            .getInstrumentation()
+            .targetContext
+            .packageManager
+            .hasSystemFeature(HARDWARE_KEYSTORE_FEATURE)
+
     private fun keyInfo(): KeyInfo {
         val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
         val key = store.getKey(keyAlias, null) as SecretKey
@@ -199,5 +229,6 @@ class KeystoreHardwareManualTest {
     private companion object {
         const val PROVIDER = "AndroidKeyStore"
         const val STRONGBOX_FEATURE = "android.hardware.strongbox_keystore"
+        const val HARDWARE_KEYSTORE_FEATURE = "android.hardware.hardware_keystore"
     }
 }
