@@ -513,10 +513,16 @@ def commits_since_last_green() -> dict | None:
         return None
 
     compared = github_get(f"{api}/repos/{repo}/compare/{base_sha}...{sha}", token)
+    total = (compared or {}).get("total_commits")
+    if not isinstance(total, int):
+        # The compare did not answer, which happens when a force-push leaves the previous success
+        # incomparable. The link would 404 as well, so rendering a suspect range here would be a guess with a
+        # dead reference attached. This function's contract is to return nothing rather than that.
+        return None
     return {
         "base": base_sha[:7],
         "head": sha[:7],
-        "count": (compared or {}).get("total_commits"),
+        "count": total,
         "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
         "when": baseline.get("created_at", ""),
     }
@@ -543,7 +549,7 @@ def slack_get(method: str, token: str, params: dict) -> dict | None:
     return body
 
 
-def arm_liveness_switch(token: str, channel: str) -> str | None:
+def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
     """Schedule the alarm and return its id, or None if Slack would not take it.
 
     Armed before the previous one is cancelled, deliberately, and the earlier ordering was wrong. Cancelling
@@ -583,17 +589,28 @@ def arm_liveness_switch(token: str, channel: str) -> str | None:
         "unfurl_links": False,
     })
     if armed and armed.get("ok"):
-        return armed.get("scheduled_message_id") or None
+        message_id = armed.get("scheduled_message_id")
+        # post_at is echoed back, but the value we asked for is authoritative for the ordering comparison.
+        return (message_id, post_at) if message_id else None
     return None
 
 
-def cancel_stale_switches(token: str, channel: str, keep: str) -> None:
-    """Cancel this bot's earlier alarms, keeping the one just armed.
+def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int) -> None:
+    """Cancel this bot's alarms that are strictly older than the one just armed.
 
     Filtered on SWITCH_MARKER rather than deleting everything the token has pending. The list is scoped to
     this token, which stops the bot touching a person's scheduled message, but it does not distinguish the
-    alarm from anything else this bot might ever schedule in the channel. Failing to filter would make that a
-    silent side effect the day something else is added.
+    alarm from anything else this bot might ever schedule in the channel.
+
+    Filtered on `post_at` as well, and that is the part that took a review to see. `cancel-in-progress` only
+    *requests* cancellation, so two runs on the same ref can overlap. Both arm, then each lists both alarms
+    and deletes the one that is not its own, leaving nothing pending while the later run still reports
+    success. Deleting only what is strictly older is what closes that: every run's own alarm has the latest
+    `post_at`, so the newest always survives no matter which order the two cancels interleave.
+
+    Ties and unreadable timestamps are retained rather than deleted. Two alarms armed in the same second
+    leave a duplicate, which is one false alarm and self-heals on the next run; deleting on a tie could leave
+    zero, which is the outcome this whole mechanism exists to prevent.
     """
     pending = slack_get("chat.scheduledMessages.list", token, {"channel": channel, "limit": 100})
     if not (pending and pending.get("ok")):
@@ -603,6 +620,10 @@ def cancel_stale_switches(token: str, channel: str, keep: str) -> None:
         if not message_id or message_id == keep:
             continue
         if SWITCH_MARKER not in (message.get("text") or ""):
+            continue
+        post_at = message.get("post_at")
+        if not isinstance(post_at, int) or post_at >= keep_post_at:
+            # Not provably older, so not ours to remove.
             continue
         slack_post("chat.deleteScheduledMessage", token,
                    {"channel": channel, "scheduled_message_id": message_id})
@@ -619,7 +640,7 @@ def reset_liveness_switch(token: str, channel: str) -> bool:
     if not armed:
         warn(f"The liveness switch could not be armed, so silence would not be monitored ({SWITCH_MARKER}).")
         return False
-    cancel_stale_switches(token, channel, keep=armed)
+    cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1])
     print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({SWITCH_MARKER}).")
     return True
 
