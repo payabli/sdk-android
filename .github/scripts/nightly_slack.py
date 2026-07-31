@@ -556,14 +556,15 @@ def arm_liveness_switch(token: str, channel: str) -> str | None:
     post_at = int(time.time()) + SWITCH_HOURS * 3600
     platform = mrkdwn(platform_name())
     run = trusted_run_links()
+    # Kept short on purpose. This is read at a glance, and the first draft spent two paragraphs explaining
+    # its own mechanism, which the reader does not need and which is already in this file and in CLAUDE.md.
+    # What survives is the three things that change what someone does next: what happened, that it is worse
+    # than a red suite, and where to look.
     text = (
-        f":rotating_light: *{platform} · the nightly has not reported for over {SWITCH_HOURS} hours*\n"
-        "This message was armed by the last run that completed and should have been cancelled by the next "
-        "one. It posting means no nightly reported in that window, so the run is not merely red, it did not "
-        "happen or could not reach Slack.\n"
-        "Worth checking in order: whether the workflow is still enabled, whether scheduled runs were dropped, "
-        "and whether Actions minutes ran out. A public repository also has its scheduled workflows disabled "
-        "automatically after 60 days without repository activity, and GitHub does not announce that."
+        f":rotating_light: *{platform} · no nightly report in over {SWITCH_HOURS} hours*\n"
+        "It did not run, or could not reach Slack. Not just a red suite.\n"
+        "Check: workflow still enabled (a public repo silently disables schedules after 60 days idle) · "
+        "scheduled runs not dropped · Actions minutes left"
     )
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
     if run["url"]:
