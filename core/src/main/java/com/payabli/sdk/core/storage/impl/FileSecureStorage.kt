@@ -74,11 +74,15 @@ internal class FileSecureStorage(
                 val current = read()
                 var plaintext: ByteArray? = null
                 try {
-                    // A write cannot otherwise tell a fresh install from a lost alias, and the cipher creates
-                    // a key for either. With entries already on disk it is the second case: the new blob
-                    // would sit beside ciphertext sealed under the key that is gone, nothing would report the
-                    // loss, and each old value would instead fail alone on some later read.
-                    if (current.isNotEmpty() && !cipher.hasKey()) throw SecureStorageException.KeyInvalidated()
+                    // Only an empty store may create a key. A write cannot otherwise tell a fresh install from
+                    // a lost alias, and creating for the second case puts the new blob beside ciphertext sealed
+                    // under the key that is gone, with nothing reporting the loss: each old value would instead
+                    // fail alone on some later read as though it were individually corrupt.
+                    //
+                    // The decision is the caller's because only the caller knows the store is empty, and it is
+                    // one cipher operation because a separate "is there a key" question left a window between
+                    // asking and encrypting.
+                    cipher.ensureKey(mayCreate = current.isEmpty())
                     plaintext = SecretBuffers.toBytes(value)
                     write(current + (key to cipher.encrypt(key, plaintext)))
                 } catch (e: SecureStorageException.KeyInvalidated) {

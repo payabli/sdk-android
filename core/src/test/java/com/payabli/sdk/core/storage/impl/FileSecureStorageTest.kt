@@ -68,7 +68,16 @@ class FileSecureStorageTest {
             return "$ordinal|$aad|${String(plaintext, Charsets.UTF_8)}"
         }
 
-        override fun hasKey(): Boolean = keyPresent
+        /** Records what storage decided, so a test can prove the flag is derived rather than always false. */
+        var lastMayCreate: Boolean? = null
+            private set
+
+        override fun ensureKey(mayCreate: Boolean) {
+            lastMayCreate = mayCreate
+            if (keyPresent) return
+            if (!mayCreate) throw SecureStorageException.KeyInvalidated()
+            keyPresent = true
+        }
 
         override fun decrypt(
             aad: String,
@@ -332,7 +341,7 @@ class FileSecureStorageTest {
                         blob: String,
                     ): ByteArray = ByteArray(0)
 
-                    override fun hasKey(): Boolean = true
+                    override fun ensureKey(mayCreate: Boolean) = Unit
                 }
 
             storage(cipher = capturing).set("refresh", "secret-value".toCharArray())
@@ -382,10 +391,36 @@ class FileSecureStorageTest {
     @Test
     fun `a write into an empty store creates the key`() =
         runTest(timeout = 5.seconds) {
-            val subject = storage(cipher = CountingCipher(keyPresent = false))
+            val cipher = CountingCipher(keyPresent = false)
+            val subject = storage(cipher = cipher)
             subject.set("refresh", "secret-value".toCharArray())
 
             assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            // The flag has to be derived from the store, not a constant. Hardcoded false breaks the line above,
+            // but hardcoded true breaks nothing there, so the value passed is asserted directly.
+            assertEquals("an empty store must be allowed to create a key", true, cipher.lastMayCreate)
+        }
+
+    /**
+     * The window a separate presence check left open: an alias that disappears **after** provisioning.
+     *
+     * Provisioning says a key is there, and then it is not by the time `encrypt` runs. `encrypt` must refuse to
+     * create a replacement, because doing so would seal this value under a new key and leave every earlier blob
+     * unreadable with nothing reporting it. Instead the failure surfaces and the store is cleared.
+     */
+    @Test
+    fun `a key that vanishes after provisioning is reported rather than replaced`() =
+        runTest(timeout = 5.seconds) {
+            val cipher = CountingCipher()
+            val subject = storage(cipher = cipher)
+            subject.set("first", "one".toCharArray())
+
+            cipher.failNextEncrypt = SecureStorageException.KeyInvalidated()
+            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+
+            assertTrue("expected KeyInvalidated, got $thrown", thrown is SecureStorageException.KeyInvalidated)
+            assertNull("the store should have been cleared rather than mixed", subject.get("first"))
+            assertNull(subject.get("second"))
         }
 
     /**

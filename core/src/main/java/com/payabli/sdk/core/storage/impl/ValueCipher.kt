@@ -26,11 +26,16 @@ internal interface ValueCipher {
     ): ByteArray
 
     /**
-     * Whether a key exists to encrypt under, without creating one.
+     * Makes sure a key is available to [encrypt] under, and decides whether creating one is allowed.
      *
-     * A write cannot otherwise tell a fresh install from a lost key, and both would have [encrypt] create
-     * one. With entries already stored, creating is the wrong answer: the new blob would sit beside
-     * ciphertext sealed under the key that is gone.
+     * Provisioning is separate from use, and this is the only operation that may create a key: [encrypt]
+     * never does. That is what makes the decision the caller's, since only the caller knows whether the store
+     * is empty. Creating a key for a store that already holds entries is always wrong, because the new blob
+     * would sit beside ciphertext sealed under the key that is gone with nothing reporting the loss.
+     *
+     * @param mayCreate true only when the store holds no entries, so a missing key means a fresh install.
+     *   With entries present a missing key means the key was lost, and this fails with
+     *   `SecureStorageException.KeyInvalidated` rather than papering over it.
      */
-    fun hasKey(): Boolean
+    fun ensureKey(mayCreate: Boolean)
 }

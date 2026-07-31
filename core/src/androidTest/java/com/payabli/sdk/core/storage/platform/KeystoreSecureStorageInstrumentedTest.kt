@@ -84,7 +84,8 @@ class KeystoreSecureStorageInstrumentedTest {
             // Delete and recreate under the same alias: from the read side the key simply changed.
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             store.deleteEntry(keyAlias)
-            KeystoreValueCipher(keyAlias, logger).encrypt("unrelated", "forces a new key".toByteArray())
+            // ensureKey, because encrypt no longer creates: provisioning is a separate operation now.
+            KeystoreValueCipher(keyAlias, logger).ensureKey(mayCreate = true)
 
             val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
             // ValueUnreadable rather than KeyInvalidated: the alias exists, so the read reaches the tag
@@ -172,12 +173,78 @@ class KeystoreSecureStorageInstrumentedTest {
         )
 
     /**
+     * `encrypt` must never create a key, which is the cipher-level half of the provisioning split.
+     *
+     * Storage decides whether creation is allowed and says so once, through `ensureKey`. If `encrypt` can also
+     * create, that decision is bypassed whenever the alias disappears between the two calls: the value gets
+     * sealed under a fresh key, every earlier blob becomes unreadable, and nothing reports it.
+     *
+     * Asserted directly against the cipher rather than through storage, because storage's fake cannot show what
+     * the real Keystore does, and because a `KeyInvalidated` from `encrypt` is only correct if no key was left
+     * behind. Both halves are checked.
+     */
+    @Test
+    fun encryptDoesNotCreateAKeyWhenTheAliasIsGone() =
+        runTest(timeout = 30.seconds) {
+            val cipher = KeystoreValueCipher(keyAlias, logger)
+            cipher.ensureKey(mayCreate = true)
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(keyAlias)
+
+            val thrown = runCatching { cipher.encrypt("refresh", "secret-value".toByteArray()) }.exceptionOrNull()
+
+            assertTrue(
+                "expected KeyInvalidated rather than a silently minted replacement, got $thrown",
+                thrown is SecureStorageException.KeyInvalidated,
+            )
+            assertFalse(
+                "encrypt created a replacement key, which strands every blob sealed by the previous one",
+                KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.containsAlias(keyAlias),
+            )
+        }
+
+    /**
+     * Two stores built by the factory must not share a key alias.
+     *
+     * The isolation the continuity argument rests on. A cipher can cheaply prove a key is *present*, not that it
+     * is the key that sealed the blobs, so the guarantee has to come from nobody else owning the alias. While
+     * `create` took a `keyAlias` parameter, two stores could hold one alias, take different locks, and one could
+     * delete and recreate the key the other depended on.
+     */
+    @Test
+    fun twoStoresFromTheFactoryDoNotShareAKeyAlias() =
+        runTest(timeout = 30.seconds) {
+            val first = PayabliSecureStorages.create(directory, fileName = "first.json", logger = logger)
+            val second = PayabliSecureStorages.create(directory, fileName = "second.json", logger = logger)
+            try {
+                first.set("refresh", "first-value".toCharArray())
+                second.set("refresh", "second-value".toCharArray())
+
+                val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                val aliasOfFirst = PayabliSecureStorages.aliasFor("first.json")
+                val aliasOfSecond = PayabliSecureStorages.aliasFor("second.json")
+
+                assertNotEquals("the two stores derived the same alias", aliasOfFirst, aliasOfSecond)
+                assertTrue("the first store's own alias is missing", store.containsAlias(aliasOfFirst))
+                assertTrue("the second store's own alias is missing", store.containsAlias(aliasOfSecond))
+                // Each value still readable, so distinct aliases did not cost correctness.
+                assertArrayEquals("first-value".toCharArray(), first.get("refresh"))
+                assertArrayEquals("second-value".toCharArray(), second.get("refresh"))
+            } finally {
+                val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                listOf("first.json", "second.json").forEach {
+                    runCatching { store.deleteEntry(PayabliSecureStorages.aliasFor(it)) }
+                }
+            }
+        }
+
+    /**
      * Two stores sharing one alias must both survive their first write.
      *
-     * `PayabliSecureStorages.create` takes `fileName` while defaulting `keyAlias`, so this configuration is
-     * legitimate, and the two take different locks because locks are keyed by path. Left unsynchronized both
-     * see no key and both generate: the second generation replaces the first key and the first store's blob
-     * becomes permanently unreadable, reported as a corrupt value on something that was never corrupt.
+     * **The factory can no longer produce this**, since it derives one alias per file; only direct construction
+     * can, which is internal code. The monitor stays as defence for that, and this is what proves it works: left
+     * unsynchronized both stores see no key and both generate, the second generation replaces the first key, and
+     * the first store's blob becomes permanently unreadable, reported as a corrupt value on something that was
+     * never corrupt.
      *
      * A real dispatcher, not `Unconfined`, which runs each `async` to completion in turn so nothing interleaves.
      */

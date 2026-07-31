@@ -48,7 +48,9 @@ internal class KeystoreValueCipher(
         val cipher = cipher()
         try {
             // No IvParameterSpec: randomized encryption is required, so the platform supplies the IV.
-            cipher.init(Cipher.ENCRYPT_MODE, keyForWriting())
+            // keyForReading, not a creating variant: provisioning is ensureKey's job alone, so an alias
+            // that vanished after provisioning is reported instead of silently replaced.
+            cipher.init(Cipher.ENCRYPT_MODE, keyForReading())
             cipher.updateAAD(aad.toByteArray(Charsets.UTF_8))
             val ciphertext = cipher.doFinal(plaintext)
             val iv = cipher.iv
@@ -88,12 +90,27 @@ internal class KeystoreValueCipher(
     }
 
     /**
-     * Whether the alias is present, so a write can tell a fresh install from a lost key.
+     * Provisions the alias, and is the only place a key is ever created.
      *
-     * Without it both look identical from the write side and [keyForWriting] mints a replacement for either,
-     * which silently strands every value already on disk under the key that is gone.
+     * Double-checked under the per-alias monitor, so concurrent first writes generate once rather than racing
+     * to replace each other's key. An earlier version asked a separate `hasKey()` and let `encrypt` create,
+     * which left the decision split across two calls with a window between them.
+     *
+     * **What this guarantees, and what it does not.** With [mayCreate] false it proves a key is *present*, not
+     * that the present key is the one that sealed the store. Continuity comes from alias ownership instead:
+     * `PayabliSecureStorages.create` derives one alias per backing file, so nothing else can delete and
+     * recreate this one. Two ciphers constructed directly over a single alias, which only internal code can do,
+     * are outside that guarantee. Proving continuity rather than owning it would need a canary blob decrypted
+     * on every write, and that is deliberately not built.
      */
-    override fun hasKey(): Boolean = existingKey() != null
+    override fun ensureKey(mayCreate: Boolean) {
+        if (existingKey() != null) return
+        synchronized(monitorFor(keyAlias)) {
+            if (existingKey() != null) return
+            if (!mayCreate) throw SecureStorageException.KeyInvalidated()
+            createKey()
+        }
+    }
 
     /**
      * A Keystore backend failure, which arrives outside the checked hierarchy everything else here maps.
@@ -129,8 +146,14 @@ internal class KeystoreValueCipher(
 
             cause is UnrecoverableKeyException || cause::class.java.name == KEY_INVALIDATED -> {
                 logger.warn(LogField.safe("keyAlias", keyAlias)) { "storage key unusable, discarding alias" }
-                runCatching { keyStore().deleteEntry(keyAlias) }
-                SecureStorageException.KeyInvalidated(cause)
+                if (runCatching { keyStore().deleteEntry(keyAlias) }.isSuccess) {
+                    SecureStorageException.KeyInvalidated(cause)
+                } else {
+                    // The cleanup KeyInvalidated promises did not happen, so promising it would be false: every
+                    // later write would meet the same unusable alias. CryptoUnavailable is the honest answer, and
+                    // it also leaves the store intact rather than clearing blobs that may yet be readable.
+                    SecureStorageException.CryptoUnavailable(cause)
+                }
             }
 
             else -> SecureStorageException.CryptoUnavailable(cause)
@@ -155,23 +178,6 @@ internal class KeystoreValueCipher(
         } catch (e: ProviderException) {
             throw asProviderFailure(e)
         }
-
-    /**
-     * Writing may create the key: a first write on a fresh install has nothing to reuse.
-     *
-     * Double-checked under a per-alias monitor, because the alias is shared more widely than any one store's
-     * lock. `PayabliSecureStorages.create` takes `fileName` while defaulting `keyAlias`, so two stores over
-     * different files legitimately share an alias, and their locks are keyed by path. Left unsynchronized, both
-     * first writes see no key and both generate: the second generation replaces the first key and the first
-     * store's already-written blob becomes permanently unreadable, reported later as a corrupt value on
-     * something that was never corrupt.
-     *
-     * The window that remains is harmless. A store that sees no key while a sibling creates one encrypts under
-     * the sibling's key, and nothing is lost, because there is only ever one key per alias. Two *creations* are
-     * the loss, and that is what this removes.
-     */
-    private fun keyForWriting(): SecretKey =
-        existingKey() ?: synchronized(monitorFor(keyAlias)) { existingKey() ?: createKey() }
 
     /**
      * Reading may not create one, and that is the correctness of the invalidation path: a key minted here
