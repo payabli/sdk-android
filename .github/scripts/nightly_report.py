@@ -392,12 +392,10 @@ def main() -> int:
     card_total, card_failed, card_skipped, card_details = parse_results(card_patterns)
     inst_total, inst_failed, inst_skipped, inst_details = parse_results(android_patterns)
 
+    # Only for the platform fallback. The run and commit URLs used to be built here and travel in the facts;
+    # the poster rebuilds them from its own environment now, because a URL that crossed this artifact is
+    # untrusted input landing inside Slack link syntax.
     repo = os.environ.get("GITHUB_REPOSITORY", "payabli/sdk-android")
-    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
-    run_id = os.environ.get("GITHUB_RUN_ID", "")
-    sha = os.environ.get("GITHUB_SHA", "")[:7]
-    ref = os.environ.get("GITHUB_REF_NAME", "")
-    run_url = f"{server}/{repo}/actions/runs/{run_id}" if run_id else f"{server}/{repo}/actions"
     # Set by the workflow from the earlier steps' outcomes, so a step that never ran is not read as a pass.
     unit_step = os.environ.get("UNIT_OUTCOME", "unknown")
     inst_step = os.environ.get("INSTRUMENTED_OUTCOME", "unknown")
@@ -456,7 +454,10 @@ def main() -> int:
     facts = {
         # Bumped whenever a consumer would misread an older file. The poster refuses an unknown version
         # rather than rendering half a message from fields it does not recognise.
-        "schema": 2,
+        # 3: the run block is gone. The poster rebuilds those URLs from its own GITHUB_* environment, since
+        # this file crosses a job boundary out of the job that runs a third-party action, and a URL carried
+        # across it is untrusted input landing inside Slack link syntax.
+        "schema": 3,
         "verdict": "red" if red else "green",
         "platform": platform,
         "suites": [{"name": name, "label": label} for name, label in suites],
@@ -465,12 +466,6 @@ def main() -> int:
             for label, measured in coverages
         ],
         "failures": [failure.as_facts() for failure in all_failures],
-        "run": {
-            "url": run_url,
-            "commit_url": f"{server}/{repo}/commit/{sha}" if sha else "",
-            "sha": sha,
-            "ref": ref,
-        },
     }
     facts_path.parent.mkdir(parents=True, exist_ok=True)
     facts_path.write_text(json.dumps(facts, indent=2), encoding="utf-8")

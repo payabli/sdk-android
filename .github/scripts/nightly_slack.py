@@ -54,7 +54,7 @@ SLACK_API = "https://slack.com/api"
 # was all of them". The length bound sits under 3000 to leave room for the notice that reports it.
 MAX_LISTED_FAILURES = 12
 SLACK_BLOCK_LIMIT = 2900
-SUPPORTED_SCHEMA = 2
+SUPPORTED_SCHEMA = 3
 
 # Mention lookups are bounded twice, and the second bound is the one that matters. Twelve listed failures can
 # each name two distinct commits with two distinct authors, so the worst case is 24 sequential lookups. At the
@@ -233,16 +233,18 @@ def summary_blocks(facts: dict) -> tuple[list[dict], str]:
     # The ref is escaped like everything else dynamic. Git allows backticks and angle brackets in a refname,
     # and a manual dispatch chooses the ref, so an unescaped one could close this code span and inject a
     # Slack control sequence.
-    run = facts["run"]
+    run = trusted_run_links()
     trail = f"<{run['url']}|Open the run>"
     if run["sha"] and run["commit_url"]:
-        trail += f" · <{run['commit_url']}|`{run['sha']}`>"
+        trail += f" · <{run['commit_url']}|`{mrkdwn(run['sha'])}`>"
     if run["ref"]:
         trail += f" on `{mrkdwn(run['ref'])}`"
     blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": trail}]})
 
-    suite_text = ", ".join(f"{s['label']} {s['name'].lower()}" for s in facts["suites"])
-    return blocks, f"{facts['platform']} {verdict.lower()}: {suite_text}"
+    # Escaped like everything else from the facts. The fallback is Slack's notification text and is rendered
+    # as mrkdwn, so a `<!channel>` reaching it broadcasts even though every visible block escapes its fields.
+    suite_text = ", ".join(f"{mrkdwn(s['label'])} {mrkdwn(s['name']).lower()}" for s in facts["suites"])
+    return blocks, f"{mrkdwn(facts['platform'])} {verdict.lower()}: {suite_text}"
 
 
 def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
@@ -252,7 +254,7 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
     outlives log retention, and a full trace would blow the 3000-character block limit on the first failure.
     """
     failures = facts["failures"]
-    run_url = facts["run"]["url"]
+    run_url = trusted_run_links()["url"]
     cache: dict[str, str | None] = {}
     # Only meaningful when mentions are on, and harmless when they are not, since nothing is looked up.
     deadline = time.monotonic() + LOOKUP_BUDGET_SECONDS if mention else None
@@ -298,6 +300,33 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
     return [{"type": "section", "text": {"type": "mrkdwn", "text": text[:SLACK_BLOCK_LIMIT]}}]
 
 
+def trusted_run_links() -> dict[str, str]:
+    """The run and commit URLs, rebuilt from this job's own environment rather than read from the facts.
+
+    The facts file crosses a job boundary, and the job that writes it is the one that runs the mutable
+    third-party action, so every value in it is untrusted input. A URL is the worst place for that: it is
+    interpolated inside Slack's `<url|label>` syntax, where a single `>` closes the link and whatever follows
+    is parsed as mrkdwn, so `<!channel>` in a tampered `run.url` would broadcast from a job that was split
+    out specifically to keep that action away from Slack.
+
+    Escaping would not be the right answer even though it would work. GitHub injects GITHUB_SERVER_URL,
+    GITHUB_REPOSITORY, GITHUB_RUN_ID and GITHUB_SHA into this job directly, they describe the same run, and
+    a value that never crossed the boundary cannot have been tampered with. So the dependency is removed
+    rather than sanitised.
+    """
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    sha = os.environ.get("GITHUB_SHA", "")[:7]
+    ref = os.environ.get("GITHUB_REF_NAME", "")
+    return {
+        "url": f"{server}/{repo}/actions/runs/{run_id}" if repo and run_id else f"{server}/{repo}/actions",
+        "commit_url": f"{server}/{repo}/commit/{sha}" if repo and sha else "",
+        "sha": sha,
+        "ref": ref,
+    }
+
+
 def platform_name() -> str:
     """The platform label, from the workflow rather than guessed.
 
@@ -334,29 +363,25 @@ def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
             "The facts file did not reach this job. The artifact upload and download are both non-blocking, "
             "so a transient artifact-service error loses the report without touching the run result."
         )
-        fallback = f"{platform_name()} nightly passed but its report did not arrive"
+        fallback = f"{mrkdwn(platform_name())} nightly passed but its report did not arrive"
     else:
         icon = ":red_circle:"
         cause = (
             f"The test job ended `{mrkdwn(job_result)}`, so it produced no usable report. A cancellation, a "
             "job timeout, or a failure before the tests ran each end it this way."
         )
-        fallback = f"{platform_name()} nightly produced no report"
+        fallback = f"{mrkdwn(platform_name())} nightly produced no report"
 
     platform = mrkdwn(platform_name())
     blocks: list[dict] = [
         {"type": "section",
          "text": {"type": "mrkdwn", "text": f"{icon} *{platform} · Nightly · no report*\n{cause}"}}
     ]
-    # This path has no facts to take a run link from, so it is built from the environment. Without it the
-    # message names a problem and offers nowhere to go and look at it.
-    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
-    repo = os.environ.get("GITHUB_REPOSITORY", "")
-    run_id = os.environ.get("GITHUB_RUN_ID", "")
-    if repo and run_id:
+    # Without a link the message names a problem and offers nowhere to go and look at it.
+    if os.environ.get("GITHUB_REPOSITORY") and os.environ.get("GITHUB_RUN_ID"):
         blocks.append({
             "type": "context",
-            "elements": [{"type": "mrkdwn", "text": f"<{server}/{repo}/actions/runs/{run_id}|Open the run>"}],
+            "elements": [{"type": "mrkdwn", "text": f"<{trusted_run_links()['url']}|Open the run>"}],
         })
     return blocks, fallback
 
