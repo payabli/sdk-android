@@ -50,6 +50,34 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - **card-present** - `:taptopay`. Skipped on pull requests from forks, which never receive secrets, so a fork sees it skipped rather than failing on an authentication error.
 - **sonar** - analysis after `build`, producing the reports it consumes first.
 
+`.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
+required check. Two jobs, and the split is a security boundary rather than organisation:
+
+- **nightly** - every unit test plus `:core`'s instrumented tests on an emulator. Runs the one third-party
+  action in the repository, so no Slack credential exists in it. Ends by deciding the verdict and gating on
+  it, so the run result never depends on the reporting job.
+- **report** - `needs: nightly`, holds the bot token, runs nothing third-party. Posts a summary to
+  `#mobile-sdk-nightly-build` and the failure detail in that message's thread. `if: ${{ !cancelled() }}`
+  rather than `always()`, so a test job that timed out is still announced while a run superseded by
+  `cancel-in-progress` stays quiet.
+
+The two halves talk through a `nightly-facts` artifact: `.github/scripts/nightly_report.py` parses the
+JUnit XML and writes the facts, the verdict and the full stack traces (to the job summary, which is what
+Slack links); `.github/scripts/nightly_slack.py` renders and posts them. Parsing has to stay in the test
+job because the build outputs and the git history the culprit lookup needs are both there, and the verdict
+has to be decided there because that is where the gate reads it.
+
+Configuration, all optional, and every one of them absent means warn and skip rather than fail:
+`SLACK_BOT_TOKEN` (secret, needs `chat:write`), `SLACK_CHANNEL_ID` (variable, not a secret), and
+`SLACK_MENTION_CULPRITS` (variable). The last turns the probable-culprit author into an `@`-mention and
+additionally needs `users:read.email`; it is off by default because the culprit is a labelled heuristic
+that has been wrong before, and pinging its author at 3am is a team-norm decision.
+
+**Leave token rotation disabled on the Slack app.** The poster sends a static bearer token and implements no
+refresh, so enabling rotation would make the stored secret expire on Slack's schedule and the nightly would
+start warning and skipping. Nothing would go red, which is what makes it worth writing down: the failure is
+a channel that quietly stops reporting. Enabling rotation means teaching the poster to refresh first.
+
 ## Testing
 
 - Unit tests in `src/test`, instrumented in `src/androidTest` (JUnit4, Espresso). `:core`'s network,
