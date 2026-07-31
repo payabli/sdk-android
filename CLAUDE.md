@@ -72,7 +72,10 @@ Configuration, all optional, and every one of them absent means warn and skip ra
 `SLACK_BOT_TOKEN` (secret, needs `chat:write`), `SLACK_CHANNEL_ID` (variable, not a secret), and
 `SLACK_MENTION_CULPRITS` (variable). The last turns the probable-culprit author into an `@`-mention and
 additionally needs `users:read.email`; it is off by default because the culprit is a labelled heuristic
-that has been wrong before, and pinging its author at 3am is a team-norm decision.
+that has been wrong before, and pinging its author at 3am is a team-norm decision. **Enabling it also widens
+the blast radius of a tampered facts artifact**, which is written in the job that runs the third-party
+emulator action: the author email is looked up as given, so a compromised action could make the bot ping
+anyone. Off, nothing is looked up and no mention is emitted. Weigh that alongside the norm, not after it.
 
 **Leave token rotation disabled on the Slack app.** The poster sends a static bearer token and implements no
 refresh, so enabling rotation would make the stored secret expire on Slack's schedule and the nightly would

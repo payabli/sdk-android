@@ -158,6 +158,13 @@ def render_author(commit: dict, token: str, mention: bool, cache: dict[str, str 
     Off by default, and that is a team-norm decision rather than a technical one. The culprit is a labelled
     heuristic and it has been wrong before, so pinging its author at 3am is not something to enable without
     the team agreeing to it first. Set SLACK_MENTION_CULPRITS=true once that conversation has happened.
+
+    Turning it on also widens what a tampered facts artifact can do, and that belongs in the same decision.
+    The email is looked up as given, and the artifact is written in the job that runs the third-party action,
+    so a compromised action could name any address it likes and have the bot ping whoever owns it. Escaping
+    does not help: a mention is `<@U…>` built from an ID Slack returned, which is the intended output. While
+    the flag is off nothing is looked up and no mention is ever emitted, which is why this is recorded as a
+    precondition for enabling rather than fixed in the renderer.
     """
     name = mrkdwn(commit.get("author", "")) or "unknown author"
     if not mention:
@@ -190,14 +197,26 @@ def merge_by_commit(culprits: list[dict]) -> list[tuple[dict, list[str]]]:
     return list(merged.values())
 
 
-def summary_blocks(facts: dict) -> tuple[list[dict], str]:
+def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict], str]:
     """The channel message: verdict, counts, coverage, and where to look. No failure detail.
 
     Deliberately silent about the thread. Slack renders its own reply count on a threaded parent, so a line
     claiming detail is in the thread would be redundant when the thread post succeeds and a lie when it
     fails. Letting Slack's own affordance be the pointer keeps the parent true either way.
     """
-    red = facts["verdict"] == "red"
+    # The verdict is reconciled against the job result rather than trusted on its own, because the facts are
+    # uploaded two steps before the gate runs. If the test job hits its own timeout during `Upload reports` or
+    # during the gate, the artifact already holds a green verdict while the run is red, and posting that green
+    # is exactly the run-versus-notification disagreement this workflow exists to prevent. A tampered
+    # collector reaches the same place from the other direction: it can write `green` into the facts, but it
+    # cannot make a failed step report success, so the gate still fails the job and the mismatch shows here.
+    #
+    # Anything other than a successful test job means the run is not green, whatever the artifact says, and
+    # the run is the authority. The counts are still worth printing, so this corrects the headline rather than
+    # discarding the message.
+    claimed_red = facts["verdict"] == "red"
+    unfinished = job_result != "success"
+    red = claimed_red or unfinished
     verdict = "Nightly failed" if red else "Nightly green"
     icon = ":red_circle:" if red else ":white_check_mark:"
     # The ref and sha live in the context line at the bottom, not here. A branch name can be 60 characters
@@ -238,6 +257,13 @@ def summary_blocks(facts: dict) -> tuple[list[dict], str]:
     failures = facts["failures"]
     if failures:
         lines.append(f"*Failures* {len(failures)}")
+    if unfinished and not claimed_red:
+        # Named explicitly, because "collected green, ran red" is the one combination a reader would otherwise
+        # have to reconcile themselves, and the run is what to believe.
+        lines.append(
+            f"_The collected results were green, but the test job ended `{mrkdwn(job_result)}`, so the run "
+            "did not finish. Believe the run._"
+        )
 
     blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}]
 
@@ -257,6 +283,7 @@ def summary_blocks(facts: dict) -> tuple[list[dict], str]:
     # Escaped like everything else from the facts. The fallback is Slack's notification text and is rendered
     # as mrkdwn, so a `<!channel>` reaching it broadcasts even though every visible block escapes its fields.
     suite_text = ", ".join(f"{mrkdwn(s['label'])} {mrkdwn(s['name']).lower()}" for s in facts["suites"])
+    # `verdict` rather than the artifact's own, so the notification agrees with the headline above it.
     return blocks, f"{mrkdwn(facts['platform'])} {verdict.lower()}: {suite_text}"
 
 
@@ -428,7 +455,7 @@ def main() -> int:
     if facts is None:
         blocks, fallback = unreported_blocks(os.environ.get("NIGHTLY_JOB_RESULT", "unknown"))
     else:
-        blocks, fallback = summary_blocks(facts)
+        blocks, fallback = summary_blocks(facts, os.environ.get("NIGHTLY_JOB_RESULT", "success"))
 
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
     if parent is None or not parent.get("ok"):
