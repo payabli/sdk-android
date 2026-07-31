@@ -86,6 +86,13 @@ LOOKUP_BUDGET_SECONDS = 60
 # 26 hours rather than 25. Measured on this repo, scheduled runs fire 42 to 53 minutes after the cron, which
 # is the documented load delay, so a tighter window would cry wolf nightly.
 SWITCH_HOURS = 26
+
+# The stale sweep pages through the pending list, because an alarm it never sees is an alarm it cannot cancel,
+# and that one fires as a false alarm. Bounded so a repeating or malformed cursor cannot spin: ten pages is
+# 1000 pending messages, where the steady state is one or two, so exhausting this is a symptom and gets said
+# out loud rather than truncated silently.
+SWITCH_PAGE_SIZE = 100
+MAX_SWITCH_PAGES = 10
 # Marks the bot's own armed message so a future reader knows what it is, and so the cancel can tell its own
 # alarms from anything else scheduled in the channel.
 #
@@ -632,22 +639,35 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
     Ties and unreadable timestamps are retained rather than deleted. Two alarms armed in the same second
     leave a duplicate, which is one false alarm and self-heals on the next run; deleting on a tie could leave
     zero, which is the outcome this whole mechanism exists to prevent.
+
+    Paged rather than read one page deep. A single request is enough for the steady state, but the sweep is
+    the only thing that removes an alarm, so anything it does not see fires.
     """
-    pending = slack_get("chat.scheduledMessages.list", token, {"channel": channel, "limit": 100})
-    if not (pending and pending.get("ok")):
-        return
-    for message in pending.get("scheduled_messages") or []:
-        message_id = message.get("id")
-        if not message_id or message_id == keep:
-            continue
-        if switch_marker() not in (message.get("text") or ""):
-            continue
-        post_at = message.get("post_at")
-        if not isinstance(post_at, int) or post_at >= keep_post_at:
-            # Not provably older, so not ours to remove.
-            continue
-        slack_post("chat.deleteScheduledMessage", token,
-                   {"channel": channel, "scheduled_message_id": message_id})
+    cursor = ""
+    for _ in range(MAX_SWITCH_PAGES):
+        params = {"channel": channel, "limit": SWITCH_PAGE_SIZE}
+        if cursor:
+            params["cursor"] = cursor
+        pending = slack_get("chat.scheduledMessages.list", token, params)
+        if not (pending and pending.get("ok")):
+            return
+        for message in pending.get("scheduled_messages") or []:
+            message_id = message.get("id")
+            if not message_id or message_id == keep:
+                continue
+            if switch_marker() not in (message.get("text") or ""):
+                continue
+            post_at = message.get("post_at")
+            if not isinstance(post_at, int) or post_at >= keep_post_at:
+                # Not provably older, so not ours to remove.
+                continue
+            slack_post("chat.deleteScheduledMessage", token,
+                       {"channel": channel, "scheduled_message_id": message_id})
+        cursor = str((pending.get("response_metadata") or {}).get("next_cursor") or "").strip()
+        if not cursor:
+            return
+    warn(f"More than {MAX_SWITCH_PAGES} pages of scheduled messages are pending, so the oldest alarms were "
+         "not examined and one may fire spuriously.")
 
 
 def owns_liveness_switch() -> bool:
