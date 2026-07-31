@@ -166,10 +166,24 @@ jobs:
       #
       # What made the pin worth arguing about was the secret this job used to hold: step-scoping a credential
       # does not isolate it from code that ran earlier in the same job, so this action could have tampered
-      # with runner state and read the Slack webhook when the reporting step ran. That exposure is now closed
-      # structurally instead. Reporting is a separate job, so the Slack token never exists here, and the one
-      # remaining credential in this job, GPR_TOKEN, is declared on a step that runs before this action does.
-      # The only third-party action in the repository now runs beside no secret at all.
+      # with runner state and read the Slack webhook when the reporting step ran. The Slack half of that is
+      # closed structurally: reporting is a separate job, so no Slack credential exists here at all.
+      #
+      # GPR_TOKEN is still exposed to this action, and declaring it on an earlier step does not change that.
+      # settings.gradle.kts reads it from the environment during configuration into the Fiserv repository's
+      # credentials, which are held by the Gradle daemon, and the daemon outlives the step that started it:
+      # measured locally, `./gradlew --status` reports an IDLE daemon after the build returns. This action
+      # then runs as the same user in the same job and can inspect a JVM it owns. Step scoping bounds which
+      # step the variable is *set* in, not how long the value lives.
+      #
+      # What is not true, checked rather than assumed: the token does not reach disk. A build run with a
+      # sentinel value leaves it in no file under .gradle, build or the Gradle home, so the configuration
+      # cache is not serialising it. The exposure needs a live JVM, not a readable file.
+      #
+      # The fix is to run card-present work in its own job, as ci.yml already does, which is a real change
+      # rather than a line here: the report collector globs taptopay's results out of this workspace, so
+      # moving the build means passing those results between jobs. Queued rather than smuggled into a
+      # reporting change.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
@@ -326,10 +340,20 @@ jobs:
     name: Report to Slack
     needs: nightly
     continue-on-error: true
-    # Not `always()`. GitHub recommends this form, and the difference is visible in the channel: `cancelled()`
-    # is true for the whole run, so `!cancelled()` still reports a nightly whose test job timed out, while
-    # staying quiet when `cancel-in-progress` supersedes a nightly with a manual dispatch. With `always()`
-    # that superseded run would post a spurious "no report" message every time.
+    # Not `always()`, which is the form GitHub recommends against. `cancelled()` is scoped to the whole run
+    # rather than to the needed job, and the consequences are worth stating exactly rather than summarising,
+    # because the useful case and the unwanted one look alike from here:
+    #
+    #   * test job exceeded `timeout-minutes`, or failed: the run is not cancelled, so this reports. That is
+    #     the case the old single-job arrangement could not report at all
+    #   * `cancel-in-progress` superseded this nightly with a manual dispatch: silent, which is the point.
+    #     `always()` would post a "no report" message for every superseded run
+    #   * somebody cancelled the run by hand: also silent, and deliberately. A run nobody wanted to finish is
+    #     not a nightly failure, and there is no way to tell it apart from supersession here in any case,
+    #     since both arrive as a cancelled run
+    #
+    # So the guarantee is that a test job which dies on its own gets announced. A cancelled *run* does not,
+    # and the poster's `cancelled` branch is reached through a job-level timeout rather than through this.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
