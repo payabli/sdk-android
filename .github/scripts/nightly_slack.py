@@ -29,6 +29,7 @@ import http.client
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -54,6 +55,16 @@ SLACK_API = "https://slack.com/api"
 MAX_LISTED_FAILURES = 12
 SLACK_BLOCK_LIMIT = 2900
 SUPPORTED_SCHEMA = 2
+
+# Mention lookups are bounded twice, and the second bound is the one that matters. Twelve listed failures can
+# each name two distinct commits with two distinct authors, so the worst case is 24 sequential lookups. At the
+# old 15 seconds each that is 360 seconds, and with the parent post ahead of it the step exceeded its own
+# five-minute bound before the thread was ever posted: the detail was lost to a timeout on precisely the
+# nights it existed for. A per-call timeout alone cannot fix that, because the arithmetic changes whenever
+# MAX_LISTED_FAILURES does, so the phase carries a wall-clock budget and falls back to plain names once it is
+# spent. Names are the default rendering anyway, so running out costs nothing but the mentions.
+LOOKUP_TIMEOUT_SECONDS = 5
+LOOKUP_BUDGET_SECONDS = 60
 
 
 def warn(message: str) -> None:
@@ -126,7 +137,7 @@ def slack_user_for_email(email: str, token: str) -> str | None:
         method="GET",
     )
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urllib.request.urlopen(request, timeout=LOOKUP_TIMEOUT_SECONDS) as response:
             body = json.loads(response.read().decode("utf-8"))
     except UNREACHABLE:
         # HTTPError is a URLError subclass, so it is covered. Not warned for the same reason a refusal is
@@ -139,7 +150,8 @@ def slack_user_for_email(email: str, token: str) -> str | None:
     return (body.get("user") or {}).get("id")
 
 
-def render_author(commit: dict, token: str, mention: bool, cache: dict[str, str | None]) -> str:
+def render_author(commit: dict, token: str, mention: bool, cache: dict[str, str | None],
+                  deadline: float | None = None) -> str:
     """The commit author, as a Slack mention only when mentions are switched on.
 
     Off by default, and that is a team-norm decision rather than a technical one. The culprit is a labelled
@@ -151,6 +163,10 @@ def render_author(commit: dict, token: str, mention: bool, cache: dict[str, str 
         return name
     email = commit.get("email", "")
     if email not in cache:
+        # A spent budget stops looking rather than degrading every remaining lookup into a timeout. A cached
+        # answer is still used, since it costs nothing.
+        if deadline is not None and time.monotonic() >= deadline:
+            return name
         cache[email] = slack_user_for_email(email, token)
     user_id = cache[email]
     return f"<@{user_id}>" if user_id else name
@@ -238,6 +254,8 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
     failures = facts["failures"]
     run_url = facts["run"]["url"]
     cache: dict[str, str | None] = {}
+    # Only meaningful when mentions are on, and harmless when they are not, since nothing is looked up.
+    deadline = time.monotonic() + LOOKUP_BUDGET_SECONDS if mention else None
 
     # One rendered entry per failure, so trimming can drop whole failures rather than cut through one.
     entries: list[str] = []
@@ -253,7 +271,7 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
             # change to a class and to its test normally ships together, and printing that commit twice with
             # only the leading noun different was the least readable thing in the message.
             subjects = " and ".join("test" if what == "test" else f"`{mrkdwn(what)}`" for what in whats)
-            author = render_author(commit, token, mention, cache)
+            author = render_author(commit, token, mention, cache, deadline)
             entry += (
                 f"\n  {subjects} last touched by `{mrkdwn(commit['sha'])}"
                 f" {mrkdwn(commit['subject'])}` — {author}"
@@ -278,6 +296,16 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
         entries.pop()
 
     return [{"type": "section", "text": {"type": "mrkdwn", "text": text[:SLACK_BLOCK_LIMIT]}}]
+
+
+def platform_name() -> str:
+    """The platform label, from the workflow rather than guessed.
+
+    Both platform SDKs can report into one channel, so a message that does not name the platform is
+    ambiguous, and the no-facts path is the one place that cannot read it out of the facts file.
+    """
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    return os.environ.get("PLATFORM", "").strip() or (repo.rsplit("/", 1)[-1] if repo else "Nightly")
 
 
 def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
@@ -306,17 +334,19 @@ def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
             "The facts file did not reach this job. The artifact upload and download are both non-blocking, "
             "so a transient artifact-service error loses the report without touching the run result."
         )
-        fallback = "Nightly passed but its report did not arrive"
+        fallback = f"{platform_name()} nightly passed but its report did not arrive"
     else:
         icon = ":red_circle:"
         cause = (
             f"The test job ended `{mrkdwn(job_result)}`, so it produced no usable report. A cancellation, a "
             "job timeout, or a failure before the tests ran each end it this way."
         )
-        fallback = "Nightly produced no report"
+        fallback = f"{platform_name()} nightly produced no report"
 
+    platform = mrkdwn(platform_name())
     blocks: list[dict] = [
-        {"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *Nightly · no report*\n{cause}"}}
+        {"type": "section",
+         "text": {"type": "mrkdwn", "text": f"{icon} *{platform} · Nightly · no report*\n{cause}"}}
     ]
     # This path has no facts to take a run link from, so it is built from the environment. Without it the
     # message names a problem and offers nowhere to go and look at it.
