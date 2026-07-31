@@ -100,7 +100,11 @@ internal class FileSecureStorage(
             requireRepresentable(key)
             mutex.withLock {
                 val current = read()
-                if (key in current) write(current - key)
+                // Sweeping on the absent-key path too, because deletion is what remove promises. A set
+                // interrupted between the flush and the rename leaves an orphan holding ciphertext for an entry
+                // that never reached the store file, so a later remove finds no map entry, would skip the write,
+                // and would report success while that blob is still on disk and still decryptable.
+                if (key in current) write(current - key) else sweepOrphans()
             }
         }
     }
@@ -155,7 +159,7 @@ internal class FileSecureStorage(
             if (!parent.exists() && !parent.mkdirs() && !parent.isDirectory) {
                 throw SecureStorageException.StorageUnavailable()
             }
-            sweepOrphans(parent)
+            sweepOrphans()
             val temp = File.createTempFile(tempPrefix(), TEMP_SUFFIX, parent)
             try {
                 FileOutputStream(temp).use { out ->
@@ -208,7 +212,9 @@ internal class FileSecureStorage(
      * Nothing else looks for them. Process death between creating the temp and renaming it orphans one
      * permanently, and it holds ciphertext for every entry present at that moment: under the same key alias
      * those blobs still open, so an entry a later [remove] deleted would survive inside it. An orphan is
-     * therefore reclaimed here, on the next write, rather than at the moment it is created.
+     * therefore reclaimed on the next write **or on any [remove]**, rather than at the moment it is created.
+     * [remove] sweeps even when the key is absent, since otherwise the one call that promises deletion would be
+     * the one call that never looks.
      *
      * **The match is a shape, not a prefix**, because the lock only covers this store's own file. `fileName` is
      * a parameter, so a sibling store on `store.json2` is legitimate, and a prefix match would delete its temp
@@ -219,9 +225,9 @@ internal class FileSecureStorage(
      * Deleting a match is then safe, because the caller holds this file's lock, the store is single-process, and
      * the sweep runs before this write's own temp exists.
      */
-    private fun sweepOrphans(parent: File) {
+    private fun sweepOrphans() {
         val prefix = tempPrefix()
-        parent
+        file.parentFile
             .listFiles { candidate -> isOwnTemp(candidate.name, prefix) }
             ?.forEach { orphan ->
                 if (orphan.delete()) logger.warn { "discarded an unfinished secure storage write" }

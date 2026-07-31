@@ -97,6 +97,10 @@ class FileSecureStorageTest {
                 throw it
             }
             val parts = blob.split('|', limit = 3)
+            // Not a well-formed envelope, which the real cipher reports the same way for a blob that fails base64
+            // decoding or is shorter than an IV plus a tag. Without this the double threw IndexOutOfBounds, a
+            // failure the contract does not have, so a test feeding it a bad blob learned nothing about storage.
+            if (parts.size < 3) throw SecureStorageException.StorageUnavailable()
             // The AAD check the real cipher gets from GCM: a blob under the wrong name must not open.
             if (parts[1] != aad) throw SecureStorageException.ValueUnreadable()
             return parts[2].fromHex()
@@ -688,6 +692,70 @@ class FileSecureStorageTest {
             subject.set("refresh", "secret-value".toByteArray())
 
             assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
+        }
+
+    /**
+     * `remove` of a key that is not in the store must still reclaim an orphan.
+     *
+     * The sequence: a `set` is interrupted after the temp file is flushed and before the rename, so the orphan
+     * holds ciphertext for an entry that never reached the store file. A later `remove` of that entry reads a map
+     * without it, and if the sweep only ran inside `write` it would skip both, report success, and leave the blob
+     * on disk decryptable under the same alias. Deletion is the one promise `remove` makes.
+     */
+    @Test
+    fun `remove of an absent key still reclaims an orphaned temporary file`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val subject = storage(file)
+            subject.set("present", "value".toByteArray())
+            val orphan =
+                File(folder.root, "pbl${StoreIdentity.of(file)}.4242.tmp")
+                    .apply { writeText("""{"interrupted":"ciphertext"}""") }
+
+            subject.remove("never-written")
+
+            assertFalse("remove reported success with an orphan still on disk", orphan.exists())
+        }
+
+    /** And the write path keeps sweeping, so the fix added a path rather than moving one. */
+    @Test
+    fun `remove of a present key still reclaims an orphaned temporary file`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val subject = storage(file)
+            subject.set("present", "value".toByteArray())
+            val orphan =
+                File(folder.root, "pbl${StoreIdentity.of(file)}.4243.tmp")
+                    .apply { writeText("""{"interrupted":"ciphertext"}""") }
+
+            subject.remove("present")
+
+            assertFalse("the write path stopped sweeping", orphan.exists())
+            assertNull(subject.get("present"))
+        }
+
+    /**
+     * A malformed blob raises `StorageUnavailable`, and the message must name that cause.
+     *
+     * The file was read perfectly well here, so a message naming only the file would send a reader looking for a
+     * disk problem that did not happen.
+     */
+    @Test
+    fun `a malformed value reports storage unavailable with a message naming the value`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val subject = storage(file)
+            subject.set("refresh", "secret-value".toByteArray())
+            // A blob the fake cipher cannot open: no AAD delimiter at all.
+            file.writeText("""{"refresh":"not-a-blob"}""")
+
+            val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
+
+            assertTrue("expected a storage failure, got $thrown", thrown is SecureStorageException)
+            assertTrue(
+                "the message names only the file: ${thrown?.message}",
+                thrown?.message?.contains("malformed") == true,
+            )
         }
 
     /**

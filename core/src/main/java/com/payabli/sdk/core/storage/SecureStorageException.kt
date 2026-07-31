@@ -51,9 +51,21 @@ public sealed class SecureStorageException(
         cause: Throwable? = null,
     ) : SecureStorageException("the platform key store or cipher is unavailable", cause)
 
-    /** Reading or writing the backing file failed, or its contents are not a well-formed blob. */
+    /**
+     * The backing file could not be read or written, **or** a stored blob is not a well-formed envelope.
+     *
+     * Both, and the message says both, because the second raises this while the file was read perfectly well: a
+     * blob that fails base64 decoding, or is shorter than an IV plus a tag, is corruption rather than an I/O
+     * failure, and a message naming only the file sends a caller looking for a disk problem that did not happen.
+     *
+     * Note what does **not** raise this: a whole store whose JSON cannot be parsed is reset and read as empty,
+     * because refusing to load would make one bad write permanent.
+     */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class StorageUnavailable(
         cause: Throwable? = null,
-    ) : SecureStorageException("the secure storage file could not be read or written", cause)
+    ) : SecureStorageException(
+            "the secure storage file could not be read or written, or a stored value is malformed",
+            cause,
+        )
 }

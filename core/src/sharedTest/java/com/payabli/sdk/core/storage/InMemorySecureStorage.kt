@@ -7,7 +7,9 @@ package com.payabli.sdk.core.storage
  * fixtures module yet and both source sets need it.
  *
  * Copies on the way in and out, so the map never aliases a caller's array: a consumer that wipes what it
- * passed to [set], as it should, would otherwise blank the stored value too.
+ * passed to [set], as it should, would otherwise blank the stored value too. The map was briefly a constructor
+ * parameter, which defeated exactly that: a caller seeding the fixture kept references to the stored arrays and
+ * could wipe them afterwards. Nothing seeded it, so the parameter went rather than gaining a copy.
  *
  * **Not encrypted, and that is the point.** Never construct one outside a test.
  *
@@ -19,9 +21,9 @@ package com.payabli.sdk.core.storage
  * `@VisibleForTesting` is not used, and would not fit: `sharedTest` compiles only into `test` and `androidTest`,
  * so nothing here has production visibility to widen. The same reasoning as `PayabliTransports`.
  */
-internal class InMemorySecureStorage(
-    private val values: MutableMap<String, ByteArray> = mutableMapOf(),
-) : PayabliSecureStorage {
+internal class InMemorySecureStorage : PayabliSecureStorage {
+    private val values: MutableMap<String, ByteArray> = mutableMapOf()
+
     override suspend fun get(key: String): ByteArray? = values[key]?.copyOf()
 
     override suspend fun set(
