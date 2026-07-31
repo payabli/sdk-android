@@ -39,7 +39,7 @@ SLACK_API = "https://slack.com/api"
 # was all of them". The length bound sits under 3000 to leave room for the notice that reports it.
 MAX_LISTED_FAILURES = 12
 SLACK_BLOCK_LIMIT = 2900
-SUPPORTED_SCHEMA = 1
+SUPPORTED_SCHEMA = 2
 
 
 def warn(message: str) -> None:
@@ -173,17 +173,22 @@ def summary_blocks(facts: dict) -> tuple[list[dict], str]:
     for suite in facts["suites"]:
         lines.append(f"*{mrkdwn(suite['name'])}* {mrkdwn(suite['label'])}")
 
+    # Three states, three phrasings, because conflating them misreports. "no classes yet" is a module with
+    # nothing to measure; "no report written" is a module whose coverage task did not produce one, which on a
+    # red night is the normal fate of the module whose tests just failed. Rendering the second as the first,
+    # or omitting it, would say coverage is absent when it is merely unmeasured tonight.
     for group in facts["coverage"]:
-        modules = group["modules"]
-        if modules:
-            rendered = [
-                f"{mrkdwn(m['module'])} {m['percent']:.1f}%" if m["percent"] is not None
-                else f"{mrkdwn(m['module'])} no classes yet"
-                for m in modules
-            ]
-            lines.append(f"*Coverage ({group['label']})* " + " · ".join(rendered))
-        else:
-            lines.append(f"*Coverage ({group['label']})* no report found")
+        rendered = []
+        for module in group["modules"]:
+            name = mrkdwn(module["module"])
+            if module["state"] == "measured":
+                rendered.append(f"{name} {module['percent']:.1f}%")
+            elif module["state"] == "empty":
+                rendered.append(f"{name} no classes yet")
+            else:
+                rendered.append(f"{name} no report written")
+        measured = " · ".join(rendered) if rendered else "no modules configured"
+        lines.append(f"*Coverage ({group['label']})* {measured}")
 
     failures = facts["failures"]
     if failures:

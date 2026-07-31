@@ -43,6 +43,16 @@ MAX_DETAIL_CHARS = 300
 MAX_TRACE_CHARS = 4000
 MAX_SUMMARY_CHARS = 900_000
 
+# The modules that have a coverage task, named rather than discovered. Globbing for whatever report happens
+# to be on disk drops a module out of the message entirely when its task did not run, and the module with
+# the only real coverage is the first to go, because its report is written by the very task a failing test
+# just failed. Measured on a red probe run: `core 79.7%` vanished and the line read `payin no classes yet ·
+# taptopay no classes yet · telemetry no classes yet`, which invites the reader to conclude coverage
+# collapsed rather than that it was never written.
+#
+# :example is absent deliberately, matching ci.yml. It has no coverage task, so it has nothing to omit.
+COVERAGE_MODULES = ("core", "payin", "taptopay", "telemetry")
+
 
 class Failure:
     def __init__(self, suite: str, case: str, detail: str, trace: str, kind: str) -> None:
@@ -135,22 +145,33 @@ def parse_results(patterns: list[str]) -> tuple[int, int, int, list[Failure]]:
     return tests, failures, skipped, details
 
 
-def coverage(counter_type: str) -> list[tuple[str, float | None]]:
+def coverage(counter_type: str) -> list[tuple[str, float | None, str]]:
     """Coverage of one JaCoCo counter type per module, from the XML the coverage task writes.
 
     `counter_type` is a JaCoCo counter name: BRANCH and LINE are the two reported here. Branch coverage is
     the stricter of the two, since a fully executed line with an untaken branch counts as covered by line
     and uncovered by branch.
 
-    A module with no classes yet reports None rather than being left out. Omitting it silently would read as
-    "core is the only module we measure", when the truth is the others have nothing to measure.
+    Returns one row per module in COVERAGE_MODULES, always, with a state that distinguishes three answers
+    that must not be conflated. `measured` carries a percentage. `empty` means the report exists with no
+    counters, which is a module that has no classes yet, and is different from 0%. `missing` means no
+    readable report was written at all, which is what a failed or skipped coverage task leaves behind.
+
+    Every one of them is named. Reporting only what is on disk lets a module disappear on the nights the
+    report matters most, and a silent omission reads as "this module is not measured" rather than "this
+    module was not measured tonight".
     """
-    out: list[tuple[str, float | None]] = []
-    for path in sorted(REPO_ROOT.glob("*/build/reports/coverage/test/debug/report.xml")):
-        module = path.relative_to(REPO_ROOT).parts[0]
+    out: list[tuple[str, float | None, str]] = []
+    for module in COVERAGE_MODULES:
+        path = REPO_ROOT / module / "build/reports/coverage/test/debug/report.xml"
+        if not path.is_file():
+            out.append((module, None, "missing"))
+            continue
         try:
             root = ET.parse(path).getroot()
         except ET.ParseError:
+            # A half-written report is as unmeasured as an absent one, and says so the same way.
+            out.append((module, None, "missing"))
             continue
         # Only counters that are direct children of <report>. Nested ones are per-package and per-class,
         # and summing those double-counts. An empty module has no such counters at all.
@@ -162,7 +183,7 @@ def coverage(counter_type: str) -> list[tuple[str, float | None]]:
             total = missed + covered
             if total:
                 percent = 100.0 * covered / total
-        out.append((module, percent))
+        out.append((module, percent, "measured" if percent is not None else "empty"))
     return out
 
 
@@ -394,12 +415,12 @@ def main() -> int:
     facts = {
         # Bumped whenever a consumer would misread an older file. The poster refuses an unknown version
         # rather than rendering half a message from fields it does not recognise.
-        "schema": 1,
+        "schema": 2,
         "verdict": "red" if red else "green",
         "platform": platform,
         "suites": [{"name": name, "label": label} for name, label in suites],
         "coverage": [
-            {"label": label, "modules": [{"module": m, "percent": p} for m, p in measured]}
+            {"label": label, "modules": [{"module": m, "percent": p, "state": s} for m, p, s in measured]}
             for label, measured in coverages
         ],
         "failures": [failure.as_facts() for failure in all_failures],
