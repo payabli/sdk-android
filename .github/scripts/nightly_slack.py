@@ -367,6 +367,37 @@ def trusted_run_links() -> dict[str, str]:
     }
 
 
+# What a malformed artifact raises on the way through a renderer. Narrow on purpose: these are shape errors,
+# not a licence to swallow a defect in the rendering code, and every one of them is warned about loudly.
+SHAPE_ERRORS = (KeyError, IndexError, TypeError, ValueError, AttributeError)
+
+
+def usable_facts(raw: object) -> dict | None:
+    """The facts if they are the shape this poster renders, otherwise None.
+
+    Matching the schema number is not the same as being usable, and the gap was reachable: `{"schema": 4}`
+    passed the version check and then raised KeyError on `verdict`, and a JSON list root raised AttributeError
+    on `.get` before any check ran. Either way the poster died before posting even the no-report fallback, so
+    a tampered or truncated artifact turned into a silent channel, which is the outcome this reporter exists
+    to make impossible.
+
+    Only the root shape is asserted here. Nested fields are covered by catching SHAPE_ERRORS around rendering,
+    because enumerating every nested key would duplicate the renderers and drift from them.
+    """
+    if not isinstance(raw, dict):
+        warn(f"The nightly facts are {type(raw).__name__}, not an object, so they cannot be rendered.")
+        return None
+    if raw.get("schema") != SUPPORTED_SCHEMA:
+        warn(f"Unsupported nightly facts schema {raw.get('schema')!r}; expected {SUPPORTED_SCHEMA}.")
+        return None
+    required = {"verdict": str, "platform": str, "suites": list, "coverage": list, "failures": list}
+    for key, kind in required.items():
+        if not isinstance(raw.get(key), kind):
+            warn(f"The nightly facts are missing a usable {key!r}, so they cannot be rendered.")
+            return None
+    return raw
+
+
 def platform_name() -> str:
     """The platform label, from the workflow rather than guessed.
 
@@ -445,17 +476,22 @@ def main() -> int:
     facts: dict | None = None
     if facts_path.is_file():
         try:
-            facts = json.loads(facts_path.read_text(encoding="utf-8"))
+            facts = usable_facts(json.loads(facts_path.read_text(encoding="utf-8")))
         except (json.JSONDecodeError, OSError) as error:
             warn(f"The nightly facts file could not be read ({type(error).__name__}).")
-    if facts is not None and facts.get("schema") != SUPPORTED_SCHEMA:
-        warn(f"Unsupported nightly facts schema {facts.get('schema')!r}; expected {SUPPORTED_SCHEMA}.")
-        facts = None
 
+    job_result = os.environ.get("NIGHTLY_JOB_RESULT", "success" if facts else "unknown")
     if facts is None:
-        blocks, fallback = unreported_blocks(os.environ.get("NIGHTLY_JOB_RESULT", "unknown"))
+        blocks, fallback = unreported_blocks(job_result)
     else:
-        blocks, fallback = summary_blocks(facts, os.environ.get("NIGHTLY_JOB_RESULT", "success"))
+        try:
+            blocks, fallback = summary_blocks(facts, job_result)
+        except SHAPE_ERRORS as error:
+            # Something nested is not the shape the renderer expects. Report that rather than dying, because
+            # the alternative is a channel that says nothing on a night when something is already wrong.
+            warn(f"The nightly facts could not be rendered ({type(error).__name__}: {error}).")
+            facts = None
+            blocks, fallback = unreported_blocks(job_result)
 
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
     if parent is None or not parent.get("ok"):
@@ -472,6 +508,13 @@ def main() -> int:
         warn("Slack accepted the summary but returned no ts, so the failure detail was not threaded.")
         return 0
 
+    try:
+        detail = thread_blocks(facts, token, mention)
+    except SHAPE_ERRORS as error:
+        # The summary has already landed, so this costs the detail and nothing else.
+        warn(f"The failure detail could not be rendered ({type(error).__name__}: {error}).")
+        return 0
+
     slack_post(
         "chat.postMessage",
         token,
@@ -479,7 +522,7 @@ def main() -> int:
             "channel": channel,
             "thread_ts": thread_ts,
             "text": f"{len(facts['failures'])} failure(s)",
-            "blocks": thread_blocks(facts, token, mention),
+            "blocks": detail,
         },
     )
     return 0
