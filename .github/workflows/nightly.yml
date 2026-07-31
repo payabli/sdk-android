@@ -10,7 +10,8 @@ name: Nightly
 # Instrumented coverage is :core only, and that is a scope statement rather than an oversight. Every module
 # has a src/androidTest directory, but outside :core they hold the generated ExampleInstrumentedTest and none
 # of them declares androidx.test:runner, so those tasks would die with ClassNotFoundException before running
-# a thing. :taptopay is further out of reach: minSdk 30, and attestation and card-reader paths that need a
+# a thing. :core's own instrumented tier is not small any more: 18 tests as measured on PLA-2307's probe runs,
+# up from 4, once PLA-2180's Keystore coverage landed. :taptopay is further out of reach: minSdk 30, and attestation and card-reader paths that need a
 # physical device (PLA-2193). Wiring the runner into template-only modules to run generated tests is not
 # worth a line in this file, so the claim is narrowed instead.
 #

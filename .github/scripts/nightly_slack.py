@@ -26,6 +26,7 @@ Never prints the token, and never handles a stack trace: traces stay in the job 
 from __future__ import annotations
 
 import http.client
+import itertools
 import json
 import os
 import sys
@@ -229,12 +230,21 @@ def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict]
     # nothing to measure; "no report written" is a module whose coverage task did not produce one, which on a
     # red night is the normal fate of the module whose tests just failed. Rendering the second as the first,
     # or omitting it, would say coverage is absent when it is merely unmeasured tonight.
+    # Modules sharing a phrase are named together, because most nights three of the four entries are the
+    # same words repeated. Spelling each one out ran to 104 characters, which wraps on a phone; sharing the
+    # phrase says the same thing in 72 and still names every module, which is the property this function has
+    # always defended. A percentage never shares, since it is a fact about one module.
+    #
+    # Grouping is over *consecutive* modules only, so COVERAGE_MODULES order survives and the line reads the
+    # same way every night. A mixed night therefore renders each state where it falls, rather than sorting
+    # modules into state buckets: `payin no classes yet · taptopay no report written · telemetry no classes
+    # yet`. Predictable beats tidy for something read at a glance at 3am.
     for group in facts["coverage"]:
         # The raw label keys the fixed-phrase lookup; the escaped one is the only form that gets rendered.
         # Both are values from the artifact, so neither reaches a block unescaped.
         label = group["label"]
         safe_label = mrkdwn(label)
-        rendered = []
+        cells: list[tuple[str, str, bool]] = []
         for module in group["modules"]:
             name = mrkdwn(module["module"])
             state = module.get("state")
@@ -242,15 +252,23 @@ def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict]
             # isinstance rather than a bare format, because a `:.1f` against a non-number raises and the
             # poster would die with a traceback instead of reporting. Everything here crossed the artifact.
             if state == "measured" and isinstance(percent, (int, float)):
-                rendered.append(f"{name} {percent:.1f}%")
+                cells.append((name, f"{percent:.1f}%", False))
             elif state == "empty":
-                rendered.append(f"{name} no classes yet")
+                cells.append((name, "no classes yet", True))
             elif state == "inapplicable":
                 # Has classes, has none of this counter. Saying "no classes yet" here contradicted the line
                 # row directly beneath it, about the same module, in the same message.
-                rendered.append(f"{name} {INAPPLICABLE.get(label, 'no ' + safe_label + ' data')}")
+                cells.append((name, INAPPLICABLE.get(label, "no " + safe_label + " data"), True))
             else:
-                rendered.append(f"{name} no report written")
+                cells.append((name, "no report written", True))
+
+        rendered = []
+        for (shareable, phrase), run in itertools.groupby(cells, key=lambda cell: (cell[2], cell[1])):
+            names = [name for name, _, _ in run]
+            if shareable:
+                rendered.append(", ".join(names) + f" {phrase}")
+            else:
+                rendered.extend(f"{name} {phrase}" for name in names)
         measured = " · ".join(rendered) if rendered else "no modules configured"
         lines.append(f"*Coverage ({safe_label})* {measured}")
 
