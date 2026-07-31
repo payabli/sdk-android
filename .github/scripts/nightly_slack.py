@@ -598,7 +598,7 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
         "1. the workflow is still enabled, since a public repo silently disables schedules "
         "after 60 days idle\n"
         "2. scheduled runs were not dropped under load\n"
-        "3. Actions minutes have not run out"
+        "3. the Actions service itself is healthy, at <https://www.githubstatus.com|githubstatus.com>"
     )
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
     if run["url"]:
@@ -623,8 +623,8 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
     return None
 
 
-def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int) -> None:
-    """Cancel this bot's alarms that are strictly older than the one just armed.
+def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int) -> bool:
+    """Cancel this bot's alarms that are strictly older than the one just armed, reporting whether it worked.
 
     Filtered on the scoped marker rather than deleting everything the token has pending. The list is scoped to
     this token, which stops the bot touching a person's scheduled message, but it does not distinguish the
@@ -642,7 +642,12 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
 
     Paged rather than read one page deep. A single request is enough for the steady state, but the sweep is
     the only thing that removes an alarm, so anything it does not see fires.
+
+    Returns False when a stale alarm may still be pending, whether because the list could not be read, a page
+    was never reached, or a delete was refused. The caller needs that: yesterday's alarm is due about two hours
+    from now, before the next nightly, so a failed sweep is a false alarm already in flight.
     """
+    swept = True
     cursor = ""
     for _ in range(MAX_SWITCH_PAGES):
         params = {"channel": channel, "limit": SWITCH_PAGE_SIZE}
@@ -650,7 +655,8 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
             params["cursor"] = cursor
         pending = slack_get("chat.scheduledMessages.list", token, params)
         if not (pending and pending.get("ok")):
-            return
+            # Nothing is known about what is pending, so the older alarm cannot be assumed gone.
+            return False
         for message in pending.get("scheduled_messages") or []:
             message_id = message.get("id")
             if not message_id or message_id == keep:
@@ -661,13 +667,16 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
             if not isinstance(post_at, int) or post_at >= keep_post_at:
                 # Not provably older, so not ours to remove.
                 continue
-            slack_post("chat.deleteScheduledMessage", token,
-                       {"channel": channel, "scheduled_message_id": message_id})
+            removed = slack_post("chat.deleteScheduledMessage", token,
+                                 {"channel": channel, "scheduled_message_id": message_id})
+            if not (removed and removed.get("ok")):
+                swept = False
         cursor = str((pending.get("response_metadata") or {}).get("next_cursor") or "").strip()
         if not cursor:
-            return
+            return swept
     warn(f"More than {MAX_SWITCH_PAGES} pages of scheduled messages are pending, so the oldest alarms were "
          "not examined and one may fire spuriously.")
+    return False
 
 
 def owns_liveness_switch() -> bool:
@@ -686,17 +695,25 @@ def owns_liveness_switch() -> bool:
 
 
 def reset_liveness_switch(token: str, channel: str) -> bool:
-    """Arm a fresh alarm and clear the older ones. True only if an alarm is definitely pending.
+    """Arm a fresh alarm and clear the older ones. True only if *exactly one* alarm is now pending.
 
     The return value is the point. It used to return nothing while the caller printed that the switch had been
     re-armed, which was a claim the code could not support: every call inside warns and continues, so a green
     night could post nothing *and* arm nothing, producing exactly the unmonitored silence this replaced.
+
+    Too many pending alarms is a failure as well as too few, which is the second thing this got wrong. Arming
+    succeeded while the sweep quietly failed still counted as success, and the alarm the sweep should have
+    removed is due before the next nightly, so it fires and reports a stopped nightly that did not stop.
     """
     armed = arm_liveness_switch(token, channel)
     if not armed:
         warn(f"The liveness switch could not be armed, so silence would not be monitored ({switch_marker()}).")
         return False
-    cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1])
+    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1]):
+        # Not a smaller problem than failing to arm, just a noisier one. A false alarm is what teaches people to
+        # stop believing the alarm, and an alarm nobody believes is the same as no alarm at all.
+        warn(f"An earlier alarm may still be pending and fire spuriously ({switch_marker()}).")
+        return False
     print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({switch_marker()}).")
     return True
 
@@ -798,10 +815,16 @@ def main() -> int:
         print("::notice::Nightly is green, so nothing was posted. The liveness switch is armed.")
         return 0
     if green:
-        # The switch could not be armed, so staying silent would leave nobody watching the silence. Fall back
-        # to the old behaviour and post the green summary: worse to read, but the channel keeps its evidence
-        # that the nightly ran. The silent-green optimisation is conditional on the safety net existing.
-        warn("Posting the green summary because the liveness switch could not be armed.")
+        # Silence is only safe while exactly one alarm is pending, and it is not: either none could be armed, or
+        # an older one survived the sweep and is due before the next nightly. Fall back to the old behaviour and
+        # post the green summary. Worse to read, but with nothing armed the channel at least keeps its evidence
+        # that the nightly ran, and with a stale alarm in flight this is what stops the false alarm two hours
+        # from now being read as a dead schedule.
+        #
+        # The reset below is skipped after this, because the attempt has already been made this run. Retrying it
+        # would arm a second alarm within the same second as the first, and two alarms sharing a `post_at` tie,
+        # which the sweep retains by design: the retry would create the duplicate the sweep refuses to resolve.
+        warn("Posting the green summary because silence is not covered by exactly one pending alarm.")
 
     if facts is None:
         blocks, fallback = unreported_blocks(job_result)
@@ -833,7 +856,7 @@ def main() -> int:
         # not: resetting would push the alarm out another 26 hours while the report was lost. Leaving the
         # existing alarm armed is what makes that visible.
         return 0
-    if owns_liveness_switch():
+    if owns_liveness_switch() and not green:
         reset_liveness_switch(token, channel)
 
     if facts is None or not facts["failures"]:
