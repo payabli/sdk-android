@@ -807,7 +807,11 @@ def main() -> int:
         blocks, fallback = unreported_blocks(job_result)
     else:
         try:
-            blocks, fallback = summary_blocks(facts, job_result, commits_since_last_green())
+            # Not looked up when green, and that is both halves of the reasoning above. A green fallback would
+            # otherwise pay for three Actions API calls the early decision exists to avoid, and it would print
+            # a suspect range under a headline saying the nightly passed, which invites a hunt for a cause that
+            # does not exist. The range answers "what might have broken it", so a green run has no question.
+            blocks, fallback = summary_blocks(facts, job_result, None if green else commits_since_last_green())
         except SHAPE_ERRORS as error:
             # Something nested is not the shape the renderer expects. Report that rather than dying, because
             # the alternative is a channel that says nothing on a night when something is already wrong.

@@ -83,11 +83,15 @@ The marker is also scoped per platform, so a sibling platform reporting into the
 this one's alarm. The clock has to live outside GitHub: a watcher hosted on the thing it watches dies with it,
 which is why this is not a scheduled digest job.
 
-Three reasons the window is 26 hours rather than 25: scheduled runs here fire 42 to 53 minutes after the
-cron, which is GitHub's documented load delay; this repository is public, so "scheduled workflows are
-automatically disabled when no repository activity has occurred in 60 days" applies and GitHub announces
-nothing when it happens; and queued scheduled jobs can be dropped outright under load. None of those
-produces an error to report, which is the whole reason the switch exists.
+The window is 26 hours rather than 25 for one reason only: scheduled runs here fire 42 to 53 minutes after
+the cron, which is GitHub's documented load delay, so 24 plus 2 leaves headroom without hiding a genuinely
+missed night. Widen it only against a measurement.
+
+What the switch is *for* is a separate question, and two documented behaviours answer it rather than setting
+the window. This repository is public, so "scheduled workflows are automatically disabled when no repository
+activity has occurred in 60 days" applies, and GitHub announces nothing when it happens. And queued
+scheduled jobs can be dropped outright under load. Neither produces an error for anything to report, which
+is why the absence has to be watched from outside.
 
 The reset runs through the same Slack API as the report, deliberately. If Slack is unreachable the reset
 fails too, the switch stays armed and it fires, which is correct: the switch asserts that the channel heard
