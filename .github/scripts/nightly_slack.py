@@ -795,11 +795,14 @@ def main() -> int:
             facts = None
             blocks, fallback = unreported_blocks(job_result)
 
-    # A green night posts nothing at all. Six of seven messages used to say "Nightly green", which is what
-    # trains people to stop reading a channel, and the whole point of the switch above is that silence can
-    # now be trusted. Red nights, and any night with no usable facts, still post.
+    # Reaching here means something is being posted: a red night, a night with no usable facts, or a green night
+    # whose switch could not be armed. The green decision itself is above, with its reasoning.
     #
-    # The switch is reset either way and before returning, because a green nightly is still a live nightly.
+    # Stated as the invariant rather than as the sequence, because the sequence has changed four times and the
+    # comment that described it went stale every time: **the channel is never left silent with no alarm
+    # pending.** That is what the ordering below protects. The reset therefore happens only after Slack has
+    # accepted the report, so a lost report cannot push the alarm out, and only for the run that owns the
+    # switch, so a dispatch cannot vouch for the schedule.
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
     if parent is None or not parent.get("ok"):
         # Deliberately not reset here. The switch asserts that the channel heard from the nightly, and it did
