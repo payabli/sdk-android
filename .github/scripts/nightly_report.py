@@ -36,12 +36,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# The first line of a failure is what reaches Slack, so it is bounded there. The full trace only reaches the
-# job summary, which allows 1 MiB per job, so the per-trace bound exists to stop one runaway trace from
-# crowding out the other failures rather than to fit a hard limit. Both announce themselves when they bite.
+# The first line of a failure is what reaches Slack, so it is bounded there. The trace only reaches the job
+# summary, and the per-trace bound exists to stop one runaway trace from crowding out the other failures.
+# Both announce themselves when they bite, and the unabridged trace is in the nightly-reports artifact
+# either way, so neither bound loses evidence.
 MAX_DETAIL_CHARS = 300
 MAX_TRACE_CHARS = 4000
-MAX_SUMMARY_CHARS = 900_000
+# GitHub caps a job summary at 1 MiB, and that is a limit on **bytes**, so the budget below is spent in
+# bytes rather than in characters. Counting `len()` measures code points: 900,000 characters of multi-byte
+# UTF-8 is up to 3.6 MB, which GitHub rejects, and a rejected summary takes the destination of every trace
+# link in the Slack report with it. Not hypothetical for this repo, whose storage tests deliberately carry
+# non-BMP and malformed text, and whose assertion output would therefore quote it back.
+MAX_SUMMARY_BYTES = 900_000
 
 # The modules that have a coverage task, named rather than discovered. Globbing for whatever report happens
 # to be on disk drops a module out of the message entirely when its task did not run, and the module with
@@ -283,8 +289,37 @@ def suite_label(failed: int, skipped: int, total: int, outcome: str, missing: bo
     return ", ".join(parts) + (f" / {total} tests" if failed or skipped else "")
 
 
+def _utf8_len(text: str) -> int:
+    """Byte length, because every limit this file spends against is a byte limit."""
+    return len(text.encode("utf-8"))
+
+
+def clip_trace(trace: str) -> str:
+    """Bound a trace, keeping both ends rather than the first N characters.
+
+    Taking the head was the obvious thing and the wrong one. A JVM trace puts the `Caused by:` chain at the
+    end, and on a wrapped exception that tail is the whole diagnosis, so head-only truncation reliably
+    discards the part a reader opened the summary for. Keep two thirds from the top, which carries the
+    exception type, the message and the frames nearest the assertion, and the remainder from the bottom.
+
+    The notice says where the unabridged trace is rather than only that trimming happened, since the JUnit
+    XML in the nightly-reports artifact always holds it.
+    """
+    if len(trace) <= MAX_TRACE_CHARS:
+        return trace
+    head = MAX_TRACE_CHARS * 2 // 3
+    tail = MAX_TRACE_CHARS - head
+    omitted = len(trace) - MAX_TRACE_CHARS
+    return (
+        trace[:head]
+        + f"\n\n... {omitted} characters trimmed from the middle. The complete trace is in the "
+        "nightly-reports artifact ...\n\n"
+        + trace[-tail:]
+    )
+
+
 def write_step_summary(failures: list[Failure]) -> None:
-    """Render the full traces into the job summary, which is what the Slack report links at.
+    """Render the traces into the job summary, which is what the Slack report links at.
 
     Chosen over the three alternatives for a reason each. The results artifact holds the same traces but
     costs the reader a download and an unzip. A Slack file upload reads best but needs an upload scope and
@@ -299,14 +334,19 @@ def write_step_summary(failures: list[Failure]) -> None:
     if not target or not failures:
         return
 
-    chunks = [f"## Nightly failures ({len(failures)})\n\n"]
-    chunks.append("Full stack traces. The Slack report links here.\n\n")
-    budget = MAX_SUMMARY_CHARS
+    header = (
+        f"## Nightly failures ({len(failures)})\n\n"
+        "Stack traces, trimmed in the middle where they are long. The complete JUnit XML is in the "
+        "`nightly-reports` artifact on this run.\n\n"
+    )
+    chunks = [header]
+    # Spent in bytes, and the header and the worst-case omission notice are charged up front so the notice
+    # cannot itself be what pushes the summary over.
+    notice_reserve = _utf8_len(f"_{len(failures)} further trace(s) omitted: the job summary limit._\n")
+    budget = MAX_SUMMARY_BYTES - _utf8_len(header) - notice_reserve
     written = 0
     for failure in failures:
-        trace = failure.trace or failure.detail or "(no trace recorded)"
-        if len(trace) > MAX_TRACE_CHARS:
-            trace = trace[:MAX_TRACE_CHARS] + f"\n... trace truncated at {MAX_TRACE_CHARS} characters ..."
+        trace = clip_trace(failure.trace or failure.detail or "(no trace recorded)")
         # `open` on the first few only. A red night is usually one or two failures and expanding each one by
         # hand is friction; twenty open traces is a wall.
         opened = " open" if written < 3 else ""
@@ -314,10 +354,11 @@ def write_step_summary(failures: list[Failure]) -> None:
             f"<details{opened}><summary><code>{html.escape(failure.label)}</code></summary>\n\n"
             f"<pre>{html.escape(trace)}</pre>\n\n</details>\n\n"
         )
-        if len(block) > budget:
+        cost = _utf8_len(block)
+        if cost > budget:
             chunks.append(f"_{len(failures) - written} further trace(s) omitted: the job summary limit._\n")
             break
-        budget -= len(block)
+        budget -= cost
         written += 1
         chunks.append(block)
 
