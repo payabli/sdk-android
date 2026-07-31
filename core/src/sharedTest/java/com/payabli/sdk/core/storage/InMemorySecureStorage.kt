@@ -28,7 +28,21 @@ import kotlinx.coroutines.sync.withLock
  * `@VisibleForTesting` is not used, and would not fit: `sharedTest` compiles only into `test` and `androidTest`,
  * so nothing here has production visibility to widen. The same reasoning as `PayabliTransports`.
  */
-internal class InMemorySecureStorage : PayabliSecureStorage {
+internal class InMemorySecureStorage(
+    /**
+     * Runs inside the critical section, so a test can hold the lock and prove a second caller cannot enter.
+     *
+     * A no-op by default, which leaves every other use unchanged. It exists because the lost-update test below is a
+     * weak detector: measured, it catches a removed mutex about 1 run in 5, and raising the writer count does not
+     * help, since the critical section is a single map assignment. Asserting exclusion directly is deterministic
+     * where asserting its consequence is not.
+     *
+     * A hook here costs nothing that the earlier debate about a seam in `KeystoreValueCipher` cost. This file is in
+     * `sharedTest`, compiled only into `test` and `androidTest`, so this is test-only control flow in test-only
+     * code rather than in a class that owns key material.
+     */
+    private val insideCriticalSection: suspend () -> Unit = {},
+) : PayabliSecureStorage {
     private val values: MutableMap<String, ByteArray> = mutableMapOf()
 
     /**
@@ -44,7 +58,10 @@ internal class InMemorySecureStorage : PayabliSecureStorage {
 
     override suspend fun get(key: String): ByteArray? {
         requireRepresentableKey(key)
-        return mutex.withLock { values[key]?.copyOf() }
+        return mutex.withLock {
+            insideCriticalSection()
+            values[key]?.copyOf()
+        }
     }
 
     override suspend fun set(
@@ -52,11 +69,17 @@ internal class InMemorySecureStorage : PayabliSecureStorage {
         value: ByteArray,
     ) {
         requireRepresentableKey(key)
-        mutex.withLock { values[key] = value.copyOf() }
+        mutex.withLock {
+            insideCriticalSection()
+            values[key] = value.copyOf()
+        }
     }
 
     override suspend fun remove(key: String) {
         requireRepresentableKey(key)
-        mutex.withLock { values.remove(key) }
+        mutex.withLock {
+            insideCriticalSection()
+            values.remove(key)
+        }
     }
 }

@@ -1,13 +1,16 @@
 package com.payabli.sdk.core.storage
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -71,14 +74,10 @@ class InMemorySecureStorageTest {
      * Mirrors `FileSecureStorageTest`'s own concurrency test: a fixture that is less safe than what it stands in for
      * makes a consumer's concurrency test flake for a reason production does not have.
      *
-     * **A weak detector, and worth saying so.** With the lock removed this catches the defect about 1 run in 5,
-     * measured, and raising the writers from 10 to 500 did not change that: the critical section is a single map
-     * assignment, so the window for a lost update stays tiny however many callers pile into it. Contention is the
-     * only lever available, there being no cipher here to widen the section, and it does not work.
-     *
-     * The lock is therefore justified by the contract rather than by this test: the shipping store serialises every
-     * operation, so a fixture standing in for it must too. What this test does reliably is prove the fixture works
-     * *with* the lock, which is not nothing, and it would catch a gross regression such as dropping the copy.
+     * A behavioural smoke test, not the guard. Measured, it catches a removed mutex 0 to 1 runs in 5, because the
+     * critical section is a single map assignment and raising the writer count does not widen it. Exclusion is
+     * proven deterministically by `a second operation cannot enter while the first holds the lock`; this one states
+     * the contract in the terms a consumer sees and would catch a gross regression such as dropping the copy.
      */
     @Test
     fun `concurrent writes do not lose values`() =
@@ -96,6 +95,57 @@ class InMemorySecureStorageTest {
         /** Ten, matching the store's own concurrency test. 500 was measured and detected no better. */
         const val WRITERS = 10
     }
+
+    /**
+     * A second caller cannot enter while the first holds the lock.
+     *
+     * The deterministic counterpart to the lost-update test above, which catches a removed mutex about 1 run in 5.
+     * This asserts mutual exclusion itself rather than one of its consequences: the first `set` parks inside the
+     * critical section, a second operation is attempted under a timeout and must **not** complete, and once the
+     * first is released it must.
+     *
+     * Both directions are pinned, so the test cannot pass by accident. Without the lock the second call completes
+     * immediately and the first assertion fails on every run; with it, the release is what lets the second finish,
+     * so a lock that never unlocks fails the second assertion instead of hanging. The sentinel below is what makes
+     * the first assertion mean what it says.
+     */
+    @Test
+    fun `a second operation cannot enter while the first holds the lock`() =
+        runTest(timeout = 10.seconds) {
+            val parked = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val subject =
+                InMemorySecureStorage(
+                    insideCriticalSection = {
+                        // Only the first entrant parks; later ones pass straight through, so the release below does
+                        // not have to account for how many callers the implementation let in.
+                        if (parked.complete(Unit)) release.await()
+                    },
+                )
+
+            val holder = async(Dispatchers.IO) { subject.set("held", "value".toByteArray()) }
+            parked.await()
+
+            // A sentinel, not the operation's own result. `withTimeoutOrNull { subject.get(...) }` returns null
+            // both when it times out and when it enters and finds nothing, and the parked writer has not written
+            // yet, so the first version of this test passed by reading the wrong null: measured, it caught a removed
+            // lock 0 times in 5. Returning a value the operation cannot produce separates the two.
+            val entered =
+                withTimeoutOrNull(500.milliseconds) {
+                    subject.get("held")
+                    "entered"
+                }
+            assertNull("a second operation entered while the lock was held", entered)
+
+            release.complete(Unit)
+            holder.await()
+
+            assertArrayEquals(
+                "the second operation did not complete once the lock was released",
+                "value".toByteArray(),
+                withTimeoutOrNull(5.seconds) { subject.get("held") },
+            )
+        }
 
     @Test
     fun `remove deletes the value`() =
