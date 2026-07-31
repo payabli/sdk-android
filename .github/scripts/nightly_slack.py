@@ -543,30 +543,16 @@ def slack_get(method: str, token: str, params: dict) -> dict | None:
     return body
 
 
-def reset_liveness_switch(token: str, channel: str) -> None:
-    """Cancel the previously armed alarm and arm a fresh one, so silence stays meaningful.
+def arm_liveness_switch(token: str, channel: str) -> str | None:
+    """Schedule the alarm and return its id, or None if Slack would not take it.
 
-    Called on every run that got this far, green or red, because what it asserts is "the reporter reached
-    Slack tonight" rather than anything about the suite. A red night is still a live nightly.
-
-    Ordering is cancel-then-arm on purpose. Arming first and cancelling second would, if the cancel failed,
-    leave two alarms pending and produce a duplicate alert a day later.
-
-    Nothing here can fail the run: every call warns and returns None, and a failure simply leaves the switch
-    as it was. Leaving it armed is the safe direction, since the alarm is a false positive at worst, and if
-    Slack was unreachable then the channel genuinely has not heard from the nightly.
-
-    `chat.scheduledMessages.list` returns only messages scheduled with this same token, which is what makes
-    this safe to run against a shared channel: the bot cannot see or cancel a person's scheduled message.
+    Armed before the previous one is cancelled, deliberately, and the earlier ordering was wrong. Cancelling
+    first was justified as avoiding a duplicate if the arm failed, but the two failures are not comparable: a
+    duplicate is one false alarm, while cancelling and then failing to arm leaves *no* pending alarm, and a
+    stopped nightly then becomes indistinguishable from green silence, which is the single thing this whole
+    mechanism exists to prevent. Arming first means at least one alarm is pending at every instant, including
+    if this job is superseded mid-sequence, which `cancel-in-progress` makes a live possibility.
     """
-    pending = slack_get("chat.scheduledMessages.list", token, {"channel": channel, "limit": 100})
-    if pending and pending.get("ok"):
-        for message in pending.get("scheduled_messages") or []:
-            message_id = message.get("id")
-            if message_id:
-                slack_post("chat.deleteScheduledMessage", token,
-                           {"channel": channel, "scheduled_message_id": message_id})
-
     post_at = int(time.time()) + SWITCH_HOURS * 3600
     platform = mrkdwn(platform_name())
     run = trusted_run_links()
@@ -586,14 +572,55 @@ def reset_liveness_switch(token: str, channel: str) -> None:
     armed = slack_post("chat.scheduleMessage", token, {
         "channel": channel,
         "post_at": post_at,
-        "text": f"{platform_name()} nightly has not reported for over {SWITCH_HOURS} hours",
+        # The marker rides in the fallback text because that is what chat.scheduledMessages.list returns, so
+        # it is what the cancel step can filter on. Without it the cancel deletes every message this bot has
+        # scheduled in the channel, which is not the same set.
+        "text": f"[{SWITCH_MARKER}] {platform_name()} nightly has not reported for over {SWITCH_HOURS} hours",
         "blocks": blocks,
         # Not metadata: Slack documents that a message scheduled with the metadata parameter will not post,
-        # which would silently disarm the switch. The marker rides in the text instead.
+        # which would disarm the switch silently.
         "unfurl_links": False,
     })
     if armed and armed.get("ok"):
-        print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({SWITCH_MARKER}).")
+        return armed.get("scheduled_message_id") or None
+    return None
+
+
+def cancel_stale_switches(token: str, channel: str, keep: str) -> None:
+    """Cancel this bot's earlier alarms, keeping the one just armed.
+
+    Filtered on SWITCH_MARKER rather than deleting everything the token has pending. The list is scoped to
+    this token, which stops the bot touching a person's scheduled message, but it does not distinguish the
+    alarm from anything else this bot might ever schedule in the channel. Failing to filter would make that a
+    silent side effect the day something else is added.
+    """
+    pending = slack_get("chat.scheduledMessages.list", token, {"channel": channel, "limit": 100})
+    if not (pending and pending.get("ok")):
+        return
+    for message in pending.get("scheduled_messages") or []:
+        message_id = message.get("id")
+        if not message_id or message_id == keep:
+            continue
+        if SWITCH_MARKER not in (message.get("text") or ""):
+            continue
+        slack_post("chat.deleteScheduledMessage", token,
+                   {"channel": channel, "scheduled_message_id": message_id})
+
+
+def reset_liveness_switch(token: str, channel: str) -> bool:
+    """Arm a fresh alarm and clear the older ones. True only if an alarm is definitely pending.
+
+    The return value is the point. It used to return nothing while the caller printed that the switch had been
+    re-armed, which was a claim the code could not support: every call inside warns and continues, so a green
+    night could post nothing *and* arm nothing, producing exactly the unmonitored silence this replaced.
+    """
+    armed = arm_liveness_switch(token, channel)
+    if not armed:
+        warn(f"The liveness switch could not be armed, so silence would not be monitored ({SWITCH_MARKER}).")
+        return False
+    cancel_stale_switches(token, channel, keep=armed)
+    print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({SWITCH_MARKER}).")
+    return True
 
 
 def platform_name() -> str:
@@ -698,15 +725,22 @@ def main() -> int:
     #
     # The switch is reset either way and before returning, because a green nightly is still a live nightly.
     green = facts is not None and facts["verdict"] != "red" and job_result == "success"
-    if green:
-        reset_liveness_switch(token, channel)
-        print("::notice::Nightly is green, so nothing was posted. The liveness switch was re-armed.")
+    if green and reset_liveness_switch(token, channel):
+        print("::notice::Nightly is green, so nothing was posted. The liveness switch is armed.")
         return 0
+    if green:
+        # The switch could not be armed, so staying silent would leave nobody watching the silence. Fall back
+        # to the old behaviour and post the green summary: worse to read, but the channel keeps its evidence
+        # that the nightly ran. The silent-green optimisation is conditional on the safety net existing.
+        warn("Posting the green summary because the liveness switch could not be armed.")
 
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
-    reset_liveness_switch(token, channel)
     if parent is None or not parent.get("ok"):
+        # Deliberately not reset here. The switch asserts that the channel heard from the nightly, and it did
+        # not: resetting would push the alarm out another 26 hours while the report was lost. Leaving the
+        # existing alarm armed is what makes that visible.
         return 0
+    reset_liveness_switch(token, channel)
 
     if facts is None or not facts["failures"]:
         return 0
