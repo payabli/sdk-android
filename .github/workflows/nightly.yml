@@ -195,7 +195,17 @@ jobs:
           disable-animations: true
           # Scoped to :core. :taptopay carries minSdk 30 and its instrumented paths need a physical device
           # for attestation and the card reader, so an emulator cannot run them; see PLA-2193.
+          #
+          # notAnnotation excludes the manual tier, which needs real hardware. Excluded rather than skipped,
+          # and the difference is the point: measured, this leaves `skipped="0"` in the results XML and the
+          # manual tests absent from it entirely. An `@Ignore` would have reported a standing skip in Slack
+          # every night, and a permanent skip is indistinguishable from a regression that started skipping.
+          #
+          # Those tests genuinely fail here rather than being merely inapplicable: an emulator's Keystore is
+          # software-backed, so the hardware assertion fails with SECURITY_LEVEL_SOFTWARE. Excluding them is
+          # load-bearing, not tidiness. See ManualDeviceTest for the command that runs them.
           script: ./gradlew :core:connectedAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest
 
       # Posts to #mobile-sdk-nightly-build. Reads the reports Gradle already wrote and sends coverage, a
       # green or red verdict with the exact failure count, only the tests that failed, a probable culprit

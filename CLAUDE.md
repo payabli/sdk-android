@@ -6,7 +6,10 @@
 - `./gradlew :MODULE:assembleRelease` - Single module (e.g. `:core`, `:taptopay`)
 - `./gradlew test` - All unit tests
 - `./gradlew :MODULE:testDebugUnitTest` - Single module unit tests
-- `./gradlew connectedAndroidTest` - Instrumentation tests (requires device)
+- `./gradlew connectedAndroidTest` - Instrumentation tests (requires device). **The per-PR CI runs none of
+  these**; only the nightly workflow does, and it appends
+  `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest`. See
+  **Testing** for why, and for the command that runs the excluded tier
 - `./gradlew ktlintCheck` - Formatting
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
 - `./gradlew lint` - Android Lint
@@ -68,6 +71,37 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
   a parked `HttpURLConnection` read on this JVM within about two milliseconds, and the whole-call timeout
   tests assert exactly that. The entry was not describing a platform limit; it was shielding a defect from
   scrutiny, since the teardown had never fired at all. Before adding a behaviour to this list, measure it.
+- **A `platform` package is the instrumented tier, and the boundary is structural rather than a list.** A file
+  belongs there when it calls an Android API with no JVM implementation — Keystore, `android.util.*`, a
+  `Context`. Nothing else does: "hard to test" is not a reason to move a file, and moving one to quiet a
+  coverage number is how the boundary stops meaning anything. `sonar.coverage.exclusions` is `**/platform/**`,
+  coverage only, so those files still get issue detection; their tests live in the mirroring package under
+  `src/androidTest`. This exists because Sonar gates **introduced** code: `:core`'s module total read 81.5%
+  line while the same commit measured 41% on its new lines, because `KeystoreValueCipher` was 121 of 261
+  measured units and unreachable from any unit test. Read both numbers, not one.
+- **Three test tiers, and the third is excluded from CI rather than skipped.** JVM unit tests; instrumented
+  tests the nightly runs on an emulator; and `@ManualDeviceTest`, which needs real hardware. The exclusion is
+  `notAnnotation`, verified to leave `skipped="0"` in the results XML with the manual tests absent from it
+  entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
+  skip cannot be told apart from a regression that started skipping.
+
+  ```bash
+  # Only the manual tier, against a wired phone. ANDROID_SERIAL matters when an emulator is also attached.
+  ANDROID_SERIAL=<serial> ./gradlew :core:connectedAndroidTest \
+    -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.core.ManualDeviceTest
+  ```
+
+  Put a test there only when an emulator cannot answer the question. The current ones assert the storage key
+  is in secure hardware at the device's best level, which on an emulator fails with `SECURITY_LEVEL_SOFTWARE`:
+  excluding them is load-bearing, not housekeeping.
+- **`KeyPermanentlyInvalidatedException` is handled defensively, not reachably, and there is no manual
+  procedure for it.** An earlier version of this file described one: write a value, change a credential, read
+  it back. That cannot work. The storage key deliberately omits `setUserAuthenticationRequired`, because the
+  refresh secret is read during background refresh with nobody present, so enrollment and lockscreen changes
+  do not invalidate it. The manual tier also deletes key and file in `tearDown`, so nothing would survive the
+  credential change anyway. What **is** covered, on an emulator, is both reachable lost-key outcomes: a
+  deleted alias reports `KeyInvalidated` and clears the store, a replaced alias reports `ValueUnreadable` for
+  the entry read. Do not reintroduce the credential-change instruction.
 - Two traps in the instrumented setup, both of which fail in a way that does not name its cause.
   `androidx.test.ext:junit` does **not** bring `androidx.test:runner`, so without it the test APK installs and
   dies with `ClassNotFoundException` on `AndroidJUnitRunner` before any test runs. And the harness pins
