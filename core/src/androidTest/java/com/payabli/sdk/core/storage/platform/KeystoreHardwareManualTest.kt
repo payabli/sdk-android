@@ -139,9 +139,18 @@ class KeystoreHardwareManualTest {
             storage().set("refresh", "secret-value".toByteArray())
             val info = keyInfo()
 
+            // No skip in either branch, because "the best level this device advertises" is answerable on any
+            // device: software is the honest expectation when the device claims no hardware keystore at all. Both
+            // paths therefore derive the expectation from the capability rather than assuming a secure element.
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                // The same rule at the resolution the platform offers. Before 31 there is no level to read, so the
+                // answerable question is whether hardware backing matches what the device claims.
                 @Suppress("DEPRECATION")
-                assertTrue("the storage key is not inside secure hardware", info.isInsideSecureHardware)
+                assertEquals(
+                    "hardware backing should match what the device advertises",
+                    advertisesHardwareKeystore(),
+                    info.isInsideSecureHardware,
+                )
                 return@runTest
             }
 
@@ -151,8 +160,6 @@ class KeystoreHardwareManualTest {
                     .targetContext
                     .packageManager
                     .hasSystemFeature(STRONGBOX_FEATURE)
-            // No skip here, because "the best level this device advertises" is answerable on any device: software
-            // is the honest expectation when the device claims no hardware keystore at all.
             val expected =
                 when {
                     hasStrongBox -> KeyProperties.SECURITY_LEVEL_STRONGBOX
