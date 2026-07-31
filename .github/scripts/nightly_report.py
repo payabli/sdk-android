@@ -60,6 +60,18 @@ MAX_SUMMARY_BYTES = 900_000
 # :example is absent deliberately, matching ci.yml. It has no coverage task, so it has nothing to omit.
 COVERAGE_MODULES = ("core", "payin", "taptopay", "telemetry")
 
+# Attribution stops here, because the report cannot show more than this and the work is not free: each
+# failure costs two recursive source globs and up to two `git log` subprocesses. Measured against this repo
+# one attribution is about 50 ms, so 335 failures is nearer 17 seconds than the collector's 300-second bound,
+# which makes the typical case comfortable rather than tight. The bound is still worth having twice over. The
+# cost is proportional to the failure count with no ceiling, and `git log` carries a 20-second timeout, so a
+# pathological repository state turns a broad failure into a step timeout that loses the whole facts file.
+# And computing a culprit for a failure nobody can read is waste whatever it costs.
+#
+# Keep this equal to MAX_LISTED_FAILURES in nightly_slack.py. The counts, the verdict and the job summary's
+# traces still cover every failure; only the git attribution is bounded.
+MAX_ATTRIBUTED_FAILURES = 12
+
 
 class Failure:
     def __init__(self, suite: str, case: str, detail: str, trace: str, kind: str) -> None:
@@ -224,6 +236,14 @@ def git_one_line(*args: str) -> str:
 
 
 def last_commit(path: Path) -> dict[str, str] | None:
+    """Cached wrapper: the same file is named by every failure in the same class."""
+    key = str(path)
+    if key not in _COMMIT_CACHE:
+        _COMMIT_CACHE[key] = _last_commit_uncached(path)
+    return _COMMIT_CACHE[key]
+
+
+def _last_commit_uncached(path: Path) -> dict[str, str] | None:
     """The last commit to touch a path, as fields rather than a rendered line.
 
     Unit-separated rather than space-separated, because a commit subject and an author name can both contain
@@ -240,6 +260,12 @@ def last_commit(path: Path) -> dict[str, str] | None:
     return {"sha": sha, "author": author, "email": email, "subject": subject}
 
 
+# Memoised because a broken shared fixture fails many tests in one class, and every one of them would
+# otherwise repeat the same glob and the same `git log`. Keyed on the arguments, cleared by process exit.
+_SOURCE_CACHE: dict[tuple[str, str], Path | None] = {}
+_COMMIT_CACHE: dict[str, dict[str, str] | None] = {}
+
+
 def find_source(class_name: str, package: str = "") -> Path | None:
     """The file for a class, disambiguated by package, or None when the answer would be a guess.
 
@@ -247,6 +273,15 @@ def find_source(class_name: str, package: str = "") -> Path | None:
     this repo, so every non-core failure was attributed to core's history. A package-qualified path is
     checked first, and an ambiguous bare filename yields nothing rather than a plausible wrong answer.
     """
+    key = (class_name, package)
+    if key in _SOURCE_CACHE:
+        return _SOURCE_CACHE[key]
+    found = _find_source_uncached(class_name, package)
+    _SOURCE_CACHE[key] = found
+    return found
+
+
+def _find_source_uncached(class_name: str, package: str = "") -> Path | None:
     if package:
         suffix = f"{package.replace('.', '/')}/{class_name}.kt"
         qualified = sorted(p for p in REPO_ROOT.glob(f"*/src/*/**/{class_name}.kt") if str(p).endswith(suffix))
@@ -466,7 +501,8 @@ def main() -> int:
     coverages = [(label, coverage(counter)) for label, counter in (("branch", "BRANCH"), ("line", "LINE"))]
 
     all_failures = unit_details + card_details + inst_details
-    for failure in all_failures:
+    # Only the failures the report can list. See MAX_ATTRIBUTED_FAILURES.
+    for failure in all_failures[:MAX_ATTRIBUTED_FAILURES]:
         attribute(failure)
 
     write_step_summary(all_failures)
