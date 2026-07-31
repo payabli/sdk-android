@@ -68,6 +68,23 @@ SUPPORTED_SCHEMA = 4
 LOOKUP_TIMEOUT_SECONDS = 5
 LOOKUP_BUDGET_SECONDS = 60
 
+# The dead-man's switch. A green nightly says nothing, which means silence can no longer be read as health:
+# "green" and "the workflow stopped firing" would look identical, and this repository has documented ways to
+# stop silently. It is public, so "scheduled workflows are automatically disabled when no repository activity
+# has occurred in 60 days" applies and GitHub documents no notification when it happens; and "if the load is
+# sufficiently high enough, some queued jobs may be dropped". Neither produces an error to report.
+#
+# So every run arms a message in Slack's own future and cancels the one the previous run armed. If the nightly
+# stops for any reason, nobody cancels it and Slack posts it. The clock lives outside GitHub, which is the
+# whole point: a watcher hosted on the thing it watches dies with it. That is also why this is not a weekly
+# digest job.
+#
+# 26 hours rather than 25. Measured on this repo, scheduled runs fire 42 to 53 minutes after the cron, which
+# is the documented load delay, so a tighter window would cry wolf nightly.
+SWITCH_HOURS = 26
+# Marks the bot's own armed message so a future reader knows what it is and why it fired.
+SWITCH_MARKER = "nightly-liveness"
+
 
 def warn(message: str) -> None:
     print(f"::warning::{message}")
@@ -198,7 +215,7 @@ def merge_by_commit(culprits: list[dict]) -> list[tuple[dict, list[str]]]:
     return list(merged.values())
 
 
-def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict], str]:
+def summary_blocks(facts: dict, job_result: str = "success", since_green: dict | None = None) -> tuple[list[dict], str]:
     """The channel message: verdict, counts, coverage, and where to look. No failure detail.
 
     Deliberately silent about the thread. Slack renders its own reply count on a threaded parent, so a line
@@ -275,6 +292,14 @@ def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict]
     failures = facts["failures"]
     if failures:
         lines.append(f"*Failures* {len(failures)}")
+
+    # The bounded suspect set, next to the per-file heuristic rather than replacing it. Absent when the answer
+    # would be a guess, because a missing line is better than a wrong range.
+    if since_green:
+        count = since_green.get("count")
+        span = f"{mrkdwn(since_green['base'])}...{mrkdwn(since_green['head'])}"
+        commits = f"{count} commit{'s' if count != 1 else ''}" if isinstance(count, int) else "the commits"
+        lines.append(f"*Since the last green nightly* {commits} · <{since_green['url']}|{span}>")
     if unfinished and not claimed_red:
         # Named explicitly, because "collected green, ran red" is the one combination a reader would otherwise
         # have to reconcile themselves, and the run is what to believe.
@@ -416,6 +441,161 @@ def usable_facts(raw: object) -> dict | None:
     return raw
 
 
+def github_get(url: str, token: str) -> dict | None:
+    """GET one GitHub API URL. Warns and returns None rather than raising, like the Slack helpers."""
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                 "X-GitHub-Api-Version": "2022-11-28"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        warn(f"GitHub API returned HTTP {error.code} for a last-green lookup. The report continues without it.")
+        return None
+    except UNREACHABLE as error:
+        warn(f"GitHub API unreachable for a last-green lookup ({type(error).__name__}).")
+        return None
+
+
+def commits_since_last_green() -> dict | None:
+    """The commit range between the last successful nightly on this branch and this one.
+
+    Replaces guesswork with a bounded fact. The existing per-file culprit is `git log -1 -- <file>`, a
+    heuristic that has been wrong; the honest suspect set is everything that landed since the suite was last
+    known good, and only the Actions API knows when that was.
+
+    Runs here, in the report job, rather than in the collector. The query needs a token, and PLA-2307 closed
+    the exposure of keeping credentials in the job that runs the third-party emulator action. No git history
+    is needed either way: the baseline is a sha from the API and the compare link is just two shas.
+
+    A successful run is the right definition of green, because the suite gate is what decides that run's
+    conclusion, so this cannot disagree with the verdict the way a separate judgement would.
+
+    Returns None whenever the answer would be a guess: no token, no previous success on this branch, or an
+    API that would not answer. The report is better without the line than with a wrong one.
+    """
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    sha = os.environ.get("GITHUB_SHA", "")
+    branch = os.environ.get("GITHUB_REF_NAME", "")
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    if not (token and repo and run_id and sha):
+        return None
+
+    # The workflow id comes from this run rather than from a hardcoded filename, so renaming the file cannot
+    # quietly turn this into a lookup against the wrong workflow.
+    this_run = github_get(f"{api}/repos/{repo}/actions/runs/{run_id}", token)
+    workflow_id = (this_run or {}).get("workflow_id")
+    if not workflow_id:
+        return None
+
+    query = urllib.parse.urlencode(
+        {"status": "success", "per_page": 20, **({"branch": branch} if branch else {})}
+    )
+    listed = github_get(f"{api}/repos/{repo}/actions/workflows/{workflow_id}/runs?{query}", token)
+    baseline = None
+    for candidate in (listed or {}).get("workflow_runs") or []:
+        # Newest first, so the first success that is not this run is the last known good one.
+        if str(candidate.get("id")) != str(run_id) and candidate.get("head_sha"):
+            baseline = candidate
+            break
+    if not baseline:
+        return None
+
+    base_sha = baseline["head_sha"]
+    if base_sha == sha:
+        # The same commit already went green, so nothing landed since and there is no range to report.
+        return None
+
+    compared = github_get(f"{api}/repos/{repo}/compare/{base_sha}...{sha}", token)
+    return {
+        "base": base_sha[:7],
+        "head": sha[:7],
+        "count": (compared or {}).get("total_commits"),
+        "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
+        "when": baseline.get("created_at", ""),
+    }
+
+
+def slack_get(method: str, token: str, params: dict) -> dict | None:
+    """GET one Slack Web API method. Same warn-and-return-None contract as slack_post."""
+    request = urllib.request.Request(
+        f"{SLACK_API}/{method}?{urllib.parse.urlencode(params)}",
+        headers={"Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        warn(f"Slack {method} returned HTTP {error.code}. The suite result is unaffected.")
+        return None
+    except UNREACHABLE as error:
+        warn(f"Slack {method} could not be reached ({type(error).__name__}). The suite result is unaffected.")
+        return None
+    if not body.get("ok"):
+        warn(f"Slack {method} refused the call: {body.get('error', 'unknown error')}.")
+    return body
+
+
+def reset_liveness_switch(token: str, channel: str) -> None:
+    """Cancel the previously armed alarm and arm a fresh one, so silence stays meaningful.
+
+    Called on every run that got this far, green or red, because what it asserts is "the reporter reached
+    Slack tonight" rather than anything about the suite. A red night is still a live nightly.
+
+    Ordering is cancel-then-arm on purpose. Arming first and cancelling second would, if the cancel failed,
+    leave two alarms pending and produce a duplicate alert a day later.
+
+    Nothing here can fail the run: every call warns and returns None, and a failure simply leaves the switch
+    as it was. Leaving it armed is the safe direction, since the alarm is a false positive at worst, and if
+    Slack was unreachable then the channel genuinely has not heard from the nightly.
+
+    `chat.scheduledMessages.list` returns only messages scheduled with this same token, which is what makes
+    this safe to run against a shared channel: the bot cannot see or cancel a person's scheduled message.
+    """
+    pending = slack_get("chat.scheduledMessages.list", token, {"channel": channel, "limit": 100})
+    if pending and pending.get("ok"):
+        for message in pending.get("scheduled_messages") or []:
+            message_id = message.get("id")
+            if message_id:
+                slack_post("chat.deleteScheduledMessage", token,
+                           {"channel": channel, "scheduled_message_id": message_id})
+
+    post_at = int(time.time()) + SWITCH_HOURS * 3600
+    platform = mrkdwn(platform_name())
+    run = trusted_run_links()
+    text = (
+        f":rotating_light: *{platform} · the nightly has not reported for over {SWITCH_HOURS} hours*\n"
+        "This message was armed by the last run that completed and should have been cancelled by the next "
+        "one. It posting means no nightly reported in that window, so the run is not merely red, it did not "
+        "happen or could not reach Slack.\n"
+        "Worth checking in order: whether the workflow is still enabled, whether scheduled runs were dropped, "
+        "and whether Actions minutes ran out. A public repository also has its scheduled workflows disabled "
+        "automatically after 60 days without repository activity, and GitHub does not announce that."
+    )
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+    if run["url"]:
+        blocks.append({"type": "context",
+                       "elements": [{"type": "mrkdwn", "text": f"<{run['url']}|The last run that armed this>"}]})
+    armed = slack_post("chat.scheduleMessage", token, {
+        "channel": channel,
+        "post_at": post_at,
+        "text": f"{platform_name()} nightly has not reported for over {SWITCH_HOURS} hours",
+        "blocks": blocks,
+        # Not metadata: Slack documents that a message scheduled with the metadata parameter will not post,
+        # which would silently disarm the switch. The marker rides in the text instead.
+        "unfurl_links": False,
+    })
+    if armed and armed.get("ok"):
+        print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({SWITCH_MARKER}).")
+
+
 def platform_name() -> str:
     """The platform label, from the workflow rather than guessed.
 
@@ -503,7 +683,8 @@ def main() -> int:
         blocks, fallback = unreported_blocks(job_result)
     else:
         try:
-            blocks, fallback = summary_blocks(facts, job_result)
+            # Looked up only when there is something to report, so a green night costs no API calls.
+            blocks, fallback = summary_blocks(facts, job_result, commits_since_last_green())
         except SHAPE_ERRORS as error:
             # Something nested is not the shape the renderer expects. Report that rather than dying, because
             # the alternative is a channel that says nothing on a night when something is already wrong.
@@ -511,12 +692,22 @@ def main() -> int:
             facts = None
             blocks, fallback = unreported_blocks(job_result)
 
+    # A green night posts nothing at all. Six of seven messages used to say "Nightly green", which is what
+    # trains people to stop reading a channel, and the whole point of the switch above is that silence can
+    # now be trusted. Red nights, and any night with no usable facts, still post.
+    #
+    # The switch is reset either way and before returning, because a green nightly is still a live nightly.
+    green = facts is not None and facts["verdict"] != "red" and job_result == "success"
+    if green:
+        reset_liveness_switch(token, channel)
+        print("::notice::Nightly is green, so nothing was posted. The liveness switch was re-armed.")
+        return 0
+
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
+    reset_liveness_switch(token, channel)
     if parent is None or not parent.get("ok"):
         return 0
 
-    # Green nights end here, with one line in the channel and no thread. That is the readability this whole
-    # arrangement is for.
     if facts is None or not facts["failures"]:
         return 0
 
