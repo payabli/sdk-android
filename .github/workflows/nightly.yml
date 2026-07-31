@@ -310,11 +310,22 @@ jobs:
   #     quiet on exactly the nights that most needed a message
   #   * the report is decoupled from the test job's lifetime, so a slow Slack cannot hold an emulator runner
   #
-  # It cannot redden a green run: the poster warns and exits zero on every Slack failure, and the gate above
-  # owns the run result.
+  # It cannot redden a green run, and `continue-on-error` is what makes that true rather than the poster's
+  # own discipline. The poster warning and exiting zero covers Slack failures only, and this job has steps
+  # that are not Slack: a transient `actions/checkout` failure, or any uncaught exception in the poster,
+  # fails the step, and a failed job fails the workflow run. GitHub's syntax reference is explicit that this
+  # setting "prevents a workflow run from failing when a job fails".
+  #
+  # Which matters most in the case the ordering was chosen for. The summary posts first, so a crash after it
+  # lands would leave Slack saying "Nightly green" while the run went red, and a run disagreeing with the
+  # notification it just sent is the single failure this workflow is built to avoid.
+  #
+  # Failures here stay visible: the job itself is still marked failed on the run, so a reporter that breaks
+  # is not silent, it just stops being the suite's problem. Same trade as the artifact upload above.
   report:
     name: Report to Slack
     needs: nightly
+    continue-on-error: true
     # Not `always()`. GitHub recommends this form, and the difference is visible in the channel: `cancelled()`
     # is true for the whole run, so `!cancelled()` still reports a nightly whose test job timed out, while
     # staying quiet when `cancel-in-progress` supersedes a nightly with a manual dispatch. With `always()`
