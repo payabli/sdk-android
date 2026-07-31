@@ -7,10 +7,13 @@ import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.logging.LogCategory
+import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.LogSink
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
+import com.payabli.sdk.core.storage.impl.ValueCipher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -31,6 +34,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.security.KeyStore
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
 import kotlin.time.Duration.Companion.seconds
@@ -165,12 +171,14 @@ class KeystoreSecureStorageInstrumentedTest {
             )
         }
 
-    private fun storage(fileName: String = "store.json") =
-        FileSecureStorage(
-            file = File(directory, fileName),
-            cipher = KeystoreValueCipher(keyAlias, logger),
-            logger = logger,
-        )
+    private fun storage(
+        fileName: String = "store.json",
+        cipher: ValueCipher = KeystoreValueCipher(keyAlias, logger),
+    ) = FileSecureStorage(
+        file = File(directory, fileName),
+        cipher = cipher,
+        logger = logger,
+    )
 
     /**
      * `encrypt` must never create a key, which is the cipher-level half of the provisioning split.
@@ -259,38 +267,65 @@ class KeystoreSecureStorageInstrumentedTest {
         }
 
     /**
-     * Two stores sharing one alias should both survive their first write.
+     * Two ciphers over one alias must generate exactly one key.
      *
-     * **The factory can no longer produce this**, since it derives one alias per file; only direct construction
-     * can, which is internal code. The per-alias monitor is a defensive guard for that unsupported shape.
+     * **The invariant, not its consequence.** An earlier version raced two writes and asserted both values were
+     * still readable, which caught the missing monitor in 3 of 3 whole-suite runs but only about half the time in
+     * isolation, and a start barrier did not help. Data is lost only when one store finishes encrypting *between*
+     * the two generations, so tighter overlap puts both generations before either encrypt, both blobs end up under
+     * the final key, and nothing is lost. The detection window was bounded on both sides.
      *
-     * This is intentionally a smoke test, not a deterministic proof of the check-then-create race. Making that
-     * race deterministic would require a test-only rendezvous inside [KeystoreValueCipher], between the outer
-     * missing-key check and the synchronized generation block. That would put test control flow into production
-     * crypto code for a path the public factory no longer exposes, so the monitor is primarily justified by
-     * inspection and this test only exercises the realistic concurrent path.
+     * Counting generations removes the timing. `beforeKeyGeneration` is a rendezvous placed after the
+     * unsynchronized presence check and before the guarded creation, so both callers are provably inside the
+     * window, and `createKey` already logs once per generation. With the monitor, one thread creates and the other
+     * finds the key on the second check. Without it, both create.
+     *
+     * The factory cannot produce two stores over one alias; only direct construction can, which is internal code,
+     * so the monitor is defence for that shape and this proves the defence works.
      */
     @Test
-    fun twoStoresSharingAnAliasBothSurviveAConcurrentFirstWrite() =
+    fun twoCiphersOverOneAliasGenerateExactlyOneKey() =
         runTest(timeout = 30.seconds) {
-            val first = storage("first.json")
-            val second = storage("second.json")
+            val generations = AtomicInteger(0)
+            val countingLogger =
+                DefaultPayabliLogger(
+                    LogCategory.CORE,
+                    object : LogSink {
+                        override fun isLoggable(
+                            level: LogLevel,
+                            tag: String,
+                        ): Boolean = true
+
+                        override fun write(
+                            level: LogLevel,
+                            tag: String,
+                            message: String,
+                        ) {
+                            if ("storage key created" in message) generations.incrementAndGet()
+                        }
+                    },
+                )
+            val rendezvous = CyclicBarrier(2)
+            val hook = {
+                rendezvous.await(10, TimeUnit.SECONDS)
+                Unit
+            }
+            val first = storage("first.json", KeystoreValueCipher(keyAlias, countingLogger, hook))
+            val second = storage("second.json", KeystoreValueCipher(keyAlias, countingLogger, hook))
 
             listOf(
                 async(Dispatchers.IO) { first.set("refresh", "first-value".toByteArray()) },
                 async(Dispatchers.IO) { second.set("refresh", "second-value".toByteArray()) },
             ).awaitAll()
 
-            assertArrayEquals(
-                "the first store's value was sealed under a key that was then replaced",
-                "first-value".toByteArray(),
-                first.get("refresh"),
+            assertEquals(
+                "the key was generated more than once for one alias, so one store's ciphertext is stranded",
+                1,
+                generations.get(),
             )
-            assertArrayEquals(
-                "the second store's value was sealed under a key that was then replaced",
-                "second-value".toByteArray(),
-                second.get("refresh"),
-            )
+            // The consequence still holds, which is why generating once matters.
+            assertArrayEquals("first-value".toByteArray(), first.get("refresh"))
+            assertArrayEquals("second-value".toByteArray(), second.get("refresh"))
         }
 
     @Test

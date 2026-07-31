@@ -40,6 +40,27 @@ import javax.crypto.spec.GCMParameterSpec
 internal class KeystoreValueCipher(
     private val keyAlias: String,
     private val logger: PayabliLogger,
+    /**
+     * Runs after the unsynchronized presence check and before the guarded generation. **A test seam, no-op in
+     * production**, and it exists because the race it opens cannot be reached from outside this class.
+     *
+     * The hazard is two ciphers over one alias both finding no key and both generating, where the second
+     * generation replaces the first key and strands whatever was sealed under it. Reaching it needs both callers
+     * past the check before either creates, and from outside [ensureKey] that check and the creation are atomic,
+     * so no decorator on [ValueCipher] can interleave them. Two coroutines racing cannot either: measured, a plain
+     * `Dispatchers.IO` race detected the missing monitor in 3 of 3 whole-suite runs but only about half of the
+     * time in isolation, and a start barrier did not improve it, because the test was observing a *consequence*.
+     * A blob is only lost if one store finishes encrypting between the two generations, so tighter overlap puts
+     * both generations before either encrypt and loses nothing.
+     *
+     * With a rendezvous here, the test stops asking whether data was lost and asserts the invariant instead: the
+     * key is generated exactly once, counted from the log line [createKey] already emits. That is deterministic.
+     *
+     * The default makes this dead in production, and the parameter is deliberately not a `@VisibleForTesting`
+     * member or a mutable static: it is per-instance and injected, the same shape as `FileSecureStorage`'s
+     * `dispatcher`.
+     */
+    private val beforeKeyGeneration: () -> Unit = {},
 ) : ValueCipher {
     override fun encrypt(
         aad: String,
@@ -105,6 +126,7 @@ internal class KeystoreValueCipher(
      */
     override fun ensureKey(mayCreate: Boolean) {
         if (existingKey() != null) return
+        beforeKeyGeneration()
         synchronized(monitorFor(keyAlias)) {
             if (existingKey() != null) return
             if (!mayCreate) throw SecureStorageException.KeyInvalidated()
