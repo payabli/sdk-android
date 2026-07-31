@@ -514,6 +514,13 @@ def commits_since_last_green() -> dict | None:
 
     compared = github_get(f"{api}/repos/{repo}/compare/{base_sha}...{sha}", token)
     total = (compared or {}).get("total_commits")
+    # `ahead` is the only status under which "commits since the last green nightly" is a true description.
+    # Measured against this repo: a reversed pair returns status `behind` with total_commits 0, and an
+    # identical pair returns `identical` with 0, so an integer count proves nothing about ancestry. Re-running
+    # an older failure after a newer success produces exactly the reversed case, and rewritten history
+    # produces `diverged`, where the count is real but is not a count of commits since anything.
+    if (compared or {}).get("status") != "ahead":
+        return None
     if not isinstance(total, int):
         # The compare did not answer, which happens when a force-push leaves the previous success
         # incomparable. The link would 404 as well, so rendering a suspect range here would be a guess with a
@@ -731,11 +738,25 @@ def main() -> int:
             warn(f"The nightly facts file could not be read ({type(error).__name__}).")
 
     job_result = os.environ.get("NIGHTLY_JOB_RESULT", "success" if facts else "unknown")
+
+    # Decided before anything is rendered, and that ordering is load-bearing rather than tidy. The commit-range
+    # lookup costs up to three Actions API calls, and building the blocks first meant a green night paid for
+    # all of them and threw the result away. Worse, an Actions API timeout would then delay re-arming the
+    # liveness switch, which is the one thing on a green night that must not be delayed.
+    green = facts is not None and facts["verdict"] != "red" and job_result == "success"
+    if green and reset_liveness_switch(token, channel):
+        print("::notice::Nightly is green, so nothing was posted. The liveness switch is armed.")
+        return 0
+    if green:
+        # The switch could not be armed, so staying silent would leave nobody watching the silence. Fall back
+        # to the old behaviour and post the green summary: worse to read, but the channel keeps its evidence
+        # that the nightly ran. The silent-green optimisation is conditional on the safety net existing.
+        warn("Posting the green summary because the liveness switch could not be armed.")
+
     if facts is None:
         blocks, fallback = unreported_blocks(job_result)
     else:
         try:
-            # Looked up only when there is something to report, so a green night costs no API calls.
             blocks, fallback = summary_blocks(facts, job_result, commits_since_last_green())
         except SHAPE_ERRORS as error:
             # Something nested is not the shape the renderer expects. Report that rather than dying, because
@@ -749,16 +770,6 @@ def main() -> int:
     # now be trusted. Red nights, and any night with no usable facts, still post.
     #
     # The switch is reset either way and before returning, because a green nightly is still a live nightly.
-    green = facts is not None and facts["verdict"] != "red" and job_result == "success"
-    if green and reset_liveness_switch(token, channel):
-        print("::notice::Nightly is green, so nothing was posted. The liveness switch is armed.")
-        return 0
-    if green:
-        # The switch could not be armed, so staying silent would leave nobody watching the silence. Fall back
-        # to the old behaviour and post the green summary: worse to read, but the channel keeps its evidence
-        # that the nightly ran. The silent-green optimisation is conditional on the safety net existing.
-        warn("Posting the green summary because the liveness switch could not be armed.")
-
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
     if parent is None or not parent.get("ok"):
         # Deliberately not reset here. The switch asserts that the channel heard from the nightly, and it did
