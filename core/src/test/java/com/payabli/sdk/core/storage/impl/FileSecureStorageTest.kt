@@ -325,11 +325,12 @@ class FileSecureStorageTest {
         }
 
     /**
-     * The plaintext the cipher was handed must be wiped once `set` returns.
+     * The caller's array reaches the cipher unchanged and uncopied.
      *
-     * Observable because the cipher keeps the reference it was given: if storage did not overwrite the
-     * buffer, the secret would still be readable through it. This is the whole reason values are
-     * `CharArray` rather than `String`, so it is the assertion that proves the change was worth making.
+     * The inverse of what this test used to assert. It once checked that storage *wiped* the buffer it handed the
+     * cipher, which was necessary because the old `CharArray` contract encoded into a second array that storage
+     * then owned. Bytes go straight through, so no such buffer exists: nothing of ours holds the plaintext, and
+     * there is nothing for storage to forget to clear. Wiping is the caller's, as the contract now says.
      */
     @Test
     fun `the caller's array reaches the cipher without being copied`() =
@@ -360,6 +361,63 @@ class FileSecureStorageTest {
             // responsible for wiping, which is the buffer the old CharArray conversion created and had to clear.
             // Passing the caller's array through means there is no such buffer to leak or to forget.
             assertSame("the value was copied on the way to the cipher", value, handed)
+        }
+
+    /**
+     * Two names that collapse under UTF-8 must not be able to open each other's value.
+     *
+     * `"\uD800"` and `"\uD801"` both encode to the single byte `0x3f`, measured, so as GCM AAD they are the same
+     * name. Since every entry shares one key, the AAD is the only thing binding a blob to its entry, and two
+     * entries with one AAD is the substitution attack the binding exists to stop, reached by naming rather than
+     * by editing the file. Rejecting the names makes the collision unreachable, so this asserts through the
+     * public surface rather than reaching for the cipher.
+     */
+    @Test
+    fun `names that collide under UTF-8 cannot open each other's value`() =
+        runTest(timeout = 5.seconds) {
+            val subject = storage()
+
+            val first = runCatching { subject.set("\uD800", "first".toByteArray()) }.exceptionOrNull()
+            val second = runCatching { subject.set("\uD801", "second".toByteArray()) }.exceptionOrNull()
+
+            assertTrue("a name that cannot round-trip was accepted, got $first", first is IllegalArgumentException)
+            assertTrue("a name that cannot round-trip was accepted, got $second", second is IllegalArgumentException)
+            // And nothing was stored under the name they would both have collapsed to.
+            assertNull("a rejected write reached the store anyway", subject.get("?"))
+        }
+
+    /** Every entry point checks, because one unguarded door reopens the collision above. */
+    @Test
+    fun `an unrepresentable key is rejected by get, set and remove`() =
+        runTest(timeout = 5.seconds) {
+            val subject = storage()
+            val malformed = "\uDC00-trailing-surrogate"
+
+            val onGet = runCatching { subject.get(malformed) }.exceptionOrNull()
+            val onSet = runCatching { subject.set(malformed, "x".toByteArray()) }.exceptionOrNull()
+            val onRemove = runCatching { subject.remove(malformed) }.exceptionOrNull()
+
+            assertTrue("get accepted it, got $onGet", onGet is IllegalArgumentException)
+            assertTrue("set accepted it, got $onSet", onSet is IllegalArgumentException)
+            assertTrue("remove accepted it, got $onRemove", onRemove is IllegalArgumentException)
+        }
+
+    /**
+     * The guard rejects only what is malformed.
+     *
+     * A supplementary character is a *valid* surrogate pair and must be accepted. A check that refused anything
+     * containing a surrogate code unit would pass the two tests above while breaking every legitimate name
+     * outside the basic plane, which is the way this fix would plausibly go wrong.
+     */
+    @Test
+    fun `a key containing a valid supplementary character is accepted`() =
+        runTest(timeout = 5.seconds) {
+            val subject = storage()
+            val astral = "refresh-😀"
+
+            subject.set(astral, "secret-value".toByteArray())
+
+            assertArrayEquals("secret-value".toByteArray(), subject.get(astral))
         }
 
     /**

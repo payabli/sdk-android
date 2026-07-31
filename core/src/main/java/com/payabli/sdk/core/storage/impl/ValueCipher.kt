@@ -10,6 +10,10 @@ package com.payabli.sdk.core.storage.impl
  * one key, so without it a blob is valid under any name and swapping two blobs in the file returns the
  * wrong secret with the tag check passing. Implementations authenticate [aad] and fail when it differs.
  *
+ * **[aad] must be losslessly representable as UTF-8**, which `FileSecureStorage` enforces on every entry point
+ * before calling here. An implementation encoding it with `String.toByteArray` would otherwise collapse
+ * malformed UTF-16 to `?` and give two different names the same AAD, which defeats the binding above.
+ *
  * Plaintext is `ByteArray` so it can be overwritten. Implementations must not retain it.
  */
 internal interface ValueCipher {

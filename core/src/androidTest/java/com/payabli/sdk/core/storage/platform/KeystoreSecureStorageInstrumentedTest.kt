@@ -259,15 +259,16 @@ class KeystoreSecureStorageInstrumentedTest {
         }
 
     /**
-     * Two stores sharing one alias must both survive their first write.
+     * Two stores sharing one alias should both survive their first write.
      *
      * **The factory can no longer produce this**, since it derives one alias per file; only direct construction
-     * can, which is internal code. The monitor stays as defence for that, and this is what proves it works: left
-     * unsynchronized both stores see no key and both generate, the second generation replaces the first key, and
-     * the first store's blob becomes permanently unreadable, reported as a corrupt value on something that was
-     * never corrupt.
+     * can, which is internal code. The per-alias monitor is a defensive guard for that unsupported shape.
      *
-     * A real dispatcher, not `Unconfined`, which runs each `async` to completion in turn so nothing interleaves.
+     * This is intentionally a smoke test, not a deterministic proof of the check-then-create race. Making that
+     * race deterministic would require a test-only rendezvous inside [KeystoreValueCipher], between the outer
+     * missing-key check and the synchronized generation block. That would put test control flow into production
+     * crypto code for a path the public factory no longer exposes, so the monitor is primarily justified by
+     * inspection and this test only exercises the realistic concurrent path.
      */
     @Test
     fun twoStoresSharingAnAliasBothSurviveAConcurrentFirstWrite() =

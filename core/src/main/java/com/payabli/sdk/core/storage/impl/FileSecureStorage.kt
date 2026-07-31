@@ -42,6 +42,7 @@ internal class FileSecureStorage(
 
     override suspend fun get(key: String): ByteArray? =
         withContext(dispatcher) {
+            requireRepresentable(key)
             mutex.withLock {
                 val blob = read()[key] ?: return@withLock null
                 try {
@@ -66,6 +67,7 @@ internal class FileSecureStorage(
         value: ByteArray,
     ) {
         withContext(dispatcher) {
+            requireRepresentable(key)
             mutex.withLock {
                 // Read before encrypting, so the whole read-modify-write sits inside one critical section
                 // and a test can widen the window from the cipher. Encrypting first put the seam outside it.
@@ -95,6 +97,7 @@ internal class FileSecureStorage(
 
     override suspend fun remove(key: String) {
         withContext(dispatcher) {
+            requireRepresentable(key)
             mutex.withLock {
                 val current = read()
                 if (key in current) write(current - key)
@@ -173,6 +176,29 @@ internal class FileSecureStorage(
             throw SecureStorageException.StorageUnavailable(e)
         } catch (e: SecurityException) {
             throw SecureStorageException.StorageUnavailable(e)
+        }
+    }
+
+    /**
+     * A key must survive a UTF-8 round trip, and every entry point checks it rather than one of them.
+     *
+     * The name is the only thing binding a blob to its entry, as GCM AAD, and `String.toByteArray` replaces
+     * malformed UTF-16 rather than refusing it. Measured, `"\uD800"`, `"\uD801"` and a literal `"?"` all encode
+     * to the single byte `0x3f`, so entries whose names collapse can open each other's blob with the tag check
+     * passing. That is the substitution attack the AAD exists to stop, reached by naming instead of by editing
+     * the file. The same string is also the persisted map key, so a name that cannot round-trip makes an entry's
+     * identity ambiguous in two places at once.
+     *
+     * `require`, not a [SecureStorageException]: a key is a plaintext name chosen by calling code, so one that
+     * is not representable is a caller bug rather than a storage outcome. Rejecting also keeps the file's keys
+     * readable, which matters for a field somebody will look at during an incident.
+     *
+     * The check asserts the property directly rather than configuring an encoder to report, because the property
+     * *is* "this name means the same thing after being written and read back".
+     */
+    private fun requireRepresentable(key: String) {
+        require(String(key.toByteArray(Charsets.UTF_8), Charsets.UTF_8) == key) {
+            "a storage key must be representable as UTF-8 without loss"
         }
     }
 

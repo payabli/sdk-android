@@ -11,6 +11,10 @@ import androidx.annotation.RestrictTo
  * **Keys are names, values are secrets.** A key is stored in plaintext and may be logged; a value is
  * encrypted and must never be.
  *
+ * A key must be losslessly representable as UTF-8, and one that is not is rejected with
+ * `IllegalArgumentException`. It is not decoration: the name is what binds a blob to its entry, and malformed
+ * UTF-16 collapses to `?` when encoded, so two different names would authenticate each other's value.
+ *
  * **Values are bytes, and this store does not interpret them.** Whatever it is handed comes back byte for
  * byte, so nothing here can alter a secret in transit. An earlier revision took `CharArray` and encoded to
  * UTF-8 internally, which silently replaced malformed input: a lone `'\uD800'` was stored as `?` and read
@@ -25,10 +29,14 @@ import androidx.annotation.RestrictTo
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface PayabliSecureStorage {
     /**
-     * The stored value as a fresh array, or null when nothing is stored under [key].
+     * The stored value as a fresh array, or null when no value is stored under [key].
      *
-     * Null means nothing was ever stored, which is distinct from every failure below. All four subtypes can
-     * arrive here, and they differ in what the caller should do about them:
+     * **Null is the current state, not a history.** It says only that nothing is stored under this name now: a
+     * value that was written and then removed reads as null, and so does one lost when an unparseable store was
+     * reset. A caller cannot tell those apart and should not be written as though it can.
+     *
+     * Every failure below is distinct from null, and all four subtypes can arrive here. They differ in what the
+     * caller should do:
      *
      * | Failure | Means | Caller |
      * |---|---|---|
