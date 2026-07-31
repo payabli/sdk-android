@@ -232,7 +232,9 @@ jobs:
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
       # failure count, only the tests that failed, and a probable culprit per failure from git history with
       # that commit's author. Writes the stack traces to this job's summary, which is what the Slack
-      # report links at, and a facts file for the `report` job to render.
+      # report links at, and a facts file for the `report` job to render. A trace over 4000 characters is
+      # trimmed in the middle, keeping both ends, and the summary names the nightly-reports artifact as where
+      # the unabridged JUnit XML is.
       #
       # This step holds no credential, which is the point of the split. It also has to stay in this job for
       # two reasons that are not interchangeable: the build outputs are here, and so is the full git history

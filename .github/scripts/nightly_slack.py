@@ -211,22 +211,29 @@ def summary_blocks(facts: dict) -> tuple[list[dict], str]:
     # red night is the normal fate of the module whose tests just failed. Rendering the second as the first,
     # or omitting it, would say coverage is absent when it is merely unmeasured tonight.
     for group in facts["coverage"]:
+        # The raw label keys the fixed-phrase lookup; the escaped one is the only form that gets rendered.
+        # Both are values from the artifact, so neither reaches a block unescaped.
+        label = group["label"]
+        safe_label = mrkdwn(label)
         rendered = []
         for module in group["modules"]:
             name = mrkdwn(module["module"])
-            if module["state"] == "measured":
-                rendered.append(f"{name} {module['percent']:.1f}%")
-            elif module["state"] == "empty":
+            state = module.get("state")
+            percent = module.get("percent")
+            # isinstance rather than a bare format, because a `:.1f` against a non-number raises and the
+            # poster would die with a traceback instead of reporting. Everything here crossed the artifact.
+            if state == "measured" and isinstance(percent, (int, float)):
+                rendered.append(f"{name} {percent:.1f}%")
+            elif state == "empty":
                 rendered.append(f"{name} no classes yet")
-            elif module["state"] == "inapplicable":
+            elif state == "inapplicable":
                 # Has classes, has none of this counter. Saying "no classes yet" here contradicted the line
                 # row directly beneath it, about the same module, in the same message.
-                label = group["label"]
-                rendered.append(f"{name} {INAPPLICABLE.get(label, 'no ' + label + ' data')}")
+                rendered.append(f"{name} {INAPPLICABLE.get(label, 'no ' + safe_label + ' data')}")
             else:
                 rendered.append(f"{name} no report written")
         measured = " · ".join(rendered) if rendered else "no modules configured"
-        lines.append(f"*Coverage ({group['label']})* {measured}")
+        lines.append(f"*Coverage ({safe_label})* {measured}")
 
     failures = facts["failures"]
     if failures:
