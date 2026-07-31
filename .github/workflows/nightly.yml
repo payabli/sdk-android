@@ -408,6 +408,12 @@ jobs:
           SLACK_MENTION_CULPRITS: ${{ vars.SLACK_MENTION_CULPRITS }}
           # For the last-green lookup only. The job-scoped token above is read-only on Actions.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Only the scheduled run on the default branch owns the liveness switch, because the switch answers
+          # "is the scheduled nightly still alive". Letting a manual dispatch or a probe branch reset it would
+          # measure "somebody ran this at some point" instead, and a dead schedule could then be masked
+          # indefinitely by occasional dispatches, which is the exact failure the switch exists to catch.
+          # Non-owning runs still report; they just do not vouch for a schedule they are not evidence of.
+          LIVENESS_OWNER: ${{ github.event_name == 'schedule' && github.ref_name == github.event.repository.default_branch }}
           # So a run with no facts file can say what became of the job instead of guessing.
           NIGHTLY_JOB_RESULT: ${{ needs.nightly.result }}
         run: python3 .github/scripts/nightly_slack.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"

@@ -82,8 +82,15 @@ LOOKUP_BUDGET_SECONDS = 60
 # 26 hours rather than 25. Measured on this repo, scheduled runs fire 42 to 53 minutes after the cron, which
 # is the documented load delay, so a tighter window would cry wolf nightly.
 SWITCH_HOURS = 26
-# Marks the bot's own armed message so a future reader knows what it is and why it fired.
-SWITCH_MARKER = "nightly-liveness"
+# Marks the bot's own armed message so a future reader knows what it is, and so the cancel can tell its own
+# alarms from anything else scheduled in the channel.
+#
+# Scoped by platform, because nightly.yml states that both platform SDKs can report into this one channel. An
+# unscoped marker would make an iOS alarm and an Android alarm indistinguishable, so each would cancel the
+# other's and each would mask the other's death. That is worse than having no switch, because it looks like
+# one is present.
+def switch_marker() -> str:
+    return f"nightly-liveness:{platform_name()}"
 
 
 def warn(message: str) -> None:
@@ -592,7 +599,7 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
         # The marker rides in the fallback text because that is what chat.scheduledMessages.list returns, so
         # it is what the cancel step can filter on. Without it the cancel deletes every message this bot has
         # scheduled in the channel, which is not the same set.
-        "text": f"[{SWITCH_MARKER}] {platform_name()} nightly has not reported for over {SWITCH_HOURS} hours",
+        "text": f"[{switch_marker()}] {platform_name()} nightly has not reported for over {SWITCH_HOURS} hours",
         "blocks": blocks,
         # Not metadata: Slack documents that a message scheduled with the metadata parameter will not post,
         # which would disarm the switch silently.
@@ -608,7 +615,7 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
 def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int) -> None:
     """Cancel this bot's alarms that are strictly older than the one just armed.
 
-    Filtered on SWITCH_MARKER rather than deleting everything the token has pending. The list is scoped to
+    Filtered on the scoped marker rather than deleting everything the token has pending. The list is scoped to
     this token, which stops the bot touching a person's scheduled message, but it does not distinguish the
     alarm from anything else this bot might ever schedule in the channel.
 
@@ -629,7 +636,7 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
         message_id = message.get("id")
         if not message_id or message_id == keep:
             continue
-        if SWITCH_MARKER not in (message.get("text") or ""):
+        if switch_marker() not in (message.get("text") or ""):
             continue
         post_at = message.get("post_at")
         if not isinstance(post_at, int) or post_at >= keep_post_at:
@@ -637,6 +644,21 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
             continue
         slack_post("chat.deleteScheduledMessage", token,
                    {"channel": channel, "scheduled_message_id": message_id})
+
+
+def owns_liveness_switch() -> bool:
+    """Whether this run is the one the switch is about.
+
+    The switch answers "is the scheduled nightly still alive", so only the scheduled nightly may reset it.
+    Resetting on every run measured something weaker and self-defeating: "somebody ran the nightly at some
+    point". A dead schedule could then be masked indefinitely by the occasional manual dispatch or probe
+    branch, which is precisely the failure the switch exists to catch, and the chance of that rises with the
+    number of people who might dispatch it.
+
+    A non-owning run still reports normally. It simply leaves the alarm alone rather than vouching for a
+    schedule it is not evidence of.
+    """
+    return os.environ.get("LIVENESS_OWNER", "").strip().lower() == "true"
 
 
 def reset_liveness_switch(token: str, channel: str) -> bool:
@@ -648,10 +670,10 @@ def reset_liveness_switch(token: str, channel: str) -> bool:
     """
     armed = arm_liveness_switch(token, channel)
     if not armed:
-        warn(f"The liveness switch could not be armed, so silence would not be monitored ({SWITCH_MARKER}).")
+        warn(f"The liveness switch could not be armed, so silence would not be monitored ({switch_marker()}).")
         return False
     cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1])
-    print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({SWITCH_MARKER}).")
+    print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({switch_marker()}).")
     return True
 
 
@@ -744,6 +766,10 @@ def main() -> int:
     # all of them and threw the result away. Worse, an Actions API timeout would then delay re-arming the
     # liveness switch, which is the one thing on a green night that must not be delayed.
     green = facts is not None and facts["verdict"] != "red" and job_result == "success"
+    if green and not owns_liveness_switch():
+        # A dispatch or a probe. Silent because it is green, and it does not vouch for the schedule.
+        print("::notice::Nightly is green, so nothing was posted. This run does not own the liveness switch.")
+        return 0
     if green and reset_liveness_switch(token, channel):
         print("::notice::Nightly is green, so nothing was posted. The liveness switch is armed.")
         return 0
@@ -776,7 +802,8 @@ def main() -> int:
         # not: resetting would push the alarm out another 26 hours while the report was lost. Leaving the
         # existing alarm armed is what makes that visible.
         return 0
-    reset_liveness_switch(token, channel)
+    if owns_liveness_switch():
+        reset_liveness_switch(token, channel)
 
     if facts is None or not facts["failures"]:
         return 0
