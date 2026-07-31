@@ -50,6 +50,13 @@ permissions:
 env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
   GRADLE_OPTS: -Dorg.gradle.console=plain
+  # Leads every Slack message. Workflow level rather than job level because both jobs need it: the collector
+  # stamps it into the facts, and the report job has to name the platform even when no facts arrived. Scoped
+  # to the test job it was invisible to the reporter, so the one message sent when the test job dies said
+  # only "Nightly · no report" into a channel both platform SDKs post into.
+  #
+  # Stated rather than inferred, because a script that guesses the platform would eventually guess wrong.
+  PLATFORM: Android
 
 jobs:
   nightly:
@@ -77,9 +84,6 @@ jobs:
       # A boolean, not the credential. The token itself is scoped to the one step that needs it, but a step
       # `if:` cannot read the secrets context, so the presence check has to live here as a rendered string.
       HAS_GPR_CREDENTIALS: ${{ secrets.GPR_TOKEN != '' }}
-      # Leads the Slack report. Stated rather than inferred, because both platform SDKs can post into the
-      # same channel and a script that guesses the platform would eventually guess wrong.
-      PLATFORM: Android
     steps:
       # Full history, because the Slack report attributes each failure with `git log -1 -- <file>`. On the
       # action's default depth of 1 that does not merely come back empty: git attributes the single grafted
