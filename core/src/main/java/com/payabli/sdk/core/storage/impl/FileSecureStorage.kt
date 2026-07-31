@@ -33,17 +33,16 @@ internal class FileSecureStorage(
     private val cipher: ValueCipher,
     private val logger: PayabliLogger,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
-) : PayabliSecureStorage {
     /**
-     * Resolved once, at construction, and never recomputed.
+     * The store's resolved identity, injected so one composition resolves it once.
      *
-     * The alias, this lock and the temp prefix all derive from it, so recomputing risked one store answering
-     * differently on different calls: a later resolution that succeeded where an earlier one failed would look for
-     * another key, take another lock, and stop recognising its own temp files. Construction can therefore fail,
-     * which is the right moment for a path that cannot be resolved.
+     * The default keeps direct construction working and self-consistent. What it cannot do is make the *factory*
+     * consistent: `create` needs the same value for the cipher's alias and for this store, and computing it in both
+     * places let a path whose canonical target changed between the calls give the alias one identity and persistence
+     * another. That is the split the single-identity work exists to prevent, surviving at the composition point.
      */
-    private val identity: String = StoreIdentity.of(file)
-
+    private val identity: String = StoreIdentity.of(file),
+) : PayabliSecureStorage {
     /**
      * Keyed by path, not per instance, because the factory hands out a new object for the same file and
      * reopening one is supported usage. Two instances with private locks both read the old map and
@@ -270,9 +269,15 @@ internal class FileSecureStorage(
         name: String,
         prefix: String,
     ): Boolean {
+        // Length first, because the prefix ends with the delimiter and the suffix begins with one, so they can
+        // overlap: `<prefix>tmp` satisfies both of the checks below while being shorter than the two combined, and
+        // the slice would then run backwards. That threw StringIndexOutOfBoundsException out of the sweep, past
+        // write()'s IOException and SecurityException handlers, failing every write and every absent-key remove for
+        // as long as such a sibling existed.
+        if (name.length <= prefix.length + TEMP_SUFFIX.length) return false
         if (!name.startsWith(prefix) || !name.endsWith(TEMP_SUFFIX)) return false
         val middle = name.substring(prefix.length, name.length - TEMP_SUFFIX.length)
-        return middle.isNotEmpty() && middle.all { it in '0'..'9' }
+        return middle.all { it in '0'..'9' }
     }
 
     private companion object {

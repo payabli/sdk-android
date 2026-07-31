@@ -227,14 +227,26 @@ class FileSecureStorageTest {
      *
      * A real thread pool, because `Dispatchers.Unconfined` runs each `async` to completion before starting
      * the next and nothing ever interleaves.
+     *
+     * **Already a deterministic detector, and measured to be one.** With the lock neutralised, so that each call
+     * takes its own `Mutex`, this fails 5 runs in 5: ten writers overlap on ten threads, all read the same map, and
+     * the file ends with a single entry. `delayMillis` is what buys that, holding each writer inside the window
+     * while the loop dispatches the rest.
+     *
+     * A `CountDownLatch` start gate was tried and reverted, because it detected no better and the machinery was not
+     * free. A barrier inside `encrypt` would be worse than useless: it deadlocks the correct implementation, since
+     * the first writer holds the lock while waiting for writers that cannot enter it.
      */
     @Test
     fun `concurrent writes do not lose values`() =
         runTest(timeout = 30.seconds) {
             val subject = storage(cipher = CountingCipher(delayMillis = 50), dispatcher = Dispatchers.IO)
-            (1..10).map { async(Dispatchers.IO) { subject.set("key-$it", "value-$it".toByteArray()) } }.awaitAll()
+            (1..WRITERS)
+                .map { index ->
+                    async(Dispatchers.IO) { subject.set("key-$index", "value-$index".toByteArray()) }
+                }.awaitAll()
 
-            (1..10).forEach {
+            (1..WRITERS).forEach {
                 assertArrayEquals("value-$it was dropped", "value-$it".toByteArray(), subject.get("key-$it"))
             }
         }
@@ -819,6 +831,30 @@ class FileSecureStorageTest {
         }
 
     /**
+     * A sibling whose name overlaps the prefix and the suffix must not break the store.
+     *
+     * `<prefix>tmp` satisfies both `startsWith` and `endsWith`, because the prefix ends with the delimiter and the
+     * suffix begins with one, while being shorter than the two combined. The slice then ran backwards and threw
+     * `StringIndexOutOfBoundsException` out of the sweep, past `write()`'s handlers, so **every** write and every
+     * absent-key `remove` failed while such a file existed. The store never produces that name, so it takes a
+     * host-app or leftover file, which makes it an improbable trigger with a total consequence.
+     */
+    @Test
+    fun `a sibling overlapping the prefix and suffix does not break writes`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val subject = storage(file)
+            val overlapping =
+                File(folder.root, "pbl${StoreIdentity.of(file)}.tmp").apply { writeText("not ours") }
+
+            subject.set("refresh", "secret-value".toByteArray())
+            subject.remove("never-written")
+
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
+            assertTrue("a file the store never created was deleted", overlapping.exists())
+        }
+
+    /**
      * A sweep that cannot delete an orphan must say so, or `remove` lies again.
      *
      * The whole point of sweeping on `remove` is that deletion means deletion. `delete()` returning false used to
@@ -1034,4 +1070,9 @@ class FileSecureStorageTest {
                     .orEmpty()
             assertTrue("temp files left behind: $leftovers", leftovers.isEmpty())
         }
+
+    private companion object {
+        /** Ten writers, which is enough: measured, a removed lock loses nine of them on every run. */
+        const val WRITERS = 10
+    }
 }

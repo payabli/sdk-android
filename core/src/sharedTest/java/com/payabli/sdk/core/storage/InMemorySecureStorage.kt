@@ -1,5 +1,8 @@
 package com.payabli.sdk.core.storage
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
 /**
  * A [PayabliSecureStorage] that keeps values in a map, for testing a consumer without a Keystore.
  *
@@ -28,9 +31,20 @@ package com.payabli.sdk.core.storage
 internal class InMemorySecureStorage : PayabliSecureStorage {
     private val values: MutableMap<String, ByteArray> = mutableMapOf()
 
+    /**
+     * The same primitive the shipping store uses, for the same reason.
+     *
+     * Without it this map is mutated unguarded, so concurrent writers race and lose entries where the real store
+     * serialises them. A fixture that is *less* safe than what it stands in for makes a consumer's concurrency test
+     * flake for a reason production does not have, which is worse than not having the fixture.
+     *
+     * Each copy happens inside the critical section, so no caller observes a half-updated entry.
+     */
+    private val mutex = Mutex()
+
     override suspend fun get(key: String): ByteArray? {
         requireRepresentableKey(key)
-        return values[key]?.copyOf()
+        return mutex.withLock { values[key]?.copyOf() }
     }
 
     override suspend fun set(
@@ -38,11 +52,11 @@ internal class InMemorySecureStorage : PayabliSecureStorage {
         value: ByteArray,
     ) {
         requireRepresentableKey(key)
-        values[key] = value.copyOf()
+        mutex.withLock { values[key] = value.copyOf() }
     }
 
     override suspend fun remove(key: String) {
         requireRepresentableKey(key)
-        values.remove(key)
+        mutex.withLock { values.remove(key) }
     }
 }

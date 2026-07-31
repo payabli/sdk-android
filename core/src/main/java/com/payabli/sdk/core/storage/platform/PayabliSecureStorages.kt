@@ -52,13 +52,21 @@ internal object PayabliSecureStorages {
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.CORE),
     ): PayabliSecureStorage {
         val file = File(directory, fileName)
+        // Resolved once, here, and handed to both. Resolving separately for the alias and inside the store let a
+        // path whose canonical target changed between the two calls, a repointed symlink being the plausible way,
+        // give the cipher one identity and persistence another.
+        val identity = StoreIdentity.of(file)
         return FileSecureStorage(
             file = file,
-            cipher = KeystoreValueCipher(aliasFor(file), logger),
+            cipher = KeystoreValueCipher(aliasFor(identity), logger),
             logger = logger,
+            identity = identity,
         )
     }
 
+    /** The alias for an already-resolved identity, which is what [create] uses so nothing resolves twice. */
+    fun aliasFor(identity: String): String = "$KEY_ALIAS_PREFIX.$identity"
+
     /** The alias [create] will use for [file]. Exposed so a test can assert two stores do not share one. */
-    fun aliasFor(file: File): String = "$KEY_ALIAS_PREFIX.${StoreIdentity.of(file)}"
+    fun aliasFor(file: File): String = aliasFor(StoreIdentity.of(file))
 }

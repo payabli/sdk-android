@@ -1,5 +1,8 @@
 package com.payabli.sdk.core.storage
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertNull
@@ -60,6 +63,39 @@ class InMemorySecureStorageTest {
 
             assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
+
+    /**
+     * Concurrent writers must not lose entries, because the shipping store serialises and so must this.
+     *
+     * A real dispatcher, not `Unconfined`, which runs each `async` to completion in turn so nothing interleaves.
+     * Mirrors `FileSecureStorageTest`'s own concurrency test: a fixture that is less safe than what it stands in for
+     * makes a consumer's concurrency test flake for a reason production does not have.
+     *
+     * **A weak detector, and worth saying so.** With the lock removed this catches the defect about 1 run in 5,
+     * measured, and raising the writers from 10 to 500 did not change that: the critical section is a single map
+     * assignment, so the window for a lost update stays tiny however many callers pile into it. Contention is the
+     * only lever available, there being no cipher here to widen the section, and it does not work.
+     *
+     * The lock is therefore justified by the contract rather than by this test: the shipping store serialises every
+     * operation, so a fixture standing in for it must too. What this test does reliably is prove the fixture works
+     * *with* the lock, which is not nothing, and it would catch a gross regression such as dropping the copy.
+     */
+    @Test
+    fun `concurrent writes do not lose values`() =
+        runTest(timeout = 30.seconds) {
+            val subject = InMemorySecureStorage()
+
+            (1..WRITERS).map { async(Dispatchers.IO) { subject.set("key-$it", "value-$it".toByteArray()) } }.awaitAll()
+
+            (1..WRITERS).forEach {
+                assertArrayEquals("value-$it was dropped", "value-$it".toByteArray(), subject.get("key-$it"))
+            }
+        }
+
+    private companion object {
+        /** Ten, matching the store's own concurrency test. 500 was measured and detected no better. */
+        const val WRITERS = 10
+    }
 
     @Test
     fun `remove deletes the value`() =
