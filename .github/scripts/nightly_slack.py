@@ -567,10 +567,13 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
     # What survives is the three things that change what someone does next: what happened, that it is worse
     # than a red suite, and where to look.
     text = (
-        f":rotating_light: *{platform} · no nightly report in over {SWITCH_HOURS} hours*\n"
-        "It did not run, or could not reach Slack. Not just a red suite.\n"
-        "Check: workflow still enabled (a public repo silently disables schedules after 60 days idle) · "
-        "scheduled runs not dropped · Actions minutes left"
+        f":rotating_light: *{platform} · no nightly report in over {SWITCH_HOURS} hours*\n\n"
+        "It did not run, or could not reach Slack. This is not just a red suite.\n\n"
+        "Check, in order:\n"
+        "1. the workflow is still enabled, since a public repo silently disables schedules "
+        "after 60 days idle\n"
+        "2. scheduled runs were not dropped under load\n"
+        "3. Actions minutes have not run out"
     )
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
     if run["url"]:
