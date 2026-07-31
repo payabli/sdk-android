@@ -68,6 +68,24 @@ Slack links; a trace over 4000 characters is trimmed in the middle and the unabr
 job because the build outputs and the git history the culprit lookup needs are both there, and the verdict
 has to be decided there because that is where the gate reads it.
 
+**A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
+missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
+stop reading a channel. Silence would be ambiguous on its own, because "green" and "the workflow stopped
+firing" look identical, so every run arms a Slack scheduled message about 26 hours out and cancels the one
+the previous run armed. If the nightly stops for any reason, nobody cancels it and Slack posts the alarm on
+its own clock. The clock has to live outside GitHub: a watcher hosted on the thing it watches dies with it,
+which is why this is not a scheduled digest job.
+
+Three reasons the window is 26 hours rather than 25: scheduled runs here fire 42 to 53 minutes after the
+cron, which is GitHub's documented load delay; this repository is public, so "scheduled workflows are
+automatically disabled when no repository activity has occurred in 60 days" applies and GitHub announces
+nothing when it happens; and queued scheduled jobs can be dropped outright under load. None of those
+produces an error to report, which is the whole reason the switch exists.
+
+The reset runs through the same Slack API as the report, deliberately. If Slack is unreachable the reset
+fails too, the switch stays armed and it fires, which is correct: the switch asserts that the channel heard
+from the nightly, and if nothing could reach the channel then it did not.
+
 Configuration, all optional, and every one of them absent means warn and skip rather than fail:
 `SLACK_BOT_TOKEN` (secret, needs `chat:write`), `SLACK_CHANNEL_ID` (variable, not a secret), and
 `SLACK_MENTION_CULPRITS` (variable). The last turns the probable-culprit author into an `@`-mention and
