@@ -244,7 +244,10 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
     for failure in failures[:MAX_LISTED_FAILURES]:
         # Every field here originates in a test result or in git output, which carries commit subjects and
         # author names, so all of it is escaped.
-        entry = f"\n• `{mrkdwn(failure['label'])}` · <{run_url}|full trace>\n  {mrkdwn(failure['detail'])}"
+        # "stack trace" rather than "full trace". The job summary trims a long trace in the middle, so a link
+        # promising the full one is a promise the destination does not keep. The unabridged trace is in the
+        # nightly-reports artifact, which the summary itself points at.
+        entry = f"\n• `{mrkdwn(failure['label'])}` · <{run_url}|stack trace>\n  {mrkdwn(failure['detail'])}"
         for commit, whats in merge_by_commit(failure["culprits"]):
             # One line per commit, not per lookup. The two lookups usually land on the same commit, because a
             # change to a class and to its test normally ships together, and printing that commit twice with
