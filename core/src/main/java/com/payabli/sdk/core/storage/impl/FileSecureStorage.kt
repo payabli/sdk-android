@@ -150,7 +150,12 @@ internal class FileSecureStorage(
     private fun write(values: Map<String, String>) {
         val parent = file.parentFile ?: throw SecureStorageException.StorageUnavailable()
         try {
-            if (!parent.exists() && !parent.mkdirs()) throw SecureStorageException.StorageUnavailable()
+            // isDirectory last: mkdirs returns false for a directory that already exists, and a sibling store
+            // under the same missing parent can create it between this exists() and this mkdirs(). Without the
+            // third clause the loser of that race reports StorageUnavailable with the directory sitting there.
+            if (!parent.exists() && !parent.mkdirs() && !parent.isDirectory) {
+                throw SecureStorageException.StorageUnavailable()
+            }
             sweepOrphans(parent)
             val temp = File.createTempFile(tempPrefix(), TEMP_SUFFIX, parent)
             try {
@@ -201,8 +206,15 @@ internal class FileSecureStorage(
             }
     }
 
-    /** `<fileName>.` so the digits `createTempFile` appends cannot run into another store's name. */
-    private fun tempPrefix(): String = file.name + TEMP_DELIMITER
+    /**
+     * `pbl<identity>.`, a fixed length whatever the store is called.
+     *
+     * Two properties the previous `<fileName>.` form did not have. It is never shorter than the three characters
+     * `File.createTempFile` demands, which a one-character file name violated with a raw `IllegalArgumentException`
+     * escaping this class entirely. And because every prefix is the same length, no prefix can be a prefix of
+     * another, so the `store` versus `store2` overlap the delimiter was patching cannot arise at all.
+     */
+    private fun tempPrefix(): String = TEMP_NAME_PREFIX + StoreIdentity.of(file) + TEMP_DELIMITER
 
     /**
      * The exact shape [tempPrefix] plus `createTempFile` produces: prefix, digits, suffix.
@@ -224,6 +236,7 @@ internal class FileSecureStorage(
     private companion object {
         private const val TEMP_SUFFIX = ".tmp"
         private const val TEMP_DELIMITER = "."
+        private const val TEMP_NAME_PREFIX = "pbl"
 
         private val SERIALIZER = MapSerializer(String.serializer(), String.serializer())
 
@@ -231,11 +244,10 @@ internal class FileSecureStorage(
         private val locks = HashMap<String, Mutex>()
 
         private fun lockFor(file: File): Mutex {
-            // Canonical path, so two instances built from different relative paths still share a lock.
-            val path = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
+            // The same identity the alias and the temp prefix use, so all three agree on what one store is.
             // A plain map under a monitor, not ConcurrentHashMap.computeIfAbsent, which is API 24 against
             // this module's floor of 23. Lint caught that; contention here is one lookup per instance.
-            return synchronized(locks) { locks.getOrPut(path) { Mutex() } }
+            return synchronized(locks) { locks.getOrPut(StoreIdentity.of(file)) { Mutex() } }
         }
     }
 }

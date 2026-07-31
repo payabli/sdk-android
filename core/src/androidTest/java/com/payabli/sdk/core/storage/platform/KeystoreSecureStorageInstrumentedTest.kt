@@ -203,35 +203,56 @@ class KeystoreSecureStorageInstrumentedTest {
         }
 
     /**
-     * Two stores built by the factory must not share a key alias.
+     * Two stores built by the factory must not share a key alias, including when only the directory differs.
      *
      * The isolation the continuity argument rests on. A cipher can cheaply prove a key is *present*, not that it
-     * is the key that sealed the blobs, so the guarantee has to come from nobody else owning the alias. While
-     * `create` took a `keyAlias` parameter, two stores could hold one alias, take different locks, and one could
-     * delete and recreate the key the other depended on.
+     * is the key that sealed the blobs, so the guarantee has to come from nobody else owning the alias. Deriving
+     * from the file name alone was not enough: `create(dirA)` and `create(dirB)` on the default name shared one
+     * alias while holding separate locks, which is the same collision one step smaller.
+     *
+     * The equal-name-different-directory pair is the case that mattered and is asserted first. It also proves the
+     * Keystore accepts an alias of this length, which is otherwise an assumption about the derived name.
      */
     @Test
     fun twoStoresFromTheFactoryDoNotShareAKeyAlias() =
         runTest(timeout = 30.seconds) {
-            val first = PayabliSecureStorages.create(directory, fileName = "first.json", logger = logger)
-            val second = PayabliSecureStorages.create(directory, fileName = "second.json", logger = logger)
+            val dirA = File(directory, "a").apply { mkdirs() }
+            val dirB = File(directory, "b").apply { mkdirs() }
+            val sameNameA = File(dirA, "store.json")
+            val sameNameB = File(dirB, "store.json")
+            val differentName = File(dirA, "other.json")
+
+            assertNotEquals(
+                "equal file names in different directories derived one alias",
+                PayabliSecureStorages.aliasFor(sameNameA),
+                PayabliSecureStorages.aliasFor(sameNameB),
+            )
+            assertNotEquals(
+                PayabliSecureStorages.aliasFor(sameNameA),
+                PayabliSecureStorages.aliasFor(differentName),
+            )
+
+            val first = PayabliSecureStorages.create(dirA, fileName = "store.json", logger = logger)
+            val second = PayabliSecureStorages.create(dirB, fileName = "store.json", logger = logger)
             try {
                 first.set("refresh", "first-value".toCharArray())
                 second.set("refresh", "second-value".toCharArray())
 
                 val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-                val aliasOfFirst = PayabliSecureStorages.aliasFor("first.json")
-                val aliasOfSecond = PayabliSecureStorages.aliasFor("second.json")
-
-                assertNotEquals("the two stores derived the same alias", aliasOfFirst, aliasOfSecond)
-                assertTrue("the first store's own alias is missing", store.containsAlias(aliasOfFirst))
-                assertTrue("the second store's own alias is missing", store.containsAlias(aliasOfSecond))
-                // Each value still readable, so distinct aliases did not cost correctness.
+                assertTrue(
+                    "the first store's key is missing, so the derived alias was not usable",
+                    store.containsAlias(PayabliSecureStorages.aliasFor(sameNameA)),
+                )
+                assertTrue(
+                    "the second store's key is missing",
+                    store.containsAlias(PayabliSecureStorages.aliasFor(sameNameB)),
+                )
+                // Neither store disturbed the other, which a shared alias would have made a coin flip.
                 assertArrayEquals("first-value".toCharArray(), first.get("refresh"))
                 assertArrayEquals("second-value".toCharArray(), second.get("refresh"))
             } finally {
                 val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-                listOf("first.json", "second.json").forEach {
+                listOf(sameNameA, sameNameB, differentName).forEach {
                     runCatching { store.deleteEntry(PayabliSecureStorages.aliasFor(it)) }
                 }
             }

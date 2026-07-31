@@ -5,6 +5,7 @@ import com.payabli.sdk.core.logging.PayabliLogger
 import com.payabli.sdk.core.logging.PayabliLoggers
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
+import com.payabli.sdk.core.storage.impl.StoreIdentity
 import java.io.File
 
 /**
@@ -24,14 +25,20 @@ internal object PayabliSecureStorages {
     const val DEFAULT_FILE_NAME: String = "payabli-secure-store.json"
 
     /**
-     * One alias per backing file, and no way for a caller to choose otherwise.
+     * One alias per backing file, from the **whole** file's identity, with no way for a caller to choose otherwise.
      *
      * Within a store every value does share one key, each write still getting its own IV with each blob bound to
-     * its entry name. **Across** stores they must not, and a `keyAlias` parameter used to allow it: two stores
-     * on different files could hold the same alias, take different locks, and one could delete and recreate the
-     * key the other's blobs were sealed under. The survivor's presence check would still pass, against a
-     * different key, and its next write would mix. Deriving the alias makes that unreachable rather than merely
-     * discouraged, which matters because presence is all a cipher can cheaply prove.
+     * its entry name. **Across** stores they must not. A `keyAlias` parameter used to allow the collision
+     * outright; deriving from `fileName` alone still allowed it, because `directory` is equally part of what
+     * identifies a file, so `create(dirA)` and `create(dirB)` on the default name shared one alias while holding
+     * separate locks, keyed by path. Either way one store could replace the key the other's ciphertext was sealed
+     * under, and the survivor's presence check would pass against a different key. [StoreIdentity] closes it by
+     * being the single answer to which store this is, shared with the lock and the temporary-file prefix.
+     *
+     * **A store that moves is a new store.** The alias follows the canonical path, so relocating the file orphans
+     * its key: the old blobs read as `KeyInvalidated`, the store clears, and the next write provisions again.
+     * Correct for ciphertext the caller can re-obtain, and the same outcome as an uninstall, but decide the
+     * directory with it in mind.
      *
      * Pass `Context.noBackupFilesDir` for [directory]: it keeps ciphertext out of backup and device transfer
      * without the host app adding manifest rules.
@@ -40,13 +47,15 @@ internal object PayabliSecureStorages {
         directory: File,
         fileName: String = DEFAULT_FILE_NAME,
         logger: PayabliLogger = PayabliLoggers.of(LogCategory.CORE),
-    ): PayabliSecureStorage =
-        FileSecureStorage(
-            file = File(directory, fileName),
-            cipher = KeystoreValueCipher(aliasFor(fileName), logger),
+    ): PayabliSecureStorage {
+        val file = File(directory, fileName)
+        return FileSecureStorage(
+            file = file,
+            cipher = KeystoreValueCipher(aliasFor(file), logger),
             logger = logger,
         )
+    }
 
-    /** The alias [create] will use for [fileName]. Exposed so a test can assert two stores do not share one. */
-    fun aliasFor(fileName: String): String = "$KEY_ALIAS_PREFIX.$fileName"
+    /** The alias [create] will use for [file]. Exposed so a test can assert two stores do not share one. */
+    fun aliasFor(file: File): String = "$KEY_ALIAS_PREFIX.${StoreIdentity.of(file)}"
 }

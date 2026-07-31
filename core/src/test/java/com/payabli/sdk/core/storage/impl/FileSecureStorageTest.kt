@@ -469,9 +469,10 @@ class FileSecureStorageTest {
     fun `an orphaned temporary file is discarded by the next write`() =
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
-            // The shape createTempFile produces for this store: name, delimiter, digits, suffix.
+            // The shape createTempFile produces for this store: prefix, identity, delimiter, digits, suffix.
             val orphan =
-                File(folder.root, "${file.name}.4242.tmp").apply { writeText("""{"stale":"ciphertext"}""") }
+                File(folder.root, "pbl${StoreIdentity.of(file)}.4242.tmp")
+                    .apply { writeText("""{"stale":"ciphertext"}""") }
 
             storage(file).set("refresh", "secret-value".toCharArray())
 
@@ -479,73 +480,111 @@ class FileSecureStorageTest {
         }
 
     /**
-     * The sweep must not reach a sibling store's temp file.
+     * The sweep must not reach another store's temp file.
      *
-     * `fileName` is a parameter, so a second store on `store.json2` is legitimate, and it takes a different
-     * lock because locks are keyed by path. A prefix match deletes its temp **while that write is in progress**
-     * and fails its rename, which is why the sweep requires the delimiter rather than the bare name.
+     * Written against the derived prefix rather than a literal name, which is what it should always have
+     * asserted: the guarantee is "not ours", and ownership is what the identity decides. Every prefix is now the
+     * same width, so a sibling's prefix cannot be an initial substring of ours the way `store` and `store2`
+     * could.
      */
     @Test
     fun `the sweep leaves another store's temporary file alone`() =
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
-            val sibling = File(folder.root, "store.json2.4242.tmp").apply { writeText("in flight") }
+            val sibling = File(folder.root, "sibling.json")
+            val theirs =
+                File(folder.root, "pbl${StoreIdentity.of(sibling)}.4242.tmp").apply { writeText("in flight") }
 
             storage(file).set("refresh", "secret-value".toCharArray())
 
-            assertTrue("a sibling store's in-flight temp file was deleted", sibling.exists())
+            assertTrue("another store's in-flight temp file was deleted", theirs.exists())
         }
 
     /**
-     * The delimiter's own case, which neither test above isolates.
-     *
-     * A file named this store's name followed by digits and the suffix reads, to a bare prefix match, as one of
-     * our own temp files: the digits check cannot separate them because the extra characters *are* digits. The
-     * delimiter is the only thing that does, and this is the shape that proves it. Which matters because the
-     * directory is the host app's, so a name we did not create is not ours to delete.
-     */
-    @Test
-    fun `the sweep leaves a file whose name is this store's name followed by digits`() =
-        runTest(timeout = 5.seconds) {
-            val file = File(folder.root, "store")
-            val theirs = File(folder.root, "store24242.tmp").apply { writeText("not ours") }
-
-            storage(file).set("refresh", "secret-value".toCharArray())
-
-            assertTrue("a file the store never created was deleted", theirs.exists())
-        }
-
-    /**
-     * Nor a file that merely looks like one. The directory belongs to the host app too, so anything not of the
-     * exact shape this store produces, prefix then digits then suffix, is somebody else's.
+     * Nor a file carrying our own prefix whose middle is not digits, since the store never produces such a name.
+     * The directory belongs to the host app too.
      */
     @Test
     fun `the sweep leaves a file that is not one of its temporaries alone`() =
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
-            val theirs = File(folder.root, "store.json.backup.7.tmp").apply { writeText("not ours") }
+            val theirs =
+                File(folder.root, "pbl${StoreIdentity.of(file)}.backup.tmp").apply { writeText("not ours") }
 
             storage(file).set("refresh", "secret-value".toCharArray())
 
-            assertTrue("an unrelated file matching the prefix was deleted", theirs.exists())
+            assertTrue("a file matching the prefix but not the shape was deleted", theirs.exists())
         }
 
     /**
-     * A digit is an ASCII digit, not any Unicode numeral.
+     * A one-character file name must still write.
      *
-     * `Char.isDigit` follows `Character.isDigit`, which is true for Arabic-Indic numerals, while
-     * `createTempFile` only ever emits `0` to `9`. The wider set makes a name this store cannot produce look
-     * like one of its own, in a directory the host app also owns.
+     * `File.createTempFile` rejects a prefix under three characters, and the previous `<fileName>.` form gave two
+     * for a name like `a`. The `IllegalArgumentException` was caught nowhere in `write`, so it escaped the
+     * `SecureStorageException` surface entirely: every write to such a store threw a raw platform exception.
      */
     @Test
-    fun `the sweep leaves a file whose digits are not ASCII`() =
+    fun `a store whose file name is one character still writes`() =
         runTest(timeout = 5.seconds) {
-            val file = File(folder.root, "store.json")
-            val theirs = File(folder.root, "store.json.١.tmp").apply { writeText("not ours") }
+            val subject = storage(File(folder.root, "a"))
 
-            storage(file).set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toCharArray())
 
-            assertTrue("a file named with a non-ASCII numeral was deleted", theirs.exists())
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+        }
+
+    /**
+     * The temp name is bounded by construction, not by the store's name being short.
+     *
+     * With the prefix derived from a fixed-width identity, a long file name cannot push the temp name toward
+     * `NAME_MAX`, measured at 255 on the emulator and both test phones. Asserted because "short enough" is
+     * otherwise a claim nobody rechecks after changing the prefix.
+     */
+    @Test
+    fun `the temporary file name stays bounded however long the store's name is`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "s".repeat(120) + ".json")
+            val subject = storage(file)
+            val orphan =
+                File(folder.root, "pbl${StoreIdentity.of(file)}.4242.tmp").apply { writeText("stale") }
+
+            subject.set("refresh", "secret-value".toCharArray())
+
+            assertTrue("the sweep did not recognise its own temp name", !orphan.exists())
+            assertTrue(
+                "temp names grow with the store's name: ${orphan.name.length} bytes",
+                orphan.name.length < 96,
+            )
+        }
+
+    /**
+     * A parent directory created by somebody else between `exists()` and `mkdirs()` is not a failure.
+     *
+     * `mkdirs` returns false for a directory that already exists, and two stores under one missing parent hold
+     * separate locks, so the loser of that race reported `StorageUnavailable` with the directory sitting right
+     * there. Injected with a parent that reports exactly that state, rather than by racing threads and hoping.
+     */
+    @Test
+    fun `a parent created concurrently does not fail the write`() =
+        runTest(timeout = 5.seconds) {
+            val real = folder.newFolder("appeared")
+            val racingParent =
+                object : File(real.path) {
+                    override fun exists(): Boolean = false
+
+                    override fun mkdirs(): Boolean = false
+
+                    override fun isDirectory(): Boolean = true
+                }
+            val file =
+                object : File(real, "store.json") {
+                    override fun getParentFile(): File = racingParent
+                }
+
+            val subject = storage(file)
+            subject.set("refresh", "secret-value".toCharArray())
+
+            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
         }
 
     /**
