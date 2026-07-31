@@ -77,9 +77,13 @@ class KeystoreSecureStorageInstrumentedTest {
      * `AEADBadTagException` mapping.
      *
      * Distinct from deletion: the alias exists, so the read finds a key and gets as far as the GCM tag check,
-     * which fails because the bytes were sealed under the previous key. The value is just as unrecoverable, so
-     * the caller must be told the same thing. Without the mapping this reports `CryptoUnavailable`, meaning
-     * transient, and a caller would retry forever instead of re-authenticating.
+     * which fails because the bytes were sealed under the previous key. What the mapping is for is telling the
+     * caller the value is gone for good rather than transient: without it this reports `CryptoUnavailable`, and a
+     * caller retries forever instead of re-obtaining that entry.
+     *
+     * **Re-obtaining, not re-authenticating.** Re-authentication is `KeyInvalidated`'s action, and this path
+     * deliberately does not take it: a replaced key is indistinguishable from a corrupted blob on the read side, so
+     * only the entry asked for is discarded.
      */
     @Test
     fun aReplacedKeyReportsTheValueAsUnreadable() =

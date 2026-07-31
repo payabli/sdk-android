@@ -9,6 +9,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -933,6 +937,25 @@ class FileSecureStorageTest {
 
             assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
         }
+
+    /**
+     * The premise the narrowed catch rests on: malformed JSON is a `SerializationException`.
+     *
+     * `read` catches that rather than its `IllegalArgumentException` supertype, because the handler does not
+     * rethrow, it overwrites the store with an empty map. Catching the supertype turns a programming error raised
+     * from inside a serializer into data loss. Asserted against the library directly, so it pins kotlinx's
+     * behaviour rather than ours: if malformed input ever stopped being a `SerializationException`, the corrupt-file
+     * path would silently stop resetting.
+     */
+    @Test
+    fun `malformed json throws a serialization exception rather than a bare argument exception`() {
+        val thrown =
+            runCatching {
+                Json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), "{ this is not json")
+            }.exceptionOrNull()
+
+        assertTrue("expected SerializationException, got $thrown", thrown is SerializationException)
+    }
 
     /**
      * The reset of a corrupt file is best effort, and failing to persist it must not fail the call.

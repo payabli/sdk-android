@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
@@ -123,6 +124,9 @@ internal class FileSecureStorage(
     /**
      * A missing file is an empty store. Unparseable content is reset, because refusing to load would make
      * one bad write permanent, and everything here is ciphertext the caller can re-obtain.
+     *
+     * Only a *deserialization* failure resets. Anything else, including a programming error surfacing as an
+     * `IllegalArgumentException` from inside a serializer, propagates rather than costing the caller their data.
      */
     private fun read(): Map<String, String> {
         if (!file.exists()) return emptyMap()
@@ -134,7 +138,13 @@ internal class FileSecureStorage(
             }
         return try {
             Json.decodeFromString(SERIALIZER, text)
-        } catch (e: IllegalArgumentException) {
+        } catch (e: SerializationException) {
+            // SerializationException, not its IllegalArgumentException supertype. The supertype also catches a
+            // genuine programming error raised from inside a serializer, and this handler does not rethrow, it
+            // *writes*: it overwrites the store with an empty map, so a bug would become data loss reported as a
+            // corrupt file. PayabliV2Decoding states the same rule for the same API, and the line below it is
+            // where RedactedCause came from.
+            //
             // RedactedCause, not e: kotlinx.serialization appends the input it could not parse to its own
             // message, so the cause would carry the file's contents into whatever renders the chain.
             val cause = RedactedCause(e)

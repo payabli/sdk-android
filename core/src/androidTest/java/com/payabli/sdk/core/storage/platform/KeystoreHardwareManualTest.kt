@@ -49,9 +49,12 @@ import kotlin.time.Duration.Companion.seconds
  * a software key when the platform offers nothing better, so asserting hardware backing needs a signal rather than
  * an assumption. Above API 31 that is `FEATURE_HARDWARE_KEYSTORE`. Below it, that feature does not exist and
  * querying it returns a misleading false, so the signal is `FEATURE_FINGERPRINT` and the basis is the CDD clause
- * quoted on [requiresHardwareBackedKeystore]. Old devices keep their coverage; only a pre-31 device without
- * fingerprint, which the CDD genuinely exempts, skips. A skip here costs no reported count, since the nightly does
- * not run this tier.
+ * quoted on [requiresHardwareBackedKeystore]. Old devices keep their coverage.
+ *
+ * **Two devices skip, so read a manual run's skips accordingly.** A pre-31 device without fingerprint, which the
+ * CDD genuinely exempts, and an API 31+ device that does not advertise `FEATURE_HARDWARE_KEYSTORE`. In both cases
+ * the two hardware-only tests opt out while the best-level test still runs, because software is a legitimate
+ * expectation there. A skip costs no reported count, since the nightly does not run this tier.
  *
  * **Gaps worth naming rather than hiding:** both phones available here advertise StrongBox *and* a hardware
  * keystore, so neither the `TRUSTED_ENVIRONMENT` branch nor the software branch of
