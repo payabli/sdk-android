@@ -19,6 +19,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -756,6 +757,61 @@ class FileSecureStorageTest {
                 "the message names only the file: ${thrown?.message}",
                 thrown?.message?.contains("malformed") == true,
             )
+        }
+
+    /**
+     * A store on an unresolvable path fails at construction, before any write.
+     *
+     * The identity is resolved once, in the initialiser, precisely so a path that cannot be resolved is a failure
+     * rather than a second identity discovered later. Failing here also means no caller can hold a store whose
+     * alias, lock and temp prefix might disagree.
+     */
+    @Test
+    fun `constructing a store on an unresolvable path fails`() {
+        val unresolvable =
+            object : File(folder.root, "store.json") {
+                override fun getCanonicalPath(): String = throw IOException("cannot resolve")
+            }
+
+        val thrown = runCatching { storage(unresolvable) }.exceptionOrNull()
+
+        assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
+    }
+
+    /**
+     * The identity is resolved once, so a resolution that changes later cannot split one store in two.
+     *
+     * Modelled with a path whose `canonicalPath` answers differently on the second call, which is the hazard the
+     * removed fallback created: the alias, the lock and the temp prefix all derive from this, so a store that
+     * re-resolves can look for another key, take another lock, and stop recognising its own temp files. Only the
+     * identity shifts here; the file I/O still uses the real path, so the store keeps working and the split is what
+     * the test observes.
+     */
+    @Test
+    fun `the identity is resolved once per store`() =
+        runTest(timeout = 5.seconds) {
+            val real = File(folder.root, "store.json")
+            var resolutions = 0
+            val shifting =
+                object : File(real.path) {
+                    override fun getCanonicalPath(): String {
+                        resolutions++
+                        return if (resolutions == 1) real.canonicalPath else real.canonicalPath + "-moved"
+                    }
+                }
+
+            val subject = storage(shifting)
+            subject.set("a", "1".toByteArray())
+            // Planted under the prefix the first resolution produced, which is the only one a correct store uses.
+            val planted =
+                File(folder.root, "pbl${StoreIdentity.of(real)}.4242.tmp").apply { writeText("stale") }
+            subject.set("b", "2".toByteArray())
+
+            assertFalse(
+                "a later resolution produced a different prefix, so the sweep missed its own temp",
+                planted.exists(),
+            )
+            assertTrue("canonicalPath was never re-read, so this proves nothing", resolutions >= 1)
         }
 
     /**

@@ -1,6 +1,8 @@
 package com.payabli.sdk.core.storage.impl
 
+import com.payabli.sdk.core.storage.SecureStorageException
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
 /**
@@ -15,6 +17,9 @@ import java.security.MessageDigest
  * The canonical path is the identity because it is what the filesystem itself considers one file: `dir/store.json`
  * and `dir/../dir/store.json` are the same store and must not get two aliases.
  *
+ * **There is no fallback, deliberately.** Resolving the path is the one step that can fail, and answering with the
+ * absolute path instead would hand one store a second identity for as long as the failure lasted.
+ *
  * **A moved store is a different store.** Tie the alias to the path and relocating the file orphans its key, so
  * its blobs read as `KeyInvalidated`, the store clears, and the next write provisions again. That is the right
  * outcome for ciphertext the caller can re-obtain, and it is what an uninstall already does, but it is a
@@ -22,7 +27,7 @@ import java.security.MessageDigest
  */
 internal object StoreIdentity {
     /**
-     * Hex of the first [IDENTITY_BYTES] bytes of the canonical path's SHA-256.
+     * Hex of the first [IDENTITY_BYTES] bytes of the canonical path's SHA-256, or a failure.
      *
      * Truncated because the full digest is 64 characters and buys nothing here. These paths come from the app's
      * own data directory rather than from an attacker, so the bar is accidental collision across a handful of
@@ -34,9 +39,18 @@ internal object StoreIdentity {
      * the JVM: this file is unit-testable even though everything that consumes it is not.
      */
     fun of(file: File): String {
-        // Canonicalisation touches the filesystem and can fail. The absolute path is the honest fallback: it
-        // still distinguishes different files, it merely stops recognising two spellings of one path as equal.
-        val path = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
+        // Failing, not falling back. Canonicalisation touches the filesystem and can fail, and switching to the
+        // absolute path on that call would give one store two identities: the alias, the lock and the temp prefix
+        // all derive from this, so a later successful call would look for a different key, take a different lock,
+        // and stop recognising its own temp files. A path that cannot be resolved is a storage failure.
+        val path =
+            try {
+                file.canonicalPath
+            } catch (e: IOException) {
+                throw SecureStorageException.StorageUnavailable(e)
+            } catch (e: SecurityException) {
+                throw SecureStorageException.StorageUnavailable(e)
+            }
         val digest = MessageDigest.getInstance("SHA-256").digest(path.toByteArray(Charsets.UTF_8))
         return buildString(IDENTITY_BYTES * 2) {
             for (index in 0 until IDENTITY_BYTES) {

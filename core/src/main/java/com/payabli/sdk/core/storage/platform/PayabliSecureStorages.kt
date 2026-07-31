@@ -42,6 +42,9 @@ internal object PayabliSecureStorages {
      *
      * Pass `Context.noBackupFilesDir` for [directory]: it keeps ciphertext out of backup and device transfer
      * without the host app adding manifest rules.
+     *
+     * **This can fail.** The store's identity is resolved here, once, and a path that cannot be resolved raises
+     * `SecureStorageException.StorageUnavailable` rather than being answered with a second identity.
      */
     fun create(
         directory: File,

@@ -1,5 +1,6 @@
 package com.payabli.sdk.core.storage.impl
 
+import com.payabli.sdk.core.storage.SecureStorageException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -7,6 +8,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 /**
  * The single identity every consumer derives from: the lock, the Keystore alias, the temporary-file prefix.
@@ -71,6 +73,26 @@ class StoreIdentityTest {
         assertEquals(StoreIdentity.IDENTITY_BYTES * 2, short.length)
         assertEquals("a 200-character name changed the identity's width", short.length, long.length)
         assertTrue("not lowercase hex: $short", short.all { it in '0'..'9' || it in 'a'..'f' })
+    }
+
+    /**
+     * An unresolvable path fails rather than answering with a different representation.
+     *
+     * The fallback this replaces returned the absolute path when canonicalisation failed, which gave one store two
+     * identities for as long as the failure lasted. Since the alias, the lock and the temp prefix all derive from
+     * this, a later successful resolution would look for another key, take another lock, and stop recognising its
+     * own temp files.
+     */
+    @Test
+    fun `an unresolvable path fails rather than falling back`() {
+        val unresolvable =
+            object : File(folder.root, "store.json") {
+                override fun getCanonicalPath(): String = throw IOException("cannot resolve")
+            }
+
+        val thrown = runCatching { StoreIdentity.of(unresolvable) }.exceptionOrNull()
+
+        assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
     }
 
     /** Stable across calls, or a store would lose its key between one write and the next. */

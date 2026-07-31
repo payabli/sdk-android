@@ -34,12 +34,22 @@ internal class FileSecureStorage(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : PayabliSecureStorage {
     /**
+     * Resolved once, at construction, and never recomputed.
+     *
+     * The alias, this lock and the temp prefix all derive from it, so recomputing risked one store answering
+     * differently on different calls: a later resolution that succeeded where an earlier one failed would look for
+     * another key, take another lock, and stop recognising its own temp files. Construction can therefore fail,
+     * which is the right moment for a path that cannot be resolved.
+     */
+    private val identity: String = StoreIdentity.of(file)
+
+    /**
      * Keyed by path, not per instance, because the factory hands out a new object for the same file and
      * reopening one is supported usage. Two instances with private locks both read the old map and
      * overwrite each other, and worse, both generate a first-use key, where the loser's ciphertext becomes
      * unreadable. Single process only: this is not an OS file lock.
      */
-    private val mutex: Mutex = lockFor(file)
+    private val mutex: Mutex = lockFor(identity)
 
     override suspend fun get(key: String): ByteArray? =
         withContext(dispatcher) {
@@ -236,7 +246,7 @@ internal class FileSecureStorage(
      * escaping this class entirely. And because every prefix is the same length, no prefix can be a prefix of
      * another, so the `store` versus `store2` overlap the delimiter was patching cannot arise at all.
      */
-    private fun tempPrefix(): String = TEMP_NAME_PREFIX + StoreIdentity.of(file) + TEMP_DELIMITER
+    private fun tempPrefix(): String = TEMP_NAME_PREFIX + identity + TEMP_DELIMITER
 
     /**
      * The exact shape [tempPrefix] plus `createTempFile` produces: prefix, digits, suffix.
@@ -265,11 +275,11 @@ internal class FileSecureStorage(
         /** One lock per backing file, shared by every instance over it. */
         private val locks = HashMap<String, Mutex>()
 
-        private fun lockFor(file: File): Mutex {
-            // The same identity the alias and the temp prefix use, so all three agree on what one store is.
-            // A plain map under a monitor, not ConcurrentHashMap.computeIfAbsent, which is API 24 against
-            // this module's floor of 23. Lint caught that; contention here is one lookup per instance.
-            return synchronized(locks) { locks.getOrPut(StoreIdentity.of(file)) { Mutex() } }
-        }
+        private fun lockFor(identity: String): Mutex =
+            // Keyed by the identity the caller already resolved, so the alias, the lock and the temp prefix cannot
+            // disagree about what one store is. A plain map under a monitor, not ConcurrentHashMap.computeIfAbsent,
+            // which is API 24 against this module's floor of 23. Lint caught that; contention is one lookup per
+            // instance.
+            synchronized(locks) { locks.getOrPut(identity) { Mutex() } }
     }
 }
