@@ -278,18 +278,54 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
 
 
 def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
-    """What to say when the test job produced no facts file at all.
+    """What to say when no facts file reached this job.
 
     This is the case the old arrangement could not report. Posting lived inside the test job behind
     `if: always()`, and a job timeout or a cancellation kills the job and takes that step with it, so the
     channel simply went quiet on the nights that most needed a message. Reporting from a separate job means
     a dead test job still gets announced.
+
+    Two different situations reach here and the message must not merge them, because an absent facts file
+    does not prove the test job failed to write one. The upload and the download are both deliberately
+    non-blocking, so a transient artifact-service error loses the report while the suite and the run stay
+    green. Saying "the test job ended success without writing a report" in that case is both wrong and
+    self-contradictory, and a red circle over a green suite is a false alarm on the one channel that exists
+    to be trusted.
+
+    The job result tells the two apart on its own. The gate lives in the test job and fails it on a red
+    verdict, so `success` proves the suite passed and the results existed, which leaves the transfer as the
+    only thing that can have gone wrong.
     """
-    text = (
-        f":red_circle:*Nightly · no report*\nThe test job ended `{mrkdwn(job_result)}` without writing a "
-        "report. A cancellation, a job timeout, or a failure before the tests ran."
-    )
-    return [{"type": "section", "text": {"type": "mrkdwn", "text": text}}], "Nightly produced no report"
+    if job_result == "success":
+        icon = ":warning:"
+        cause = (
+            "The test job passed, its suite gate included, so the results existed and the suite was green. "
+            "The facts file did not reach this job. The artifact upload and download are both non-blocking, "
+            "so a transient artifact-service error loses the report without touching the run result."
+        )
+        fallback = "Nightly passed but its report did not arrive"
+    else:
+        icon = ":red_circle:"
+        cause = (
+            f"The test job ended `{mrkdwn(job_result)}`, so it produced no usable report. A cancellation, a "
+            "job timeout, or a failure before the tests ran each end it this way."
+        )
+        fallback = "Nightly produced no report"
+
+    blocks: list[dict] = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *Nightly · no report*\n{cause}"}}
+    ]
+    # This path has no facts to take a run link from, so it is built from the environment. Without it the
+    # message names a problem and offers nowhere to go and look at it.
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    if repo and run_id:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"<{server}/{repo}/actions/runs/{run_id}|Open the run>"}],
+        })
+    return blocks, fallback
 
 
 def main() -> int:
