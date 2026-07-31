@@ -25,6 +25,7 @@ Never prints the token, and never handles a stack trace: traces stay in the job 
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import sys
@@ -32,6 +33,19 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+# Everything a call to Slack is allowed to do other than answer. `http.client.HTTPException` earns its place
+# by not being an OSError: `IncompleteRead` and `BadStatusLine` are raised on a truncated or malformed
+# response and urllib does not wrap them, so a handler built from URLError and OSError alone lets them
+# through and the poster dies with a traceback. Measured, not assumed: issubclass(HTTPException, OSError)
+# is False.
+UNREACHABLE = (
+    urllib.error.URLError,
+    http.client.HTTPException,
+    TimeoutError,
+    json.JSONDecodeError,
+    OSError,
+)
 
 SLACK_API = "https://slack.com/api"
 # Slack hard-limits a text block at 3000 characters. Two separate bounds therefore apply to the failure
@@ -89,7 +103,7 @@ def slack_post(method: str, token: str, payload: dict) -> dict | None:
         # night delays nothing that matters while adding a path that is never exercised.
         warn(f"Slack {method} returned HTTP {error.code}. The suite result is unaffected.")
         return None
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as error:
+    except UNREACHABLE as error:
         warn(f"Slack {method} could not be reached ({type(error).__name__}). The suite result is unaffected.")
         return None
 
@@ -114,7 +128,9 @@ def slack_user_for_email(email: str, token: str) -> str | None:
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             body = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, OSError):
+    except UNREACHABLE:
+        # HTTPError is a URLError subclass, so it is covered. Not warned for the same reason a refusal is
+        # not: a lookup that fails falls back to the plain name, which is the default rendering anyway.
         return None
     if not body.get("ok"):
         # Not warned. `users_not_found` is the expected answer for anyone who commits from an address that
