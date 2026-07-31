@@ -1,5 +1,8 @@
 package com.payabli.sdk.core.storage.platform
 
+import android.os.Build
+import android.security.keystore.KeyInfo
+import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -22,11 +25,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.security.KeyStore
+import javax.crypto.SecretKey
+import javax.crypto.SecretKeyFactory
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -246,11 +252,11 @@ class KeystoreSecureStorageInstrumentedTest {
         }
 
     /**
-     * The key is created on first use, under the alias given, and is a 256-bit AES key.
+     * The key is created on first use, under the alias given.
      *
      * Asserted through the Keystore rather than through our own field, so it reflects what the platform
-     * actually holds. Reading the key size back is not possible for a hardware-backed key, so this checks
-     * what can be checked: the entry exists and is a secret key under the expected algorithm.
+     * actually holds. What the key was created *with* is
+     * [theKeyIsCreatedWithTheAuthorizationsWeAskedFor]; this is only about the entry appearing.
      */
     @Test
     fun theKeyIsCreatedInTheKeystoreOnFirstUse() =
@@ -264,6 +270,110 @@ class KeystoreSecureStorageInstrumentedTest {
             assertTrue("no key was created", after.containsAlias(keyAlias))
             assertEquals("AES", after.getKey(keyAlias, null)?.algorithm)
         }
+
+    /**
+     * The key's authorizations are what the spec asked for, read back from the platform.
+     *
+     * Here rather than in the manual tier on purpose. These *values* are readable wherever Keystore exists, so
+     * the nightly catches a regression in them; whether a secure element **enforces** them is the separate
+     * question the manual tier asks. An earlier comment claimed the size could not be read back for a
+     * hardware-backed key. It can, on an emulator and on both test phones, so the claim is gone rather than
+     * qualified.
+     *
+     * `isUserAuthenticationRequired` is the load-bearing one. The spec omits `setUserAuthenticationRequired`
+     * deliberately, because the first consumer is a secret read during background token refresh with nobody
+     * present, and because it is why no credential-change procedure for `KeyPermanentlyInvalidatedException`
+     * exists. Bind the key to user presence and background refresh breaks at runtime with nothing here to
+     * notice, which is exactly the kind of silent regression this asserts against.
+     */
+    @Test
+    fun theKeyIsCreatedWithTheAuthorizationsWeAskedFor() =
+        runTest(timeout = 30.seconds) {
+            storage().set("refresh", "secret-value".toCharArray())
+            val info = keyInfo()
+
+            assertEquals("the key is not AES-256", 256, info.keySize)
+            assertArrayEquals(
+                "block modes other than GCM are authorized",
+                arrayOf(KeyProperties.BLOCK_MODE_GCM),
+                info.blockModes,
+            )
+            assertArrayEquals(
+                "paddings other than none are authorized",
+                arrayOf(KeyProperties.ENCRYPTION_PADDING_NONE),
+                info.encryptionPaddings,
+            )
+            assertEquals(
+                "purposes beyond encrypt and decrypt are authorized",
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+                info.purposes,
+            )
+            assertEquals("the key was not generated inside the keystore", KeyProperties.ORIGIN_GENERATED, info.origin)
+            assertFalse(
+                "the key is bound to user authentication, which would break background token refresh",
+                info.isUserAuthenticationRequired,
+            )
+        }
+
+    /**
+     * Where StrongBox is absent, the fallback must still produce a usable key.
+     *
+     * The question only an emulator can answer, because it advertises no `strongbox_keystore` and both test
+     * phones do. `strongBoxKey()` must return null through `StrongBoxUnavailableException` and creation must
+     * continue with a plain spec. If that signal is ever swallowed, key creation fails outright on every device
+     * without StrongBox, and this is the only place that would see it.
+     *
+     * The level is asserted as software rather than as hardware, because that is what an emulator has, and it
+     * is what proves the fallback ran rather than a StrongBox key having been made.
+     *
+     * **The one `Assume` in either instrumented file, and it is sound here.** The no-skip rule exists because
+     * the nightly reporter counts skips, and the nightly runs on an emulator, where this never skips. It opts
+     * out only when somebody points this suite at a phone, where StrongBox exists and there is genuinely no
+     * fallback to observe. Asserting instead would fail a correct implementation on correct hardware.
+     */
+    @Test
+    fun theStrongBoxFallbackProducesAUsableKeyWhereStrongBoxIsAbsent() =
+        runTest(timeout = 30.seconds) {
+            Assume.assumeFalse(
+                "StrongBox is present, so there is no fallback to observe; this runs on an emulator",
+                InstrumentationRegistry
+                    .getInstrumentation()
+                    .targetContext
+                    .packageManager
+                    .hasSystemFeature("android.hardware.strongbox_keystore"),
+            )
+
+            val subject = storage()
+            subject.set("refresh", "secret-value".toCharArray())
+
+            assertArrayEquals(
+                "the fallback key could not decrypt what it encrypted",
+                "secret-value".toCharArray(),
+                subject.get("refresh"),
+            )
+            // Below 31 the platform cannot report a level, only the coarser question, so that is what is asked.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                assertEquals(
+                    "no StrongBox is present, so a StrongBox key means the fallback did not run",
+                    KeyProperties.SECURITY_LEVEL_SOFTWARE,
+                    keyInfo().securityLevel,
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                assertFalse(
+                    "an emulator cannot back a key in secure hardware, so the fallback did not run",
+                    keyInfo().isInsideSecureHardware,
+                )
+            }
+        }
+
+    private fun keyInfo(): KeyInfo {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val key = store.getKey(keyAlias, null) as SecretKey
+        return SecretKeyFactory
+            .getInstance(key.algorithm, "AndroidKeyStore")
+            .getKeySpec(key, KeyInfo::class.java) as KeyInfo
+    }
 
     /**
      * A lost key must report as invalidation, not as a generic crypto failure.

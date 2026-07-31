@@ -15,6 +15,7 @@ import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.core.storage.impl.ValueCipher
 import java.security.GeneralSecurityException
 import java.security.KeyStore
+import java.security.ProviderException
 import java.security.UnrecoverableKeyException
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
@@ -55,6 +56,8 @@ internal class KeystoreValueCipher(
             return Base64.encodeToString(iv + ciphertext, Base64.NO_WRAP)
         } catch (e: GeneralSecurityException) {
             throw asFailure(e)
+        } catch (e: ProviderException) {
+            throw asProviderFailure(e)
         }
     }
 
@@ -79,6 +82,8 @@ internal class KeystoreValueCipher(
             return cipher.doFinal(bytes, IV_BYTES, bytes.size - IV_BYTES)
         } catch (e: GeneralSecurityException) {
             throw asFailure(e)
+        } catch (e: ProviderException) {
+            throw asProviderFailure(e)
         }
     }
 
@@ -89,6 +94,23 @@ internal class KeystoreValueCipher(
      * which silently strands every value already on disk under the key that is gone.
      */
     override fun hasKey(): Boolean = existingKey() != null
+
+    /**
+     * A Keystore backend failure, which arrives outside the checked hierarchy everything else here maps.
+     *
+     * `ProviderException` extends `RuntimeException`, not `GeneralSecurityException`, so without this a
+     * keystore daemon that is unreachable, `KeyStoreConnectException` among others, escapes the
+     * [SecureStorageException] surface as a raw runtime failure and the caller loses the one distinction the
+     * surface exists to make. Always `CryptoUnavailable`: a provider that is broken says nothing about this
+     * blob or about the key, so it is neither a tag failure nor key loss.
+     *
+     * Deliberately **not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
+     * `ProviderException`, so a catch there swallows it, [strongBoxKey] never sees the signal it falls back on,
+     * and key creation fails outright on every device without StrongBox. [createKey] maps it one level up,
+     * after the fallback has resolved.
+     */
+    private fun asProviderFailure(cause: ProviderException): SecureStorageException =
+        SecureStorageException.CryptoUnavailable(cause)
 
     /**
      * Maps a platform failure by **blast radius**, which is the whole point of the split.
@@ -119,6 +141,8 @@ internal class KeystoreValueCipher(
             Cipher.getInstance(TRANSFORMATION)
         } catch (e: GeneralSecurityException) {
             throw SecureStorageException.CryptoUnavailable(e)
+        } catch (e: ProviderException) {
+            throw asProviderFailure(e)
         }
 
     private fun keyStore(): KeyStore =
@@ -128,6 +152,8 @@ internal class KeystoreValueCipher(
             throw SecureStorageException.CryptoUnavailable(e)
         } catch (e: java.io.IOException) {
             throw SecureStorageException.CryptoUnavailable(e)
+        } catch (e: ProviderException) {
+            throw asProviderFailure(e)
         }
 
     /**
@@ -160,6 +186,8 @@ internal class KeystoreValueCipher(
             throw asFailure(e)
         } catch (e: GeneralSecurityException) {
             throw SecureStorageException.CryptoUnavailable(e)
+        } catch (e: ProviderException) {
+            throw asProviderFailure(e)
         }
 
     /**
@@ -173,10 +201,16 @@ internal class KeystoreValueCipher(
         // StrongBox is API 28 while this module's floor is 23: unguarded, this is a NoSuchMethodError on
         // 23 to 27, which no test device would surface because they are all newer.
         val key =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                strongBoxKey() ?: generate(baseSpec().build())
-            } else {
-                generate(baseSpec().build())
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    strongBoxKey() ?: generate(baseSpec().build())
+                } else {
+                    generate(baseSpec().build())
+                }
+            } catch (e: ProviderException) {
+                // Here rather than in generate(): StrongBoxUnavailableException is a ProviderException, so
+                // catching it there would swallow the signal strongBoxKey() falls back on. See asProviderFailure.
+                throw asProviderFailure(e)
             }
         logger.debug(LogField.safe("securityLevel", securityLevelOf(key))) { "storage key created" }
         return key

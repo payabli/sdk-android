@@ -9,7 +9,7 @@ package com.payabli.sdk.core
  * `AndroidJUnitRunner`'s annotation filtering omits these from the run entirely, so the counts stay honest.
  *
  * ```
- * # CI, and the nightly: everything except these
+ * # The nightly emulator job: everything except these
  * ./gradlew :core:connectedAndroidTest \
  *   -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest
  *
@@ -19,7 +19,8 @@ package com.payabli.sdk.core
  * ```
  *
  * Use it only where an emulator cannot answer the question. A test that would pass on an emulator belongs in
- * the ordinary instrumented suite, where CI actually runs it.
+ * the ordinary instrumented suite, which the nightly emulator job runs. **No instrumented test runs per pull
+ * request**, either tier, so neither gates a merge.
  */
 @Retention(AnnotationRetention.RUNTIME)
 @Target(AnnotationTarget.FUNCTION, AnnotationTarget.CLASS)

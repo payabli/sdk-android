@@ -496,6 +496,24 @@ class FileSecureStorageTest {
         }
 
     /**
+     * A digit is an ASCII digit, not any Unicode numeral.
+     *
+     * `Char.isDigit` follows `Character.isDigit`, which is true for Arabic-Indic numerals, while
+     * `createTempFile` only ever emits `0` to `9`. The wider set makes a name this store cannot produce look
+     * like one of its own, in a directory the host app also owns.
+     */
+    @Test
+    fun `the sweep leaves a file whose digits are not ASCII`() =
+        runTest(timeout = 5.seconds) {
+            val file = File(folder.root, "store.json")
+            val theirs = File(folder.root, "store.json.١.tmp").apply { writeText("not ours") }
+
+            storage(file).set("refresh", "secret-value".toCharArray())
+
+            assertTrue("a file named with a non-ASCII numeral was deleted", theirs.exists())
+        }
+
+    /**
      * A write that cannot create its temp file must leave the previous store complete.
      *
      * What matters is not the exception but what survives it. Injected by taking write permission off the

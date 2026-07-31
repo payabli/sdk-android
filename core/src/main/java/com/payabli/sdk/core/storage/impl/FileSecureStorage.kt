@@ -203,8 +203,10 @@ internal class FileSecureStorage(
     /**
      * The exact shape [tempPrefix] plus `createTempFile` produces: prefix, digits, suffix.
      *
-     * Digits are that method's own contract rather than an observation: it fills the middle from
-     * `Long.toUnsignedString`.
+     * ASCII digits specifically. `Char.isDigit` follows `Character.isDigit`, which is true for Arabic-Indic and
+     * Devanagari numerals among others, while `createTempFile` fills the middle from `Long.toUnsignedString` and
+     * so only ever emits `0` to `9`. Accepting the wider set would match `store.json.١.tmp`, a name this store
+     * cannot produce, and delete it.
      */
     private fun isOwnTemp(
         name: String,
@@ -212,7 +214,7 @@ internal class FileSecureStorage(
     ): Boolean {
         if (!name.startsWith(prefix) || !name.endsWith(TEMP_SUFFIX)) return false
         val middle = name.substring(prefix.length, name.length - TEMP_SUFFIX.length)
-        return middle.isNotEmpty() && middle.all { it.isDigit() }
+        return middle.isNotEmpty() && middle.all { it in '0'..'9' }
     }
 
     private companion object {
