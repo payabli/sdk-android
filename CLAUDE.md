@@ -68,6 +68,35 @@ Slack links; a trace over 4000 characters is trimmed in the middle and the unabr
 job because the build outputs and the git history the culprit lookup needs are both there, and the verdict
 has to be decided there because that is where the gate reads it.
 
+**A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
+missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
+stop reading a channel. Silence would be ambiguous on its own, because "green" and "the workflow stopped
+firing" look identical, so the scheduled run on the default branch arms a Slack scheduled message about 26
+hours out and cancels the one the previous scheduled run armed. If that nightly stops for any reason, nobody
+cancels it and Slack posts the alarm on its own clock.
+
+**Only that run owns the alarm, and that restriction is load-bearing.** A manual dispatch or a probe branch
+reports as normal and leaves the alarm alone; a non-owner going quiet is the design rather than a broken path.
+Letting any run reset it would measure "somebody ran the nightly at some point", which a dead schedule could
+satisfy indefinitely through the occasional dispatch, and that is the exact failure the switch exists to catch.
+The marker is also scoped per platform, so a sibling platform reporting into the same channel cannot cancel
+this one's alarm. The clock has to live outside GitHub: a watcher hosted on the thing it watches dies with it,
+which is why this is not a scheduled digest job.
+
+The window is 26 hours rather than 25 for one reason only: scheduled runs here fire 42 to 53 minutes after
+the cron, which is GitHub's documented load delay, so 24 plus 2 leaves headroom without hiding a genuinely
+missed night. Widen it only against a measurement.
+
+What the switch is *for* is a separate question, and two documented behaviours answer it rather than setting
+the window. This repository is public, so "scheduled workflows are automatically disabled when no repository
+activity has occurred in 60 days" applies, and GitHub announces nothing when it happens. And queued
+scheduled jobs can be dropped outright under load. Neither produces an error for anything to report, which
+is why the absence has to be watched from outside.
+
+The reset runs through the same Slack API as the report, deliberately. If Slack is unreachable the reset
+fails too, the switch stays armed and it fires, which is correct: the switch asserts that the channel heard
+from the nightly, and if nothing could reach the channel then it did not.
+
 Configuration, all optional, and every one of them absent means warn and skip rather than fail:
 `SLACK_BOT_TOKEN` (secret, needs `chat:write`), `SLACK_CHANNEL_ID` (variable, not a secret), and
 `SLACK_MENTION_CULPRITS` (variable). The last turns the probable-culprit author into an `@`-mention and

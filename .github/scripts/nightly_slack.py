@@ -68,6 +68,41 @@ SUPPORTED_SCHEMA = 4
 LOOKUP_TIMEOUT_SECONDS = 5
 LOOKUP_BUDGET_SECONDS = 60
 
+# The dead-man's switch. A green nightly says nothing, which means silence can no longer be read as health:
+# "green" and "the workflow stopped firing" would look identical, and this repository has documented ways to
+# stop silently. It is public, so "scheduled workflows are automatically disabled when no repository activity
+# has occurred in 60 days" applies and GitHub documents no notification when it happens; and "if the load is
+# sufficiently high enough, some queued jobs may be dropped". Neither produces an error to report.
+#
+# So the scheduled run on the default branch arms a message in Slack's own future and cancels the one the
+# previous scheduled run armed. If that nightly stops for any reason, nobody cancels it and Slack posts it. The
+# clock lives outside GitHub, which is the whole point: a watcher hosted on the thing it watches dies with it.
+# That is also why this is not a weekly digest job.
+#
+# Only that run, and see owns_liveness_switch() for why. A manual dispatch or a probe branch reports normally
+# and leaves the alarm untouched, because the switch answers "is the schedule alive" and those runs are not
+# evidence of a schedule. A non-owner going quiet is the design, not a broken path.
+#
+# 26 hours rather than 25. Measured on this repo, scheduled runs fire 42 to 53 minutes after the cron, which
+# is the documented load delay, so a tighter window would cry wolf nightly.
+SWITCH_HOURS = 26
+
+# The stale sweep pages through the pending list, because an alarm it never sees is an alarm it cannot cancel,
+# and that one fires as a false alarm. Bounded so a repeating or malformed cursor cannot spin: ten pages is
+# 1000 pending messages, where the steady state is one or two, so exhausting this is a symptom and gets said
+# out loud rather than truncated silently.
+SWITCH_PAGE_SIZE = 100
+MAX_SWITCH_PAGES = 10
+# Marks the bot's own armed message so a future reader knows what it is, and so the cancel can tell its own
+# alarms from anything else scheduled in the channel.
+#
+# Scoped by platform, because nightly.yml states that both platform SDKs can report into this one channel. An
+# unscoped marker would make an iOS alarm and an Android alarm indistinguishable, so each would cancel the
+# other's and each would mask the other's death. That is worse than having no switch, because it looks like
+# one is present.
+def switch_marker() -> str:
+    return f"nightly-liveness:{platform_name()}"
+
 
 def warn(message: str) -> None:
     print(f"::warning::{message}")
@@ -198,7 +233,7 @@ def merge_by_commit(culprits: list[dict]) -> list[tuple[dict, list[str]]]:
     return list(merged.values())
 
 
-def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict], str]:
+def summary_blocks(facts: dict, job_result: str = "success", since_green: dict | None = None) -> tuple[list[dict], str]:
     """The channel message: verdict, counts, coverage, and where to look. No failure detail.
 
     Deliberately silent about the thread. Slack renders its own reply count on a threaded parent, so a line
@@ -275,6 +310,14 @@ def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict]
     failures = facts["failures"]
     if failures:
         lines.append(f"*Failures* {len(failures)}")
+
+    # The bounded suspect set, next to the per-file heuristic rather than replacing it. Absent when the answer
+    # would be a guess, because a missing line is better than a wrong range.
+    if since_green:
+        count = since_green.get("count")
+        span = f"{mrkdwn(since_green['base'])}...{mrkdwn(since_green['head'])}"
+        commits = f"{count} commit{'s' if count != 1 else ''}" if isinstance(count, int) else "the commits"
+        lines.append(f"*Since the last green nightly* {commits} · <{since_green['url']}|{span}>")
     if unfinished and not claimed_red:
         # Named explicitly, because "collected green, ran red" is the one combination a reader would otherwise
         # have to reconcile themselves, and the run is what to believe.
@@ -416,6 +459,265 @@ def usable_facts(raw: object) -> dict | None:
     return raw
 
 
+def github_get(url: str, token: str) -> dict | None:
+    """GET one GitHub API URL. Warns and returns None rather than raising, like the Slack helpers."""
+    request = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                 "X-GitHub-Api-Version": "2022-11-28"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        warn(f"GitHub API returned HTTP {error.code} for a last-green lookup. The report continues without it.")
+        return None
+    except UNREACHABLE as error:
+        warn(f"GitHub API unreachable for a last-green lookup ({type(error).__name__}).")
+        return None
+
+
+def commits_since_last_green() -> dict | None:
+    """The commit range between the last successful nightly on this branch and this one.
+
+    Replaces guesswork with a bounded fact. The existing per-file culprit is `git log -1 -- <file>`, a
+    heuristic that has been wrong; the honest suspect set is everything that landed since the suite was last
+    known good, and only the Actions API knows when that was.
+
+    Runs here, in the report job, rather than in the collector. The query needs a token, and PLA-2307 closed
+    the exposure of keeping credentials in the job that runs the third-party emulator action. No git history
+    is needed either way: the baseline is a sha from the API and the compare link is just two shas.
+
+    A successful run is the right definition of green, because the suite gate is what decides that run's
+    conclusion, so this cannot disagree with the verdict the way a separate judgement would.
+
+    Returns None whenever the answer would be a guess: no token, no previous success on this branch, or an
+    API that would not answer. The report is better without the line than with a wrong one.
+    """
+    token = os.environ.get("GITHUB_TOKEN", "").strip()
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    sha = os.environ.get("GITHUB_SHA", "")
+    branch = os.environ.get("GITHUB_REF_NAME", "")
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    if not (token and repo and run_id and sha):
+        return None
+
+    # The workflow id comes from this run rather than from a hardcoded filename, so renaming the file cannot
+    # quietly turn this into a lookup against the wrong workflow.
+    this_run = github_get(f"{api}/repos/{repo}/actions/runs/{run_id}", token)
+    workflow_id = (this_run or {}).get("workflow_id")
+    if not workflow_id:
+        return None
+
+    query = urllib.parse.urlencode(
+        {"status": "success", "per_page": 20, **({"branch": branch} if branch else {})}
+    )
+    listed = github_get(f"{api}/repos/{repo}/actions/workflows/{workflow_id}/runs?{query}", token)
+    baseline = None
+    for candidate in (listed or {}).get("workflow_runs") or []:
+        # Newest first, so the first success that is not this run is the last known good one.
+        if str(candidate.get("id")) != str(run_id) and candidate.get("head_sha"):
+            baseline = candidate
+            break
+    if not baseline:
+        return None
+
+    base_sha = baseline["head_sha"]
+    if base_sha == sha:
+        # The same commit already went green, so nothing landed since and there is no range to report.
+        return None
+
+    compared = github_get(f"{api}/repos/{repo}/compare/{base_sha}...{sha}", token)
+    total = (compared or {}).get("total_commits")
+    # `ahead` is the only status under which "commits since the last green nightly" is a true description.
+    # Measured against this repo: a reversed pair returns status `behind` with total_commits 0, and an
+    # identical pair returns `identical` with 0, so an integer count proves nothing about ancestry. Re-running
+    # an older failure after a newer success produces exactly the reversed case, and rewritten history
+    # produces `diverged`, where the count is real but is not a count of commits since anything.
+    if (compared or {}).get("status") != "ahead":
+        return None
+    if not isinstance(total, int):
+        # The compare did not answer, which happens when a force-push leaves the previous success
+        # incomparable. The link would 404 as well, so rendering a suspect range here would be a guess with a
+        # dead reference attached. This function's contract is to return nothing rather than that.
+        return None
+    return {
+        "base": base_sha[:7],
+        "head": sha[:7],
+        "count": total,
+        "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
+        "when": baseline.get("created_at", ""),
+    }
+
+
+def slack_get(method: str, token: str, params: dict) -> dict | None:
+    """GET one Slack Web API method. Same warn-and-return-None contract as slack_post."""
+    request = urllib.request.Request(
+        f"{SLACK_API}/{method}?{urllib.parse.urlencode(params)}",
+        headers={"Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        warn(f"Slack {method} returned HTTP {error.code}. The suite result is unaffected.")
+        return None
+    except UNREACHABLE as error:
+        warn(f"Slack {method} could not be reached ({type(error).__name__}). The suite result is unaffected.")
+        return None
+    if not body.get("ok"):
+        warn(f"Slack {method} refused the call: {body.get('error', 'unknown error')}.")
+    return body
+
+
+def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
+    """Schedule the alarm and return its id, or None if Slack would not take it.
+
+    Armed before the previous one is cancelled, deliberately, and the earlier ordering was wrong. Cancelling
+    first was justified as avoiding a duplicate if the arm failed, but the two failures are not comparable: a
+    duplicate is one false alarm, while cancelling and then failing to arm leaves *no* pending alarm, and a
+    stopped nightly then becomes indistinguishable from green silence, which is the single thing this whole
+    mechanism exists to prevent. Arming first means at least one alarm is pending at every instant, including
+    if this job is superseded mid-sequence, which `cancel-in-progress` makes a live possibility.
+    """
+    post_at = int(time.time()) + SWITCH_HOURS * 3600
+    platform = mrkdwn(platform_name())
+    run = trusted_run_links()
+    # Kept short on purpose. This is read at a glance, and the first draft spent two paragraphs explaining
+    # its own mechanism, which the reader does not need and which is already in this file and in CLAUDE.md.
+    # What survives is the three things that change what someone does next: what happened, that it is worse
+    # than a red suite, and where to look.
+    text = (
+        f":rotating_light: *{platform} · no nightly report in over {SWITCH_HOURS} hours*\n\n"
+        "It did not run, or could not reach Slack. This is not just a red suite.\n\n"
+        "Check, in order:\n"
+        "1. the workflow is still enabled, since a public repo silently disables schedules "
+        "after 60 days idle\n"
+        "2. scheduled runs were not dropped under load\n"
+        "3. the Actions service itself is healthy, at <https://www.githubstatus.com|githubstatus.com>"
+    )
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": text}}]
+    if run["url"]:
+        blocks.append({"type": "context",
+                       "elements": [{"type": "mrkdwn", "text": f"<{run['url']}|The last run that armed this>"}]})
+    armed = slack_post("chat.scheduleMessage", token, {
+        "channel": channel,
+        "post_at": post_at,
+        # The marker rides in the fallback text because that is what chat.scheduledMessages.list returns, so
+        # it is what the cancel step can filter on. Without it the cancel deletes every message this bot has
+        # scheduled in the channel, which is not the same set.
+        "text": f"[{switch_marker()}] {platform_name()} nightly has not reported for over {SWITCH_HOURS} hours",
+        "blocks": blocks,
+        # Not metadata: Slack documents that a message scheduled with the metadata parameter will not post,
+        # which would disarm the switch silently.
+        "unfurl_links": False,
+    })
+    if armed and armed.get("ok"):
+        message_id = armed.get("scheduled_message_id")
+        # post_at is echoed back, but the value we asked for is authoritative for the ordering comparison.
+        return (message_id, post_at) if message_id else None
+    return None
+
+
+def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int) -> bool:
+    """Cancel this bot's alarms that are strictly older than the one just armed, reporting whether it worked.
+
+    Filtered on the scoped marker rather than deleting everything the token has pending. The list is scoped to
+    this token, which stops the bot touching a person's scheduled message, but it does not distinguish the
+    alarm from anything else this bot might ever schedule in the channel.
+
+    Filtered on `post_at` as well, and that is the part that took a review to see. `cancel-in-progress` only
+    *requests* cancellation, so two runs on the same ref can overlap. Both arm, then each lists both alarms
+    and deletes the one that is not its own, leaving nothing pending while the later run still reports
+    success. Deleting only what is strictly older is what closes that: every run's own alarm has the latest
+    `post_at`, so the newest always survives no matter which order the two cancels interleave.
+
+    Ties and unreadable timestamps are retained rather than deleted. Two alarms armed in the same second
+    leave a duplicate, which is one false alarm and self-heals on the next run; deleting on a tie could leave
+    zero, which is the outcome this whole mechanism exists to prevent.
+
+    Paged rather than read one page deep. A single request is enough for the steady state, but the sweep is
+    the only thing that removes an alarm, so anything it does not see fires.
+
+    Returns False when a stale alarm may still be pending, whether because the list could not be read, a page
+    was never reached, or a delete was refused. The caller needs that: yesterday's alarm is due about two hours
+    from now, before the next nightly, so a failed sweep is a false alarm already in flight.
+    """
+    swept = True
+    cursor = ""
+    for _ in range(MAX_SWITCH_PAGES):
+        params = {"channel": channel, "limit": SWITCH_PAGE_SIZE}
+        if cursor:
+            params["cursor"] = cursor
+        pending = slack_get("chat.scheduledMessages.list", token, params)
+        if not (pending and pending.get("ok")):
+            # Nothing is known about what is pending, so the older alarm cannot be assumed gone.
+            return False
+        for message in pending.get("scheduled_messages") or []:
+            message_id = message.get("id")
+            if not message_id or message_id == keep:
+                continue
+            if switch_marker() not in (message.get("text") or ""):
+                continue
+            post_at = message.get("post_at")
+            if not isinstance(post_at, int) or post_at >= keep_post_at:
+                # Not provably older, so not ours to remove.
+                continue
+            removed = slack_post("chat.deleteScheduledMessage", token,
+                                 {"channel": channel, "scheduled_message_id": message_id})
+            if not (removed and removed.get("ok")):
+                swept = False
+        cursor = str((pending.get("response_metadata") or {}).get("next_cursor") or "").strip()
+        if not cursor:
+            return swept
+    warn(f"More than {MAX_SWITCH_PAGES} pages of scheduled messages are pending, so the oldest alarms were "
+         "not examined and one may fire spuriously.")
+    return False
+
+
+def owns_liveness_switch() -> bool:
+    """Whether this run is the one the switch is about.
+
+    The switch answers "is the scheduled nightly still alive", so only the scheduled nightly may reset it.
+    Resetting on every run measured something weaker and self-defeating: "somebody ran the nightly at some
+    point". A dead schedule could then be masked indefinitely by the occasional manual dispatch or probe
+    branch, which is precisely the failure the switch exists to catch, and the chance of that rises with the
+    number of people who might dispatch it.
+
+    A non-owning run still reports normally. It simply leaves the alarm alone rather than vouching for a
+    schedule it is not evidence of.
+    """
+    return os.environ.get("LIVENESS_OWNER", "").strip().lower() == "true"
+
+
+def reset_liveness_switch(token: str, channel: str) -> bool:
+    """Arm a fresh alarm and clear the older ones. True only if *exactly one* alarm is now pending.
+
+    The return value is the point. It used to return nothing while the caller printed that the switch had been
+    re-armed, which was a claim the code could not support: every call inside warns and continues, so a green
+    night could post nothing *and* arm nothing, producing exactly the unmonitored silence this replaced.
+
+    Too many pending alarms is a failure as well as too few, which is the second thing this got wrong. Arming
+    succeeded while the sweep quietly failed still counted as success, and the alarm the sweep should have
+    removed is due before the next nightly, so it fires and reports a stopped nightly that did not stop.
+    """
+    armed = arm_liveness_switch(token, channel)
+    if not armed:
+        warn(f"The liveness switch could not be armed, so silence would not be monitored ({switch_marker()}).")
+        return False
+    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1]):
+        # Not a smaller problem than failing to arm, just a noisier one. A false alarm is what teaches people to
+        # stop believing the alarm, and an alarm nobody believes is the same as no alarm at all.
+        warn(f"An earlier alarm may still be pending and fire spuriously ({switch_marker()}).")
+        return False
+    print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({switch_marker()}).")
+    return True
+
+
 def platform_name() -> str:
     """The platform label, from the workflow rather than guessed.
 
@@ -499,11 +801,40 @@ def main() -> int:
             warn(f"The nightly facts file could not be read ({type(error).__name__}).")
 
     job_result = os.environ.get("NIGHTLY_JOB_RESULT", "success" if facts else "unknown")
+
+    # Decided before anything is rendered, and that ordering is load-bearing rather than tidy. The commit-range
+    # lookup costs up to three Actions API calls, and building the blocks first meant a green night paid for
+    # all of them and threw the result away. Worse, an Actions API timeout would then delay re-arming the
+    # liveness switch, which is the one thing on a green night that must not be delayed.
+    green = facts is not None and facts["verdict"] != "red" and job_result == "success"
+    if green and not owns_liveness_switch():
+        # A dispatch or a probe. Silent because it is green, and it does not vouch for the schedule.
+        print("::notice::Nightly is green, so nothing was posted. This run does not own the liveness switch.")
+        return 0
+    if green and reset_liveness_switch(token, channel):
+        print("::notice::Nightly is green, so nothing was posted. The liveness switch is armed.")
+        return 0
+    if green:
+        # Silence is only safe while exactly one alarm is pending, and it is not: either none could be armed, or
+        # an older one survived the sweep and is due before the next nightly. Fall back to the old behaviour and
+        # post the green summary. Worse to read, but with nothing armed the channel at least keeps its evidence
+        # that the nightly ran, and with a stale alarm in flight this is what stops the false alarm two hours
+        # from now being read as a dead schedule.
+        #
+        # The reset below is skipped after this, because the attempt has already been made this run. Retrying it
+        # would arm a second alarm within the same second as the first, and two alarms sharing a `post_at` tie,
+        # which the sweep retains by design: the retry would create the duplicate the sweep refuses to resolve.
+        warn("Posting the green summary because silence is not covered by exactly one pending alarm.")
+
     if facts is None:
         blocks, fallback = unreported_blocks(job_result)
     else:
         try:
-            blocks, fallback = summary_blocks(facts, job_result)
+            # Not looked up when green, and that is both halves of the reasoning above. A green fallback would
+            # otherwise pay for three Actions API calls the early decision exists to avoid, and it would print
+            # a suspect range under a headline saying the nightly passed, which invites a hunt for a cause that
+            # does not exist. The range answers "what might have broken it", so a green run has no question.
+            blocks, fallback = summary_blocks(facts, job_result, None if green else commits_since_last_green())
         except SHAPE_ERRORS as error:
             # Something nested is not the shape the renderer expects. Report that rather than dying, because
             # the alternative is a channel that says nothing on a night when something is already wrong.
@@ -511,12 +842,23 @@ def main() -> int:
             facts = None
             blocks, fallback = unreported_blocks(job_result)
 
+    # Reaching here means something is being posted: a red night, a night with no usable facts, or a green night
+    # whose switch could not be armed. The green decision itself is above, with its reasoning.
+    #
+    # Stated as the invariant rather than as the sequence, because the sequence has changed four times and the
+    # comment that described it went stale every time: **the channel is never left silent with no alarm
+    # pending.** That is what the ordering below protects. The reset therefore happens only after Slack has
+    # accepted the report, so a lost report cannot push the alarm out, and only for the run that owns the
+    # switch, so a dispatch cannot vouch for the schedule.
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
     if parent is None or not parent.get("ok"):
+        # Deliberately not reset here. The switch asserts that the channel heard from the nightly, and it did
+        # not: resetting would push the alarm out another 26 hours while the report was lost. Leaving the
+        # existing alarm armed is what makes that visible.
         return 0
+    if owns_liveness_switch() and not green:
+        reset_liveness_switch(token, channel)
 
-    # Green nights end here, with one line in the channel and no thread. That is the readability this whole
-    # arrangement is for.
     if facts is None or not facts["failures"]:
         return 0
 
