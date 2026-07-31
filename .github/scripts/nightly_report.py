@@ -5,7 +5,8 @@ This half holds no credential and posts nothing. It runs in the test job, where 
 full git history are, and it writes three things:
 
   * a facts file, JSON, uploaded as an artifact for `nightly_slack.py` to render and post
-  * the full stack traces, to `$GITHUB_STEP_SUMMARY`, so the report has something durable to link at
+  * the stack traces, to `$GITHUB_STEP_SUMMARY`, so the report has something durable to link at. Long
+    ones are trimmed in the middle, keeping both ends, and the unabridged XML stays in the artifact
   * `verdict=green|red` to `$GITHUB_OUTPUT`, which the suite gate in the same job honours
 
 The split from posting is not tidiness. The gate reads the verdict, so the verdict has to be computed in

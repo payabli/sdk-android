@@ -62,7 +62,7 @@ required check. Two jobs, and the split is a security boundary rather than organ
   `cancel-in-progress` stays quiet.
 
 The two halves talk through a `nightly-facts` artifact: `.github/scripts/nightly_report.py` parses the
-JUnit XML and writes the facts, the verdict and the full stack traces (to the job summary, which is what
+JUnit XML and writes the facts, the verdict and the stack traces (to the job summary, which is what
 Slack links); `.github/scripts/nightly_slack.py` renders and posts them. Parsing has to stay in the test
 job because the build outputs and the git history the culprit lookup needs are both there, and the verdict
 has to be decided there because that is where the gate reads it.

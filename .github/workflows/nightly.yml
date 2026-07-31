@@ -231,7 +231,7 @@ jobs:
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
       # failure count, only the tests that failed, and a probable culprit per failure from git history with
-      # that commit's author. Writes the full stack traces to this job's summary, which is what the Slack
+      # that commit's author. Writes the stack traces to this job's summary, which is what the Slack
       # report links at, and a facts file for the `report` job to render.
       #
       # This step holds no credential, which is the point of the split. It also has to stay in this job for
