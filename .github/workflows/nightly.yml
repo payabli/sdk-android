@@ -22,6 +22,12 @@ name: Nightly
 # Promote to pull_request only after this has been stable for a stretch, and then consider a paths filter on
 # core/** and the build files. See PLA-2306.
 #
+# Two jobs, and the split is a security boundary rather than organisation. `nightly` runs the tests and a
+# third-party action; `report` holds the Slack bot token and runs nothing third-party. Step-scoping a secret
+# does not isolate it from code that ran earlier in the same job, so the only way the emulator action cannot
+# reach the token is for the token to live in another job. It also means a test job that times out or dies
+# still gets announced, which the previous single-job arrangement could not do.
+#
 # Note both triggers below only work from the default branch: a scheduled run never fires from a feature
 # branch, and this workflow does not appear in the Run workflow menu until it is on main. So a branch cannot
 # be validated by dispatching it; use a short-lived probe branch with a temporary push trigger instead.
@@ -44,16 +50,23 @@ permissions:
 env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
   GRADLE_OPTS: -Dorg.gradle.console=plain
+  # Leads every Slack message. Workflow level rather than job level because both jobs need it: the collector
+  # stamps it into the facts, and the report job has to name the platform even when no facts arrived. Scoped
+  # to the test job it was invisible to the reporter, so the one message sent when the test job dies said
+  # only "Nightly · no report" into a channel both platform SDKs post into.
+  #
+  # Stated rather than inferred, because a script that guesses the platform would eventually guess wrong.
+  PLATFORM: Android
 
 jobs:
   nightly:
     name: Unit + instrumented tests
     runs-on: ubuntu-latest
     # A backstop that must stay well above the sum of the step bounds below, currently 65 minutes. If the
-    # job bound is close to that sum, steps running near their limits let the job time out first, and a job
-    # timeout cancels the job and takes the `if: always()` Slack step with it. That is the failure this whole
-    # arrangement exists to avoid, so the headroom is the point rather than slack. Raise this whenever a step
-    # bound goes up.
+    # job bound is close to that sum, steps running near their limits let the job time out first, which takes
+    # the collect step and the suite gate with it. Since reporting moved to its own job a job timeout is now
+    # announced rather than silent, but the run would still end without a verdict of its own, so the headroom
+    # is the point rather than slack. Raise this whenever a step bound goes up.
     #
     # For scale, the observed run is a few minutes: unit tests under a minute, instrumented around two and a
     # half. The bounds are set to catch a wedge, not to be tight.
@@ -71,9 +84,6 @@ jobs:
       # A boolean, not the credential. The token itself is scoped to the one step that needs it, but a step
       # `if:` cannot read the secrets context, so the presence check has to live here as a rendered string.
       HAS_GPR_CREDENTIALS: ${{ secrets.GPR_TOKEN != '' }}
-      # Leads the Slack report. Stated rather than inferred, because both platform SDKs can post into the
-      # same channel and a script that guesses the platform would eventually guess wrong.
-      PLATFORM: Android
     steps:
       # Full history, because the Slack report attributes each failure with `git log -1 -- <file>`. On the
       # action's default depth of 1 that does not merely come back empty: git attributes the single grafted
@@ -151,21 +161,33 @@ jobs:
       #
       # Note what is absent: no -no-snapshot-save, and disable-animations left false. Both are deliberate,
       # because this step exists to write the snapshot rather than to run anything.
-      # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin.
+      # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin twice.
       #
-      # The threat is real: this action runs before the reporting step, so it could write to the checkout or
-      # to runner state and read the webhook when that step executes. Step-scoping a secret does not isolate
-      # it from code that ran earlier in the same job.
+      # A pin is brittle here. This repository has no Dependabot or Renovate configuration, so a pinned SHA
+      # would never be bumped, and this action is the one most coupled to Android tooling churn, with two to
+      # six releases a year. The trade would be a low-probability tag compromise against a nightly that
+      # silently stops receiving upstream fixes.
       #
-      # It is not worth a pin here. This repository has no Dependabot or Renovate configuration, so a pinned
-      # SHA would never be bumped, and this action is the one most coupled to Android tooling churn, with two
-      # to six releases a year. The trade is a low-probability tag compromise against a nightly that
-      # silently stops receiving upstream fixes. What is exposed is a webhook that can post to one channel
-      # and a read:packages token, so the blast radius does not justify that.
+      # What made the pin worth arguing about was the secret this job used to hold: step-scoping a credential
+      # does not isolate it from code that ran earlier in the same job, so this action could have tampered
+      # with runner state and read the Slack webhook when the reporting step ran. The Slack half of that is
+      # closed structurally: reporting is a separate job, so no Slack credential exists here at all.
       #
-      # The fix that would remove the exposure without brittleness is structural: report from a separate job
-      # that needs this one and downloads the artifact, so the webhook never exists in a job that runs a
-      # third-party action. Worth doing on its own, not as a version-pin side effect.
+      # GPR_TOKEN is still exposed to this action, and declaring it on an earlier step does not change that.
+      # settings.gradle.kts reads it from the environment during configuration into the Fiserv repository's
+      # credentials, which are held by the Gradle daemon, and the daemon outlives the step that started it:
+      # measured locally, `./gradlew --status` reports an IDLE daemon after the build returns. This action
+      # then runs as the same user in the same job and can inspect a JVM it owns. Step scoping bounds which
+      # step the variable is *set* in, not how long the value lives.
+      #
+      # What is not true, checked rather than assumed: the token does not reach disk. A build run with a
+      # sentinel value leaves it in no file under .gradle, build or the Gradle home, so the configuration
+      # cache is not serialising it. The exposure needs a live JVM, not a readable file.
+      #
+      # The fix is to run card-present work in its own job, as ci.yml already does, which is a real change
+      # rather than a line here: the report collector globs taptopay's results out of this workspace, so
+      # moving the build means passing those results between jobs. Queued rather than smuggled into a
+      # reporting change.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
@@ -207,48 +229,49 @@ jobs:
           script: ./gradlew :core:connectedAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest
 
-      # Posts to #mobile-sdk-nightly-build. Reads the reports Gradle already wrote and sends coverage, a
-      # green or red verdict with the exact failure count, only the tests that failed, a probable culprit
-      # per failure from git history, and a link to this run.
+      # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
+      # failure count, only the tests that failed, and a probable culprit per failure from git history with
+      # that commit's author. Writes the stack traces to this job's summary, which is what the Slack
+      # report links at, and a facts file for the `report` job to render. A trace over 4000 characters is
+      # trimmed in the middle, keeping both ends, and the summary names the nightly-reports artifact as where
+      # the unabridged JUnit XML is.
       #
-      # curl rather than a Slack action, on purpose: this repo just moved five actions off a deprecated Node
-      # runtime, and a curl post has nothing to pin and no runtime to deprecate.
+      # This step holds no credential, which is the point of the split. It also has to stay in this job for
+      # two reasons that are not interchangeable: the build outputs are here, and so is the full git history
+      # the culprit lookup needs. The verdict is a step output because the gate below reads it, and computing
+      # it anywhere but the job the gate lives in is how a run and its notification start disagreeing.
       #
-      # Skipped rather than failed when the webhook secret is absent, so the suite result is never lost to a
-      # reporting problem. The URL is passed by env and never echoed; --data @- keeps the payload off the
-      # command line too.
-      - name: Report to Slack
-        id: slack
-        if: always()
+      # A script rather than a Slack action, on purpose: this repo just moved five actions off a deprecated
+      # Node runtime, and a script has nothing to pin and no runtime to deprecate.
+      - name: Collect the report
+        id: collect
+        if: ${{ !cancelled() }}
         timeout-minutes: 5
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           UNIT_OUTCOME: ${{ steps.unit.outcome }}
           INSTRUMENTED_OUTCOME: ${{ steps.instrumented.outcome }}
           # The gate below checks this, so the report has to as well. Without it a :taptopay failure that
           # happens before any JUnit XML is written, during dependency resolution or compilation, left the
           # other suites looking green while the run went red.
           CARD_PRESENT_OUTCOME: ${{ steps.unit_card_present.outcome }}
-        run: |
-          # The payload is built first and unconditionally, so the verdict output below exists even when
-          # there is no webhook to post it to.
-          python3 .github/scripts/nightly_report.py > "$RUNNER_TEMP/slack.json"
-          if [ -z "$SLACK_WEBHOOK_URL" ]; then
-            echo "::warning::SLACK_WEBHOOK_URL is not set, so no nightly report was posted."
-            exit 0
-          fi
-          # Bounded on purpose. An unbounded curl against a stalled endpoint would hold this step until the
-          # job bound, which would take the report upload and the suite gate down with it: a Slack outage
-          # must not cost the run's result.
-          # Warn rather than fail. The comment above promises a reporting outage will not cost the suite
-          # result, and letting a non-zero curl fail this step would have broken that promise: an otherwise
-          # green nightly would go red because Slack was unreachable. The gate below owns the run result.
-          if ! curl --silent --show-error --fail-with-body \
-            --connect-timeout 10 --max-time 30 --retry 2 --retry-connrefused \
-            -X POST -H 'Content-Type: application/json' \
-            --data @"$RUNNER_TEMP/slack.json" "$SLACK_WEBHOOK_URL"; then
-            echo "::warning::Posting the nightly report to Slack failed. The suite result is unaffected."
-          fi
+        run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
+
+      # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than
+      # a glob. upload-artifact roots the archive at the common ancestor of everything it matched, so a glob
+      # that happens to match one module on a bad night would shift every path inside the archive and the
+      # reader would download something laid out differently from what it downloaded yesterday. One named
+      # directory makes the path the `report` job downloads deterministic.
+      #
+      # Non-blocking: a lost facts file costs the report, and the `report` job says so rather than going
+      # quiet. It must not cost the suite result.
+      - name: Upload the report facts
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-facts
+          path: ${{ runner.temp }}/nightly-facts
+          retention-days: 7
 
       # The XML is the only way to read a failure once the runner is gone, and the emulator is not
       # reproducible locally, so upload on failure too.
@@ -282,10 +305,13 @@ jobs:
                          "${{ steps.instrumented.outcome }}"; do
             case "$outcome" in failure|cancelled|timed_out) failed=1 ;; esac
           done
-          # The reporter's own verdict, so the run and the notification cannot disagree. Step outcomes alone
+          # The collector's own verdict, so the run and the notification cannot disagree. Step outcomes alone
           # miss a task that succeeded while discovering no tests: the report calls that red, and without
           # this the run would stay green and contradict the message it just sent.
-          if [ "${{ steps.slack.outputs.verdict }}" = "red" ]; then
+          #
+          # This still reads a step in this job, not the `report` job. Reporting moved out; deciding did not,
+          # precisely so the gate never has to wait on or trust the job that talks to Slack.
+          if [ "${{ steps.collect.outputs.verdict }}" = "red" ]; then
             failed=1
           fi
           if [ "$failed" -eq 1 ]; then
@@ -293,3 +319,85 @@ jobs:
             exit 1
           fi
           echo "All suites passed."
+
+  # Everything that touches Slack, and nothing else. Separate from the tests for three reasons, in the order
+  # they matter:
+  #
+  #   * the bot token never shares a job with a third-party action, which is what closed the exposure that
+  #     made a commit pin on the emulator action look necessary
+  #   * a test job that times out, or dies before the gate, still gets announced. Posting used to live inside
+  #     that job behind `if: always()`, and a job timeout takes such a step with it, so the channel went
+  #     quiet on exactly the nights that most needed a message
+  #   * the report is decoupled from the test job's lifetime, so a slow Slack cannot hold an emulator runner
+  #
+  # It cannot redden a green run, and `continue-on-error` is what makes that true rather than the poster's
+  # own discipline. The poster warning and exiting zero covers Slack failures only, and this job has steps
+  # that are not Slack: a transient `actions/checkout` failure, or any uncaught exception in the poster,
+  # fails the step, and a failed job fails the workflow run. GitHub's syntax reference is explicit that this
+  # setting "prevents a workflow run from failing when a job fails".
+  #
+  # Which matters most in the case the ordering was chosen for. The summary posts first, so a crash after it
+  # lands would leave Slack saying "Nightly green" while the run went red, and a run disagreeing with the
+  # notification it just sent is the single failure this workflow is built to avoid.
+  #
+  # Failures here stay visible: the job itself is still marked failed on the run, so a reporter that breaks
+  # is not silent, it just stops being the suite's problem. Same trade as the artifact upload above.
+  report:
+    name: Report to Slack
+    needs: nightly
+    continue-on-error: true
+    # Not `always()`, which is the form GitHub recommends against. `cancelled()` is scoped to the whole run
+    # rather than to the needed job, and the consequences are worth stating exactly rather than summarising,
+    # because the useful case and the unwanted one look alike from here:
+    #
+    #   * test job exceeded `timeout-minutes`, or failed: the run is not cancelled, so this reports. That is
+    #     the case the old single-job arrangement could not report at all
+    #   * `cancel-in-progress` superseded this nightly with a manual dispatch: silent, which is the point.
+    #     `always()` would post a "no report" message for every superseded run
+    #   * somebody cancelled the run by hand: also silent, and deliberately. A run nobody wanted to finish is
+    #     not a nightly failure, and there is no way to tell it apart from supersession here in any case,
+    #     since both arrive as a cancelled run
+    #
+    # So the guarantee is that a test job which dies on its own gets announced. A cancelled *run* does not,
+    # and the poster's `cancelled` branch is reached through a job-level timeout rather than through this.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Only the poster script is wanted, so the default shallow fetch is right: the git history the culprit
+      # lookup needs was read in the test job, and its answers travel in the facts file. persist-credentials
+      # is off because this job holds a Slack token and has nothing to push, so leaving a GITHUB_TOKEN in
+      # .git/config would be surface for no benefit.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Same run, so no extra permission is needed. Non-blocking: a missing facts file is a case the poster
+      # reports rather than a reason to fail, and it is the case that arises when the test job never finished.
+      - name: Download the report facts
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: nightly-facts
+          path: ${{ runner.temp }}/nightly-facts
+
+      # Posts to #mobile-sdk-nightly-build: a summary in the channel, the failure detail in its thread.
+      #
+      # chat.postMessage with a bot token rather than the incoming webhook this replaced, because threading
+      # needs the parent's `ts` and a webhook's response body is the literal string `ok`. Absent credentials
+      # warn and skip, so the suite result is never lost to a reporting problem, and the channel ID is a
+      # variable rather than a secret because it is not one.
+      #
+      # SLACK_MENTION_CULPRITS is off unless set to `true`. Turning it on makes the report @-mention the
+      # author of a probable-culprit commit, which is a team-norm decision and not a technical one: the
+      # culprit is a labelled heuristic and it has been wrong before. It also needs `users:read.email` on the
+      # bot. Agree the norm before setting the variable.
+      - name: Post the nightly report
+        timeout-minutes: 5
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+          SLACK_MENTION_CULPRITS: ${{ vars.SLACK_MENTION_CULPRITS }}
+          # So a run with no facts file can say what became of the job instead of guessing.
+          NIGHTLY_JOB_RESULT: ${{ needs.nightly.result }}
+        run: python3 .github/scripts/nightly_slack.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"

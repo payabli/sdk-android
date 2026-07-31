@@ -1,0 +1,532 @@
+#!/usr/bin/env python3
+"""Render the nightly facts into Slack: a summary in the channel, the failure detail in its thread.
+
+Runs in a job of its own that `needs` the test job, so the bot token never exists in a job that runs a
+third-party action. It reads the facts file `nightly_report.py` wrote and posts twice.
+
+Why a bot token rather than the incoming webhook this replaced. Threading needs the parent message's `ts`
+as `thread_ts`, and a webhook's response body is the literal string `ok` with no `ts` and no channel, so a
+webhook cannot reply to its own message. Slack documents a workaround, carrying a `thread_ts` obtained from
+`conversations.history` or the Events API, but each of those needs a token too, so there is no token-free
+route to a thread. `chat.postMessage` returns `{"ok": true, "channel": ..., "ts": ...}`, which is the whole
+reason for the change.
+
+Two calls, not one, and that is not a compromise. No Slack method posts a parent and a reply together:
+`thread_ts` has to name a message that already exists. Posting the summary first is also the failure mode
+worth having. If the thread post fails the summary is already in the channel with the verdict, the counts
+and the coverage, so the channel keeps the actionable part and loses only the detail. An atomic call would
+be all or nothing, which on a red night means no message at all.
+
+Nothing here can fail the run. A Slack outage must not turn a green nightly red, and the suite gate in the
+test job owns the run result, so every path below warns and exits zero.
+
+Never prints the token, and never handles a stack trace: traces stay in the job summary and this links them.
+"""
+
+from __future__ import annotations
+
+import http.client
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+# Everything a call to Slack is allowed to do other than answer. `http.client.HTTPException` earns its place
+# by not being an OSError: `IncompleteRead` and `BadStatusLine` are raised on a truncated or malformed
+# response and urllib does not wrap them, so a handler built from URLError and OSError alone lets them
+# through and the poster dies with a traceback. Measured, not assumed: issubclass(HTTPException, OSError)
+# is False.
+UNREACHABLE = (
+    urllib.error.URLError,
+    http.client.HTTPException,
+    TimeoutError,
+    json.JSONDecodeError,
+    OSError,
+)
+
+SLACK_API = "https://slack.com/api"
+# Slack hard-limits a text block at 3000 characters. Two separate bounds therefore apply to the failure
+# list, a count and a length, and both must announce themselves: a silently truncated list reads as "that
+# was all of them". The length bound sits under 3000 to leave room for the notice that reports it.
+INAPPLICABLE = {"branch": "no branches", "line": "no lines"}
+MAX_LISTED_FAILURES = 12
+SLACK_BLOCK_LIMIT = 2900
+SUPPORTED_SCHEMA = 4
+
+# Mention lookups are bounded twice, and the second bound is the one that matters. Twelve listed failures can
+# each name two distinct commits with two distinct authors, so the worst case is 24 sequential lookups. At the
+# old 15 seconds each that is 360 seconds, and with the parent post ahead of it the step exceeded its own
+# five-minute bound before the thread was ever posted: the detail was lost to a timeout on precisely the
+# nights it existed for. A per-call timeout alone cannot fix that, because the arithmetic changes whenever
+# MAX_LISTED_FAILURES does, so the phase carries a wall-clock budget and falls back to plain names once it is
+# spent. Names are the default rendering anyway, so running out costs nothing but the mentions.
+LOOKUP_TIMEOUT_SECONDS = 5
+LOOKUP_BUDGET_SECONDS = 60
+
+
+def warn(message: str) -> None:
+    print(f"::warning::{message}")
+
+
+def mrkdwn(text: str) -> str:
+    """Escape text that came from a test result before it reaches a Slack block.
+
+    Two reasons, and the second is the serious one. Slack mrkdwn treats `&`, `<` and `>` specially, and a
+    JUnit ComparisonFailure is written as `expected:<a> but was:<b>`, so ordinary assertion output would
+    misrender. And Slack control sequences are written the same way, so an assertion message or a test name
+    containing `<!channel>` would broadcast to everyone in the channel. Test data is untrusted input here,
+    even when we wrote the test.
+    """
+    escaped = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # Backticks are not escapable in mrkdwn, and several of these values are rendered inside a code span, so
+    # one would end the span early. With the angle brackets already neutralised that is cosmetic rather than
+    # a broadcast route, but the substitution costs nothing and closes the class. An apostrophe rather than a
+    # deletion, so a test name that legitimately contains one still reads.
+    return escaped.replace("`", "'")
+
+
+def slack_post(method: str, token: str, payload: dict) -> dict | None:
+    """Call one Slack Web API method. Returns the parsed body, or None if it could not be reached.
+
+    Slack reports application errors as HTTP 200 with `{"ok": false, "error": "..."}` rather than as a
+    status code, so `ok` is what the callers check. Only the error code is ever logged: the response body
+    echoes the message back and the request carries the token, and neither belongs in a public log.
+    """
+    request = urllib.request.Request(
+        f"{SLACK_API}/{method}",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json; charset=utf-8",
+            "Authorization": f"Bearer {token}",
+        },
+        method="POST",
+    )
+    try:
+        # Bounded on purpose. An unbounded call against a stalled endpoint would hold this job until its
+        # timeout, and a Slack outage must not cost anything but the report.
+        with urllib.request.urlopen(request, timeout=20) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        # 429 and 5xx arrive here. Not retried: the report is worth one attempt, and a second one on a red
+        # night delays nothing that matters while adding a path that is never exercised.
+        warn(f"Slack {method} returned HTTP {error.code}. The suite result is unaffected.")
+        return None
+    except UNREACHABLE as error:
+        warn(f"Slack {method} could not be reached ({type(error).__name__}). The suite result is unaffected.")
+        return None
+
+    if not body.get("ok"):
+        warn(f"Slack {method} refused the call: {body.get('error', 'unknown error')}.")
+    return body
+
+
+def slack_user_for_email(email: str, token: str) -> str | None:
+    """The Slack user ID for a git author email, or None when there is not one.
+
+    A git email need not match a Slack account at all, so failure here is ordinary rather than exceptional
+    and the caller falls back to the plain name. Needs the `users:read.email` scope.
+    """
+    if not email:
+        return None
+    request = urllib.request.Request(
+        f"{SLACK_API}/users.lookupByEmail?{urllib.parse.urlencode({'email': email})}",
+        headers={"Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=LOOKUP_TIMEOUT_SECONDS) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except UNREACHABLE:
+        # HTTPError is a URLError subclass, so it is covered. Not warned for the same reason a refusal is
+        # not: a lookup that fails falls back to the plain name, which is the default rendering anyway.
+        return None
+    if not body.get("ok"):
+        # Not warned. `users_not_found` is the expected answer for anyone who commits from an address that
+        # is not their Slack one, and a warning per failure per night would train people to ignore warnings.
+        return None
+    return (body.get("user") or {}).get("id")
+
+
+def render_author(commit: dict, token: str, mention: bool, cache: dict[str, str | None],
+                  deadline: float | None = None) -> str:
+    """The commit author, as a Slack mention only when mentions are switched on.
+
+    Off by default, and that is a team-norm decision rather than a technical one. The culprit is a labelled
+    heuristic and it has been wrong before, so pinging its author at 3am is not something to enable without
+    the team agreeing to it first. Set SLACK_MENTION_CULPRITS=true once that conversation has happened.
+
+    Turning it on also widens what a tampered facts artifact can do, and that belongs in the same decision.
+    The email is looked up as given, and the artifact is written in the job that runs the third-party action,
+    so a compromised action could name any address it likes and have the bot ping whoever owns it. Escaping
+    does not help: a mention is `<@U…>` built from an ID Slack returned, which is the intended output. While
+    the flag is off nothing is looked up and no mention is ever emitted, which is why this is recorded as a
+    precondition for enabling rather than fixed in the renderer.
+    """
+    name = mrkdwn(commit.get("author", "")) or "unknown author"
+    if not mention:
+        return name
+    email = commit.get("email", "")
+    if email not in cache:
+        # A spent budget stops looking rather than degrading every remaining lookup into a timeout. A cached
+        # answer is still used, since it costs nothing.
+        if deadline is not None and time.monotonic() >= deadline:
+            return name
+        cache[email] = slack_user_for_email(email, token)
+    user_id = cache[email]
+    return f"<@{user_id}>" if user_id else name
+
+
+def merge_by_commit(culprits: list[dict]) -> list[tuple[dict, list[str]]]:
+    """Group attributions that name the same commit, preserving the order they were found in.
+
+    The collector looks up two things, the failing test and the class it names, and a commit that changed a
+    class usually changed its test in the same breath. Left ungrouped that renders the same sha, subject and
+    author twice per failure, which on a multi-failure night is most of the message.
+    """
+    merged: dict[str, tuple[dict, list[str]]] = {}
+    for commit in culprits:
+        sha = commit.get("sha", "")
+        if sha in merged:
+            merged[sha][1].append(commit["what"])
+        else:
+            merged[sha] = (commit, [commit["what"]])
+    return list(merged.values())
+
+
+def summary_blocks(facts: dict, job_result: str = "success") -> tuple[list[dict], str]:
+    """The channel message: verdict, counts, coverage, and where to look. No failure detail.
+
+    Deliberately silent about the thread. Slack renders its own reply count on a threaded parent, so a line
+    claiming detail is in the thread would be redundant when the thread post succeeds and a lie when it
+    fails. Letting Slack's own affordance be the pointer keeps the parent true either way.
+    """
+    # The verdict is reconciled against the job result rather than trusted on its own, because the facts are
+    # uploaded two steps before the gate runs. If the test job hits its own timeout during `Upload reports` or
+    # during the gate, the artifact already holds a green verdict while the run is red, and posting that green
+    # is exactly the run-versus-notification disagreement this workflow exists to prevent. A tampered
+    # collector reaches the same place from the other direction: it can write `green` into the facts, but it
+    # cannot make a failed step report success, so the gate still fails the job and the mismatch shows here.
+    #
+    # Anything other than a successful test job means the run is not green, whatever the artifact says, and
+    # the run is the authority. The counts are still worth printing, so this corrects the headline rather than
+    # discarding the message.
+    claimed_red = facts["verdict"] == "red"
+    unfinished = job_result != "success"
+    red = claimed_red or unfinished
+    verdict = "Nightly failed" if red else "Nightly green"
+    icon = ":red_circle:" if red else ":white_check_mark:"
+    # The ref and sha live in the context line at the bottom, not here. A branch name can be 60 characters
+    # of ticket slug, which pushes the thing you actually need to read off the first line.
+    lines = [f"{icon} *{mrkdwn(facts['platform'])} · {verdict}*"]
+    for suite in facts["suites"]:
+        lines.append(f"*{mrkdwn(suite['name'])}* {mrkdwn(suite['label'])}")
+
+    # Three states, three phrasings, because conflating them misreports. "no classes yet" is a module with
+    # nothing to measure; "no report written" is a module whose coverage task did not produce one, which on a
+    # red night is the normal fate of the module whose tests just failed. Rendering the second as the first,
+    # or omitting it, would say coverage is absent when it is merely unmeasured tonight.
+    for group in facts["coverage"]:
+        # The raw label keys the fixed-phrase lookup; the escaped one is the only form that gets rendered.
+        # Both are values from the artifact, so neither reaches a block unescaped.
+        label = group["label"]
+        safe_label = mrkdwn(label)
+        rendered = []
+        for module in group["modules"]:
+            name = mrkdwn(module["module"])
+            state = module.get("state")
+            percent = module.get("percent")
+            # isinstance rather than a bare format, because a `:.1f` against a non-number raises and the
+            # poster would die with a traceback instead of reporting. Everything here crossed the artifact.
+            if state == "measured" and isinstance(percent, (int, float)):
+                rendered.append(f"{name} {percent:.1f}%")
+            elif state == "empty":
+                rendered.append(f"{name} no classes yet")
+            elif state == "inapplicable":
+                # Has classes, has none of this counter. Saying "no classes yet" here contradicted the line
+                # row directly beneath it, about the same module, in the same message.
+                rendered.append(f"{name} {INAPPLICABLE.get(label, 'no ' + safe_label + ' data')}")
+            else:
+                rendered.append(f"{name} no report written")
+        measured = " · ".join(rendered) if rendered else "no modules configured"
+        lines.append(f"*Coverage ({safe_label})* {measured}")
+
+    failures = facts["failures"]
+    if failures:
+        lines.append(f"*Failures* {len(failures)}")
+    if unfinished and not claimed_red:
+        # Named explicitly, because "collected green, ran red" is the one combination a reader would otherwise
+        # have to reconcile themselves, and the run is what to believe.
+        lines.append(
+            f"_The collected results were green, but the test job ended `{mrkdwn(job_result)}`, so the run "
+            "did not finish. Believe the run._"
+        )
+
+    blocks: list[dict] = [{"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(lines)}}]
+
+    # Traceability, kept small and out of the headline. The sha is a link so it stays one short token.
+    #
+    # The ref is escaped like everything else dynamic. Git allows backticks and angle brackets in a refname,
+    # and a manual dispatch chooses the ref, so an unescaped one could close this code span and inject a
+    # Slack control sequence.
+    run = trusted_run_links()
+    trail = f"<{run['url']}|Open the run>"
+    if run["sha"] and run["commit_url"]:
+        trail += f" · <{run['commit_url']}|`{mrkdwn(run['sha'])}`>"
+    if run["ref"]:
+        trail += f" on `{mrkdwn(run['ref'])}`"
+    blocks.append({"type": "context", "elements": [{"type": "mrkdwn", "text": trail}]})
+
+    # Escaped like everything else from the facts. The fallback is Slack's notification text and is rendered
+    # as mrkdwn, so a `<!channel>` reaching it broadcasts even though every visible block escapes its fields.
+    suite_text = ", ".join(f"{mrkdwn(s['label'])} {mrkdwn(s['name']).lower()}" for s in facts["suites"])
+    # `verdict` rather than the artifact's own, so the notification agrees with the headline above it.
+    return blocks, f"{mrkdwn(facts['platform'])} {verdict.lower()}: {suite_text}"
+
+
+def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
+    """The thread reply: one entry per failed test, with its trace linked and its commit attributed.
+
+    The trace is a link rather than text. It lives in the job summary, which renders without a download and
+    outlives log retention, and a full trace would blow the 3000-character block limit on the first failure.
+    """
+    failures = facts["failures"]
+    run_url = trusted_run_links()["url"]
+    cache: dict[str, str | None] = {}
+    # Only meaningful when mentions are on, and harmless when they are not, since nothing is looked up.
+    deadline = time.monotonic() + LOOKUP_BUDGET_SECONDS if mention else None
+
+    # One rendered entry per failure, so trimming can drop whole failures rather than cut through one.
+    entries: list[str] = []
+    for failure in failures[:MAX_LISTED_FAILURES]:
+        # Every field here originates in a test result or in git output, which carries commit subjects and
+        # author names, so all of it is escaped.
+        # "stack trace" rather than "full trace". The job summary trims a long trace in the middle, so a link
+        # promising the full one is a promise the destination does not keep. The unabridged trace is in the
+        # nightly-reports artifact, which the summary itself points at.
+        entry = f"\n• `{mrkdwn(failure['label'])}` · <{run_url}|stack trace>\n  {mrkdwn(failure['detail'])}"
+        for commit, whats in merge_by_commit(failure["culprits"]):
+            # One line per commit, not per lookup. The two lookups usually land on the same commit, because a
+            # change to a class and to its test normally ships together, and printing that commit twice with
+            # only the leading noun different was the least readable thing in the message.
+            subjects = " and ".join("test" if what == "test" else f"`{mrkdwn(what)}`" for what in whats)
+            author = render_author(commit, token, mention, cache, deadline)
+            entry += (
+                f"\n  {subjects} last touched by `{mrkdwn(commit['sha'])}"
+                f" {mrkdwn(commit['subject'])}` — {author}"
+            )
+        entries.append(entry)
+
+    # Two independent limits, and the character one used to be applied silently by slicing the finished
+    # string. Twelve failures at 300 characters each exceed the block limit before any culprit text, so
+    # the list could be cut mid-failure while the omitted count was zero and the message therefore
+    # claimed to be complete. Drop whole entries until the text and its notice fit, and always say how
+    # many are missing, counting both limits together.
+    # Drops to zero entries if it has to. Stopping at one left the contract broken in the case it was
+    # meant to cover: a single entry longer than the limit, from a parameterized test name or a long
+    # commit subject, was sliced mid-entry with no notice. Header plus notice is always short enough.
+    while True:
+        hidden = len(failures) - len(entries)
+        notice = f"\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""
+        header = "*Probable cause is a heuristic, not evidence.*"
+        text = f"{header}" + "".join(entries) + notice
+        if len(text) <= SLACK_BLOCK_LIMIT or not entries:
+            break
+        entries.pop()
+
+    return [{"type": "section", "text": {"type": "mrkdwn", "text": text[:SLACK_BLOCK_LIMIT]}}]
+
+
+def trusted_run_links() -> dict[str, str]:
+    """The run and commit URLs, rebuilt from this job's own environment rather than read from the facts.
+
+    The facts file crosses a job boundary, and the job that writes it is the one that runs the mutable
+    third-party action, so every value in it is untrusted input. A URL is the worst place for that: it is
+    interpolated inside Slack's `<url|label>` syntax, where a single `>` closes the link and whatever follows
+    is parsed as mrkdwn, so `<!channel>` in a tampered `run.url` would broadcast from a job that was split
+    out specifically to keep that action away from Slack.
+
+    Escaping would not be the right answer even though it would work. GitHub injects GITHUB_SERVER_URL,
+    GITHUB_REPOSITORY, GITHUB_RUN_ID and GITHUB_SHA into this job directly, they describe the same run, and
+    a value that never crossed the boundary cannot have been tampered with. So the dependency is removed
+    rather than sanitised.
+    """
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    sha = os.environ.get("GITHUB_SHA", "")[:7]
+    ref = os.environ.get("GITHUB_REF_NAME", "")
+    return {
+        "url": f"{server}/{repo}/actions/runs/{run_id}" if repo and run_id else f"{server}/{repo}/actions",
+        "commit_url": f"{server}/{repo}/commit/{sha}" if repo and sha else "",
+        "sha": sha,
+        "ref": ref,
+    }
+
+
+# What a malformed artifact raises on the way through a renderer. Narrow on purpose: these are shape errors,
+# not a licence to swallow a defect in the rendering code, and every one of them is warned about loudly.
+SHAPE_ERRORS = (KeyError, IndexError, TypeError, ValueError, AttributeError)
+
+
+def usable_facts(raw: object) -> dict | None:
+    """The facts if they are the shape this poster renders, otherwise None.
+
+    Matching the schema number is not the same as being usable, and the gap was reachable: `{"schema": 4}`
+    passed the version check and then raised KeyError on `verdict`, and a JSON list root raised AttributeError
+    on `.get` before any check ran. Either way the poster died before posting even the no-report fallback, so
+    a tampered or truncated artifact turned into a silent channel, which is the outcome this reporter exists
+    to make impossible.
+
+    Only the root shape is asserted here. Nested fields are covered by catching SHAPE_ERRORS around rendering,
+    because enumerating every nested key would duplicate the renderers and drift from them.
+    """
+    if not isinstance(raw, dict):
+        warn(f"The nightly facts are {type(raw).__name__}, not an object, so they cannot be rendered.")
+        return None
+    if raw.get("schema") != SUPPORTED_SCHEMA:
+        warn(f"Unsupported nightly facts schema {raw.get('schema')!r}; expected {SUPPORTED_SCHEMA}.")
+        return None
+    required = {"verdict": str, "platform": str, "suites": list, "coverage": list, "failures": list}
+    for key, kind in required.items():
+        if not isinstance(raw.get(key), kind):
+            warn(f"The nightly facts are missing a usable {key!r}, so they cannot be rendered.")
+            return None
+    return raw
+
+
+def platform_name() -> str:
+    """The platform label, from the workflow rather than guessed.
+
+    Both platform SDKs can report into one channel, so a message that does not name the platform is
+    ambiguous, and the no-facts path is the one place that cannot read it out of the facts file.
+    """
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    return os.environ.get("PLATFORM", "").strip() or (repo.rsplit("/", 1)[-1] if repo else "Nightly")
+
+
+def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
+    """What to say when no facts file reached this job.
+
+    This is the case the old arrangement could not report. Posting lived inside the test job behind
+    `if: always()`, and a job timeout or a cancellation kills the job and takes that step with it, so the
+    channel simply went quiet on the nights that most needed a message. Reporting from a separate job means
+    a dead test job still gets announced.
+
+    Two different situations reach here and the message must not merge them, because an absent facts file
+    does not prove the test job failed to write one. The upload and the download are both deliberately
+    non-blocking, so a transient artifact-service error loses the report while the suite and the run stay
+    green. Saying "the test job ended success without writing a report" in that case is both wrong and
+    self-contradictory, and a red circle over a green suite is a false alarm on the one channel that exists
+    to be trusted.
+
+    The job result tells the two apart on its own. The gate lives in the test job and fails it on a red
+    verdict, so `success` proves the suite passed and the results existed, which leaves the transfer as the
+    only thing that can have gone wrong.
+    """
+    if job_result == "success":
+        icon = ":warning:"
+        cause = (
+            "The test job passed, its suite gate included, so the results existed and the suite was green. "
+            "The facts file did not reach this job. The artifact upload and download are both non-blocking, "
+            "so a transient artifact-service error loses the report without touching the run result."
+        )
+        fallback = f"{mrkdwn(platform_name())} nightly passed but its report did not arrive"
+    else:
+        icon = ":red_circle:"
+        cause = (
+            f"The test job ended `{mrkdwn(job_result)}`, so it produced no usable report. A cancellation, a "
+            "job timeout, or a failure before the tests ran each end it this way."
+        )
+        fallback = f"{mrkdwn(platform_name())} nightly produced no report"
+
+    platform = mrkdwn(platform_name())
+    blocks: list[dict] = [
+        {"type": "section",
+         "text": {"type": "mrkdwn", "text": f"{icon} *{platform} · Nightly · no report*\n{cause}"}}
+    ]
+    # Without a link the message names a problem and offers nowhere to go and look at it.
+    if os.environ.get("GITHUB_REPOSITORY") and os.environ.get("GITHUB_RUN_ID"):
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"<{trusted_run_links()['url']}|Open the run>"}],
+        })
+    return blocks, fallback
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(f"usage: {Path(sys.argv[0]).name} <facts-path>", file=sys.stderr)
+        return 2
+
+    token = os.environ.get("SLACK_BOT_TOKEN", "").strip()
+    channel = os.environ.get("SLACK_CHANNEL_ID", "").strip()
+    # Absent credentials warn and skip, and never cost the suite result. The nightly's whole point is the
+    # test outcome; the report is how it is delivered, and a delivery problem is not a test result.
+    if not token or not channel:
+        warn("SLACK_BOT_TOKEN or SLACK_CHANNEL_ID is not set, so no nightly report was posted.")
+        return 0
+
+    mention = os.environ.get("SLACK_MENTION_CULPRITS", "").strip().lower() == "true"
+
+    facts_path = Path(sys.argv[1])
+    facts: dict | None = None
+    if facts_path.is_file():
+        try:
+            facts = usable_facts(json.loads(facts_path.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError) as error:
+            warn(f"The nightly facts file could not be read ({type(error).__name__}).")
+
+    job_result = os.environ.get("NIGHTLY_JOB_RESULT", "success" if facts else "unknown")
+    if facts is None:
+        blocks, fallback = unreported_blocks(job_result)
+    else:
+        try:
+            blocks, fallback = summary_blocks(facts, job_result)
+        except SHAPE_ERRORS as error:
+            # Something nested is not the shape the renderer expects. Report that rather than dying, because
+            # the alternative is a channel that says nothing on a night when something is already wrong.
+            warn(f"The nightly facts could not be rendered ({type(error).__name__}: {error}).")
+            facts = None
+            blocks, fallback = unreported_blocks(job_result)
+
+    parent = slack_post("chat.postMessage", token, {"channel": channel, "text": fallback, "blocks": blocks})
+    if parent is None or not parent.get("ok"):
+        return 0
+
+    # Green nights end here, with one line in the channel and no thread. That is the readability this whole
+    # arrangement is for.
+    if facts is None or not facts["failures"]:
+        return 0
+
+    thread_ts = parent.get("ts")
+    if not thread_ts:
+        # Documented to be present on a successful post, so this is defensive rather than expected.
+        warn("Slack accepted the summary but returned no ts, so the failure detail was not threaded.")
+        return 0
+
+    try:
+        detail = thread_blocks(facts, token, mention)
+    except SHAPE_ERRORS as error:
+        # The summary has already landed, so this costs the detail and nothing else.
+        warn(f"The failure detail could not be rendered ({type(error).__name__}: {error}).")
+        return 0
+
+    slack_post(
+        "chat.postMessage",
+        token,
+        {
+            "channel": channel,
+            "thread_ts": thread_ts,
+            "text": f"{len(facts['failures'])} failure(s)",
+            "blocks": detail,
+        },
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
