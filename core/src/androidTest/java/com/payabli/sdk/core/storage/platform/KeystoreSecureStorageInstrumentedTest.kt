@@ -79,7 +79,7 @@ class KeystoreSecureStorageInstrumentedTest {
     fun aReplacedKeyReportsTheValueAsUnreadable() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
             // Delete and recreate under the same alias: from the read side the key simply changed.
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -112,8 +112,8 @@ class KeystoreSecureStorageInstrumentedTest {
         runTest(timeout = 30.seconds) {
             val file = File(directory, "store.json")
             val subject = storage()
-            subject.set("damaged", "first-value".toCharArray())
-            subject.set("intact", "second-value".toCharArray())
+            subject.set("damaged", "first-value".toByteArray())
+            subject.set("intact", "second-value".toByteArray())
 
             // Flip the payload of one entry only, leaving its base64 valid so it reaches the tag check.
             val map = Json.decodeFromString(MapSerializer(String.serializer(), String.serializer()), file.readText())
@@ -134,7 +134,7 @@ class KeystoreSecureStorageInstrumentedTest {
 
             assertArrayEquals(
                 "the other entry was destroyed by a failure that had nothing to do with it",
-                "second-value".toCharArray(),
+                "second-value".toByteArray(),
                 subject.get("intact"),
             )
         }
@@ -151,7 +151,7 @@ class KeystoreSecureStorageInstrumentedTest {
         runTest(timeout = 30.seconds) {
             val file = File(directory, "store.json")
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
             val serializer = MapSerializer(String.serializer(), String.serializer())
             val map = Json.decodeFromString(serializer, file.readText())
@@ -235,8 +235,8 @@ class KeystoreSecureStorageInstrumentedTest {
             val first = PayabliSecureStorages.create(dirA, fileName = "store.json", logger = logger)
             val second = PayabliSecureStorages.create(dirB, fileName = "store.json", logger = logger)
             try {
-                first.set("refresh", "first-value".toCharArray())
-                second.set("refresh", "second-value".toCharArray())
+                first.set("refresh", "first-value".toByteArray())
+                second.set("refresh", "second-value".toByteArray())
 
                 val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 assertTrue(
@@ -248,8 +248,8 @@ class KeystoreSecureStorageInstrumentedTest {
                     store.containsAlias(PayabliSecureStorages.aliasFor(sameNameB)),
                 )
                 // Neither store disturbed the other, which a shared alias would have made a coin flip.
-                assertArrayEquals("first-value".toCharArray(), first.get("refresh"))
-                assertArrayEquals("second-value".toCharArray(), second.get("refresh"))
+                assertArrayEquals("first-value".toByteArray(), first.get("refresh"))
+                assertArrayEquals("second-value".toByteArray(), second.get("refresh"))
             } finally {
                 val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 listOf(sameNameA, sameNameB, differentName).forEach {
@@ -276,18 +276,18 @@ class KeystoreSecureStorageInstrumentedTest {
             val second = storage("second.json")
 
             listOf(
-                async(Dispatchers.IO) { first.set("refresh", "first-value".toCharArray()) },
-                async(Dispatchers.IO) { second.set("refresh", "second-value".toCharArray()) },
+                async(Dispatchers.IO) { first.set("refresh", "first-value".toByteArray()) },
+                async(Dispatchers.IO) { second.set("refresh", "second-value".toByteArray()) },
             ).awaitAll()
 
             assertArrayEquals(
                 "the first store's value was sealed under a key that was then replaced",
-                "first-value".toCharArray(),
+                "first-value".toByteArray(),
                 first.get("refresh"),
             )
             assertArrayEquals(
                 "the second store's value was sealed under a key that was then replaced",
-                "second-value".toCharArray(),
+                "second-value".toByteArray(),
                 second.get("refresh"),
             )
         }
@@ -296,8 +296,8 @@ class KeystoreSecureStorageInstrumentedTest {
     fun aValueRoundTripsThroughTheRealKeystore() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            subject.set("refresh", "secret-value".toByteArray())
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
             assertNull(subject.get("never-written"))
         }
 
@@ -317,15 +317,15 @@ class KeystoreSecureStorageInstrumentedTest {
             val file = File(directory, "store.json")
             val subject = storage()
 
-            subject.set("refresh", "the-secret".toCharArray())
+            subject.set("refresh", "the-secret".toByteArray())
             val first = file.readText()
-            subject.set("refresh", "the-secret".toCharArray())
+            subject.set("refresh", "the-secret".toByteArray())
             val second = file.readText()
 
             assertNotEquals("the same IV was reused across writes", first, second)
             assertFalse("the plaintext reached the file", first.contains("the-secret"))
             assertFalse("the plaintext reached the file", second.contains("the-secret"))
-            assertArrayEquals("the-secret".toCharArray(), subject.get("refresh"))
+            assertArrayEquals("the-secret".toByteArray(), subject.get("refresh"))
         }
 
     /**
@@ -335,8 +335,8 @@ class KeystoreSecureStorageInstrumentedTest {
     @Test
     fun aNewInstanceDecryptsWhatAnEarlierOneWrote() =
         runTest(timeout = 30.seconds) {
-            storage().set("refresh", "secret-value".toCharArray())
-            assertArrayEquals("secret-value".toCharArray(), storage().get("refresh"))
+            storage().set("refresh", "secret-value".toByteArray())
+            assertArrayEquals("secret-value".toByteArray(), storage().get("refresh"))
         }
 
     /**
@@ -352,7 +352,7 @@ class KeystoreSecureStorageInstrumentedTest {
             val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             assertFalse("the alias existed before first use", store.containsAlias(keyAlias))
 
-            storage().set("refresh", "secret-value".toCharArray())
+            storage().set("refresh", "secret-value".toByteArray())
 
             val after = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             assertTrue("no key was created", after.containsAlias(keyAlias))
@@ -377,7 +377,7 @@ class KeystoreSecureStorageInstrumentedTest {
     @Test
     fun theKeyIsCreatedWithTheAuthorizationsWeAskedFor() =
         runTest(timeout = 30.seconds) {
-            storage().set("refresh", "secret-value".toCharArray())
+            storage().set("refresh", "secret-value".toByteArray())
             val info = keyInfo()
 
             assertEquals("the key is not AES-256", 256, info.keySize)
@@ -432,11 +432,11 @@ class KeystoreSecureStorageInstrumentedTest {
             )
 
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
             assertArrayEquals(
                 "the fallback key could not decrypt what it encrypted",
-                "secret-value".toCharArray(),
+                "secret-value".toByteArray(),
                 subject.get("refresh"),
             )
             // Below 31 the platform cannot report a level, only the coarser question, so that is what is asked.
@@ -482,7 +482,7 @@ class KeystoreSecureStorageInstrumentedTest {
     fun aLostKeyReportsInvalidationAndLeavesTheStoreUsable() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
             KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(keyAlias)
 
@@ -497,8 +497,8 @@ class KeystoreSecureStorageInstrumentedTest {
             assertNull("the missing alias should be detected before decrypting", thrown?.cause)
 
             assertNull("the unreadable value should have been discarded", subject.get("refresh"))
-            subject.set("refresh", "fresh-value".toCharArray())
-            assertArrayEquals("the store should be usable again", "fresh-value".toCharArray(), subject.get("refresh"))
+            subject.set("refresh", "fresh-value".toByteArray())
+            assertArrayEquals("the store should be usable again", "fresh-value".toByteArray(), subject.get("refresh"))
         }
 
     /**
@@ -513,12 +513,12 @@ class KeystoreSecureStorageInstrumentedTest {
     fun deletingTheAliasThenWritingReportsInvalidationRatherThanMintingAKey() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("first", "one".toCharArray())
-            subject.set("second", "two".toCharArray())
+            subject.set("first", "one".toByteArray())
+            subject.set("second", "two".toByteArray())
 
             KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(keyAlias)
 
-            val thrown = runCatching { subject.set("third", "three".toCharArray()) }.exceptionOrNull()
+            val thrown = runCatching { subject.set("third", "three".toByteArray()) }.exceptionOrNull()
             assertTrue(
                 "expected KeyInvalidated on a write into a store whose key is gone, got $thrown",
                 thrown is SecureStorageException.KeyInvalidated,
@@ -527,7 +527,7 @@ class KeystoreSecureStorageInstrumentedTest {
             // Cleared, so the next write starts from nothing rather than mixing a new key with old blobs.
             assertNull("the stranded entry should be gone", subject.get("first"))
             assertNull("the stranded entry should be gone", subject.get("second"))
-            subject.set("third", "three".toCharArray())
-            assertArrayEquals("the store should be usable again", "three".toCharArray(), subject.get("third"))
+            subject.set("third", "three".toByteArray())
+            assertArrayEquals("the store should be usable again", "three".toByteArray(), subject.get("third"))
         }
 }

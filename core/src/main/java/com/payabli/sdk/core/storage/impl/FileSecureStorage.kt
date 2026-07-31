@@ -40,14 +40,14 @@ internal class FileSecureStorage(
      */
     private val mutex: Mutex = lockFor(file)
 
-    override suspend fun get(key: String): CharArray? =
+    override suspend fun get(key: String): ByteArray? =
         withContext(dispatcher) {
             mutex.withLock {
                 val blob = read()[key] ?: return@withLock null
-                var plaintext: ByteArray? = null
                 try {
-                    plaintext = cipher.decrypt(key, blob)
-                    SecretBuffers.toChars(plaintext)
+                    // Straight out of the cipher, which already returns a fresh array. Nothing is interpreted,
+                    // so there is no intermediate to wipe either: the array returned is the caller's.
+                    cipher.decrypt(key, blob)
                 } catch (e: SecureStorageException.ValueUnreadable) {
                     // One bad entry: drop it, keep the rest.
                     write(read() - key)
@@ -57,22 +57,19 @@ internal class FileSecureStorage(
                     // every later read and let the next write mix a fresh key with stale ciphertext.
                     write(emptyMap())
                     throw e
-                } finally {
-                    SecretBuffers.wipe(plaintext)
                 }
             }
         }
 
     override suspend fun set(
         key: String,
-        value: CharArray,
+        value: ByteArray,
     ) {
         withContext(dispatcher) {
             mutex.withLock {
                 // Read before encrypting, so the whole read-modify-write sits inside one critical section
                 // and a test can widen the window from the cipher. Encrypting first put the seam outside it.
                 val current = read()
-                var plaintext: ByteArray? = null
                 try {
                     // Only an empty store may create a key. A write cannot otherwise tell a fresh install from
                     // a lost alias, and creating for the second case puts the new blob beside ciphertext sealed
@@ -83,15 +80,14 @@ internal class FileSecureStorage(
                     // one cipher operation because a separate "is there a key" question left a window between
                     // asking and encrypting.
                     cipher.ensureKey(mayCreate = current.isEmpty())
-                    plaintext = SecretBuffers.toBytes(value)
-                    write(current + (key to cipher.encrypt(key, plaintext)))
+                    // The caller's array goes straight to the cipher, which must not retain it. Nothing is
+                    // copied or converted, so there is nothing of ours holding the plaintext afterwards.
+                    write(current + (key to cipher.encrypt(key, value)))
                 } catch (e: SecureStorageException.KeyInvalidated) {
                     // As on the read path: the remaining blobs are unreadable, and leaving them lets a retry
                     // mix a fresh key with stale ciphertext.
                     write(emptyMap())
                     throw e
-                } finally {
-                    SecretBuffers.wipe(plaintext)
                 }
             }
         }

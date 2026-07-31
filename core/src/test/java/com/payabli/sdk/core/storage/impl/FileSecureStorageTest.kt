@@ -13,6 +13,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -65,7 +66,10 @@ class FileSecureStorageTest {
             }
             val ordinal = synchronized(this) { ++encryptions }
             if (delayMillis > 0) Thread.sleep(delayMillis)
-            return "$ordinal|$aad|${String(plaintext, Charsets.UTF_8)}"
+            // Hex, not String(bytes), because this fake must be byte-faithful. Framing the payload as text put
+            // the very lossy conversion the store just shed inside the double, so bytes that are not valid
+            // UTF-8 came back as '?' and every test using this cipher ran through a lossy layer.
+            return "$ordinal|$aad|${plaintext.toHex()}"
         }
 
         /** Records what storage decided, so a test can prove the flag is derived rather than always false. */
@@ -79,6 +83,11 @@ class FileSecureStorageTest {
             keyPresent = true
         }
 
+        private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+
+        private fun String.fromHex(): ByteArray =
+            ByteArray(length / 2) { substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+
         override fun decrypt(
             aad: String,
             blob: String,
@@ -90,7 +99,7 @@ class FileSecureStorageTest {
             val parts = blob.split('|', limit = 3)
             // The AAD check the real cipher gets from GCM: a blob under the wrong name must not open.
             if (parts[1] != aad) throw SecureStorageException.ValueUnreadable()
-            return parts[2].toByteArray(Charsets.UTF_8)
+            return parts[2].fromHex()
         }
     }
 
@@ -109,8 +118,8 @@ class FileSecureStorageTest {
     fun `a value round-trips`() =
         runTest(timeout = 5.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            subject.set("refresh", "secret-value".toByteArray())
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
 
     @Test
@@ -124,17 +133,17 @@ class FileSecureStorageTest {
     fun `a value survives a new instance over the same file`() =
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
-            storage(file).set("refresh", "secret-value".toCharArray())
-            assertArrayEquals("secret-value".toCharArray(), storage(file).get("refresh"))
+            storage(file).set("refresh", "secret-value".toByteArray())
+            assertArrayEquals("secret-value".toByteArray(), storage(file).get("refresh"))
         }
 
     @Test
     fun `a second write replaces the first`() =
         runTest(timeout = 5.seconds) {
             val subject = storage()
-            subject.set("refresh", "first".toCharArray())
-            subject.set("refresh", "second".toCharArray())
-            assertArrayEquals("second".toCharArray(), subject.get("refresh"))
+            subject.set("refresh", "first".toByteArray())
+            subject.set("refresh", "second".toByteArray())
+            assertArrayEquals("second".toByteArray(), subject.get("refresh"))
         }
 
     /**
@@ -146,19 +155,19 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
             val subject = storage(file)
-            subject.set("a", "1".toCharArray())
+            subject.set("a", "1".toByteArray())
             assertTrue("the store was not created", file.exists())
-            subject.set("b", "2".toCharArray())
+            subject.set("b", "2".toByteArray())
 
-            assertArrayEquals("1".toCharArray(), subject.get("a"))
-            assertArrayEquals("2".toCharArray(), subject.get("b"))
+            assertArrayEquals("1".toByteArray(), subject.get("a"))
+            assertArrayEquals("2".toByteArray(), subject.get("b"))
         }
 
     @Test
     fun `remove deletes the value and is silent about an absent key`() =
         runTest(timeout = 5.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
             subject.remove("refresh")
             assertNull(subject.get("refresh"))
             subject.remove("never-written")
@@ -170,9 +179,9 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
             val subject = storage(file)
-            subject.set("refresh", "same".toCharArray())
+            subject.set("refresh", "same".toByteArray())
             val first = file.readText()
-            subject.set("refresh", "same".toCharArray())
+            subject.set("refresh", "same".toByteArray())
 
             assertTrue("the stored blob did not change between writes", first != file.readText())
         }
@@ -188,8 +197,8 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
             val subject = storage(file)
-            subject.set("alpha", "alpha-secret".toCharArray())
-            subject.set("beta", "beta-secret".toCharArray())
+            subject.set("alpha", "alpha-secret".toByteArray())
+            subject.set("beta", "beta-secret".toByteArray())
 
             val text = file.readText()
             val alpha = Regex("\"alpha\":\"([^\"]+)\"").find(text)!!.groupValues[1]
@@ -214,10 +223,10 @@ class FileSecureStorageTest {
     fun `concurrent writes do not lose values`() =
         runTest(timeout = 30.seconds) {
             val subject = storage(cipher = CountingCipher(delayMillis = 50), dispatcher = Dispatchers.IO)
-            (1..10).map { async(Dispatchers.IO) { subject.set("key-$it", "value-$it".toCharArray()) } }.awaitAll()
+            (1..10).map { async(Dispatchers.IO) { subject.set("key-$it", "value-$it".toByteArray()) } }.awaitAll()
 
             (1..10).forEach {
-                assertArrayEquals("value-$it was dropped", "value-$it".toCharArray(), subject.get("key-$it"))
+                assertArrayEquals("value-$it was dropped", "value-$it".toByteArray(), subject.get("key-$it"))
             }
         }
 
@@ -233,12 +242,12 @@ class FileSecureStorageTest {
             val second = storage(file, CountingCipher(delayMillis = 50), Dispatchers.IO)
 
             listOf(
-                async(Dispatchers.IO) { first.set("from-first", "1".toCharArray()) },
-                async(Dispatchers.IO) { second.set("from-second", "2".toCharArray()) },
+                async(Dispatchers.IO) { first.set("from-first", "1".toByteArray()) },
+                async(Dispatchers.IO) { second.set("from-second", "2".toByteArray()) },
             ).awaitAll()
 
-            assertArrayEquals("the first instance's value was lost", "1".toCharArray(), first.get("from-first"))
-            assertArrayEquals("the second instance's value was lost", "2".toCharArray(), first.get("from-second"))
+            assertArrayEquals("the first instance's value was lost", "1".toByteArray(), first.get("from-first"))
+            assertArrayEquals("the second instance's value was lost", "2".toByteArray(), first.get("from-second"))
         }
 
     @Test
@@ -249,8 +258,8 @@ class FileSecureStorageTest {
 
             val subject = storage(file)
             assertNull(subject.get("refresh"))
-            subject.set("refresh", "secret-value".toCharArray())
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            subject.set("refresh", "secret-value".toByteArray())
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
 
     /**
@@ -284,15 +293,15 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val cipher = CountingCipher()
             val subject = storage(cipher = cipher)
-            subject.set("damaged", "one".toCharArray())
-            subject.set("intact", "two".toCharArray())
+            subject.set("damaged", "one".toByteArray())
+            subject.set("intact", "two".toByteArray())
 
             cipher.failNextDecrypt = SecureStorageException.ValueUnreadable()
             val thrown = runCatching { subject.get("damaged") }.exceptionOrNull()
 
             assertTrue("expected ValueUnreadable, got $thrown", thrown is SecureStorageException.ValueUnreadable)
             assertNull("the damaged entry should be gone", subject.get("damaged"))
-            assertArrayEquals("the intact entry was destroyed", "two".toCharArray(), subject.get("intact"))
+            assertArrayEquals("the intact entry was destroyed", "two".toByteArray(), subject.get("intact"))
         }
 
     /**
@@ -304,8 +313,8 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val cipher = CountingCipher()
             val subject = storage(cipher = cipher)
-            subject.set("first", "one".toCharArray())
-            subject.set("second", "two".toCharArray())
+            subject.set("first", "one".toByteArray())
+            subject.set("second", "two".toByteArray())
 
             cipher.failNextDecrypt = SecureStorageException.KeyInvalidated()
             val thrown = runCatching { subject.get("first") }.exceptionOrNull()
@@ -323,7 +332,7 @@ class FileSecureStorageTest {
      * `CharArray` rather than `String`, so it is the assertion that proves the change was worth making.
      */
     @Test
-    fun `the plaintext handed to the cipher is wiped after set`() =
+    fun `the caller's array reaches the cipher without being copied`() =
         runTest(timeout = 5.seconds) {
             var handed: ByteArray? = null
             val capturing =
@@ -343,13 +352,49 @@ class FileSecureStorageTest {
 
                     override fun ensureKey(mayCreate: Boolean) = Unit
                 }
+            val value = "secret-value".toByteArray()
 
-            storage(cipher = capturing).set("refresh", "secret-value".toCharArray())
+            storage(cipher = capturing).set("refresh", value)
+
+            // Identity, not equality. A copy would be a second plaintext this store had made and would then be
+            // responsible for wiping, which is the buffer the old CharArray conversion created and had to clear.
+            // Passing the caller's array through means there is no such buffer to leak or to forget.
+            assertSame("the value was copied on the way to the cipher", value, handed)
+        }
+
+    /**
+     * Any byte sequence round-trips exactly, which is the property the old text contract could not offer.
+     *
+     * These bytes are deliberately not valid UTF-8: a lone `0x80` continuation byte, `0xED 0xA0 0x80` which is
+     * the UTF-8 encoding of an unpaired surrogate, and a NUL. Under the previous `CharArray` contract the
+     * equivalent input was silently replaced with `?`, measured, so the value read back differed from the value
+     * stored. Storing bytes means there is nothing to interpret and therefore nothing to corrupt.
+     */
+    @Test
+    fun `an arbitrary byte sequence round-trips exactly`() =
+        runTest(timeout = 5.seconds) {
+            val subject = storage()
+            val value = byteArrayOf(0x00, 0x80.toByte(), 0xED.toByte(), 0xA0.toByte(), 0x80.toByte(), 0x7F, -1)
+
+            subject.set("refresh", value)
+
+            assertArrayEquals("the store altered bytes it was asked to keep", value, subject.get("refresh"))
+        }
+
+    /** A fresh array per read, so a caller wiping what it got cannot blank the next reader's copy. */
+    @Test
+    fun `get returns a fresh array each call`() =
+        runTest(timeout = 5.seconds) {
+            val subject = storage()
+            subject.set("refresh", "secret-value".toByteArray())
+
+            val first = subject.get("refresh")!!
+            first.fill(0)
 
             assertArrayEquals(
-                "the plaintext buffer was left readable after the write",
-                ByteArray(handed!!.size),
-                handed,
+                "wiping one read's array changed what the next read returned",
+                "secret-value".toByteArray(),
+                subject.get("refresh"),
             )
         }
 
@@ -357,10 +402,10 @@ class FileSecureStorageTest {
     @Test
     fun `set does not clear the caller's array`() =
         runTest(timeout = 5.seconds) {
-            val value = "secret-value".toCharArray()
+            val value = "secret-value".toByteArray()
             storage().set("refresh", value)
 
-            assertArrayEquals("secret-value".toCharArray(), value)
+            assertArrayEquals("secret-value".toByteArray(), value)
         }
 
     /**
@@ -376,10 +421,10 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val cipher = CountingCipher()
             val subject = storage(cipher = cipher)
-            subject.set("first", "one".toCharArray())
+            subject.set("first", "one".toByteArray())
 
             cipher.keyPresent = false
-            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+            val thrown = runCatching { subject.set("second", "two".toByteArray()) }.exceptionOrNull()
 
             assertTrue("expected KeyInvalidated, got $thrown", thrown is SecureStorageException.KeyInvalidated)
             cipher.keyPresent = true
@@ -393,9 +438,9 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val cipher = CountingCipher(keyPresent = false)
             val subject = storage(cipher = cipher)
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
             // The flag has to be derived from the store, not a constant. Hardcoded false breaks the line above,
             // but hardcoded true breaks nothing there, so the value passed is asserted directly.
             assertEquals("an empty store must be allowed to create a key", true, cipher.lastMayCreate)
@@ -413,10 +458,10 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val cipher = CountingCipher()
             val subject = storage(cipher = cipher)
-            subject.set("first", "one".toCharArray())
+            subject.set("first", "one".toByteArray())
 
             cipher.failNextEncrypt = SecureStorageException.KeyInvalidated()
-            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+            val thrown = runCatching { subject.set("second", "two".toByteArray()) }.exceptionOrNull()
 
             assertTrue("expected KeyInvalidated, got $thrown", thrown is SecureStorageException.KeyInvalidated)
             assertNull("the store should have been cleared rather than mixed", subject.get("first"))
@@ -434,10 +479,10 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val cipher = CountingCipher()
             val subject = storage(cipher = cipher)
-            subject.set("first", "one".toCharArray())
+            subject.set("first", "one".toByteArray())
 
             cipher.failNextEncrypt = SecureStorageException.KeyInvalidated()
-            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+            val thrown = runCatching { subject.set("second", "two".toByteArray()) }.exceptionOrNull()
 
             assertTrue("expected KeyInvalidated, got $thrown", thrown is SecureStorageException.KeyInvalidated)
             assertNull("the store should have been cleared", subject.get("first"))
@@ -449,13 +494,13 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val cipher = CountingCipher()
             val subject = storage(cipher = cipher)
-            subject.set("first", "one".toCharArray())
+            subject.set("first", "one".toByteArray())
 
             cipher.failNextEncrypt = SecureStorageException.CryptoUnavailable()
-            val thrown = runCatching { subject.set("second", "two".toCharArray()) }.exceptionOrNull()
+            val thrown = runCatching { subject.set("second", "two".toByteArray()) }.exceptionOrNull()
 
             assertTrue("expected CryptoUnavailable, got $thrown", thrown is SecureStorageException.CryptoUnavailable)
-            assertArrayEquals("an unrelated failure destroyed the store", "one".toCharArray(), subject.get("first"))
+            assertArrayEquals("an unrelated failure destroyed the store", "one".toByteArray(), subject.get("first"))
         }
 
     /**
@@ -474,7 +519,7 @@ class FileSecureStorageTest {
                 File(folder.root, "pbl${StoreIdentity.of(file)}.4242.tmp")
                     .apply { writeText("""{"stale":"ciphertext"}""") }
 
-            storage(file).set("refresh", "secret-value".toCharArray())
+            storage(file).set("refresh", "secret-value".toByteArray())
 
             assertFalse("an unfinished write's temp file survived", orphan.exists())
         }
@@ -495,7 +540,7 @@ class FileSecureStorageTest {
             val theirs =
                 File(folder.root, "pbl${StoreIdentity.of(sibling)}.4242.tmp").apply { writeText("in flight") }
 
-            storage(file).set("refresh", "secret-value".toCharArray())
+            storage(file).set("refresh", "secret-value".toByteArray())
 
             assertTrue("another store's in-flight temp file was deleted", theirs.exists())
         }
@@ -511,7 +556,7 @@ class FileSecureStorageTest {
             val theirs =
                 File(folder.root, "pbl${StoreIdentity.of(file)}.backup.tmp").apply { writeText("not ours") }
 
-            storage(file).set("refresh", "secret-value".toCharArray())
+            storage(file).set("refresh", "secret-value".toByteArray())
 
             assertTrue("a file matching the prefix but not the shape was deleted", theirs.exists())
         }
@@ -528,9 +573,9 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val subject = storage(File(folder.root, "a"))
 
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
 
     /**
@@ -548,7 +593,7 @@ class FileSecureStorageTest {
             val orphan =
                 File(folder.root, "pbl${StoreIdentity.of(file)}.4242.tmp").apply { writeText("stale") }
 
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
             assertTrue("the sweep did not recognise its own temp name", !orphan.exists())
             assertTrue(
@@ -582,9 +627,9 @@ class FileSecureStorageTest {
                 }
 
             val subject = storage(file)
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
 
     /**
@@ -605,20 +650,20 @@ class FileSecureStorageTest {
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
             val subject = storage(file)
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
             val before = file.readText()
 
             assertTrue("the directory stayed writable, so nothing was tested", folder.root.setWritable(false))
             val thrown =
                 try {
-                    runCatching { subject.set("another", "value".toCharArray()) }.exceptionOrNull()
+                    runCatching { subject.set("another", "value".toByteArray()) }.exceptionOrNull()
                 } finally {
                     folder.root.setWritable(true)
                 }
 
             assertTrue("expected StorageUnavailable, got $thrown", thrown is SecureStorageException.StorageUnavailable)
             assertEquals("the previous store was not left intact", before, file.readText())
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
 
     /** The directory need not exist yet: production is handed one, not asked to guarantee it. */
@@ -628,10 +673,10 @@ class FileSecureStorageTest {
             val file = File(folder.root, "nested/deeper/store.json")
             val subject = storage(file)
 
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
             assertTrue("the directory was not created", file.exists())
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
 
     /** A store that cannot be read at all is reported rather than swallowed as an empty store. */
@@ -702,9 +747,9 @@ class FileSecureStorageTest {
                     logger = DefaultPayabliLogger(LogCategory.CORE, sink),
                 )
 
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
-            assertArrayEquals("secret-value".toCharArray(), subject.get("refresh"))
+            assertArrayEquals("secret-value".toByteArray(), subject.get("refresh"))
         }
 
     /** A crash-safe write leaves no debris, so the directory does not fill with temp files. */
@@ -712,8 +757,8 @@ class FileSecureStorageTest {
     fun `no temporary files are left behind`() =
         runTest(timeout = 5.seconds) {
             val subject = storage()
-            subject.set("a", "1".toCharArray())
-            subject.set("b", "2".toCharArray())
+            subject.set("a", "1".toByteArray())
+            subject.set("b", "2".toByteArray())
 
             val leftovers =
                 folder.root

@@ -93,7 +93,7 @@ class KeystoreHardwareManualTest {
     @Test
     fun theStorageKeyIsHardwareBacked() =
         runTest(timeout = 30.seconds) {
-            storage().set("refresh", "secret-value".toCharArray())
+            storage().set("refresh", "secret-value".toByteArray())
             val info = keyInfo()
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -126,7 +126,7 @@ class KeystoreHardwareManualTest {
     @Test
     fun theStorageKeyUsesTheBestLevelTheDeviceAdvertises() =
         runTest(timeout = 30.seconds) {
-            storage().set("refresh", "secret-value".toCharArray())
+            storage().set("refresh", "secret-value".toByteArray())
             val info = keyInfo()
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -168,11 +168,11 @@ class KeystoreHardwareManualTest {
     fun aValueRoundTripsUnderAHardwareBackedKey() =
         runTest(timeout = 30.seconds) {
             val subject = storage()
-            subject.set("refresh", "secret-value".toCharArray())
+            subject.set("refresh", "secret-value".toByteArray())
 
             assertArrayEquals(
                 "the value did not survive a round trip on real hardware",
-                "secret-value".toCharArray(),
+                "secret-value".toByteArray(),
                 subject.get("refresh"),
             )
 
