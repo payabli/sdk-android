@@ -18,7 +18,7 @@ import org.junit.Test
 class PayabliLoggingTest {
     @After
     fun restoreProcessWideState() {
-        PayabliLogging.resetLevel()
+        LoggerRegistry.clearLogLevel()
         LoggerRegistry.setHostDebuggable(false)
 
         assertEquals(
@@ -35,24 +35,14 @@ class PayabliLoggingTest {
 
     @Test
     fun `setLevel reaches the cutoff`() {
-        PayabliLogging.setLevel(LogLevel.WARN)
+        PayabliLogging.setLogLevel(LogLevel.WARN)
 
         assertEquals(LogLevel.WARN, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
-    fun `resetLevel returns to the host-debuggable default`() {
-        LoggerRegistry.setHostDebuggable(true)
-        PayabliLogging.setLevel(LogLevel.ERROR)
-
-        PayabliLogging.resetLevel()
-
-        assertEquals(LogLevel.DEBUG, LoggerRegistry.effectiveLogLevel())
-    }
-
-    @Test
     fun `an app silencing the SDK is not overridden by its own debug build`() {
-        PayabliLogging.setLevel(LogLevel.NONE)
+        PayabliLogging.setLogLevel(LogLevel.NONE)
         LoggerRegistry.setHostDebuggable(true)
 
         assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
@@ -62,7 +52,7 @@ class PayabliLoggingTest {
     @Test
     fun `an app silencing the SDK after the debug build is detected still wins`() {
         LoggerRegistry.setHostDebuggable(true)
-        PayabliLogging.setLevel(LogLevel.NONE)
+        PayabliLogging.setLogLevel(LogLevel.NONE)
 
         assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
     }
@@ -72,7 +62,7 @@ class PayabliLoggingTest {
         // Not debuggable, which is what a release build reads as, so only the explicit setting can open it.
         LoggerRegistry.setHostDebuggable(false)
 
-        PayabliLogging.setLevel(LogLevel.INFO)
+        PayabliLogging.setLogLevel(LogLevel.INFO)
 
         assertEquals(LogLevel.INFO, LoggerRegistry.effectiveLogLevel())
     }
