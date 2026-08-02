@@ -56,6 +56,37 @@ class TransportFactoryTest {
 
     private fun ping() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
 
+    /**
+     * Every other test here goes through `authenticatedAgainst`, which takes a base URL, because it needs a
+     * loopback server. That left the **public** overload, the one a separately-shipped capability actually
+     * calls, with no coverage at all.
+     *
+     * What it adds over the internal one is that the origin comes from [PayabliEnvironment] and from nowhere
+     * else, so this drives every shipped environment through it. A malformed or relative base URL in any of
+     * them fails at construction, which is the failure this would catch and which no other test would.
+     *
+     * No request is issued: constructing is the whole of what is under test, and a real call would reach a
+     * live origin.
+     */
+    @Test
+    fun `the public overload builds a transport for every shipped environment`() {
+        PayabliEnvironment.entries.forEach { environment ->
+            val config =
+                PayabliConfig(
+                    accessToken = "initial-token",
+                    entryPoint = "entry",
+                    environment = environment,
+                )
+
+            val first = TransportFactory.authenticated(config)
+            val second = TransportFactory.authenticated(config)
+
+            // Same guarantee the internal overload is held to: a holder per call, which is why the KDoc
+            // tells callers to build one and share it.
+            assertNotSame("environment $environment", first, second)
+        }
+    }
+
     @Test
     fun `the transport it returns already stamps the bearer`() =
         runTest(timeout = TEST_TIMEOUT) {

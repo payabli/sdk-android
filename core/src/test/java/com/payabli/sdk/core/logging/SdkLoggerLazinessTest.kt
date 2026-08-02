@@ -47,6 +47,29 @@ class SdkLoggerLazinessTest {
         assertTrue(logger.isLoggable(LogLevel.FAULT))
     }
 
+    /**
+     * The `throwable` overloads are separate functions from the plain ones, so "every level reaches the
+     * sink" below does not exercise them. Without this, a level whose exception overload dropped its
+     * `throwable` on the floor would look tested.
+     */
+    @Test
+    fun everyExceptionOverloadCarriesItsThrowableToTheSink() {
+        val records = RecordingLogSink()
+        val subject: SdkLogger = DefaultSdkLogger(LogCategory.AUTH, records)
+        val cause = IllegalStateException("the cause")
+
+        subject.debug(cause) { "d" }
+        subject.info(cause) { "i" }
+        subject.warn(cause) { "w" }
+        subject.error(cause) { "e" }
+        subject.fault(cause) { "f" }
+
+        assertEquals(LogLevel.entries.filter { it.isRecordLevel }, records.records.map { it.level })
+        records.records.forEach { record ->
+            assertTrue("no trace in ${record.level}: ${record.message}", record.message.contains("the cause"))
+        }
+    }
+
     @Test
     fun everyLevelReachesTheSinkAtItsOwnSeverity() {
         val records = RecordingLogSink()
