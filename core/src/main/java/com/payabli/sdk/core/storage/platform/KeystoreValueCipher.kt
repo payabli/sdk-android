@@ -119,7 +119,7 @@ internal class KeystoreValueCipher(
      *
      * **What this guarantees, and what it does not.** With [mayCreate] false it proves a key is *present*, not
      * that the present key is the one that sealed the store. Continuity comes from alias ownership instead:
-     * `PayabliSecureStorages.create` derives one alias per backing file, so nothing else can delete and
+     * `SecureStorageFactory.create` derives one alias per backing file, so nothing else can delete and
      * recreate this one. Two ciphers constructed directly over a single alias, which only internal code can do,
      * are outside that guarantee. Proving continuity rather than owning it would need a canary blob decrypted
      * on every write, and that is deliberately not built.

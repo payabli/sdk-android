@@ -19,7 +19,7 @@ import com.payabli.sdk.core.network.impl.PayabliService
  * recovery missing.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public object PayabliTransports {
+public object TransportFactory {
     /**
      * **Create one per [config] and share it.** Each call builds its own token holder, and two holders are two
      * refresh domains, which loses the de-duplication [PayabliAuth] exists to provide.

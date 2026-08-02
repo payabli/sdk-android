@@ -87,7 +87,7 @@ class AuthenticatedTransportTest {
 
     private fun ping() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
 
-    /** A capability's own rule, of the shape [PayabliTransports] exists to accept. */
+    /** A capability's own rule, of the shape [TransportFactory] exists to accept. */
     private fun widenedTo419() =
         object : AuthRecoveryPolicy() {
             override fun isCredentialRejection(response: PayabliResponse): Boolean =
@@ -123,7 +123,7 @@ class AuthenticatedTransportTest {
      * the replay decision belongs to [AuthenticatedTransport] and never touches the HTTP client. It is also
      * the only level where `PATCH` can be observed, because the JVM's `HttpURLConnection` rejects that verb
      * in `PayabliService.openConnection` before any I/O, as the comment there records. The socket-backed
-     * paths stay covered by `the retry re-sends the body unchanged` and by `PayabliTransportsTest`.
+     * paths stay covered by `the retry re-sends the body unchanged` and by `TransportFactoryTest`.
      */
     private class CountingBase(
         private val firstStatus: Int = WIDENED,

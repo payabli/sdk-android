@@ -31,7 +31,7 @@ private const val REFRESHED = "refreshed-token"
  * These assert it hands back something already correct: bearer stamped, 401 recovered. A factory that
  * returned a transport missing either would be worse than no factory, because the caller cannot tell.
  */
-class PayabliTransportsTest {
+class TransportFactoryTest {
     private val sink = RecordingLogSink()
     private val authSink = RecordingLogSink()
 
@@ -63,7 +63,7 @@ class PayabliTransportsTest {
                 server.respondWith(200, "")
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(server.baseUrl, config(), logger = logger())
+                    TransportFactory.authenticatedAgainst(server.baseUrl, config(), logger = logger())
                 completing("the call") { transport.execute(ping()) }
 
                 assertEquals("Bearer initial-token", server.onlyRequest.header(AUTHORIZATION))
@@ -78,7 +78,7 @@ class PayabliTransportsTest {
                 val calls = AtomicInteger()
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED.also { calls.incrementAndGet() } },
                         logger = logger(),
@@ -100,7 +100,7 @@ class PayabliTransportsTest {
                 server.respondInOrder(401 to "")
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED },
                         logger = logger(),
@@ -127,7 +127,7 @@ class PayabliTransportsTest {
                     }
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED.also { calls.incrementAndGet() } },
                         recovery = widened,
@@ -149,8 +149,8 @@ class PayabliTransportsTest {
                 val calls = AtomicInteger()
                 val cfg = config { REFRESHED.also { calls.incrementAndGet() } }
 
-                val first = PayabliTransports.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
-                val second = PayabliTransports.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
+                val first = TransportFactory.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
+                val second = TransportFactory.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
                 assertNotSame(first, second)
 
                 completing("first") { first.execute(ping()) }
@@ -169,7 +169,7 @@ class PayabliTransportsTest {
                 server.respondInOrder(401 to "", 200 to "")
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED },
                         logger = logger(),
@@ -224,7 +224,7 @@ class PayabliTransportsTest {
                     if (request.header(AUTHORIZATION) == "Bearer initial-token") 401 to "" else 200 to ""
                 }
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         slowProvider,
                         logger = logger(),
@@ -266,7 +266,7 @@ class PayabliTransportsTest {
                 }
 
                 val tooTight =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config(slowProvider),
                         logger = logger(),
@@ -281,7 +281,7 @@ class PayabliTransportsTest {
                 assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
 
                 val roomy =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config(slowProvider),
                         logger = logger(),

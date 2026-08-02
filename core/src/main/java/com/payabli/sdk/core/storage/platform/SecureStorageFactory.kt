@@ -15,7 +15,7 @@ import java.io.File
  * unreachable from a unit test, and this is the only other place that does. Keeping it out leaves the
  * persistence layer testable on the JVM in full.
  */
-internal object PayabliSecureStorages {
+internal object SecureStorageFactory {
     /**
      * Prefix for the per-store alias. Reverse-DNS to avoid colliding with the **host app's** aliases, not with
      * other apps': the Keystore is scoped per app by UID, so this key lives in the embedding app's namespace.

@@ -10,12 +10,12 @@ import org.junit.Test
  * The expectation is the exact class sequence, never a loosened assertion: a chain that is merely
  * non-empty would not catch a binder inserted ahead of a contributor.
  */
-class PayabliRequestDecorationsTest {
+class RequestDecorationFactoryTest {
     @Test
     fun `the declared chain is exactly what is expected`() {
         assertEquals(
             listOf(BearerDecoration::class.java),
-            PayabliRequestDecorations.chainFor(testAuth()).map { it.javaClass },
+            RequestDecorationFactory.chainFor(testAuth()).map { it.javaClass },
         )
     }
 }

@@ -458,7 +458,7 @@ internal class PayabliService private constructor(
         ): PayabliTransport =
             PayabliService(
                 baseUrl,
-                PayabliRequestDecorations.chainFor(auth),
+                RequestDecorationFactory.chainFor(auth),
                 logger,
                 DEFAULT_CONNECT_TIMEOUT_MILLIS,
                 DEFAULT_READ_TIMEOUT_MILLIS,

@@ -26,7 +26,7 @@ import kotlinx.coroutines.sync.withLock
  * UTF-8. Whatever P3.2 actually needs it can add, against a real call site.
  *
  * `@VisibleForTesting` is not used, and would not fit: `sharedTest` compiles only into `test` and `androidTest`,
- * so nothing here has production visibility to widen. The same reasoning as `PayabliTransports`.
+ * so nothing here has production visibility to widen. The same reasoning as `TransportFactory`.
  */
 internal class InMemorySecureStorage(
     /**

@@ -48,7 +48,7 @@ private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejec
  * refresh, and half a minute of that is most of a user's patience.
  *
  * A default rather than a rule. It is deliberately shorter than the transport's own whole-call budget even
- * though a broker callback also makes a network round trip, so `PayabliTransports.authenticated` takes an
+ * though a broker callback also makes a network round trip, so `TransportFactory.authenticated` takes an
  * override for an integrator whose broker is legitimately slower. `internal` for that default parameter to
  * reference; nothing outside `:core` reads it.
  */

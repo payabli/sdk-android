@@ -26,7 +26,7 @@ import java.io.IOException
  * plain [File] keeps this constructible without any of those, which is what lets the persistence layer be
  * unit-tested on the JVM against a fake cipher.
  *
- * `PayabliSecureStorages.create` is how production builds one, and it decides the directory.
+ * `SecureStorageFactory.create` is how production builds one, and it decides the directory.
  */
 internal class FileSecureStorage(
     private val file: File,
