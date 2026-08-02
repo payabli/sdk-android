@@ -4,20 +4,20 @@ import androidx.annotation.RestrictTo
 
 /*
  * The level ladder, as extension functions rather than interface members: extensions are not
- * virtual, so no PayabliLogger implementation can make a level bypass the redaction pipeline that
- * PayabliLogger.log applies. Runtime values go in `fields`, never interpolated into `message`.
+ * virtual, so no SdkLogger implementation can make a level bypass the redaction pipeline that
+ * SdkLogger.log applies. Runtime values go in `fields`, never interpolated into `message`.
  */
 
 /** Detail useful while diagnosing. Off by default on a device; raise with `setprop log.tag.<TAG>`. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.debug(
+public fun SdkLogger.debug(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.DEBUG, fields.asList(), throwable = null, message = message)
 
 /** [debug] with exception context. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.debug(
+public fun SdkLogger.debug(
     throwable: Throwable,
     vararg fields: LogField,
     message: () -> String,
@@ -25,14 +25,14 @@ public fun PayabliLogger.debug(
 
 /** A normal lifecycle milestone. Always emitted, so it may carry allowlisted fields only. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.info(
+public fun SdkLogger.info(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.INFO, fields.asList(), throwable = null, message = message)
 
 /** [info] with exception context. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.info(
+public fun SdkLogger.info(
     throwable: Throwable,
     vararg fields: LogField,
     message: () -> String,
@@ -40,14 +40,14 @@ public fun PayabliLogger.info(
 
 /** Recoverable, but worth a maintainer's attention. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.warn(
+public fun SdkLogger.warn(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.WARN, fields.asList(), throwable = null, message = message)
 
 /** [warn] with exception context. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.warn(
+public fun SdkLogger.warn(
     throwable: Throwable,
     vararg fields: LogField,
     message: () -> String,
@@ -55,14 +55,14 @@ public fun PayabliLogger.warn(
 
 /** An operation failed. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.error(
+public fun SdkLogger.error(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.ERROR, fields.asList(), throwable = null, message = message)
 
 /** [error] with exception context. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.error(
+public fun SdkLogger.error(
     throwable: Throwable,
     vararg fields: LogField,
     message: () -> String,
@@ -70,14 +70,14 @@ public fun PayabliLogger.error(
 
 /** An invariant this SDK guarantees was violated. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.fault(
+public fun SdkLogger.fault(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.FAULT, fields.asList(), throwable = null, message = message)
 
 /** [fault] with exception context. */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public fun PayabliLogger.fault(
+public fun SdkLogger.fault(
     throwable: Throwable,
     vararg fields: LogField,
     message: () -> String,

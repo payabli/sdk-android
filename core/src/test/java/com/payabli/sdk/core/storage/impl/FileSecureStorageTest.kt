@@ -2,7 +2,7 @@ package com.payabli.sdk.core.storage.impl
 
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.storage.SecureStorageException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -119,7 +119,7 @@ class FileSecureStorageTest {
     ) = FileSecureStorage(
         file = file,
         cipher = cipher,
-        logger = DefaultPayabliLogger(LogCategory.CORE, sink),
+        logger = DefaultSdkLogger(LogCategory.CORE, sink),
         dispatcher = dispatcher,
     )
 
@@ -1047,7 +1047,7 @@ class FileSecureStorageTest {
                 FileSecureStorage(
                     file = File(folder.root, "store.json"),
                     cipher = CountingCipher(),
-                    logger = DefaultPayabliLogger(LogCategory.CORE, sink),
+                    logger = DefaultSdkLogger(LogCategory.CORE, sink),
                 )
 
             subject.set("refresh", "secret-value".toByteArray())

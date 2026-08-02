@@ -5,7 +5,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.impl.LoopbackServer
@@ -31,7 +31,7 @@ private const val REFRESHED = "refreshed-token"
  * These assert it hands back something already correct: bearer stamped, 401 recovered. A factory that
  * returned a transport missing either would be worse than no factory, because the caller cannot tell.
  */
-class PayabliTransportsTest {
+class TransportFactoryTest {
     private val sink = RecordingLogSink()
     private val authSink = RecordingLogSink()
 
@@ -43,9 +43,9 @@ class PayabliTransportsTest {
             tokenProvider = provider,
         )
 
-    private fun logger() = DefaultPayabliLogger(LogCategory.NETWORK, sink)
+    private fun logger() = DefaultSdkLogger(LogCategory.NETWORK, sink)
 
-    private fun authLogger() = DefaultPayabliLogger(LogCategory.AUTH, authSink)
+    private fun authLogger() = DefaultSdkLogger(LogCategory.AUTH, authSink)
 
     private suspend fun <T : Any> completing(
         what: String,
@@ -56,6 +56,37 @@ class PayabliTransportsTest {
 
     private fun ping() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
 
+    /**
+     * Every other test here goes through `authenticatedAgainst`, which takes a base URL, because it needs a
+     * loopback server. That left the **public** overload, the one a separately-shipped capability actually
+     * calls, with no coverage at all.
+     *
+     * What it adds over the internal one is that the origin comes from [PayabliEnvironment] and from nowhere
+     * else, so this drives every shipped environment through it. A malformed or relative base URL in any of
+     * them fails at construction, which is the failure this would catch and which no other test would.
+     *
+     * No request is issued: constructing is the whole of what is under test, and a real call would reach a
+     * live origin.
+     */
+    @Test
+    fun `the public overload builds a transport for every shipped environment`() {
+        PayabliEnvironment.entries.forEach { environment ->
+            val config =
+                PayabliConfig(
+                    accessToken = "initial-token",
+                    entryPoint = "entry",
+                    environment = environment,
+                )
+
+            val first = TransportFactory.authenticated(config)
+            val second = TransportFactory.authenticated(config)
+
+            // Same guarantee the internal overload is held to: a holder per call, which is why the KDoc
+            // tells callers to build one and share it.
+            assertNotSame("environment $environment", first, second)
+        }
+    }
+
     @Test
     fun `the transport it returns already stamps the bearer`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -63,7 +94,7 @@ class PayabliTransportsTest {
                 server.respondWith(200, "")
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(server.baseUrl, config(), logger = logger())
+                    TransportFactory.authenticatedAgainst(server.baseUrl, config(), logger = logger())
                 completing("the call") { transport.execute(ping()) }
 
                 assertEquals("Bearer initial-token", server.onlyRequest.header(AUTHORIZATION))
@@ -78,7 +109,7 @@ class PayabliTransportsTest {
                 val calls = AtomicInteger()
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED.also { calls.incrementAndGet() } },
                         logger = logger(),
@@ -100,7 +131,7 @@ class PayabliTransportsTest {
                 server.respondInOrder(401 to "")
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED },
                         logger = logger(),
@@ -127,7 +158,7 @@ class PayabliTransportsTest {
                     }
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED.also { calls.incrementAndGet() } },
                         recovery = widened,
@@ -149,8 +180,8 @@ class PayabliTransportsTest {
                 val calls = AtomicInteger()
                 val cfg = config { REFRESHED.also { calls.incrementAndGet() } }
 
-                val first = PayabliTransports.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
-                val second = PayabliTransports.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
+                val first = TransportFactory.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
+                val second = TransportFactory.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
                 assertNotSame(first, second)
 
                 completing("first") { first.execute(ping()) }
@@ -169,7 +200,7 @@ class PayabliTransportsTest {
                 server.respondInOrder(401 to "", 200 to "")
 
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED },
                         logger = logger(),
@@ -224,7 +255,7 @@ class PayabliTransportsTest {
                     if (request.header(AUTHORIZATION) == "Bearer initial-token") 401 to "" else 200 to ""
                 }
                 val transport =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         slowProvider,
                         logger = logger(),
@@ -266,7 +297,7 @@ class PayabliTransportsTest {
                 }
 
                 val tooTight =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config(slowProvider),
                         logger = logger(),
@@ -281,7 +312,7 @@ class PayabliTransportsTest {
                 assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
 
                 val roomy =
-                    PayabliTransports.authenticatedAgainst(
+                    TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config(slowProvider),
                         logger = logger(),

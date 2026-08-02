@@ -1,8 +1,8 @@
 package com.payabli.sdk.core.storage.platform
 
 import com.payabli.sdk.core.logging.LogCategory
-import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
 import com.payabli.sdk.core.storage.impl.StoreIdentity
@@ -15,7 +15,7 @@ import java.io.File
  * unreachable from a unit test, and this is the only other place that does. Keeping it out leaves the
  * persistence layer testable on the JVM in full.
  */
-internal object PayabliSecureStorages {
+internal object SecureStorageFactory {
     /**
      * Prefix for the per-store alias. Reverse-DNS to avoid colliding with the **host app's** aliases, not with
      * other apps': the Keystore is scoped per app by UID, so this key lives in the embedding app's namespace.
@@ -49,7 +49,7 @@ internal object PayabliSecureStorages {
     fun create(
         directory: File,
         fileName: String = DEFAULT_FILE_NAME,
-        logger: PayabliLogger = PayabliLoggers.of(LogCategory.CORE),
+        logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
     ): PayabliSecureStorage {
         val file = File(directory, fileName)
         // Resolved once, here, and handed to both. Resolving separately for the alias and inside the store let a

@@ -6,8 +6,8 @@ import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.isHeaderSafe
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
-import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.model.PayabliErrorCode
@@ -48,7 +48,7 @@ private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejec
  * refresh, and half a minute of that is most of a user's patience.
  *
  * A default rather than a rule. It is deliberately shorter than the transport's own whole-call budget even
- * though a broker callback also makes a network round trip, so `PayabliTransports.authenticated` takes an
+ * though a broker callback also makes a network round trip, so `TransportFactory.authenticated` takes an
  * override for an integrator whose broker is legitimately slower. `internal` for that default parameter to
  * reference; nothing outside `:core` reads it.
  */
@@ -66,7 +66,7 @@ internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class PayabliAuth(
     private val config: PayabliConfig,
-    private val logger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
+    private val logger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
     private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
 ) {
     init {

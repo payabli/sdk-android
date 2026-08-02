@@ -5,7 +5,7 @@ import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
@@ -77,17 +77,17 @@ class AuthenticatedTransportTest {
                 PayabliService.create(
                     baseUrl = server.baseUrl,
                     auth = auth,
-                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                     callTimeout = callTimeout,
                 ),
             auth = auth,
             recovery = recovery,
-            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+            logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
         )
 
     private fun ping() = PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")
 
-    /** A capability's own rule, of the shape [PayabliTransports] exists to accept. */
+    /** A capability's own rule, of the shape [TransportFactory] exists to accept. */
     private fun widenedTo419() =
         object : AuthRecoveryPolicy() {
             override fun isCredentialRejection(response: PayabliResponse): Boolean =
@@ -123,7 +123,7 @@ class AuthenticatedTransportTest {
      * the replay decision belongs to [AuthenticatedTransport] and never touches the HTTP client. It is also
      * the only level where `PATCH` can be observed, because the JVM's `HttpURLConnection` rejects that verb
      * in `PayabliService.openConnection` before any I/O, as the comment there records. The socket-backed
-     * paths stay covered by `the retry re-sends the body unchanged` and by `PayabliTransportsTest`.
+     * paths stay covered by `the retry re-sends the body unchanged` and by `TransportFactoryTest`.
      */
     private class CountingBase(
         private val firstStatus: Int = WIDENED,
@@ -174,7 +174,7 @@ class AuthenticatedTransportTest {
                 // Through the base, not the wrapper: the chain is where this happens now, so asserting it
                 // through the wrapper would pass even if the wrapper were the one injecting.
                 PayabliService
-                    .create(server.baseUrl, auth, DefaultPayabliLogger(LogCategory.NETWORK, sink))
+                    .create(server.baseUrl, auth, DefaultSdkLogger(LogCategory.NETWORK, sink))
                     .execute(ping())
 
                 assertEquals("Bearer $TEST_TOKEN", server.onlyRequest.header(AUTHORIZATION))
@@ -236,7 +236,7 @@ class AuthenticatedTransportTest {
                 val auth = testAuth()
 
                 PayabliService
-                    .create(server.baseUrl, auth, DefaultPayabliLogger(LogCategory.NETWORK, sink))
+                    .create(server.baseUrl, auth, DefaultSdkLogger(LogCategory.NETWORK, sink))
                     .execute(
                         PayabliRequest(
                             HttpMethod.GET,
@@ -293,7 +293,7 @@ class AuthenticatedTransportTest {
                             PayabliService.createWithDecorations(
                                 baseUrl = server.baseUrl,
                                 decorations = listOf(BearerDecoration(auth), barrier),
-                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                                logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ),
                         auth = auth,
                     )
@@ -350,7 +350,7 @@ class AuthenticatedTransportTest {
                             PayabliService.createWithDecorations(
                                 baseUrl = server.baseUrl,
                                 decorations = listOf(gate, BearerDecoration(auth)),
-                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                                logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ),
                         auth = auth,
                     )
@@ -534,7 +534,7 @@ class AuthenticatedTransportTest {
                                         maxJitterMillis = 0,
                                         jitter = RetryPolicy.Jitter.None,
                                     ),
-                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                                logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ) { transport.execute(ping()) }
                         }
                     }
@@ -569,7 +569,7 @@ class AuthenticatedTransportTest {
                             PayabliService.create(
                                 baseUrl = server.baseUrl,
                                 auth = auth,
-                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                                logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ),
                         auth = auth,
                         recovery = neverRecovers,
@@ -624,7 +624,7 @@ class AuthenticatedTransportTest {
                                 REFRESHED.also { calls.incrementAndGet() }
                             },
                         ),
-                        DefaultPayabliLogger(LogCategory.AUTH, sink),
+                        DefaultSdkLogger(LogCategory.AUTH, sink),
                         providerTimeoutMillis = 5_000,
                     )
                 server.respondPerRequest { request ->
@@ -636,7 +636,7 @@ class AuthenticatedTransportTest {
                         withContext(Dispatchers.IO) {
                             Retry.run(
                                 policy = RetryPolicy(maxAttempts = 3, baseDelayMillis = 0, maxJitterMillis = 0),
-                                logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                                logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ) { stack(server, auth, callTimeout = 300.milliseconds).execute(ping()) }
                         }
                     }
@@ -700,7 +700,7 @@ class AuthenticatedTransportTest {
                     base = base,
                     auth = authWithCountingRefresh(calls),
                     recovery = AuthRecoveryPolicy(),
-                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
 
             val response = subject.execute(guardedReplayRequest(HttpMethod.POST))
@@ -720,7 +720,7 @@ class AuthenticatedTransportTest {
                     base = base,
                     auth = authWithCountingRefresh(calls),
                     recovery = widenedTo419(),
-                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
 
             val response = subject.execute(guardedReplayRequest(HttpMethod.GET))
@@ -740,7 +740,7 @@ class AuthenticatedTransportTest {
                     base = base,
                     auth = authWithCountingRefresh(calls),
                     recovery = widenedTo419(),
-                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
 
             val response = subject.execute(guardedReplayRequest(HttpMethod.PUT))
@@ -760,7 +760,7 @@ class AuthenticatedTransportTest {
                     base = base,
                     auth = authWithCountingRefresh(calls),
                     recovery = widenedTo419(),
-                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
 
             val response = subject.execute(guardedReplayRequest(HttpMethod.DELETE))
@@ -780,7 +780,7 @@ class AuthenticatedTransportTest {
                     base = base,
                     auth = authWithCountingRefresh(calls),
                     recovery = widenedTo419(),
-                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
 
             val response = subject.execute(guardedReplayRequest(HttpMethod.POST))
@@ -800,7 +800,7 @@ class AuthenticatedTransportTest {
                     base = base,
                     auth = authWithCountingRefresh(calls),
                     recovery = widenedTo419(),
-                    logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                 )
 
             val response = subject.execute(guardedReplayRequest(HttpMethod.PATCH))

@@ -10,7 +10,7 @@ import androidx.annotation.RestrictTo
  * these two packages is that everything here carries [RestrictTo] and nothing in `impl` does.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public object NoOpPayabliLogger : PayabliLogger {
+public object NoOpSdkLogger : SdkLogger {
     override fun isLoggable(level: LogLevel): Boolean = false
 
     override fun log(

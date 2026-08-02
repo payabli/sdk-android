@@ -9,7 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.logging.impl.LogSink
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
@@ -54,7 +54,7 @@ import kotlin.time.Duration.Companion.seconds
 @RunWith(AndroidJUnit4::class)
 class KeystoreSecureStorageInstrumentedTest {
     private val sink = RecordingLogSink()
-    private val logger = DefaultPayabliLogger(LogCategory.CORE, sink)
+    private val logger = DefaultSdkLogger(LogCategory.CORE, sink)
     private lateinit var directory: File
     private lateinit var keyAlias: String
 
@@ -236,16 +236,16 @@ class KeystoreSecureStorageInstrumentedTest {
 
             assertNotEquals(
                 "equal file names in different directories derived one alias",
-                PayabliSecureStorages.aliasFor(sameNameA),
-                PayabliSecureStorages.aliasFor(sameNameB),
+                SecureStorageFactory.aliasFor(sameNameA),
+                SecureStorageFactory.aliasFor(sameNameB),
             )
             assertNotEquals(
-                PayabliSecureStorages.aliasFor(sameNameA),
-                PayabliSecureStorages.aliasFor(differentName),
+                SecureStorageFactory.aliasFor(sameNameA),
+                SecureStorageFactory.aliasFor(differentName),
             )
 
-            val first = PayabliSecureStorages.create(dirA, fileName = "store.json", logger = logger)
-            val second = PayabliSecureStorages.create(dirB, fileName = "store.json", logger = logger)
+            val first = SecureStorageFactory.create(dirA, fileName = "store.json", logger = logger)
+            val second = SecureStorageFactory.create(dirB, fileName = "store.json", logger = logger)
             try {
                 first.set("refresh", "first-value".toByteArray())
                 second.set("refresh", "second-value".toByteArray())
@@ -253,11 +253,11 @@ class KeystoreSecureStorageInstrumentedTest {
                 val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 assertTrue(
                     "the first store's key is missing, so the derived alias was not usable",
-                    store.containsAlias(PayabliSecureStorages.aliasFor(sameNameA)),
+                    store.containsAlias(SecureStorageFactory.aliasFor(sameNameA)),
                 )
                 assertTrue(
                     "the second store's key is missing",
-                    store.containsAlias(PayabliSecureStorages.aliasFor(sameNameB)),
+                    store.containsAlias(SecureStorageFactory.aliasFor(sameNameB)),
                 )
                 // Neither store disturbed the other, which a shared alias would have made a coin flip.
                 assertArrayEquals("first-value".toByteArray(), first.get("refresh"))
@@ -265,7 +265,7 @@ class KeystoreSecureStorageInstrumentedTest {
             } finally {
                 val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
                 listOf(sameNameA, sameNameB, differentName).forEach {
-                    runCatching { store.deleteEntry(PayabliSecureStorages.aliasFor(it)) }
+                    runCatching { store.deleteEntry(SecureStorageFactory.aliasFor(it)) }
                 }
             }
         }
@@ -292,7 +292,7 @@ class KeystoreSecureStorageInstrumentedTest {
         runTest(timeout = 30.seconds) {
             val generations = AtomicInteger(0)
             val countingLogger =
-                DefaultPayabliLogger(
+                DefaultSdkLogger(
                     LogCategory.CORE,
                     object : LogSink {
                         override fun isLoggable(

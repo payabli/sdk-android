@@ -2,7 +2,7 @@ package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
@@ -30,7 +30,7 @@ class PayabliServiceErrorTest {
         PayabliService.create(
             baseUrl = baseUrl,
             auth = testAuth(),
-            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+            logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
         )
 
     /** A port that accepted then closed, so a connection attempt is refused rather than hanging. */

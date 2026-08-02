@@ -1,13 +1,59 @@
 package com.payabli.sdk.core.logging
 
 import com.payabli.sdk.core.logging.impl.LogFieldRenderer
+import com.payabli.sdk.core.logging.impl.LoggableFieldNames
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.util.Locale
 
 /** The structured half of redaction: the allowlist decides, not the call site. */
 class LogFieldRendererTest {
+    /**
+     * Deny-by-default fails safe, and therefore silently: a diagnostic whose name is not allowlisted emits
+     * `[REDACTED]`, and nobody notices the record is useless. Four shipped call sites were doing exactly that.
+     *
+     * So this reads the call sites rather than restating them. A hand-written list of names would drift the
+     * moment one was added or renamed, and would have covered seven of the seventeen names in use. Scanning
+     * catches both directions: a new field whose name nobody allowlisted, and a rename that walks a call site
+     * off the list.
+     *
+     * It reads source text, so it only sees literal names, which is how every call site is written today. A
+     * name assembled at runtime would pass unseen, and that is a reason not to assemble one.
+     */
+    @Test
+    fun everyFieldNameAShippedRecordUsesIsAllowlisted() {
+        val sources = File("src/main/java/com/payabli/sdk/core")
+        assertTrue(
+            "expected :core's sources at ${sources.absolutePath}, which is resolved from the module directory",
+            sources.isDirectory,
+        )
+
+        val literalName = Regex("LogField\\.(?:safe|lastFour)\\(\\s*\"([^\"]+)\"")
+        val callSites =
+            sources
+                .walkTopDown()
+                .filter { it.extension == "kt" }
+                .flatMap { file -> literalName.findAll(file.readText()).map { it.groupValues[1] to file.name } }
+                .toList()
+
+        // Without this the test passes vacuously when the scan finds nothing, which is the failure mode a
+        // source-reading test has and an ordinary one does not.
+        assertTrue(
+            "the scan found ${callSites.size} field names, so it is not seeing the sources",
+            callSites.size >= 15,
+        )
+
+        callSites.forEach { (name, file) ->
+            assertTrue(
+                "$file logs LogField.safe(\"$name\"); that name is not allowlisted, so the value renders [REDACTED]",
+                LogFieldRenderer.normalize(name) in LoggableFieldNames.ALLOWED,
+            )
+        }
+    }
+
     @Test
     fun normalizationCollapsesSeparatorsAndCase() {
         listOf("cardNumber", "card-number", "Card_Number", "card number", "CARDNUMBER").forEach { name ->

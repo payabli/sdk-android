@@ -8,7 +8,7 @@ import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
 import androidx.annotation.RequiresApi
 import com.payabli.sdk.core.logging.LogField
-import com.payabli.sdk.core.logging.PayabliLogger
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.storage.SecureStorageException
@@ -39,7 +39,7 @@ import javax.crypto.spec.GCMParameterSpec
  */
 internal class KeystoreValueCipher(
     private val keyAlias: String,
-    private val logger: PayabliLogger,
+    private val logger: SdkLogger,
     /**
      * Runs after the unsynchronized presence check and before the guarded generation. **A test seam, no-op in
      * production**, and it exists because the race it opens cannot be reached from outside this class.
@@ -119,7 +119,7 @@ internal class KeystoreValueCipher(
      *
      * **What this guarantees, and what it does not.** With [mayCreate] false it proves a key is *present*, not
      * that the present key is the one that sealed the store. Continuity comes from alias ownership instead:
-     * `PayabliSecureStorages.create` derives one alias per backing file, so nothing else can delete and
+     * `SecureStorageFactory.create` derives one alias per backing file, so nothing else can delete and
      * recreate this one. Two ciphers constructed directly over a single alias, which only internal code can do,
      * are outside that guarantee. Proving continuity rather than owning it would need a canary blob decrypted
      * on every write, and that is deliberately not built.

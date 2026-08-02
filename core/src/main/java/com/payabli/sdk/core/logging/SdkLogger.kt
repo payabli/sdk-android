@@ -7,15 +7,15 @@ import androidx.annotation.RestrictTo
  * file that does is `impl/AndroidLogSink.kt`.
  *
  * Two abstract members, so a test fake costs two overrides. The five level methods are extension
- * functions in `PayabliLoggerLevels.kt` rather than interface members: extensions are not virtual,
+ * functions in `SdkLoggerLevels.kt` rather than interface members: extensions are not virtual,
  * so no implementation can make `debug` bypass the redaction pipeline that [log] applies.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public interface PayabliLogger {
+public interface SdkLogger {
     /**
-     * Whether [level] would be emitted. Two gates, both of which must allow it: the SDK's own floor,
-     * which `PayabliLoggers.setMinimumLevel` controls and which is silent by default, and the platform's
-     * per-tag level. So `adb shell setprop log.tag.<TAG> DEBUG` alone emits nothing.
+     * Whether [level] would be emitted. Two gates, both of which must allow it: the SDK's own cutoff,
+     * which is [LogLevel.NONE] by default and is set inside `:core` rather than by a host app, and the
+     * platform's per-tag level. So `adb shell setprop log.tag.<TAG> DEBUG` alone emits nothing.
      */
     public fun isLoggable(level: LogLevel): Boolean
 

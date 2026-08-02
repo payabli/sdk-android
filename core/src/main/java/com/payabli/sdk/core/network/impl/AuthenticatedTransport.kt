@@ -3,8 +3,8 @@ package com.payabli.sdk.core.network.impl
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
-import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
@@ -45,7 +45,7 @@ internal class AuthenticatedTransport(
     private val auth: PayabliAuth,
     private val recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
     /** [LogCategory.NETWORK], not `AUTH`: declining a replay is this layer's decision, not the holder's. */
-    private val logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+    private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
 ) : PayabliTransport {
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
         val stamped = SentToken()

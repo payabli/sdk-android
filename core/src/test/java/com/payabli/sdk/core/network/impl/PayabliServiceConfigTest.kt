@@ -2,7 +2,7 @@ package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
@@ -26,7 +26,7 @@ class PayabliServiceConfigTest {
         PayabliService.create(
             baseUrl = baseUrl,
             auth = testAuth(),
-            logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+            logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
         )
 
     @Test

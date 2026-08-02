@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.storage.impl
 
-import com.payabli.sdk.core.logging.PayabliLogger
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.storage.PayabliSecureStorage
@@ -26,12 +26,12 @@ import java.io.IOException
  * plain [File] keeps this constructible without any of those, which is what lets the persistence layer be
  * unit-tested on the JVM against a fake cipher.
  *
- * `PayabliSecureStorages.create` is how production builds one, and it decides the directory.
+ * `SecureStorageFactory.create` is how production builds one, and it decides the directory.
  */
 internal class FileSecureStorage(
     private val file: File,
     private val cipher: ValueCipher,
-    private val logger: PayabliLogger,
+    private val logger: SdkLogger,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     /**
      * The store's resolved identity, injected so one composition resolves it once.
