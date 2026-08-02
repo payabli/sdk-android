@@ -277,6 +277,13 @@ class RetryTest {
      *
      * `attempts` is the load-bearing assertion. A budget expiry that was retryable would show up here as 3,
      * and that is exactly the storm the removed per-attempt timeout used to cause.
+     *
+     * The scheduler's time source is passed for the same reason as the backoff test below, and here it is
+     * what makes the `currentTime` assertion stable rather than merely meaningful. `TimeSource.Monotonic`
+     * reads real time while `runTest` advances the timeout virtually, so every real millisecond spent
+     * between `markNow()` and the timeout comes straight off the budget. Measured with an injected lag:
+     * 1ms lands `currentTime` on 999 and 25ms lands it on 975, against an assertion of exactly 1,000. It
+     * passed on a quiet machine and failed on a loaded CI runner, which is precisely what it did.
      */
     @Test
     fun `the total budget cuts off an in-flight attempt and does not retry`() =
@@ -285,7 +292,11 @@ class RetryTest {
 
             val thrown =
                 failureFrom {
-                    Retry.run(policy = policy(maxAttempts = 3, totalTimeoutMillis = 1_000), logger = logger) {
+                    Retry.run(
+                        policy = policy(maxAttempts = 3, totalTimeoutMillis = 1_000),
+                        logger = logger,
+                        timeSource = testScheduler.timeSource,
+                    ) {
                         attempts++
                         delay(5_000)
                         "never returned"
