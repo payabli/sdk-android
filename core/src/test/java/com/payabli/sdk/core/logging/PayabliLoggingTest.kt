@@ -19,61 +19,61 @@ class PayabliLoggingTest {
     @After
     fun restoreProcessWideState() {
         PayabliLogging.resetLevel()
-        PayabliLoggers.setHostDebuggable(false)
+        LoggerRegistry.setHostDebuggable(false)
 
         assertEquals(
             "left the SDK verbose for every later test class in this JVM",
             LogLevel.NONE,
-            PayabliLoggers.effectiveLogLevel(),
+            LoggerRegistry.effectiveLogLevel(),
         )
     }
 
     @Test
     fun `silent until an app says otherwise`() {
-        assertEquals(LogLevel.NONE, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `setLevel reaches the cutoff`() {
         PayabliLogging.setLevel(LogLevel.WARN)
 
-        assertEquals(LogLevel.WARN, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.WARN, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `resetLevel returns to the host-debuggable default`() {
-        PayabliLoggers.setHostDebuggable(true)
+        LoggerRegistry.setHostDebuggable(true)
         PayabliLogging.setLevel(LogLevel.ERROR)
 
         PayabliLogging.resetLevel()
 
-        assertEquals(LogLevel.DEBUG, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.DEBUG, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `an app silencing the SDK is not overridden by its own debug build`() {
         PayabliLogging.setLevel(LogLevel.NONE)
-        PayabliLoggers.setHostDebuggable(true)
+        LoggerRegistry.setHostDebuggable(true)
 
-        assertEquals(LogLevel.NONE, PayabliLoggers.effectiveLogLevel())
-        assertFalse(PayabliLoggers.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
+        assertFalse(LoggerRegistry.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
     }
 
     @Test
     fun `an app silencing the SDK after the debug build is detected still wins`() {
-        PayabliLoggers.setHostDebuggable(true)
+        LoggerRegistry.setHostDebuggable(true)
         PayabliLogging.setLevel(LogLevel.NONE)
 
-        assertEquals(LogLevel.NONE, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `an app asking for records in a release build gets them`() {
         // Not debuggable, which is what a release build reads as, so only the explicit setting can open it.
-        PayabliLoggers.setHostDebuggable(false)
+        LoggerRegistry.setHostDebuggable(false)
 
         PayabliLogging.setLevel(LogLevel.INFO)
 
-        assertEquals(LogLevel.INFO, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.INFO, LoggerRegistry.effectiveLogLevel())
     }
 }

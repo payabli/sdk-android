@@ -1,8 +1,8 @@
 package com.payabli.sdk.core.storage.platform
 
 import com.payabli.sdk.core.logging.LogCategory
-import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
 import com.payabli.sdk.core.storage.impl.StoreIdentity
@@ -49,7 +49,7 @@ internal object PayabliSecureStorages {
     fun create(
         directory: File,
         fileName: String = DEFAULT_FILE_NAME,
-        logger: PayabliLogger = PayabliLoggers.of(LogCategory.CORE),
+        logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
     ): PayabliSecureStorage {
         val file = File(directory, fileName)
         // Resolved once, here, and handed to both. Resolving separately for the alias and inside the store let a

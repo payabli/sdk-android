@@ -5,8 +5,8 @@ import com.payabli.sdk.core.auth.DEFAULT_PROVIDER_TIMEOUT_MILLIS
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.logging.LogCategory
-import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.impl.AuthenticatedTransport
 import com.payabli.sdk.core.network.impl.PayabliService
 
@@ -34,8 +34,8 @@ public object PayabliTransports {
     public fun authenticated(
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
-        logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
-        authLogger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
+        logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
+        authLogger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
         providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
     ): PayabliTransport =
         authenticated(
@@ -60,8 +60,8 @@ public object PayabliTransports {
         baseUrl: String,
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
-        logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
-        authLogger: PayabliLogger = PayabliLoggers.of(LogCategory.AUTH),
+        logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
+        authLogger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
         providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
     ): PayabliTransport = authenticated(baseUrl, config, recovery, logger, authLogger, providerTimeoutMillis)
 
@@ -69,8 +69,8 @@ public object PayabliTransports {
         baseUrl: String,
         config: PayabliConfig,
         recovery: AuthRecoveryPolicy,
-        logger: PayabliLogger,
-        authLogger: PayabliLogger,
+        logger: SdkLogger,
+        authLogger: SdkLogger,
         providerTimeoutMillis: Long,
     ): PayabliTransport {
         // One holder for both the chain that reads the token and the wrapper that refreshes it, which is what

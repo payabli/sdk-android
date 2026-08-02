@@ -122,7 +122,7 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   and holds `LoopbackServer` with the fixtures it needs (`TestAuth`, `RecordingLogSink`). Add to `kotlin`
   srcDirs, not `java`: AGP's built-in Kotlin keeps its own source directories and `java` alone leaves `.kt`
   files out of the compilation. This is not a stand-in for a fixtures module and cannot become one: `LogSink`
-  and `DefaultPayabliLogger` are `internal`, and only compilations of `:core` itself see those. Moving these
+  and `DefaultSdkLogger` are `internal`, and only compilations of `:core` itself see those. Moving these
   fixtures to a sibling module or to AGP `testFixtures` would mean widening a published security SDK's API to
   suit a test layout. Do not re-propose it. The separate cross-module fixtures module (PLA-2192) is a
   different thing and still does not exist.

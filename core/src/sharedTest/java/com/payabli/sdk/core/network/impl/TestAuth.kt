@@ -6,7 +6,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 
 internal const val TEST_TOKEN: String = "test-token"
 
@@ -30,5 +30,5 @@ internal fun testAuth(
             environment = PayabliEnvironment.SANDBOX,
             tokenProvider = tokenProvider,
         ),
-        DefaultPayabliLogger(LogCategory.AUTH, RecordingLogSink()),
+        DefaultSdkLogger(LogCategory.AUTH, RecordingLogSink()),
     )

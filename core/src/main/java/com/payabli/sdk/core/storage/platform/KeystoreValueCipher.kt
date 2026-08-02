@@ -8,7 +8,7 @@ import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
 import androidx.annotation.RequiresApi
 import com.payabli.sdk.core.logging.LogField
-import com.payabli.sdk.core.logging.PayabliLogger
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.storage.SecureStorageException
@@ -39,7 +39,7 @@ import javax.crypto.spec.GCMParameterSpec
  */
 internal class KeystoreValueCipher(
     private val keyAlias: String,
-    private val logger: PayabliLogger,
+    private val logger: SdkLogger,
     /**
      * Runs after the unsynchronized presence check and before the guarded generation. **A test seam, no-op in
      * production**, and it exists because the race it opens cannot be reached from outside this class.

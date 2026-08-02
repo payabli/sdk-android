@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.logging
 
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -16,9 +16,9 @@ import java.net.UnknownHostException
  * That is the concrete demonstration that deny-by-default, not pattern matching, protects short
  * secrets, and it is what a denylist design cannot claim.
  */
-class PayabliLoggerRedactionTest {
+class SdkLoggerRedactionTest {
     private val sink = RecordingLogSink()
-    private val logger: PayabliLogger = DefaultPayabliLogger(LogCategory.NETWORK, sink)
+    private val logger: SdkLogger = DefaultSdkLogger(LogCategory.NETWORK, sink)
 
     @Test
     fun sensitiveFieldsAreRedactedAndAllowlistedFieldsAreNot() {

@@ -5,7 +5,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.impl.LoopbackServer
@@ -43,9 +43,9 @@ class PayabliTransportsTest {
             tokenProvider = provider,
         )
 
-    private fun logger() = DefaultPayabliLogger(LogCategory.NETWORK, sink)
+    private fun logger() = DefaultSdkLogger(LogCategory.NETWORK, sink)
 
-    private fun authLogger() = DefaultPayabliLogger(LogCategory.AUTH, authSink)
+    private fun authLogger() = DefaultSdkLogger(LogCategory.AUTH, authSink)
 
     private suspend fun <T : Any> completing(
         what: String,

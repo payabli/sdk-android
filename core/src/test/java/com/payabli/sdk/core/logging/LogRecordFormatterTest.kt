@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.logging
 
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.logging.impl.LogRecordFormatter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -48,7 +48,7 @@ class LogRecordFormatterTest {
     @Test
     fun scrubbingHappensBeforeTruncation() {
         val sink = RecordingLogSink()
-        val logger: PayabliLogger = DefaultPayabliLogger(LogCategory.NETWORK, sink)
+        val logger: SdkLogger = DefaultSdkLogger(LogCategory.NETWORK, sink)
         val cut = LogRecordFormatter.MAX_PAYLOAD_BYTES - tag.length - LogRecordFormatter.TRUNCATION_MARKER.length
         // Filler length is picked so a truncate-first implementation would keep ten of the sixteen
         // digits, below the twelve-digit floor, and a later scrub would no longer match them.

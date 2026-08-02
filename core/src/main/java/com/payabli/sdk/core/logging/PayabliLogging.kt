@@ -35,11 +35,11 @@ package com.payabli.sdk.core.logging
 public object PayabliLogging {
     /** Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK. */
     public fun setLevel(level: LogLevel) {
-        PayabliLoggers.setLogLevel(level)
+        LoggerRegistry.setLogLevel(level)
     }
 
     /** Drops an explicit [setLevel], so the SDK returns to logging only when the host app is debuggable. */
     public fun resetLevel() {
-        PayabliLoggers.clearLogLevel()
+        LoggerRegistry.clearLogLevel()
     }
 }

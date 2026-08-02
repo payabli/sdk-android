@@ -14,70 +14,70 @@ import org.junit.Test
  * exercised on a device by `HostLogLevelInstrumentedTest`.
  *
  * **The restore is not housekeeping.** Classes that construct `PayabliAuth` or a transport without
- * passing a logger get `PayabliLoggers.of(...)`, so a cutoff left lowered here reaches the real sink
+ * passing a logger get `LoggerRegistry.of(...)`, so a cutoff left lowered here reaches the real sink
  * in a later class and fails it with "Method isLoggable in android.util.Log not mocked" from inside
  * a refresh. Measured, not hypothetical: sabotaging the reset failed six auth and transport tests and
  * none in this package. Hence the assertion below, so a leak fails in the class that caused it.
  */
-class PayabliLoggersTest {
+class LoggerRegistryTest {
     @After
     fun restoreProcessWideState() {
-        PayabliLoggers.clearLogLevel()
-        PayabliLoggers.setHostDebuggable(false)
+        LoggerRegistry.clearLogLevel()
+        LoggerRegistry.setHostDebuggable(false)
 
         assertEquals(
             "left the SDK verbose for every later test class in this JVM",
             LogLevel.NONE,
-            PayabliLoggers.effectiveLogLevel(),
+            LoggerRegistry.effectiveLogLevel(),
         )
     }
 
     @Test
     fun `an explicit cutoff reaches the loggers`() {
-        PayabliLoggers.setLogLevel(LogLevel.WARN)
+        LoggerRegistry.setLogLevel(LogLevel.WARN)
 
-        assertEquals(LogLevel.WARN, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.WARN, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `an explicit NONE silences`() {
-        PayabliLoggers.setLogLevel(LogLevel.NONE)
+        LoggerRegistry.setLogLevel(LogLevel.NONE)
 
-        assertEquals(LogLevel.NONE, PayabliLoggers.effectiveLogLevel())
-        assertFalse(PayabliLoggers.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
+        assertFalse(LoggerRegistry.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
     }
 
     @Test
     fun `a debuggable host reaches the loggers`() {
-        PayabliLoggers.setHostDebuggable(true)
+        LoggerRegistry.setHostDebuggable(true)
 
-        assertEquals(LogLevel.DEBUG, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.DEBUG, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `an explicit cutoff still wins through the locator`() {
-        PayabliLoggers.setHostDebuggable(true)
-        PayabliLoggers.setLogLevel(LogLevel.NONE)
+        LoggerRegistry.setHostDebuggable(true)
+        LoggerRegistry.setLogLevel(LogLevel.NONE)
 
-        assertEquals(LogLevel.NONE, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `clearing returns to the automatic value`() {
-        PayabliLoggers.setHostDebuggable(true)
-        PayabliLoggers.setLogLevel(LogLevel.ERROR)
+        LoggerRegistry.setHostDebuggable(true)
+        LoggerRegistry.setLogLevel(LogLevel.ERROR)
 
-        PayabliLoggers.clearLogLevel()
+        LoggerRegistry.clearLogLevel()
 
-        assertEquals(LogLevel.DEBUG, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.DEBUG, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `every category shares one cutoff`() {
-        PayabliLoggers.setLogLevel(LogLevel.NONE)
+        LoggerRegistry.setLogLevel(LogLevel.NONE)
 
         LogCategory.entries.forEach { category ->
-            assertFalse("category $category", PayabliLoggers.of(category).isLoggable(LogLevel.FAULT))
+            assertFalse("category $category", LoggerRegistry.of(category).isLoggable(LogLevel.FAULT))
         }
     }
 }

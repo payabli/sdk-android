@@ -4,7 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogLevel
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -26,15 +26,15 @@ class HostLogLevelInstrumentedTest {
 
     @After
     fun restoreProcessWideState() {
-        PayabliLoggers.clearLogLevel()
-        PayabliLoggers.setHostDebuggable(false)
+        LoggerRegistry.clearLogLevel()
+        LoggerRegistry.setHostDebuggable(false)
     }
 
     @Test
     fun aDebuggableHostStopsTheSdkFilteringBySeverity() {
         context.applyHostLogLevel()
 
-        assertEquals(LogLevel.DEBUG, PayabliLoggers.effectiveLogLevel())
+        assertEquals(LogLevel.DEBUG, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
@@ -43,7 +43,7 @@ class HostLogLevelInstrumentedTest {
 
         // INFO is the platform's documented default per-tag level, so it needs no setprop. DEBUG
         // deliberately is not asserted: it depends on a device property this SDK does not own.
-        val logger = PayabliLoggers.of(LogCategory.CORE)
+        val logger = LoggerRegistry.of(LogCategory.CORE)
         assertTrue(logger.isLoggable(LogLevel.INFO))
         assertTrue(logger.isLoggable(LogLevel.ERROR))
         logger.log(LogLevel.INFO, emptyList(), null) { "host log level applied" }
@@ -51,17 +51,17 @@ class HostLogLevelInstrumentedTest {
 
     @Test
     fun deliberateSilenceSurvivesADebuggableHost() {
-        PayabliLoggers.setLogLevel(LogLevel.NONE)
+        LoggerRegistry.setLogLevel(LogLevel.NONE)
 
         context.applyHostLogLevel()
 
-        assertEquals(LogLevel.NONE, PayabliLoggers.effectiveLogLevel())
-        assertFalse(PayabliLoggers.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
+        assertFalse(LoggerRegistry.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
     }
 
     @Test
     fun silentUntilTheHostFlagIsRead() {
-        assertEquals(LogLevel.NONE, PayabliLoggers.effectiveLogLevel())
-        assertFalse(PayabliLoggers.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
+        assertFalse(LoggerRegistry.of(LogCategory.CORE).isLoggable(LogLevel.FAULT))
     }
 }

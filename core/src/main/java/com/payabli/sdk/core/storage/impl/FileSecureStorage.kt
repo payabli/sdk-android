@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.storage.impl
 
-import com.payabli.sdk.core.logging.PayabliLogger
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.network.impl.RedactedCause
 import com.payabli.sdk.core.storage.PayabliSecureStorage
@@ -31,7 +31,7 @@ import java.io.IOException
 internal class FileSecureStorage(
     private val file: File,
     private val cipher: ValueCipher,
-    private val logger: PayabliLogger,
+    private val logger: SdkLogger,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     /**
      * The store's resolved identity, injected so one composition resolves it once.

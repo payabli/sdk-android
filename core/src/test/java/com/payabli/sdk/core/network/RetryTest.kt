@@ -4,7 +4,7 @@ package com.payabli.sdk.core.network
 
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
@@ -32,7 +32,7 @@ import org.junit.Test
  */
 class RetryTest {
     private val sink = RecordingLogSink()
-    private val logger = DefaultPayabliLogger(LogCategory.NETWORK, sink)
+    private val logger = DefaultSdkLogger(LogCategory.NETWORK, sink)
 
     /** No jitter, so every schedule below is an exact number rather than a range. */
     private fun policy(

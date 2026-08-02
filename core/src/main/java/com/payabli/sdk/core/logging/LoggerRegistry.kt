@@ -2,16 +2,16 @@ package com.payabli.sdk.core.logging
 
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.logging.impl.AndroidLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.logging.impl.LogLevelSetting
 
 /**
- * Default wiring. Every SDK class takes a [PayabliLogger] as a constructor parameter and defaults it
+ * Default wiring. Every SDK class takes a [SdkLogger] as a constructor parameter and defaults it
  * here, so production call sites carry no boilerplate and tests inject a fake:
  *
  * ```
  * internal class PayabliService(
- *     private val logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+ *     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
  * )
  * ```
  *
@@ -22,14 +22,14 @@ import com.payabli.sdk.core.logging.impl.LogLevelSetting
  * control: an integrator reaches [PayabliLogging] instead, which delegates here.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public object PayabliLoggers {
+public object LoggerRegistry {
     private val logLevel = LogLevelSetting()
 
-    private val loggers: Map<LogCategory, PayabliLogger> =
-        LogCategory.entries.associateWith { DefaultPayabliLogger(it, AndroidLogSink, logLevel::effective) }
+    private val loggers: Map<LogCategory, SdkLogger> =
+        LogCategory.entries.associateWith { DefaultSdkLogger(it, AndroidLogSink, logLevel::effective) }
 
     /** The shared, stateless logger for [category]. Reads the current cutoff on every call. */
-    public fun of(category: LogCategory): PayabliLogger = loggers.getValue(category)
+    public fun of(category: LogCategory): SdkLogger = loggers.getValue(category)
 
     /**
      * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK, which is the default.

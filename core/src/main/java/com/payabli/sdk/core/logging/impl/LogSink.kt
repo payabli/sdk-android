@@ -5,8 +5,8 @@ import com.payabli.sdk.core.logging.LogLevel
 /**
  * Where a finished, already-scrubbed, already-truncated line is written.
  *
- * This, not `PayabliLogger`, is the swap point for a different logging backend. Redaction lives
- * above it in [DefaultPayabliLogger], so replacing the sink cannot skip redaction: a future
+ * This, not `SdkLogger`, is the swap point for a different logging backend. Redaction lives
+ * above it in [DefaultSdkLogger], so replacing the sink cannot skip redaction: a future
  * OSLog-shaped bridge, an in-process ring buffer, or a host-facing channel all receive text that has
  * already been through the pipeline.
  *

@@ -4,8 +4,8 @@ import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
-import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.core.model.PayabliErrorCode
@@ -69,7 +69,7 @@ import kotlin.time.Duration.Companion.milliseconds
 internal class PayabliService private constructor(
     baseUrl: String,
     private val decorations: List<PayabliRequestDecoration>,
-    private val logger: PayabliLogger,
+    private val logger: SdkLogger,
     private val connectTimeoutMillis: Int,
     private val readTimeoutMillis: Int,
     /**
@@ -451,7 +451,7 @@ internal class PayabliService private constructor(
         internal fun create(
             baseUrl: String,
             auth: PayabliAuth,
-            logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+            logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
@@ -478,7 +478,7 @@ internal class PayabliService private constructor(
         internal fun createWithDecorations(
             baseUrl: String,
             decorations: List<PayabliRequestDecoration>,
-            logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+            logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,

@@ -9,7 +9,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.logging.impl.LogSink
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
@@ -54,7 +54,7 @@ import kotlin.time.Duration.Companion.seconds
 @RunWith(AndroidJUnit4::class)
 class KeystoreSecureStorageInstrumentedTest {
     private val sink = RecordingLogSink()
-    private val logger = DefaultPayabliLogger(LogCategory.CORE, sink)
+    private val logger = DefaultSdkLogger(LogCategory.CORE, sink)
     private lateinit var directory: File
     private lateinit var keyAlias: String
 
@@ -292,7 +292,7 @@ class KeystoreSecureStorageInstrumentedTest {
         runTest(timeout = 30.seconds) {
             val generations = AtomicInteger(0)
             val countingLogger =
-                DefaultPayabliLogger(
+                DefaultSdkLogger(
                     LogCategory.CORE,
                     object : LogSink {
                         override fun isLoggable(

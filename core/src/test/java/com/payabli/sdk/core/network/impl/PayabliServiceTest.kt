@@ -2,7 +2,7 @@ package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
@@ -41,7 +41,7 @@ class PayabliServiceTest {
     ) = PayabliService.create(
         baseUrl = baseUrl,
         auth = testAuth(),
-        logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+        logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
         callTimeout = callTimeout,
     )
 
@@ -243,7 +243,7 @@ class PayabliServiceTest {
                     PayabliService.createWithDecorations(
                         baseUrl = server.baseUrl,
                         decorations = listOf(PayabliRequestDecoration { it.withHeaders(mapOf("X-Probe" to "1")) }),
-                        logger = DefaultPayabliLogger(LogCategory.NETWORK, sink),
+                        logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                     )
 
                 // The request carries no headers of its own, so anything that arrives came from the chain.

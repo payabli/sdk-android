@@ -3,8 +3,8 @@ package com.payabli.sdk.core.network
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
-import com.payabli.sdk.core.logging.PayabliLogger
-import com.payabli.sdk.core.logging.PayabliLoggers
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorCode
@@ -54,7 +54,7 @@ public object Retry {
     public suspend fun <T> run(
         route: String? = null,
         policy: RetryPolicy = RetryPolicy(),
-        logger: PayabliLogger = PayabliLoggers.of(LogCategory.NETWORK),
+        logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
         /**
          * Injected so a test can drive it, exactly as [RetryPolicy.jitter] is. Production never passes this.
          *
@@ -103,7 +103,7 @@ public object Retry {
 
     /** The whole operation ran out of time. Terminal: every throw site sits outside the retry decision. */
     private fun budgetExhausted(
-        logger: PayabliLogger,
+        logger: SdkLogger,
         route: String?,
         policy: RetryPolicy,
         phase: String,
@@ -128,7 +128,7 @@ public object Retry {
         failure: PayabliException,
         attempt: Int,
         policy: RetryPolicy,
-        logger: PayabliLogger,
+        logger: SdkLogger,
         route: String?,
         startedAt: TimeMark,
     ): Int {

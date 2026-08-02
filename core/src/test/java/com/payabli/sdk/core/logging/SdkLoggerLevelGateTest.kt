@@ -1,16 +1,16 @@
 package com.payabli.sdk.core.logging
 
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The SDK's own cutoff, which sits above the platform's per-tag level. */
-class PayabliLoggerLevelGateTest {
+class SdkLoggerLevelGateTest {
     private val sink = RecordingLogSink()
 
-    private fun logger(cutoff: () -> LogLevel) = DefaultPayabliLogger(LogCategory.NETWORK, sink, cutoff)
+    private fun logger(cutoff: () -> LogLevel) = DefaultSdkLogger(LogCategory.NETWORK, sink, cutoff)
 
     @Test
     fun `a cutoff of NONE silences every level`() {
@@ -69,7 +69,7 @@ class PayabliLoggerLevelGateTest {
     fun `the platform gate still applies above the cutoff`() {
         // A sink that only admits ERROR stands in for a device whose per-tag level is ERROR.
         val restrictive = RecordingLogSink(loggableFrom = LogLevel.ERROR)
-        val logger = DefaultPayabliLogger(LogCategory.NETWORK, restrictive) { LogLevel.DEBUG }
+        val logger = DefaultSdkLogger(LogCategory.NETWORK, restrictive) { LogLevel.DEBUG }
 
         assertFalse("the SDK cutoff allows it, the platform does not", logger.isLoggable(LogLevel.INFO))
         assertTrue(logger.isLoggable(LogLevel.ERROR))

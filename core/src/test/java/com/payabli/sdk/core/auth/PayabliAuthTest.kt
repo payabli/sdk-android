@@ -5,7 +5,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
@@ -40,7 +40,7 @@ class PayabliAuthTest {
                 environment = PayabliEnvironment.SANDBOX,
                 tokenProvider = tokenProvider,
             ),
-            DefaultPayabliLogger(LogCategory.AUTH, sink),
+            DefaultSdkLogger(LogCategory.AUTH, sink),
         )
 
     /**
@@ -509,7 +509,7 @@ class PayabliAuthTest {
                         environment = PayabliEnvironment.SANDBOX,
                         tokenProvider = { CompletableDeferred<String>().await() },
                     ),
-                    DefaultPayabliLogger(LogCategory.AUTH, sink),
+                    DefaultSdkLogger(LogCategory.AUTH, sink),
                     providerTimeoutMillis = 50,
                 )
 
@@ -662,7 +662,7 @@ class PayabliAuthTest {
                     runCatching {
                         PayabliAuth(
                             PayabliConfig("t", "e", PayabliEnvironment.SANDBOX),
-                            DefaultPayabliLogger(LogCategory.AUTH, sink),
+                            DefaultSdkLogger(LogCategory.AUTH, sink),
                             providerTimeoutMillis = invalid,
                         )
                     }.exceptionOrNull()

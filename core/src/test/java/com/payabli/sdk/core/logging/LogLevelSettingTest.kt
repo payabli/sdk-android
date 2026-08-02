@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.logging
 
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.logging.impl.LogLevelSetting
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -97,7 +97,7 @@ class LogLevelSettingTest {
     @Test
     fun `a logger already handed out sees a later change`() {
         val sink = RecordingLogSink()
-        val logger: PayabliLogger = DefaultPayabliLogger(LogCategory.NETWORK, sink, setting::effective)
+        val logger: SdkLogger = DefaultSdkLogger(LogCategory.NETWORK, sink, setting::effective)
 
         assertFalse("silent by default", logger.isLoggable(LogLevel.ERROR))
 

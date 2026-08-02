@@ -6,7 +6,7 @@ package com.payabli.sdk.core.logging
  *
  * Every digit run below is Luhn-invalid and made of the digit 9, so it falls in the IIN range ISO/IEC
  * 7812 reserves for national use and which no card scheme issues from.
- * `PayabliLoggerRedactionTest.luhnValidityIsNotAccidental` asserts the Luhn property, so this is a
+ * `SdkLoggerRedactionTest.luhnValidityIsNotAccidental` asserts the Luhn property, so this is a
  * machine-checked guarantee rather than a comment that can rot.
  *
  * Scheme test numbers such as the well-known Visa and Mastercard ones are deliberately absent: they

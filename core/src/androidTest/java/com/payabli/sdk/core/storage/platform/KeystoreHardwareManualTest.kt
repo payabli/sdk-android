@@ -8,7 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.ManualDeviceTest
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
-import com.payabli.sdk.core.logging.impl.DefaultPayabliLogger
+import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -66,7 +66,7 @@ import kotlin.time.Duration.Companion.seconds
  */
 @RunWith(AndroidJUnit4::class)
 class KeystoreHardwareManualTest {
-    private val logger = DefaultPayabliLogger(LogCategory.CORE, RecordingLogSink())
+    private val logger = DefaultSdkLogger(LogCategory.CORE, RecordingLogSink())
     private lateinit var directory: File
     private lateinit var keyAlias: String
 
