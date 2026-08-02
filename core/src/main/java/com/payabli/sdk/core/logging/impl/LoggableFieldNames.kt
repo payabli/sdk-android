@@ -50,10 +50,21 @@ internal object LoggableFieldNames {
             "retryable",
             "durationms",
             "elapsedms",
+            // Three distinct durations, deliberately not collapsed into one name: `timeoutms` is the
+            // backoff wait before the next attempt, `totaltimeoutms` the retry budget, `calltimeoutms`
+            // the ceiling on one whole call. An incident reads differently depending on which ran out.
             "timeoutms",
+            "totaltimeoutms",
+            "calltimeoutms",
             "contentlength",
             "errorcode",
             "errorkind",
             "sdkversion",
+            // Storage key diagnostics. `keyalias` is a constant prefix plus a truncated SHA-256 of the
+            // store's canonical path, so it names an entry without naming a subject; `securitylevel` is
+            // the fixed vocabulary strongbox / tee / software. Both say which key failed and how well it
+            // was protected, which is the whole content of those two records.
+            "keyalias",
+            "securitylevel",
         )
 }

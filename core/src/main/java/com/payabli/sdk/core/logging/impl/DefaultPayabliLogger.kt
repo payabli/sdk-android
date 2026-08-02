@@ -17,16 +17,14 @@ internal class DefaultPayabliLogger(
     private val category: LogCategory,
     private val sink: LogSink,
     /**
-     * The SDK's own floor, read on every call so raising it later affects loggers already handed out.
-     * Null silences the SDK entirely. Defaults to fully verbose, which is what a test wants;
-     * `PayabliLoggers` supplies the configured gate in production.
+     * The SDK's own cutoff, read on every call so lowering it later affects loggers already handed
+     * out. [LogLevel.NONE] silences the SDK entirely. Defaults to fully verbose, which is what a test
+     * wants; `PayabliLoggers` supplies the configured gate in production.
      */
-    private val minimumLevel: () -> LogLevel? = { LogLevel.DEBUG },
+    private val logLevel: () -> LogLevel = { LogLevel.DEBUG },
 ) : PayabliLogger {
-    override fun isLoggable(level: LogLevel): Boolean {
-        val floor = minimumLevel() ?: return false
-        return level >= floor && sink.isLoggable(level, category.tag)
-    }
+    override fun isLoggable(level: LogLevel): Boolean =
+        level.isRecordLevel && level >= logLevel() && sink.isLoggable(level, category.tag)
 
     override fun log(
         level: LogLevel,

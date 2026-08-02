@@ -8,6 +8,31 @@ import java.util.Locale
 
 /** The structured half of redaction: the allowlist decides, not the call site. */
 class LogFieldRendererTest {
+    /**
+     * Deny-by-default fails safe, and therefore silently: a diagnostic whose name is not allowlisted
+     * emits `[REDACTED]` and nobody notices the record is useless. Four shipped call sites were doing
+     * exactly that. Each name below belongs to a real record, so this fails if one is dropped from the
+     * allowlist or a call site is renamed away from it.
+     */
+    @Test
+    fun everyNameAShippedRecordDependsOnSurvivesTheAllowlist() {
+        mapOf(
+            "callTimeoutMs" to "30000",
+            "totalTimeoutMs" to "60000",
+            "keyAlias" to "com.payabli.sdk.core.storage.v1.abcdef",
+            "securityLevel" to "strongbox",
+            "timeoutMs" to "250",
+            "route" to "/api/v2/tokens",
+            "statusCode" to "503",
+        ).forEach { (name, value) ->
+            assertEquals(
+                "$name is used by a shipped log record and must render, not redact",
+                "$name=$value",
+                LogFieldRenderer.render(listOf(LogField.safe(name, value))),
+            )
+        }
+    }
+
     @Test
     fun normalizationCollapsesSeparatorsAndCase() {
         listOf("cardNumber", "card-number", "Card_Number", "card number", "CARDNUMBER").forEach { name ->

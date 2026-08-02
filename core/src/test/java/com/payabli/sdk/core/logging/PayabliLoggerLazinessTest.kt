@@ -58,7 +58,7 @@ class PayabliLoggerLazinessTest {
         subject.error { "e" }
         subject.fault { "f" }
 
-        assertEquals(LogLevel.entries.toList(), records.records.map { it.level })
+        assertEquals(LogLevel.entries.filter { it.isRecordLevel }, records.records.map { it.level })
         assertTrue(records.records.all { it.tag == "PayabliAuth" })
     }
 }

@@ -28,5 +28,8 @@ internal object AndroidLogSink : LogSink {
             LogLevel.WARN -> Log.WARN
             LogLevel.ERROR -> Log.ERROR
             LogLevel.FAULT -> Log.ASSERT
+            // Unreachable: DefaultPayabliLogger rejects a non-record level before the sink is
+            // reached. Mapped rather than thrown, for the same reason Log.wtf is not used.
+            LogLevel.NONE -> Log.ASSERT
         }
 }

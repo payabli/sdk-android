@@ -6,15 +6,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** The SDK's own floor, which sits above the platform's per-tag level. */
+/** The SDK's own cutoff, which sits above the platform's per-tag level. */
 class PayabliLoggerLevelGateTest {
     private val sink = RecordingLogSink()
 
-    private fun logger(floor: () -> LogLevel?) = DefaultPayabliLogger(LogCategory.NETWORK, sink, floor)
+    private fun logger(cutoff: () -> LogLevel) = DefaultPayabliLogger(LogCategory.NETWORK, sink, cutoff)
 
     @Test
-    fun `a null floor silences every level`() {
-        val logger = logger { null }
+    fun `a cutoff of NONE silences every level`() {
+        val logger = logger { LogLevel.NONE }
 
         LogLevel.entries.forEach { level ->
             assertFalse("level $level", logger.isLoggable(level))
@@ -25,9 +25,9 @@ class PayabliLoggerLevelGateTest {
     }
 
     @Test
-    fun `a null floor never invokes the message lambda`() {
+    fun `a cutoff of NONE never invokes the message lambda`() {
         var built = 0
-        logger { null }.log(LogLevel.ERROR, emptyList(), null) {
+        logger { LogLevel.NONE }.log(LogLevel.ERROR, emptyList(), null) {
             built++
             "expensive"
         }
@@ -35,7 +35,17 @@ class PayabliLoggerLevelGateTest {
     }
 
     @Test
-    fun `a floor admits its own level and everything more severe`() {
+    fun `NONE is never emitted as a record, however low the cutoff`() {
+        val logger = logger { LogLevel.DEBUG }
+
+        assertFalse(logger.isLoggable(LogLevel.NONE))
+        logger.log(LogLevel.NONE, emptyList(), null) { "should not appear" }
+
+        assertTrue(sink.records.isEmpty())
+    }
+
+    @Test
+    fun `a cutoff admits its own level and everything more severe`() {
         val logger = logger { LogLevel.WARN }
 
         assertFalse(logger.isLoggable(LogLevel.DEBUG))
@@ -46,22 +56,22 @@ class PayabliLoggerLevelGateTest {
     }
 
     @Test
-    fun `the floor is read on every call, so raising it affects a logger already handed out`() {
-        var floor: LogLevel? = null
-        val logger = logger { floor }
+    fun `the cutoff is read on every call, so lowering it affects a logger already handed out`() {
+        var cutoff = LogLevel.NONE
+        val logger = logger { cutoff }
 
         assertFalse(logger.isLoggable(LogLevel.ERROR))
-        floor = LogLevel.ERROR
+        cutoff = LogLevel.ERROR
         assertTrue(logger.isLoggable(LogLevel.ERROR))
     }
 
     @Test
-    fun `the platform gate still applies above the floor`() {
+    fun `the platform gate still applies above the cutoff`() {
         // A sink that only admits ERROR stands in for a device whose per-tag level is ERROR.
         val restrictive = RecordingLogSink(loggableFrom = LogLevel.ERROR)
         val logger = DefaultPayabliLogger(LogCategory.NETWORK, restrictive) { LogLevel.DEBUG }
 
-        assertFalse("the SDK floor allows it, the platform does not", logger.isLoggable(LogLevel.INFO))
+        assertFalse("the SDK cutoff allows it, the platform does not", logger.isLoggable(LogLevel.INFO))
         assertTrue(logger.isLoggable(LogLevel.ERROR))
     }
 }
