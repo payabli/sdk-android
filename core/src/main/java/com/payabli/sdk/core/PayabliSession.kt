@@ -13,7 +13,6 @@ import com.payabli.sdk.core.logging.platform.applyHostLogLevel
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
-import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
@@ -39,6 +38,12 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
  *
  * **There is no accessor for the token holder, at any visibility.** A capability needs a transport that is
  * already correct, never the credential inside it.
+ *
+ * The credential-rejection policy is the transport's default and is not settable here. A host cannot supply
+ * one, since `AuthRecoveryPolicy` is `@RestrictTo` and naming it is a Lint error outside this Maven group,
+ * and one policy for the whole session is the wrong granularity for the case that wants it: the card-present
+ * device routes need refresh refused on those routes alone, which is a property of a transport rather than
+ * of a session. Whatever gives them that is the shape that work chooses, not a parameter guessed ahead of it.
  */
 public class PayabliSession private constructor(
     private val identity: ConfigIdentity,
@@ -98,22 +103,17 @@ public class PayabliSession private constructor(
          *   is the documented recovery, and it has to work with a newly brokered token.
          *
          * It does not rehydrate.
-         *
-         * [recovery] narrows or widens what counts as a credential rejection. The card-present device routes
-         * need it narrowed, because they pin the token captured at attestation and a refresh rotates it out
-         * of the match.
          */
         public suspend fun initialize(
             config: PayabliConfig,
             host: HostBindings,
-            recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         ): Result<PayabliSession> {
             // First, so everything below is subject to the level it derives. `applicationContext` rather
             // than the reference as given, because the debuggable flag belongs to the application.
             host.appContext.applicationContext.applyHostLogLevel()
 
             return install(ConfigIdentity(config)) { onAuthFailure ->
-                TransportFactory.authenticated(config, recovery, onAuthFailure = onAuthFailure)
+                TransportFactory.authenticated(config, onAuthFailure = onAuthFailure)
             }
         }
 
@@ -128,10 +128,9 @@ public class PayabliSession private constructor(
         internal suspend fun initializeAgainst(
             baseUrl: String,
             config: PayabliConfig,
-            recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         ): Result<PayabliSession> =
             install(ConfigIdentity(config)) { onAuthFailure ->
-                TransportFactory.authenticatedAgainst(baseUrl, config, recovery, onAuthFailure = onAuthFailure)
+                TransportFactory.authenticatedAgainst(baseUrl, config, onAuthFailure = onAuthFailure)
             }
 
         /** Drops the installed session so one test cannot decide the outcome of the next. */
