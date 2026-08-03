@@ -34,6 +34,12 @@ COLLECTOR = Path(os.environ.get("NIGHTLY_COLLECTOR", SDK / ".github/scripts/nigh
 POSTER = Path(os.environ.get("NIGHTLY_POSTER", SDK / ".github/scripts/nightly_slack.py"))
 ONLY = os.environ.get("NIGHTLY_ONLY", "both")
 
+# One scratch root for the whole run, removed on the way out. Every synthetic repository and every facts
+# directory is created inside it. Per-case mkdtemp with no cleanup left 122 directories behind per run, and
+# a sabotage pass invokes this suite 41 times, so the two together accumulated 27,754 directories and 835MB
+# on one machine before anything noticed.
+SCRATCH = Path(tempfile.mkdtemp(prefix="nightly-verify-"))
+
 PASS, FAIL = [], []
 
 
@@ -79,7 +85,7 @@ COVERAGE = '<?xml version="1.0"?><report name="core"><counter type="BRANCH" miss
 
 
 def make_repo(files: dict[str, str], *, commit_files=True):
-    root = Path(tempfile.mkdtemp(prefix="nightly-"))
+    root = Path(tempfile.mkdtemp(dir=SCRATCH))
     (root / ".github/scripts").mkdir(parents=True)
     shutil.copy(COLLECTOR, root / ".github/scripts/nightly_report.py")
     for rel, content in files.items():
@@ -479,7 +485,7 @@ FACTS_RED = {
 
 def run_poster(mod, facts, **env_extra):
     FakeSlack.calls = []
-    tmp = Path(tempfile.mkdtemp(prefix="nightly-post-"))
+    tmp = Path(tempfile.mkdtemp(dir=SCRATCH))
     path = tmp / "nightly-facts.json"
     if facts is not None:
         path.write_text(json.dumps(facts) if not isinstance(facts, str) else facts)
@@ -1582,4 +1588,7 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    finally:
+        shutil.rmtree(SCRATCH, ignore_errors=True)
