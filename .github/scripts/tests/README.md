@@ -9,7 +9,7 @@ deliberate: it matches the repository's posture on third-party code and means th
 supply-chain surface to a security SDK.
 
 ```bash
-python3 .github/scripts/tests/verify.py     # 367 checks, about 4 seconds
+python3 .github/scripts/tests/verify.py     # 369 checks, about 4 seconds
 python3 .github/scripts/tests/sabotage.py   # 38 deliberate breaks, about a minute
 ```
 

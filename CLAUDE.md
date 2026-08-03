@@ -69,7 +69,7 @@ job because the build outputs and the git history the culprit lookup needs are b
 has to be decided there because that is where the gate reads it.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs nothing but `python3`.** `verify.py`
-runs 367 checks, driving the collector as a subprocess inside a synthetic git repository and the poster
+runs 369 checks, driving the collector as a subprocess inside a synthetic git repository and the poster
 in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed behaviour in turn and
 confirms a check goes red, rewriting copies in a scratch directory rather than the files in the tree, so it
 is safe to interrupt. `.github/workflows/scripts.yml` runs both, and only when `.github/scripts/**` or that

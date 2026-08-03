@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 367 checks. The collector runs as a subprocess in a synthetic git repository; the poster runs
+      # 369 checks. The collector runs as a subprocess in a synthetic git repository; the poster runs
       # in-process against a fake Slack on loopback.
       - name: Verify
         run: python3 .github/scripts/tests/verify.py
