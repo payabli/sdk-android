@@ -4,9 +4,10 @@
 thing that reports a failure. Between them they are the reason anyone finds out a night went red, so they
 are covered here rather than trusted.
 
-Two entry points, no setup and no dependencies beyond `python3`. Everything is standard library, which is
-deliberate: it matches the repository's posture on third-party code and means these tests add no
-supply-chain surface to a security SDK.
+Two entry points and no setup. The requirements are `python3` and `git`: the collector half shells out to
+`git` to build the synthetic repository it runs against, so it fails without one on `PATH`. No third-party
+Python package is involved at all, which is deliberate: it matches the repository's posture on third-party
+code and means these tests add no supply-chain surface to a security SDK.
 
 ```bash
 python3 .github/scripts/tests/verify.py     # 369 checks, about 4 seconds
