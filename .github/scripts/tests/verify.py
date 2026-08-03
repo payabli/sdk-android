@@ -29,7 +29,11 @@ HERE = Path(__file__).resolve().parent
 # Pointing COLLECTOR or POSTER at an older revision is how a check is proved red before it is proved green,
 # so these overrides are load-bearing rather than incidental. The default resolves from this file so a fresh
 # clone needs nothing set: tests -> scripts -> .github -> repository root.
-SDK = Path(os.environ.get("NIGHTLY_SDK", HERE.parents[2]))
+# Not `os.environ.get("NIGHTLY_SDK", HERE.parents[2])`: a default argument is evaluated eagerly, so the
+# fallback would raise IndexError for a copy of this file sitting fewer than three directories deep even
+# when the override is set, which is the one situation the override exists for.
+_sdk = os.environ.get("NIGHTLY_SDK")
+SDK = Path(_sdk) if _sdk else HERE.parents[2]
 COLLECTOR = Path(os.environ.get("NIGHTLY_COLLECTOR", SDK / ".github/scripts/nightly_report.py"))
 POSTER = Path(os.environ.get("NIGHTLY_POSTER", SDK / ".github/scripts/nightly_slack.py"))
 ONLY = os.environ.get("NIGHTLY_ONLY", "both")
