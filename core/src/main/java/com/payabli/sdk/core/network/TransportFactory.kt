@@ -28,14 +28,12 @@ internal object TransportFactory {
      * Builds one auth domain. Called once per session; see the class note for why nothing outside `:core`
      * calls it directly any more.
      *
-     * [recovery] lets a capability widen what counts as a rejection on its own routes, or narrow it: the
-     * card-present device routes pin the token captured at attestation, so a refresh there rotates it out of
-     * the match.
+     * Every parameter past [config] is internal assembly, and `PayabliSession` passes none of them: they
+     * exist so `:core`'s own tests can vary a piece, and each default is the shipped behaviour. Nothing
+     * outside `:core` can set any of them, so do not describe them as configuration.
      *
-     * [providerTimeoutMillis] is the escape hatch for a slow broker. The default protects every reader,
-     * because one provider holds them all while the refresh is de-duplicated, but the transport allows its own
-     * calls longer than the host's callback, and that callback usually makes a network round trip too. An
-     * integrator whose broker is legitimately slower widens it here.
+     * [providerTimeoutMillis] in particular bounds a provider that never returns, so it cannot wedge every
+     * reader waiting on the same refresh. Its default is the only value anything uses today.
      */
     internal fun authenticated(
         config: PayabliConfig,

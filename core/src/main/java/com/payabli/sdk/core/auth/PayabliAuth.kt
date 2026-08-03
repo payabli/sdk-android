@@ -47,10 +47,10 @@ private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejec
  * Ten seconds rather than thirty: a provider that never returns holds every reader waiting on the same
  * refresh, and half a minute of that is most of a user's patience.
  *
- * A default rather than a rule. It is deliberately shorter than the transport's own whole-call budget even
- * though a broker callback also makes a network round trip, so `TransportFactory.authenticated` takes an
- * override for an integrator whose broker is legitimately slower. `internal` for that default parameter to
- * reference; nothing outside `:core` reads it.
+ * Deliberately shorter than the transport's own whole-call budget, even though a broker callback also makes
+ * a network round trip. `TransportFactory.authenticated` takes it as a parameter so `:core`'s tests can vary
+ * it, and nothing outside `:core` can set it: a host with a legitimately slower broker has no way to widen
+ * this today.
  */
 internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
 
