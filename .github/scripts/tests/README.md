@@ -13,7 +13,8 @@ python3 .github/scripts/tests/verify.py     # 367 checks, about 4 seconds
 python3 .github/scripts/tests/sabotage.py   # 38 deliberate breaks, about a minute
 ```
 
-Both run in CI through `.github/workflows/scripts.yml`, but only when `.github/scripts/**` changes.
+Both run in CI through `.github/workflows/scripts.yml`, but only when `.github/scripts/**` or that
+workflow file changes. The workflow is in its own `paths` filter so a change to it tests itself.
 
 ## verify.py
 
