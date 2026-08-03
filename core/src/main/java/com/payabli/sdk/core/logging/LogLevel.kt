@@ -3,7 +3,7 @@ package com.payabli.sdk.core.logging
 /**
  * Severity ladder for SDK log records, plus [NONE] as the cutoff that admits nothing.
  *
- * Public because it appears in [PayabliLogging.setLogLevel], which is the app-facing control.
+ * Public because it appears in `PayabliSession.setLogLevel`, which is the app-facing control.
  *
  * Declaration order is increasing severity, so the generated [Comparable] is the severity
  * comparison. There is deliberately no `VERBOSE`: the platform documents that verbose

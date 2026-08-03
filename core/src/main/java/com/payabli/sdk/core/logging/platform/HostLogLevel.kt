@@ -12,7 +12,9 @@ import com.payabli.sdk.core.logging.LoggerRegistry
  * Call with the application context: `applicationInfo` is read as given, and a context obtained
  * through `createPackageContext` would describe another package.
  *
- * No caller yet, by design. The SDK holds no `Context` until `initialize` exists.
+ * Called from `PayabliSession.initialize`, which takes `applicationContext` from the host bindings
+ * before calling this. Safe to call on every initialize: setting the automatic slot is idempotent and
+ * cannot clobber an explicit level.
  */
 internal fun Context.applyHostLogLevel() {
     LoggerRegistry.setHostDebuggable(
