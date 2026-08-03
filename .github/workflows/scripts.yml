@@ -3,9 +3,12 @@ name: Nightly reporter tests
 # `nightly_report.py` decides the nightly verdict and gates the run, and `nightly_slack.py` is the only
 # thing that reports a failure. They are covered here rather than trusted.
 #
-# This also answers a question nothing else could. Neither `schedule` nor `workflow_dispatch` fires from a
-# feature branch, so a change to either script used to be verifiable only by burning a short-lived probe
-# branch with a temporary push trigger. These tests run on the pull request itself.
+# It also gives a change to those scripts somewhere cheap to be checked. A scheduled run never fires from a
+# feature branch. A dispatch can be pointed at one, since `nightly.yml` is on the default branch, but that
+# runs the whole nightly including the emulator suite and its report job posts to the team channel, which is
+# a great deal of machinery and noise for a change to a Python script. So the practical options were a
+# short-lived probe branch with a temporary push trigger, or merging and waiting for morning. These run on
+# the pull request itself, in about a minute, and post nothing.
 #
 # Path-filtered, so an ordinary pull request pays nothing for it. That also means it must not be made a
 # required check: a required check that never runs blocks a merge rather than passing it. Neither is

@@ -29,9 +29,11 @@ name: Nightly
 # reach the token is for the token to live in another job. It also means a test job that times out or dies
 # still gets announced, which the previous single-job arrangement could not do.
 #
-# Note both triggers below only work from the default branch: a scheduled run never fires from a feature
-# branch, and this workflow does not appear in the Run workflow menu until it is on main. So a branch cannot
-# be validated by dispatching it; use a short-lived probe branch with a temporary push trigger instead.
+# Note what the triggers below can and cannot do from a feature branch. A scheduled run never fires from one.
+# A dispatch can be pointed at one, because this workflow is on the default branch and the branch is chosen
+# when it is run, but it runs the whole suite and the report job posts to the channel, so it is a loud way to
+# test a branch. A workflow that is not yet on main does not appear in the Run workflow menu at all. For a
+# quick check, use a short-lived probe branch with a temporary push trigger.
 on:
   workflow_dispatch:
   schedule:
