@@ -26,8 +26,9 @@ import kotlin.time.Duration.Companion.milliseconds
  * file those comments describe coverage that does not exist. The third, the call budget's socket teardown, is
  * covered on the JVM too and is repeated here because the mechanism is platform-specific.
  *
- * **CI does not run this.** The workflow has no emulator, so `:core:connectedAndroidTest` is a deliberate
- * local step and a regression here will not turn a pull request red.
+ * **No pull request runs this.** The per-PR workflow has no emulator, so a regression here will not turn a
+ * pull request red. The nightly workflow does run `:core:connectedAndroidTest` on one, deliberately as a
+ * non-required check, so the gap is same-day feedback rather than coverage.
  */
 @RunWith(AndroidJUnit4::class)
 class PayabliServiceInstrumentedTest {
