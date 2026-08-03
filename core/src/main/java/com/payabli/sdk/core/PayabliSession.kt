@@ -95,6 +95,12 @@ public class PayabliSession private constructor(
          * in `Application.onCreate` and again in an Activity gets one session. Sameness
          * is by value, not object identity, since rebuilding an equal configuration is the ordinary thing.
          *
+         * With one exception, because "by value" would otherwise promise more than it delivers: the token
+         * provider counts only as **present or absent**, never by which callback it is. A provider written
+         * inline is a new object on every call, so comparing them would make this never idempotent for the
+         * most ordinary way of writing it. The consequence is that calling this again with a different
+         * provider does not replace the one in use, and the session keeps the callback it started with.
+         *
          * Two cases are deliberately not idempotent:
          *
          * - A **different** configuration while the session is usable fails, rather than returning one
