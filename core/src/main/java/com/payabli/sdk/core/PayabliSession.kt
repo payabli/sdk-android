@@ -192,7 +192,9 @@ public class PayabliSession private constructor(
      * passes a different object every call, so comparing references would make [initialize] never idempotent
      * for the most ordinary way of writing it.
      *
-     * `internal` rather than private so its [toString] can be tested: it holds an access token.
+     * `internal` rather than private so its [toString] can be tested: it holds an access token and an
+     * entry point, and `PayabliConfig` withholds both for reasons that do not stop applying because the
+     * fields were copied into another type.
      */
     internal class ConfigIdentity(
         config: PayabliConfig,
@@ -220,7 +222,15 @@ public class PayabliSession private constructor(
             return result
         }
 
-        /** Holds an access token, so it must never render one. */
-        override fun toString(): String = "ConfigIdentity(entryPoint=$entryPoint, environment=$environment)"
+        /**
+         * Carries no credential and no identifier, matching `PayabliConfig.toString`.
+         *
+         * The entry point is withheld as well as the token: it names a specific merchant, and this string
+         * reaches exception messages and crash reports. It is the same rule and the same reason, and it
+         * applies here because this type holds the same two fields.
+         */
+        override fun toString(): String =
+            "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled, " +
+                "tokenProvider=${if (hasTokenProvider) "present" else "absent"})"
     }
 }

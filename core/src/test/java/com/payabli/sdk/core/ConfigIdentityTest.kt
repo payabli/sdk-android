@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private const val TOKEN = "an-access-token-that-must-not-leak"
+private const val ENTRY_POINT = "a-merchant-entry-point"
 
 /**
  * What decides whether two `initialize` calls mean the same session.
@@ -21,7 +22,7 @@ private const val TOKEN = "an-access-token-that-must-not-leak"
 class ConfigIdentityTest {
     private fun config(
         accessToken: String = TOKEN,
-        entryPoint: String = "entry",
+        entryPoint: String = ENTRY_POINT,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
         telemetryEnabled: Boolean = true,
         tokenProvider: PayabliTokenProvider? = null,
@@ -68,10 +69,19 @@ class ConfigIdentityTest {
     }
 
     @Test
-    fun `rendering it never renders the access token`() {
+    fun `rendering it reveals neither the token nor the entry point`() {
         val rendered = config().toString()
 
         assertFalse("the access token reached toString: $rendered", rendered.contains(TOKEN))
-        assertTrue("the entry point is the useful part and should survive", rendered.contains("entry"))
+        // The same rule `PayabliConfigTest` holds the configuration to, for the same reason: the entry point
+        // names a specific merchant and this string reaches exception messages and crash reports. Copying
+        // the fields into another type does not stop that applying, which is how it was missed here.
+        assertFalse("the entry point reached toString: $rendered", rendered.contains(ENTRY_POINT))
+    }
+
+    @Test
+    fun `rendering it still says whether a provider was supplied`() {
+        assertTrue(config().toString().contains("absent"))
+        assertTrue(config(tokenProvider = PayabliTokenProvider { "unused" }).toString().contains("present"))
     }
 }
