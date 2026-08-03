@@ -15,7 +15,14 @@ import androidx.annotation.RestrictTo
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public sealed interface SdkState {
-    /** No session yet. `PayabliSession.initialize` is required, and nothing else will work first. */
+    /**
+     * No session yet.
+     *
+     * A holder of a `PayabliSession` never observes this, because `state` is a property of a session and a
+     * session exists only once `initialize` has succeeded. It is the starting value the machine transitions
+     * out of, and it is meaningful to a caller only if the state is ever published somewhere a session is
+     * not needed to reach it. Whether it should be is a question for the surface freeze, not for this file.
+     */
     public data object Uninitialized : SdkState
 
     /** A session is live and requests can be made. */
