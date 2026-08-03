@@ -19,7 +19,7 @@ import com.payabli.sdk.core.logging.impl.LogLevelSetting
  * stateless and shared.
  *
  * **The SDK is silent until [setLogLevel] or [setHostDebuggable] lowers the cutoff.** Neither is the app-facing
- * control: an integrator reaches [PayabliLogging] instead, which delegates here.
+ * control: an integrator reaches `PayabliSession.setLogLevel` instead, which delegates here.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object LoggerRegistry {
@@ -41,9 +41,9 @@ public object LoggerRegistry {
      * call order, so a caller that deliberately silenced the SDK is not overridden. [clearLogLevel]
      * is the way back.
      *
-     * `internal`: [PayabliLogging] is the app-facing control and delegates here, so this stays the SDK's
-     * own entry point rather than a second public one. What is exposed is the level; the sink is not, which
-     * is what keeps records out of an app's own logging systems.
+     * `internal`: `PayabliSession.setLogLevel` is the app-facing control and delegates here, so this stays
+     * the SDK's own entry point rather than a second public one. What is exposed is the level; the sink is
+     * not, which is what keeps records out of an app's own logging systems.
      *
      * The platform's per-tag level still applies on top, so `debug` additionally needs
      * `adb shell setprop log.tag.<TAG> DEBUG`. Lowering this cutoff alone emits nothing at `debug`.

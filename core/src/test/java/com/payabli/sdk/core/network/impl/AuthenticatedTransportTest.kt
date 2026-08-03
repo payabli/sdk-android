@@ -19,6 +19,7 @@ import com.payabli.sdk.core.network.RetryPolicy
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -405,6 +406,96 @@ class AuthenticatedTransportTest {
                 val failure = failureFrom { stack(server, auth).execute(ping(), Payload.serializer()) }
 
                 assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            }
+        }
+
+    /**
+     * The interleaving an entry check alone cannot stop.
+     *
+     * A request that passed the terminal check before anything was condemned keeps going. When its own
+     * rejection arrives it asks for a refresh, and if that request could still take a claim it would call
+     * the host's broker and might succeed, after the host had been told to re-initialize and had built a
+     * second session. `PayabliAuth` refuses the claim instead, so the broker is never reached.
+     */
+    @Test
+    fun `a request already under way cannot reach the broker after another finishes the auth`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                val auth = testAuth(tokenProvider = { "refreshed-${calls.incrementAndGet()}" })
+                val subject = stack(server, auth)
+
+                // Condemn first, exactly as a sibling request would have: the token is unchanged and no
+                // refresh is running, so this is the settled case the choke-point acts on.
+                assertTrue(
+                    auth.finishIfSettledOn(TEST_TOKEN, AuthRecoveryPolicy().exhausted()),
+                )
+                val callsWhenFinished = calls.get()
+
+                server.respondWith(UNAUTHORIZED, "")
+                val failure =
+                    runCatching {
+                        completing("the request issued against a finished auth") { subject.execute(ping()) }
+                    }.exceptionOrNull()
+
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+                assertEquals(
+                    "a finished auth must not call the host's broker again",
+                    callsWhenFinished,
+                    calls.get(),
+                )
+            }
+        }
+
+    /**
+     * A rejection that arrives after somebody else replaced the token.
+     *
+     * A second rejection normally means the credential is finished. That conclusion is only sound about the
+     * token this attempt actually sent: if another caller replaced it while the reply was in flight, the
+     * rejection describes a credential already gone, and acting on it would end a session whose current
+     * token works. Ending it is permanent, so a wrong answer here is not recoverable.
+     */
+    @Test
+    fun `a rejection of a token already replaced fails the caller without latching the transport`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val minted = AtomicInteger()
+                val auth = testAuth(tokenProvider = { "rotated-${minted.incrementAndGet()}" })
+                val subject = stack(server, auth)
+
+                // Counted here rather than read from the server, which indexes before appending, so the
+                // first request would otherwise report zero and the branches would be off by one.
+                val attempt = AtomicInteger()
+                server.respondPerRequest { recorded ->
+                    when (attempt.incrementAndGet()) {
+                        1 -> UNAUTHORIZED to ""
+                        // The replay. Rotate the holder before answering, so by the time this rejection is
+                        // read the token it carried is no longer the one the holder would send.
+                        2 -> {
+                            val inFlight = recorded.header(AUTHORIZATION).orEmpty().removePrefix("Bearer ")
+                            runBlocking { auth.invalidateAndRefresh(inFlight) }
+                            UNAUTHORIZED to ""
+                        }
+                        else -> OK to ""
+                    }
+                }
+
+                val failure =
+                    runCatching {
+                        completing("the request whose token was replaced under it") { subject.execute(ping()) }
+                    }.exceptionOrNull()
+
+                // The caller fails, because its own request did not succeed.
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+
+                // The transport does not, because the token it holds now was never refused. Without the
+                // staleness check this second request throws from the latch instead of reaching the server.
+                assertEquals(
+                    OK,
+                    completing("a later request on a transport that was not condemned") {
+                        subject.execute(ping())
+                    }.statusCode,
+                )
             }
         }
 

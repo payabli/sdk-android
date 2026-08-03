@@ -1,21 +1,26 @@
 package com.payabli.sdk.core.logging
 
+import com.payabli.sdk.core.PayabliSession
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
 
 /**
- * The app-facing control, exercised the way an integrator reaches it rather than through the locator.
+ * The app-facing log control, exercised the way an integrator reaches it rather than through the locator.
  *
- * The delegation hop is the point: `PayabliLogging` adds a layer between the caller and the cutoff, and a
- * layer that quietly dropped the call would leave every precedence test in `LogLevelSettingTest` passing
- * while the public surface did nothing.
+ * The delegation hop is the point: `PayabliSession.setLogLevel` adds a layer between the caller and the
+ * cutoff, and a layer that quietly dropped the call would leave every precedence test in
+ * `LogLevelSettingTest` passing while the public surface did nothing.
+ *
+ * It sits on the session's companion rather than on a logging object of its own, on the type that owns
+ * `initialize`. That is what lets an explicit level be set before `initialize` derives the automatic one,
+ * which is the only way "explicit wins in either order" can hold in both directions.
  *
  * Process-wide state, so it is restored afterwards, and the restore is asserted: a cutoff left lowered here
  * reaches the real sink in a later class and fails it with "not mocked" from inside an unrelated refresh.
  */
-class PayabliLoggingTest {
+class SessionLogLevelTest {
     @After
     fun restoreProcessWideState() {
         LoggerRegistry.clearLogLevel()
@@ -34,15 +39,15 @@ class PayabliLoggingTest {
     }
 
     @Test
-    fun `setLevel reaches the cutoff`() {
-        PayabliLogging.setLogLevel(LogLevel.WARN)
+    fun `setLogLevel reaches the cutoff`() {
+        PayabliSession.setLogLevel(LogLevel.WARN)
 
         assertEquals(LogLevel.WARN, LoggerRegistry.effectiveLogLevel())
     }
 
     @Test
     fun `an app silencing the SDK is not overridden by its own debug build`() {
-        PayabliLogging.setLogLevel(LogLevel.NONE)
+        PayabliSession.setLogLevel(LogLevel.NONE)
         LoggerRegistry.setHostDebuggable(true)
 
         assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
@@ -52,7 +57,7 @@ class PayabliLoggingTest {
     @Test
     fun `an app silencing the SDK after the debug build is detected still wins`() {
         LoggerRegistry.setHostDebuggable(true)
-        PayabliLogging.setLogLevel(LogLevel.NONE)
+        PayabliSession.setLogLevel(LogLevel.NONE)
 
         assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
     }
@@ -62,8 +67,18 @@ class PayabliLoggingTest {
         // Not debuggable, which is what a release build reads as, so only the explicit setting can open it.
         LoggerRegistry.setHostDebuggable(false)
 
-        PayabliLogging.setLogLevel(LogLevel.INFO)
+        PayabliSession.setLogLevel(LogLevel.INFO)
 
         assertEquals(LogLevel.INFO, LoggerRegistry.effectiveLogLevel())
+    }
+
+    @Test
+    fun `a level set before initialize survives it`() {
+        // The reason the setter is type-level at all. An instance-owned one could not be called here, so the
+        // automatic value derived inside initialize would always be the later write and would always win.
+        PayabliSession.setLogLevel(LogLevel.NONE)
+        LoggerRegistry.setHostDebuggable(true)
+
+        assertEquals(LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
     }
 }
