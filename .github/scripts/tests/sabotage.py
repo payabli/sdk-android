@@ -28,7 +28,11 @@ import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SDK = Path(os.environ.get("NIGHTLY_SDK", HERE.parents[2]))
+# Not `os.environ.get("NIGHTLY_SDK", HERE.parents[2])`: a default argument is evaluated eagerly, so the
+# fallback would raise IndexError for a copy of this file sitting fewer than three directories deep even
+# when the override is set, which is the one situation the override exists for.
+_sdk = os.environ.get("NIGHTLY_SDK")
+SDK = Path(_sdk) if _sdk else HERE.parents[2]
 VERIFY = HERE / "verify.py"
 
 # COLLECTOR and POSTER are the copies the mutations rewrite. SOURCE maps each one back to the file in the
