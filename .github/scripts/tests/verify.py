@@ -886,8 +886,12 @@ def test_poster(mod):
     # P18 URLs come from this job's trusted environment, never from the artifact. The facts above carry a
     # poisoned run block; a tampered value inside `<url|label>` closes the link and whatever follows is
     # parsed as mrkdwn, so `<!channel>` would broadcast from the very job that was split out to prevent it.
+    # The trusted sha and ref are supplied here rather than left unset, because the absence checks below are
+    # only worth something if the context block would otherwise carry the values they are checking for. With
+    # no GITHUB_SHA the poisoned sha has nothing to displace, and "the poison is absent" passes on a block
+    # that renders no sha at all.
     FakeSlack.behaviour = {"chat.postMessage": ok_parent}
-    code, out, calls = run_poster(mod, FACTS_RED)
+    code, out, calls = run_poster(mod, FACTS_RED, GITHUB_SHA="045eebf9c1d2", GITHUB_REF_NAME="main")
     parent = posts(calls)[0]["payload"]
     ctx = parent["blocks"][1]["elements"][0]["text"]
     thread_text = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
@@ -897,7 +901,11 @@ def test_poster(mod):
     check("P18 no raw control sequence anywhere in the thread",
           "<!" not in json.dumps(posts(calls)[1]["payload"]), json.dumps(posts(calls)[1]["payload"]))
     check("P18 the trusted run id is used instead", "30609394288" in ctx, ctx)
-    check("P18 trusted sha and ref are rendered", "045eebf" in ctx or "aaa" not in ctx, ctx)
+    # The pair: the environment's sha and ref are rendered, and the artifact's are not. Either one alone
+    # passes without testing the substitution.
+    check("P18 the trusted sha is rendered", "045eebf" in ctx, ctx)
+    check("P18 the trusted ref is rendered", "on `main`" in ctx, ctx)
+    check("P18 the poisoned sha is not rendered", "aaa" not in ctx, ctx)
 
     # P19 the notification fallback is escaped too. It is rendered as mrkdwn, so a control sequence there
     # broadcasts even when every visible block is clean.
