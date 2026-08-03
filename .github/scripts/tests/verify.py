@@ -1579,7 +1579,16 @@ def test_poster(mod):
     check("P13 merging also halves the lookups", len(lookups) == 1, str(len(lookups)))
 
 
+HALVES = ("both", "collector", "poster")
+
+
 def main():
+    # A typo selects no half at all, and a run of nothing prints "0 passed, 0 failed" and exits 0. That is
+    # the vacuous green this whole harness exists to make impossible, so it is rejected rather than run.
+    if ONLY not in HALVES:
+        print(f"NIGHTLY_ONLY={ONLY!r} is not one of {', '.join(HALVES)}")
+        return 2
+
     server = ThreadingHTTPServer(("127.0.0.1", 0), FakeSlack)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}/api"
@@ -1594,6 +1603,11 @@ def main():
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     for name in FAIL:
         print(f"  FAILED: {name}")
+    # The same guard one level down, for any other route to running nothing: a half that raises before its
+    # first check, an accidental early return. Zero checks is never a pass.
+    if not PASS and not FAIL:
+        print("  FAILED: no checks ran at all")
+        return 1
     return 1 if FAIL else 0
 
 
