@@ -238,7 +238,7 @@ def main() -> int:
 
         path.write_text(source.replace(anchor, replacement))
         try:
-            py_compile.compile(str(path), doraise=True, cfile=str(Path(tempfile.mkdtemp()) / "x.pyc"))
+            py_compile.compile(str(path), doraise=True, cfile=str(WORK / "compile-probe.pyc"))
         except py_compile.PyCompileError as error:
             invalid.append((description, f"patched file does not compile: {error}"))
             print(f"  INVALID  {description}: does not compile")
