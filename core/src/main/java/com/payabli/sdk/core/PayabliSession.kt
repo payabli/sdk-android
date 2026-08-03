@@ -23,7 +23,12 @@ import kotlinx.coroutines.sync.withLock
 private const val REASON_ALREADY_INITIALIZED = "a session is already initialized with a different configuration"
 
 /**
- * One session per app: one token holder, one transport, one state.
+ * One session per app process: one token holder, one transport, one state.
+ *
+ * Per **process**, not per app, and the difference is real rather than pedantic. The installed session and
+ * the lock guarding it are companion state, which Android gives every process its own copy of, so an app
+ * that runs a service or an activity under `android:process` gets a session in each and a refresh in one is
+ * invisible to the other. Nothing here coordinates across that boundary and nothing pretends to.
  *
  * One initialize call and one session serving every capability, never two, and this type makes that
  * structural. Building the auth stack twice produced two token holders, so a refresh de-duplicated inside
