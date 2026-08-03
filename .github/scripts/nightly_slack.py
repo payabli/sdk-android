@@ -485,9 +485,9 @@ def commits_since_last_green() -> dict | None:
     heuristic that has been wrong; the honest suspect set is everything that landed since the suite was last
     known good, and only the Actions API knows when that was.
 
-    Runs here, in the report job, rather than in the collector. The query needs a token, and PLA-2307 closed
-    the exposure of keeping credentials in the job that runs the third-party emulator action. No git history
-    is needed either way: the baseline is a sha from the API and the compare link is just two shas.
+    Runs here, in the report job, rather than in the collector. The query needs a token, and a credential does
+    not belong in the job that runs the third-party emulator action. No git history is needed either way: the
+    baseline is a sha from the API and the compare link is just two shas.
 
     A successful run is the right definition of green, because the suite gate is what decides that run's
     conclusion, so this cannot disagree with the verdict the way a separate judgement would.
