@@ -88,12 +88,23 @@ internal class AuthenticatedTransport(
         }
 
         // No re-authorizing: re-entering the transport re-runs the chain, which reads the token again.
-        val second = withContext(SentToken()) { base.execute(request) }
+        val replayed = SentToken()
+        val second = withContext(replayed) { base.execute(request) }
         if (!recovery.isCredentialRejection(second)) return second
 
         // A token minted seconds ago and refused again is an authorization fact, not a transient one, which
         // is the same reason AuthRecoveryPolicy.exhausted is not open. Nothing further inside the SDK can fix
         // it, so the session hears about it before the caller does.
+        //
+        // Unless the holder moved on while this reply was in flight. Another caller can rotate the token
+        // between this attempt leaving and its rejection arriving, and then this rejection is evidence about
+        // a credential that has already been replaced rather than about the session. Condemning on it would
+        // kill a session whose current token is working, and the latch makes that permanent, so the stale
+        // case fails this caller and leaves the session alone. `invalidateAndRefresh` already declines to
+        // act on a superseded token for the same reason.
+        val sent = replayed.value
+        if (sent != null && !auth.isCurrent(sent)) throw recovery.exhausted()
+
         throw condemn(recovery.exhausted())
     }
 

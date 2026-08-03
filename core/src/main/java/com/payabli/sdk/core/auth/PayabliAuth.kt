@@ -106,6 +106,15 @@ public class PayabliAuth(
     internal val canRefresh: Boolean
         get() = config.tokenProvider != null
 
+    /**
+     * Whether [token] is still the one this holder would send.
+     *
+     * False means somebody rotated it while the caller was in flight, so whatever that caller learned about
+     * [token] is about a credential the holder has already replaced. `invalidateAndRefresh` draws the same
+     * distinction for the same reason; this exposes it to a caller that needs to read it without refreshing.
+     */
+    internal suspend fun isCurrent(token: String): Boolean = mutex.withLock { currentToken == token }
+
     /** The token to send now. Never refreshes on its own; call [invalidateAndRefresh] after a rejection. */
     public suspend fun accessToken(): String {
         reentrantToken()?.let { return it }
