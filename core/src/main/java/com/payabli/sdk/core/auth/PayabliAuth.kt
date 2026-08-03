@@ -11,6 +11,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.impl.RedactedCause
 import kotlinx.coroutines.CancellationException
@@ -107,27 +108,46 @@ public class PayabliAuth(
         get() = config.tokenProvider != null
 
     /**
-     * Runs [onSettled] under this holder's lock when [token] is still the credential it would send **and**
-     * no refresh is in flight, and reports whether it ran.
+     * Why this instance is finished, or null while it still works.
+     *
+     * Written only under [mutex], beside the refresh claim, so no refresh can start after it is set.
+     * `@Volatile` so a caller can read it without taking the lock on every request: a stale read can only
+     * be permissive, never wrongly terminal, and the authoritative read is the one inside the claim.
+     */
+    @Volatile
+    private var finished: PayabliException? = null
+
+    /** Non-null once this instance is finished. See [finished]. */
+    internal val terminalFailure: PayabliException?
+        get() = finished
+
+    /**
+     * Marks this instance finished when [token] is still the credential it would send **and** no refresh is
+     * in flight, and reports whether it did.
      *
      * Two conditions rather than one, because "still current" does not mean "nothing is about to replace
      * it". A claim is taken before the provider is called and [currentToken] is only written when the
      * refresh commits, so throughout a refresh the token being replaced is still the current one. A caller
-     * that checked currency alone would draw a conclusion about a credential already on its way out.
+     * that checked currency alone would condemn on evidence about a credential already on its way out.
      *
-     * [onSettled] runs under the lock so that a refresh cannot begin between the decision and whatever it
-     * records, which is the same reason the commit above holds the lock across all three of its writes. It
-     * must not suspend and must not re-enter this holder.
+     * Deciding and recording happen in one lock acquisition, so a refresh cannot begin between them. That
+     * is what makes the guarantee in [invalidateAndRefresh] hold: nothing is set while a refresh runs, and
+     * nothing runs after it is set.
      */
     internal suspend fun finishIfSettledOn(
         token: String,
-        onSettled: () -> Unit,
+        failure: PayabliException,
     ): Boolean =
         mutex.withLock {
             if (inFlight != null || currentToken != token) return@withLock false
-            onSettled()
+            finished = failure
             true
         }
+
+    /** Marks this instance finished outright, for a failure no rotation could have fixed. */
+    internal suspend fun finish(failure: PayabliException) {
+        mutex.withLock { finished = failure }
+    }
 
     /** The token to send now. Never refreshes on its own; call [invalidateAndRefresh] after a rejection. */
     public suspend fun accessToken(): String {
@@ -156,15 +176,22 @@ public class PayabliAuth(
      * refresh again on a token that has already rotated. That would discard the rotation the first one
      * obtained.
      *
-     * So: already rotated returns the current token untouched, a refresh in flight joins it and shares
-     * its outcome, and otherwise this caller runs the provider.
+     * So: finished refuses outright, already rotated returns the current token untouched, a refresh in
+     * flight joins it and shares its outcome, and otherwise this caller runs the provider.
+     *
+     * **This block is the only place a claim is created, which is what makes the refusal complete.** Once
+     * [finished] is set no caller can reach the provider, whatever stage it had already got to elsewhere,
+     * so the host's broker is never called again after this instance is done.
      */
     public suspend fun invalidateAndRefresh(rejectedToken: String): String {
         reentrantToken()?.let { return it }
         val plan =
             mutex.withLock {
                 val existing = inFlight
+                val terminated = finished
                 when {
+                    // First, so nothing below can take a claim on an instance that is already finished.
+                    terminated != null -> RefreshPlan.Refused(terminated)
                     // Before AlreadyRotated: the current token may itself be the one under refresh, and
                     // handing it back would return a credential already known to be rejected.
                     existing != null -> RefreshPlan.Join(existing)
@@ -173,18 +200,22 @@ public class PayabliAuth(
                 }
             }
         return when (plan) {
+            is RefreshPlan.Refused -> throw plan.failure
             is RefreshPlan.AlreadyRotated -> plan.token
             is RefreshPlan.Join -> plan.claim.await()
             is RefreshPlan.Own -> runRefresh(plan.claim, rejectedToken)
         }
     }
 
-    /** Restores the token from [PayabliConfig] and drops any in-flight claim. */
+    /** Restores the token from [PayabliConfig], drops any in-flight claim, and revives a finished instance. */
     @VisibleForTesting
     internal suspend fun reset() {
         mutex.withLock {
             currentToken = config.accessToken
             inFlight = null
+            // Without this a test that finishes the instance leaves it dead for every later one, and the
+            // failure lands somewhere unrelated.
+            finished = null
         }
     }
 
@@ -312,6 +343,10 @@ public class PayabliAuth(
     }
 
     private sealed interface RefreshPlan {
+        data class Refused(
+            val failure: PayabliException,
+        ) : RefreshPlan
+
         data class AlreadyRotated(
             val token: String,
         ) : RefreshPlan

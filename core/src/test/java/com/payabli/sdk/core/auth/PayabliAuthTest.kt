@@ -19,6 +19,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -27,10 +29,15 @@ import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
 private val COMPLETION_TIMEOUT = 2.seconds
+private const val TERMINAL_REASON = "the refreshed token was rejected as well"
+private const val THREE_CALLERS = 3
 
 /** The 2.2 auth holder: refresh de-duplication, the change flow, and how a provider failure surfaces. */
 class PayabliAuthTest {
     private val sink = RecordingLogSink()
+
+    /** The failure the choke-point hands in when a refreshed token is refused again. */
+    private fun terminal() = PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, TERMINAL_REASON)
 
     private fun auth(tokenProvider: PayabliTokenProvider? = null) =
         PayabliAuth(
@@ -702,28 +709,90 @@ class PayabliAuthTest {
                 "claimed"
             }
 
-            // The distinction the caller depends on. A claim is taken before the provider runs and the new
-            // token is only written when it commits, so right now the old token is still the current one.
-            // Reading currency alone would say "settled" and let a caller draw a permanent conclusion about
-            // a credential that is already being replaced.
-            var ran = false
+            // A claim is taken before the provider runs and the new token is written only when it commits,
+            // so right now the old token is still the current one. Reading currency alone would report
+            // settled and let a caller end a session over a credential already being replaced.
             assertFalse(
                 "a token with a refresh in flight must not be reported as settled",
-                subject.finishIfSettledOn("initial-token") { ran = true },
+                subject.finishIfSettledOn("initial-token", terminal()),
             )
-            assertFalse("the action must not run when the token is unsettled", ran)
 
             release.complete(Unit)
             refreshing.join()
 
-            assertTrue(
-                "once the refresh has committed, the token it minted is settled",
-                subject.finishIfSettledOn("refreshed-token") { ran = true },
-            )
-            assertTrue("the action runs when the token is settled", ran)
+            // Checked before finishing anything, or it would pass for the wrong reason.
             assertFalse(
-                "the replaced token is not settled either",
-                subject.finishIfSettledOn("initial-token") { },
+                "the replaced token is not settled once the refresh has committed",
+                subject.finishIfSettledOn("initial-token", terminal()),
+            )
+            assertTrue(
+                "the token the refresh minted is settled",
+                subject.finishIfSettledOn("refreshed-token", terminal()),
+            )
+        }
+
+    @Test
+    fun `a finished instance refuses a refresh and never calls the provider`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val subject =
+                auth(
+                    tokenProvider = {
+                        calls.incrementAndGet()
+                        "never-minted"
+                    },
+                )
+            assertTrue(subject.finishIfSettledOn("initial-token", terminal()))
+
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+            // The guarantee the whole arrangement exists for: the claim is the only way to the provider, and
+            // a finished instance never takes one, whatever stage a caller had already reached elsewhere.
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals("the host's broker must not be called on a finished instance", 0, calls.get())
+            assertEquals(TERMINAL_REASON, failure.reason)
+        }
+
+    @Test
+    fun `every concurrent caller on a finished instance gets the same refusal`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val subject =
+                auth(
+                    tokenProvider = {
+                        calls.incrementAndGet()
+                        "never-minted"
+                    },
+                )
+            assertTrue(subject.finishIfSettledOn("initial-token", terminal()))
+
+            val outcomes =
+                (1..THREE_CALLERS)
+                    .map { async { runCatching { subject.invalidateAndRefresh("initial-token") } } }
+                    .map { it.await() }
+
+            // One entry, one exit. Nobody starts a refresh and nobody waits on one that will not come.
+            assertTrue("every caller should have been refused", outcomes.all { it.isFailure })
+            outcomes.forEach {
+                assertEquals(TERMINAL_REASON, (it.exceptionOrNull() as PayabliException).reason)
+            }
+            assertEquals("no caller reached the provider", 0, calls.get())
+        }
+
+    @Test
+    fun `reset revives a finished instance, so one test cannot poison the next`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val subject = auth(tokenProvider = { "refreshed-token" })
+            assertTrue(subject.finishIfSettledOn("initial-token", terminal()))
+            assertNotNull(subject.terminalFailure)
+
+            subject.reset()
+
+            assertNull("reset must clear the terminal failure", subject.terminalFailure)
+            assertEquals(
+                "a revived instance refreshes normally",
+                "refreshed-token",
+                completing("the refresh after reset") { subject.invalidateAndRefresh("initial-token") },
             )
         }
 }

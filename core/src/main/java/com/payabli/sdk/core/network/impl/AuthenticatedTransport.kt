@@ -52,21 +52,11 @@ internal class AuthenticatedTransport(
     /** Told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred. */
     private val onAuthFailure: AuthFailureListener = AuthFailureListener { },
 ) : PayabliTransport {
-    /**
-     * Set once auth is finished for good, and never cleared.
-     *
-     * Telling the session was not enough on its own. Without this, a later `execute` on the same transport
-     * sends the rejected token again, calls the host's provider again, and can even succeed, while the
-     * session it belongs to says it must be re-initialized. The dangerous half is not the disagreement: it
-     * is that the host does the right thing, calls `initialize`, gets a new session with a new holder, and
-     * any capability still holding the old one keeps a second refresh domain alive through this transport.
-     * That is the state the session type exists to make impossible, arrived at from the other direction.
-     */
-    @Volatile
-    private var terminal: PayabliException? = null
-
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
-        terminal?.let { throw PayabliGenericException(it.code, it.reason) }
+        // Fail without a round trip on an instance already known to be finished. This is a convenience, not
+        // the guard: [PayabliAuth] refuses a refresh claim on its own, so a request that slips past this
+        // line still cannot reach the host's broker.
+        auth.terminalFailure?.let { throw PayabliGenericException(it.code, it.reason) }
 
         val stamped = SentToken()
         val first = withContext(stamped) { base.execute(request) }
@@ -96,47 +86,26 @@ internal class AuthenticatedTransport(
         // is the same reason AuthRecoveryPolicy.exhausted is not open. Nothing further inside the SDK can fix
         // it, so the session hears about it before the caller does.
         //
-        // Unless the holder has moved on, or is moving on. Another caller can replace the token between this
-        // attempt leaving and its rejection arriving, and can also be midway through replacing it right now,
-        // in which case the credential this reply describes is on its way out and a refresh that may well
-        // succeed is already running. Either way the rejection is evidence about a token rather than about
-        // the session, and condemning on it kills a session whose next token works. The latch makes that
-        // permanent, so the decision and the latching happen together under the holder's lock: no refresh
-        // can start in the gap, which is the window a check-then-act would leave open.
+        // Unless the token has moved on, or is moving on. Another caller can replace it between this attempt
+        // leaving and its rejection arriving, and can also be midway through replacing it right now, in
+        // which case a refresh that may well succeed is already running. Either way the rejection is
+        // evidence about a token rather than about the session, and acting on it would end a session whose
+        // next token works. `PayabliAuth` answers both questions and records the outcome in one lock
+        // acquisition, so no refresh can start in the gap a check-then-act would leave open.
         val exhausted = recovery.exhausted()
-        val condemned =
-            replayed.value
-                ?.let { sent -> auth.finishIfSettledOn(sent) { latch(exhausted) } }
-                // Nothing stamped means the chain did not run, which is not a state to be lenient about.
-                ?: run {
-                    latch(exhausted)
-                    true
-                }
+        val sent = replayed.value
+        val finished =
+            // Nothing stamped means the chain did not run, which is not a state to be lenient about.
+            if (sent == null) {
+                auth.finish(exhausted)
+                true
+            } else {
+                auth.finishIfSettledOn(sent, exhausted)
+            }
 
-        if (condemned) onAuthFailure.onUnrecoverable(exhausted)
+        // Outside the lock: telling the session runs a listener, and a listener is foreign code.
+        if (finished) onAuthFailure.onUnrecoverable(exhausted)
         throw exhausted
-    }
-
-    /**
-     * Records that auth is finished. Separate from telling the session, because this half runs under the
-     * holder's lock and notifying a listener from there would run foreign code with the lock held.
-     */
-    private fun latch(failure: PayabliException) {
-        terminal = failure
-    }
-
-    /**
-     * Latches [failure] and reports it, returning it so a caller can throw it in the same expression. For
-     * the paths where no refresh can be racing the decision.
-     *
-     * A fresh exception is raised on each later call rather than the latched instance being rethrown: a
-     * shared `Throwable` carries the stack trace of whichever request happened to fail first, which points
-     * diagnosis at the wrong call.
-     */
-    private fun condemn(failure: PayabliException): PayabliException {
-        latch(failure)
-        onAuthFailure.onUnrecoverable(failure)
-        return failure
     }
 
     /**
@@ -151,7 +120,12 @@ internal class AuthenticatedTransport(
         try {
             auth.invalidateAndRefresh(rejected)
         } catch (failure: PayabliException) {
-            if (!auth.canRefresh) condemn(failure)
+            // No provider means every future refresh fails identically, so nothing could rotate and there
+            // is no settledness question to ask.
+            if (!auth.canRefresh) {
+                auth.finish(failure)
+                onAuthFailure.onUnrecoverable(failure)
+            }
             throw failure
         }
     }
