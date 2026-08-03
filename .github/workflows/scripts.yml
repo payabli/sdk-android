@@ -1,0 +1,53 @@
+name: Nightly reporter tests
+
+# `nightly_report.py` decides the nightly verdict and gates the run, and `nightly_slack.py` is the only
+# thing that reports a failure. They are covered here rather than trusted.
+#
+# This also answers a question nothing else could. Neither `schedule` nor `workflow_dispatch` fires from a
+# feature branch, so a change to either script used to be verifiable only by burning a short-lived probe
+# branch with a temporary push trigger. These tests run on the pull request itself.
+#
+# Path-filtered, so an ordinary pull request pays nothing for it. That also means it must not be made a
+# required check: a required check that never runs blocks a merge rather than passing it. Neither is
+# `nightly.yml`.
+#
+# No `setup-python` and nothing third-party. The runner's `python3` is what `nightly.yml` already invokes
+# these scripts with, and the harness is standard library only, deliberately. `git` is needed and present,
+# because the collector half builds a synthetic repository to run against.
+
+on:
+  pull_request:
+    paths:
+      # The workflow file is in the filter so a change to it tests itself.
+      - '.github/scripts/**'
+      - '.github/workflows/scripts.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/**'
+      - '.github/workflows/scripts.yml'
+
+concurrency:
+  group: scripts-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  harness:
+    name: Harness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 367 checks. The collector runs as a subprocess in a synthetic git repository; the poster runs
+      # in-process against a fake Slack on loopback.
+      - name: Verify
+        run: python3 .github/scripts/tests/verify.py
+
+      # 38 deliberate breaks, each confirmed to turn a check red. Rewrites copies in a scratch directory and
+      # never the files in the tree, so an interrupted run leaves nothing behind. An edit that moves a
+      # mutation anchor reports INVALID and fails here; re-point the anchor in the same change.
+      - name: Sabotage
+        run: python3 .github/scripts/tests/sabotage.py
