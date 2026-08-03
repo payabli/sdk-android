@@ -114,6 +114,12 @@ public class PayabliSession private constructor(
          *   is the documented recovery, and it has to work with a newly brokered token.
          *
          * It does not rehydrate.
+         *
+         * **It sets the diagnostic log level as a side effect**, once, from the host build. On a debuggable
+         * host the SDK starts emitting at its most verbose; on any other build it stays silent. An app that
+         * wants neither calls [setLogLevel] with [LogLevel.NONE], and an explicit level set before or after
+         * this call wins either way. Records go to the platform log and never to a callback, and every one
+         * is redacted before it is written, so this cannot surface a credential.
          */
         public suspend fun initialize(
             config: PayabliConfig,
