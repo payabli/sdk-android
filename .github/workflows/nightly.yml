@@ -10,10 +10,12 @@ name: Nightly
 # Instrumented coverage is :core only, and that is a scope statement rather than an oversight. Every module
 # has a src/androidTest directory, but outside :core they hold the generated ExampleInstrumentedTest and none
 # of them declares androidx.test:runner, so those tasks would die with ClassNotFoundException before running
-# a thing. :core's own instrumented tier is not small any more: 18 tests as measured on a probe run, up from
-# 4, once the Keystore coverage landed. :taptopay is further out of reach: minSdk 30, and attestation and
-# card-reader paths that need a physical device. Wiring the runner into template-only modules to run
-# generated tests is not worth a line in this file, so the claim is narrowed instead.
+# a thing. :core's own instrumented tier is not small any more, and it grows with each capability that binds
+# to a platform API. No count is kept here, because the last one went stale inside a single merge; what runs
+# on the emulator is every @Test under core/src/androidTest that is not @ManualDeviceTest. :taptopay is
+# further out of reach: minSdk 30, and attestation and card-reader paths that need a physical device. Wiring
+# the runner into template-only modules to run generated tests is not worth a line in this file, so the
+# claim is narrowed instead.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
