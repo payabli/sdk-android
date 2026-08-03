@@ -17,7 +17,19 @@ internal const val BUFFER = 64
  *
  * For **observation only**, where several watchers may each want the same transition: a host driving UI
  * while something else logs. That is the one problem multicast solves, and the overflow policy is settled
- * here so each capability with a lifecycle stream does not re-argue it.
+ * here so a capability with a lifecycle stream does not re-argue it.
+ *
+ * **Card-present is the intended consumer, and probably the only one.** The useful predictor of whether a
+ * flow needs a transition stream is not which acceptance channel it is, it is who draws the UI. Card-present
+ * leaves the surrounding screens to the host across a multi-second physical interaction, so the host needs
+ * to be told where it is. Card-not-present ships its own forms and completes in one call, so a result and a
+ * submitting flag say everything there is to say, which is what the sibling platform exposes there and what
+ * every comparable product surveyed exposes there.
+ *
+ * So this deliberately does **not** try to be one stream for every flow. Where that shape has been tried
+ * elsewhere it works by giving up typing, and an untyped channel carrying every flow's traffic is a
+ * redaction problem before it is an ergonomics one. If card-present stays the only consumer, this belongs
+ * in that module rather than here, which is a decision for whoever lands the first emitter.
  *
  * **Not a telemetry channel, and not a general event bus.** With no subscriber attached an event is
  * discarded, which is correct for something nobody is watching and wrong for anything that has to be
