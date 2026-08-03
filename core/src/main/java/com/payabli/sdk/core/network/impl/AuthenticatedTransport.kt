@@ -1,11 +1,13 @@
 package com.payabli.sdk.core.network.impl
 
+import com.payabli.sdk.core.SdkState
 import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
@@ -46,6 +48,8 @@ internal class AuthenticatedTransport(
     private val recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
     /** [LogCategory.NETWORK], not `AUTH`: declining a replay is this layer's decision, not the holder's. */
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
+    /** Told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred. */
+    private val onAuthFailure: AuthFailureListener = AuthFailureListener { },
 ) : PayabliTransport {
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
         val stamped = SentToken()
@@ -54,7 +58,7 @@ internal class AuthenticatedTransport(
 
         // The token the chain stamped, not one this class read earlier: a rotation between the two reads would
         // make them disagree, and reporting the earlier one replays the credential just refused.
-        auth.invalidateAndRefresh(stamped.value ?: auth.accessToken())
+        refresh(stamped.value ?: auth.accessToken())
 
         // Refresh first, then decide: a rejected credential is worth replacing whether or not this particular
         // request may be sent again, so the next one starts clean.
@@ -69,8 +73,31 @@ internal class AuthenticatedTransport(
 
         // No re-authorizing: re-entering the transport re-runs the chain, which reads the token again.
         val second = withContext(SentToken()) { base.execute(request) }
-        if (recovery.isCredentialRejection(second)) throw recovery.exhausted()
-        return second
+        if (!recovery.isCredentialRejection(second)) return second
+
+        // A token minted seconds ago and refused again is an authorization fact, not a transient one, which
+        // is the same reason AuthRecoveryPolicy.exhausted is not open. Nothing further inside the SDK can fix
+        // it, so the session hears about it before the caller does.
+        val exhausted = recovery.exhausted()
+        onAuthFailure.onUnrecoverable(exhausted)
+        throw exhausted
+    }
+
+    /**
+     * Refreshes, and reports the session dead only when the failure is structural.
+     *
+     * The discriminator is [PayabliAuth.canRefresh], not the error: a provider that timed out or threw once
+     * is a bad minute for the host's backend and the next request may well succeed, whereas no provider at
+     * all means every future refresh fails identically. Condemning a session for the first would make
+     * [SdkState.ReinitializeRequired] fire on a transient blip and teach hosts to ignore it.
+     */
+    private suspend fun refresh(rejected: String) {
+        try {
+            auth.invalidateAndRefresh(rejected)
+        } catch (failure: PayabliException) {
+            if (!auth.canRefresh) onAuthFailure.onUnrecoverable(failure)
+            throw failure
+        }
     }
 
     /**

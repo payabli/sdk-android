@@ -26,10 +26,14 @@ private const val AUTHORIZATION = "Authorization"
 private const val REFRESHED = "refreshed-token"
 
 /**
- * The single entry point a separately-shipped capability uses to get a transport.
+ * The auth stack assembler that `PayabliSession` builds on.
  *
  * These assert it hands back something already correct: bearer stamped, 401 recovered. A factory that
  * returned a transport missing either would be worse than no factory, because the caller cannot tell.
+ *
+ * It is no longer what a separately-shipped capability calls; the session is, and it owns one of these so
+ * that "one session serving both, never two" is enforced rather than requested. The tests below still hold,
+ * because what they cover is the assembly rather than who asks for it.
  */
 class TransportFactoryTest {
     private val sink = RecordingLogSink()
@@ -58,10 +62,9 @@ class TransportFactoryTest {
 
     /**
      * Every other test here goes through `authenticatedAgainst`, which takes a base URL, because it needs a
-     * loopback server. That left the **public** overload, the one a separately-shipped capability actually
-     * calls, with no coverage at all.
+     * loopback server. That left the overload `PayabliSession.initialize` actually calls with no coverage.
      *
-     * What it adds over the internal one is that the origin comes from [PayabliEnvironment] and from nowhere
+     * What it adds over the base-URL one is that the origin comes from [PayabliEnvironment] and from nowhere
      * else, so this drives every shipped environment through it. A malformed or relative base URL in any of
      * them fails at construction, which is the failure this would catch and which no other test would.
      *
@@ -69,7 +72,7 @@ class TransportFactoryTest {
      * live origin.
      */
     @Test
-    fun `the public overload builds a transport for every shipped environment`() {
+    fun `the environment overload builds a transport for every shipped environment`() {
         PayabliEnvironment.entries.forEach { environment ->
             val config =
                 PayabliConfig(
@@ -81,8 +84,8 @@ class TransportFactoryTest {
             val first = TransportFactory.authenticated(config)
             val second = TransportFactory.authenticated(config)
 
-            // Same guarantee the internal overload is held to: a holder per call, which is why the KDoc
-            // tells callers to build one and share it.
+            // A holder per call, which is exactly why this is no longer what a capability calls: sharing
+            // could only ever be requested here, and `PayabliSession` is where it became structural.
             assertNotSame("environment $environment", first, second)
         }
     }

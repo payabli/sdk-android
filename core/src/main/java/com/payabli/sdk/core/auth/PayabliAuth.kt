@@ -93,6 +93,19 @@ public class PayabliAuth(
     /** Emits once per successful refresh. Carries the token, so it is internal like the rest of this type. */
     public val tokenChanges: SharedFlow<String> = tokenChangeSink.asSharedFlow()
 
+    /**
+     * Whether a rejected token can be replaced at all.
+     *
+     * False means no provider was supplied, so every refresh from now on fails the same way and the session
+     * is beyond recovery from inside the SDK. `AuthenticatedTransport` reads this to tell that apart from a
+     * provider that merely failed this once, which is transient and must not condemn the session.
+     *
+     * `internal` rather than `@RestrictTo`: it is a fact about this holder that only `:core`'s own choke-point
+     * acts on, and a capability that could read it would be reading how auth is configured.
+     */
+    internal val canRefresh: Boolean
+        get() = config.tokenProvider != null
+
     /** The token to send now. Never refreshes on its own; call [invalidateAndRefresh] after a rejection. */
     public suspend fun accessToken(): String {
         reentrantToken()?.let { return it }
