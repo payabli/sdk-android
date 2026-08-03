@@ -38,6 +38,10 @@ jobs:
   harness:
     name: Harness
     runs-on: ubuntu-latest
+    # The sabotage half runs deliberately corrupted copies of the reporter, and neither it nor the collector
+    # subprocesses impose a timeout of their own, so a mutation that produces a loop would otherwise sit on
+    # the six-hour default. The documented run is about a minute.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
