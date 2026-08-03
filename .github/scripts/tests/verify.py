@@ -520,6 +520,23 @@ def run_poster(mod, facts, **env_extra):
 MAX_LOOKUPS = 24  # MAX_LISTED_FAILURES x two distinct commit authors
 
 
+class _PinnedClock:
+    """The poster's `time` module with `time()` frozen, and everything else passed straight through.
+
+    Only `post_at` arithmetic needs pinning. `time.monotonic`, which bounds the mention lookups, must stay
+    real: freezing it would turn a budget that is supposed to expire into one that never does.
+    """
+
+    def __init__(self, real, at):
+        self._real, self._at = real, at
+
+    def time(self):
+        return self._at
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
 class _Missing(dict):
     """Stands in for an absent call so an assertion fails cleanly instead of raising.
 
@@ -1444,10 +1461,23 @@ def test_poster(mod):
     check("P35 a concurrent run's newer alarm is NOT cancelled", "Q0NEWER" not in deleted, str(deleted))
 
     # A tie must be retained: a duplicate is one false alarm, deleting on a tie could leave zero.
-    FakeSlack.behaviour = {"chat.postMessage": ok_parent,
-                           "chat.scheduledMessages.list": {"ok": True, "scheduled_messages": [
-                               {"id": "Q0TIE", "post_at": now + 26 * 3600, "text": "[nightly-liveness:Android] tie"}]}}
-    code, out, calls = run_poster(mod, FACTS_RED)
+    #
+    # The poster's clock is pinned for this one case, because a tie is the only assertion here that turns on
+    # exact equality. Deriving the fixture from a wall clock read earlier in this function left an 8.8ms
+    # window: crossing a second boundary inside it makes the poster arm one second later, the "tie" becomes
+    # strictly older, production correctly deletes it and the check fails for a reason that is not a defect.
+    # Measured at roughly a 1-in-110 chance per run, which a sabotage pass takes 33 times.
+    pinned = int(_t.time())
+    real_clock = mod.time
+    mod.time = _PinnedClock(real_clock, pinned)
+    try:
+        FakeSlack.behaviour = {"chat.postMessage": ok_parent,
+                               "chat.scheduledMessages.list": {"ok": True, "scheduled_messages": [
+                                   {"id": "Q0TIE", "post_at": pinned + mod.SWITCH_HOURS * 3600,
+                                    "text": "[nightly-liveness:Android] tie"}]}}
+        code, out, calls = run_poster(mod, FACTS_RED)
+    finally:
+        mod.time = real_clock
     tie_deleted = {d["payload"]["scheduled_message_id"] for d in of(calls, "chat.deleteScheduledMessage")}
     check("P35 a tie on post_at is retained, not deleted", "Q0TIE" not in tie_deleted, str(tie_deleted))
 
