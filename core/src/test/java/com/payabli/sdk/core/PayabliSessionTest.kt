@@ -295,6 +295,41 @@ class PayabliSessionTest {
         }
 
     @Test
+    fun `a condemned transport refuses later requests without sending or refreshing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(401, "{}")
+                val subject = session(server, config(tokenProvider = provider()))
+
+                runCatching {
+                    completing("the request that condemns the session") { subject.transport.execute(ping()) }
+                }
+                assertEquals(SdkState.ReinitializeRequired, subject.state.value)
+                val sentWhileDying = server.recorded.size
+                val refreshesWhileDying = providerCalls.get()
+
+                val after =
+                    runCatching {
+                        completing("the request after the session was condemned") {
+                            subject.transport.execute(ping())
+                        }
+                    }.exceptionOrNull()
+
+                // Telling the session is not enough on its own. Left unlatched, this request sends the
+                // rejected token again, calls the host's broker again, and can even succeed, while the
+                // session it belongs to says it must be re-initialized. Worse, the host then re-initializes
+                // and a capability still holding this transport keeps a second refresh domain alive.
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (after as PayabliException).code)
+                assertEquals("a condemned transport must not send again", sentWhileDying, server.recorded.size)
+                assertEquals(
+                    "a condemned transport must not call the host's broker again",
+                    refreshesWhileDying,
+                    providerCalls.get(),
+                )
+            }
+        }
+
+    @Test
     fun `a recovered 401 leaves the session Ready`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->

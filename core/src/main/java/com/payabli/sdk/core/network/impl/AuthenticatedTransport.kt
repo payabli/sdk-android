@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
@@ -51,7 +52,22 @@ internal class AuthenticatedTransport(
     /** Told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred. */
     private val onAuthFailure: AuthFailureListener = AuthFailureListener { },
 ) : PayabliTransport {
+    /**
+     * Set once auth is finished for good, and never cleared.
+     *
+     * Telling the session was not enough on its own. Without this, a later `execute` on the same transport
+     * sends the rejected token again, calls the host's provider again, and can even succeed, while the
+     * session it belongs to says it must be re-initialized. The dangerous half is not the disagreement: it
+     * is that the host does the right thing, calls `initialize`, gets a new session with a new holder, and
+     * any capability still holding the old one keeps a second refresh domain alive through this transport.
+     * That is the state the session type exists to make impossible, arrived at from the other direction.
+     */
+    @Volatile
+    private var terminal: PayabliException? = null
+
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        terminal?.let { throw PayabliGenericException(it.code, it.reason) }
+
         val stamped = SentToken()
         val first = withContext(stamped) { base.execute(request) }
         if (!recovery.isCredentialRejection(first)) return first
@@ -78,9 +94,20 @@ internal class AuthenticatedTransport(
         // A token minted seconds ago and refused again is an authorization fact, not a transient one, which
         // is the same reason AuthRecoveryPolicy.exhausted is not open. Nothing further inside the SDK can fix
         // it, so the session hears about it before the caller does.
-        val exhausted = recovery.exhausted()
-        onAuthFailure.onUnrecoverable(exhausted)
-        throw exhausted
+        throw condemn(recovery.exhausted())
+    }
+
+    /**
+     * Latches [failure] and reports it, returning it so a caller can throw it in the same expression.
+     *
+     * A fresh exception is raised on each later call rather than the latched instance being rethrown: a
+     * shared `Throwable` carries the stack trace of whichever request happened to fail first, which points
+     * diagnosis at the wrong call.
+     */
+    private fun condemn(failure: PayabliException): PayabliException {
+        terminal = failure
+        onAuthFailure.onUnrecoverable(failure)
+        return failure
     }
 
     /**
@@ -95,7 +122,7 @@ internal class AuthenticatedTransport(
         try {
             auth.invalidateAndRefresh(rejected)
         } catch (failure: PayabliException) {
-            if (!auth.canRefresh) onAuthFailure.onUnrecoverable(failure)
+            if (!auth.canRefresh) condemn(failure)
             throw failure
         }
     }
