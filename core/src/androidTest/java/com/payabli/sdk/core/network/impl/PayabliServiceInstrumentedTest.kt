@@ -27,8 +27,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * covered on the JVM too and is repeated here because the mechanism is platform-specific.
  *
  * **CI does not run this.** The workflow has no emulator, so `:core:connectedAndroidTest` is a deliberate
- * local step and a regression here will not turn a pull request red. PLA-2306 adds a manual and nightly
- * emulator job, deliberately not a required per-PR check.
+ * local step and a regression here will not turn a pull request red.
  */
 @RunWith(AndroidJUnit4::class)
 class PayabliServiceInstrumentedTest {
@@ -157,8 +156,8 @@ class PayabliServiceInstrumentedTest {
          * The midpoint, which is what "nearer the budget than the stall" means.
          *
          * A tighter bound catches nothing extra, since the behaviour it guards against is waiting out the
-         * whole stall, and it spends slack that a loaded emulator needs. PLA-2306 runs this on a hosted
-         * runner, so the slack is the difference between a signal and a retry habit.
+         * whole stall, and it spends slack that a loaded emulator needs. On a hosted runner that slack is
+         * the difference between a signal and a retry habit.
          */
         const val CUTOFF_MILLIS = (CALL_BUDGET_MILLIS + STALL_MILLIS) / 2
     }
