@@ -68,6 +68,19 @@ Slack links; a trace over 4000 characters is trimmed in the middle and the unabr
 job because the build outputs and the git history the culprit lookup needs are both there, and the verdict
 has to be decided there because that is where the gate reads it.
 
+**Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
+runs 369 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
+`git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
+behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
+files in the tree, so it is safe to interrupt. No third-party Python package is involved.
+`.github/workflows/scripts.yml` runs both, and only when `.github/scripts/**` or that workflow itself
+changes, so an ordinary pull request pays nothing for it. An edit that moves a sabotage anchor turns that
+workflow red until the anchor is re-pointed in the same change; that is the safeguard working, not a flake.
+Read the README there before adding a check, because each of the four disciplines it lists exists because
+its absence produced a false pass. It is also the cheap place to check a change to either script: a
+scheduled run never fires from a feature branch, and while `nightly.yml` can be dispatched at one, that runs
+the whole emulator suite and posts to the channel.
+
 **A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
 missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
 stop reading a channel. Silence would be ambiguous on its own, because "green" and "the workflow stopped

@@ -10,10 +10,12 @@ name: Nightly
 # Instrumented coverage is :core only, and that is a scope statement rather than an oversight. Every module
 # has a src/androidTest directory, but outside :core they hold the generated ExampleInstrumentedTest and none
 # of them declares androidx.test:runner, so those tasks would die with ClassNotFoundException before running
-# a thing. :core's own instrumented tier is not small any more: 18 tests as measured on PLA-2307's probe runs,
-# up from 4, once PLA-2180's Keystore coverage landed. :taptopay is further out of reach: minSdk 30, and attestation and card-reader paths that need a
-# physical device (PLA-2193). Wiring the runner into template-only modules to run generated tests is not
-# worth a line in this file, so the claim is narrowed instead.
+# a thing. :core's own instrumented tier is not small any more, and it grows with each capability that binds
+# to a platform API. No count is kept here, because the last one went stale inside a single merge; what runs
+# on the emulator is every @Test under core/src/androidTest that is not @ManualDeviceTest. :taptopay is
+# further out of reach: minSdk 30, and attestation and card-reader paths that need a physical device. Wiring
+# the runner into template-only modules to run generated tests is not worth a line in this file, so the
+# claim is narrowed instead.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
@@ -21,7 +23,7 @@ name: Nightly
 # when the platform or AGP moves, not per commit.
 #
 # Promote to pull_request only after this has been stable for a stretch, and then consider a paths filter on
-# core/** and the build files. See PLA-2306.
+# core/** and the build files.
 #
 # Two jobs, and the split is a security boundary rather than organisation. `nightly` runs the tests and a
 # third-party action; `report` holds the Slack bot token and runs nothing third-party. Step-scoping a secret
@@ -29,9 +31,11 @@ name: Nightly
 # reach the token is for the token to live in another job. It also means a test job that times out or dies
 # still gets announced, which the previous single-job arrangement could not do.
 #
-# Note both triggers below only work from the default branch: a scheduled run never fires from a feature
-# branch, and this workflow does not appear in the Run workflow menu until it is on main. So a branch cannot
-# be validated by dispatching it; use a short-lived probe branch with a temporary push trigger instead.
+# Note what the triggers below can and cannot do from a feature branch. A scheduled run never fires from one.
+# A dispatch can be pointed at one, because this workflow is on the default branch and the branch is chosen
+# when it is run, but it runs the whole suite and the report job posts to the channel, so it is a loud way to
+# test a branch. A workflow that is not yet on main does not appear in the Run workflow menu at all. For a
+# quick check, use a short-lived probe branch with a temporary push trigger.
 on:
   workflow_dispatch:
   schedule:
@@ -217,7 +221,7 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           # Scoped to :core. :taptopay carries minSdk 30 and its instrumented paths need a physical device
-          # for attestation and the card reader, so an emulator cannot run them; see PLA-2193.
+          # for attestation and the card reader, so an emulator cannot run them.
           #
           # notAnnotation excludes the manual tier, which needs real hardware. Excluded rather than skipped,
           # and the difference is the point: measured, this leaves `skipped="0"` in the results XML and the
