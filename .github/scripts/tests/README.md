@@ -45,9 +45,10 @@ run in CI and safe to interrupt locally.
 Three safeguards, because a sabotage harness that lies is worse than none: an anchor must match **exactly
 once**, the mutated copy must still **compile**, and every copy is **restored** pass or fail.
 
-When an edit to either script moves an anchor, the run reports `INVALID` and goes red rather than scoring
-the mutation as caught. Re-point the anchor in the same change. That is the safeguard working, and it has
-caught a detached anchor five times.
+When an edit to either script moves an anchor, the find-and-replace matches nothing, so the reporter is
+never actually broken and every check correctly passes. The run reports `INVALID` and names the anchor.
+Re-point it in the same change. That is the safeguard working, and it has caught a detached anchor five
+times.
 
 ## The four disciplines
 
@@ -60,8 +61,10 @@ indexed. The structural fix is the sentinel accessors in `verify.py`: a missing 
 whose every lookup returns another sentinel. Probe with `getattr` rather than reading an attribute an older
 revision does not have.
 
-**A sabotage anchor must match exactly once.** Zero matches tests nothing and would otherwise be scored as
-caught.
+**A sabotage anchor must match exactly once.** Zero matches breaks nothing, so every check passes and the
+run would report `1 breaks, 0 caught, 1 missed`: measured, an unguarded miss reads as a hole in the suite
+rather than as a stale anchor, which sends the reader to the wrong file. Two matches breaks two sites at
+once, so which one a failing check caught is unknowable.
 
 **Red before, green after, every time.** A check written after the fix proves nothing. Point the harness at
 the previous revision and confirm the new check fails there:
