@@ -10,23 +10,31 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.LoopbackServer
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 10.seconds
 private val COMPLETION_TIMEOUT = 5.seconds
+
+/** Long enough that a caller which is not blocked would have finished; short enough to stay a test. */
+private val BLOCKED_PROBE = 300.milliseconds
 private const val AUTHORIZATION = "Authorization"
 private const val STALE = "stale-token"
 private const val FRESH = "fresh-token"
@@ -48,7 +56,14 @@ class PayabliSessionTest {
     @After
     fun clearInstalledSession() {
         // Process-wide, like the log cutoff: a session left installed decides the outcome of the next class.
-        runBlocking { PayabliSession.reset() }
+        // Bounded, because reset takes the same lock initialize does: a test that left it held would
+        // otherwise hang the whole suite here rather than report the failure that caused it.
+        runBlocking {
+            assertNotNull(
+                "could not clear the installed session; a test left the initialize lock held",
+                withTimeoutOrNull(COMPLETION_TIMEOUT) { PayabliSession.reset() },
+            )
+        }
     }
 
     private fun provider(token: String = FRESH) =
@@ -148,6 +163,65 @@ class PayabliSessionTest {
                 val second = session(server, config(tokenProvider = provider()))
 
                 assertSame("a second initialize with the same configuration must not build a session", first, second)
+            }
+        }
+
+    /**
+     * `runBlocking` rather than `runTest`, deliberately and unusually for this file.
+     *
+     * This is the one test here about real threads interleaving, and `runTest`'s virtual clock is the wrong
+     * clock for it: the blocked-probe below never elapses in virtual time while a real coroutine is parked
+     * on a real `Mutex`, and the measured cost of trying was sixteen minutes for a class that otherwise runs
+     * in under a second. Real dispatchers, real deadline, bounded so it fails fast rather than wedging.
+     */
+    @Test
+    fun `a second caller waits while the first is inside initialize`() =
+        runBlocking {
+            withTimeout(TEST_TIMEOUT) {
+                LoopbackServer().use { server ->
+                    val insideFirst = CompletableDeferred<Unit>()
+                    val releaseFirst = CompletableDeferred<Unit>()
+                    try {
+                        // Deterministic rather than hopeful. The critical section is a few microseconds of
+                        // object construction, so two callers launched together almost never collide, and a
+                        // test that just races them passes with the lock removed. Measured, exactly that.
+                        // Holding the section open is what makes the second caller's wait observable.
+                        val first =
+                            async(Dispatchers.IO) {
+                                PayabliSession.initializeWith(config()) { _ ->
+                                    insideFirst.complete(Unit)
+                                    releaseFirst.await()
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                }
+                            }
+                        insideFirst.await()
+
+                        val second =
+                            async(Dispatchers.IO) {
+                                PayabliSession.initializeWith(config()) { _ ->
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                }
+                            }
+
+                        // Still blocked: without the mutex it finds no installed session and builds a second
+                        // one, which is the two-sessions state this whole type exists to prevent.
+                        assertNull(
+                            "the second caller entered initialize while the first was still inside",
+                            withTimeoutOrNull(BLOCKED_PROBE) { second.await() },
+                        )
+
+                        releaseFirst.complete(Unit)
+                        assertSame(
+                            "two callers racing initialize must not install two sessions",
+                            first.await().getOrThrow(),
+                            second.await().getOrThrow(),
+                        )
+                    } finally {
+                        // An assertion failing above must not leave the lock held, or every later test in
+                        // this class waits on it and the suite reports a wedge instead of the failure.
+                        releaseFirst.complete(Unit)
+                    }
+                }
             }
         }
 

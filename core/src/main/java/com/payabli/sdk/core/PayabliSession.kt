@@ -139,9 +139,22 @@ public class PayabliSession private constructor(
             lock.withLock { installed = null }
         }
 
+        /**
+         * Same, with the transport supplied, so a test can hold the critical section open.
+         *
+         * Without it the mutex cannot be shown to do anything: the section is a few microseconds of
+         * object construction, so two racing callers almost never collide and a concurrency test passes
+         * just as happily with the lock removed. Measured, exactly that, which is why this exists.
+         */
+        @VisibleForTesting
+        internal suspend fun initializeWith(
+            config: PayabliConfig,
+            buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
+        ): Result<PayabliSession> = install(ConfigIdentity(config), buildTransport)
+
         private suspend fun install(
             identity: ConfigIdentity,
-            buildTransport: (AuthFailureListener) -> PayabliTransport,
+            buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
         ): Result<PayabliSession> =
             lock.withLock {
                 val current = installed
