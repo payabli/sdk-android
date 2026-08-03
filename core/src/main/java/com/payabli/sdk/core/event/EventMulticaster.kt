@@ -44,7 +44,12 @@ public class EventMulticaster<T : Any> {
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
 
-    /** Every active subscriber receives every event emitted after it subscribes. */
+    /**
+     * Events emitted after a subscriber subscribes, for as long as it keeps up.
+     *
+     * Bounded, not guaranteed: a subscriber more than [BUFFER] behind loses the oldest, and one that is not
+     * subscribed sees nothing. Do not treat this as reliable delivery.
+     */
     public val events: SharedFlow<T> = sink.asSharedFlow()
 
     /**
