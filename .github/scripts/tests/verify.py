@@ -1132,7 +1132,9 @@ def test_poster(mod):
     check("P25 no metadata parameter, which would stop it posting", "metadata" not in armed_payload,
           json.dumps(armed_payload))
 
-    # P26 cancel-then-arm. Arming first would, if the cancel failed, leave two alarms pending and fire twice.
+    # P26 arm, then cancel. Cancelling first opens a window with no alarm pending, and a run that dies inside
+    # it disarms the dead-man's switch with nothing to report that it happened. Arming first means the worst
+    # case is a duplicate alarm, which is noisy and visible, rather than a missing one, which is silent.
     FakeSlack.behaviour = {
         "chat.postMessage": ok_parent,
         "chat.scheduledMessages.list": {"ok": True, "scheduled_messages": [
