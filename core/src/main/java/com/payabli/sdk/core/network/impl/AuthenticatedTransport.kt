@@ -96,27 +96,45 @@ internal class AuthenticatedTransport(
         // is the same reason AuthRecoveryPolicy.exhausted is not open. Nothing further inside the SDK can fix
         // it, so the session hears about it before the caller does.
         //
-        // Unless the holder moved on while this reply was in flight. Another caller can rotate the token
-        // between this attempt leaving and its rejection arriving, and then this rejection is evidence about
-        // a credential that has already been replaced rather than about the session. Condemning on it would
-        // kill a session whose current token is working, and the latch makes that permanent, so the stale
-        // case fails this caller and leaves the session alone. `invalidateAndRefresh` already declines to
-        // act on a superseded token for the same reason.
-        val sent = replayed.value
-        if (sent != null && !auth.isCurrent(sent)) throw recovery.exhausted()
+        // Unless the holder has moved on, or is moving on. Another caller can replace the token between this
+        // attempt leaving and its rejection arriving, and can also be midway through replacing it right now,
+        // in which case the credential this reply describes is on its way out and a refresh that may well
+        // succeed is already running. Either way the rejection is evidence about a token rather than about
+        // the session, and condemning on it kills a session whose next token works. The latch makes that
+        // permanent, so the decision and the latching happen together under the holder's lock: no refresh
+        // can start in the gap, which is the window a check-then-act would leave open.
+        val exhausted = recovery.exhausted()
+        val condemned =
+            replayed.value
+                ?.let { sent -> auth.finishIfSettledOn(sent) { latch(exhausted) } }
+                // Nothing stamped means the chain did not run, which is not a state to be lenient about.
+                ?: run {
+                    latch(exhausted)
+                    true
+                }
 
-        throw condemn(recovery.exhausted())
+        if (condemned) onAuthFailure.onUnrecoverable(exhausted)
+        throw exhausted
     }
 
     /**
-     * Latches [failure] and reports it, returning it so a caller can throw it in the same expression.
+     * Records that auth is finished. Separate from telling the session, because this half runs under the
+     * holder's lock and notifying a listener from there would run foreign code with the lock held.
+     */
+    private fun latch(failure: PayabliException) {
+        terminal = failure
+    }
+
+    /**
+     * Latches [failure] and reports it, returning it so a caller can throw it in the same expression. For
+     * the paths where no refresh can be racing the decision.
      *
      * A fresh exception is raised on each later call rather than the latched instance being rethrown: a
      * shared `Throwable` carries the stack trace of whichever request happened to fail first, which points
      * diagnosis at the wrong call.
      */
     private fun condemn(failure: PayabliException): PayabliException {
-        terminal = failure
+        latch(failure)
         onAuthFailure.onUnrecoverable(failure)
         return failure
     }

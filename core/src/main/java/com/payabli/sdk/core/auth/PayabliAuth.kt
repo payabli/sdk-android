@@ -107,13 +107,27 @@ public class PayabliAuth(
         get() = config.tokenProvider != null
 
     /**
-     * Whether [token] is still the one this holder would send.
+     * Runs [onSettled] under this holder's lock when [token] is still the credential it would send **and**
+     * no refresh is in flight, and reports whether it ran.
      *
-     * False means somebody rotated it while the caller was in flight, so whatever that caller learned about
-     * [token] is about a credential the holder has already replaced. `invalidateAndRefresh` draws the same
-     * distinction for the same reason; this exposes it to a caller that needs to read it without refreshing.
+     * Two conditions rather than one, because "still current" does not mean "nothing is about to replace
+     * it". A claim is taken before the provider is called and [currentToken] is only written when the
+     * refresh commits, so throughout a refresh the token being replaced is still the current one. A caller
+     * that checked currency alone would draw a conclusion about a credential already on its way out.
+     *
+     * [onSettled] runs under the lock so that a refresh cannot begin between the decision and whatever it
+     * records, which is the same reason the commit above holds the lock across all three of its writes. It
+     * must not suspend and must not re-enter this holder.
      */
-    internal suspend fun isCurrent(token: String): Boolean = mutex.withLock { currentToken == token }
+    internal suspend fun finishIfSettledOn(
+        token: String,
+        onSettled: () -> Unit,
+    ): Boolean =
+        mutex.withLock {
+            if (inFlight != null || currentToken != token) return@withLock false
+            onSettled()
+            true
+        }
 
     /** The token to send now. Never refreshes on its own; call [invalidateAndRefresh] after a rejection. */
     public suspend fun accessToken(): String {

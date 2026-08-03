@@ -681,4 +681,49 @@ class PayabliAuthTest {
             assertTrue(logged.contains("token_refreshed"))
             assertFalse("the token was logged", logged.contains("SENTINEL-FRESH-TOKEN"))
         }
+
+    @Test
+    fun `a token being refreshed right now is not settled, even though it is still current`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val claimed = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val subject =
+                auth(
+                    tokenProvider = {
+                        claimed.complete(Unit)
+                        release.await()
+                        "refreshed-token"
+                    },
+                )
+
+            val refreshing = launch { subject.invalidateAndRefresh("initial-token") }
+            completing("the refresh to claim") {
+                claimed.await()
+                "claimed"
+            }
+
+            // The distinction the caller depends on. A claim is taken before the provider runs and the new
+            // token is only written when it commits, so right now the old token is still the current one.
+            // Reading currency alone would say "settled" and let a caller draw a permanent conclusion about
+            // a credential that is already being replaced.
+            var ran = false
+            assertFalse(
+                "a token with a refresh in flight must not be reported as settled",
+                subject.finishIfSettledOn("initial-token") { ran = true },
+            )
+            assertFalse("the action must not run when the token is unsettled", ran)
+
+            release.complete(Unit)
+            refreshing.join()
+
+            assertTrue(
+                "once the refresh has committed, the token it minted is settled",
+                subject.finishIfSettledOn("refreshed-token") { ran = true },
+            )
+            assertTrue("the action runs when the token is settled", ran)
+            assertFalse(
+                "the replaced token is not settled either",
+                subject.finishIfSettledOn("initial-token") { },
+            )
+        }
 }
