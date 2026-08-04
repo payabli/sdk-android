@@ -35,6 +35,7 @@ carries no type tag that would make it resemble one. Nothing here mints, stores 
 """
 
 import argparse
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -117,10 +118,9 @@ class Handler(BaseHTTPRequestHandler):
         # failure this script exists to help diagnose.
         #
         # The path only, never the query, because that is where the tunables are and a future one could
-        # carry something not worth printing. flush because stdout is block-buffered when redirected to a
-        # file, and an operator tailing a log needs the line when it happens rather than when the buffer
-        # fills.
-        print(f"{self.command} {urlparse(self.path).path} -> {code}", flush=True)
+        # carry something not worth printing. Line buffering is set once in main rather than flushed here,
+        # so every line this script prints is subject to one rule.
+        print(f"{self.command} {urlparse(self.path).path} -> {code}")
 
     def log_error(self, fmt, *args):
         # Silenced: send_error already routes here *and* through send_response to log_request, so leaving
@@ -138,6 +138,12 @@ def main():
         help=f"default send rate when a request names none; 0 for unpaced (default {DEFAULT_KBPS})",
     )
     args = parser.parse_args()
+
+    # Everything this script prints is a progress line somebody is watching, and the normal way to run it
+    # is with stdout redirected to a file. Redirected, stdout is block-buffered: measured before this line
+    # existed, the three startup lines below never appeared at all, and the file stayed empty through the
+    # whole run. Line buffering makes each line arrive when it happens.
+    sys.stdout.reconfigure(line_buffering=True)
 
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     server.default_kbps = args.kbps
