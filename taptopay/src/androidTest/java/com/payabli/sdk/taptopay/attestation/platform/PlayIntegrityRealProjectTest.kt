@@ -3,7 +3,9 @@ package com.payabli.sdk.taptopay.attestation.platform
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,7 +69,12 @@ class PlayIntegrityRealProjectTest {
         runTest(timeout = TIMEOUT) {
             val attestor = AttestorFactory.standard(context, cloudProjectNumber)
 
-            val token = attestor.attest(AttestationChallenge.standard("cmVhbC1wcm9qZWN0LXJlcXVlc3QtaGFzaA"))
+            // On a real dispatcher, or the attestor's thirty second deadline elapses in virtual time
+            // while the platform call is outstanding and this reports a local timeout instead of a token.
+            val token =
+                withContext(Dispatchers.IO) {
+                    attestor.attest(AttestationChallenge.standard("cmVhbC1wcm9qZWN0LXJlcXVlc3QtaGFzaA"))
+                }
 
             // Non-empty and nothing else. The token is opaque by contract, so any stronger client-side
             // assertion would be asserting a shape we have promised not to depend on.
@@ -79,7 +86,12 @@ class PlayIntegrityRealProjectTest {
         runTest(timeout = TIMEOUT) {
             val attestor = AttestorFactory.classic(context, cloudProjectNumber)
 
-            val token = attestor.attest(AttestationChallenge.classic("cmVhbC1wcm9qZWN0LW5vbmNlLXZhbA"))
+            // On a real dispatcher, or the attestor's thirty second deadline elapses in virtual time
+            // while the platform call is outstanding and this reports a local timeout instead of a token.
+            val token =
+                withContext(Dispatchers.IO) {
+                    attestor.attest(AttestationChallenge.classic("cmVhbC1wcm9qZWN0LW5vbmNlLXZhbA"))
+                }
 
             assertTrue("the platform returned an empty token", token.value.isNotEmpty())
         }

@@ -5,7 +5,10 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.impl.IntegrityFailure
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,14 +61,25 @@ class PlayIntegrityAttestorInstrumentedTest {
         runTest(timeout = TIMEOUT) {
             val attestor = AttestorFactory.standard(context, cloudProjectNumber)
 
+            // On a real dispatcher. `runTest`'s virtual clock jumps to the next scheduled task the moment
+            // the scheduler runs dry, and the attestor schedules a thirty second deadline, so the deadline
+            // fires while the platform call is still outstanding and the test never reaches Play Integrity.
             val outcome =
-                runCatching {
-                    attestor.attest(AttestationChallenge.standard("aW5zdHJ1bWVudGVkLXJlcXVlc3QtaGFzaA"))
-                }.exceptionOrNull()
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        attestor.attest(AttestationChallenge.standard("aW5zdHJ1bWVudGVkLXJlcXVlc3QtaGFzaA"))
+                    }.exceptionOrNull()
+                }
 
             assertTrue(
                 "expected a mapped AttestationException, got ${outcome?.let { it::class.java.name } ?: "a token"}",
                 outcome is AttestationException,
+            )
+            // Carrying a platform code, which is what separates a real refusal from an SDK-side deadline:
+            // underDeadline reports expiry with a null code, and only the platform supplies one.
+            assertNotNull(
+                "the failure carried no platform code, so nothing reached Play Integrity",
+                (outcome as AttestationException).errorCode,
             )
         }
 
@@ -74,14 +88,25 @@ class PlayIntegrityAttestorInstrumentedTest {
         runTest(timeout = TIMEOUT) {
             val attestor = AttestorFactory.classic(context, cloudProjectNumber)
 
+            // On a real dispatcher. `runTest`'s virtual clock jumps to the next scheduled task the moment
+            // the scheduler runs dry, and the attestor schedules a thirty second deadline, so the deadline
+            // fires while the platform call is still outstanding and the test never reaches Play Integrity.
             val outcome =
-                runCatching {
-                    attestor.attest(AttestationChallenge.classic("aW5zdHJ1bWVudGVkLW5vbmNlLXZhbHVl"))
-                }.exceptionOrNull()
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        attestor.attest(AttestationChallenge.classic("aW5zdHJ1bWVudGVkLW5vbmNlLXZhbHVl"))
+                    }.exceptionOrNull()
+                }
 
             assertTrue(
                 "expected a mapped AttestationException, got ${outcome?.let { it::class.java.name } ?: "a token"}",
                 outcome is AttestationException,
+            )
+            // Carrying a platform code, which is what separates a real refusal from an SDK-side deadline:
+            // underDeadline reports expiry with a null code, and only the platform supplies one.
+            assertNotNull(
+                "the failure carried no platform code, so nothing reached Play Integrity",
+                (outcome as AttestationException).errorCode,
             )
         }
 
