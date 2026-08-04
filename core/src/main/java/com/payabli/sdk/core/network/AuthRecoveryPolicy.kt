@@ -3,8 +3,8 @@ package com.payabli.sdk.core.network
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
+import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
-private const val HTTP_UNAUTHORIZED = 401
 private const val REASON_REFRESH_REJECTED = "the refreshed token was rejected as well"
 
 /**

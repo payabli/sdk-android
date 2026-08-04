@@ -17,17 +17,22 @@ import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.net.HttpURLConnection.HTTP_BAD_REQUEST
+import java.net.HttpURLConnection.HTTP_FORBIDDEN
+import java.net.HttpURLConnection.HTTP_GONE
+import java.net.HttpURLConnection.HTTP_INTERNAL_ERROR
+import java.net.HttpURLConnection.HTTP_PAYMENT_REQUIRED
+import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 
-private const val HTTP_BAD_REQUEST = 400
-private const val HTTP_UNAUTHORIZED = 401
-private const val HTTP_PAYMENT_REQUIRED = 402
-private const val HTTP_FORBIDDEN = 403
-private const val HTTP_GONE = 410
+/**
+ * 429 is written out because `HttpURLConnection` does not have it: that class predates RFC 6585, which
+ * introduced the status. Every other status this file maps comes from the platform's own constants,
+ * imported above, so a reader seeing one literal here is seeing the only one that has to be.
+ */
 private const val HTTP_TOO_MANY_REQUESTS = 429
-private const val HTTP_INTERNAL_ERROR = 500
 
 /** RFC 9110: valid status codes are 100..599. `getResponseCode` reports -1 for an unparseable line. */
 private const val HTTP_MIN_VALID = 100

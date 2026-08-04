@@ -17,8 +17,7 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
-
-private const val HTTP_UNAUTHORIZED = 401
+import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
  * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. Mechanism only, so what
