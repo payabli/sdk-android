@@ -16,7 +16,9 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -35,7 +37,7 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
  * one was invisible to the other; nothing enforced the sharing, a doc comment requested it.
  *
  * **The type is host-facing, its members mostly are not.** An integrator names this type, calls [initialize]
- * and [setLogLevel], and hands the result to a capability. The transport and the state are
+ * and [setLogLevel], and hands the result to a capability. The transport and [state] are
  * `@RestrictTo(LIBRARY_GROUP)`: reachable from the SDK's own artifacts, including a card-present capability
  * shipped as its own repository, and a Lint error in a host app's build. A detached capability cannot build
  * the auth stack itself, so it must be handed a ready transport; a host app has no business issuing
@@ -62,11 +64,6 @@ public class PayabliSession private constructor(
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val transport: PayabliTransport,
 ) {
-    /** What this session can do right now. [SessionStateMachine] is the only writer. */
-    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public val state: StateFlow<SdkState>
-        get() = machine.state
-
     public companion object {
         /**
          * Serializes [initialize] so two callers racing at startup install one session rather than two.
@@ -77,7 +74,26 @@ public class PayabliSession private constructor(
         @Volatile
         private var installed: PayabliSession? = null
 
+        /** Written only by the [SessionStateMachine] of whichever session is current. See [state]. */
+        private val sink = MutableStateFlow<SdkState>(SdkState.Uninitialized)
+
         private val logger: SdkLogger get() = LoggerRegistry.of(LogCategory.CORE)
+
+        /**
+         * What the SDK can do right now.
+         *
+         * On the companion for the reason [setLogLevel] is: it has to be readable before an instance exists.
+         * A state reachable only through a session could never be [SdkState.Uninitialized], because a session
+         * exists only once [initialize] has succeeded, and a consumer of a sealed state would then be writing
+         * a branch that can never run.
+         *
+         * **Process-wide, and there is exactly one of it.** After a finished session is replaced this reads
+         * the successor's state, so a caller never has to know that two sessions existed. So does a capability
+         * still holding the session that was replaced, and that old session is not usable: its transport is
+         * latched and every request through it fails without sending.
+         */
+        @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+        public val state: StateFlow<SdkState> = sink.asStateFlow()
 
         /**
          * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK.
@@ -150,9 +166,19 @@ public class PayabliSession private constructor(
                 TransportFactory.authenticatedAgainst(baseUrl, config, onAuthFailure = onAuthFailure)
             }
 
-        /** Drops the installed session so one test cannot decide the outcome of the next. */
+        /**
+         * Drops the installed session and puts [state] back, so one test cannot decide the outcome of the
+         * next.
+         *
+         * The outgoing machine is finished first: an in-flight request on it would otherwise publish a
+         * terminal state over the value restored here. Both come before the lock, because a caller bounds
+         * this call out when a test leaves the lock held, and inside the lock a wedged test would leave the
+         * state set for every later class too.
+         */
         @VisibleForTesting
         internal suspend fun reset() {
+            installed?.machine?.finish()
+            sink.value = SdkState.Uninitialized
             lock.withLock { installed = null }
         }
 
@@ -175,7 +201,10 @@ public class PayabliSession private constructor(
         ): Result<PayabliSession> =
             lock.withLock {
                 val current = installed
-                if (current != null && current.state.value != SdkState.ReinitializeRequired) {
+                // The machine rather than [state], because this is a question about the session install
+                // holds. The published value is process-wide, and reading it here would let one stray write
+                // replace a healthy session, which is the two-sessions state this type exists to prevent.
+                if (current != null && !current.machine.isFinished) {
                     return@withLock if (current.identity == identity) {
                         Result.success(current)
                     } else {
@@ -188,7 +217,7 @@ public class PayabliSession private constructor(
                     }
                 }
 
-                val machine = SessionStateMachine()
+                val machine = SessionStateMachine(sink)
                 // The listener is handed in rather than wired afterwards so no request can complete against a
                 // transport whose failures nothing is listening for.
                 val session =

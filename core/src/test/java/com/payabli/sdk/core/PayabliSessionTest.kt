@@ -5,14 +5,18 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
+import com.payabli.sdk.core.network.impl.AuthFailureListener
 import com.payabli.sdk.core.network.impl.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -54,7 +58,7 @@ class PayabliSessionTest {
     private val providerCalls = AtomicInteger()
 
     @After
-    fun clearInstalledSession() {
+    fun restoreProcessWideState() {
         // Process-wide, like the log cutoff: a session left installed decides the outcome of the next class.
         // Bounded, because reset takes the same lock initialize does: a test that left it held would
         // otherwise hang the whole suite here rather than report the failure that caused it.
@@ -64,6 +68,15 @@ class PayabliSessionTest {
                 withTimeoutOrNull(COMPLETION_TIMEOUT) { PayabliSession.reset() },
             )
         }
+
+        // Asserted, so a leak fails in the class that caused it. The published state is the only place a
+        // caller can read Uninitialized, so a class that leaves it set makes the test proving that fail
+        // somewhere else entirely, with nothing pointing back here.
+        assertEquals(
+            "left the SDK's published state set for every later test class in this JVM",
+            SdkState.Uninitialized,
+            PayabliSession.state.value,
+        )
     }
 
     private fun provider(token: String = FRESH) =
@@ -254,24 +267,139 @@ class PayabliSessionTest {
                 server.respondWith(401, "{}")
                 val dead = session(server, config())
                 runCatching { completing("the request that finishes the session") { dead.transport.execute(ping()) } }
-                assertEquals(SdkState.ReinitializeRequired, dead.state.value)
+                assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
 
                 // The documented recovery, and it has to work with a newly brokered token, so the new
                 // configuration differs. Refusing here would leave the host with no way back.
                 val revived = session(server, config(accessToken = "brokered-again"))
 
                 assertNotSame("re-initializing after a finished session must build a new one", dead, revived)
-                assertEquals(SdkState.Ready, revived.state.value)
+                assertEquals(SdkState.Ready, PayabliSession.state.value)
+
+                // The state is one value for the process, so it stops answering for the session that was
+                // replaced. What answers for that one is its transport, and it is still finished: a holder
+                // that missed the replacement cannot get a request out of it.
+                val throughDead =
+                    runCatching {
+                        completing("the request through the replaced session") { dead.transport.execute(ping()) }
+                    }.exceptionOrNull()
+                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (throughDead as PayabliException).code)
             }
         }
 
     // ---- state --------------------------------------------------------------------------------------
 
+    /**
+     * The acceptance criterion: a caller reads [SdkState.Uninitialized] without holding a session.
+     *
+     * A collector across the transition rather than two reads of `value`, which a constant would satisfy just
+     * as well. Nothing in the shipped SDK transitions back **into** the pre-initialized state; the only route
+     * there is `reset`, which is test machinery, so what is proven here is the starting value and the
+     * transition out of it.
+     */
+    @Test
+    fun `the state is Uninitialized before initialize and Ready after`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val seen = mutableListOf<SdkState>()
+                val subscribed = CompletableDeferred<Unit>()
+                val ready = CompletableDeferred<Unit>()
+                val collector =
+                    backgroundScope.launch {
+                        PayabliSession.state
+                            .onSubscription { subscribed.complete(Unit) }
+                            .collect {
+                                seen += it
+                                if (it == SdkState.Ready) ready.complete(Unit)
+                            }
+                    }
+                // Registered before initialize runs, so the starting value is observed rather than raced for.
+                assertNotNull(
+                    "the collector never subscribed",
+                    withTimeoutOrNull(COMPLETION_TIMEOUT) { subscribed.await() },
+                )
+
+                session(server, config())
+
+                assertNotNull(
+                    "the collector never saw the session become ready",
+                    withTimeoutOrNull(COMPLETION_TIMEOUT) { ready.await() },
+                )
+                collector.cancel()
+                assertEquals(listOf(SdkState.Uninitialized, SdkState.Ready), seen)
+            }
+        }
+
     @Test
     fun `a session is Ready once initialized`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
-                assertEquals(SdkState.Ready, session(server, config()).state.value)
+                session(server, config())
+
+                assertEquals(SdkState.Ready, PayabliSession.state.value)
+            }
+        }
+
+    @Test
+    fun `a straggler on a replaced session cannot finish its successor`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                // The listener the first session's transport was built with, captured rather than fired
+                // through a request: it has to fire *late*, and a real request cannot be held past the
+                // replacement.
+                lateinit var straggler: AuthFailureListener
+                PayabliSession
+                    .initializeWith(config()) { onAuthFailure ->
+                        straggler = onAuthFailure
+                        TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                    }.getOrThrow()
+
+                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+                assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
+
+                PayabliSession
+                    .initializeWith(config(accessToken = "brokered-again")) { _ ->
+                        TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                    }.getOrThrow()
+                assertEquals(SdkState.Ready, PayabliSession.state.value)
+
+                // A request that decided the first session was finished can suspend before it says so, and
+                // resume after the host has re-initialized. Keyed on the published value rather than on the
+                // machine, this call kills a session that is live and the host has no signal that it did.
+                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+
+                assertEquals(
+                    "a listener from a replaced session must not finish the one that replaced it",
+                    SdkState.Ready,
+                    PayabliSession.state.value,
+                )
+            }
+        }
+
+    @Test
+    fun `a straggler cannot publish over a state that has been reset`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                lateinit var straggler: AuthFailureListener
+                PayabliSession
+                    .initializeWith(config()) { onAuthFailure ->
+                        straggler = onAuthFailure
+                        TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                    }.getOrThrow()
+
+                PayabliSession.reset()
+
+                // The same hazard as a replacement, in the arrangement every test in this file ends with. A
+                // reset that only put the value back would leave the outgoing session able to write over it,
+                // and the class that inherited the state would have nothing pointing back to the one that
+                // leaked it.
+                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+
+                assertEquals(
+                    "a listener from a session that was reset away must not publish",
+                    SdkState.Uninitialized,
+                    PayabliSession.state.value,
+                )
             }
         }
 
@@ -290,7 +418,7 @@ class PayabliSessionTest {
 
                 assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
                 // A token minted seconds ago and refused again is an authorization fact, not a transient one.
-                assertEquals(SdkState.ReinitializeRequired, subject.state.value)
+                assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
             }
         }
 
@@ -304,7 +432,7 @@ class PayabliSessionTest {
                 runCatching {
                     completing("the request that finishes the session") { subject.transport.execute(ping()) }
                 }
-                assertEquals(SdkState.ReinitializeRequired, subject.state.value)
+                assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
                 val sentWhileDying = server.recorded.size
                 val refreshesWhileDying = providerCalls.get()
 
@@ -343,7 +471,7 @@ class PayabliSessionTest {
 
                 // The discriminating case. Every 401 maps to TOKEN_EXPIRED, so anything inferring the state
                 // from the error code would finish this session, which just recovered exactly as designed.
-                assertEquals(SdkState.Ready, subject.state.value)
+                assertEquals(SdkState.Ready, PayabliSession.state.value)
             }
         }
 
@@ -357,7 +485,7 @@ class PayabliSessionTest {
                 runCatching { completing("the unrefreshable request") { subject.transport.execute(ping()) } }
 
                 // No provider means every future refresh fails the same way, so there is nothing to wait for.
-                assertEquals(SdkState.ReinitializeRequired, subject.state.value)
+                assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
                 assertEquals("a session with no provider must not have called one", 0, providerCalls.get())
             }
         }
@@ -379,7 +507,7 @@ class PayabliSessionTest {
                 // The distinction this rests on: a broker that failed once may well answer the
                 // next call, and finishing the session for it would teach hosts to ignore the state that
                 // means their session is genuinely finished.
-                assertEquals(SdkState.Ready, subject.state.value)
+                assertEquals(SdkState.Ready, PayabliSession.state.value)
                 assertEquals(1, providerCalls.get())
             }
         }

@@ -3,32 +3,40 @@ package com.payabli.sdk.core
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
 
 /**
- * The state machine on its own, including the one rule `PayabliSessionTest` cannot reach through the session.
+ * The state machine on its own, including the rules `PayabliSessionTest` cannot reach through the session.
+ *
+ * A sink per test rather than the process-wide one `PayabliSession` owns, so nothing here can decide the
+ * outcome of a later class and this file needs no teardown to say so.
  *
  * The injected logger is not decoration: the default reaches `android.util.Log` and throws "not mocked" on
  * the JVM the moment a cutoff is low enough to emit.
  */
 class SessionStateMachineTest {
-    private val subject = SessionStateMachine(DefaultSdkLogger(LogCategory.CORE, RecordingLogSink()))
+    private val sink = MutableStateFlow<SdkState>(SdkState.Uninitialized)
+    private val subject = machine()
+
+    private fun machine() = SessionStateMachine(sink, DefaultSdkLogger(LogCategory.CORE, RecordingLogSink()))
 
     @Test
-    fun `a machine starts uninitialized`() {
-        assertEquals(SdkState.Uninitialized, subject.state.value)
+    fun `a machine publishes nothing until it is told to`() {
+        assertEquals(SdkState.Uninitialized, sink.value)
     }
 
     @Test
     fun `marking ready publishes ready`() {
         subject.markReady()
 
-        assertEquals(SdkState.Ready, subject.state.value)
+        assertEquals(SdkState.Ready, sink.value)
     }
 
     @Test
@@ -39,7 +47,7 @@ class SessionStateMachineTest {
 
         // Several in-flight requests can each discover the same dead session. The second to notice is
         // reporting the same fact, and making that a failure would push the de-duplication onto every caller.
-        assertEquals(SdkState.ReinitializeRequired, subject.state.value)
+        assertEquals(SdkState.ReinitializeRequired, sink.value)
     }
 
     @Test
@@ -52,7 +60,47 @@ class SessionStateMachineTest {
         // The rule that makes ReinitializeRequired mean something. Re-initializing builds a new session with
         // a new machine, so a machine reviving in place would present a session the host has been told to
         // replace as usable again.
-        assertEquals(SdkState.ReinitializeRequired, subject.state.value)
+        assertEquals(SdkState.ReinitializeRequired, sink.value)
+    }
+
+    @Test
+    fun `a machine retired without publishing still refuses to become ready`() {
+        subject.markReady()
+
+        // How a session is dropped without reaching the terminal state: nothing is published, because
+        // whatever replaces it publishes its own value. The machine is over all the same, and a late caller
+        // must not revive it.
+        subject.finish()
+        subject.markReady()
+
+        assertEquals(SdkState.Ready, sink.value)
+        assertTrue("a retired machine must be finished, not merely quiet", subject.isFinished)
+    }
+
+    @Test
+    fun `a successor publishes over the terminal value its predecessor left`() {
+        subject.markReady()
+        subject.markReinitializeRequired()
+
+        val successor = machine()
+        successor.markReady()
+
+        // The whole reason the refusal is per machine rather than per published value. Keyed on the value, a
+        // replacement could never announce itself and the state would stay terminal for the process's life.
+        assertEquals(SdkState.Ready, sink.value)
+    }
+
+    @Test
+    fun `a finished predecessor cannot publish over its successor`() {
+        subject.markReady()
+        subject.markReinitializeRequired()
+        machine().markReady()
+
+        // A request that decided the session was finished can suspend before it says so, and resume after the
+        // host has already re-initialized. It then calls the listener it was built with, which belongs here.
+        subject.markReinitializeRequired()
+
+        assertEquals(SdkState.Ready, sink.value)
     }
 
     @Test
@@ -62,11 +110,11 @@ class SessionStateMachineTest {
 
             // StateFlow replays its current value to a new collector, so the starting state is seen without
             // racing the writer. That property is why state is a StateFlow and events are not.
-            seen += subject.state.value
+            seen += sink.value
             subject.markReady()
-            seen += subject.state.value
+            seen += sink.value
             subject.markReinitializeRequired()
-            seen += subject.state.value
+            seen += sink.value
 
             assertEquals(
                 listOf(SdkState.Uninitialized, SdkState.Ready, SdkState.ReinitializeRequired),

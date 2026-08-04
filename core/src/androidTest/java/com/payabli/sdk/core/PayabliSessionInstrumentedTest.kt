@@ -45,6 +45,11 @@ class PayabliSessionInstrumentedTest {
             LogLevel.NONE,
             LoggerRegistry.effectiveLogLevel(),
         )
+        assertEquals(
+            "left the SDK's published state set for every later test class in this process",
+            SdkState.Uninitialized,
+            PayabliSession.state.value,
+        )
     }
 
     @Test
