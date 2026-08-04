@@ -33,11 +33,22 @@ internal class SessionStateMachine(
     private val sink: MutableStateFlow<SdkState> = MutableStateFlow(SdkState.Uninitialized),
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
 ) {
-    @Volatile
+    /**
+     * Holds [finished] and the write it explains together, so the two are one step to any observer.
+     *
+     * Neither order works on its own. Raise the flag after the write and a caller that reacts to the terminal
+     * value still reads this machine as usable, so `install` hands back the session the host was just told to
+     * replace. Raise it before and `install` can build a successor while this machine is still between the
+     * two lines, so the write lands on top of the successor's. Under one monitor the question does not
+     * arise: a caller reading [isFinished] waits for the write to complete, and the write cannot start once
+     * the flag is up.
+     */
+    private val guard = Any()
+
     private var finished = false
 
     /** True once this machine is finished, whether it published the fact or was retired by [finish]. */
-    val isFinished: Boolean get() = finished
+    val isFinished: Boolean get() = synchronized(guard) { finished }
 
     /**
      * Retires this machine without publishing anything.
@@ -48,7 +59,7 @@ internal class SessionStateMachine(
      * true.
      */
     fun finish() {
-        finished = true
+        synchronized(guard) { finished = true }
     }
 
     /** `initialize` succeeded. */
@@ -67,44 +78,42 @@ internal class SessionStateMachine(
     }
 
     /**
-     * Decides against the value it then swaps, so a refused transition is never briefly published.
+     * Decides and writes under [guard], so a refused transition is never briefly published and no caller can
+     * read the value without the flag that explains it.
      *
-     * Writing first and restoring afterwards would be simpler and wrong: a `StateFlow` collector is woken by
-     * the write, so the reverted value can still be observed. The loop re-reads only when a concurrent caller
-     * won the swap, which is the ordinary compare-and-set retry rather than a special case.
+     * Writing first and reverting afterwards would be simpler and wrong: a `StateFlow` collector is woken by
+     * the write, so the reverted value can still be observed.
      *
-     * The finished check sits **inside** the loop for the same reason the swap does. A caller that reads the
-     * flag as false, is descheduled, and wakes after a successor published loses its swap, comes back around,
-     * and finds itself finished. Read once above the loop, that caller would retry straight into a write.
-     *
-     * The flag is set **after** the swap, never before, so a machine `install` sees as finished has already
-     * finished writing and cannot land a value on top of the successor install is about to build.
+     * Both records are emitted after the monitor is released. A collector on an immediate dispatcher resumes
+     * inside the write, so whatever is held here is held while foreign code runs.
      */
     private fun transition(target: SdkState) {
-        while (true) {
+        var refused = false
+        var published = false
+
+        synchronized(guard) {
             if (finished) {
                 // Silent for the terminal target: several in-flight requests discovering the same dead
                 // session is the documented case, not an anomaly. Anything else is an attempt to revive.
-                if (target != SdkState.ReinitializeRequired) {
-                    logger.warn(
-                        LogField.safe("event", "session_state_refused"),
-                        LogField.safe("state", target.diagnosticName),
-                    ) { "refused a transition out of the terminal state" }
-                }
-                return
-            }
-
-            val previous = sink.value
-            if (previous == target) return
-
-            if (sink.compareAndSet(previous, target)) {
+                refused = target != SdkState.ReinitializeRequired
+            } else if (sink.value != target) {
                 if (target == SdkState.ReinitializeRequired) finished = true
-                logger.info(
-                    LogField.safe("event", "session_state"),
-                    LogField.safe("state", target.diagnosticName),
-                ) { "session state changed" }
-                return
+                sink.value = target
+                published = true
             }
+        }
+
+        if (refused) {
+            logger.warn(
+                LogField.safe("event", "session_state_refused"),
+                LogField.safe("state", target.diagnosticName),
+            ) { "refused a transition out of the terminal state" }
+        }
+        if (published) {
+            logger.info(
+                LogField.safe("event", "session_state"),
+                LogField.safe("state", target.diagnosticName),
+            ) { "session state changed" }
         }
     }
 }

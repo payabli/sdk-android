@@ -3,7 +3,9 @@ package com.payabli.sdk.core
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -102,6 +104,31 @@ class SessionStateMachineTest {
 
         assertEquals(SdkState.Ready, sink.value)
     }
+
+    @Test
+    fun `no observer of the terminal value can see the machine as still usable`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var usableWhilePublishing: Boolean? = null
+
+            // Unconfined so the collector resumes on the publishing thread, inside the write itself, which is
+            // the earliest any observer can possibly run. A dispatched collector would be scheduled instead
+            // and would read the flag long after, which passes whatever the order is.
+            val collector =
+                backgroundScope.launch(Dispatchers.Unconfined) {
+                    sink.collect {
+                        if (it == SdkState.ReinitializeRequired) usableWhilePublishing = !subject.isFinished
+                    }
+                }
+
+            subject.markReady()
+            subject.markReinitializeRequired()
+            collector.cancel()
+
+            // `install` asks exactly this question. Answered wrongly, a host reacting to the terminal value
+            // gets its dead session handed back, or a re-initialize refused, right after being told to
+            // re-initialize.
+            assertEquals(false, usableWhilePublishing)
+        }
 
     @Test
     fun `the state is observable and carries the transition`() =
