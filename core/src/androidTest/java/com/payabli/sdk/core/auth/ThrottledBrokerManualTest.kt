@@ -55,10 +55,18 @@ import java.util.concurrent.atomic.AtomicLong
  * `-netdelay lte` at 0, so it is faster than most real links and adds no latency. `edge` (473.6 kbps) is the
  * figure this borrows for its default rate.
  *
- * **Emulator only, and it must be an emulator.** `10.0.2.2` is the emulator's alias for the host's loopback
- * interface and exists nowhere else, so this skips on a wired phone. That is also why the broker runs on the
- * host rather than in the test process: `127.0.0.1` inside the device is the device's own loopback, so an
- * in-process `LoopbackServer` would never leave the device and could not be a round trip to a broker at all.
+ * **Emulator only.** `10.0.2.2` is the emulator's alias for the machine running it, so this skips on a wired
+ * phone. That is also why the broker runs on that machine rather than in the test process: `127.0.0.1` inside
+ * the device is the device's own loopback, so an in-process `LoopbackServer` would never leave the device and
+ * could not be a round trip to a separate host at all.
+ *
+ * **Manual for a reason that expires, and it is a provisioning gap rather than a property of emulators.**
+ * Nothing here needs hardware, and the nightly's emulator could reach a broker started beside it, so this does
+ * not qualify for [ManualDeviceTest] on the terms that annotation sets: it passes on an emulator rather than
+ * failing there. It is parked here because the nightly starts no broker, and a test that skips unattended every
+ * night is the standing-skip problem that annotation exists to avoid. Moving it is a workflow change that also
+ * has to decide what an unprovisioned run means once nobody is reading the message, so it is queued rather than
+ * bolted on here. Until then this is the one real-network check that no automated run exercises.
  *
  * **Skips when unprovisioned, fails when provisioned and meaningless.** No reachable broker means the
  * environment cannot answer, so it skips with what to start. A reachable broker that turns out to be fast is

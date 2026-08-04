@@ -4,11 +4,16 @@ package com.payabli.sdk.core
  * Marks a test that needs an environment CI does not provide and is therefore **excluded from CI**, not skipped
  * there.
  *
- * Two kinds so far, and the distinction matters when reading a manual run. A test needing real **hardware**,
- * where an emulator answers the wrong thing no matter how correct the code is. And a test needing a real
- * **emulator configuration**, where a physical device is the thing that cannot answer: a bandwidth profile is
- * something only an emulator can impose, so those tests skip on a phone. Running the tier against everything
- * attached is still right, and some of it will skip either way.
+ * **The qualifying reason is that the test would fail or answer wrongly in the nightly, not that the nightly
+ * has not been taught to run it.** The storage tests qualify on those terms: an emulator's Keystore is
+ * software-backed, so a hardware assertion fails there no matter how correct the code is. "The nightly does
+ * not set this up yet" is a provisioning gap and a different thing, because it is fixed by changing the
+ * workflow rather than by owning a phone. A test parked here for that reason is on borrowed time and says so
+ * at its own declaration, with the work to move it recorded; it does not get to sit here quietly, because a
+ * test that never runs unattended cannot catch a regression.
+ *
+ * Some tests here are also emulator-only rather than phone-only, so running the tier against everything
+ * attached is still right and part of it will skip either way. Read a manual run's skips with that in mind.
  *
  * Excluded rather than skipped on purpose. The nightly reporter derives passed from total minus failed minus
  * skipped and prints the skip count, so a device-only test parked with `@Ignore` or an `Assume` would report
