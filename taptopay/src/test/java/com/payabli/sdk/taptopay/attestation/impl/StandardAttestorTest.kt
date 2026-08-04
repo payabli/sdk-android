@@ -4,6 +4,7 @@ import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -347,11 +348,26 @@ class StandardAttestorTest {
             val gateway = FakeStandardGateway(onRequest = { _, _ -> awaitCancellation() })
             val attestor = attestorFor(gateway)
 
-            val job = launch { runCatching { attestor.attest(challenge()) } }
+            // What the coroutine actually saw. Asserting job.isCancelled proves nothing: cancelAndJoin
+            // marks the job cancelled by itself, so it stays true even if the attestor swallowed the
+            // cancellation and returned an AttestationException instead.
+            var observed: Throwable? = null
+            val job =
+                launch {
+                    try {
+                        attestor.attest(challenge())
+                    } catch (thrown: Throwable) {
+                        observed = thrown
+                        throw thrown
+                    }
+                }
             yield()
             job.cancelAndJoin()
 
-            assertTrue("cancelling the caller must not open the throttle gate", job.isCancelled)
+            assertTrue(
+                "the caller's cancellation reached it as ${observed?.let { it::class.java.simpleName }}",
+                observed is CancellationException,
+            )
         }
 
     // --- diagnostics --------------------------------------------------------------------------------

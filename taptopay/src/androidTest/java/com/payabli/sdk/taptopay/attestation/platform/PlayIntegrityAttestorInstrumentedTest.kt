@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import com.payabli.sdk.taptopay.attestation.impl.IntegrityFailure
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -92,16 +93,27 @@ class PlayIntegrityAttestorInstrumentedTest {
      * what asserts it: an unresumed continuation fails here as a timeout instead of hanging the suite.
      */
     @Test
-    fun theFailureArrivesWithoutAnActivityOrAWorkerThread() =
+    fun theTaskBridgeResumesWithoutAnActivityOrAWorkerThread() =
         runTest(timeout = TIMEOUT) {
-            val attestor = AttestorFactory.classic(context, cloudProjectNumber)
+            // The gateway directly, not through an attestor, and that is the whole point of this test.
+            // An attestor bounds every platform call at thirty seconds and reports expiry as a mapped
+            // failure, so a bridge that never resumed would satisfy an assertion made through it, inside
+            // this test's own timeout. Going straight at the gateway removes that cushion: if the
+            // continuation is never resumed, nothing completes and runTest fails on time rather than on
+            // a result.
+            val gateway = PlayClassicIntegrityGateway(context)
 
             val outcome =
                 runCatching {
-                    attestor.attest(AttestationChallenge.classic("YW5vdGhlci1ub25jZS12YWx1ZQ"))
+                    gateway.requestToken("YW5vdGhlci1ub25jZS12YWx1ZQ", cloudProjectNumber)
                 }.exceptionOrNull()
 
-            assertTrue(outcome is AttestationException)
+            // An IntegrityFailure means the bridge resumed and the error code was extracted, which is the
+            // seam's whole job. Mapping that code to a disposition is the unit suite's business.
+            assertTrue(
+                "expected the bridge to resume with an IntegrityFailure, got ${outcome?.let { it::class.java.name }}",
+                outcome is IntegrityFailure,
+            )
         }
 
     private companion object {
