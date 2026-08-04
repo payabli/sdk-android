@@ -122,16 +122,28 @@ class ThrottledBrokerManualTest {
         }
     }
 
-    /** Whether the stand-in broker answers at all. Distinguishes "not set up" from "set up and slow". */
+    /**
+     * Whether anything answers at the configured address, whatever it answers.
+     *
+     * **Any status counts as reachable, including an error status.** This decides between skipping and
+     * running, so it must only ever answer "nothing is there", never "something is there but unhappy". An
+     * earlier version read `inputStream` and required 200, which fails on both counts: measured,
+     * `HttpURLConnection.getInputStream` throws `IOException` on a 400 while `getResponseCode` returns 400
+     * without throwing, so a reachable endpoint answering an error was reported as absent and the test
+     * skipped with a message telling the operator to start a broker already running. A bad response is the
+     * real fetch's business, where it fails and names itself.
+     *
+     * Unpaced and tiny, because this asks whether anything is listening and must not itself be slow.
+     */
     private fun brokerIsReachable(): Boolean =
         runCatching {
-            // Unpaced and tiny: this asks whether anything is listening, and must not itself be slow.
-            val connection = URL("$brokerUrl?bytes=1024&kbps=0").openConnection() as HttpURLConnection
+            val connection = URL("$brokerUrl?bytes=$MIN_BROKER_BYTES&kbps=0").openConnection() as HttpURLConnection
             try {
                 connection.connectTimeout = PROBE_TIMEOUT_MILLIS
                 connection.readTimeout = PROBE_TIMEOUT_MILLIS
-                connection.inputStream.readBytes()
-                connection.responseCode == HTTP_OK
+                // Not inputStream: that throws on an error status, which is exactly the case this must not
+                // mistake for an absent server.
+                connection.responseCode > 0
             } finally {
                 connection.disconnect()
             }
@@ -249,6 +261,9 @@ class ThrottledBrokerManualTest {
         const val WALL_CLOCK_BOUND_MILLIS = 120_000L
 
         const val NANOS_PER_MILLI = 1_000_000
-        const val HTTP_OK = 200
+
+        // The broker refuses a body it cannot fit the token line into, so the probe asks for the smallest
+        // size that is always valid rather than an arbitrary one that a future token length could invalidate.
+        const val MIN_BROKER_BYTES = 1_024
     }
 }
