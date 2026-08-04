@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay.attestation.impl
 
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -57,7 +59,17 @@ internal val DEFAULT_PLATFORM_DEADLINE: Duration = 30.seconds
 internal suspend fun <T> underDeadline(
     deadline: Duration,
     block: suspend () -> T,
-): T = withTimeoutOrNull(deadline) { block() } ?: throw IntegrityFailure(null)
+): T {
+    val outcome = withTimeoutOrNull(deadline) { Result.success(block()) }
+    if (outcome == null) {
+        // Cancellation can land between the null and this throw, with nothing suspending in between, and a
+        // withdrawn caller must not be told the platform timed out. The transport and the retry primitive
+        // both guard the same window the same way.
+        currentCoroutineContext().ensureActive()
+        throw IntegrityFailure(null)
+    }
+    return outcome.getOrThrow()
+}
 
 /**
  * The platform half of a standard request, which is two steps rather than one.

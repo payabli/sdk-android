@@ -110,7 +110,9 @@ public class AttestationChallenge private constructor(
             }
             // Decoded rather than measured as text: the floor the platform enforces is on the bytes the
             // nonce carries, and the alphabet check above says nothing about whether the string decodes at
-            // all. A length that is not a valid base64 length, 501 characters for instance, gets here.
+            // all. A value inside the ceiling whose length is not a valid base64 length reaches here and
+            // nothing above it objects: 25 characters, for instance, whose trailing group of one encodes
+            // no whole byte. A 501-character example would be wrong, since the ceiling rejects it first.
             // Only the exception the decoder documents. `runCatching` here would catch `Throwable`, so an
             // OutOfMemoryError raised mid-decode would be re-reported as a malformed nonce, which blames
             // the input for a process-fatal condition. Same boundary the platform gateway draws.
