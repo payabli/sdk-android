@@ -27,7 +27,7 @@ internal class IntegrityFailure(
  * prepared provider is the cheap part. Splitting them is not an optimisation, it is the shape the platform
  * has: a provider expires independently of any request made through it.
  */
-internal interface StandardIntegrityGateway {
+internal fun interface StandardIntegrityGateway {
     /** Prepares a provider for [cloudProjectNumber]. Throws [IntegrityFailure] for a platform error. */
     suspend fun prepareProvider(cloudProjectNumber: Long): StandardTokenRequester
 }
