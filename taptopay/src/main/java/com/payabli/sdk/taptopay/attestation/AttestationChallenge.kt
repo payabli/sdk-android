@@ -111,9 +111,14 @@ public class AttestationChallenge private constructor(
             // Decoded rather than measured as text: the floor the platform enforces is on the bytes the
             // nonce carries, and the alphabet check above says nothing about whether the string decodes at
             // all. A length that is not a valid base64 length, 501 characters for instance, gets here.
+            // Only the exception the decoder documents. `runCatching` here would catch `Throwable`, so an
+            // OutOfMemoryError raised mid-decode would be re-reported as a malformed nonce, which blames
+            // the input for a process-fatal condition. Same boundary the platform gateway draws.
             val decoded =
-                runCatching { Base64.getUrlDecoder().decode(nonce) }.getOrElse {
-                    throw IllegalArgumentException("nonce is not decodable base64", it)
+                try {
+                    Base64.getUrlDecoder().decode(nonce)
+                } catch (malformed: IllegalArgumentException) {
+                    throw IllegalArgumentException("nonce is not decodable base64", malformed)
                 }
             require(decoded.size >= MIN_NONCE_BYTES) {
                 "nonce must carry at least $MIN_NONCE_BYTES bytes; this one decodes to ${decoded.size}"

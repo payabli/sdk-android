@@ -137,7 +137,7 @@ class SingleUseChallengeTest {
             val record = logger.records.single()
             assertEquals(LogLevel.ERROR, record.level)
             // No errorCode: there is no platform code, and inventing one would imply the platform spoke.
-            assertEquals(setOf("event", "verdictClass"), record.fieldNames)
+            assertEquals(listOf("event", "verdictClass"), record.fieldNames)
             assertFalse("the challenge itself never reaches the log", record.message.contains("bG9nZ2VkLW9uLXJldXNl"))
         }
 

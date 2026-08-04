@@ -326,7 +326,7 @@ class StandardAttestorTest {
             // three and nothing else, so a fourth field added later has to be justified rather than
             // sliding in unnoticed. Whether an allowlisted value renders correctly is :core's question
             // and :core tests it; the challenge is never passed as a field at all, so it cannot leak.
-            assertEquals(setOf("event", "verdictClass", "errorCode"), record.fieldNames)
+            assertEquals(listOf("event", "verdictClass", "errorCode"), record.fieldNames)
             assertFalse(record.message.contains("c2VjcmV0LWNoYWxsZW5nZQ"))
         }
 }

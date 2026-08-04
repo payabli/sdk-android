@@ -131,7 +131,7 @@ class ClassicAttestorTest {
             val record = logger.records.single()
             assertEquals(LogLevel.ERROR, record.level)
             // An exact set; see the same assertion in StandardAttestorTest for why.
-            assertEquals(setOf("event", "verdictClass", "errorCode"), record.fieldNames)
+            assertEquals(listOf("event", "verdictClass", "errorCode"), record.fieldNames)
             assertFalse(record.message.contains("c2VjcmV0LW5vbmNlLXZhbHVl"))
         }
 }

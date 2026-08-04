@@ -20,7 +20,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 internal class RecordingSdkLogger : SdkLogger {
     internal data class Record(
         val level: LogLevel,
-        val fieldNames: Set<String>,
+        val fieldNames: List<String>,
         val message: String,
     )
 
@@ -34,6 +34,8 @@ internal class RecordingSdkLogger : SdkLogger {
         throwable: Throwable?,
         message: () -> String,
     ) {
-        records += Record(level, fields.map { it.name }.toSet(), message())
+        // A list, not a set: a set erases a repeated name, so an assertion reading "exactly these
+        // three" would still pass if a fourth field reused one of them.
+        records += Record(level, fields.map { it.name }, message())
     }
 }

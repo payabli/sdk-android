@@ -56,6 +56,22 @@ private val ALL_CLASSIC_CODES =
     )
 
 /**
+ * Every failure constant the platform actually declares, read from the class rather than transcribed.
+ *
+ * `NO_ERROR` is excluded: it is the absence of a failure and has no disposition to give it.
+ *
+ * This is what turns the lists below into a real completeness check. Written by hand alone they are
+ * maintained together with the classification, so a constant added by a library upgrade is missing from
+ * both and the comparison still passes while the new code quietly takes the unknown-code fallback. Checked
+ * against the class, an upgrade fails here and someone has to read the new constant and place it.
+ */
+private fun declaredCodes(type: Class<*>): Set<Int> =
+    type.declaredFields
+        .filter { it.type == Int::class.javaPrimitiveType && it.name != "NO_ERROR" }
+        .map { it.getInt(null) }
+        .toSet()
+
+/**
  * Both error enums, every documented constant, against an explicit table.
  *
  * The expectations are written out rather than derived from the mapper, on purpose: an expectation derived
@@ -175,6 +191,11 @@ class PlayIntegrityErrorMappingTest {
 
         assertEquals("a code classified twice", classified.size, classified.toSet().size)
         assertEquals(
+            "the platform declares a standard code this file does not list; read it and place it",
+            declaredCodes(StandardIntegrityErrorCode::class.java),
+            ALL_STANDARD_CODES.toSet(),
+        )
+        assertEquals(
             "a documented code with no disposition, or a disposition for a code that is not documented",
             ALL_STANDARD_CODES.toSet(),
             classified.toSet(),
@@ -205,6 +226,11 @@ class PlayIntegrityErrorMappingTest {
             classicRetryable + classicRemediation + classicFailed + classicMisconfigured + classicThrottled
 
         assertEquals("a code classified twice", classified.size, classified.toSet().size)
+        assertEquals(
+            "the platform declares a classic code this file does not list; read it and place it",
+            declaredCodes(IntegrityErrorCode::class.java),
+            ALL_CLASSIC_CODES.toSet(),
+        )
         assertEquals(
             "a documented code with no disposition, or a disposition for a code that is not documented",
             ALL_CLASSIC_CODES.toSet(),
