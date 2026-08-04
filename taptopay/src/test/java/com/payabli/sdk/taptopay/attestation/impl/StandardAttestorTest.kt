@@ -137,6 +137,82 @@ class StandardAttestorTest {
         }
 
     @Test
+    fun `a burst whose preparation fails costs one attempt, not one each`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The failure case of the test above, and the one that used to behave differently. Ten callers
+            // join one preparation; it fails with a transient code, so the throttle gate never closes and
+            // nothing else stops a caller from trying. They must still share the one outcome.
+            //
+            // Preparing under the lock rather than only claiming under it would serialise them: each waiter
+            // in turn wakes, finds nothing prepared, and starts its own. Against a Play services that
+            // stalls until the deadline, that is ten deadlines end to end and ten requests against a budget
+            // shared with every other app embedding this SDK.
+            val released = CompletableDeferred<Unit>()
+            val started = CompletableDeferred<Unit>()
+            var pending = 10
+            val gateway =
+                FakeStandardGateway(
+                    onPrepare = {
+                        released.await()
+                        throw IntegrityFailure(StandardIntegrityErrorCode.NETWORK_ERROR)
+                    },
+                )
+            val attestor = attestorFor(gateway)
+
+            val attestations =
+                (1..10).map { index ->
+                    async {
+                        if (--pending == 0) started.complete(Unit)
+                        failureOf { attestor.attest(challenge("YnVyc3QtaGFzaC1udW1iZXI$index")) }
+                    }
+                }
+            started.await()
+            released.complete(Unit)
+            val outcomes = attestations.awaitAll()
+
+            assertEquals(1, gateway.prepares.get())
+            // Every one of them, not just the owner: a waiter handed nothing would hang, and a waiter handed
+            // the wrong thing would report a device problem the device does not have.
+            assertTrue(
+                "expected ten Retryable failures, got ${outcomes.map { it?.let { e -> e::class.java.simpleName } }}",
+                outcomes.all { it is AttestationException.Retryable },
+            )
+            // No challenge was offered to the platform, so none of the ten is spent and all ten can be retried.
+            assertTrue(gateway.requestHashes.isEmpty())
+        }
+
+    @Test
+    fun `a caller that withdraws mid-preparation does not fail the ones waiting on it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The owner of a shared preparation is just whoever got there first, so its cancellation must
+            // not read as the waiters' own. They are still active and must be told something they can act
+            // on, rather than a CancellationException that would unwind scopes that never withdrew.
+            val started = CompletableDeferred<Unit>()
+            val gateway =
+                FakeStandardGateway(
+                    // The first preparation only. The last assertion makes a second one, and a fake that
+                    // stalled on every attempt would hang it rather than answer it.
+                    onPrepare = { attempt ->
+                        if (attempt == 1) {
+                            started.complete(Unit)
+                            awaitCancellation()
+                        }
+                    },
+                )
+            val attestor = attestorFor(gateway)
+
+            val owner = launch { attestor.attest(challenge("b3duZXItY2hhbGxlbmdl")) }
+            started.await()
+            val waiter = async { failureOf { attestor.attest(challenge("d2FpdGVyLWNoYWxsZW5nZQ")) } }
+            yield()
+            owner.cancelAndJoin()
+
+            assertTrue(waiter.await() is AttestationException.Retryable)
+            // And the claim was dropped rather than left set, so the attestor still works afterwards.
+            assertEquals(FAKE_TOKEN, attestor.attest(challenge("YWZ0ZXItdGhlLXdpdGhkcmF3YWw")).value)
+        }
+
+    @Test
     fun `a failed preparation is mapped, and the next attestation prepares again`() =
         runTest(timeout = TEST_TIMEOUT) {
             val gateway =

@@ -11,8 +11,12 @@ import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.attestation.VerdictClass
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.time.Duration
 
 /**
@@ -44,6 +48,15 @@ internal class StandardAttestor(
      */
     @Volatile
     private var prepared: StandardTokenRequester? = null
+
+    /**
+     * The preparation currently running, or null when none is.
+     *
+     * Written only under [mutex]. Callers arriving while it is set wait on it rather than starting a second
+     * preparation, and it is cleared as the outcome is published, so the cohort that joined shares one
+     * result and the next caller is free to try again.
+     */
+    private var inFlight: CompletableDeferred<StandardTokenRequester>? = null
 
     override suspend fun warmUp() {
         // The gate guards this path as well. Preparing is itself a platform request that can be refused
@@ -105,31 +118,98 @@ internal class StandardAttestor(
     /**
      * The prepared provider, preparing one if there is none.
      *
-     * Concurrent callers collapse onto a single preparation: the first takes the lock and prepares, the
-     * rest wait and then find the field already set. Worth the lock rather than letting each caller prepare
-     * its own, because preparation is a network round trip and the results are interchangeable, so N
-     * concurrent attestations would otherwise cost N of them.
+     * Concurrent callers collapse onto a single preparation, and **the lock is held only to decide whether
+     * this caller owns that preparation or joins one, never across the platform call itself.** The claim is
+     * what the others wait on, so one preparation serves the whole burst whether it succeeds or fails.
+     *
+     * Holding the lock across the call instead would look equivalent and is not: on success it is, because
+     * the waiters wake to a set field, but on failure every waiter in turn finds the field still null and
+     * starts its own preparation. A burst of N against a stalled Play services would then serialise into N
+     * platform deadlines and N requests against the shared budget, which is the outcome the rest of this
+     * class exists to avoid. Sharing the failure costs the cohort one attempt and leaves retrying to
+     * whoever arrives next.
+     *
+     * The token refresh path in the core module resolves the same problem the same way, and the reasoning
+     * for the cancellation and cleanup rules below is written out there in full.
      */
     private suspend fun requester(): StandardTokenRequester {
         prepared?.let { return it }
-        return mutex.withLock {
-            prepared ?: run {
-                // Re-checked inside the lock, because the gate can close while this caller queues on it.
-                // A burst all passes the outer check while the field is null, the first one prepares and is
-                // told the budget is spent, and every waiter behind it would then walk into this branch and
-                // spend another known-doomed request. Checking on entry costs nothing when the gate is open.
-                throttleGate.check()
-                prepare().also { prepared = it }
+        val plan =
+            mutex.withLock {
+                val ready = prepared
+                val joined = inFlight
+                when {
+                    ready != null -> PreparePlan.Ready(ready)
+                    joined != null -> PreparePlan.Join(joined)
+                    else -> {
+                        // Re-checked inside the lock, because the gate can close while this caller queues
+                        // on it: the preparation it is queued behind can be the one that reports the budget
+                        // spent. Checking on entry costs nothing when the gate is open.
+                        throttleGate.check()
+                        PreparePlan.Own(CompletableDeferred<StandardTokenRequester>().also { inFlight = it })
+                    }
+                }
             }
+        return when (plan) {
+            is PreparePlan.Ready -> plan.requester
+            is PreparePlan.Join -> plan.claim.await()
+            is PreparePlan.Own -> prepare(plan.claim)
         }
     }
 
-    private suspend fun prepare(): StandardTokenRequester =
-        try {
-            underDeadline(deadline) { gateway.prepareProvider(cloudProjectNumber) }
-        } catch (failure: IntegrityFailure) {
-            throw report(failure)
+    /** Prepares a provider and hands the outcome, success or failure, to everyone holding [shared]. */
+    private suspend fun prepare(shared: CompletableDeferred<StandardTokenRequester>): StandardTokenRequester {
+        val fresh =
+            try {
+                underDeadline(deadline) { gateway.prepareProvider(cloudProjectNumber) }
+            } catch (failure: IntegrityFailure) {
+                // report() maps, logs, and closes the gate when the budget is spent, all before the waiters
+                // are released, so a joiner cannot wake and walk back into a platform it was just refused by.
+                val mapped = report(failure)
+                release(shared, mapped)
+                throw mapped
+            } catch (cancellation: CancellationException) {
+                // This caller withdrew. The waiters did not, so they get a retryable failure instead: a
+                // foreign CancellationException would make their own scopes look like they are unwinding.
+                release(shared, AttestationException.Retryable(null))
+                throw cancellation
+            } catch (unexpected: Exception) {
+                // Exception, not Throwable: an OutOfMemoryError is not an attestation failure. It still
+                // reaches this caller unchanged, but the claim cannot outlive it or every later caller
+                // waits on a deferred nobody owns.
+                release(shared, AttestationException.Retryable(null, unexpected))
+                throw unexpected
+            }
+        // NonCancellable for the reason the cleanup path is: the provider is already prepared, and
+        // cancellation arriving while this lock is contended would leave the claim set with no owner.
+        withContext(NonCancellable) {
+            mutex.withLock {
+                prepared = fresh
+                inFlight = null
+            }
+            shared.complete(fresh)
         }
+        return fresh
+    }
+
+    /**
+     * Drops the claim and hands [outcome] to the waiters.
+     *
+     * It does not throw, because what the *owner* raises is not always what the waiters are told: a caller
+     * that withdrew re-throws its own cancellation while the waiters get something retryable.
+     *
+     * Under [NonCancellable] because liveness depends on it: a claim left set with nobody to complete it
+     * wedges every later caller. Whether `withLock` observes an already-cancelled job depends on whether it
+     * has to suspend, and correctness must not rest on which path it happens to take.
+     */
+    private suspend fun release(
+        shared: CompletableDeferred<StandardTokenRequester>,
+        outcome: Exception,
+    ) = withContext(NonCancellable) {
+        mutex.withLock { inFlight = null }
+        shared.completeExceptionally(outcome)
+        Unit
+    }
 
     /**
      * Drops [stale], unless it has already been replaced by something else.
@@ -156,5 +236,23 @@ internal class StandardAttestor(
         ) { "standard integrity request failed" }
         if (mapped is AttestationException.Throttled) throttleGate.record()
         return mapped
+    }
+
+    /** What a caller found when it looked for a provider, decided under [mutex] and acted on outside it. */
+    private sealed interface PreparePlan {
+        /** One was already prepared. */
+        class Ready(
+            val requester: StandardTokenRequester,
+        ) : PreparePlan
+
+        /** Someone else is preparing; wait for their outcome rather than starting a second. */
+        class Join(
+            val claim: CompletableDeferred<StandardTokenRequester>,
+        ) : PreparePlan
+
+        /** Nobody is; this caller prepares and publishes the result to anyone who joins. */
+        class Own(
+            val claim: CompletableDeferred<StandardTokenRequester>,
+        ) : PreparePlan
     }
 }
