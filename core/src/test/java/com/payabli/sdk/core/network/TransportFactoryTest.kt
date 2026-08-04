@@ -284,7 +284,9 @@ class TransportFactoryTest {
      *
      * Both halves matter: a provider slower than a supplied short deadline must fail, and the *same* provider
      * under the default must succeed. Without the second half the test would pass against a factory that
-     * ignored the parameter and simply had a short default.
+     * ignored the parameter and simply had a short default. What the default *is* is pinned in
+     * `PayabliAuthTest`; this half only shows the parameter is not ignored, so the sleep stays comfortably
+     * under any plausible default rather than tracking it.
      */
     @Test
     fun `a supplied provider timeout reaches the holder, and the default does not use it`() =

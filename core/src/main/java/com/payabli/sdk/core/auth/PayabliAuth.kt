@@ -40,20 +40,29 @@ private const val REASON_UNUSABLE_TOKEN = "the tokenProvider returned a token th
 private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejected token"
 
 /**
- * Bounds a provider that never returns, so it cannot wedge every reader.
+ * The ceiling on one call to the host's token provider.
+ *
+ * Bounds a provider that never returns, so it cannot wedge every reader waiting on the same refresh.
  *
  * Only binds cancellation-cooperative code. A provider blocking a thread outside a suspension point
  * cannot be interrupted by any timeout, which is why the contract asks for cooperation.
  *
- * Ten seconds rather than thirty: a provider that never returns holds every reader waiting on the same
- * refresh, and half a minute of that is most of a user's patience.
+ * A hang detector, not a latency budget. Minting a token is one whole network round trip to the host's own
+ * backend, so it belongs on the tier the transport bounds a whole exchange with, not on the tier that bounds
+ * a single socket read. Anything reaching this ceiling is stuck rather than slow. Expiring early is the more
+ * expensive mistake: a reader gets a token failure on a payment that would have gone through, where expiring
+ * late only makes a caller wait longer for an error that was already coming.
  *
- * Deliberately shorter than the transport's own whole-call budget, even though a broker callback also makes
- * a network round trip. `TransportFactory.authenticated` takes it as a parameter so `:core`'s tests can vary
- * it, and nothing outside `:core` can set it: a host with a legitimately slower broker has no way to widen
- * this today.
+ * Not nested inside the transport's whole-call budget and never was: a refresh runs between two calls, and a
+ * joining reader takes this deadline before any call budget starts. The two are independent ceilings on the
+ * same shape of work, which is why they land on the same magnitude. What bounds a whole recovery is
+ * `RetryPolicy.totalTimeoutMillis`, not this.
+ *
+ * Fixed, not configuration: nothing outside `:core` can set it. A host that could widen a hang detector could
+ * ask every reader to wait longer on its own broker, and this is already generous enough that a broker which
+ * is working does not reach it.
  */
-internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 10_000L
+internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
 
 /**
  * Holds the access token and refreshes it through the host's provider.
@@ -99,7 +108,7 @@ public class PayabliAuth(
      *
      * False means no provider was supplied, so every refresh from now on fails the same way and the session
      * is beyond recovery from inside the SDK. `AuthenticatedTransport` reads this to tell that apart from a
-     * provider that merely failed this once, which is transient and must not condemn the session.
+     * provider that merely failed this once, which is transient and must not finish the session.
      *
      * `internal` rather than `@RestrictTo`: it is a fact about this holder that only `:core`'s own choke-point
      * acts on, and a capability that could read it would be reading how auth is configured.
@@ -128,7 +137,7 @@ public class PayabliAuth(
      * Two conditions rather than one, because "still current" does not mean "nothing is about to replace
      * it". A claim is taken before the provider is called and [currentToken] is only written when the
      * refresh commits, so throughout a refresh the token being replaced is still the current one. A caller
-     * that checked currency alone would condemn on evidence about a credential already on its way out.
+     * that checked currency alone would finish on evidence about a credential already on its way out.
      *
      * Deciding and recording happen in one lock acquisition, so a refresh cannot begin between them. That
      * is what makes the guarantee in [invalidateAndRefresh] hold: nothing is set while a refresh runs, and

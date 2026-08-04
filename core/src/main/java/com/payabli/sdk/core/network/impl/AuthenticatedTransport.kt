@@ -112,7 +112,7 @@ internal class AuthenticatedTransport(
      *
      * The discriminator is [PayabliAuth.canRefresh], not the error: a provider that timed out or threw once
      * is a bad minute for the host's backend and the next request may well succeed, whereas no provider at
-     * all means every future refresh fails identically. Condemning a session for the first would make
+     * all means every future refresh fails identically. Finishing a session for the first would make
      * [SdkState.ReinitializeRequired] fire on a transient blip and teach hosts to ignore it.
      */
     private suspend fun refresh(rejected: String) {

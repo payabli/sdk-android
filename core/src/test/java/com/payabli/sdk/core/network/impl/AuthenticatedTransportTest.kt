@@ -412,7 +412,7 @@ class AuthenticatedTransportTest {
     /**
      * The interleaving an entry check alone cannot stop.
      *
-     * A request that passed the terminal check before anything was condemned keeps going. When its own
+     * A request that passed the terminal check before anything was finished keeps going. When its own
      * rejection arrives it asks for a refresh, and if that request could still take a claim it would call
      * the host's broker and might succeed, after the host had been told to re-initialize and had built a
      * second session. `PayabliAuth` refuses the claim instead, so the broker is never reached.
@@ -425,7 +425,7 @@ class AuthenticatedTransportTest {
                 val auth = testAuth(tokenProvider = { "refreshed-${calls.incrementAndGet()}" })
                 val subject = stack(server, auth)
 
-                // Condemn first, exactly as a sibling request would have: the token is unchanged and no
+                // Finish first, exactly as a sibling request would have: the token is unchanged and no
                 // refresh is running, so this is the settled case the choke-point acts on.
                 assertTrue(
                     auth.finishIfSettledOn(TEST_TOKEN, AuthRecoveryPolicy().exhausted()),
@@ -492,7 +492,7 @@ class AuthenticatedTransportTest {
                 // staleness check this second request throws from the latch instead of reaching the server.
                 assertEquals(
                     OK,
-                    completing("a later request on a transport that was not condemned") {
+                    completing("a later request on a transport that was not finished") {
                         subject.execute(ping())
                     }.statusCode,
                 )
@@ -697,7 +697,10 @@ class AuthenticatedTransportTest {
      * refresh would be cancelled and each further attempt would call the provider again with the token that
      * was already rejected.
      *
-     * Millisecond scale, in the ratio the shipped defaults have: 10s against 30s would be a 30-second test.
+     * Millisecond scale on a real dispatcher: the provider blocks a thread, so nothing here runs in virtual
+     * time and these numbers keep the test under a second. Only the ordering matters, the call budget below
+     * the provider's own duration and the provider deadline well above it, so the shipped values do not
+     * appear here.
      */
     @Test
     fun `a refresh slower than one call budget runs once and still recovers`() =
