@@ -170,16 +170,24 @@ public class PayabliSession private constructor(
          * Drops the installed session and puts [state] back, so one test cannot decide the outcome of the
          * next.
          *
-         * The outgoing machine is finished first: an in-flight request on it would otherwise publish a
-         * terminal state over the value restored here. Both come before the lock, because a caller bounds
-         * this call out when a test leaves the lock held, and inside the lock a wedged test would leave the
-         * state set for every later class too.
+         * The state is put back before the lock as well as under it, because a caller bounds this call out
+         * when a test leaves the lock held. Restoring only under the lock would let one wedged test leave the
+         * state set for every class after it, none of which names the cause.
+         *
+         * Everything else happens under the lock, against the session actually being cleared. An `initialize`
+         * holding the lock with its transport builder suspended installs a session *after* the first line has
+         * run, and clearing that one without finishing it would leave a live machine behind and the state
+         * reading [SdkState.Ready].
          */
         @VisibleForTesting
         internal suspend fun reset() {
-            installed?.machine?.finish()
             sink.value = SdkState.Uninitialized
-            lock.withLock { installed = null }
+
+            lock.withLock {
+                installed?.machine?.finish()
+                installed = null
+                sink.value = SdkState.Uninitialized
+            }
         }
 
         /**

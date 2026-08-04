@@ -376,6 +376,106 @@ class PayabliSessionTest {
             }
         }
 
+    /**
+     * `runBlocking` for the reason the mutex test above gives: this is about a real wait on a real lock.
+     *
+     * The wedge this describes is what teardown bounds itself against. A test that leaves the lock held makes
+     * `reset` time out, and the state has to come back anyway, or one wedged test decides the outcome of
+     * every class after it and none of them names the cause.
+     */
+    @Test
+    fun `reset restores the state even when it cannot take the lock`() =
+        runBlocking {
+            withTimeout(TEST_TIMEOUT) {
+                LoopbackServer().use { server ->
+                    val insideBuilder = CompletableDeferred<Unit>()
+                    val releaseBuilder = CompletableDeferred<Unit>()
+                    try {
+                        // A finished session, so the next initialize gets as far as its transport builder.
+                        // While one is usable, install returns or refuses without ever calling the builder.
+                        lateinit var straggler: AuthFailureListener
+                        PayabliSession
+                            .initializeWith(config()) { onAuthFailure ->
+                                straggler = onAuthFailure
+                                TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                            }.getOrThrow()
+                        straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+                        assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
+
+                        val initializing =
+                            async(Dispatchers.IO) {
+                                PayabliSession.initializeWith(config(accessToken = "brokered-again")) { _ ->
+                                    insideBuilder.complete(Unit)
+                                    releaseBuilder.await()
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                }
+                            }
+                        insideBuilder.await()
+
+                        val resetting = async(Dispatchers.IO) { PayabliSession.reset() }
+                        assertNull(
+                            "reset should not have taken the lock initialize is holding",
+                            withTimeoutOrNull(BLOCKED_PROBE) { resetting.await() },
+                        )
+
+                        // The half that runs before the lock. Without it a wedged lock leaves the state set,
+                        // and the assertion in teardown fails in whichever class inherits it.
+                        assertEquals(SdkState.Uninitialized, PayabliSession.state.value)
+
+                        releaseBuilder.complete(Unit)
+                        initializing.await().getOrThrow()
+                        resetting.await()
+                    } finally {
+                        releaseBuilder.complete(Unit)
+                    }
+                }
+            }
+        }
+
+    /**
+     * `runBlocking` for the reason the mutex test above gives: this is about a real wait on a real lock.
+     */
+    @Test
+    fun `reset clears the session an initialize installs while reset is waiting`() =
+        runBlocking {
+            withTimeout(TEST_TIMEOUT) {
+                LoopbackServer().use { server ->
+                    val insideBuilder = CompletableDeferred<Unit>()
+                    val releaseBuilder = CompletableDeferred<Unit>()
+                    try {
+                        val initializing =
+                            async(Dispatchers.IO) {
+                                PayabliSession.initializeWith(config()) { _ ->
+                                    insideBuilder.complete(Unit)
+                                    releaseBuilder.await()
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                }
+                            }
+                        insideBuilder.await()
+
+                        // Runs whatever it does before the lock, then waits: the window in which the session
+                        // it is about to clear does not exist yet.
+                        val resetting = async(Dispatchers.IO) { PayabliSession.reset() }
+                        assertNull(
+                            "reset should be waiting on the lock initialize holds",
+                            withTimeoutOrNull(BLOCKED_PROBE) { resetting.await() },
+                        )
+
+                        releaseBuilder.complete(Unit)
+                        initializing.await().getOrThrow()
+                        resetting.await()
+
+                        // Cleared against the session that ended up installed, not against the one that was
+                        // there when reset started. Otherwise teardown leaves a live machine and a state the
+                        // next class inherits.
+                        assertEquals(SdkState.Uninitialized, PayabliSession.state.value)
+                    } finally {
+                        releaseBuilder.complete(Unit)
+                    }
+                }
+            }
+        }
+
     @Test
     fun `a straggler cannot publish over a state that has been reset`() =
         runTest(timeout = TEST_TIMEOUT) {
