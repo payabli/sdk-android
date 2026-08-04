@@ -3,11 +3,23 @@ package com.payabli.sdk.taptopay.attestation
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.lang.reflect.Modifier
+import java.util.Base64
 
-/** A valid nonce of exactly [length] characters, URL-safe base64 and nothing else. */
-private fun nonceOf(length: Int): String = "a".repeat(length)
+/**
+ * A nonce carrying exactly [bytes] decoded bytes, which is the axis the platform's floor is on.
+ *
+ * Built by encoding rather than by repeating a character, because the two are not the same measurement:
+ * sixteen characters of base64 carry twelve bytes, so a hand-written sixteen-character string looks like a
+ * minimum-length nonce and is not one.
+ */
+private fun nonceOfBytes(bytes: Int): String =
+    Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(bytes) { 'a'.code.toByte() })
+
+/** How many bytes a nonce actually carries, which is what the platform's floor is measured against. */
+private fun decodedSize(nonce: String): Int = Base64.getUrlDecoder().decode(nonce).size
 
 class AttestationChallengeTest {
     @Test
@@ -20,10 +32,10 @@ class AttestationChallengeTest {
 
     @Test
     fun `a classic challenge carries its value and its class`() {
-        val challenge = AttestationChallenge.classic(nonceOf(32))
+        val challenge = AttestationChallenge.classic(nonceOfBytes(32))
 
         assertEquals(VerdictClass.CLASSIC, challenge.verdictClass)
-        assertEquals(nonceOf(32), challenge.value)
+        assertEquals(nonceOfBytes(32), challenge.value)
     }
 
     // --- requestHash bounds -------------------------------------------------------------------------
@@ -60,45 +72,77 @@ class AttestationChallengeTest {
         assertEquals("a+b/c=~!", AttestationChallenge.standard("a+b/c=~!").value)
     }
 
-    // --- nonce bounds -------------------------------------------------------------------------------
+    // --- nonce bounds, measured in decoded bytes -----------------------------------------------------
 
     @Test
-    fun `a nonce of exactly the minimum length is accepted`() {
-        assertEquals(16, AttestationChallenge.classic(nonceOf(16)).value.length)
+    fun `a nonce carrying exactly the minimum bytes is accepted`() {
+        assertEquals(16, decodedSize(AttestationChallenge.classic(nonceOfBytes(16)).value))
     }
 
     @Test
-    fun `a nonce one character short of the minimum is rejected`() {
-        assertThrows(IllegalArgumentException::class.java) { AttestationChallenge.classic(nonceOf(15)) }
+    fun `a nonce one byte short of the minimum is rejected`() {
+        // 15 bytes encode to 20 characters, comfortably past the guide's 16-character floor, so a check
+        // written against the text accepts this and the platform answers NONCE_TOO_SHORT.
+        assertEquals(20, nonceOfBytes(15).length)
+        assertThrows(IllegalArgumentException::class.java) { AttestationChallenge.classic(nonceOfBytes(15)) }
+    }
+
+    @Test
+    fun `a sixteen-character nonce is rejected, because it carries only twelve bytes`() {
+        // The case that makes the two measurements visibly different, and the one an earlier revision of
+        // this file asserted was the valid minimum.
+        assertEquals(12, decodedSize("aaaaaaaaaaaaaaaa"))
+        assertThrows(IllegalArgumentException::class.java) { AttestationChallenge.classic("aaaaaaaaaaaaaaaa") }
     }
 
     @Test
     fun `a nonce of exactly the maximum length is accepted`() {
-        assertEquals(500, AttestationChallenge.classic(nonceOf(500)).value.length)
+        // 375 bytes is the most that fits in the character ceiling, and encodes to exactly 500.
+        val longest = nonceOfBytes(375)
+        assertEquals(500, longest.length)
+        assertEquals(500, AttestationChallenge.classic(longest).value.length)
     }
 
     @Test
-    fun `a nonce one character past the maximum is rejected`() {
-        assertThrows(IllegalArgumentException::class.java) { AttestationChallenge.classic(nonceOf(501)) }
+    fun `a nonce past the maximum length is rejected`() {
+        // One byte more crosses the ceiling; base64 grows in steps, so 376 bytes is 502 characters and
+        // there is no encodable value of exactly 501.
+        assertEquals(502, nonceOfBytes(376).length)
+        assertThrows(IllegalArgumentException::class.java) { AttestationChallenge.classic(nonceOfBytes(376)) }
+    }
+
+    @Test
+    fun `a value in the alphabet that is not decodable base64 is rejected`() {
+        // A trailing group of one character encodes no whole byte, so this is not a valid base64 length.
+        //
+        // The length is chosen so that only the decode can reject it. It must sit inside the character
+        // ceiling, or the ceiling rejects it first; and it must be long enough that a naive byte estimate
+        // clears the floor, or the floor does. 25 characters is roughly 18 bytes, so both other checks
+        // would pass it. Measured: at 21 characters this test passed with the decode removed.
+        val undecodable = "a".repeat(25)
+        assertEquals(1, undecodable.length % 4)
+        assertTrue(undecodable.length <= 500)
+        assertTrue(undecodable.length * 3 / 4 >= 16)
+        assertThrows(IllegalArgumentException::class.java) { AttestationChallenge.classic(undecodable) }
     }
 
     // --- nonce alphabet -----------------------------------------------------------------------------
 
     @Test
     fun `a nonce may use the URL-safe alphabet and may be padded`() {
-        assertEquals("abcDEF012-_xyzAB", AttestationChallenge.classic("abcDEF012-_xyzAB").value)
-        assertEquals("abcDEF012-_xyzA=", AttestationChallenge.classic("abcDEF012-_xyzA=").value)
-        assertEquals("abcDEF012-_xyz==", AttestationChallenge.classic("abcDEF012-_xyz==").value)
+        // 24 characters so the value clears the byte floor; the point here is the alphabet and the padding.
+        assertEquals("abcDEF012-_xyzABabcDEF01", AttestationChallenge.classic("abcDEF012-_xyzABabcDEF01").value)
+        assertEquals("abcDEF012-_xyzABabcDEF==", AttestationChallenge.classic("abcDEF012-_xyzABabcDEF==").value)
     }
 
     @Test
     fun `a nonce in the standard alphabet is rejected`() {
         // '+' and '/' are exactly what URL-safe base64 replaces, and the platform rejects them.
         assertThrows(IllegalArgumentException::class.java) {
-            AttestationChallenge.classic("abcDEF012+xyzABC")
+            AttestationChallenge.classic("abcDEF012+xyzABabcDEF01")
         }
         assertThrows(IllegalArgumentException::class.java) {
-            AttestationChallenge.classic("abcDEF012/xyzABC")
+            AttestationChallenge.classic("abcDEF012/xyzABabcDEF01")
         }
     }
 
@@ -116,7 +160,7 @@ class AttestationChallengeTest {
     @Test
     fun `a nonce padded anywhere but the end is rejected`() {
         assertThrows(IllegalArgumentException::class.java) {
-            AttestationChallenge.classic("abcDEF0=12xyzABCD")
+            AttestationChallenge.classic("abcDEF0=12xyzABabcDEF01")
         }
     }
 
@@ -157,9 +201,9 @@ class AttestationChallengeTest {
 
     @Test
     fun `toString does not contain the value`() {
-        val challenge = AttestationChallenge.classic("s3cr3tNonceValue")
+        val challenge = AttestationChallenge.classic("s3cr3tNonceValueLongEnough")
 
-        assertFalse(challenge.toString().contains("s3cr3tNonceValue"))
+        assertFalse(challenge.toString().contains("s3cr3tNonceValueLongEnough"))
         assertEquals("AttestationChallenge(verdictClass=CLASSIC)", challenge.toString())
     }
 }

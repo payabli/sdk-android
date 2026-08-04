@@ -1,12 +1,26 @@
 package com.payabli.sdk.taptopay.attestation
 
 import androidx.annotation.RestrictTo
+import java.util.Base64
 
-/** Play Integrity's documented ceiling, for a `nonce` and for a `requestHash` alike. */
+/** Play Integrity's documented ceiling, in characters, for a `nonce` and for a `requestHash` alike. */
 private const val MAX_LENGTH = 500
 
-/** Play Integrity's documented floor for a `nonce`. A `requestHash` has none. */
-private const val MIN_NONCE_LENGTH = 16
+/**
+ * Play Integrity's documented floor for a `nonce`, **in decoded bytes**. A `requestHash` has none.
+ *
+ * Bytes rather than characters because the two Google pages that state this limit disagree, and each is
+ * enforced here on the axis its own page names. The guide says "Minimum of 16 characters / Maximum of 500
+ * characters" of the encoded string; the `IntegrityErrorCode` reference says `NONCE_TOO_SHORT` means "the
+ * nonce must be a minimum of 16 bytes (before base64 encoding)". Sixteen characters of base64 decode to
+ * twelve bytes, so a value can satisfy the guide and still be refused by the platform.
+ *
+ * Taking the stricter reading on each axis costs nothing real: the character floor is implied, since 16
+ * bytes never encode to fewer than 22 characters, and the documented byte ceiling is unreachable behind the
+ * character one, since 500 characters carry at most 375 bytes. So there is no separate byte-ceiling check,
+ * and adding one would be a branch no input can take.
+ */
+private const val MIN_NONCE_BYTES = 16
 
 /**
  * URL-safe base64, non-wrapping, with padding optional.
@@ -79,16 +93,24 @@ public class AttestationChallenge private constructor(
         /**
          * A challenge for a classic request, landing in `nonce`.
          *
-         * [MIN_NONCE_LENGTH] to [MAX_LENGTH] characters of URL-safe, non-wrapping base64. All three are
-         * the platform's own limits, and each has an error code behind it that this rejection replaces.
+         * URL-safe, non-wrapping base64 that decodes, carrying at least [MIN_NONCE_BYTES] bytes and written
+         * in at most [MAX_LENGTH] characters. Each limit is the platform's own and has an error code behind
+         * it that this rejection replaces: `NONCE_IS_NOT_BASE64`, `NONCE_TOO_SHORT` and `NONCE_TOO_LONG`.
          */
         public fun classic(nonce: String): AttestationChallenge {
-            require(nonce.length >= MIN_NONCE_LENGTH) {
-                "nonce must be at least $MIN_NONCE_LENGTH characters"
-            }
             require(nonce.length <= MAX_LENGTH) { "nonce must be at most $MAX_LENGTH characters" }
             require(URL_SAFE_BASE64.matches(nonce)) {
                 "nonce must be URL-safe base64 with no line wrapping"
+            }
+            // Decoded rather than measured as text: the floor the platform enforces is on the bytes the
+            // nonce carries, and the alphabet check above says nothing about whether the string decodes at
+            // all. A length that is not a valid base64 length, 501 characters for instance, gets here.
+            val decoded =
+                runCatching { Base64.getUrlDecoder().decode(nonce) }.getOrElse {
+                    throw IllegalArgumentException("nonce is not decodable base64", it)
+                }
+            require(decoded.size >= MIN_NONCE_BYTES) {
+                "nonce must carry at least $MIN_NONCE_BYTES bytes; this one decodes to ${decoded.size}"
             }
             return AttestationChallenge(VerdictClass.CLASSIC, nonce)
         }

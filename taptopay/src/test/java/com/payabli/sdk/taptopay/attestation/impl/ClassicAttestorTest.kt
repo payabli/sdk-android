@@ -38,9 +38,9 @@ class ClassicAttestorTest {
         runTest(timeout = TEST_TIMEOUT) {
             val gateway = FakeClassicGateway()
 
-            attestorFor(gateway).attest(challenge("YS1zZXJ2ZXItbm9uY2U"))
+            attestorFor(gateway).attest(challenge("YS1zZXJ2ZXItaXNzdWVkLW5vbmNl"))
 
-            assertEquals(listOf("YS1zZXJ2ZXItbm9uY2U"), gateway.nonces)
+            assertEquals(listOf("YS1zZXJ2ZXItaXNzdWVkLW5vbmNl"), gateway.nonces)
         }
 
     @Test

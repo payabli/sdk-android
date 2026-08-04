@@ -65,7 +65,10 @@ class StandardAttestorTest {
         runTest(timeout = TEST_TIMEOUT) {
             val gateway = FakeStandardGateway()
 
-            val failure = failureOf { attestorFor(gateway).attest(AttestationChallenge.classic("aaaaaaaaaaaaaaaa")) }
+            // The nonce has to be one the classic constructor accepts, or this test throws from building
+            // the challenge and passes without the attestor's guard ever running.
+            val classic = AttestationChallenge.classic("Y2xhc3NpYy1jaGFsbGVuZ2UtdmFsdWU")
+            val failure = failureOf { attestorFor(gateway).attest(classic) }
 
             assertTrue(failure is IllegalArgumentException)
             assertEquals(0, gateway.prepares.get())
