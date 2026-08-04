@@ -8,9 +8,9 @@ package com.payabli.sdk.core.config
  * Must mint a token rather than return a cached one. Handing back the credential that was just rejected
  * is refused, because it would be rejected again and nothing would have rotated.
  *
- * Must return a non-blank token within the refresh deadline, 10 seconds by default, and must suspend
- * rather than block a thread: a timeout cannot interrupt code that never reaches a suspension point,
- * and a blocked provider wedges the refresh and every reader waiting on it.
+ * Must return a non-blank token within thirty seconds, and must suspend rather than block a thread: a
+ * timeout cannot interrupt code that never reaches a suspension point, and a blocked provider wedges the
+ * refresh and every reader waiting on it.
  *
  * Must not call back into the SDK. A re-entrant call is served the last known token rather than
  * waiting for this one to finish.

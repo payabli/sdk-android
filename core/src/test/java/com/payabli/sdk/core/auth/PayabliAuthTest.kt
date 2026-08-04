@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.payabli.sdk.core.auth
 
 import com.payabli.sdk.core.config.PayabliConfig
@@ -11,9 +13,11 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
@@ -523,6 +527,34 @@ class PayabliAuthTest {
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
             assertEquals("the tokenProvider did not return in time", failure.reason)
+        }
+
+    /**
+     * The shipped deadline, pinned in the declaration and on the clock.
+     *
+     * Two assertions, and each catches something the other does not. The literal on the expected side is what
+     * fails when the constant moves, in either direction; comparing the constant to itself would pass against
+     * any value. The elapsed virtual time is what makes that literal a fact about behaviour rather than about
+     * a declaration: it is what a parked provider actually buys before the refresh reports expiry, so a
+     * deadline that stopped being applied fails here too.
+     *
+     * Costs no wall clock. `runRefresh` never switches dispatcher, so `withTimeoutOrNull` runs on the test
+     * scheduler and thirty virtual seconds elapse at once. Not wrapped in [completing], whose two-second
+     * bound is virtual as well and would fire first.
+     */
+    @Test
+    fun `the shipped provider deadline is thirty seconds, in the constant and on the clock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            assertEquals("the shipped provider deadline moved", 30_000L, DEFAULT_PROVIDER_TIMEOUT_MILLIS)
+
+            // No providerTimeoutMillis: this is the default in the shape production uses it.
+            val subject = auth { CompletableDeferred<String>().await() }
+            val startedAt = currentTime
+
+            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
+
+            assertEquals("the tokenProvider did not return in time", failure.reason)
+            assertEquals("the deadline was not what ended it", 30_000L, currentTime - startedAt)
         }
 
     @Test

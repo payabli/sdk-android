@@ -697,7 +697,10 @@ class AuthenticatedTransportTest {
      * refresh would be cancelled and each further attempt would call the provider again with the token that
      * was already rejected.
      *
-     * Millisecond scale, in the ratio the shipped defaults have: 10s against 30s would be a 30-second test.
+     * Millisecond scale on a real dispatcher: the provider blocks a thread, so nothing here runs in virtual
+     * time and these numbers keep the test under a second. Only the ordering matters, the call budget below
+     * the provider's own duration and the provider deadline well above it, so the shipped values do not
+     * appear here.
      */
     @Test
     fun `a refresh slower than one call budget runs once and still recovers`() =
