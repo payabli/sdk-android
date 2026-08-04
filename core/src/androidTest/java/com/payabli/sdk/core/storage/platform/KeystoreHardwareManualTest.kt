@@ -38,8 +38,9 @@ import kotlin.time.Duration.Companion.seconds
  * separate failures with three separate causes. A single test that branches on device capability runs half of
  * itself on any given phone, and the half that did not run reads as covered.
  *
- * Run it against every wired phone, not one. Vendors differ: measured here, a Pixel 7a reports
- * `hardware_keystore=400` with `strongbox_keystore=300`, and a Samsung SM-S908U1 reports `100` with `4`.
+ * Run it against every wired phone, not one. Vendors differ, and by a lot: measured here, one
+ * manufacturer's flagship reports `hardware_keystore=400` with `strongbox_keystore=300`, while another's
+ * reports `100` with `4`. The spread is the reason for the instruction; the specific handsets are not.
  * ```
  * ANDROID_SERIAL=<serial> ./gradlew :core:connectedAndroidTest \
  *   -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.core.ManualDeviceTest

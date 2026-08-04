@@ -24,11 +24,32 @@ Full transitive set: see each module's CycloneDX SBOM.
 | AndroidX Core KTX | `androidx.core:core-ktx` | Apache-2.0 |
 | Material Components for Android | `com.google.android.material:material` | Apache-2.0 |
 | AndroidX (transitive: activity, annotation, lifecycle, …) | `androidx.*` | Apache-2.0 |
+| Kotlin coroutines Play services adapter | `org.jetbrains.kotlinx:kotlinx-coroutines-play-services` | Apache-2.0 |
 
 > Apache-2.0 NOTICE propagation: where an upstream component ships its own `NOTICE`
 > file, that notice is preserved in the component's own artifact and enumerated in
 > the per-module SBOM. Consumers performing app-level license aggregation (e.g.
 > `play-services-oss-licenses`) will surface these automatically.
+
+---
+
+## Google Play components, under Google's own terms
+
+**These are not open source, and they are not Apache-2.0.** Each carries a licence declared by Google in
+its own published POM, quoted below with the URL that POM gives. They reach `:taptopay` through the Play
+Integrity dependency; no other module links them, and the umbrella artifact omits `:taptopay`, so a
+card-not-present integrator receives none of them.
+
+| Component | Coordinates | Licence as declared in the artifact's POM |
+|---|---|---|
+| Play Integrity API | `com.google.android.play:integrity` | Play Integrity API Terms of Service — https://developer.android.com/google/play/integrity/overview#tos |
+| Play Core Common (transitive) | `com.google.android.play:core-common` | Play Core Software Development Kit Terms of Service — https://developer.android.com/guide/playcore/license |
+| Google Play services basement (transitive) | `com.google.android.gms:play-services-basement` | Android Software Development Kit License — https://developer.android.com/studio/terms.html |
+| Google Play services tasks (transitive) | `com.google.android.gms:play-services-tasks` | Android Software Development Kit License — https://developer.android.com/studio/terms.html |
+
+These were briefly listed above as Apache-2.0, which misstated their redistribution terms. Read the licence
+from the artifact's POM rather than assuming a Google-published library is Apache-2.0: several are, and
+these are not.
 
 ---
 

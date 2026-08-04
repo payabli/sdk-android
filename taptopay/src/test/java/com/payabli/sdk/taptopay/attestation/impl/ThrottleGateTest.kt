@@ -1,0 +1,299 @@
+package com.payabli.sdk.taptopay.attestation.impl
+
+import com.google.android.play.core.integrity.model.IntegrityErrorCode
+import com.payabli.sdk.taptopay.attestation.AttestationChallenge
+import com.payabli.sdk.taptopay.attestation.AttestationException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit.SECONDS
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TestTimeSource
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
+
+private val TEST_TIMEOUT = 5.seconds
+
+/**
+ * The gate that makes a throttle a refusal rather than advice.
+ *
+ * A virtual clock, so the window is exercised without the suite waiting out a real minute. `TestTimeSource`
+ * is monotonic like the production source, which is the property the gate depends on.
+ */
+class ThrottleGateTest {
+    private val clock = TestTimeSource()
+
+    private fun gate(window: kotlin.time.Duration = 60.seconds) = ThrottleGate(window, clock)
+
+    private companion object {
+        /** Long enough that the cancelled caller reaches the lock while it is still held. */
+        const val HOLD_MILLIS = 300L
+
+        /** Bounded so a regression fails this test rather than parking the worker. */
+        const val LATCH_WAIT_SECONDS = 10L
+    }
+
+    @Test
+    fun `an untriggered gate lets everything through`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            assertNull(runCatching { gate().check() }.exceptionOrNull())
+        }
+
+    @Test
+    fun `once triggered the gate refuses without reaching the platform`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gate = gate()
+            gate.record()
+
+            val refusal = runCatching { gate.check() }.exceptionOrNull()
+
+            assertTrue(refusal is AttestationException.Throttled)
+            // The platform's own throttle code, because that is what the condition still is.
+            assertEquals(IntegrityErrorCode.TOO_MANY_REQUESTS, (refusal as AttestationException).errorCode)
+        }
+
+    @Test
+    fun `the gate reopens once the window has passed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gate = gate(window = 60.seconds)
+            gate.record()
+
+            clock += 59.seconds
+            assertTrue(runCatching { gate.check() }.exceptionOrNull() is AttestationException.Throttled)
+
+            clock += 2.seconds
+            assertNull("the window must not outlive its duration", runCatching { gate.check() }.exceptionOrNull())
+        }
+
+    @Test
+    fun `a second throttle extends the window from when it happened`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gate = gate(window = 60.seconds)
+            gate.record()
+
+            clock += 50.seconds
+            gate.record()
+
+            // 20s after the second throttle, so past the first window and inside the second.
+            clock += 20.seconds
+            assertTrue(runCatching { gate.check() }.exceptionOrNull() is AttestationException.Throttled)
+        }
+
+    // --- the attestors honour it, which is the part that matters ------------------------------------
+
+    @Test
+    fun `a throttled standard attestor stops calling the platform`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway =
+                FakeStandardGateway(
+                    onRequest = { _, _ -> throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS) },
+                )
+            val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, throttleGate = gate())
+
+            val first =
+                runCatching {
+                    attestor.attest(AttestationChallenge.standard("Zmlyc3QtY2hhbGxlbmdl"))
+                }.exceptionOrNull()
+            val second =
+                runCatching {
+                    attestor.attest(AttestationChallenge.standard("c2Vjb25kLWNoYWxsZW5nZQ"))
+                }.exceptionOrNull()
+
+            assertTrue(first is AttestationException.Throttled)
+            assertTrue(second is AttestationException.Throttled)
+            // One request, not two. Without the gate the second attestation asks a budget already known
+            // to be spent, which is the loop the gate exists to break.
+            assertEquals(1, gateway.requestHashes.size)
+        }
+
+    @Test
+    fun `a refused attempt does not spend the challenge`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The gate runs before the ledger, so a caller refused by the gate can present the same
+            // challenge once the window closes rather than having to obtain another.
+            // Counted per request, not per preparation: the provider prepared by the first attestation is
+            // reused by the third, so keying the failure on the preparation index would fail it twice.
+            var requests = 0
+            val gateway =
+                FakeStandardGateway(
+                    onRequest = { _, _ ->
+                        requests++
+                        if (requests == 1) throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS)
+                        FAKE_TOKEN
+                    },
+                )
+            val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, throttleGate = gate())
+            val unspent = AttestationChallenge.standard("dW5zcGVudC1jaGFsbGVuZ2U")
+
+            runCatching { attestor.attest(AttestationChallenge.standard("Zmlyc3QtY2hhbGxlbmdl")) }
+            val refused = runCatching { attestor.attest(unspent) }.exceptionOrNull()
+            assertTrue(refused is AttestationException.Throttled)
+
+            clock += 61.seconds
+
+            // Accepted, not ChallengeReused: the refused attempt never consumed it.
+            assertEquals(FAKE_TOKEN, attestor.attest(unspent).value)
+        }
+
+    @Test
+    fun `a throttled classic attestor stops calling the platform`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway =
+                FakeClassicGateway(
+                    onRequest = { _, _ -> throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS) },
+                )
+            val attestor = ClassicAttestor(gateway, throttleGate = gate())
+
+            runCatching { attestor.attest(AttestationChallenge.classic("Zmlyc3QtY2xhc3NpYy1ub25jZQ")) }
+            val second =
+                runCatching {
+                    attestor.attest(AttestationChallenge.classic("c2Vjb25kLWNsYXNzaWMtbm9uY2U"))
+                }.exceptionOrNull()
+
+            assertTrue(second is AttestationException.Throttled)
+            assertEquals(1, gateway.nonces.size)
+        }
+
+    @Test
+    fun `warmUp honours the gate rather than walking past it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Preparing is itself a platform request and can be refused for a spent budget. Nothing is
+            // cached when it fails, so a warm-up loop without this check reaches the platform every time.
+            val gateway =
+                FakeStandardGateway(
+                    onPrepare = { throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS) },
+                )
+            val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, throttleGate = gate())
+
+            assertTrue(runCatching { attestor.warmUp() }.exceptionOrNull() is AttestationException.Throttled)
+            assertTrue(runCatching { attestor.warmUp() }.exceptionOrNull() is AttestationException.Throttled)
+
+            assertEquals("the second warm-up must not reach the platform", 1, gateway.prepares.get())
+        }
+
+    @Test
+    fun `a burst queued on the preparation lock does not each spend a doomed request`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Every caller passes the outer gate check while the field is still null, then queues on the
+            // preparation lock. The first prepares, is told the budget is spent, and opens the gate. Each
+            // waiter behind it must notice that on entry: without the re-check inside the lock they each
+            // prepare again, so a burst costs one known-doomed platform request per caller, which is
+            // exactly the amplification the gate exists to stop.
+            val reached = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val gateway =
+                FakeStandardGateway(
+                    onPrepare = {
+                        reached.complete(Unit)
+                        release.await()
+                        throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS)
+                    },
+                )
+            val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, throttleGate = gate())
+
+            val burst =
+                (1..5).map { i ->
+                    async {
+                        runCatching {
+                            attestor.attest(AttestationChallenge.standard("YnVyc3QtY2hhbGxlbmdlLSRp$i"))
+                        }.exceptionOrNull()
+                    }
+                }
+            reached.await()
+            release.complete(Unit)
+            val outcomes = burst.awaitAll()
+
+            assertEquals("only the first caller may reach the platform", 1, gateway.prepares.get())
+            assertTrue(outcomes.all { it is AttestationException.Throttled })
+        }
+
+    // A JUnit timeout, because this one runs outside `runTest` and so has no guard of its own. An
+    // unbounded wait here would hang the Gradle worker on a regression, and a worker that hangs reports
+    // no failure at all.
+    @Test(timeout = 30_000)
+    fun `a caller cancelled while another holds the lock still records the throttle`() {
+        // Real threads and a blocking hold, because the defect needs the lock to be contended and the
+        // production hold is a few nanoseconds. `Mutex.withLock` only checks cancellation when it has to
+        // suspend, so an uncontended acquisition by a cancelled caller succeeds and proves nothing; the
+        // window has to be widened for the test to be able to fail at all.
+        //
+        // Losing the record is not only a lost window. The standard attestor records while mapping a
+        // failure, and the mapped failure is what releases the waiters on a shared preparation, so
+        // cancellation escaping here leaves them on a claim nobody owns.
+        val insideLock = CountDownLatch(1)
+        val holderReady = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val blockingClock =
+            object : TimeSource {
+                override fun markNow(): TimeMark =
+                    if (calls.incrementAndGet() == 1) {
+                        insideLock.countDown()
+                        Thread.sleep(HOLD_MILLIS)
+                        // Far enough in the past that the window this opens is already over, so the
+                        // assertion below can only be satisfied by the cancelled caller's own record.
+                        TimeSource.Monotonic.markNow() - 10.minutes
+                    } else {
+                        TimeSource.Monotonic.markNow()
+                    }
+            }
+        val gate = ThrottleGate(60.seconds, blockingClock)
+
+        runBlocking {
+            val cancelled =
+                launch(Dispatchers.Default) {
+                    try {
+                        holderReady.countDown()
+                        awaitCancellation()
+                    } catch (withdrawal: CancellationException) {
+                        gate.record()
+                        throw withdrawal
+                    }
+                }
+            assertTrue("the cancelled caller never started", holderReady.await(LATCH_WAIT_SECONDS, SECONDS))
+            val holder = launch(Dispatchers.Default) { gate.record() }
+            assertTrue("the holder never reached the lock", insideLock.await(LATCH_WAIT_SECONDS, SECONDS))
+
+            cancelled.cancel()
+            cancelled.join()
+            holder.join()
+
+            // Only the cancelled caller's record leaves a window in the future. If its acquisition threw,
+            // the gate still holds the holder's already-expired mark and lets the next caller through.
+            val refusal = runCatching { gate.check() }.exceptionOrNull()
+            assertTrue(
+                "the throttle must survive the caller withdrawing, got $refusal",
+                refusal is AttestationException.Throttled,
+            )
+        }
+    }
+
+    @Test
+    fun `any other failure leaves the gate open`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Only a spent budget closes it. A network blip is this device's problem and must not stop the
+            // next attestation from trying.
+            val gateway =
+                FakeClassicGateway(
+                    onRequest = { _, _ -> throw IntegrityFailure(IntegrityErrorCode.NETWORK_ERROR) },
+                )
+            val attestor = ClassicAttestor(gateway, throttleGate = gate())
+
+            runCatching { attestor.attest(AttestationChallenge.classic("Zmlyc3QtY2xhc3NpYy1ub25jZQ")) }
+            runCatching { attestor.attest(AttestationChallenge.classic("c2Vjb25kLWNsYXNzaWMtbm9uY2U")) }
+
+            assertEquals(2, gateway.nonces.size)
+        }
+}

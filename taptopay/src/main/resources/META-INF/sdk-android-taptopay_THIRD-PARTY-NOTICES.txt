@@ -18,5 +18,12 @@ at the integrating application build; it is not redistributed by Payabli.
  [FISERV LICENSE TEXT GOES HERE] //todo complete the license
 ================================================================================
 
-Open-source dependencies: Apache-2.0 / MIT as listed in the module SBOM.
+Google Play components: this module links the Play Integrity API
+(com.google.android.play:integrity) and, transitively, Play Core Common and
+Google Play services. These are NOT open source and NOT Apache-2.0. They are
+governed by the Play Integrity API Terms of Service, the Play Core SDK Terms of
+Service and the Android SDK License respectively, as declared in each artifact's
+own POM. See THIRD-PARTY-NOTICES.md at the repository root for the URLs.
+
+Remaining open-source dependencies: Apache-2.0 / MIT as listed in the module SBOM.
 Full project notices: THIRD-PARTY-NOTICES.md at the repository root.
