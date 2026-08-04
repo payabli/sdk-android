@@ -35,9 +35,13 @@ import kotlin.time.Duration.Companion.seconds
  * **A failure reading `Throttled(errorCode=-8)` is rate limiting, not a defect.** Running this class in a
  * tight loop reaches it: it appeared after roughly twenty to thirty requests inside an hour, which is far
  * below the documented daily maximum, so it was short-term limiting rather than the budget running out.
- * It had cleared by the end of a two-minute wait. Re-run before investigating, and note the attestor now
- * holds a suppression window of its own, so an immediate re-run is refused locally without reaching the
- * platform.
+ * It had cleared by the end of a two-minute wait, so **wait before re-running** rather than re-running
+ * immediately.
+ *
+ * The attestor's own suppression window does not help here and it is worth being clear why, because the
+ * opposite was written in this file: the window is per instance, each test builds its own attestor, and an
+ * instrumented run is a fresh process besides. Nothing about it survives from one run to the next, so an
+ * immediate re-run reaches the platform and spends more of the budget that is already short.
  *
  * What this still cannot see is the verdict *contents* — device integrity, licensing, app recognition are
  * inside the token, which is decodable only server-side through the same cloud project. Do not add an

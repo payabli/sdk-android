@@ -26,11 +26,17 @@ private const val REMEMBERED = 256
  * the value to the pool: the platform may well have seen it, and a caller that retries with the same value
  * is asking for exactly the replay this refuses.
  */
-internal class ChallengeLedger {
+internal class ChallengeLedger(
+    /**
+     * The backing store, injectable so a test can widen the check-and-insert window and make the
+     * concurrency guarantee provable rather than probabilistic.
+     *
+     * **Must be insertion-ordered**, because eviction is "oldest first" and reads that order rather than
+     * tracking age separately. Anything else silently evicts the wrong entry.
+     */
+    private val spent: MutableSet<String> = LinkedHashSet(REMEMBERED),
+) {
     private val mutex = Mutex()
-
-    // Insertion-ordered, so eviction is "oldest first" without a second structure tracking age.
-    private val spent = LinkedHashSet<String>(REMEMBERED)
 
     /** Records [value] as spent, or throws if it already was. */
     suspend fun spend(value: String) {
