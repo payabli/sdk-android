@@ -1,5 +1,9 @@
 package com.payabli.sdk.taptopay.attestation.impl
 
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
+
 /**
  * A platform error, carried across the seam as a plain integer.
  *
@@ -24,6 +28,36 @@ internal class IntegrityFailure(
     val errorCode: Int?,
     cause: Throwable? = null,
 ) : Exception("integrity error ${errorCode ?: "unreported"}", cause)
+
+/**
+ * The ceiling on a single platform call.
+ *
+ * Nothing in the Play Integrity API promises to return. A wedged binder or an unresponsive Play services
+ * leaves `Task.await()` suspended for as long as the caller's scope lives, and for a card reader that means
+ * arming hangs with a merchant waiting. The transport already bounds a whole call for the same reason.
+ *
+ * Thirty seconds is a hang detector, not a performance target: the platform documents a standard request in
+ * a few hundred milliseconds and a classic one in a few seconds, so anything reaching this is not slow, it
+ * is stuck. Generous on purpose, because expiring a call that would have succeeded costs a request against
+ * a shared budget.
+ */
+internal val DEFAULT_PLATFORM_DEADLINE: Duration = 30.seconds
+
+/**
+ * Runs [block] under [deadline], reporting expiry as an uncoded [IntegrityFailure].
+ *
+ * `withTimeoutOrNull` rather than `withTimeout`, deliberately. `withTimeout` signals expiry with a
+ * `CancellationException`, which the gateways forward untouched because a caller withdrawing is not a
+ * device failure; an SDK-owned deadline would then reach the caller as cancellation rather than as an
+ * attestation outcome. Returning null keeps the two apart, and an outer cancellation still propagates.
+ *
+ * Uncoded because the platform said nothing, which maps to the retryable disposition: a stuck call is worth
+ * trying again, unlike a spent budget.
+ */
+internal suspend fun <T> underDeadline(
+    deadline: Duration,
+    block: suspend () -> T,
+): T = withTimeoutOrNull(deadline) { block() } ?: throw IntegrityFailure(null)
 
 /**
  * The platform half of a standard request, which is two steps rather than one.

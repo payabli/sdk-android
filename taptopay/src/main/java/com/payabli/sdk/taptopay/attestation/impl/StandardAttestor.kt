@@ -13,6 +13,7 @@ import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Duration
 
 /**
  * Attests through a standard request: a provider prepared once, then a token per challenge.
@@ -29,6 +30,7 @@ internal class StandardAttestor(
     private val cloudProjectNumber: Long,
     private val ledger: ChallengeLedger = ChallengeLedger(),
     private val throttleGate: ThrottleGate = ThrottleGate(),
+    private val deadline: Duration = DEFAULT_PLATFORM_DEADLINE,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) : AppAttestor {
     private val mutex = Mutex()
@@ -76,7 +78,7 @@ internal class StandardAttestor(
         }
         val token =
             try {
-                used.request(challenge.value)
+                underDeadline(deadline) { used.request(challenge.value) }
             } catch (failure: IntegrityFailure) {
                 if (failure.errorCode != StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID) {
                     throw report(failure)
@@ -87,7 +89,7 @@ internal class StandardAttestor(
                 discard(used)
                 val replacement = requester()
                 try {
-                    replacement.request(challenge.value)
+                    underDeadline(deadline) { replacement.request(challenge.value) }
                 } catch (retried: IntegrityFailure) {
                     // Discard the replacement too when it is invalid in its turn, or it stays cached and the
                     // next attestation spends a platform request discovering what this one already knows.
@@ -124,7 +126,7 @@ internal class StandardAttestor(
 
     private suspend fun prepare(): StandardTokenRequester =
         try {
-            gateway.prepareProvider(cloudProjectNumber)
+            underDeadline(deadline) { gateway.prepareProvider(cloudProjectNumber) }
         } catch (failure: IntegrityFailure) {
             throw report(failure)
         }

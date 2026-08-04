@@ -10,6 +10,7 @@ import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.attestation.VerdictClass
+import kotlin.time.Duration
 
 /**
  * Attests through a classic request: one call, nothing kept between them.
@@ -26,6 +27,7 @@ internal class ClassicAttestor(
     private val cloudProjectNumber: Long? = null,
     private val ledger: ChallengeLedger = ChallengeLedger(),
     private val throttleGate: ThrottleGate = ThrottleGate(),
+    private val deadline: Duration = DEFAULT_PLATFORM_DEADLINE,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) : AppAttestor {
     /** Nothing to prepare. */
@@ -52,7 +54,7 @@ internal class ClassicAttestor(
 
         val token =
             try {
-                gateway.requestToken(challenge.value, cloudProjectNumber)
+                underDeadline(deadline) { gateway.requestToken(challenge.value, cloudProjectNumber) }
             } catch (failure: IntegrityFailure) {
                 val mapped = PlayIntegrityErrorMapping.failureFor(failure.errorCode, VerdictClass.CLASSIC, failure)
                 logger.error(

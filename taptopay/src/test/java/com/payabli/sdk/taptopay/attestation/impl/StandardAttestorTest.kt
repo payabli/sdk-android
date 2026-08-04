@@ -7,7 +7,11 @@ import com.payabli.sdk.taptopay.attestation.AttestationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -306,6 +310,48 @@ class StandardAttestorTest {
             // One warm-up plus one replacement. A third would mean the second attestation discarded a
             // provider it had never held.
             assertEquals(2, gateway.prepares.get())
+        }
+
+    // --- the platform not answering at all ----------------------------------------------------------
+
+    @Test
+    fun `a request that never returns is bounded rather than hanging`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Nothing in the Play Integrity API promises to return. Unbounded, a wedged call leaves reader
+            // arming suspended for as long as the caller's scope lives. Virtual time, so this costs nothing.
+            val gateway = FakeStandardGateway(onRequest = { _, _ -> awaitCancellation() })
+
+            val failure = failureOf { attestorFor(gateway).attest(challenge()) }
+
+            assertTrue(failure is AttestationException.Retryable)
+            // Uncoded: the platform said nothing, so there is no code to report.
+            assertEquals(null, (failure as AttestationException).errorCode)
+        }
+
+    @Test
+    fun `a preparation that never returns is bounded too`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The other unbounded call, and the one warmUp reaches.
+            val gateway = FakeStandardGateway(onPrepare = { awaitCancellation() })
+
+            val failure = failureOf { attestorFor(gateway).warmUp() }
+
+            assertTrue(failure is AttestationException.Retryable)
+        }
+
+    @Test
+    fun `the caller's own cancellation is not reported as a platform failure`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The reason the bound uses withTimeoutOrNull rather than withTimeout: an SDK-owned deadline
+            // must not be indistinguishable from the caller withdrawing.
+            val gateway = FakeStandardGateway(onRequest = { _, _ -> awaitCancellation() })
+            val attestor = attestorFor(gateway)
+
+            val job = launch { runCatching { attestor.attest(challenge()) } }
+            yield()
+            job.cancelAndJoin()
+
+            assertTrue("cancelling the caller must not open the throttle gate", job.isCancelled)
         }
 
     // --- diagnostics --------------------------------------------------------------------------------
