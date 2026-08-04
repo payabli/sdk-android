@@ -24,6 +24,10 @@ Full transitive set: see each module's CycloneDX SBOM.
 | AndroidX Core KTX | `androidx.core:core-ktx` | Apache-2.0 |
 | Material Components for Android | `com.google.android.material:material` | Apache-2.0 |
 | AndroidX (transitive: activity, annotation, lifecycle, …) | `androidx.*` | Apache-2.0 |
+| Play Integrity API | `com.google.android.play:integrity` | Apache-2.0 |
+| Play Core Common (transitive) | `com.google.android.play:core-common` | Apache-2.0 |
+| Google Play services (transitive: basement, tasks) | `com.google.android.gms:play-services-*` | Apache-2.0 |
+| Kotlin coroutines Play services adapter | `org.jetbrains.kotlinx:kotlinx-coroutines-play-services` | Apache-2.0 |
 
 > Apache-2.0 NOTICE propagation: where an upstream component ships its own `NOTICE`
 > file, that notice is preserved in the component's own artifact and enumerated in

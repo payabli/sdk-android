@@ -27,6 +27,10 @@ internal object LoggableFieldNames {
             "familyid",
             "rotationindex",
             "verdict",
+            // Which of the two integrity request shapes was made: the fixed vocabulary standard / classic.
+            // Needed because the same error code means different things in each, so a record naming only
+            // the code cannot be read without it.
+            "verdictclass",
             "deviceintegrityverdict",
             "appaccessriskverdict",
             "applicensingverdict",

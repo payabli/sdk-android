@@ -17,7 +17,7 @@
 - `./gradlew sonar` - Static analysis (needs `SONAR_TOKEN`; add `--dry-run` to check config only)
 - `./gradlew publishToMavenLocal` - Exercise the publish convention
 
-**Setup**: two things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `gpr.user` and `gpr.token` in `~/.gradle/gradle.properties` (never in this repo) for the card reader registry that `:taptopay` resolves from; it needs a classic PAT with `read:packages`. Only `:taptopay` needs it, and the build says so if it is missing.
+**Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `gpr.user` and `gpr.token` in `~/.gradle/gradle.properties` (never in this repo) for the card reader registry that `:taptopay` resolves from; it needs a classic PAT with `read:packages`. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
 
 **Work tracking**: Linear, Platform team, project `Android SDK`, `Android -` title prefix.
 
@@ -185,4 +185,17 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
 - **CI runs no instrumented test.** All jobs are `ubuntu-latest` with no emulator, so `connectedAndroidTest`
   is a deliberate local step and a regression in the three device-only behaviours will not turn a pull
   request red. PLA-2306 adds a manual and nightly emulator job, deliberately not a required per-PR check.
-- Card-present and attestation paths need a physical device or mocks rather than an emulator.
+- Card-present paths need a physical device or mocks rather than an emulator.
+- **Attestation runs on an emulator and has no manual tier, both of which were measured.** Attestation lives
+  in `:taptopay`, not `:core`: the platform verdict gates arming the card reader, and keeping it there is
+  what keeps Play services off the umbrella AAR. Against a real cloud project with the API enabled, both
+  request shapes returned **a token** on a `google_apis_playstore` emulator (API 37) and on three phones
+  from two manufacturers, spanning API 33 to 36, all debug-signed and adb-installed.
+  `UNRECOGNIZED_VERSION` and `UNLICENSED` are verdict values inside the token, not reasons the call fails.
+  Hardware and a Play-Store emulator agreed at every client-observable level, so a manual tier can ask
+  nothing the emulator tier cannot, and there is none. Reading verdict *contents* needs a server-side decode
+  through the same cloud project, which is separate work with no owner.
+- **The attestation instrumented tier does not run in the nightly, and the blocker is a credential, not
+  hardware.** Building `:taptopay` resolves the card reader from the Fiserv GitHub Packages repo, so running
+  its instrumented tests in the nightly would hand `GPR_TOKEN` to the third-party emulator action, which is
+  the exposure the job split exists to prevent. It waits on `:taptopay` getting its own instrumented job.

@@ -12,10 +12,18 @@ name: Nightly
 # of them declares androidx.test:runner, so those tasks would die with ClassNotFoundException before running
 # a thing. :core's own instrumented tier is not small any more, and it grows with each capability that binds
 # to a platform API. No count is kept here, because the last one went stale inside a single merge; what runs
-# on the emulator is every @Test under core/src/androidTest that is not @ManualDeviceTest. :taptopay is
-# further out of reach: minSdk 30, and attestation and card-reader paths that need a physical device. Wiring
-# the runner into template-only modules to run generated tests is not worth a line in this file, so the
-# claim is narrowed instead.
+# on the emulator is every @Test under core/src/androidTest that is not @ManualDeviceTest.
+#
+# :taptopay is out of reach for a different reason than it used to be, and the old one was wrong. It is not
+# that its instrumented paths need real hardware: attestation was measured returning a token on a
+# `google_apis_playstore` emulator, matching three phones exactly, so an emulator answers that question
+# perfectly well. What blocks it is the credential. Building :taptopay resolves the card reader from the
+# Fiserv GitHub Packages repo, so running its instrumented tests here would hand GPR_TOKEN to the
+# third-party emulator action, which is the exposure the job split below exists to prevent. Card-reader
+# paths do still need a physical device; attestation does not.
+#
+# So the attestation instrumented tier runs locally only until :taptopay gets its own instrumented job with
+# results passed between jobs, the same change already queued for the card-present unit build below.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
@@ -220,8 +228,8 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Scoped to :core. :taptopay carries minSdk 30 and its instrumented paths need a physical device
-          # for attestation and the card reader, so an emulator cannot run them.
+          # Scoped to :core; see the header for why :taptopay is not here. Short version: not hardware, a
+          # credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator action.
           #
           # notAnnotation excludes the manual tier, which needs real hardware. Excluded rather than skipped,
           # and the difference is the point: measured, this leaves `skipped="0"` in the results XML and the
