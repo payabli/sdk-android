@@ -1,12 +1,14 @@
 package com.payabli.sdk.taptopay.attestation.impl
 
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
+import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -84,6 +86,29 @@ class SingleUseChallengeTest {
                 second is AttestationException.ChallengeReused,
             )
             assertEquals(1, gateway.requestHashes.size)
+        }
+
+    @Test
+    fun `a reused challenge is logged, since it is the one failure that is the caller's own`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Every other failure logs on its way out. This one is raised before the platform is consulted,
+            // so it used to leave no trace at all, which is the wrong way round: it is the only failure that
+            // is unambiguously a bug in the calling code rather than a device or platform condition.
+            val logger = RecordingSdkLogger()
+            val gateway = FakeStandardGateway()
+            val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, logger = logger)
+            val challenge = AttestationChallenge.standard("bG9nZ2VkLW9uLXJldXNl")
+
+            attestor.attest(challenge)
+            assertTrue(logger.records.isEmpty())
+
+            runCatching { attestor.attest(challenge) }
+
+            val record = logger.records.single()
+            assertEquals(LogLevel.ERROR, record.level)
+            // No errorCode: there is no platform code, and inventing one would imply the platform spoke.
+            assertEquals(setOf("event", "verdictClass"), record.fieldNames)
+            assertFalse("the challenge itself never reaches the log", record.message.contains("bG9nZ2VkLW9uLXJldXNl"))
         }
 
     @Test

@@ -38,7 +38,17 @@ internal class ClassicAttestor(
         // Before the challenge is spent, so a refused attempt does not burn a value the caller must replace.
         throttleGate.check()
         // Before the request, not after it. A challenge is spent by being offered.
-        ledger.spend(challenge.value)
+        try {
+            ledger.spend(challenge.value)
+        } catch (reused: AttestationException.ChallengeReused) {
+            // The only failure here that is unambiguously the caller's mistake, and the only one that left
+            // no trace: it is raised before the platform is consulted, so none of the paths below run.
+            logger.error(
+                LogField.safe("event", "attestation_challenge_reused"),
+                LogField.safe("verdictClass", VerdictClass.CLASSIC.name),
+            ) { "the classic challenge had already been offered" }
+            throw reused
+        }
 
         val token =
             try {

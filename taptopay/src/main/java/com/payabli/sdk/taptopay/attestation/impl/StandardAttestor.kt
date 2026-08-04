@@ -63,7 +63,17 @@ internal class StandardAttestor(
         // perfectly reasonable retry with the same value as ChallengeReused.
         val used = requester()
         // Now, immediately before the request. A challenge is spent by being offered to the platform.
-        ledger.spend(challenge.value)
+        try {
+            ledger.spend(challenge.value)
+        } catch (reused: AttestationException.ChallengeReused) {
+            // The only failure here that is unambiguously the caller's mistake, and the only one that left
+            // no trace: it is raised before the platform is consulted, so none of the paths below run.
+            logger.error(
+                LogField.safe("event", "attestation_challenge_reused"),
+                LogField.safe("verdictClass", VerdictClass.STANDARD.name),
+            ) { "the standard challenge had already been offered" }
+            throw reused
+        }
         val token =
             try {
                 used.request(challenge.value)
