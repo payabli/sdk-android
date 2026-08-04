@@ -32,8 +32,12 @@ public interface AppAttestor {
      * [AttestationException.Throttled] without reaching the platform. Neither consumed anything, and
      * treating them as spent would make a caller discard a value it can still use.
      *
-     * Every failure is an [AttestationException], and its subtype says what to do. Cancellation propagates
-     * as `CancellationException` in the usual way.
+     * **Every failure originating at the platform is an [AttestationException]**, and its subtype says what
+     * to do. Two things are deliberately outside that: a challenge built for the other request shape is an
+     * `IllegalArgumentException`, because it is a programming error rather than an attestation outcome, and
+     * cancellation propagates as `CancellationException` in the usual way. A caller catching only
+     * [AttestationException] is therefore correct about attestation and still has to build the challenge
+     * for the right shape.
      */
     public suspend fun attest(challenge: AttestationChallenge): AttestationToken
 
