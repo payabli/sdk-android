@@ -11,6 +11,7 @@ import com.payabli.sdk.taptopay.attestation.impl.ClassicIntegrityGateway
 import com.payabli.sdk.taptopay.attestation.impl.IntegrityFailure
 import com.payabli.sdk.taptopay.attestation.impl.StandardIntegrityGateway
 import com.payabli.sdk.taptopay.attestation.impl.StandardTokenRequester
+import com.payabli.sdk.taptopay.attestation.impl.platformCancellation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 
@@ -21,9 +22,9 @@ import kotlinx.coroutines.tasks.await
  * and both become the same thing here. This is the boundary that guarantees no platform exception reaches
  * a caller, which is what lets everything above it be written against one failure type.
  *
- * Cancellation is not a failure and is re-thrown untouched. `await()` resumes with `CancellationException`
- * when the coroutine is cancelled, and swallowing that into an integrity error would report a caller's own
- * withdrawal as a device problem.
+ * A caller withdrawing is not a failure, and swallowing it into an integrity error would report it as a
+ * device problem. `await()` raises `CancellationException` for a cancelled `Task` as well, though, and that
+ * one is a platform failure. [platformCancellation] separates them on the caller's job.
  */
 private suspend fun <T> mappingFailures(block: suspend () -> T): T =
     try {
@@ -33,7 +34,7 @@ private suspend fun <T> mappingFailures(block: suspend () -> T): T =
     } catch (failure: IntegrityServiceException) {
         throw IntegrityFailure(failure.errorCode, failure)
     } catch (cancellation: CancellationException) {
-        throw cancellation
+        platformCancellation(cancellation)
     } catch (unexpected: Exception) {
         // Exception, not Throwable: an OutOfMemoryError is not an integrity error and must not be
         // reported as one, following the same line the token refresh path draws.

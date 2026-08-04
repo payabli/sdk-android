@@ -1,7 +1,9 @@
 package com.payabli.sdk.taptopay.attestation.impl
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -23,8 +25,8 @@ import kotlin.time.Duration.Companion.seconds
  *
  * `Exception`, deliberately, not `Throwable`. A JVM `Error` propagates untouched: an `OutOfMemoryError` is
  * not an integrity failure and reporting it as one would hide it behind a retry. Do not broaden the catch
- * to match this sentence. `CancellationException` is re-thrown for its own reason, being a caller
- * withdrawing rather than a device failing.
+ * to match this sentence. A `CancellationException` becomes one of these only when the `Task` was cancelled
+ * and the caller was not; see [platformCancellation].
  */
 internal class IntegrityFailure(
     val errorCode: Int?,
@@ -69,6 +71,29 @@ internal suspend fun <T> underDeadline(
         throw IntegrityFailure(null)
     }
     return outcome.getOrThrow()
+}
+
+/**
+ * Decides whether [cancellation] is the caller withdrawing or the platform failing, and raises accordingly.
+ *
+ * `Task.await()` resumes with a `CancellationException` in two unrelated situations: the coroutine awaiting
+ * it was cancelled, and the `Task` itself was cancelled by whatever produced it. Only the first is a caller
+ * withdrawing. Forwarding the second untouched would report a platform failure as cancellation, and because
+ * a `CancellationException` thrown by a suspend function whose job is still active is a broken contract
+ * rather than a value, it would unwind the caller's scope: an `async` would come back cancelled instead of
+ * failed, and a structured parent can take the whole scope down with it.
+ *
+ * A live job tells them apart. Cancelling the coroutine is what makes `await()` resume in the first case,
+ * so the context is already inactive when the exception arrives; a `Task` cancelled on its own leaves it
+ * active. An expired deadline cancels the job running the call, so it lands on the withdrawal branch, which
+ * is what lets `underDeadline` report expiry itself.
+ *
+ * In this package rather than beside the gateways so a unit test can reach it; the platform files hold
+ * `Task` bridging and error-code extraction only.
+ */
+internal suspend fun platformCancellation(cancellation: CancellationException): Nothing {
+    if (currentCoroutineContext().isActive) throw IntegrityFailure(null, cancellation)
+    throw cancellation
 }
 
 /**

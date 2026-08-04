@@ -174,11 +174,16 @@ internal class StandardAttestor(
                 release(shared, AttestationException.Retryable(null))
                 throw cancellation
             } catch (unexpected: Exception) {
-                // Exception, not Throwable: an OutOfMemoryError is not an attestation failure. It still
-                // reaches this caller unchanged, but the claim cannot outlive it or every later caller
-                // waits on a deferred nobody owns.
                 release(shared, AttestationException.Retryable(null, unexpected))
                 throw unexpected
+            } catch (fatal: Throwable) {
+                // A JVM Error reaches this caller unchanged, because an OutOfMemoryError or a LinkageError
+                // is not an attestation failure and reporting it as one would hide it behind a retry. The
+                // claim still cannot outlive it: left set with nobody to complete it, every later caller
+                // joins a preparation that can never finish, so one Error becomes a permanent hang rather
+                // than one failed attestation. No cause attached, because that would pin whatever died.
+                release(shared, AttestationException.Retryable(null))
+                throw fatal
             }
         // NonCancellable for the reason the cleanup path is: the provider is already prepared, and
         // cancellation arriving while this lock is contended would leave the claim set with no owner.

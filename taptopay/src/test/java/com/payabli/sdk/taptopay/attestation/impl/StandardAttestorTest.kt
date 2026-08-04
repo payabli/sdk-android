@@ -213,6 +213,40 @@ class StandardAttestorTest {
         }
 
     @Test
+    fun `a fatal error releases the claim rather than wedging every caller after it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // An Error is not an attestation failure and reaches its caller untouched. The claim is the part
+            // that must not go with it: left set with nobody to complete it, every later caller joins a
+            // preparation that can never finish, so one LinkageError becomes a permanent hang instead of one
+            // failed attestation. A missing or stripped Play Core is exactly how that arrives.
+            val started = CompletableDeferred<Unit>()
+            val released = CompletableDeferred<Unit>()
+            val gateway =
+                FakeStandardGateway(
+                    onPrepare = { attempt ->
+                        if (attempt == 1) {
+                            started.complete(Unit)
+                            released.await()
+                            throw LinkageError("the platform library is not on the device")
+                        }
+                    },
+                )
+            val attestor = attestorFor(gateway)
+
+            val owner = async { runCatching { attestor.attest(challenge("b3duZXItZmF0YWw")) }.exceptionOrNull() }
+            started.await()
+            val waiter = async { failureOf { attestor.attest(challenge("d2FpdGVyLWZhdGFs")) } }
+            yield()
+            released.complete(Unit)
+
+            // Untouched for the caller that caused it, and something actionable for the ones that did not.
+            assertTrue(owner.await() is LinkageError)
+            assertTrue(waiter.await() is AttestationException.Retryable)
+            // And the attestor still works, which is the assertion that fails when the claim is left behind.
+            assertEquals(FAKE_TOKEN, attestor.attest(challenge("YWZ0ZXItdGhlLWZhdGFs")).value)
+        }
+
+    @Test
     fun `a failed preparation is mapped, and the next attestation prepares again`() =
         runTest(timeout = TEST_TIMEOUT) {
             val gateway =
