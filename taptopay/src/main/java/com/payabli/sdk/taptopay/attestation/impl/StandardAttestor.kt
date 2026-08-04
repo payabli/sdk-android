@@ -44,6 +44,10 @@ internal class StandardAttestor(
     private var prepared: StandardTokenRequester? = null
 
     override suspend fun warmUp() {
+        // The gate guards this path as well. Preparing is itself a platform request that can be refused
+        // for a spent budget, and report() opens the gate without caching anything, so a warm-up loop
+        // would otherwise walk straight back to an exhausted budget on every call.
+        throttleGate.check()
         requester()
     }
 
@@ -53,10 +57,13 @@ internal class StandardAttestor(
         }
         // Before the challenge is spent, so a refused attempt does not burn a value the caller must replace.
         throttleGate.check()
-        // Before the request, not after it. A challenge is spent by being offered.
-        ledger.spend(challenge.value)
 
+        // Prepared first, then spent. Preparing is a network round trip that can fail or be cancelled
+        // without any request carrying the challenge, and spending ahead of it would refuse the caller's
+        // perfectly reasonable retry with the same value as ChallengeReused.
         val used = requester()
+        // Now, immediately before the request. A challenge is spent by being offered to the platform.
+        ledger.spend(challenge.value)
         val token =
             try {
                 used.request(challenge.value)

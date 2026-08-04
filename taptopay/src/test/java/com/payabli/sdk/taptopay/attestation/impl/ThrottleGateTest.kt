@@ -146,6 +146,23 @@ class ThrottleGateTest {
         }
 
     @Test
+    fun `warmUp honours the gate rather than walking past it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Preparing is itself a platform request and can be refused for a spent budget. Nothing is
+            // cached when it fails, so a warm-up loop without this check reaches the platform every time.
+            val gateway =
+                FakeStandardGateway(
+                    onPrepare = { throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS) },
+                )
+            val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, throttleGate = gate())
+
+            assertTrue(runCatching { attestor.warmUp() }.exceptionOrNull() is AttestationException.Throttled)
+            assertTrue(runCatching { attestor.warmUp() }.exceptionOrNull() is AttestationException.Throttled)
+
+            assertEquals("the second warm-up must not reach the platform", 1, gateway.prepares.get())
+        }
+
+    @Test
     fun `any other failure leaves the gate open`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Only a spent budget closes it. A network blip is this device's problem and must not stop the

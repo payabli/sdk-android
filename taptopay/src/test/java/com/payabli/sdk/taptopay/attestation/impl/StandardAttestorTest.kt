@@ -153,6 +153,28 @@ class StandardAttestorTest {
             assertEquals(2, gateway.prepares.get())
         }
 
+    @Test
+    fun `a preparation that fails leaves the challenge unspent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Preparing is a network round trip. If it fails, no request ever carried the challenge, so the
+            // caller's retry with the same value has to work. Spending before preparing would answer that
+            // retry with ChallengeReused and burn a value the platform never saw.
+            val gateway =
+                FakeStandardGateway(
+                    onPrepare = { attempt ->
+                        if (attempt == 1) throw IntegrityFailure(StandardIntegrityErrorCode.NETWORK_ERROR)
+                    },
+                )
+            val attestor = attestorFor(gateway)
+            val challenge = challenge("dW5zcGVudC1vbi1wcmVwYXJlLWZhaWx1cmU")
+
+            assertTrue(failureOf { attestor.attest(challenge) } is AttestationException.Retryable)
+
+            // The same challenge, accepted. Not ChallengeReused.
+            assertEquals(FAKE_TOKEN, attestor.attest(challenge).value)
+            assertEquals(listOf("dW5zcGVudC1vbi1wcmVwYXJlLWZhaWx1cmU"), gateway.requestHashes)
+        }
+
     // --- the expired provider -----------------------------------------------------------------------
 
     @Test
