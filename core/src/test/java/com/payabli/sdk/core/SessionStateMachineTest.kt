@@ -70,12 +70,15 @@ class SessionStateMachineTest {
         subject.markReady()
 
         // How a session is dropped without reaching the terminal state: nothing is published, because
-        // whatever replaces it publishes its own value. The machine is over all the same, and a late caller
-        // must not revive it.
+        // whatever replaces it publishes its own value. Here that is a reset putting the state back.
         subject.finish()
+        sink.value = SdkState.Uninitialized
+
         subject.markReady()
 
-        assertEquals(SdkState.Ready, sink.value)
+        // Asserted against a value the machine would have to overwrite to fail. Left at Ready, this passes
+        // for an implementation that ignores the flag and merely de-duplicates the target it was handed.
+        assertEquals(SdkState.Uninitialized, sink.value)
         assertTrue("a retired machine must be finished, not merely quiet", subject.isFinished)
     }
 
