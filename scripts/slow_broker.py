@@ -43,6 +43,11 @@ from urllib.parse import parse_qs, urlparse
 # and differs from the token it is replacing.
 STAND_IN_TOKEN = "not-a-real-token-manual-tier-stand-in"
 
+# The token line is sent whole or not at all, so it is the floor on an exact body. Below it the response
+# would be larger than the size asked for, and a paced transfer would take correspondingly longer than the
+# operator's arithmetic predicts.
+MIN_BYTES = len((STAND_IN_TOKEN + "\n").encode())
+
 DEFAULT_BYTES = 256 * 1024
 MAX_BYTES = 16 * 1024 * 1024
 
@@ -70,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802 - name fixed by BaseHTTPRequestHandler
         query = parse_qs(urlparse(self.path).query)
-        size = self._int_param(query, "bytes", DEFAULT_BYTES, 1, MAX_BYTES)
+        size = self._int_param(query, "bytes", DEFAULT_BYTES, MIN_BYTES, MAX_BYTES)
         if size is None:
             return
         # 0 means send as fast as the socket allows. A test uses it to show its own floor can fail.
@@ -78,9 +83,10 @@ class Handler(BaseHTTPRequestHandler):
         if kbps is None:
             return
 
+        # Exactly `size`, which the MIN_BYTES floor is what makes true: the token line always fits, so the
+        # padding is never negative and the body never exceeds what was asked for.
         first_line = (STAND_IN_TOKEN + "\n").encode()
-        # Pad to exactly `size`, so a caller reading to EOF pays a predictable transfer.
-        body = first_line + b"." * max(0, size - len(first_line))
+        body = first_line + b"." * (size - len(first_line))
 
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
