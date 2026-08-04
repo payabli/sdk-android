@@ -17,6 +17,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit.SECONDS
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -40,6 +41,9 @@ class ThrottleGateTest {
     private companion object {
         /** Long enough that the cancelled caller reaches the lock while it is still held. */
         const val HOLD_MILLIS = 300L
+
+        /** Bounded so a regression fails this test rather than parking the worker. */
+        const val LATCH_WAIT_SECONDS = 10L
     }
 
     @Test
@@ -216,7 +220,10 @@ class ThrottleGateTest {
             assertTrue(outcomes.all { it is AttestationException.Throttled })
         }
 
-    @Test
+    // A JUnit timeout, because this one runs outside `runTest` and so has no guard of its own. An
+    // unbounded wait here would hang the Gradle worker on a regression, and a worker that hangs reports
+    // no failure at all.
+    @Test(timeout = 30_000)
     fun `a caller cancelled while another holds the lock still records the throttle`() {
         // Real threads and a blocking hold, because the defect needs the lock to be contended and the
         // production hold is a few nanoseconds. `Mutex.withLock` only checks cancellation when it has to
@@ -255,9 +262,9 @@ class ThrottleGateTest {
                         throw withdrawal
                     }
                 }
-            holderReady.await()
+            assertTrue("the cancelled caller never started", holderReady.await(LATCH_WAIT_SECONDS, SECONDS))
             val holder = launch(Dispatchers.Default) { gate.record() }
-            insideLock.await()
+            assertTrue("the holder never reached the lock", insideLock.await(LATCH_WAIT_SECONDS, SECONDS))
 
             cancelled.cancel()
             cancelled.join()

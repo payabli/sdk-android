@@ -32,18 +32,20 @@ public interface AppAttestor {
      * issuer's to enforce, since only it knows what it handed out and what it has retired. Do not build on
      * this as though it were authoritative.
      *
-     * Two refusals happen ahead of that point and leave the challenge unspent, so a caller holding one can
-     * present it again. A challenge built for the other request shape is rejected as an
-     * `IllegalArgumentException`, and a request refused locally because the shared budget is spent throws
-     * [AttestationException.Throttled] without reaching the platform. Neither consumed anything, and
-     * treating them as spent would make a caller discard a value it can still use.
+     * **Obtain a fresh challenge after any failure.** Some failures land before the request is attempted
+     * and leave the value unspent: a challenge built for the other request shape, a local refusal for a
+     * spent budget, and a standard preparation that fails before any request has carried the value.
+     * [AttestationException.Retryable] covers both sides of that line, because the same platform code can
+     * arrive from a preparation that never carried the challenge and from a request that did, so the
+     * exception does not say which happened. Leaving the earlier cases unspent keeps a retry from being
+     * refused as reuse; it does not make the value safe to reuse.
      *
-     * **Every failure originating at the platform is an [AttestationException]**, and its subtype says what
-     * to do. Two things are deliberately outside that: a challenge built for the other request shape is an
-     * `IllegalArgumentException`, because it is a programming error rather than an attestation outcome, and
-     * cancellation propagates as `CancellationException` in the usual way. A caller catching only
-     * [AttestationException] is therefore correct about attestation and still has to build the challenge
-     * for the right shape.
+     * **A failure originating at the platform is an [AttestationException]**, and its subtype says what to
+     * do. Three things sit outside that. A challenge built for the other request shape is an
+     * `IllegalArgumentException`, being a programming error rather than an attestation outcome.
+     * Cancellation propagates as `CancellationException` in the usual way. A JVM `Error` propagates
+     * unchanged, because an `OutOfMemoryError`, or a `LinkageError` from a platform library that is not on
+     * the device, is not an attestation outcome and reporting it as one would hide it behind a retry.
      */
     public suspend fun attest(challenge: AttestationChallenge): AttestationToken
 
