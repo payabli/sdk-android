@@ -37,8 +37,14 @@ private val URL_SAFE_BASE64 = Regex("^[A-Za-z0-9_-]+={0,2}$")
  *
  * Freshness is the whole point of the value, and freshness a client mints is not freshness: a value the
  * device chose proves only that the device can choose values. So there is deliberately **no generator on
- * this type**. The only way to obtain a challenge is to be handed one, and the absence of a factory that
- * would make one up is the enforcement, not the documentation.
+ * this type**, and nothing here will invent a value for a caller.
+ *
+ * **That is a speed bump, not an enforcement, and the difference matters.** Both entry points take a
+ * `String`, so a caller can pass anything, including something it generated itself. This type cannot tell
+ * a server-issued value from a self-issued one, and no client-side type could. Provenance is an invariant
+ * held between whoever issues the challenge and whoever verifies the resulting token: the verifier accepts
+ * only values it issued and has not yet retired, and that check is what makes freshness real. Omitting a
+ * generator removes the easy way to get this wrong; it does not make it impossible.
  *
  * Which field it lands in depends on [verdictClass]: `requestHash` for [VerdictClass.STANDARD], `nonce`
  * for [VerdictClass.CLASSIC]. The two carry different validity rules, which is why there are two

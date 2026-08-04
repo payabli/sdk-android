@@ -26,6 +26,12 @@ public interface AppAttestor {
      * whether or not the first attempt succeeded: what makes a challenge single-use is that it was offered
      * to the platform, not that it worked.
      *
+     * **That refusal is a bounded caller-error guard, not replay protection.** It remembers a limited
+     * number of recent values per attestor instance, so a value can be accepted again once enough others
+     * have displaced it, and a second instance shares nothing with the first. Real single use is the
+     * issuer's to enforce, since only it knows what it handed out and what it has retired. Do not build on
+     * this as though it were authoritative.
+     *
      * Two refusals happen ahead of that point and leave the challenge unspent, so a caller holding one can
      * present it again. A challenge built for the other request shape is rejected as an
      * `IllegalArgumentException`, and a request refused locally because the shared budget is spent throws
