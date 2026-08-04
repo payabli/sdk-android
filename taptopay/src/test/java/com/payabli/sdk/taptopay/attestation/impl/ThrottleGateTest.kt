@@ -3,6 +3,9 @@ package com.payabli.sdk.taptopay.attestation.impl
 import com.google.android.play.core.integrity.model.IntegrityErrorCode
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -160,6 +163,42 @@ class ThrottleGateTest {
             assertTrue(runCatching { attestor.warmUp() }.exceptionOrNull() is AttestationException.Throttled)
 
             assertEquals("the second warm-up must not reach the platform", 1, gateway.prepares.get())
+        }
+
+    @Test
+    fun `a burst queued on the preparation lock does not each spend a doomed request`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Every caller passes the outer gate check while the field is still null, then queues on the
+            // preparation lock. The first prepares, is told the budget is spent, and opens the gate. Each
+            // waiter behind it must notice that on entry: without the re-check inside the lock they each
+            // prepare again, so a burst costs one known-doomed platform request per caller, which is
+            // exactly the amplification the gate exists to stop.
+            val reached = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val gateway =
+                FakeStandardGateway(
+                    onPrepare = {
+                        reached.complete(Unit)
+                        release.await()
+                        throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS)
+                    },
+                )
+            val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, throttleGate = gate())
+
+            val burst =
+                (1..5).map { i ->
+                    async {
+                        runCatching {
+                            attestor.attest(AttestationChallenge.standard("YnVyc3QtY2hhbGxlbmdlLSRp$i"))
+                        }.exceptionOrNull()
+                    }
+                }
+            reached.await()
+            release.complete(Unit)
+            val outcomes = burst.awaitAll()
+
+            assertEquals("only the first caller may reach the platform", 1, gateway.prepares.get())
+            assertTrue(outcomes.all { it is AttestationException.Throttled })
         }
 
     @Test

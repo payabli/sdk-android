@@ -101,7 +101,14 @@ internal class StandardAttestor(
     private suspend fun requester(): StandardTokenRequester {
         prepared?.let { return it }
         return mutex.withLock {
-            prepared ?: prepare().also { prepared = it }
+            prepared ?: run {
+                // Re-checked inside the lock, because the gate can close while this caller queues on it.
+                // A burst all passes the outer check while the field is null, the first one prepares and is
+                // told the budget is spent, and every waiter behind it would then walk into this branch and
+                // spend another known-doomed request. Checking on entry costs nothing when the gate is open.
+                throttleGate.check()
+                prepare().also { prepared = it }
+            }
         }
     }
 
