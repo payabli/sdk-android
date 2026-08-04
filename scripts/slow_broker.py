@@ -110,10 +110,22 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(chunk)
             self.wfile.flush()
 
-    def log_message(self, fmt, *args):
-        # One line per request, without the token. The default handler logs the request line only, which
-        # is already token-free, but this keeps that true if the path ever carries more.
-        print(f"{self.command} {urlparse(self.path).path} -> 200")
+    def log_request(self, code="-", size="-"):
+        # One line per request, carrying the real status. Overriding log_message instead would also catch
+        # the log_error call inside send_error, which has no status to report: a 400 then printed twice and
+        # both lines claimed 200, so a mistyped parameter looked like a served request. That is the one
+        # failure this script exists to help diagnose.
+        #
+        # The path only, never the query, because that is where the tunables are and a future one could
+        # carry something not worth printing. flush because stdout is block-buffered when redirected to a
+        # file, and an operator tailing a log needs the line when it happens rather than when the buffer
+        # fills.
+        print(f"{self.command} {urlparse(self.path).path} -> {code}", flush=True)
+
+    def log_error(self, fmt, *args):
+        # Silenced: send_error already routes here *and* through send_response to log_request, so leaving
+        # the default would double every error line.
+        pass
 
 
 def main():
