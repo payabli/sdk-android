@@ -20,13 +20,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // The Play Integrity project number. Not a secret, but environment-scoped and the shared quota
-        // target, so it is configured rather than hard-coded. Absent, the tests needing it are filtered
-        // out of the run; see RequiresCloudProject.
+        // target, so it is configured rather than hard-coded. Without it the tests that make a real
+        // request are filtered out of the run, rather than skipped or failed.
+        //
+        // Filtered by `notClass` rather than by an annotation, and that is forced rather than chosen.
+        // AGP applies `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=...` over whatever the
+        // DSL set, measured both with and without the configuration cache, so any exclusion written on
+        // that key disappears under the flag the nightly and the manual tier both pass. `notClass` is a
+        // separate key that no documented command here uses. The cost is naming the class: a second
+        // configuration-dependent test has to be added to this list.
         val cloudProjectNumber = providers.gradleProperty("payabli.cloudProjectNumber").orNull
         if (cloudProjectNumber != null) {
             testInstrumentationRunnerArguments["cloudProjectNumber"] = cloudProjectNumber
         } else {
-            testInstrumentationRunnerArguments["notAnnotation"] = "com.payabli.sdk.taptopay.RequiresCloudProject"
+            testInstrumentationRunnerArguments["notClass"] =
+                "com.payabli.sdk.taptopay.attestation.platform.PlayIntegrityRealProjectTest"
         }
     }
     compileOptions {

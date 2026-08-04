@@ -2,7 +2,6 @@ package com.payabli.sdk.taptopay.attestation.platform
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.payabli.sdk.taptopay.RequiresCloudProject
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertTrue
@@ -24,15 +23,26 @@ import kotlin.time.Duration.Companion.seconds
  * That measurement is also why no manual hardware tier exists: the emulator and all three phones agreed.
  *
  * **Runs only where the project number is configured.** Set `payabli.cloudProjectNumber` in
- * `~/.gradle/gradle.properties`; `taptopay/build.gradle.kts` says why it is a property rather than a
- * constant. Without it the build filters these out of the run by `@RequiresCloudProject`, which is neither
- * a skip nor a failure, and that annotation says why.
+ * `~/.gradle/gradle.properties`. Without it the build filters this class out of the run by name, which is
+ * neither a skip nor a failure: a permanent skip cannot be told apart from a regression that started
+ * skipping, and failing would make red the ordinary outcome of `connectedAndroidTest` for anyone without
+ * the property. `taptopay/build.gradle.kts` carries both that reasoning and why the filter names a class
+ * rather than an annotation.
+ *
+ * **Renaming or moving this class silently re-enables it.** The filter is a class name in the build file,
+ * so a rename that does not update it puts these back into every run.
+ *
+ * **A failure reading `Throttled(errorCode=-8)` is rate limiting, not a defect.** Running this class in a
+ * tight loop reaches it: it appeared after roughly twenty to thirty requests inside an hour, which is far
+ * below the documented daily maximum, so it was short-term limiting rather than the budget running out.
+ * It had cleared by the end of a two-minute wait. Re-run before investigating, and note the attestor now
+ * holds a suppression window of its own, so an immediate re-run is refused locally without reaching the
+ * platform.
  *
  * What this still cannot see is the verdict *contents* — device integrity, licensing, app recognition are
  * inside the token, which is decodable only server-side through the same cloud project. Do not add an
  * assertion about them here; the SDK must not parse the token at all.
  */
-@RequiresCloudProject
 @RunWith(AndroidJUnit4::class)
 class PlayIntegrityRealProjectTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
