@@ -64,9 +64,15 @@ internal class StandardAttestor(
                 // make the request once more. Exactly once: a second invalid answer is a condition a third
                 // attempt will not change, and looping here would hide it behind latency instead.
                 discard(used)
+                val replacement = requester()
                 try {
-                    requester().request(challenge.value)
+                    replacement.request(challenge.value)
                 } catch (retried: IntegrityFailure) {
+                    // Discard the replacement too when it is invalid in its turn, or it stays cached and the
+                    // next attestation spends a platform request discovering what this one already knows.
+                    if (retried.errorCode == StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID) {
+                        discard(replacement)
+                    }
                     throw report(retried)
                 }
             }

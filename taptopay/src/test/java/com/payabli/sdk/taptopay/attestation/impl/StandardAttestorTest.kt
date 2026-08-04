@@ -195,6 +195,38 @@ class StandardAttestorTest {
         }
 
     @Test
+    fun `a provider invalid on the retry is not left cached for the next attestation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Both attempts fail as invalid, so the second attestation starts with whatever the first left
+            // behind. Left cached, it spends a platform request rediscovering that the provider is dead
+            // before it can replace it, and that request costs a slot in a daily quota shared across every
+            // app embedding this SDK.
+            val gateway =
+                FakeStandardGateway(
+                    onRequest = { preparation, _ ->
+                        if (preparation <= 2) {
+                            throw IntegrityFailure(StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID)
+                        }
+                        FAKE_TOKEN
+                    },
+                )
+            val attestor = attestorFor(gateway)
+
+            failureOf { attestor.attest(challenge("Zmlyc3QtYXR0ZXN0YXRpb24")) }
+            assertEquals(2, gateway.prepares.get())
+            assertEquals(2, gateway.requestHashes.size)
+
+            // The third preparation succeeds, so the second attestation gets a token on its first request.
+            val token = attestor.attest(challenge("c2Vjb25kLWF0dGVzdGF0aW9u"))
+
+            assertEquals(FAKE_TOKEN, token.value)
+            assertEquals(3, gateway.prepares.get())
+            // Three requests in total, not four. A fourth would be the second attestation calling the dead
+            // provider the first one left in place.
+            assertEquals(3, gateway.requestHashes.size)
+        }
+
+    @Test
     fun `any other error is surfaced without discarding the provider`() =
         runTest(timeout = TEST_TIMEOUT) {
             val gateway =
