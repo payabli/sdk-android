@@ -223,10 +223,17 @@ internal class StandardAttestor(
      * rather than a re-read of the field. Two attestations can both be told the same provider is invalid;
      * without this the second would discard the replacement the first had just prepared, and one expiry
      * would become an unbounded run of preparations under any concurrent load.
+     *
+     * Non-cancellable for the reason [ThrottleGate.record] is: the platform has already said this provider
+     * is invalid, and a caller withdrawing between hearing that and acting on it leaves the invalid one
+     * cached. The next attestation then spends a request rediscovering what this one already knew, against
+     * a budget shared with every app embedding this SDK.
      */
     private suspend fun discard(stale: StandardTokenRequester) {
-        mutex.withLock {
-            if (prepared === stale) prepared = null
+        withContext(NonCancellable) {
+            mutex.withLock {
+                if (prepared === stale) prepared = null
+            }
         }
     }
 

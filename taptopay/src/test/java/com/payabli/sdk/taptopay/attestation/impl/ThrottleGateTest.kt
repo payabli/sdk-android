@@ -3,16 +3,26 @@ package com.payabli.sdk.taptopay.attestation.impl
 import com.google.android.play.core.integrity.model.IntegrityErrorCode
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TestTimeSource
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 private val TEST_TIMEOUT = 5.seconds
 
@@ -26,6 +36,11 @@ class ThrottleGateTest {
     private val clock = TestTimeSource()
 
     private fun gate(window: kotlin.time.Duration = 60.seconds) = ThrottleGate(window, clock)
+
+    private companion object {
+        /** Long enough that the cancelled caller reaches the lock while it is still held. */
+        const val HOLD_MILLIS = 300L
+    }
 
     @Test
     fun `an untriggered gate lets everything through`() =
@@ -200,6 +215,63 @@ class ThrottleGateTest {
             assertEquals("only the first caller may reach the platform", 1, gateway.prepares.get())
             assertTrue(outcomes.all { it is AttestationException.Throttled })
         }
+
+    @Test
+    fun `a caller cancelled while another holds the lock still records the throttle`() {
+        // Real threads and a blocking hold, because the defect needs the lock to be contended and the
+        // production hold is a few nanoseconds. `Mutex.withLock` only checks cancellation when it has to
+        // suspend, so an uncontended acquisition by a cancelled caller succeeds and proves nothing; the
+        // window has to be widened for the test to be able to fail at all.
+        //
+        // Losing the record is not only a lost window. The standard attestor records while mapping a
+        // failure, and the mapped failure is what releases the waiters on a shared preparation, so
+        // cancellation escaping here leaves them on a claim nobody owns.
+        val insideLock = CountDownLatch(1)
+        val holderReady = CountDownLatch(1)
+        val calls = AtomicInteger()
+        val blockingClock =
+            object : TimeSource {
+                override fun markNow(): TimeMark =
+                    if (calls.incrementAndGet() == 1) {
+                        insideLock.countDown()
+                        Thread.sleep(HOLD_MILLIS)
+                        // Far enough in the past that the window this opens is already over, so the
+                        // assertion below can only be satisfied by the cancelled caller's own record.
+                        TimeSource.Monotonic.markNow() - 10.minutes
+                    } else {
+                        TimeSource.Monotonic.markNow()
+                    }
+            }
+        val gate = ThrottleGate(60.seconds, blockingClock)
+
+        runBlocking {
+            val cancelled =
+                launch(Dispatchers.Default) {
+                    try {
+                        holderReady.countDown()
+                        awaitCancellation()
+                    } catch (withdrawal: CancellationException) {
+                        gate.record()
+                        throw withdrawal
+                    }
+                }
+            holderReady.await()
+            val holder = launch(Dispatchers.Default) { gate.record() }
+            insideLock.await()
+
+            cancelled.cancel()
+            cancelled.join()
+            holder.join()
+
+            // Only the cancelled caller's record leaves a window in the future. If its acquisition threw,
+            // the gate still holds the holder's already-expired mark and lets the next caller through.
+            val refusal = runCatching { gate.check() }.exceptionOrNull()
+            assertTrue(
+                "the throttle must survive the caller withdrawing, got $refusal",
+                refusal is AttestationException.Throttled,
+            )
+        }
+    }
 
     @Test
     fun `any other failure leaves the gate open`() =

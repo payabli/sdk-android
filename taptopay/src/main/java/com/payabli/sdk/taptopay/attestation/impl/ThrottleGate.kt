@@ -2,8 +2,10 @@ package com.payabli.sdk.taptopay.attestation.impl
 
 import com.google.android.play.core.integrity.model.IntegrityErrorCode
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -76,8 +78,20 @@ internal class ThrottleGate(
         }
     }
 
-    /** Opens the window. Called when the platform reports the budget spent. */
-    suspend fun record() {
-        mutex.withLock { openUntil = timeSource.markNow() + window }
-    }
+    /**
+     * Opens the window. Called when the platform reports the budget spent.
+     *
+     * Completes even if the caller is cancelled, because by this point the request has been spent and the
+     * platform has answered. `Mutex.withLock` observes an already-cancelled job whenever it has to suspend,
+     * which is whenever another caller holds the lock, so a caller withdrawing at the wrong moment would
+     * otherwise drop the one piece of state that stops the next one asking again.
+     *
+     * The standard attestor makes that worse than a lost window: it calls this while mapping a failure, and
+     * the mapped failure is what releases the waiters on a shared preparation. Cancellation escaping here
+     * skips that release and leaves them waiting on a claim nobody owns.
+     */
+    suspend fun record(): Unit =
+        withContext(NonCancellable) {
+            mutex.withLock { openUntil = timeSource.markNow() + window }
+        }
 }
