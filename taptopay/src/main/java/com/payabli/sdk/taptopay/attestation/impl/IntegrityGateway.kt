@@ -10,10 +10,15 @@ package com.payabli.sdk.taptopay.attestation.impl
  *
  * The [cause] is kept for a stack trace and is never inspected.
  *
- * [errorCode] is null where the platform failed without one: a gateway converts **every** throwable it
- * sees, not only the two integrity exception types, because a caller must never receive a raw platform
- * exception from a Play services internal it cannot classify. A coded failure and an uncoded one are both
- * failures; only the coded one can be classified precisely.
+ * [errorCode] is null where the platform failed without one: a gateway converts every **exception** it
+ * sees, not only the two integrity types, because a caller must never receive a raw platform exception
+ * from a Play services internal it cannot classify. A coded failure and an uncoded one are both failures;
+ * only the coded one can be classified precisely.
+ *
+ * `Exception`, deliberately, not `Throwable`. A JVM `Error` propagates untouched: an `OutOfMemoryError` is
+ * not an integrity failure and reporting it as one would hide it behind a retry. Do not broaden the catch
+ * to match this sentence. `CancellationException` is re-thrown for its own reason, being a caller
+ * withdrawing rather than a device failing.
  */
 internal class IntegrityFailure(
     val errorCode: Int?,

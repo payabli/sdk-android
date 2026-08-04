@@ -21,9 +21,16 @@ public interface AppAttestor {
     /**
      * Attests over [challenge], returning the platform's opaque token.
      *
-     * The challenge is spent by this call. A second call with the same one fails with
-     * [AttestationException.ChallengeReused] rather than producing a second token, whether or not the first
-     * attempt succeeded: what makes a challenge single-use is that it was offered, not that it worked.
+     * **The challenge is spent once the request is attempted, and not before.** A second call with the same
+     * one then fails with [AttestationException.ChallengeReused] rather than producing a second token,
+     * whether or not the first attempt succeeded: what makes a challenge single-use is that it was offered
+     * to the platform, not that it worked.
+     *
+     * Two refusals happen ahead of that point and leave the challenge unspent, so a caller holding one can
+     * present it again. A challenge built for the other request shape is rejected as an
+     * `IllegalArgumentException`, and a request refused locally because the shared budget is spent throws
+     * [AttestationException.Throttled] without reaching the platform. Neither consumed anything, and
+     * treating them as spent would make a caller discard a value it can still use.
      *
      * Every failure is an [AttestationException], and its subtype says what to do. Cancellation propagates
      * as `CancellationException` in the usual way.

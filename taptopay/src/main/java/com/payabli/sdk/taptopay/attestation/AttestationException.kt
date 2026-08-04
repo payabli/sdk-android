@@ -12,9 +12,17 @@ import androidx.annotation.RestrictTo
  * constant it can never return.
  *
  * **The subtypes are dispositions, not error codes.** Play Integrity has two error enums, more than thirty
- * constants between them, and near-total overlap in what a caller can actually *do* about any of them. The
- * four cases below are that set of actions. [errorCode] is kept alongside so the specific constant survives
- * into a log or a report; it is a diagnostic, and branching on it is a sign the disposition is wrong.
+ * constants between them, and near-total overlap in what a caller can actually *do* about any of them. Five
+ * of the cases below are that set of actions: [Retryable], [RemediationRequired], [IntegrityFailed],
+ * [Misconfigured] and [Throttled]. [errorCode] is kept alongside so the specific constant survives into a
+ * log or a report; it is a diagnostic, and branching on it is a sign the disposition is wrong.
+ *
+ * [ChallengeReused] is the sixth and is not one of them: it reports a caller error, is raised before the
+ * platform is consulted, and carries no code.
+ *
+ * **[Retryable] and [Throttled] give opposite advice and must not be collapsed.** One says try again, the
+ * other says stop because the budget is not this device's to restore. A consumer that flattens the
+ * taxonomy and retries everything transient-looking will hammer an exhausted budget.
  *
  * No message here carries a challenge or a token.
  */
