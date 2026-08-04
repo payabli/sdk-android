@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.taptopay.attestation.AppAttestor
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
+import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import kotlinx.coroutines.sync.Mutex
@@ -27,6 +28,7 @@ internal class StandardAttestor(
     private val gateway: StandardIntegrityGateway,
     private val cloudProjectNumber: Long,
     private val ledger: ChallengeLedger = ChallengeLedger(),
+    private val throttleGate: ThrottleGate = ThrottleGate(),
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) : AppAttestor {
     private val mutex = Mutex()
@@ -49,6 +51,8 @@ internal class StandardAttestor(
         require(challenge.verdictClass == VerdictClass.STANDARD) {
             "this attestor makes standard requests; the challenge was built for ${challenge.verdictClass}"
         }
+        // Before the challenge is spent, so a refused attempt does not burn a value the caller must replace.
+        throttleGate.check()
         // Before the request, not after it. A challenge is spent by being offered.
         ledger.spend(challenge.value)
 
@@ -115,7 +119,7 @@ internal class StandardAttestor(
         }
     }
 
-    private fun report(failure: IntegrityFailure): Exception {
+    private suspend fun report(failure: IntegrityFailure): Exception {
         val mapped = PlayIntegrityErrorMapping.failureFor(failure.errorCode, VerdictClass.STANDARD, failure)
         logger.error(
             LogField.safe("event", "attestation_failed"),
@@ -124,6 +128,7 @@ internal class StandardAttestor(
             // as some stand-in integer a reader would take for a real code.
             LogField.safe("errorCode", failure.errorCode?.toString()),
         ) { "standard integrity request failed" }
+        if (mapped is AttestationException.Throttled) throttleGate.record()
         return mapped
     }
 }

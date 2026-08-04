@@ -5,6 +5,7 @@ import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -65,7 +66,6 @@ class PlayIntegrityErrorMappingTest {
     private val standardRetryable =
         listOf(
             StandardIntegrityErrorCode.NETWORK_ERROR,
-            StandardIntegrityErrorCode.TOO_MANY_REQUESTS,
             StandardIntegrityErrorCode.GOOGLE_SERVER_UNAVAILABLE,
             StandardIntegrityErrorCode.CLIENT_TRANSIENT_ERROR,
             StandardIntegrityErrorCode.INTERNAL_ERROR,
@@ -98,7 +98,6 @@ class PlayIntegrityErrorMappingTest {
     private val classicRetryable =
         listOf(
             IntegrityErrorCode.NETWORK_ERROR,
-            IntegrityErrorCode.TOO_MANY_REQUESTS,
             IntegrityErrorCode.GOOGLE_SERVER_UNAVAILABLE,
             IntegrityErrorCode.CLIENT_TRANSIENT_ERROR,
             IntegrityErrorCode.INTERNAL_ERROR,
@@ -120,6 +119,10 @@ class PlayIntegrityErrorMappingTest {
             IntegrityErrorCode.APP_NOT_INSTALLED,
             IntegrityErrorCode.APP_UID_MISMATCH,
         )
+
+    private val standardThrottled = listOf(StandardIntegrityErrorCode.TOO_MANY_REQUESTS)
+
+    private val classicThrottled = listOf(IntegrityErrorCode.TOO_MANY_REQUESTS)
 
     private val classicMisconfigured =
         listOf(
@@ -167,7 +170,8 @@ class PlayIntegrityErrorMappingTest {
 
     @Test
     fun `every documented standard code is classified exactly once`() {
-        val classified = standardRetryable + standardRemediation + standardFailed + standardMisconfigured
+        val classified =
+            standardRetryable + standardRemediation + standardFailed + standardMisconfigured + standardThrottled
 
         assertEquals("a code classified twice", classified.size, classified.toSet().size)
         assertEquals(
@@ -197,7 +201,8 @@ class PlayIntegrityErrorMappingTest {
 
     @Test
     fun `every documented classic code is classified exactly once`() {
-        val classified = classicRetryable + classicRemediation + classicFailed + classicMisconfigured
+        val classified =
+            classicRetryable + classicRemediation + classicFailed + classicMisconfigured + classicThrottled
 
         assertEquals("a code classified twice", classified.size, classified.toSet().size)
         assertEquals(
@@ -205,6 +210,18 @@ class PlayIntegrityErrorMappingTest {
             ALL_CLASSIC_CODES.toSet(),
             classified.toSet(),
         )
+    }
+
+    @Test
+    fun `a spent request budget is its own disposition, not a retryable condition`() {
+        // -8 is the only code whose cause is not the device reporting it. Classified as retryable, it tells
+        // every device on an exhausted shared budget to try again, which cannot restore the budget and adds
+        // load to whatever exhausted it.
+        assertAllMap<AttestationException.Throttled>(standardThrottled, ::standard)
+        assertAllMap<AttestationException.Throttled>(classicThrottled, ::classic)
+
+        assertFalse(standard(StandardIntegrityErrorCode.TOO_MANY_REQUESTS) is AttestationException.Retryable)
+        assertFalse(classic(IntegrityErrorCode.TOO_MANY_REQUESTS) is AttestationException.Retryable)
     }
 
     // --- the collision, and the unknown -------------------------------------------------------------

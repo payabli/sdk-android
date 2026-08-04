@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.taptopay.attestation.AppAttestor
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
+import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 
@@ -24,6 +25,7 @@ internal class ClassicAttestor(
     private val gateway: ClassicIntegrityGateway,
     private val cloudProjectNumber: Long? = null,
     private val ledger: ChallengeLedger = ChallengeLedger(),
+    private val throttleGate: ThrottleGate = ThrottleGate(),
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) : AppAttestor {
     /** Nothing to prepare. */
@@ -33,6 +35,8 @@ internal class ClassicAttestor(
         require(challenge.verdictClass == VerdictClass.CLASSIC) {
             "this attestor makes classic requests; the challenge was built for ${challenge.verdictClass}"
         }
+        // Before the challenge is spent, so a refused attempt does not burn a value the caller must replace.
+        throttleGate.check()
         // Before the request, not after it. A challenge is spent by being offered.
         ledger.spend(challenge.value)
 
@@ -47,6 +51,7 @@ internal class ClassicAttestor(
                     // As a string; see the same field in StandardAttestor.
                     LogField.safe("errorCode", failure.errorCode?.toString()),
                 ) { "classic integrity request failed" }
+                if (mapped is AttestationException.Throttled) throttleGate.record()
                 throw mapped
             }
         return AttestationToken(token)

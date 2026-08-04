@@ -35,17 +35,49 @@ public sealed class AttestationException(
     override fun toString(): String = "${javaClass.simpleName}(errorCode=$errorCode)"
 
     /**
-     * A transient condition. Try again later, with backoff.
+     * A transient condition on this device. Try again later, with backoff.
      *
-     * Network trouble, throttling, and Google-side unavailability. The platform's guidance is three
-     * attempts spaced by roughly five, ten and twenty seconds, and to treat continued failure as a failed
-     * integrity check rather than as an outage to wait out.
+     * Network trouble and Google-side unavailability. The platform's guidance is three attempts spaced by
+     * roughly five, ten and twenty seconds, and to treat continued failure as a failed integrity check
+     * rather than as an outage to wait out.
+     *
+     * Throttling is deliberately **not** here; see [Throttled].
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class Retryable(
         errorCode: Int?,
         cause: Throwable? = null,
     ) : AttestationException("the integrity request failed transiently and may be retried", errorCode, cause)
+
+    /**
+     * The request budget is spent. **Do not retry here.**
+     *
+     * This is the one failure whose cause is not the device reporting it. The daily request budget belongs
+     * to the cloud project and is shared by every app embedding this SDK, so one caller's traffic exhausts
+     * it for all of them while each device sees only its own request refused. A device that retries cannot
+     * restore a budget it does not own, and many devices retrying together is what turns a throttle into an
+     * outage.
+     *
+     * The platform reports short-term throttling and daily exhaustion with the same code, documented as
+     * "has been throttled, or your app has exceeded its daily request quota", and a client cannot tell
+     * them apart. That ambiguity is why this is a distinct case rather than a slower [Retryable]: the
+     * platform's own rule is to retry transient conditions and not to retry conditions that are not
+     * transient, and one of these two branches is each. Only whatever hands out challenges can see which,
+     * because only it can see the budget across tenants. A caller that reaches this stops.
+     *
+     * Card-present callers halt the flow. There is no counterpart on the sibling platform, whose
+     * attestation service imposes no vendor-side budget, so this case is asymmetric by construction rather
+     * than by omission.
+     */
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public class Throttled(
+        errorCode: Int,
+        cause: Throwable? = null,
+    ) : AttestationException(
+            "the shared integrity request budget is spent; this device retrying cannot restore it",
+            errorCode,
+            cause,
+        )
 
     /**
      * The device cannot answer until something on it changes.

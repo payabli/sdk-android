@@ -15,6 +15,18 @@ import com.payabli.sdk.taptopay.attestation.VerdictClass
  *
  * Both constant sets are Java annotation constants, so they inline at compile time and nothing here loads
  * an Android class. That is what keeps this file, and its test, on the JVM.
+ *
+ * TODO: emit telemetry for `TOO_MANY_REQUESTS`, in both tables below. It is the one code whose cause is
+ *  not the device in front of you: the request budget is shared across every app embedding this SDK, so
+ *  one integrator's traffic exhausts it for all of them, and today that is visible only as an individual
+ *  device failing to attest. The signal has to distinguish one device retrying from the budget being gone
+ *  fleet-wide, which means it is a counter on the backend rather than a log line here.
+ *
+ *  Count only what reaches this mapping. `ThrottleGate` refuses locally with the same disposition and the
+ *  same code, without calling the platform, so counting those too turns one throttle plus twenty local
+ *  refusals into twenty-one and makes the fleet look far worse than it is. The two are deliberately
+ *  indistinguishable to a caller, whose action is identical either way; they are not interchangeable to a
+ *  counter.
  */
 internal object PlayIntegrityErrorMapping {
     /**
@@ -39,7 +51,6 @@ internal object PlayIntegrityErrorMapping {
     ): AttestationException =
         when (code) {
             StandardIntegrityErrorCode.NETWORK_ERROR,
-            StandardIntegrityErrorCode.TOO_MANY_REQUESTS,
             StandardIntegrityErrorCode.GOOGLE_SERVER_UNAVAILABLE,
             StandardIntegrityErrorCode.CLIENT_TRANSIENT_ERROR,
             StandardIntegrityErrorCode.INTERNAL_ERROR,
@@ -70,6 +81,8 @@ internal object PlayIntegrityErrorMapping {
             ->
                 AttestationException.Misconfigured(code, cause)
 
+            StandardIntegrityErrorCode.TOO_MANY_REQUESTS -> AttestationException.Throttled(code, cause)
+
             else -> unrecognised(code, cause)
         }
 
@@ -79,7 +92,6 @@ internal object PlayIntegrityErrorMapping {
     ): AttestationException =
         when (code) {
             IntegrityErrorCode.NETWORK_ERROR,
-            IntegrityErrorCode.TOO_MANY_REQUESTS,
             IntegrityErrorCode.GOOGLE_SERVER_UNAVAILABLE,
             IntegrityErrorCode.CLIENT_TRANSIENT_ERROR,
             IntegrityErrorCode.INTERNAL_ERROR,
@@ -111,6 +123,8 @@ internal object PlayIntegrityErrorMapping {
             IntegrityErrorCode.NONCE_IS_NOT_BASE64,
             ->
                 AttestationException.Misconfigured(code, cause)
+
+            IntegrityErrorCode.TOO_MANY_REQUESTS -> AttestationException.Throttled(code, cause)
 
             else -> unrecognised(code, cause)
         }
