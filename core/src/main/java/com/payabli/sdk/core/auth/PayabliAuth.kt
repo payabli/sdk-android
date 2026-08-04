@@ -99,7 +99,7 @@ public class PayabliAuth(
      *
      * False means no provider was supplied, so every refresh from now on fails the same way and the session
      * is beyond recovery from inside the SDK. `AuthenticatedTransport` reads this to tell that apart from a
-     * provider that merely failed this once, which is transient and must not condemn the session.
+     * provider that merely failed this once, which is transient and must not finish the session.
      *
      * `internal` rather than `@RestrictTo`: it is a fact about this holder that only `:core`'s own choke-point
      * acts on, and a capability that could read it would be reading how auth is configured.
@@ -128,7 +128,7 @@ public class PayabliAuth(
      * Two conditions rather than one, because "still current" does not mean "nothing is about to replace
      * it". A claim is taken before the provider is called and [currentToken] is only written when the
      * refresh commits, so throughout a refresh the token being replaced is still the current one. A caller
-     * that checked currency alone would condemn on evidence about a credential already on its way out.
+     * that checked currency alone would finish on evidence about a credential already on its way out.
      *
      * Deciding and recording happen in one lock acquisition, so a refresh cannot begin between them. That
      * is what makes the guarantee in [invalidateAndRefresh] hold: nothing is set while a refresh runs, and

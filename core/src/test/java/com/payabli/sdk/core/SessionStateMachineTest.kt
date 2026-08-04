@@ -32,7 +32,7 @@ class SessionStateMachineTest {
     }
 
     @Test
-    fun `condemning twice is one transition, not an error`() {
+    fun `finishing twice is one transition, not an error`() {
         subject.markReady()
         subject.markReinitializeRequired()
         subject.markReinitializeRequired()
@@ -43,7 +43,7 @@ class SessionStateMachineTest {
     }
 
     @Test
-    fun `a condemned machine refuses to become ready again`() {
+    fun `a finished machine refuses to become ready again`() {
         subject.markReady()
         subject.markReinitializeRequired()
 

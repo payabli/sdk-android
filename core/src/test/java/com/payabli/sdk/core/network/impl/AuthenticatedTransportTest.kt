@@ -412,7 +412,7 @@ class AuthenticatedTransportTest {
     /**
      * The interleaving an entry check alone cannot stop.
      *
-     * A request that passed the terminal check before anything was condemned keeps going. When its own
+     * A request that passed the terminal check before anything was finished keeps going. When its own
      * rejection arrives it asks for a refresh, and if that request could still take a claim it would call
      * the host's broker and might succeed, after the host had been told to re-initialize and had built a
      * second session. `PayabliAuth` refuses the claim instead, so the broker is never reached.
@@ -425,7 +425,7 @@ class AuthenticatedTransportTest {
                 val auth = testAuth(tokenProvider = { "refreshed-${calls.incrementAndGet()}" })
                 val subject = stack(server, auth)
 
-                // Condemn first, exactly as a sibling request would have: the token is unchanged and no
+                // Finish first, exactly as a sibling request would have: the token is unchanged and no
                 // refresh is running, so this is the settled case the choke-point acts on.
                 assertTrue(
                     auth.finishIfSettledOn(TEST_TOKEN, AuthRecoveryPolicy().exhausted()),
@@ -492,7 +492,7 @@ class AuthenticatedTransportTest {
                 // staleness check this second request throws from the latch instead of reaching the server.
                 assertEquals(
                     OK,
-                    completing("a later request on a transport that was not condemned") {
+                    completing("a later request on a transport that was not finished") {
                         subject.execute(ping())
                     }.statusCode,
                 )

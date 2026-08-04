@@ -253,14 +253,14 @@ class PayabliSessionTest {
             LoopbackServer().use { server ->
                 server.respondWith(401, "{}")
                 val dead = session(server, config())
-                runCatching { completing("the request that condemns the session") { dead.transport.execute(ping()) } }
+                runCatching { completing("the request that finishes the session") { dead.transport.execute(ping()) } }
                 assertEquals(SdkState.ReinitializeRequired, dead.state.value)
 
                 // The documented recovery, and it has to work with a newly brokered token, so the new
                 // configuration differs. Refusing here would leave the host with no way back.
                 val revived = session(server, config(accessToken = "brokered-again"))
 
-                assertNotSame("re-initializing after a condemned session must build a new one", dead, revived)
+                assertNotSame("re-initializing after a finished session must build a new one", dead, revived)
                 assertEquals(SdkState.Ready, revived.state.value)
             }
         }
@@ -276,7 +276,7 @@ class PayabliSessionTest {
         }
 
     @Test
-    fun `a refreshed token refused again condemns the session`() =
+    fun `a refreshed token refused again finishes the session`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 // Refuses everything, so the replay carrying the freshly minted token is rejected too.
@@ -295,14 +295,14 @@ class PayabliSessionTest {
         }
 
     @Test
-    fun `a condemned transport refuses later requests without sending or refreshing`() =
+    fun `a finished transport refuses later requests without sending or refreshing`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondWith(401, "{}")
                 val subject = session(server, config(tokenProvider = provider()))
 
                 runCatching {
-                    completing("the request that condemns the session") { subject.transport.execute(ping()) }
+                    completing("the request that finishes the session") { subject.transport.execute(ping()) }
                 }
                 assertEquals(SdkState.ReinitializeRequired, subject.state.value)
                 val sentWhileDying = server.recorded.size
@@ -310,7 +310,7 @@ class PayabliSessionTest {
 
                 val after =
                     runCatching {
-                        completing("the request after the session was condemned") {
+                        completing("the request after the session was finished") {
                             subject.transport.execute(ping())
                         }
                     }.exceptionOrNull()
@@ -320,9 +320,9 @@ class PayabliSessionTest {
                 // session it belongs to says it must be re-initialized. Worse, the host then re-initializes
                 // and a capability still holding this transport keeps a second refresh domain alive.
                 assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (after as PayabliException).code)
-                assertEquals("a condemned transport must not send again", sentWhileDying, server.recorded.size)
+                assertEquals("a finished transport must not send again", sentWhileDying, server.recorded.size)
                 assertEquals(
-                    "a condemned transport must not call the host's broker again",
+                    "a finished transport must not call the host's broker again",
                     refreshesWhileDying,
                     providerCalls.get(),
                 )
@@ -342,13 +342,13 @@ class PayabliSessionTest {
                 )
 
                 // The discriminating case. Every 401 maps to TOKEN_EXPIRED, so anything inferring the state
-                // from the error code would condemn this session, which just recovered exactly as designed.
+                // from the error code would finish this session, which just recovered exactly as designed.
                 assertEquals(SdkState.Ready, subject.state.value)
             }
         }
 
     @Test
-    fun `a rejection with no token provider condemns the session`() =
+    fun `a rejection with no token provider finishes the session`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondWith(401, "{}")
@@ -363,7 +363,7 @@ class PayabliSessionTest {
         }
 
     @Test
-    fun `a provider that fails once does not condemn the session`() =
+    fun `a provider that fails once does not finish the session`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondWith(401, "{}")
@@ -376,8 +376,8 @@ class PayabliSessionTest {
 
                 runCatching { completing("the request whose refresh fails") { subject.transport.execute(ping()) } }
 
-                // The distinction the condemnation rests on: a broker that failed once may well answer the
-                // next call, and condemning the session for it would teach hosts to ignore the state that
+                // The distinction this rests on: a broker that failed once may well answer the
+                // next call, and finishing the session for it would teach hosts to ignore the state that
                 // means their session is genuinely finished.
                 assertEquals(SdkState.Ready, subject.state.value)
                 assertEquals(1, providerCalls.get())
