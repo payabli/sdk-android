@@ -46,16 +46,21 @@ credentials and returned access tokens are not exposed on the LAN.
 
 ## Which address to use
 
-One server, one bind address, three names for it. Which one is correct depends
-entirely on where the caller runs, and this is the first thing that fails when it
-is wrong:
+One server under three names, and which one is correct depends on where the caller
+runs. This is the first thing that fails when it is wrong:
 
-| Caller | Address |
-|---|---|
-| The app, on an emulator | `10.0.2.2` |
-| The app, on a phone with `adb reverse` | `127.0.0.1` |
-| The app, on a phone with no adb connection | the development machine's LAN IP |
-| `curl` or a shell, on the development machine | `127.0.0.1` |
+| Caller | Address | Server bind |
+|---|---|---|
+| The app, on an emulator | `10.0.2.2` | default `127.0.0.1` |
+| The app, on a phone with `adb reverse` | `127.0.0.1` | default `127.0.0.1` |
+| The app, on a phone with no adb connection | the development machine's LAN IP | `0.0.0.0` |
+| `curl` or a shell, on the development machine | `127.0.0.1` | default `127.0.0.1` |
+
+Three of the four reach the server on its default loopback bind. The LAN row does
+not, and it is the one exception: a LAN address cannot reach a process listening
+only on loopback, so that route also needs
+`PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0`. That is what makes it the fallback
+rather than the default, and Physical Device Notes covers the exposure it carries.
 
 The device rows are not alternative spellings of `127.0.0.1`. In Android's own
 words, `127.0.0.1` is "the emulated device loopback interface", while `10.0.2.2`
