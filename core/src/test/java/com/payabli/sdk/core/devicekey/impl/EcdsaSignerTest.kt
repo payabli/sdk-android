@@ -9,6 +9,10 @@ import java.security.KeyPairGenerator
 import java.security.Signature
 
 private const val DER_SEQUENCE: Byte = 0x30
+private const val DER_INTEGER: Byte = 0x02
+
+/** 32 for the curve, plus the leading zero DER adds when the top bit would read as a sign. */
+private const val MAX_INTEGER_BYTES = 33
 
 /**
  * Signing, against a key generated on this JVM.
@@ -43,13 +47,46 @@ class EcdsaSignerTest {
     }
 
     @Test
-    fun `the signature is a DER sequence, not a raw coordinate pair`() {
+    fun `the signature is a DER sequence of two integers, not a raw coordinate pair`() {
         val signature = EcdsaSigner.sign(keyPair.private, payload)
 
-        // The verifier expects DER. A raw R||S pair is the same two numbers and is not interchangeable: it
-        // would be 64 bytes with no tag, and would be rejected as malformed rather than as a wrong signature.
+        // The framing itself, not its size. The verifier expects DER, and a raw R||S pair is the same two
+        // numbers with no framing at all: it is rejected as malformed rather than as a wrong signature. Size
+        // is the wrong way to tell them apart, because DER integers are minimally encoded, so a signature
+        // whose r and s happen to carry leading zero bytes is shorter than the usual seventy-odd.
+        val (r, s) = derIntegers(signature)
+
+        assertTrue("r is wider than the curve allows", r.size <= MAX_INTEGER_BYTES)
+        assertTrue("s is wider than the curve allows", s.size <= MAX_INTEGER_BYTES)
+    }
+
+    /**
+     * The `r` and `s` of a DER `SEQUENCE { INTEGER, INTEGER }`, failing if the framing is anything else.
+     *
+     * Short-form lengths throughout: a P-256 signature is well under the 128 bytes that would need the long
+     * form, so a length byte here is the length.
+     */
+    private fun derIntegers(signature: ByteArray): Pair<ByteArray, ByteArray> {
         assertEquals("expected a DER sequence tag", DER_SEQUENCE, signature[0])
-        assertTrue("a DER signature carries length bytes beyond the pair", signature.size > 64)
+        assertEquals(
+            "the sequence length must cover exactly the rest of the buffer",
+            signature.size - 2,
+            signature[1].toInt(),
+        )
+
+        var offset = 2
+        val values =
+            List(2) {
+                assertEquals("expected a DER integer tag", DER_INTEGER, signature[offset])
+                val length = signature[offset + 1].toInt()
+                assertTrue("a DER integer carries at least one content byte", length > 0)
+                val end = offset + 2 + length
+                assertTrue("the integer runs past the end of the buffer", end <= signature.size)
+                signature.copyOfRange(offset + 2, end).also { offset = end }
+            }
+
+        assertEquals("the two integers must consume the whole sequence", signature.size, offset)
+        return values[0] to values[1]
     }
 
     @Test
