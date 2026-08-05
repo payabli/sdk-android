@@ -10,11 +10,17 @@ import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
 
+/** The name the pending slot is stored under, read directly where the storage layer itself is the subject. */
+private const val RAW_PENDING = "devicekey.pending"
+
 /**
- * The two names, and the promotion between them.
+ * The two names, and every path that could drop one.
  *
- * Against the in-memory store, because what is being asserted is the slot bookkeeping rather than
- * encryption at rest. Nothing here needs a device.
+ * A dropped name strands a key: the private half stays in the platform store and nothing can name it for
+ * deletion. Most of these assert that a name is either kept or handed back, rather than asserting the
+ * bookkeeping looks tidy.
+ *
+ * Against the in-memory store, because what is asserted is the bookkeeping rather than encryption at rest.
  */
 class DeviceKeySlotsTest {
     private val storage = InMemorySecureStorage()
@@ -31,77 +37,91 @@ class DeviceKeySlotsTest {
         }
 
     @Test
-    fun `a pending alias is readable and is not yet active`() =
+    fun `a candidate becomes pending and is not yet active`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.setPending(first)
+            assertEquals(first, subject.pendingOrNew(first))
 
-            // The whole point of the second slot: attesting a key must not make it the signing key until
-            // the service has accepted it.
+            // The whole point of the second slot: attesting a key must not make it the signing key until the
+            // service has accepted it.
             assertEquals(first, subject.pending())
             assertNull(subject.active())
         }
 
     @Test
-    fun `setting pending twice keeps one key rather than accumulating them`() =
+    fun `a second candidate does not displace the key already awaiting attestation`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.setPending(first)
-            subject.setPending(second)
+            subject.pendingOrNew(first)
 
-            assertEquals(second, subject.pending())
+            // Returning `second` would leave `first`'s key in the store with nothing naming it, once per
+            // retry. Reuse is what makes a retry attest the key it already minted.
+            assertEquals(first, subject.pendingOrNew(second))
+            assertEquals(first, subject.pending())
         }
 
     @Test
-    fun `promotion activates the pending alias and clears the slot`() =
+    fun `promotion activates the pending alias and stops reporting it as pending`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.setPending(first)
+            subject.pendingOrNew(first)
 
             val promotion = subject.promotePending()
 
             assertNotNull(promotion)
             assertEquals(first, promotion?.activated)
             assertEquals(first, subject.active())
-            assertNull("a promoted key is no longer pending", subject.pending())
+            assertNull("an attested key is no longer awaiting attestation", subject.pending())
         }
 
     @Test
     fun `promotion names the key it displaced so the caller can discard it`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.setPending(first)
+            subject.pendingOrNew(first)
             subject.promotePending()
-            subject.setPending(second)
+            subject.pendingOrNew(second)
 
             val promotion = subject.promotePending()
 
-            // Without this the old key stays in the key store for the life of the install, and nothing
+            // Without this the displaced key stays in the store for the life of the install, and nothing
             // names it, so nothing can ever delete it.
             assertEquals(second, promotion?.activated)
             assertEquals(first, promotion?.replaced)
         }
 
     @Test
-    fun `promoting with nothing pending reports nothing rather than failing`() =
+    fun `promotion leaves the pending name in place rather than taking a second write`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.setPending(first)
+            subject.pendingOrNew(first)
             subject.promotePending()
 
-            // A caller promoting twice is asking a question, not making a mistake: the second call means
-            // the attestation it is reacting to was already recorded.
+            // The design this rests on. Clearing the name would need a second write, and a failure between
+            // the two loses the displaced alias: the retry reads the promoted alias as already active,
+            // reports nothing displaced, and strands the key it replaced. Equal-to-active is how an attested
+            // key reads instead, so there is nothing to clear.
+            assertNotNull("the pending name should still be stored", storage.get(RAW_PENDING))
+            assertNull("and must not be reported as awaiting attestation", subject.pending())
+        }
+
+    @Test
+    fun `promoting with nothing pending reports nothing rather than failing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            subject.pendingOrNew(first)
+            subject.promotePending()
+
+            // A caller promoting twice is reacting to an acceptance that was already recorded.
             assertNull(subject.promotePending())
             assertEquals(first, subject.active())
         }
 
     @Test
-    fun `re-promoting the same alias reports no displaced key`() =
+    fun `a candidate offered after promotion becomes pending rather than being lost`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.setPending(first)
+            subject.pendingOrNew(first)
             subject.promotePending()
-            subject.setPending(first)
 
-            val promotion = subject.promotePending()
-
-            // Naming it as displaced would have the caller delete the key it just activated.
-            assertEquals(first, promotion?.activated)
-            assertNull(promotion?.replaced)
+            // A rotation started right after an acceptance. Were promotion to clear the pending name, this
+            // candidate could be erased by that clear and its key stranded.
+            assertEquals(second, subject.pendingOrNew(second))
+            assertEquals(second, subject.pending())
+            assertEquals("the active key keeps signing until the new one is attested", first, subject.active())
         }
 
     @Test
@@ -109,20 +129,22 @@ class DeviceKeySlotsTest {
         runTest(timeout = TEST_TIMEOUT) {
             storage.set("devicekey.active", "some.other.alias".toByteArray())
 
-            // It would send a caller to a key store entry nothing here minted, which is worse than having
-            // no key: the failure would look like a broken key rather than an empty slot.
+            // It would send a caller to a key store entry nothing here minted, which is worse than an empty
+            // slot: the failure would look like a broken key rather than a missing one.
             assertNull(subject.active())
         }
 
     @Test
-    fun `clearing forgets both names`() =
+    fun `forgetting reports both names so neither key is stranded`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.setPending(first)
+            subject.pendingOrNew(first)
             subject.promotePending()
-            subject.setPending(second)
+            subject.pendingOrNew(second)
 
-            subject.clear()
+            val forgotten = subject.forget()
 
+            assertEquals(first, forgotten.active)
+            assertEquals(second, forgotten.pending)
             assertNull(subject.active())
             assertNull(subject.pending())
         }
