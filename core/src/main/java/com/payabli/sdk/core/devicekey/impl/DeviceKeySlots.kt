@@ -27,7 +27,18 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class DeviceKeySlots(
     private val storage: PayabliSecureStorage,
+    /**
+     * The backing store's resolved identity, which is what transitions are serialised on.
+     *
+     * Injected because this holds the storage interface and cannot ask it what it is backed by. The factory
+     * hands out a new store object for the same file and reopening one is supported, so two instances over
+     * one file must arrive here with the same value. `FileSecureStorage` takes its own identity at the same
+     * composition point and for the same reason.
+     */
+    identity: String,
 ) {
+    private val lock: Mutex = lockFor(identity)
+
     suspend fun active(): String? = read(KEY_ACTIVE)
 
     /**
@@ -95,10 +106,10 @@ internal class DeviceKeySlots(
      *
      * [active] and [pending] stay outside this. A transition calls them, and the lock is not reentrant.
      *
-     * The lock is per store instance, the shape the storage cipher uses per key alias. Two stores over one
-     * backing file fall outside it there too.
+     * The storage layer's own lock does not cover this. It serialises each call, and what has to be atomic
+     * here spans a read and a write.
      */
-    private suspend fun <T> transition(block: suspend () -> T): T = lockFor(storage).withLock { block() }
+    private suspend fun <T> transition(block: suspend () -> T): T = lock.withLock { block() }
 
     private suspend fun read(key: String): String? =
         storage.get(key)?.let { bytes ->
@@ -112,14 +123,16 @@ internal class DeviceKeySlots(
         const val KEY_ACTIVE = "devicekey.active"
         const val KEY_PENDING = "devicekey.pending"
 
-        /**
-         * One lock per store, so two instances over the same store serialise against each other.
-         *
-         * A plain map under `synchronized`, matching how the storage cipher holds its per-alias monitors.
-         * `computeIfAbsent` needs a higher API level than this module's floor.
-         */
-        private val locks = HashMap<PayabliSecureStorage, Mutex>()
+        /** One lock per backing store, shared by every instance over it. */
+        private val locks = HashMap<String, Mutex>()
 
-        fun lockFor(storage: PayabliSecureStorage): Mutex = synchronized(locks) { locks.getOrPut(storage) { Mutex() } }
+        /**
+         * Keyed by the identity the caller already resolved, so two instances over one file serialise against
+         * each other. Keyed by store object instead, they would each take their own lock and both write.
+         *
+         * A plain map under a monitor, matching the storage layer's own: `computeIfAbsent` is API 24 against
+         * this module's floor of 23.
+         */
+        private fun lockFor(identity: String): Mutex = synchronized(locks) { locks.getOrPut(identity) { Mutex() } }
     }
 }

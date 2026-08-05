@@ -24,6 +24,9 @@ private val BLOCKED_PROBE = 300.milliseconds
 /** The name the pending slot is stored under, read directly where the storage layer itself is the subject. */
 private const val RAW_PENDING = "devicekey.pending"
 
+/** Stands in for the resolved identity of one backing file. */
+private const val IDENTITY = "store-identity"
+
 /**
  * The two names, and every path that could drop one.
  *
@@ -35,7 +38,7 @@ private const val RAW_PENDING = "devicekey.pending"
  */
 class DeviceKeySlotsTest {
     private val storage = InMemorySecureStorage()
-    private val subject = DeviceKeySlots(storage)
+    private val subject = DeviceKeySlots(storage, IDENTITY)
 
     private val first = DeviceKeyAliases.newAlias()
     private val second = DeviceKeyAliases.newAlias()
@@ -152,13 +155,17 @@ class DeviceKeySlotsTest {
     fun `two callers minting at once agree on one alias`() =
         runBlocking {
             withTimeout(TEST_TIMEOUT) {
+                // Two wrappers over one store, which is what the shipping factory hands out: it builds a new
+                // store object per call and reopening the same file is supported. Keyed by store object, each
+                // of these would take its own lock and both would write, stranding the loser's key.
                 val gated = GatedStorage(storage)
-                val subject = DeviceKeySlots(gated)
+                val opener = DeviceKeySlots(gated, IDENTITY)
+                val reopener = DeviceKeySlots(storage, IDENTITY)
 
-                val first = async(Dispatchers.IO) { subject.pendingOrNew(this@DeviceKeySlotsTest.first) }
+                val first = async(Dispatchers.IO) { opener.pendingOrNew(this@DeviceKeySlotsTest.first) }
                 // Held inside the first caller's write, which is the window a second caller must not enter.
                 gated.insideWrite.await()
-                val second = async(Dispatchers.IO) { subject.pendingOrNew(this@DeviceKeySlotsTest.second) }
+                val second = async(Dispatchers.IO) { reopener.pendingOrNew(this@DeviceKeySlotsTest.second) }
 
                 assertNull(
                     "the second caller entered the transition while the first was inside it",
@@ -166,10 +173,8 @@ class DeviceKeySlotsTest {
                 )
                 gated.release.complete(Unit)
 
-                // Without serialising, both write and the loser's key is left in the platform store with
-                // nothing naming it.
                 assertEquals(first.await(), second.await())
-                assertEquals(first.await(), subject.pending())
+                assertEquals(first.await(), reopener.pending())
             }
         }
 
