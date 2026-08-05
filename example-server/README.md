@@ -1,27 +1,37 @@
 # PayabliDemo Local Token Server
 
-Tiny development server for PayIn payment flow QA. It gives the iOS sample a
-backend-shaped endpoint without putting Payabli credentials in the app.
+Tiny development server for PayIn payment flow QA. It gives the Android sample a
+backend-shaped endpoint without putting Payabli credentials in the APK.
 
 The server supports two local QA modes:
 
 - Direct token mode: return a sandbox API token that can call
   `/api/TokenStorage/add` and the v2 MoneyIn auth/capture endpoints.
-- Credential exchange mode: post your sandbox `clientId` and `clientSecret`
+- Credential exchange mode: post a sandbox `clientId` and `clientSecret`
   to a configurable Payabli token endpoint, then return the token from that
   response as `accessToken`.
+
+Nothing in `:example` calls this server yet. It is a local developer tool in the
+same category as `connectedAndroidTest`: no workflow in `.github/` knows about
+it, and none should.
+
+## Requirements
+
+Node 18 or newer. `server.mjs` uses the global `fetch`, which stopped requiring
+the `--experimental-fetch` flag in Node v18.0.0. There are no dependencies and
+no `package.json`, only Node built-ins.
 
 ## Setup
 
 ```bash
-cd Example/PayabliDemo/LocalTokenServer
+cd example-server
 cp .env.example .env
 ```
 
 Edit `.env`:
 
 ```bash
-PAYABLI_ACCESS_TOKEN=<your short-lived sandbox access token>
+PAYABLI_ACCESS_TOKEN=<a short-lived sandbox access token>
 ```
 
 Start the server:
@@ -31,26 +41,96 @@ node server.mjs
 ```
 
 By default the server binds only to `127.0.0.1`. Keep that default when testing
-in Simulator so local credentials and returned access tokens are not exposed on
-your LAN.
+on an emulator, so local credentials and returned access tokens are not exposed
+on the LAN.
 
-The iOS Simulator can call:
+## Reaching the server from an emulator
+
+The emulator does not share the development machine's loopback interface. In
+Android's own words, `127.0.0.1` is "the emulated device loopback interface",
+while `10.0.2.2` is a "special alias to your host loopback interface (127.0.0.1
+on your development machine)".
+
+So the address to configure in the app is:
 
 ```text
-http://127.0.0.1:8787/payabli/access-token
+http://10.0.2.2:8787/payabli/access-token
 ```
 
-Use that URL for the PayIn access-token endpoint configured in the sample app.
-The capture operation aliases to the same endpoint by default.
+The server keeps its `127.0.0.1` bind. `10.0.2.2` reaches a process bound to the
+host's loopback without the server listening on any other interface, so an
+emulator needs no `PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0`. Binding wide is a
+physical-device step only, covered below.
+
+## Permitting cleartext to the server
+
+This server speaks plain HTTP, and Android denies cleartext by default for any
+app targeting API 28 or higher. `:example` targets 36, so a request to
+`10.0.2.2` fails until the app permits it.
+
+Scope the permission to the debug source set, so no release build of the sample
+can carry it, and to the single address rather than a blanket
+`android:usesCleartextTraffic`. Create
+`example/src/debug/res/xml/network_security_config.xml`:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
+```
+
+Reference it from a debug manifest at `example/src/debug/AndroidManifest.xml`, which
+the build merges into the debug variant only:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>
+```
+
+`core/src/androidTest/res/xml/network_security_config.xml` is the working
+precedent in this repository, for the instrumented transport tests. It permits
+both `127.0.0.1` and `10.0.2.2`, and its comments explain why those are two
+different hosts rather than two spellings of one.
+
+## Token caching and the SDK's provider contract
+
+`PayabliTokenProvider`'s documented contract is to "mint a token rather than
+return a cached one", because the SDK calls it when a token has just been
+rejected. Handing the same value back leaves nothing rotated. The three ways to
+reach a token here do not all satisfy that.
+
+`/payabli/access-token` in credential exchange mode serves from a cache keyed on
+the credentials and endpoint, for `PAYABLI_TOKEN_CACHE_TTL_SECONDS` seconds,
+default `300`. That suits browsing a payment form and does not suit a provider.
+
+`POST /payabli/exchange-token` forces a refresh on every call, so it always
+reaches the upstream token endpoint and always returns a newly minted token. It
+reads `PAYABLI_CLIENT_ID` and `PAYABLI_CLIENT_SECRET` from `.env` when the POST
+body omits them, so the body can be empty. This is the route for a provider.
+
+Direct token mode cannot rotate anything: a static `PAYABLI_ACCESS_TOKEN` comes
+back unchanged on every call. It is fine for a first request and useless for
+exercising refresh.
+
+Alternatively, keep `/payabli/access-token` and disable the cache:
+
+```bash
+PAYABLI_TOKEN_CACHE_TTL_SECONDS=0
+```
 
 ## Credential Exchange Mode
 
-If you want the local endpoint to exchange sandbox credentials, leave
+To have the local endpoint exchange sandbox credentials, leave
 `PAYABLI_ACCESS_TOKEN` blank and configure:
 
 ```bash
-PAYABLI_CLIENT_ID=<your sandbox client id>
-PAYABLI_CLIENT_SECRET=<your sandbox client secret>
+PAYABLI_CLIENT_ID=<a sandbox client id>
+PAYABLI_CLIENT_SECRET=<a sandbox client secret>
 PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
 PAYABLI_TOKEN_PATH=/v2/token/serverside
 ```
@@ -84,13 +164,14 @@ Only add hosts for trusted local test infrastructure. Do not point credential
 exchange at arbitrary URLs, because that would send the configured
 `clientSecret` to that host.
 
-Then call the same sample URL:
+Then call the same emulator URL:
 
 ```text
-http://127.0.0.1:8787/payabli/access-token
+http://10.0.2.2:8787/payabli/access-token
 ```
 
-You can also pass credentials per request for quick experiments:
+Credentials can also be passed per request for quick experiments. From the
+development machine, where the server is on loopback:
 
 ```bash
 curl -X POST http://127.0.0.1:8787/payabli/exchange-token \
@@ -119,27 +200,28 @@ If `responseTokenField` is blank, the server tries `access_token`,
 
 ## Physical Device Notes
 
-For a real iPhone, `127.0.0.1` points at the phone, not your Mac. Use your
-Mac's LAN IP instead:
+For a wired phone, neither address above works: `127.0.0.1` points at the phone
+itself, and `10.0.2.2` is an emulator alias with no meaning on real hardware.
+Use the development machine's LAN IP:
 
 ```text
-http://<mac-lan-ip>:8787/payabli/access-token
+http://<machine-lan-ip>:8787/payabli/access-token
 ```
 
-To expose the local server to a physical device, explicitly bind to all
-interfaces while you are testing:
+The server has to listen beyond loopback to be reachable, so bind to all
+interfaces while testing:
 
 ```bash
 PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0 node server.mjs
 ```
 
 Use this only on a trusted network, stop the process when finished, and prefer
-short-lived sandbox credentials. Browser CORS responses are restricted to
-localhost origins by default; native iOS requests do not need CORS.
+short-lived sandbox credentials. The debug network security config also needs
+that LAN address alongside `10.0.2.2`, since the cleartext permission is keyed
+on the address the app dials.
 
-Because this is plain HTTP for local development, the app target may need an
-ATS local-network exception such as `NSAllowsLocalNetworking` in `Info.plist`,
-or you can expose the server through an HTTPS tunnel.
+Browser CORS responses are restricted to localhost origins by default. The
+sample's requests are native and do not need CORS.
 
 ## Contract
 
@@ -150,4 +232,16 @@ or you can expose the server through an HTTPS tunnel.
 { "accessToken": "..." }
 ```
 
-The sample's PayIn access-token callbacks already expect this response shape.
+`GET /health` answers `{"ok":true}` without touching credentials, which is the
+cheapest way to confirm the process is up:
+
+```bash
+curl -sS http://127.0.0.1:8787/health
+```
+
+Run that from the development machine rather than the device. Android ships
+neither `curl` nor `wget` in the shell, so `adb shell` cannot make the request;
+reachability from the device is what the app itself demonstrates.
+
+A `PayabliTokenProvider` implementation reads `accessToken` from the response and
+returns it as a `String`.
