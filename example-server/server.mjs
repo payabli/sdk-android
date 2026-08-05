@@ -332,20 +332,26 @@ async function readJsonBody(req) {
   return parsed;
 }
 
-// A malformed numeric setting stops the server at startup instead of quietly changing behaviour.
-// parseInt answers NaN for a non-numeric value, and NaN loses every comparison it takes part in, so a
-// size limit of NaN leaves `totalBytes > limit` false for a body of any size and the guard never fires.
+// A malformed numeric setting stops the server at startup instead of quietly changing behaviour. Two
+// values defeat a comparison guard rather than merely being wrong, and both have to be refused here.
+// NaN, from a non-numeric value, loses every comparison. Infinity, from a digit string too long to
+// represent, wins every one. Either leaves `totalBytes > limit` false for a body of any size, so the
+// digit test alone is not enough and the parsed number is checked as well.
 function integerSetting(name, fallback) {
   const raw = (process.env[name] || "").trim();
   if (!raw) {
     return fallback;
   }
 
-  if (!/^\d+$/.test(raw)) {
-    throw new Error(`${name} must be a non-negative integer. Received: ${JSON.stringify(raw)}`);
+  const parsed = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(parsed)) {
+    throw new Error(
+      `${name} must be a non-negative integer no greater than ${Number.MAX_SAFE_INTEGER}. ` +
+        `Received: ${JSON.stringify(raw)}`
+    );
   }
 
-  return Number.parseInt(raw, 10);
+  return parsed;
 }
 
 function parseCsvSet(value) {
