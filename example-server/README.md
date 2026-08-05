@@ -11,9 +11,9 @@ The server supports two local QA modes:
   to a configurable Payabli token endpoint, then return the token from that
   response as `accessToken`.
 
-Nothing in `:example` calls this server yet. It is a local developer tool in the
-same category as `connectedAndroidTest`: no workflow in `.github/` knows about
-it, and none should.
+Nothing in `:example` calls this server yet, and no workflow in `.github/` runs
+it. Keep it that way: it is a local developer tool rather than a CI dependency,
+and no workflow installs Node.
 
 ## Requirements
 
