@@ -109,6 +109,11 @@ async function exchangeCredentials(options = {}, { forceRefresh = false } = {}) 
     );
   }
 
+  // Resolve and check before anything else uses these values, so a refused endpoint cannot serve a
+  // cached token either.
+  const endpoint = new URL(tokenPath.replace(/^\/+/, ""), ensureTrailingSlash(apiBaseUrl));
+  assertAllowedEndpoint(endpoint, "The resolved token endpoint");
+
   const cacheKey = JSON.stringify({
     clientIdHash: sha256(clientId),
     clientSecretHash: sha256(clientSecret),
@@ -121,7 +126,6 @@ async function exchangeCredentials(options = {}, { forceRefresh = false } = {}) 
     return { token: cached.token, upstreamStatus: 200 };
   }
 
-  const endpoint = new URL(tokenPath.replace(/^\/+/, ""), ensureTrailingSlash(apiBaseUrl));
   const upstream = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -258,19 +262,24 @@ function normalizeBaseUrl(url) {
   const trimmed = url.trim();
   const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   const parsed = new URL(normalized);
+  assertAllowedEndpoint(parsed, "PAYABLI_API_BASE_URL");
+  return parsed.toString();
+}
 
+// Checks a URL that is about to receive the credentials. Applied to the configured base and, more
+// importantly, to the endpoint actually resolved from base + path: a path can steer that resolution
+// onto another origin, so validating the base alone leaves the credential reachable.
+function assertAllowedEndpoint(parsed, label) {
   if (parsed.protocol !== "https:" && process.env.PAYABLI_ALLOW_INSECURE_UPSTREAM !== "true") {
-    throw new LocalTokenServerError(400, "PAYABLI_API_BASE_URL must use https.");
+    throw new LocalTokenServerError(400, `${label} must use https.`);
   }
 
   if (!allowedApiHosts.has(parsed.hostname.toLowerCase())) {
     throw new LocalTokenServerError(
       400,
-      `PAYABLI_API_BASE_URL host is not allowed. Allowed hosts: ${Array.from(allowedApiHosts).join(", ")}`
+      `${label} host is not allowed. Allowed hosts: ${Array.from(allowedApiHosts).join(", ")}`
     );
   }
-
-  return parsed.toString();
 }
 
 function normalizeTokenPath(path) {
