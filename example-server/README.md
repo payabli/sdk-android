@@ -111,6 +111,26 @@ precedent in this repository, for the instrumented transport tests. It permits
 both `127.0.0.1` and `10.0.2.2`, and its comments explain why those are two
 different hosts rather than two spellings of one.
 
+## Declaring the INTERNET permission
+
+Permitting cleartext is not sufficient on its own. A network security config
+relaxes which protocol is allowed; it does not grant the app network access at
+all. Without `android.permission.INTERNET` every request fails regardless of the
+cleartext entry above.
+
+The SDK declares no permissions. That is deliberate: a library merging a
+permission into the app that embeds it would inflate that app's declared
+permissions without the app developer's say. So the host app declares it, and in
+this repository the host app is `:example`:
+
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+```
+
+This one belongs in the main manifest rather than the debug manifest above, since
+every variant that talks to Payabli needs it and a release build would otherwise
+be unable to reach any endpoint. Only the cleartext config is debug-scoped.
+
 ## Token caching and the SDK's provider contract
 
 `PayabliTokenProvider`'s documented contract is to "mint a token rather than
