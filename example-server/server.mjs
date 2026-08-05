@@ -12,8 +12,8 @@ const bindHost = stringValue(process.env.PAYABLI_LOCAL_TOKEN_SERVER_HOST) || "12
 const defaultApiBaseUrl = process.env.PAYABLI_API_BASE_URL || "https://api-sandbox.payabli.com/api";
 const defaultTokenPath = process.env.PAYABLI_TOKEN_PATH || "/v2/token/serverside";
 const responseTokenField = (process.env.PAYABLI_RESPONSE_TOKEN_FIELD || "").trim();
-const cacheTtlSeconds = Number.parseInt(process.env.PAYABLI_TOKEN_CACHE_TTL_SECONDS || "300", 10);
-const maxRequestBodyBytes = Number.parseInt(process.env.PAYABLI_MAX_REQUEST_BODY_BYTES || "32768", 10);
+const cacheTtlSeconds = integerSetting("PAYABLI_TOKEN_CACHE_TTL_SECONDS", 300);
+const maxRequestBodyBytes = integerSetting("PAYABLI_MAX_REQUEST_BODY_BYTES", 32768);
 const allowedApiHosts = parseCsvSet(
   process.env.PAYABLI_ALLOWED_API_HOSTS ||
     "api-sandbox.payabli.com,api-qa.payabli.com,api.payabli.com"
@@ -109,6 +109,11 @@ async function exchangeCredentials(options = {}, { forceRefresh = false } = {}) 
     );
   }
 
+  // Resolve and check before anything else uses these values, so a refused endpoint cannot serve a
+  // cached token either.
+  const endpoint = new URL(tokenPath.replace(/^\/+/, ""), ensureTrailingSlash(apiBaseUrl));
+  assertAllowedEndpoint(endpoint, "The resolved token endpoint");
+
   const cacheKey = JSON.stringify({
     clientIdHash: sha256(clientId),
     clientSecretHash: sha256(clientSecret),
@@ -121,15 +126,30 @@ async function exchangeCredentials(options = {}, { forceRefresh = false } = {}) 
     return { token: cached.token, upstreamStatus: 200 };
   }
 
-  const endpoint = new URL(tokenPath.replace(/^\/+/, ""), ensureTrailingSlash(apiBaseUrl));
+  // redirect: "manual" so a 3xx comes back as a response instead of being followed. fetch follows
+  // redirects by default, and a 307 or 308 replays the method and body, so an allowed host answering
+  // with a Location on another origin would hand the credential to that origin. The endpoint check
+  // above cannot see that: it runs before the request, and a redirect target only exists afterwards.
+  // "manual" rather than "error" because it keeps the target readable, and a bare fetch rejection is
+  // reported as "fetch failed" with nothing to distinguish it from a host being down.
   const upstream = await fetch(endpoint, {
     method: "POST",
+    redirect: "manual",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ clientId, clientSecret })
   });
+
+  if (upstream.status >= 300 && upstream.status < 400) {
+    throw new LocalTokenServerError(
+      502,
+      `Token exchange to ${endpoint.origin} answered HTTP ${upstream.status} redirecting to ` +
+        `${upstream.headers.get("location") || "an unnamed target"}. The redirect was not followed, ` +
+        "because the credential would be sent to the target."
+    );
+  }
 
   const text = await upstream.text();
   let payload;
@@ -258,19 +278,24 @@ function normalizeBaseUrl(url) {
   const trimmed = url.trim();
   const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   const parsed = new URL(normalized);
+  assertAllowedEndpoint(parsed, "PAYABLI_API_BASE_URL");
+  return parsed.toString();
+}
 
+// Checks a URL that is about to receive the credentials. Applied to the configured base and, more
+// importantly, to the endpoint actually resolved from base + path: a path can steer that resolution
+// onto another origin, so validating the base alone leaves the credential reachable.
+function assertAllowedEndpoint(parsed, label) {
   if (parsed.protocol !== "https:" && process.env.PAYABLI_ALLOW_INSECURE_UPSTREAM !== "true") {
-    throw new LocalTokenServerError(400, "PAYABLI_API_BASE_URL must use https.");
+    throw new LocalTokenServerError(400, `${label} must use https.`);
   }
 
   if (!allowedApiHosts.has(parsed.hostname.toLowerCase())) {
     throw new LocalTokenServerError(
       400,
-      `PAYABLI_API_BASE_URL host is not allowed. Allowed hosts: ${Array.from(allowedApiHosts).join(", ")}`
+      `${label} host is not allowed. Allowed hosts: ${Array.from(allowedApiHosts).join(", ")}`
     );
   }
-
-  return parsed.toString();
 }
 
 function normalizeTokenPath(path) {
@@ -305,11 +330,44 @@ async function readJsonBody(req) {
     return {};
   }
 
+  let parsed;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
     throw new LocalTokenServerError(400, "Request body must be valid JSON.");
   }
+
+  // Callers read this as an options bag, so anything else is refused here rather than reaching a
+  // property access. null is the case that matters: it is valid JSON, it is not caught by a default
+  // parameter, and reading a property of it throws a TypeError that surfaces as a 500. Arrays and
+  // primitives were accepted instead, and silently behaved as if no options had been sent.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new LocalTokenServerError(400, "Request body must be a JSON object.");
+  }
+
+  return parsed;
+}
+
+// A malformed numeric setting stops the server at startup instead of quietly changing behaviour. Two
+// values defeat a comparison guard rather than merely being wrong, and both have to be refused here.
+// NaN, from a non-numeric value, loses every comparison. Infinity, from a digit string too long to
+// represent, wins every one. Either leaves `totalBytes > limit` false for a body of any size, so the
+// digit test alone is not enough and the parsed number is checked as well.
+function integerSetting(name, fallback) {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) {
+    return fallback;
+  }
+
+  const parsed = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(parsed)) {
+    throw new Error(
+      `${name} must be a non-negative integer no greater than ${Number.MAX_SAFE_INTEGER}. ` +
+        `Received: ${JSON.stringify(raw)}`
+    );
+  }
+
+  return parsed;
 }
 
 function parseCsvSet(value) {
