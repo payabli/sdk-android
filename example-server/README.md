@@ -40,27 +40,41 @@ Start the server:
 node server.mjs
 ```
 
-By default the server binds only to `127.0.0.1`. Keep that default when testing
-on an emulator, so local credentials and returned access tokens are not exposed
-on the LAN.
+By default the server binds only to `127.0.0.1`, the loopback interface of the
+development machine it runs on. Keep that default for emulator testing, so local
+credentials and returned access tokens are not exposed on the LAN.
 
-## Reaching the server from an emulator
+## Which address to use
 
-The emulator does not share the development machine's loopback interface. In
-Android's own words, `127.0.0.1` is "the emulated device loopback interface",
-while `10.0.2.2` is a "special alias to your host loopback interface (127.0.0.1
-on your development machine)".
+One server, one bind address, three names for it. Which one is correct depends
+entirely on where the caller runs, and this is the first thing that fails when it
+is wrong:
 
-So the address to configure in the app is:
+| Caller | Address |
+|---|---|
+| The app, on an emulator | `10.0.2.2` |
+| The app, on a wired phone | the development machine's LAN IP |
+| `curl` or a shell, on the development machine | `127.0.0.1` |
+
+The device rows are not alternative spellings of `127.0.0.1`. In Android's own
+words, `127.0.0.1` is "the emulated device loopback interface", while `10.0.2.2`
+is a "special alias to your host loopback interface (127.0.0.1 on your
+development machine)". From inside an emulator, `127.0.0.1` reaches the emulator
+itself, so a server on the development machine never sees the request.
+
+Every URL below is written for one of those three callers, and says which.
+
+For the app on an emulator:
 
 ```text
 http://10.0.2.2:8787/payabli/access-token
 ```
 
-The server keeps its `127.0.0.1` bind. `10.0.2.2` reaches a process bound to the
-host's loopback without the server listening on any other interface, so an
-emulator needs no `PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0`. Binding wide is a
-physical-device step only, covered below.
+The server keeps its `127.0.0.1` bind either way. `10.0.2.2` reaches a process
+bound to the host's loopback without the server listening on any other
+interface, so an emulator needs no `PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0`. A
+wired phone does, because it is a separate machine on the network; see Physical
+Device Notes.
 
 ## Permitting cleartext to the server
 
@@ -164,14 +178,14 @@ Only add hosts for trusted local test infrastructure. Do not point credential
 exchange at arbitrary URLs, because that would send the configured
 `clientSecret` to that host.
 
-Then call the same emulator URL:
+This mode does not change the app's address. Still, for the app on an emulator:
 
 ```text
 http://10.0.2.2:8787/payabli/access-token
 ```
 
-Credentials can also be passed per request for quick experiments. From the
-development machine, where the server is on loopback:
+Credentials can also be passed per request for quick experiments. This one runs
+on the development machine rather than on a device, so it uses `127.0.0.1`:
 
 ```bash
 curl -X POST http://127.0.0.1:8787/payabli/exchange-token \
@@ -200,9 +214,9 @@ If `responseTokenField` is blank, the server tries `access_token`,
 
 ## Physical Device Notes
 
-For a wired phone, neither address above works: `127.0.0.1` points at the phone
-itself, and `10.0.2.2` is an emulator alias with no meaning on real hardware.
-Use the development machine's LAN IP:
+Neither device address above applies to a wired phone. `127.0.0.1` points at the
+phone itself, and `10.0.2.2` is an emulator alias with no meaning on real
+hardware. Use the development machine's LAN IP:
 
 ```text
 http://<machine-lan-ip>:8787/payabli/access-token
@@ -233,15 +247,15 @@ sample's requests are native and do not need CORS.
 ```
 
 `GET /health` answers `{"ok":true}` without touching credentials, which is the
-cheapest way to confirm the process is up:
+cheapest way to confirm the process is up. From the development machine:
 
 ```bash
 curl -sS http://127.0.0.1:8787/health
 ```
 
-Run that from the development machine rather than the device. Android ships
-neither `curl` nor `wget` in the shell, so `adb shell` cannot make the request;
-reachability from the device is what the app itself demonstrates.
+There is no device-side equivalent: Android ships neither `curl` nor `wget` in
+the shell, so `adb shell` cannot make the request. Reachability from a device is
+what the app itself demonstrates.
 
 A `PayabliTokenProvider` implementation reads `accessToken` from the response and
 returns it as a `String`.
