@@ -7,20 +7,20 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Which alias is the attested key and which is awaiting attestation.
  *
- * Two slots rather than one, so attesting a replacement never costs the device the key it is already using. A
- * key is minted into the pending slot, attested there, and becomes active only once the service has accepted
- * it; until then the active key keeps signing.
+ * Two slots, so attesting a replacement never costs the device the key it is already using. A key is minted
+ * into the pending slot, attested there, and becomes active only once the service has accepted it; until then
+ * the active key keeps signing.
  *
- * **No call here displaces a name without returning it.** The private half of a key never leaves the platform
- * key store, so a name is the only handle anything has on it: drop a name silently and that key stays in the
- * store for the life of the install with nothing able to name it for deletion. Every operation either refuses
- * to displace a name or hands back the one it displaced.
+ * **Nothing here reports a name it displaced, and no caller should need it to.** The private half of a key
+ * never leaves the platform key store, so a name is the only handle anything has on it, and a name delivered
+ * by return value is lost whenever the call does not complete: a storage write can fail partway, and the
+ * process can die between the write and the caller acting on what came back. Both leave a key in the store
+ * with nothing able to name it.
  *
- * That holds for the call. It does not survive the process: a return value reaches nobody if the process dies
- * after the write that produced it, and the name is then gone from these slots. Closing that needs a durable
- * record of names awaiting deletion, acknowledged once the key is gone, which is a protocol for whatever
- * drives attestation and is not built here. A caller that must not strand a key across a restart reads
- * [active] and [pending] first and keeps them where it keeps the rest of its own progress.
+ * So the order runs the other way. [active] and [pending] are readable before anything is written, a caller
+ * that intends to displace a key reads the name first and keeps it wherever it keeps the rest of its own
+ * progress, **deletes the key, and only then drops the name**. A name left pointing at a key that is already
+ * gone is recoverable; a key left with no name is not.
  *
  * Only the two names live here, which is what makes them safe to keep in ordinary storage: a name is useless
  * without the key it points at.
@@ -33,9 +33,9 @@ internal class DeviceKeySlots(
     /**
      * The alias awaiting attestation, or null when there is none.
      *
-     * A stored name equal to [active] is **not** pending. Promotion leaves the pending name in place rather
-     * than deleting it, so equal-to-active is how an attested key reads afterwards, and reporting it as
-     * pending would offer the key already in use up to be attested a second time.
+     * A stored name equal to [active] is **not** pending. Promotion leaves the pending name in place, so
+     * equal-to-active is how an attested key reads afterwards, and reporting it as pending would offer the key
+     * already in use up to be attested a second time.
      */
     suspend fun pending(): String? = read(KEY_PENDING)?.takeIf { it != active() }
 
@@ -43,10 +43,10 @@ internal class DeviceKeySlots(
      * The alias to mint a key under: the one already awaiting attestation if there is one, otherwise
      * [candidate], which becomes pending.
      *
-     * Reuse rather than replacement, and that is why a caller asks here instead of storing a name itself. A
-     * retry before attestation gets the alias it used last time, so it attests the key it already minted.
-     * Taking a new name on each attempt would leave the previous key in the store unnamed, one per attempt,
-     * which is the accumulation the second slot exists to prevent.
+     * Reuse is why a caller asks here instead of storing a name itself. A retry before attestation gets the
+     * alias it used last time, so it attests the key it already minted. Taking a new name on each attempt
+     * would leave the previous key in the store unnamed, one per attempt, which is the accumulation the second
+     * slot exists to prevent.
      */
     suspend fun pendingOrNew(candidate: String): String =
         transition {
@@ -56,36 +56,36 @@ internal class DeviceKeySlots(
         }
 
     /**
-     * Makes the pending alias the active one, reporting what it displaced so the caller can discard that key.
+     * Makes the pending alias the active one and returns it. Null when nothing is awaiting attestation, which
+     * is a caller asking twice.
      *
-     * Null when nothing is awaiting attestation, which is a caller asking twice rather than a failure.
+     * One write. Clearing the pending name afterwards would take a second write with a window between the two,
+     * and a failure there would leave the promoted alias active with the previous one already gone. Nothing
+     * needs clearing, because a pending name equal to active is not pending.
      *
-     * **One write, and that is the correctness of it.** Clearing the pending name afterwards would take a
-     * second write with a window between the two: a failure in that window loses the displaced name, and the
-     * retry then reads the promoted alias as already active, reports nothing displaced, and strands the key it
-     * replaced. A candidate installed in the same window would be erased by the clear for the same reason.
-     * Nothing needs clearing, because a pending name equal to active is not pending.
+     * The displaced alias is not returned. A caller that means to delete that key reads [active] before
+     * calling this.
      */
-    suspend fun promotePending(): Promotion? =
+    suspend fun promotePending(): String? =
         transition {
             val replaced = active()
             val promoted = read(KEY_PENDING)?.takeIf { it != replaced } ?: return@transition null
             storage.set(KEY_ACTIVE, promoted.toByteArray(Charsets.UTF_8))
-            Promotion(activated = promoted, replaced = replaced)
+            promoted
         }
 
     /**
-     * Forgets both names and reports them, so the keys they pointed at can be deleted.
+     * Drops both names.
      *
-     * The report reaches a caller that is still running. See the durability limit on the class.
+     * Called once the keys they named are gone, so a partial failure here leaves a name pointing at a key that
+     * no longer exists, which reads as an absent key and is recoverable.
      */
-    suspend fun forget(): Forgotten =
+    suspend fun discard() {
         transition {
-            val forgotten = Forgotten(active = active(), pending = pending())
             storage.remove(KEY_ACTIVE)
             storage.remove(KEY_PENDING)
-            forgotten
         }
+    }
 
     /**
      * Serialises one read-then-write transition against every other on the same store.
@@ -107,18 +107,6 @@ internal class DeviceKeySlots(
             // to a key store entry nothing here minted.
             alias.takeIf { DeviceKeyAliases.isDeviceKeyAlias(it) }
         }
-
-    /** What [promotePending] did: the alias now active, and the one it displaced if there was one. */
-    internal class Promotion(
-        val activated: String,
-        val replaced: String?,
-    )
-
-    /** What [forget] dropped, so neither key is left in the store unnamed. */
-    internal class Forgotten(
-        val active: String?,
-        val pending: String?,
-    )
 
     private companion object {
         const val KEY_ACTIVE = "devicekey.active"

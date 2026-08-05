@@ -28,7 +28,7 @@ private const val RAW_PENDING = "devicekey.pending"
  * The two names, and every path that could drop one.
  *
  * A dropped name strands a key: the private half stays in the platform store and nothing can name it for
- * deletion. Most of these assert that a name is either kept or handed back, rather than asserting the
+ * deletion. Most of these assert that a name a caller still needs is readable, rather than that the
  * bookkeeping looks tidy.
  *
  * Against the in-memory store, because what is asserted is the bookkeeping rather than encryption at rest.
@@ -74,27 +74,24 @@ class DeviceKeySlotsTest {
         runTest(timeout = TEST_TIMEOUT) {
             subject.pendingOrNew(first)
 
-            val promotion = subject.promotePending()
+            assertEquals(first, subject.promotePending())
 
-            assertNotNull(promotion)
-            assertEquals(first, promotion?.activated)
             assertEquals(first, subject.active())
             assertNull("an attested key is no longer awaiting attestation", subject.pending())
         }
 
     @Test
-    fun `promotion names the key it displaced so the caller can discard it`() =
+    fun `the displaced name is readable before promotion, which is where a caller takes it`() =
         runTest(timeout = TEST_TIMEOUT) {
             subject.pendingOrNew(first)
             subject.promotePending()
             subject.pendingOrNew(second)
 
-            val promotion = subject.promotePending()
-
-            // Without this the displaced key stays in the store for the life of the install, and nothing
-            // names it, so nothing can ever delete it.
-            assertEquals(second, promotion?.activated)
-            assertEquals(first, promotion?.replaced)
+            // Promotion does not hand back what it displaced, because a return value is lost whenever the
+            // call does not complete. A caller that means to delete this key reads it here first.
+            assertEquals(first, subject.active())
+            assertEquals(second, subject.promotePending())
+            assertEquals(second, subject.active())
         }
 
     @Test
@@ -177,16 +174,14 @@ class DeviceKeySlotsTest {
         }
 
     @Test
-    fun `forgetting reports both names so neither key is stranded`() =
+    fun `discarding drops both names`() =
         runTest(timeout = TEST_TIMEOUT) {
             subject.pendingOrNew(first)
             subject.promotePending()
             subject.pendingOrNew(second)
 
-            val forgotten = subject.forget()
+            subject.discard()
 
-            assertEquals(first, forgotten.active)
-            assertEquals(second, forgotten.pending)
             assertNull(subject.active())
             assertNull(subject.pending())
         }
