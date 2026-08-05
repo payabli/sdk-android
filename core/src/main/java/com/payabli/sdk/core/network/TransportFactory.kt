@@ -10,6 +10,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import com.payabli.sdk.core.network.impl.AuthenticatedTransport
 import com.payabli.sdk.core.network.impl.PayabliService
+import kotlinx.coroutines.CoroutineDispatcher
 
 /**
  * Assembles the auth stack for one [PayabliConfig]: a token holder, a transport, and the recovery wrapper
@@ -28,15 +29,21 @@ internal object TransportFactory {
      * Builds one auth domain. Called once per session; see the class note for why nothing outside `:core`
      * calls it directly any more.
      *
-     * Every parameter past [config] is internal assembly, and `PayabliSession` passes none of them: they
-     * exist so `:core`'s own tests can vary a piece, and each default is the shipped behaviour. Nothing
-     * outside `:core` can set any of them, so do not describe them as configuration.
+     * Every defaulted parameter past [config] is internal assembly: they exist so `:core`'s own tests can vary
+     * a piece, and each default is the shipped behaviour. Nothing outside `:core` can set any of them, so do
+     * not describe them as configuration.
+     *
+     * [dispatcher] is the exception and has no default. `PayabliSession` is the layer an integrating app calls,
+     * so it is the one place that picks a dispatcher; every layer under it is handed one. A default here would
+     * mean a caller that narrowed parallelism, or a test that substituted a dispatcher, silently did not get
+     * it, and nothing would report that.
      *
      * [providerTimeoutMillis] in particular bounds a provider that never returns, so it cannot wedge every
      * reader waiting on the same refresh. Its default is the only value anything uses today.
      */
     internal fun authenticated(
         config: PayabliConfig,
+        dispatcher: CoroutineDispatcher,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
         authLogger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
@@ -46,6 +53,7 @@ internal object TransportFactory {
         authenticated(
             config.environment.baseUrl,
             config,
+            dispatcher,
             recovery,
             logger,
             authLogger,
@@ -65,17 +73,19 @@ internal object TransportFactory {
     internal fun authenticatedAgainst(
         baseUrl: String,
         config: PayabliConfig,
+        dispatcher: CoroutineDispatcher,
         recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
         logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
         authLogger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
         providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
         onAuthFailure: AuthFailureListener = AuthFailureListener { },
     ): PayabliTransport =
-        authenticated(baseUrl, config, recovery, logger, authLogger, providerTimeoutMillis, onAuthFailure)
+        authenticated(baseUrl, config, dispatcher, recovery, logger, authLogger, providerTimeoutMillis, onAuthFailure)
 
     private fun authenticated(
         baseUrl: String,
         config: PayabliConfig,
+        dispatcher: CoroutineDispatcher,
         recovery: AuthRecoveryPolicy,
         logger: SdkLogger,
         authLogger: SdkLogger,
@@ -87,7 +97,7 @@ internal object TransportFactory {
         // auth rather than buried under network.
         val auth = PayabliAuth(config, authLogger, providerTimeoutMillis)
         return AuthenticatedTransport(
-            base = PayabliService.create(baseUrl = baseUrl, auth = auth, logger = logger),
+            base = PayabliService.create(baseUrl = baseUrl, auth = auth, dispatcher = dispatcher, logger = logger),
             auth = auth,
             recovery = recovery,
             logger = logger,

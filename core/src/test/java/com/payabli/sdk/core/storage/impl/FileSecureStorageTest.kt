@@ -1039,15 +1039,19 @@ class FileSecureStorageTest {
             assertFalse("the rejected file contents reached the log:\n$logged", logged.contains("do-not-log-this-blob"))
         }
 
-    /** Production takes the default dispatcher, so one test has to exercise it rather than substitute one. */
+    /**
+     * Every other test here substitutes `Dispatchers.Unconfined`, which never leaves the calling thread. One has
+     * to run the store on a real dispatcher, where `withContext` actually hands work to another thread.
+     */
     @Test
-    fun `the default dispatcher is used when none is given`() =
+    fun `the store works on a real dispatcher, not only an unconfined one`() =
         runTest(timeout = 5.seconds) {
             val subject =
                 FileSecureStorage(
                     file = File(folder.root, "store.json"),
                     cipher = CountingCipher(),
                     logger = DefaultSdkLogger(LogCategory.CORE, sink),
+                    dispatcher = Dispatchers.IO,
                 )
 
             subject.set("refresh", "secret-value".toByteArray())

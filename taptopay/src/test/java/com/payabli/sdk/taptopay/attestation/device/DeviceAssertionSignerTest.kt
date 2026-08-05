@@ -161,7 +161,7 @@ private class FakeDeviceKey(
     }
 }
 
-/** Counts reads, so "the clock is read once" is asserted rather than assumed. */
+/** Counts reads, so "the clock is read once" is an assertion the test can make. */
 private class CountingClock(
     private val instant: Instant,
 ) : Clock() {

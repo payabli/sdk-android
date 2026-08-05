@@ -16,6 +16,8 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,6 +80,18 @@ public class PayabliSession private constructor(
         private val sink = MutableStateFlow<SdkState>(SdkState.Uninitialized)
 
         private val logger: SdkLogger get() = LoggerRegistry.of(LogCategory.CORE)
+
+        /**
+         * The one place the SDK picks a dispatcher.
+         *
+         * This is the layer an integrating app calls, so the choice is made here and handed down; nothing
+         * below takes a default. A default at a lower layer is invisible at the call site, and a composition
+         * that omitted one would run on the real `Dispatchers.IO` while every layer above it believed it had
+         * supplied the dispatcher, with nothing reporting the difference.
+         *
+         * `IO` because everything under it is blocking I/O: sockets, files and Keystore calls.
+         */
+        private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
 
         /**
          * What the SDK can do right now.
@@ -146,7 +160,7 @@ public class PayabliSession private constructor(
             host.appContext.applicationContext.applyHostLogLevel()
 
             return install(ConfigIdentity(config)) { onAuthFailure ->
-                TransportFactory.authenticated(config, onAuthFailure = onAuthFailure)
+                TransportFactory.authenticated(config, IO_DISPATCHER, onAuthFailure = onAuthFailure)
             }
         }
 
@@ -163,7 +177,7 @@ public class PayabliSession private constructor(
             config: PayabliConfig,
         ): Result<PayabliSession> =
             install(ConfigIdentity(config)) { onAuthFailure ->
-                TransportFactory.authenticatedAgainst(baseUrl, config, onAuthFailure = onAuthFailure)
+                TransportFactory.authenticatedAgainst(baseUrl, config, IO_DISPATCHER, onAuthFailure = onAuthFailure)
             }
 
         /**

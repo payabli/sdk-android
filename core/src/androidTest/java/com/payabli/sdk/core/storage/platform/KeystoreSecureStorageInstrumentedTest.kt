@@ -182,6 +182,7 @@ class KeystoreSecureStorageInstrumentedTest {
         file = File(directory, fileName),
         cipher = cipher,
         logger = logger,
+        dispatcher = Dispatchers.IO,
     )
 
     /**
@@ -244,8 +245,8 @@ class KeystoreSecureStorageInstrumentedTest {
                 SecureStorageFactory.aliasFor(differentName),
             )
 
-            val first = SecureStorageFactory.create(dirA, fileName = "store.json", logger = logger)
-            val second = SecureStorageFactory.create(dirB, fileName = "store.json", logger = logger)
+            val first = SecureStorageFactory.create(dirA, Dispatchers.IO, fileName = "store.json", logger = logger)
+            val second = SecureStorageFactory.create(dirB, Dispatchers.IO, fileName = "store.json", logger = logger)
             try {
                 first.set("refresh", "first-value".toByteArray())
                 second.set("refresh", "second-value".toByteArray())

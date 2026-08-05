@@ -18,7 +18,6 @@ import com.payabli.sdk.core.network.PayabliV2Envelope
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -451,9 +450,9 @@ internal class PayabliService private constructor(
         internal fun create(
             baseUrl: String,
             auth: PayabliAuth,
+            dispatcher: CoroutineDispatcher,
             logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
-            dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
             PayabliService(
@@ -478,9 +477,9 @@ internal class PayabliService private constructor(
         internal fun createWithDecorations(
             baseUrl: String,
             decorations: List<PayabliRequestDecoration>,
+            dispatcher: CoroutineDispatcher,
             logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
-            dispatcher: CoroutineDispatcher = Dispatchers.IO,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
         ): PayabliTransport =
             PayabliService(

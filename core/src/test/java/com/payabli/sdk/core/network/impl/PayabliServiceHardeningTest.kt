@@ -7,6 +7,7 @@ import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -25,6 +26,7 @@ class PayabliServiceHardeningTest {
     ) = PayabliService.create(
         auth = testAuth(),
         baseUrl = baseUrl,
+        dispatcher = Dispatchers.IO,
         logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
         maxResponseBytes = maxResponseBytes,
     )

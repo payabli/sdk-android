@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
 import com.payabli.sdk.core.storage.impl.StoreIdentity
+import kotlinx.coroutines.CoroutineDispatcher
 import java.io.File
 
 /**
@@ -48,9 +49,10 @@ internal object SecureStorageFactory {
      */
     fun create(
         directory: File,
+        dispatcher: CoroutineDispatcher,
         fileName: String = DEFAULT_FILE_NAME,
         logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
-    ): PayabliSecureStorage = open(directory, fileName, logger).storage
+    ): PayabliSecureStorage = open(directory, dispatcher, fileName, logger).storage
 
     /**
      * The store together with the identity it was built from, for a caller that needs the identity as well.
@@ -62,6 +64,7 @@ internal object SecureStorageFactory {
      */
     fun open(
         directory: File,
+        dispatcher: CoroutineDispatcher,
         fileName: String = DEFAULT_FILE_NAME,
         logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
     ): OpenedStore {
@@ -76,6 +79,7 @@ internal object SecureStorageFactory {
                     file = file,
                     cipher = KeystoreValueCipher(aliasFor(identity), logger),
                     logger = logger,
+                    dispatcher = dispatcher,
                     identity = identity,
                 ),
             identity = identity,

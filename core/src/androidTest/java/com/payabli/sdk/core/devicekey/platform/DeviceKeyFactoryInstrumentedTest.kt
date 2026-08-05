@@ -9,6 +9,7 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.logging.impl.LogSink
 import com.payabli.sdk.core.storage.platform.SecureStorageFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -47,7 +48,10 @@ class DeviceKeyFactoryInstrumentedTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val logger = DefaultSdkLogger(LogCategory.CORE, RecordingLogSink())
 
-    /** Every alias this test caused to exist, so teardown deletes keys rather than leaving them on the device. */
+    /** What the integrating layer would choose. Named once here, since nothing below it supplies a default. */
+    private val dispatcher = Dispatchers.IO
+
+    /** Every alias this test caused to exist, so teardown deletes each one from the device's Keystore. */
     private val minted = mutableListOf<String>()
 
     @Before
@@ -67,7 +71,11 @@ class DeviceKeyFactoryInstrumentedTest {
         storeFile().delete()
     }
 
-    private suspend fun candidate(): DeviceKey = DeviceKeyFactory.candidate(context, logger).also { minted += it.keyId }
+    private suspend fun candidate(): DeviceKey =
+        DeviceKeyFactory.candidate(context, dispatcher, logger).also {
+            minted +=
+                it.keyId
+        }
 
     @Test
     fun theStoreLandsInTheNoBackupDirectoryUnderItsOwnName() =
@@ -96,13 +104,16 @@ class DeviceKeyFactoryInstrumentedTest {
     @Test
     fun aMintedCandidateIsNotYetActive() =
         runTest(timeout = TEST_TIMEOUT) {
-            assertNull("nothing is attested on a clean store", DeviceKeyFactory.active(context, logger))
+            assertNull("nothing is attested on a clean store", DeviceKeyFactory.active(context, dispatcher, logger))
 
             candidate()
 
             // Minting is not attestation. Reporting a candidate as active would sign with material the service
             // has never seen.
-            assertNull("a minted candidate is not an attested one", DeviceKeyFactory.active(context, logger))
+            assertNull(
+                "a minted candidate is not an attested one",
+                DeviceKeyFactory.active(context, dispatcher, logger),
+            )
         }
 
     /**
@@ -112,9 +123,9 @@ class DeviceKeyFactoryInstrumentedTest {
      * here sit between the suspending reads: resolving the store's canonical path, and every Keystore call,
      * generation included. On Main that is a stall for as long as a secure element takes.
      *
-     * Observed through the line `createKey` emits, because that is the one point inside the dispatched body
-     * that names itself. A named single thread makes the assertion an equality rather than a guess about
-     * which pool the work landed in.
+     * Observed through the line `createKey` emits, the one point inside the dispatched body that reports
+     * which thread it ran on. The dispatcher is a single thread with a known name, so the assertion is an
+     * equality on that name.
      */
     @Test
     fun theKeystoreWorkRunsOnTheDispatcherItWasGiven() =
@@ -141,7 +152,7 @@ class DeviceKeyFactoryInstrumentedTest {
             val executor = Executors.newSingleThreadExecutor { Thread(it, DISPATCH_THREAD) }
 
             try {
-                val key = DeviceKeyFactory.candidate(context, watching, executor.asCoroutineDispatcher())
+                val key = DeviceKeyFactory.candidate(context, executor.asCoroutineDispatcher(), watching)
                 minted += key.keyId
 
                 assertEquals(DISPATCH_THREAD, generatedOn.get())
@@ -155,8 +166,8 @@ class DeviceKeyFactoryInstrumentedTest {
         runTest(timeout = TEST_TIMEOUT) {
             val candidate = candidate()
 
-            val promoted = DeviceKeyFactory.slots(context, logger).promotePending()
-            val active = DeviceKeyFactory.active(context, logger)
+            val promoted = DeviceKeyFactory.slots(context, dispatcher, logger).promotePending()
+            val active = DeviceKeyFactory.active(context, dispatcher, logger)
 
             // The same key, not merely a key: the alias survives the round trip through the store, and the
             // Keystore entry it names is the one attestation was performed against.

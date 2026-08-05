@@ -151,8 +151,18 @@ class PayabliSessionTest {
                 val config = config(tokenProvider = provider())
 
                 // The arrangement the session replaces: each caller assembling its own auth stack.
-                val first: PayabliTransport = TransportFactory.authenticatedAgainst(server.baseUrl, config)
-                val second: PayabliTransport = TransportFactory.authenticatedAgainst(server.baseUrl, config)
+                val first: PayabliTransport =
+                    TransportFactory.authenticatedAgainst(
+                        server.baseUrl,
+                        config,
+                        Dispatchers.IO,
+                    )
+                val second: PayabliTransport =
+                    TransportFactory.authenticatedAgainst(
+                        server.baseUrl,
+                        config,
+                        Dispatchers.IO,
+                    )
 
                 completing("the first transport's request") { first.execute(ping()) }
                 completing("the second transport's request") { second.execute(ping()) }
@@ -204,7 +214,7 @@ class PayabliSessionTest {
                                 PayabliSession.initializeWith(config()) { _ ->
                                     insideFirst.complete(Unit)
                                     releaseFirst.await()
-                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                                 }
                             }
                         insideFirst.await()
@@ -212,7 +222,7 @@ class PayabliSessionTest {
                         val second =
                             async(Dispatchers.IO) {
                                 PayabliSession.initializeWith(config()) { _ ->
-                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                                 }
                             }
 
@@ -351,7 +361,7 @@ class PayabliSessionTest {
                 PayabliSession
                     .initializeWith(config()) { onAuthFailure ->
                         straggler = onAuthFailure
-                        TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                        TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                     }.getOrThrow()
 
                 straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
@@ -359,7 +369,7 @@ class PayabliSessionTest {
 
                 PayabliSession
                     .initializeWith(config(accessToken = "brokered-again")) { _ ->
-                        TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                        TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                     }.getOrThrow()
                 assertEquals(SdkState.Ready, PayabliSession.state.value)
 
@@ -397,7 +407,7 @@ class PayabliSessionTest {
                         PayabliSession
                             .initializeWith(config()) { onAuthFailure ->
                                 straggler = onAuthFailure
-                                TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                             }.getOrThrow()
                         straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
                         assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
@@ -407,7 +417,7 @@ class PayabliSessionTest {
                                 PayabliSession.initializeWith(config(accessToken = "brokered-again")) { _ ->
                                     insideBuilder.complete(Unit)
                                     releaseBuilder.await()
-                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                                 }
                             }
                         insideBuilder.await()
@@ -448,7 +458,7 @@ class PayabliSessionTest {
                                 PayabliSession.initializeWith(config()) { _ ->
                                     insideBuilder.complete(Unit)
                                     releaseBuilder.await()
-                                    TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                                    TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                                 }
                             }
                         insideBuilder.await()
@@ -484,7 +494,7 @@ class PayabliSessionTest {
                 PayabliSession
                     .initializeWith(config()) { onAuthFailure ->
                         straggler = onAuthFailure
-                        TransportFactory.authenticatedAgainst(server.baseUrl, config())
+                        TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                     }.getOrThrow()
 
                 PayabliSession.reset()
