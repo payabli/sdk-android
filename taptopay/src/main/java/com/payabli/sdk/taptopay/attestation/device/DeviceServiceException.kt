@@ -137,7 +137,10 @@ internal sealed class DeviceServiceException(
      * fault and lose the cause.
      */
     class Undecodable(
-        original: Throwable? = null,
+        // No default. Nullable because a response can be unusable without anything having thrown — an envelope
+        // that never claimed success is one — but every call site knows which case it is in, and a default
+        // would let one omit the cause by accident rather than by decision.
+        original: Throwable?,
     ) : DeviceServiceException(
             "the device service response could not be decoded",
             null,

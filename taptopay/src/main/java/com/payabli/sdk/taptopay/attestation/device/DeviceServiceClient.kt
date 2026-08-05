@@ -63,7 +63,7 @@ internal class DeviceServiceClient(
             bodySerializer = ChallengeRequest.serializer(),
             payloadSerializer = ChallengeResponse.serializer(),
             failureMapper = failureMapper,
-        ) ?: throw DeviceServiceException.Undecodable()
+        )
 
     /**
      * Registers this device against [entry] and returns the identity every later call uses.
@@ -101,7 +101,7 @@ internal class DeviceServiceClient(
             bodySerializer = RegisterRequest.serializer(),
             payloadSerializer = RegisterResponse.serializer(),
             failureMapper = failureMapper,
-        ) ?: throw DeviceServiceException.Undecodable()
+        )
 
     /**
      * Submits the attestation binding [challengeId] to this device's key.
@@ -121,30 +121,28 @@ internal class DeviceServiceClient(
         appId: String,
         attestation: String,
         failureMapper: DeviceFailureMapper = DeviceFailureMapper.None,
-    ): AttestResponse {
-        val payload =
-            post(
-                route = ROUTE_ATTEST,
-                body =
-                    AttestRequest(
-                        entry = entry,
-                        challengeId = challengeId,
-                        deviceId = identity.deviceId,
-                        keyId = identity.keyId,
-                        appId = appId,
-                        attestation = attestation,
-                        publicKey = identity.publicKey,
-                        platform = DEVICE_PLATFORM,
-                    ),
-                bodySerializer = AttestRequest.serializer(),
-                payloadSerializer = AttestResponse.serializer(),
-                failureMapper = failureMapper,
-            )
-        // An absent payload is tolerated rather than undecodable: the shipping sibling client discards this
-        // body, so a service answering with nothing but `isSuccess: true` is a shape a client has already
-        // accepted in production. Demanding fields here would refuse a success over a diagnostic.
-        return payload ?: AttestResponse(registered = null, isSandbox = null)
-    }
+    ): AttestResponse =
+        post(
+            route = ROUTE_ATTEST,
+            body =
+                AttestRequest(
+                    entry = entry,
+                    challengeId = challengeId,
+                    deviceId = identity.deviceId,
+                    keyId = identity.keyId,
+                    appId = appId,
+                    attestation = attestation,
+                    publicKey = identity.publicKey,
+                    platform = DEVICE_PLATFORM,
+                ),
+            bodySerializer = AttestRequest.serializer(),
+            payloadSerializer = AttestResponse.serializer(),
+            failureMapper = failureMapper,
+            // An absent payload is tolerated rather than undecodable: the shipping sibling client discards
+            // this body, so a service answering with nothing but `isSuccess: true` is a shape a client has
+            // already accepted in production. Demanding fields would refuse a success over a diagnostic.
+            emptyPayload = AttestResponse(registered = null, isSandbox = null),
+        )
 
     /**
      * Consumes [activationCode], moving a pending device to active.
@@ -164,24 +162,22 @@ internal class DeviceServiceClient(
         activationCode: String,
         assertion: DeviceAssertion,
         failureMapper: DeviceFailureMapper = DeviceFailureMapper.None,
-    ): ActivateResponse {
-        val payload =
-            post(
-                route = ROUTE_ACTIVATE,
-                body =
-                    ActivateRequest(
-                        entry = entry,
-                        deviceId = deviceId,
-                        activationCode = activationCode,
-                    ),
-                bodySerializer = ActivateRequest.serializer(),
-                payloadSerializer = ActivateResponse.serializer(),
-                failureMapper = failureMapper,
-                headers = assertion.asHeaders(),
-            )
-        // Tolerated for the reason given on attest: the sibling client discards this one too.
-        return payload ?: ActivateResponse(deviceId = null, status = null)
-    }
+    ): ActivateResponse =
+        post(
+            route = ROUTE_ACTIVATE,
+            body =
+                ActivateRequest(
+                    entry = entry,
+                    deviceId = deviceId,
+                    activationCode = activationCode,
+                ),
+            bodySerializer = ActivateRequest.serializer(),
+            payloadSerializer = ActivateResponse.serializer(),
+            failureMapper = failureMapper,
+            headers = assertion.asHeaders(),
+            // Tolerated for the reason given on attest: the sibling client discards this one too.
+            emptyPayload = ActivateResponse(deviceId = null, status = null),
+        )
 
     /**
      * One POST, and the whole of this class's care.
@@ -197,9 +193,14 @@ internal class DeviceServiceClient(
      *    is exactly how a refusal reads as a success.
      * 3. Only then the payload.
      *
-     * Returns null when the response was a success carrying no `responseData`, leaving each route to say
-     * whether that is usable: `/challenge` and `/register` need their fields and treat it as undecodable,
-     * while `/attest` and `/activate` substitute an empty one because reaching them at all is the answer.
+     * Whether an absent `responseData` is usable is the route's business, and it is settled **here** rather
+     * than by the caller: [emptyPayload] is what a route substitutes when reaching the response at all is the
+     * answer, and a route that leaves it null is saying it cannot proceed without fields. `/attest` and
+     * `/activate` supply one; `/challenge` and `/register` do not.
+     *
+     * That policy has to live inside this function, not above it, because the success record is written here.
+     * A caller rejecting a null payload afterwards would throw with `device_call_succeeded` already in the log
+     * and no failure record beside it, and an incident would read as a success the caller never received.
      */
     private suspend fun <B, T> post(
         route: String,
@@ -208,7 +209,8 @@ internal class DeviceServiceClient(
         payloadSerializer: KSerializer<T>,
         failureMapper: DeviceFailureMapper,
         headers: Map<String, String> = emptyMap(),
-    ): T? {
+        emptyPayload: T? = null,
+    ): T {
         // route and path are the same string for all four: none of them embeds an identifier. Passed anyway,
         // because `route` is the only form the transport may log and defaulting it to null would cost every
         // record in this family the name of the endpoint it came from.
@@ -249,9 +251,18 @@ internal class DeviceServiceClient(
         // `/challenge` and `/register` that surfaces anyway, because their required fields are missing; on
         // `/attest` and `/activate` it would not, because both substitute an empty ack for an absent payload,
         // and the call would report success for a response the service never sent.
-        val claimed = runCatching { PayabliJson.format.decodeFromString(PayabliEnvelope.Status.serializer(), body) }
-        if (claimed.getOrNull()?.isSuccess != true) {
-            throw undecodable(route, response.statusCode, claimed.exceptionOrNull())
+        val claimed =
+            try {
+                PayabliJson.format.decodeFromString(PayabliEnvelope.Status.serializer(), body)
+            } catch (failure: SerializationException) {
+                // Not `runCatching`, which catches Throwable: an OutOfMemoryError raised mid-decode would come
+                // back as "the service sent a bad response", blaming the input for a process-fatal condition.
+                // Same boundary as the payload decode below, as `:core` draws it, and as
+                // `AttestationChallenge.classic` spells out for exactly this trap.
+                throw undecodable(route, response.statusCode, failure)
+            }
+        if (claimed.isSuccess != true) {
+            throw undecodable(route, response.statusCode, null)
         }
         val payload =
             try {
@@ -264,12 +275,13 @@ internal class DeviceServiceClient(
                 // from inside a serializer, which is the reason `:core` narrows the same catch.
                 throw undecodable(route, response.statusCode, failure)
             }
+        val resolved = payload ?: emptyPayload ?: throw undecodable(route, response.statusCode, null)
         logger.debug(
             LogField.safe("event", "device_call_succeeded"),
             LogField.safe("route", route),
             LogField.safe("statusCode", response.statusCode),
         ) { "the device service call succeeded" }
-        return payload
+        return resolved
     }
 
     /**

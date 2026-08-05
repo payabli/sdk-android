@@ -323,6 +323,42 @@ class DeviceFailureMappingTest {
         }
 
     @Test
+    fun `a call that fails never records a success first`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // `/challenge` cannot proceed without its fields, so this body is a failure for it. The success
+            // record used to be written before the caller discovered that, leaving a log that said the call
+            // succeeded and no failure record anywhere beside it — an incident reading as a success the caller
+            // never received. Whether an absent payload is usable is now settled before anything is recorded.
+            val failure = challengeAgainst("""{"responseText":"Success","isSuccess":true}""")
+
+            assertTrue(failure is DeviceServiceException.Undecodable)
+            val record = logger.records.single()
+            assertEquals(LogLevel.WARN, record.level)
+            assertFalse(record.message.contains("succeeded"))
+        }
+
+    @Test
+    fun `a JVM error from the transport reaches the caller unchanged and records nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fatal = OutOfMemoryError("simulated")
+            val transport = FakeDeviceTransport { throw fatal }
+
+            val thrown =
+                runCatching { DeviceServiceClient(transport, logger).challenge(ENTRY) }.exceptionOrNull()
+
+            assertSame(fatal, thrown)
+            assertTrue(logger.records.isEmpty())
+        }
+
+    // The matching guarantee one layer in — that neither *decode* converts a JVM Error into `Undecodable` —
+    // has no test, and the honest reason is that it has no injection point: `Status.serializer()` and
+    // `PayabliJson.format` are both fixed, and deeply nested JSON decoded into a flat target fails fast with a
+    // SerializationException rather than recursing into a StackOverflowError. It rests on the catch clauses
+    // naming `SerializationException` instead of `Throwable`, which is where a reviewer has to see it. That is
+    // how `:core` and `AttestationChallenge.classic` hold the same rule. A sabotage run flags this: reverting
+    // either catch to `Throwable` turns nothing red.
+
+    @Test
     fun `nothing is retried, on any outcome`() =
         runTest(timeout = TEST_TIMEOUT) {
             val declining = FakeDeviceTransport.answering(declineEnvelope(500, "unavailable"))
