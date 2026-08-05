@@ -1,5 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
+    // The device endpoints' wire types are @Serializable. The runtime arrives on the compile classpath
+    // through :core's api dependency, but the compiler plugin is per module and is what generates the
+    // serializers, so without this line those types do not compile.
+    alias(libs.plugins.kotlin.serialization)
     id("payabli.publish")
     id("payabli.quality")
 }
