@@ -100,7 +100,17 @@ internal sealed class DeviceServiceException(
         reason: String,
     ) : DeviceServiceException("the device service found nothing for this request", resultCode, reason)
 
-    /** The service failed internally. The only case here a caller may reasonably retry. */
+    /**
+     * The service failed internally.
+     *
+     * The only case here worth another attempt, and **not by repeating the call that failed.** A 5xx says the
+     * service broke somewhere in handling the request, which can be after it has already changed state: a
+     * `/attest` that read and deleted its challenge before failing leaves that challenge spent, and an
+     * `/activate` can fail having already counted the attempt. Repeating either call then walks into
+     * `BadRequest` for a consumed challenge or spends a second of five attempts on a request that never had a
+     * chance. The unit to repeat is the whole cold sequence, starting from a new `/challenge`, which is the
+     * same reason nothing in this family is wrapped in `Retry`.
+     */
     class ServerFailure(
         resultCode: Int?,
         reason: String,
