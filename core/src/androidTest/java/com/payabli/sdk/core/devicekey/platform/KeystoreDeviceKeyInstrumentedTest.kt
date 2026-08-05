@@ -9,8 +9,11 @@ import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.devicekey.impl.DeviceKeyAliases
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
 import com.payabli.sdk.core.logging.LogCategory
+import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.RecordingLogSink
+import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
+import com.payabli.sdk.core.logging.impl.LogSink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -31,6 +34,7 @@ import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 private const val PROVIDER = "AndroidKeyStore"
@@ -64,7 +68,10 @@ class KeystoreDeviceKeyInstrumentedTest {
 
     private fun keyStore(): KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
 
-    private fun key(beforeKeyGeneration: () -> Unit = {}) = KeystoreDeviceKey(keyId, logger, beforeKeyGeneration)
+    private fun key(
+        beforeKeyGeneration: () -> Unit = {},
+        logger: SdkLogger = this.logger,
+    ) = KeystoreDeviceKey(keyId, logger, beforeKeyGeneration)
 
     private fun provisioned() = key().apply { ensureKey(mayCreate = true) }
 
@@ -177,12 +184,43 @@ class KeystoreDeviceKeyInstrumentedTest {
             assertTrue("the replacement must still be usable", key().sign("payload".toByteArray()).isNotEmpty())
         }
 
+    /**
+     * Two callers over one alias must generate exactly one key.
+     *
+     * **Generations are counted, not inferred from the survivor.** Whatever the second caller does, the alias
+     * ends up holding one key with a 65-byte point, so inspecting the alias afterwards passes with the monitor
+     * removed. `createKey` logs once per generation, which is the only place the second one is visible.
+     *
+     * The counter is its own sink because two racing generations would write it from two threads, and the
+     * shared recording sink appends to a plain list: a lost update there reports one generation and turns a
+     * broken monitor green. The storage cipher's equivalent test counts the same way.
+     *
+     * The rendezvous is what makes them collide. It sits after the unsynchronized presence check and before the
+     * guarded creation, so both callers are provably inside the window; without it the window is a few
+     * microseconds and two coroutines launched together almost never meet in it.
+     */
     @Test
     fun twoCallersOverOneAliasGenerateExactlyOneKey() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Deterministic rather than hopeful: the window between the presence check and the generation is a
-            // few microseconds, so two coroutines launched together almost never collide and the test passes
-            // with the monitor removed. The rendezvous makes them collide.
+            val generations = AtomicInteger(0)
+            val countingLogger =
+                DefaultSdkLogger(
+                    LogCategory.CORE,
+                    object : LogSink {
+                        override fun isLoggable(
+                            level: LogLevel,
+                            tag: String,
+                        ): Boolean = true
+
+                        override fun write(
+                            level: LogLevel,
+                            tag: String,
+                            message: String,
+                        ) {
+                            if ("device key created" in message) generations.incrementAndGet()
+                        }
+                    },
+                )
             val barrier = CyclicBarrier(2)
             val rendezvous = {
                 barrier.await(TEST_TIMEOUT.inWholeSeconds, TimeUnit.SECONDS)
@@ -190,12 +228,16 @@ class KeystoreDeviceKeyInstrumentedTest {
             }
 
             listOf(
-                async(Dispatchers.IO) { key(rendezvous).ensureKey(mayCreate = true) },
-                async(Dispatchers.IO) { key(rendezvous).ensureKey(mayCreate = true) },
+                async(Dispatchers.IO) { key(rendezvous, countingLogger).ensureKey(mayCreate = true) },
+                async(Dispatchers.IO) { key(rendezvous, countingLogger).ensureKey(mayCreate = true) },
             ).awaitAll()
 
-            // One key, and it still works. Two generations would leave the second in place and any signature
-            // already made under the first unverifiable against the point the service stored.
+            assertEquals(
+                "the key was generated more than once for one alias, so the service holds a point that is gone",
+                1,
+                generations.get(),
+            )
+            // The consequence still holds, which is why generating once matters.
             assertTrue(keyStore().containsAlias(keyId))
             assertEquals(65, key().publicKeyPoint().size)
         }

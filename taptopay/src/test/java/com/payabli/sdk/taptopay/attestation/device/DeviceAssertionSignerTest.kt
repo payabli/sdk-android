@@ -116,14 +116,17 @@ class DeviceAssertionSignerTest {
     }
 
     @Test
-    fun `two assertions from one clock both verify`() {
+    fun `two assertions from one clock are each signed and each verify`() {
         val signer = signerAt(1785931200)
 
-        // ECDSA is randomised and an assertion is minted per call, so this is the ordinary path.
         val first = signer.sign(DEVICE_ID)
         val second = signer.sign(DEVICE_ID)
 
-        assertNotEquals(first.assertion, second.assertion)
+        // One signature per call, which is what the 120-second window needs and what a cached assertion would
+        // break. Asserted on the key the signer drove, not on the two signatures differing: whether one key
+        // returns two different signatures over identical input is the provider's nonce strategy, and a
+        // deterministic ECDSA provider would fail this while the signer stayed correct.
+        assertEquals(2, key.signed.size)
         assertTrue(verifies(first, sha256(first.timestamp)))
         assertTrue(verifies(second, sha256(second.timestamp)))
     }

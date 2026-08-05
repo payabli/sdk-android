@@ -7,6 +7,8 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.storage.platform.SecureStorageFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Builds the shipping [DeviceKey]: an EC P-256 keypair in the Android Keystore, named by a slot store.
@@ -19,6 +21,11 @@ import com.payabli.sdk.core.storage.platform.SecureStorageFactory
  * remove it, and the cost of getting it wrong is silent: two composition points picking different directories
  * get two slot stores, each with its own Keystore alias, each minting its own device key, and the second
  * strands the first. One answer per app, with no way to ask for another.
+ *
+ * **Both entry points are safe to call from Main.** Neither the storage layer's own dispatch nor a suspend
+ * signature covers what happens here: resolving the store's canonical path, and every Keystore call, are
+ * blocking, and they run between the suspending reads rather than inside them. Generating a key in a secure
+ * element takes tens of milliseconds, so the whole body is dispatched.
  */
 internal object DeviceKeyFactory {
     /**
@@ -40,10 +47,11 @@ internal object DeviceKeyFactory {
     suspend fun candidate(
         context: Context,
         logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
-    ): DeviceKey {
-        val alias = slots(context, logger).pendingOrNew()
-        return KeystoreDeviceKey(alias, logger).apply { ensureKey(mayCreate = true) }
-    }
+    ): DeviceKey =
+        withContext(Dispatchers.IO) {
+            val alias = slots(context, logger).pendingOrNew()
+            KeystoreDeviceKey(alias, logger).apply { ensureKey(mayCreate = true) }
+        }
 
     /**
      * The attested key, or null when no key has been attested yet.
@@ -54,10 +62,11 @@ internal object DeviceKeyFactory {
     suspend fun active(
         context: Context,
         logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
-    ): DeviceKey? {
-        val alias = slots(context, logger).active() ?: return null
-        return KeystoreDeviceKey(alias, logger).apply { ensureKey(mayCreate = false) }
-    }
+    ): DeviceKey? =
+        withContext(Dispatchers.IO) {
+            val alias = slots(context, logger).active() ?: return@withContext null
+            KeystoreDeviceKey(alias, logger).apply { ensureKey(mayCreate = false) }
+        }
 
     /**
      * The slots over this app's device-key store.
@@ -67,6 +76,8 @@ internal object DeviceKeyFactory {
      *
      * The identity is taken from the store that was just opened rather than resolved again, so the Keystore
      * alias for the store, its file lock and the slot lock cannot disagree about which store they mean.
+     *
+     * Resolving the canonical path touches the filesystem, so callers dispatch this off Main.
      */
     internal fun slots(
         context: Context,
