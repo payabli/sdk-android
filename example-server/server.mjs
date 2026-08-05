@@ -126,14 +126,30 @@ async function exchangeCredentials(options = {}, { forceRefresh = false } = {}) 
     return { token: cached.token, upstreamStatus: 200 };
   }
 
+  // redirect: "manual" so a 3xx comes back as a response instead of being followed. fetch follows
+  // redirects by default, and a 307 or 308 replays the method and body, so an allowed host answering
+  // with a Location on another origin would hand the credential to that origin. The endpoint check
+  // above cannot see that: it runs before the request, and a redirect target only exists afterwards.
+  // "manual" rather than "error" because it keeps the target readable, and a bare fetch rejection is
+  // reported as "fetch failed" with nothing to distinguish it from a host being down.
   const upstream = await fetch(endpoint, {
     method: "POST",
+    redirect: "manual",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json"
     },
     body: JSON.stringify({ clientId, clientSecret })
   });
+
+  if (upstream.status >= 300 && upstream.status < 400) {
+    throw new LocalTokenServerError(
+      502,
+      `Token exchange to ${endpoint.origin} answered HTTP ${upstream.status} redirecting to ` +
+        `${upstream.headers.get("location") || "an unnamed target"}. The redirect was not followed, ` +
+        "because the credential would be sent to the target."
+    );
+  }
 
   const text = await upstream.text();
   let payload;
