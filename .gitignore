@@ -50,3 +50,10 @@ proguard/
 
 # Git worktrees
 .worktrees/
+
+# Local credentials for the example token server. Repeated at the repository root rather than left to
+# example-server/.gitignore alone: this repository is public, and a nested ignore stops protecting a file
+# the moment the directory is copied or moved. The template stays tracked.
+.env
+.env.*
+!.env.example
