@@ -314,11 +314,22 @@ async function readJsonBody(req) {
     return {};
   }
 
+  let parsed;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
     throw new LocalTokenServerError(400, "Request body must be valid JSON.");
   }
+
+  // Callers read this as an options bag, so anything else is refused here rather than reaching a
+  // property access. null is the case that matters: it is valid JSON, it is not caught by a default
+  // parameter, and reading a property of it throws a TypeError that surfaces as a 500. Arrays and
+  // primitives were accepted instead, and silently behaved as if no options had been sent.
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new LocalTokenServerError(400, "Request body must be a JSON object.");
+  }
+
+  return parsed;
 }
 
 // A malformed numeric setting stops the server at startup instead of quietly changing behaviour.
