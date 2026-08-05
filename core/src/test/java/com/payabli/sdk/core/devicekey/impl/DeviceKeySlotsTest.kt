@@ -12,6 +12,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -40,9 +41,6 @@ class DeviceKeySlotsTest {
     private val storage = InMemorySecureStorage()
     private val subject = DeviceKeySlots(storage, IDENTITY)
 
-    private val first = DeviceKeyAliases.newAlias()
-    private val second = DeviceKeyAliases.newAlias()
-
     @Test
     fun `both slots start empty`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -51,56 +49,70 @@ class DeviceKeySlotsTest {
         }
 
     @Test
-    fun `a candidate becomes pending and is not yet active`() =
+    fun `a minted alias becomes pending and is not yet active`() =
         runTest(timeout = TEST_TIMEOUT) {
-            assertEquals(first, subject.pendingOrNew(first))
+            val minted = subject.pendingOrNew()
 
             // The whole point of the second slot: attesting a key must not make it the signing key until the
             // service has accepted it.
-            assertEquals(first, subject.pending())
+            assertEquals(minted, subject.pending())
             assertNull(subject.active())
         }
 
     @Test
-    fun `a second candidate does not displace the key already awaiting attestation`() =
+    fun `the minted alias survives a read, so the key it names can be promoted`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.pendingOrNew(first)
+            val minted = subject.pendingOrNew()
 
-            // Returning `second` would leave `first`'s key in the store with nothing naming it, once per
-            // retry. Reuse is what makes a retry attest the key it already minted.
-            assertEquals(first, subject.pendingOrNew(second))
-            assertEquals(first, subject.pending())
+            // Every read drops a name from outside this namespace. An alias handed out here that a read then
+            // dropped would name a key nothing could promote and nothing could delete.
+            assertTrue(
+                "the minted alias is outside the namespace its own reads accept",
+                DeviceKeyAliases.isDeviceKeyAlias(minted),
+            )
+            assertEquals(minted, subject.pending())
+        }
+
+    @Test
+    fun `asking twice does not displace the key already awaiting attestation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val minted = subject.pendingOrNew()
+
+            // Minting a second would leave the first key in the store with nothing naming it, once per retry.
+            // Reuse is what makes a retry attest the key it already minted.
+            assertEquals(minted, subject.pendingOrNew())
+            assertEquals(minted, subject.pending())
         }
 
     @Test
     fun `promotion activates the pending alias and stops reporting it as pending`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.pendingOrNew(first)
+            val minted = subject.pendingOrNew()
 
-            assertEquals(first, subject.promotePending())
+            assertEquals(minted, subject.promotePending())
 
-            assertEquals(first, subject.active())
+            assertEquals(minted, subject.active())
             assertNull("an attested key is no longer awaiting attestation", subject.pending())
         }
 
     @Test
     fun `the displaced name is readable before promotion, which is where a caller takes it`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.pendingOrNew(first)
+            val firstAlias = subject.pendingOrNew()
             subject.promotePending()
-            subject.pendingOrNew(second)
+            val secondAlias = subject.pendingOrNew()
 
             // Promotion does not hand back what it displaced, because a return value is lost whenever the
             // call does not complete. A caller that means to delete this key reads it here first.
-            assertEquals(first, subject.active())
-            assertEquals(second, subject.promotePending())
-            assertEquals(second, subject.active())
+            assertEquals(firstAlias, subject.active())
+            assertEquals(secondAlias, subject.promotePending())
+            assertEquals(secondAlias, subject.active())
         }
 
     @Test
     fun `promotion leaves the pending name in place rather than taking a second write`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.pendingOrNew(first)
+            subject.pendingOrNew()
             subject.promotePending()
 
             // The design this rests on. Clearing the name would need a second write, and a failure between
@@ -114,25 +126,25 @@ class DeviceKeySlotsTest {
     @Test
     fun `promoting with nothing pending reports nothing rather than failing`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.pendingOrNew(first)
+            val minted = subject.pendingOrNew()
             subject.promotePending()
 
             // A caller promoting twice is reacting to an acceptance that was already recorded.
             assertNull(subject.promotePending())
-            assertEquals(first, subject.active())
+            assertEquals(minted, subject.active())
         }
 
     @Test
     fun `a candidate offered after promotion becomes pending rather than being lost`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.pendingOrNew(first)
+            val minted = subject.pendingOrNew()
             subject.promotePending()
 
             // A rotation started right after an acceptance. Were promotion to clear the pending name, this
             // candidate could be erased by that clear and its key stranded.
-            assertEquals(second, subject.pendingOrNew(second))
-            assertEquals(second, subject.pending())
-            assertEquals("the active key keeps signing until the new one is attested", first, subject.active())
+            val rotated = subject.pendingOrNew()
+            assertEquals(rotated, subject.pending())
+            assertEquals("the active key keeps signing until the new one is attested", minted, subject.active())
         }
 
     @Test
@@ -162,10 +174,10 @@ class DeviceKeySlotsTest {
                 val opener = DeviceKeySlots(gated, IDENTITY)
                 val reopener = DeviceKeySlots(storage, IDENTITY)
 
-                val first = async(Dispatchers.IO) { opener.pendingOrNew(this@DeviceKeySlotsTest.first) }
+                val first = async(Dispatchers.IO) { opener.pendingOrNew() }
                 // Held inside the first caller's write, which is the window a second caller must not enter.
                 gated.insideWrite.await()
-                val second = async(Dispatchers.IO) { reopener.pendingOrNew(this@DeviceKeySlotsTest.second) }
+                val second = async(Dispatchers.IO) { reopener.pendingOrNew() }
 
                 assertNull(
                     "the second caller entered the transition while the first was inside it",
@@ -181,9 +193,9 @@ class DeviceKeySlotsTest {
     @Test
     fun `discarding drops both names`() =
         runTest(timeout = TEST_TIMEOUT) {
-            subject.pendingOrNew(first)
+            val firstAlias = subject.pendingOrNew()
             subject.promotePending()
-            subject.pendingOrNew(second)
+            val secondAlias = subject.pendingOrNew()
 
             subject.discard()
 

@@ -51,19 +51,24 @@ internal class DeviceKeySlots(
     suspend fun pending(): String? = read(KEY_PENDING)?.takeIf { it != active() }
 
     /**
-     * The alias to mint a key under: the one already awaiting attestation if there is one, otherwise
-     * [candidate], which becomes pending.
+     * The alias to mint a key under: the one already awaiting attestation, or a fresh one, which becomes
+     * pending.
      *
      * Reuse is why a caller asks here instead of storing a name itself. A retry before attestation gets the
      * alias it used last time, so it attests the key it already minted. Taking a new name on each attempt
      * would leave the previous key in the store unnamed, one per attempt, which is the accumulation the second
      * slot exists to prevent.
+     *
+     * The alias is minted here, so no caller can supply one. Every read drops a name from outside this
+     * namespace, so a name that arrived from anywhere else would be handed back as the alias to mint under
+     * and then vanish from [pending], leaving that key unnamed and unpromotable.
      */
-    suspend fun pendingOrNew(candidate: String): String =
+    suspend fun pendingOrNew(): String =
         transition {
             pending()?.let { return@transition it }
-            storage.set(KEY_PENDING, candidate.toByteArray(Charsets.UTF_8))
-            candidate
+            val minted = DeviceKeyAliases.newAlias()
+            storage.set(KEY_PENDING, minted.toByteArray(Charsets.UTF_8))
+            minted
         }
 
     /**
