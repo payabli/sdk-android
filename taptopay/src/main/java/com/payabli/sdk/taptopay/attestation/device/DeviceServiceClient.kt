@@ -12,6 +12,7 @@ import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.taptopay.attestation.AttestationToken
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 
@@ -114,10 +115,15 @@ internal class DeviceServiceClient(
     /**
      * Submits the attestation binding [challengeId] to this device's key.
      *
-     * [attestation] is the encoded integrity token, not the token itself
-     * ([DeviceAttestationBinding.attestationField]). [DeviceIdentity.publicKey] is required on this platform
-     * even though the server's own shape calls it optional: the integrity token does not embed the key, so
-     * without it the server has nothing to verify a later assertion against.
+     * [token] is the integrity token as the attestor produced it. The encoding the wire field needs is applied
+     * here rather than by the caller, because a `String` parameter cannot tell the compact token from its
+     * encoded form: passing the raw one compiles, and the service consumes the single-use challenge in its
+     * prerequisite step before the attestation is decoded, so it answers "Attestation is not valid base64"
+     * with the challenge already spent and the whole sequence needing to restart.
+     *
+     * [DeviceIdentity.publicKey] is required on this platform even though the server's own shape calls it
+     * optional: the integrity token does not embed the key, so without it the server has nothing to verify a
+     * later assertion against.
      *
      * The response body is returned for diagnostics and carries nothing to branch on. Reaching it is the
      * success signal.
@@ -127,7 +133,7 @@ internal class DeviceServiceClient(
         challengeId: String,
         identity: DeviceIdentity,
         appId: String,
-        attestation: String,
+        token: AttestationToken,
         failureMapper: DeviceFailureMapper = DeviceFailureMapper.None,
     ): AttestResponse =
         post(
@@ -139,7 +145,7 @@ internal class DeviceServiceClient(
                     deviceId = identity.deviceId,
                     keyId = identity.keyId,
                     appId = appId,
-                    attestation = attestation,
+                    attestation = DeviceAttestationBinding.attestationField(token),
                     publicKey = identity.publicKey,
                     platform = DEVICE_PLATFORM,
                 ),

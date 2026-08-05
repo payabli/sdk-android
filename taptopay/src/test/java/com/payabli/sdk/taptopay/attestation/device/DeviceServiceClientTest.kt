@@ -4,6 +4,7 @@ import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,7 +33,10 @@ private const val KEY_ID = "key-id-value"
 private const val DEVICE_ID = "device-id-value"
 private const val APP_ID = "com.partner.app"
 private const val CHALLENGE_ID = "challenge-id-value"
-private const val ATTESTATION = "attestation-value"
+private const val TOKEN = "header.payload.signature"
+
+/** What TOKEN must look like on the wire: standard base64 of its UTF-8 bytes, computed independently. */
+private const val ENCODED_TOKEN = "aGVhZGVyLnBheWxvYWQuc2lnbmF0dXJl"
 private const val PUBLIC_KEY = "public-key-value"
 
 private fun identity() = DeviceIdentity(deviceId = DEVICE_ID, keyId = KEY_ID, publicKey = PUBLIC_KEY)
@@ -106,7 +111,7 @@ class DeviceServiceClientTest {
 
             client.challenge(ENTRY)
             client.register(ENTRY, HARDWARE_ID, KEY_ID, null, null, null)
-            client.attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, ATTESTATION)
+            client.attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, AttestationToken(TOKEN))
             client.activate(ENTRY, DEVICE_ID, "123456", assertion())
 
             // None of the four embeds an identifier, so template and path are the same string. Asserted rather
@@ -194,7 +199,7 @@ class DeviceServiceClientTest {
                 challengeId = CHALLENGE_ID,
                 identity = identity(),
                 appId = APP_ID,
-                attestation = ATTESTATION,
+                token = AttestationToken(TOKEN),
             )
 
             val body = transport.bodyJson()
@@ -211,7 +216,10 @@ class DeviceServiceClientTest {
             assertEquals(DEVICE_ID, body.text("deviceId"))
             assertEquals(KEY_ID, body.text("keyId"))
             assertEquals(APP_ID, body.text("appId"))
-            assertEquals(ATTESTATION, body.text("attestation"))
+            // The encoded form, not the token: the client owns the encoding so a caller cannot send the
+            // raw token, which the service refuses only after it has consumed the challenge.
+            assertEquals(ENCODED_TOKEN, body.text("attestation"))
+            assertNotEquals(TOKEN, body.text("attestation"))
             assertEquals(PUBLIC_KEY, body.text("publicKey"))
         }
 
@@ -225,7 +233,7 @@ class DeviceServiceClientTest {
             // but `isSuccess: true` is a shape a client has already accepted in production. Reaching the
             // response at all is the success signal; there is nothing in it to act on.
             val attested =
-                clientFor(attesting).attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, ATTESTATION)
+                clientFor(attesting).attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, AttestationToken(TOKEN))
             val activated = clientFor(activating).activate(ENTRY, DEVICE_ID, "123456", assertion())
 
             assertNull(attested.registered)

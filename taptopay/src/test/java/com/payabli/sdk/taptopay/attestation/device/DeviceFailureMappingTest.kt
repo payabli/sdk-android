@@ -6,6 +6,7 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -269,7 +270,7 @@ class DeviceFailureMappingTest {
 
             val attested =
                 runCatching {
-                    client.attest(ENTRY, "c", probeIdentity(), "com.payabli.example", "a")
+                    client.attest(ENTRY, "c", probeIdentity(), "com.payabli.example", AttestationToken("a.b.c"))
                 }.exceptionOrNull()
             val activated =
                 runCatching {
