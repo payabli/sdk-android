@@ -133,7 +133,8 @@ internal class AttestRequest(
      * the iOS `TEAM_ID.BUNDLE_ID` shape before the request reaches its own Android branch, and a package name
      * cannot match that, so the call comes back a validation error naming `appId`. It is sent correctly here
      * rather than worked around, because the Android branch ignores the field entirely and the fix belongs on
-     * the service: PLA-2354. Expect that failure until it lands, and do not read it as a defect in this client.
+     * the service. Expect that failure until the service changes, and do not read it as a defect in this
+     * client.
      */
     val appId: String,
     /** The integrity token, base64-encoded. See [DeviceAttestationBinding.attestationField]. */
