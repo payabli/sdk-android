@@ -53,7 +53,8 @@ is wrong:
 | Caller | Address |
 |---|---|
 | The app, on an emulator | `10.0.2.2` |
-| The app, on a wired phone | the development machine's LAN IP |
+| The app, on a phone with `adb reverse` | `127.0.0.1` |
+| The app, on a phone with no adb connection | the development machine's LAN IP |
 | `curl` or a shell, on the development machine | `127.0.0.1` |
 
 The device rows are not alternative spellings of `127.0.0.1`. In Android's own
@@ -62,7 +63,7 @@ is a "special alias to your host loopback interface (127.0.0.1 on your
 development machine)". From inside an emulator, `127.0.0.1` reaches the emulator
 itself, so a server on the development machine never sees the request.
 
-Every URL below is written for one of those three callers, and says which.
+Every URL below is written for one of those callers, and says which.
 
 For the app on an emulator:
 
@@ -70,11 +71,10 @@ For the app on an emulator:
 http://10.0.2.2:8787/payabli/access-token
 ```
 
-The server keeps its `127.0.0.1` bind either way. `10.0.2.2` reaches a process
-bound to the host's loopback without the server listening on any other
-interface, so an emulator needs no `PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0`. A
-wired phone does, because it is a separate machine on the network; see Physical
-Device Notes.
+The server keeps its `127.0.0.1` bind. `10.0.2.2` reaches a process bound to the
+host's loopback without the server listening on any other interface, so an
+emulator needs no `PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0`. A phone does not
+need one either, as long as adb is connected; see Physical Device Notes.
 
 ## Permitting cleartext to the server
 
@@ -92,9 +92,15 @@ can carry it, and to the single address rather than a blanket
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
     </domain-config>
 </network-security-config>
 ```
+
+Both addresses, because the permission is keyed on the address the app dials and
+that differs by how the device reaches the server: `10.0.2.2` from an emulator,
+`127.0.0.1` from a phone using `adb reverse`. A phone with no adb connection
+needs its LAN address added here as well.
 
 Reference it from a debug manifest at `example/src/debug/AndroidManifest.xml`, which
 the build merges into the debug variant only:
@@ -234,25 +240,48 @@ If `responseTokenField` is blank, the server tries `access_token`,
 
 ## Physical Device Notes
 
-Neither device address above applies to a wired phone. `127.0.0.1` points at the
-phone itself, and `10.0.2.2` is an emulator alias with no meaning on real
-hardware. Use the development machine's LAN IP:
+`10.0.2.2` is an emulator alias and means nothing on real hardware, and a phone
+dialing `127.0.0.1` reaches itself. The fix is to give the phone a `127.0.0.1`
+that leads back to the development machine, which is what `adb reverse` does:
 
-```text
-http://<machine-lan-ip>:8787/payabli/access-token
+```bash
+adb reverse tcp:8787 tcp:8787
 ```
 
-The server has to listen beyond loopback to be reachable, so bind to all
-interfaces while testing:
+The app then uses the same address a shell on the development machine does:
+
+```text
+http://127.0.0.1:8787/payabli/access-token
+```
+
+The server keeps its loopback bind, so nothing is exposed to the network. The
+forward lasts as long as the adb connection and is dropped by
+`adb reverse --remove tcp:8787`. With more than one device attached, name the
+target with `-s <serial>`, since a bare `adb reverse` refuses to guess.
+
+Prefer this to a wide bind. Nothing on these routes authenticates a caller:
+`/payabli/exchange-token` returns an access token to anyone who asks, and
+`/payabli/access-token` does the same. Binding to `0.0.0.0` publishes both to
+every host on the network, which is the exposure the loopback default exists to
+prevent.
+
+### When adb forwarding is not available
+
+For a device that cannot use adb, bind beyond loopback and dial the development
+machine's LAN address:
 
 ```bash
 PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0 node server.mjs
 ```
 
-Use this only on a trusted network, stop the process when finished, and prefer
-short-lived sandbox credentials. The debug network security config also needs
-that LAN address alongside `10.0.2.2`, since the cleartext permission is keyed
-on the address the app dials.
+```text
+http://<machine-lan-ip>:8787/payabli/access-token
+```
+
+Do this only on a trusted network, stop the process when finished, and prefer
+short-lived sandbox credentials. Add that LAN address to the debug network
+security config too, since the cleartext permission is keyed on the address the
+app dials.
 
 Browser CORS responses are restricted to localhost origins by default. The
 sample's requests are native and do not need CORS.
