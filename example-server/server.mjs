@@ -12,8 +12,8 @@ const bindHost = stringValue(process.env.PAYABLI_LOCAL_TOKEN_SERVER_HOST) || "12
 const defaultApiBaseUrl = process.env.PAYABLI_API_BASE_URL || "https://api-sandbox.payabli.com/api";
 const defaultTokenPath = process.env.PAYABLI_TOKEN_PATH || "/v2/token/serverside";
 const responseTokenField = (process.env.PAYABLI_RESPONSE_TOKEN_FIELD || "").trim();
-const cacheTtlSeconds = Number.parseInt(process.env.PAYABLI_TOKEN_CACHE_TTL_SECONDS || "300", 10);
-const maxRequestBodyBytes = Number.parseInt(process.env.PAYABLI_MAX_REQUEST_BODY_BYTES || "32768", 10);
+const cacheTtlSeconds = integerSetting("PAYABLI_TOKEN_CACHE_TTL_SECONDS", 300);
+const maxRequestBodyBytes = integerSetting("PAYABLI_MAX_REQUEST_BODY_BYTES", 32768);
 const allowedApiHosts = parseCsvSet(
   process.env.PAYABLI_ALLOWED_API_HOSTS ||
     "api-sandbox.payabli.com,api-qa.payabli.com,api.payabli.com"
@@ -319,6 +319,22 @@ async function readJsonBody(req) {
   } catch {
     throw new LocalTokenServerError(400, "Request body must be valid JSON.");
   }
+}
+
+// A malformed numeric setting stops the server at startup instead of quietly changing behaviour.
+// parseInt answers NaN for a non-numeric value, and NaN loses every comparison it takes part in, so a
+// size limit of NaN leaves `totalBytes > limit` false for a body of any size and the guard never fires.
+function integerSetting(name, fallback) {
+  const raw = (process.env[name] || "").trim();
+  if (!raw) {
+    return fallback;
+  }
+
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`${name} must be a non-negative integer. Received: ${JSON.stringify(raw)}`);
+  }
+
+  return Number.parseInt(raw, 10);
 }
 
 function parseCsvSet(value) {
