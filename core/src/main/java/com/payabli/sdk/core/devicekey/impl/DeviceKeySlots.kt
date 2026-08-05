@@ -1,6 +1,8 @@
 package com.payabli.sdk.core.devicekey.impl
 
 import com.payabli.sdk.core.storage.PayabliSecureStorage
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Which alias is the attested key and which is awaiting attestation.
@@ -40,11 +42,12 @@ internal class DeviceKeySlots(
      * Taking a new name on each attempt would leave the previous key in the store unnamed, one per attempt,
      * which is the accumulation the second slot exists to prevent.
      */
-    suspend fun pendingOrNew(candidate: String): String {
-        pending()?.let { return it }
-        storage.set(KEY_PENDING, candidate.toByteArray(Charsets.UTF_8))
-        return candidate
-    }
+    suspend fun pendingOrNew(candidate: String): String =
+        transition {
+            pending()?.let { return@transition it }
+            storage.set(KEY_PENDING, candidate.toByteArray(Charsets.UTF_8))
+            candidate
+        }
 
     /**
      * Makes the pending alias the active one, reporting what it displaced so the caller can discard that key.
@@ -57,20 +60,37 @@ internal class DeviceKeySlots(
      * replaced. A candidate installed in the same window would be erased by the clear for the same reason.
      * Nothing needs clearing, because a pending name equal to active is not pending.
      */
-    suspend fun promotePending(): Promotion? {
-        val replaced = active()
-        val promoted = read(KEY_PENDING)?.takeIf { it != replaced } ?: return null
-        storage.set(KEY_ACTIVE, promoted.toByteArray(Charsets.UTF_8))
-        return Promotion(activated = promoted, replaced = replaced)
-    }
+    suspend fun promotePending(): Promotion? =
+        transition {
+            val replaced = active()
+            val promoted = read(KEY_PENDING)?.takeIf { it != replaced } ?: return@transition null
+            storage.set(KEY_ACTIVE, promoted.toByteArray(Charsets.UTF_8))
+            Promotion(activated = promoted, replaced = replaced)
+        }
 
-    /** Forgets both names, reporting them, so the keys they pointed at can be deleted rather than stranded. */
-    suspend fun forget(): Forgotten {
-        val forgotten = Forgotten(active = active(), pending = pending())
-        storage.remove(KEY_ACTIVE)
-        storage.remove(KEY_PENDING)
-        return forgotten
-    }
+    /**
+     * Forgets both names, reporting them, so the keys they pointed at can be deleted rather than stranded.
+     */
+    suspend fun forget(): Forgotten =
+        transition {
+            val forgotten = Forgotten(active = active(), pending = pending())
+            storage.remove(KEY_ACTIVE)
+            storage.remove(KEY_PENDING)
+            forgotten
+        }
+
+    /**
+     * Serialises one read-then-write transition against every other on the same store.
+     *
+     * Each storage call is atomic on its own, which is not enough: two callers can both read an empty pending
+     * slot and both write, and the loser's key is then in the platform store with nothing naming it.
+     *
+     * [active] and [pending] stay outside this. A transition calls them, and the lock is not reentrant.
+     *
+     * The lock is per store instance, the shape the storage cipher uses per key alias. Two stores over one
+     * backing file fall outside it there too.
+     */
+    private suspend fun <T> transition(block: suspend () -> T): T = lockFor(storage).withLock { block() }
 
     private suspend fun read(key: String): String? =
         storage.get(key)?.let { bytes ->
@@ -95,5 +115,15 @@ internal class DeviceKeySlots(
     private companion object {
         const val KEY_ACTIVE = "devicekey.active"
         const val KEY_PENDING = "devicekey.pending"
+
+        /**
+         * One lock per store, so two instances over the same store serialise against each other.
+         *
+         * A plain map under `synchronized`, matching how the storage cipher holds its per-alias monitors.
+         * `computeIfAbsent` needs a higher API level than this module's floor.
+         */
+        private val locks = HashMap<PayabliSecureStorage, Mutex>()
+
+        fun lockFor(storage: PayabliSecureStorage): Mutex = synchronized(locks) { locks.getOrPut(storage) { Mutex() } }
     }
 }

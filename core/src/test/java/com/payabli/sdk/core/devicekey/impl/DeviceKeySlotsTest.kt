@@ -1,14 +1,25 @@
 package com.payabli.sdk.core.devicekey.impl
 
 import com.payabli.sdk.core.storage.InMemorySecureStorage
+import com.payabli.sdk.core.storage.PayabliSecureStorage
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
+
+/** Long enough that a caller which is not blocked would have finished; short enough to stay a test. */
+private val BLOCKED_PROBE = 300.milliseconds
 
 /** The name the pending slot is stored under, read directly where the storage layer itself is the subject. */
 private const val RAW_PENDING = "devicekey.pending"
@@ -134,6 +145,37 @@ class DeviceKeySlotsTest {
             assertNull(subject.active())
         }
 
+    /**
+     * `runBlocking` and real dispatchers, because this is about two callers genuinely interleaving.
+     *
+     * The gate makes the collision deterministic. Two coroutines launched together almost never both land
+     * inside the read-then-write window, so a test that merely races them passes with the lock removed.
+     */
+    @Test
+    fun `two callers minting at once agree on one alias`() =
+        runBlocking {
+            withTimeout(TEST_TIMEOUT) {
+                val gated = GatedStorage(storage)
+                val subject = DeviceKeySlots(gated)
+
+                val first = async(Dispatchers.IO) { subject.pendingOrNew(this@DeviceKeySlotsTest.first) }
+                // Held inside the first caller's write, which is the window a second caller must not enter.
+                gated.insideWrite.await()
+                val second = async(Dispatchers.IO) { subject.pendingOrNew(this@DeviceKeySlotsTest.second) }
+
+                assertNull(
+                    "the second caller entered the transition while the first was inside it",
+                    withTimeoutOrNull(BLOCKED_PROBE) { second.await() },
+                )
+                gated.release.complete(Unit)
+
+                // Without serialising, both write and the loser's key is left in the platform store with
+                // nothing naming it.
+                assertEquals(first.await(), second.await())
+                assertEquals(first.await(), subject.pending())
+            }
+        }
+
     @Test
     fun `forgetting reports both names so neither key is stranded`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -148,4 +190,27 @@ class DeviceKeySlotsTest {
             assertNull(subject.active())
             assertNull(subject.pending())
         }
+}
+
+/**
+ * Holds the first write open, so the read-then-write window is a place a second caller can be observed
+ * arriving rather than a few microseconds nothing collides inside.
+ */
+private class GatedStorage(
+    private val delegate: PayabliSecureStorage,
+) : PayabliSecureStorage {
+    val insideWrite = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+
+    override suspend fun get(key: String): ByteArray? = delegate.get(key)
+
+    override suspend fun set(
+        key: String,
+        value: ByteArray,
+    ) {
+        if (insideWrite.complete(Unit)) release.await()
+        delegate.set(key, value)
+    }
+
+    override suspend fun remove(key: String) = delegate.remove(key)
 }
