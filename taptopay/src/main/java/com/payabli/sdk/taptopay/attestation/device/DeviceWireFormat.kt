@@ -161,6 +161,9 @@ internal class AttestResponse(
     override fun toString(): String = "AttestResponse(registered=$registered, isSandbox=$isSandbox)"
 }
 
+/** Six decimal digits, the shape the service issues. */
+private val ACTIVATION_CODE = Regex("^[0-9]{6}$")
+
 /** `{ entry, deviceId, activationCode }`, plus the assertion headers in [DeviceAssertion]. */
 @Serializable
 internal class ActivateRequest(
@@ -169,6 +172,22 @@ internal class ActivateRequest(
     /** The six-digit code, delivered to the device user out of band. Never logged, never in `toString`. */
     val activationCode: String,
 ) {
+    init {
+        // Rejected at construction, because sending a value that cannot be right is not free: the server
+        // compares the code after its other guards and increments `activation_attempts` on any mismatch, and
+        // the device locks out at five. A typo of five digits would spend one of them to learn what a regex
+        // knows. Same reason `AttestationChallenge` rejects a malformed value rather than letting the platform
+        // answer it several rounds later.
+        //
+        // Matched as text, never parsed as a number: the service issues six digits from a CSPRNG, so `012345`
+        // is a legitimate code and an `Int` round trip would silently make it `12345`.
+        require(ACTIVATION_CODE.matches(activationCode)) {
+            // The value is a live credential inside its window, so the message names the field and the shape
+            // and never what was passed.
+            "activationCode must be exactly six digits"
+        }
+    }
+
     override fun toString(): String = "ActivateRequest()"
 }
 

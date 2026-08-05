@@ -124,6 +124,33 @@ class DeviceWireFormatTest {
     }
 
     @Test
+    fun `an activation code that cannot be right is refused before it costs an attempt`() {
+        // Every one of these fails the server's comparison and spends one of five attempts to do it.
+        for (wrong in listOf("", "   ", "12345", "1234567", "12a456", "12 456", "abcdef", "12.456")) {
+            val failure =
+                runCatching {
+                    ActivateRequest(entry = "an-entrypoint", deviceId = "a-device-id", activationCode = wrong)
+                }.exceptionOrNull()
+            assertTrue(wrong, failure is IllegalArgumentException)
+            // The code is a live credential inside its window, so the message says the shape, not the value.
+            // Skipped for the empty string, where `contains` is vacuously true and asserts nothing.
+            if (wrong.isNotEmpty()) {
+                assertFalse(wrong, failure!!.message.orEmpty().contains(wrong))
+            }
+        }
+    }
+
+    @Test
+    fun `a leading-zero code is accepted, because it is a string and not a number`() {
+        // The service issues six CSPRNG digits, so `000000` and `012345` are legitimate codes. Parsing to an
+        // Int to validate would turn both into something shorter and reject a code the user typed correctly.
+        for (right in listOf("000000", "012345", "999999")) {
+            val request = ActivateRequest(entry = "an-entrypoint", deviceId = "a-device-id", activationCode = right)
+            assertEquals(right, request.activationCode)
+        }
+    }
+
+    @Test
     fun `a required field missing from the payload is a decode failure`() {
         val failure =
             runCatching {
