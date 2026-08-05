@@ -16,12 +16,11 @@ import androidx.annotation.RestrictTo
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public sealed interface SdkState {
     /**
-     * No session yet.
+     * No session yet, which is what `PayabliSession.state` reads until `initialize` succeeds.
      *
-     * A holder of a `PayabliSession` never observes this, because `state` is a property of a session and a
-     * session exists only once `initialize` has succeeded. It is the starting value the machine transitions
-     * out of, and it is meaningful to a caller only if the state is ever published somewhere a session is
-     * not needed to reach it. Whether it should be is a question for the surface freeze, not for this file.
+     * Observable, and that is why the state is published on the companion rather than on a session: a value
+     * only a session could reach could never be this one, and a sealed set with an unreachable member makes
+     * every consumer write a branch that can never run.
      */
     public data object Uninitialized : SdkState
 
@@ -31,8 +30,8 @@ public sealed interface SdkState {
     /**
      * The session cannot be recovered from inside the SDK; call `PayabliSession.initialize` again.
      *
-     * Terminal for this instance, with no transition out: re-initializing builds a new session rather than
-     * reviving this one.
+     * Terminal for the session that reached it, which is never revived. The state leaves this value only
+     * when a successor session becomes [Ready].
      */
     public data object ReinitializeRequired : SdkState
 }
