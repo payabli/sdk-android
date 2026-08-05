@@ -34,6 +34,8 @@ private const val CHALLENGE_ID = "challenge-id-value"
 private const val ATTESTATION = "attestation-value"
 private const val PUBLIC_KEY = "public-key-value"
 
+private fun identity() = DeviceIdentity(deviceId = DEVICE_ID, keyId = KEY_ID, publicKey = PUBLIC_KEY)
+
 private fun assertion() =
     DeviceAssertion(
         assertion = "assertion-value",
@@ -104,7 +106,7 @@ class DeviceServiceClientTest {
 
             client.challenge(ENTRY)
             client.register(ENTRY, HARDWARE_ID, KEY_ID, null, null, null)
-            client.attest(ENTRY, CHALLENGE_ID, DEVICE_ID, KEY_ID, APP_ID, ATTESTATION, PUBLIC_KEY)
+            client.attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, ATTESTATION)
             client.activate(ENTRY, DEVICE_ID, "123456", assertion())
 
             // None of the four embeds an identifier, so template and path are the same string. Asserted rather
@@ -190,11 +192,9 @@ class DeviceServiceClientTest {
             clientFor(transport).attest(
                 entry = ENTRY,
                 challengeId = CHALLENGE_ID,
-                deviceId = DEVICE_ID,
-                keyId = KEY_ID,
+                identity = identity(),
                 appId = APP_ID,
                 attestation = ATTESTATION,
-                publicKey = PUBLIC_KEY,
             )
 
             val body = transport.bodyJson()
@@ -224,7 +224,7 @@ class DeviceServiceClientTest {
             // but `isSuccess: true` is a shape a client has already accepted in production. Reaching the
             // response at all is the success signal; there is nothing in it to act on.
             val attested =
-                clientFor(attesting).attest(ENTRY, CHALLENGE_ID, DEVICE_ID, KEY_ID, APP_ID, ATTESTATION, PUBLIC_KEY)
+                clientFor(attesting).attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, ATTESTATION)
             val activated = clientFor(activating).activate(ENTRY, DEVICE_ID, "123456", assertion())
 
             assertNull(attested.registered)

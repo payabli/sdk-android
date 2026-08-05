@@ -137,8 +137,17 @@ internal sealed class DeviceServiceException(
      * fault and lose the cause.
      */
     class Undecodable(
-        cause: Throwable? = null,
-    ) : DeviceServiceException("the device service response could not be decoded", null, REASON_UNDECODABLE, cause)
+        original: Throwable? = null,
+    ) : DeviceServiceException(
+            "the device service response could not be decoded",
+            null,
+            REASON_UNDECODABLE,
+            // Wrapped here rather than at the call sites, so no caller can forget. A decoder's own message
+            // quotes the input it choked on — kotlinx appends the offending JSON — and a device response body
+            // holds a challenge, a challengeId and a deviceId. Redacting `toString` on this class buys nothing
+            // if a cause chain underneath it carries the body, and a crash reporter renders the whole chain.
+            original?.let { RedactedCause(it) },
+        )
 
     internal companion object {
         /**
@@ -172,6 +181,24 @@ internal sealed class DeviceServiceException(
                 resultCode != null && resultCode >= HTTP_INTERNAL_ERROR -> ServerFailure(resultCode, reason)
                 else -> Unclassified(resultCode, reason)
             }
+    }
+}
+
+/**
+ * A cause that keeps a failure's type and stack trace and drops its message.
+ *
+ * The class name becomes the message, because a type name carries no subject, and the original stack trace is
+ * kept because a class, method, file and line are the whole diagnostic value. The chain stops here.
+ *
+ * `:core` has an identical type for the same reason on the same kind of failure, and it is `internal` to that
+ * module, so this is the same rule restated rather than a second rule. If a cross-module fixtures or utility
+ * home ever exists, these two collapse into one.
+ */
+internal class RedactedCause(
+    original: Throwable,
+) : Exception(original.javaClass.name) {
+    init {
+        stackTrace = original.stackTrace
     }
 }
 

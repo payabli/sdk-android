@@ -13,6 +13,7 @@ import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 
 /**
  * The four device-lifecycle calls of `/api/v2/device/taptopay`.
@@ -106,9 +107,9 @@ internal class DeviceServiceClient(
      * Submits the attestation binding [challengeId] to this device's key.
      *
      * [attestation] is the encoded integrity token, not the token itself
-     * ([DeviceAttestationBinding.attestationField]), and [publicKey] is required on this platform even though
-     * the server's own shape calls it optional: the integrity token does not embed the key, so without it the
-     * server has nothing to verify a later assertion against.
+     * ([DeviceAttestationBinding.attestationField]). [DeviceIdentity.publicKey] is required on this platform
+     * even though the server's own shape calls it optional: the integrity token does not embed the key, so
+     * without it the server has nothing to verify a later assertion against.
      *
      * The response body is returned for diagnostics and carries nothing to branch on. Reaching it is the
      * success signal.
@@ -116,11 +117,9 @@ internal class DeviceServiceClient(
     suspend fun attest(
         entry: String,
         challengeId: String,
-        deviceId: String,
-        keyId: String,
+        identity: DeviceIdentity,
         appId: String,
         attestation: String,
-        publicKey: String,
         failureMapper: DeviceFailureMapper = DeviceFailureMapper.None,
     ): AttestResponse {
         val payload =
@@ -130,11 +129,11 @@ internal class DeviceServiceClient(
                     AttestRequest(
                         entry = entry,
                         challengeId = challengeId,
-                        deviceId = deviceId,
-                        keyId = keyId,
+                        deviceId = identity.deviceId,
+                        keyId = identity.keyId,
                         appId = appId,
                         attestation = attestation,
-                        publicKey = publicKey,
+                        publicKey = identity.publicKey,
                         platform = DEVICE_PLATFORM,
                     ),
                 bodySerializer = AttestRequest.serializer(),
@@ -243,21 +242,27 @@ internal class DeviceServiceClient(
             throw failureMapper.map(declined.code, declined.reason)
                 ?: DeviceServiceException.of(declined.code, declined.reason)
         }
+        val body = response.bodyAsText()
+        // Success has to be *claimed*, not merely not-denied. `declineOutcome` above reads an absent or null
+        // `isSuccess` as "not a decline" and returns null, and `Success` does not model the field, so without
+        // this a body of `{}` behind a 200 walks through both checks and reaches the payload decode. On
+        // `/challenge` and `/register` that surfaces anyway, because their required fields are missing; on
+        // `/attest` and `/activate` it would not, because both substitute an empty ack for an absent payload,
+        // and the call would report success for a response the service never sent.
+        val claimed = runCatching { PayabliJson.format.decodeFromString(PayabliEnvelope.Status.serializer(), body) }
+        if (claimed.getOrNull()?.isSuccess != true) {
+            throw undecodable(route, response.statusCode, claimed.exceptionOrNull())
+        }
         val payload =
             try {
                 PayabliJson.format
-                    .decodeFromString(PayabliEnvelope.Success.serializer(payloadSerializer), response.bodyAsText())
+                    .decodeFromString(PayabliEnvelope.Success.serializer(payloadSerializer), body)
                     .responseData
-            } catch (undecodable: Exception) {
-                // The decoder's failures are all SerializationException, and an IllegalArgumentException can
-                // reach here from a malformed structure. Exception rather than Throwable, so a JVM Error is
-                // not re-reported as a contract mismatch.
-                logger.warn(
-                    LogField.safe("event", "device_response_undecodable"),
-                    LogField.safe("route", route),
-                    LogField.safe("statusCode", response.statusCode),
-                ) { "the device service response could not be decoded" }
-                throw DeviceServiceException.Undecodable(undecodable)
+            } catch (failure: SerializationException) {
+                // The supertype is deliberately not caught. SerializationException extends
+                // IllegalArgumentException, so catching that would swallow a genuine programming error raised
+                // from inside a serializer, which is the reason `:core` narrows the same catch.
+                throw undecodable(route, response.statusCode, failure)
             }
         logger.debug(
             LogField.safe("event", "device_call_succeeded"),
@@ -265,6 +270,26 @@ internal class DeviceServiceClient(
             LogField.safe("statusCode", response.statusCode),
         ) { "the device service call succeeded" }
         return payload
+    }
+
+    /**
+     * Logs an unusable response and builds the failure for it.
+     *
+     * One place, because both ways a 2xx can be unusable — an envelope that never claimed success, and a
+     * payload that would not decode — are the same finding for a caller and should read identically in a log.
+     * [Undecodable][DeviceServiceException.Undecodable] redacts [cause] itself.
+     */
+    private fun undecodable(
+        route: String,
+        statusCode: Int,
+        cause: Throwable?,
+    ): DeviceServiceException {
+        logger.warn(
+            LogField.safe("event", "device_response_undecodable"),
+            LogField.safe("route", route),
+            LogField.safe("statusCode", statusCode),
+        ) { "the device service response could not be decoded" }
+        return DeviceServiceException.Undecodable(cause)
     }
 
     internal companion object {

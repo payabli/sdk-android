@@ -4,6 +4,28 @@ private const val FIRST_PRINTABLE = ' '
 private const val LAST_PRINTABLE = '~'
 
 /**
+ * What identifies this device to the service: the handle it was registered under and its key.
+ *
+ * The three travel together and are required together by `/attest`, which is why they are one parameter rather
+ * than three. [deviceId] comes from `/register`; [keyId] and [publicKey] come from the device key, which is
+ * PLA-2350's work, so this is the shape that ticket produces and this one consumes.
+ *
+ * Grouping them also removes a hazard the call site had: five same-typed strings in a row, where a transposed
+ * pair compiles silently and fails as an attestation the service cannot verify. Three of them are now named
+ * once, here, instead of at every call.
+ */
+internal class DeviceIdentity(
+    val deviceId: String,
+    /** The device key's Keystore alias. */
+    val keyId: String,
+    /** Base64 of the 65-byte X9.62 uncompressed EC point. Required on this platform. */
+    val publicKey: String,
+) {
+    /** Never a value: all three are device identity or key material. */
+    override fun toString(): String = "DeviceIdentity()"
+}
+
+/**
  * The proof-of-possession headers `/activate` requires, and `/config` after it.
  *
  * The server re-derives what was signed from [timestamp] alone: `clientDataHash = SHA256(UTF8(timestamp))`,

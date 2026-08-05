@@ -23,6 +23,12 @@ private const val ENTRY = "a-test-entrypoint"
 /** Server text that echoes what was sent, which is why `reason` is displayable and never loggable. */
 private const val ECHOING_REASON = "Invalid activation code."
 
+/** Placeholders: these tests are about what comes back, so nothing here reaches an assertion on the request. */
+private fun probeIdentity() = DeviceIdentity(deviceId = "d", keyId = "k", publicKey = "p")
+
+private fun probeAssertion() =
+    DeviceAssertion(assertion = "a", keyId = "k", deviceId = "d", timestamp = "2026-08-04T12:00:00.000+0000")
+
 class DeviceFailureMappingTest {
     private val logger = RecordingSdkLogger()
 
@@ -248,6 +254,72 @@ class DeviceFailureMappingTest {
             // rather than as it ought to be, so this test says what the SDK does today; PLA-2351 fixes the
             // decode in `:core` and flips this line to the assertion it wants to be.
             assertTrue((failure as PayabliValidationException).fieldErrors.isEmpty())
+        }
+
+    @Test
+    fun `a 200 that never claims success is undecodable, not a synthetic success`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // `{}` is the whole body. It is not a decline, because `declineOutcome` reads an absent `isSuccess`
+            // as "not false" and returns null; and it is not a success either, because nothing in it says so.
+            // The two routes that tolerate an absent payload are the ones this could hurt: without a positive
+            // check they substitute an empty ack and report success for a response the service never sent.
+            val attesting = FakeDeviceTransport.answering("{}")
+            val activating = FakeDeviceTransport.answering("{}")
+            val client = DeviceServiceClient(attesting, logger)
+
+            val attested =
+                runCatching {
+                    client.attest(ENTRY, "c", probeIdentity(), "com.payabli.example", "a")
+                }.exceptionOrNull()
+            val activated =
+                runCatching {
+                    DeviceServiceClient(activating, logger)
+                        .activate(ENTRY, "d", "123456", probeAssertion())
+                }.exceptionOrNull()
+
+            assertTrue(attested is DeviceServiceException.Undecodable)
+            assertTrue(activated is DeviceServiceException.Undecodable)
+        }
+
+    @Test
+    fun `a 200 whose payload looks right but claims nothing is still undecodable`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A well-formed `responseData` with no `isSuccess` around it. The payload is not the assertion of
+            // success; the envelope is. An intermediary that returns a body shaped like the right one must not
+            // be able to manufacture an attestation.
+            val body = """{"responseText":"Success","responseData":{"challengeId":"c-1","challenge":"Y2g="}}"""
+
+            val failure = challengeAgainst(body)
+
+            assertTrue(failure is DeviceServiceException.Undecodable)
+        }
+
+    @Test
+    fun `no part of the response body survives anywhere in the cause chain`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // kotlinx quotes the input it choked on, and a device body holds a challenge, a challengeId and a
+            // deviceId. Redacting this class's own toString buys nothing if the cause underneath it carries the
+            // body: printStackTrace and a host app's crash reporter render the whole chain, and that reporter is
+            // outside anything this SDK scrubs.
+            val secret = "Y2hhbGxlbmdlLW1hdGVyaWFsLXRoYXQtbXVzdC1ub3QtbGVhaw"
+            val body = """{"responseText":"Success","isSuccess":true,"responseData":{"challenge":"$secret",}}"""
+
+            val failure = challengeAgainst(body) as DeviceServiceException.Undecodable
+
+            val rendered =
+                StringBuilder()
+                    .apply {
+                        var link: Throwable? = failure
+                        while (link != null) {
+                            append(link.javaClass.name).append(' ').append(link.message).append('\n')
+                            link = link.cause
+                        }
+                    }.toString()
+            assertFalse(rendered.contains(secret))
+            // The type and its stack survive, because a class, method, file and line are the diagnostic value
+            // and none of them carries a subject. Only the message is dropped.
+            assertTrue(rendered.contains("SerializationException") || rendered.contains("JsonDecodingException"))
+            assertTrue(failure.cause!!.stackTrace.isNotEmpty())
         }
 
     @Test

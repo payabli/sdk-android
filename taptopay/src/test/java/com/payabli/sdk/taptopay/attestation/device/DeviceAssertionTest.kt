@@ -81,6 +81,23 @@ class DeviceAssertionTest {
     }
 
     @Test
+    fun `the identity prints none of its three either`() {
+        val rendered =
+            DeviceIdentity(
+                deviceId = "a-device-id",
+                keyId = "a-keystore-alias",
+                publicKey = "a-public-key",
+            ).toString()
+
+        // All three are device identity or key material, and this type is passed around the attestation flow,
+        // so it reaches a diagnostic more readily than most.
+        assertEquals("DeviceIdentity()", rendered)
+        assertFalse(rendered.contains("a-device-id"))
+        assertFalse(rendered.contains("a-keystore-alias"))
+        assertFalse(rendered.contains("a-public-key"))
+    }
+
+    @Test
     fun `toString carries none of the four`() {
         val rendered = assertionWith().toString()
 

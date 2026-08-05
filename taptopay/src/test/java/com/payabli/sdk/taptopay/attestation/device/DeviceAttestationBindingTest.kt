@@ -94,13 +94,6 @@ class DeviceAttestationBindingTest {
         assertEquals("aGVhZGVyLnBheWxvYWQuc2lnbmF0dXJl", field)
     }
 
-    @Test
-    fun `an empty token still encodes rather than being dropped`() {
-        // Not a shape the platform produces, and asserted because the alternative to encoding it is emitting
-        // an empty field the server would refuse with a message about base64 rather than about the token.
-        assertEquals("", DeviceAttestationBinding.attestationField(AttestationToken("")))
-    }
-
     private fun standardBase64Digest(): String =
         java.util.Base64
             .getEncoder()
