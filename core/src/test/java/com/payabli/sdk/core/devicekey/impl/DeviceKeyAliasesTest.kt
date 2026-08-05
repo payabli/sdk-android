@@ -52,6 +52,26 @@ class DeviceKeyAliasesTest {
         assertFalse("the bare prefix names no key", DeviceKeyAliases.isDeviceKeyAlias(DeviceKeyAliases.PREFIX))
         assertFalse(DeviceKeyAliases.isDeviceKeyAlias(""))
     }
+
+    @Test
+    fun `the prefix alone does not make a name one of ours`() {
+        val head = DeviceKeyAliases.PREFIX + "."
+
+        // A hand edit, a truncated write, or a later scheme sharing the prefix. Accepting any of these hands
+        // back a name as one this minted, and whatever holds keys then looks up an alias it never created.
+        assertFalse("a non-hex suffix", DeviceKeyAliases.isDeviceKeyAlias(head + "z".repeat(32)))
+        assertFalse("a short suffix", DeviceKeyAliases.isDeviceKeyAlias(head + "ab"))
+        assertFalse("a long suffix", DeviceKeyAliases.isDeviceKeyAlias(head + "a".repeat(33)))
+        assertFalse("a suffix with a separator in it", DeviceKeyAliases.isDeviceKeyAlias(head + "a".repeat(29) + ".ab"))
+    }
+
+    @Test
+    fun `an uppercase suffix is a different name, not the same one`() {
+        // Key store aliases are compared verbatim, so accepting both spellings would treat two distinct
+        // entries as one name.
+        assertFalse(DeviceKeyAliases.isDeviceKeyAlias(DeviceKeyAliases.newAlias().uppercase()))
+        assertFalse(DeviceKeyAliases.isDeviceKeyAlias(DeviceKeyAliases.PREFIX + "." + "A".repeat(32)))
+    }
 }
 
 /** Fills every byte with 0xFF, so the hex formatting of a negative byte is asserted rather than hoped for. */

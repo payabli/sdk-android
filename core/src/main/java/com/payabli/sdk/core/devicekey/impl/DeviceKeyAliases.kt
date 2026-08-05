@@ -21,16 +21,29 @@ internal object DeviceKeyAliases {
 
     private const val SEPARATOR = '.'
 
+    private const val SUFFIX_LENGTH = SUFFIX_BYTES * 2
+
+    private val head = PREFIX + SEPARATOR
+
     fun newAlias(random: SecureRandom = SecureRandom()): String {
         val suffix = ByteArray(SUFFIX_BYTES).also(random::nextBytes)
-        return PREFIX + SEPARATOR + suffix.joinToString("") { "%02x".format(it) }
+        return head + suffix.joinToString("") { "%02x".format(it) }
     }
 
     /**
-     * Whether [alias] was minted here.
+     * Whether [alias] has the exact shape [newAlias] produces.
      *
-     * Used to leave other entries in a shared key store alone: the process's key store holds the storage
-     * key too, and anything the host app put there.
+     * Used to leave other entries in a shared key store alone: the process's key store holds the storage key
+     * too, and anything the host app put there.
+     *
+     * The whole shape, not the prefix. A stored value that merely starts the same way, from a hand edit or a
+     * future scheme, would otherwise be handed back as a name this minted, and whatever holds keys would look
+     * up an alias this could not have created.
      */
-    fun isDeviceKeyAlias(alias: String): Boolean = alias.startsWith(PREFIX + SEPARATOR)
+    fun isDeviceKeyAlias(alias: String): Boolean =
+        alias.length == head.length + SUFFIX_LENGTH &&
+            alias.startsWith(head) &&
+            // Lowercase only: the generated form is lowercase, so accepting uppercase would treat two
+            // different key store aliases as the same name.
+            (head.length until alias.length).all { alias[it] in '0'..'9' || alias[it] in 'a'..'f' }
 }
