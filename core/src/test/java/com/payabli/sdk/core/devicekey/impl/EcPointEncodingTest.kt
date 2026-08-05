@@ -8,6 +8,7 @@ import java.security.KeyPairGenerator
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECParameterSpec
 import java.security.spec.ECPoint
+import java.security.spec.EllipticCurve
 
 /**
  * The 65-byte point the service stores and verifies every later assertion against.
@@ -74,6 +75,26 @@ class EcPointEncodingTest {
         assertEquals(BigInteger.ONE, BigInteger(1, encoded.copyOfRange(33, 65)))
         assertEquals(0x00.toByte(), encoded[1])
         assertEquals(0x01.toByte(), encoded[32])
+    }
+
+    @Test
+    fun `a different 256-bit curve is refused, not just a different width`() {
+        // Same field, one coefficient changed. The coordinates are the same width, so this encodes to the
+        // same 65 bytes and the service reads it as P-256; the point it stores can never verify a signature
+        // from the key it came from. A width check alone passes this.
+        val foreign =
+            ECParameterSpec(
+                EllipticCurve(p256.curve.field, p256.curve.a, p256.curve.b.add(BigInteger.ONE)),
+                p256.generator,
+                p256.order,
+                p256.cofactor,
+            )
+
+        val thrown =
+            runCatching { EcPointEncoding.uncompressed(keyAt(BigInteger.ONE, BigInteger.ONE, foreign)) }
+                .exceptionOrNull()
+
+        assertTrue("expected a refusal, got $thrown", thrown is IllegalArgumentException)
     }
 
     @Test
