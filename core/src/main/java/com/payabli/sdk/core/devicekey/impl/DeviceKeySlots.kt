@@ -24,6 +24,16 @@ import kotlinx.coroutines.sync.withLock
  *
  * Only the two names live here, which is what makes them safe to keep in ordinary storage: a name is useless
  * without the key it points at.
+ *
+ * **These names can be lost without the keys being lost, and nothing here can recover from that.** The store
+ * discards an entry it cannot authenticate, clears itself when its own key is gone, and resets silently when
+ * its file will not parse. The signing keys live in the platform key store instead, under a different key, so
+ * they survive all three. Slot state gone and keys still present reads here as an empty pending slot, and the
+ * next mint adds another key beside the ones already stranded.
+ *
+ * Recovering means asking the key store which aliases in this namespace exist, which is why [newAlias] mints a
+ * recognisable shape. That enumeration belongs to whatever holds the keys, so this type documents the hole
+ * rather than claiming to close it.
  */
 internal class DeviceKeySlots(
     private val storage: PayabliSecureStorage,
@@ -56,8 +66,10 @@ internal class DeviceKeySlots(
      *
      * Reuse is why a caller asks here instead of storing a name itself. A retry before attestation gets the
      * alias it used last time, so it attests the key it already minted. Taking a new name on each attempt
-     * would leave the previous key in the store unnamed, one per attempt, which is the accumulation the second
-     * slot exists to prevent.
+     * would leave the previous key in the store unnamed, once per attempt.
+     *
+     * That covers a retry, and not a lost slot. If the pending name is gone while its key is not, this mints
+     * beside it. See the class.
      *
      * The alias is minted here, so no caller can supply one. Every read drops a name from outside this
      * namespace, so a name that arrived from anywhere else would be handed back as the alias to mint under
