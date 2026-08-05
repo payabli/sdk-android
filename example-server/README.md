@@ -302,9 +302,22 @@ cheapest way to confirm the process is up. From the development machine:
 curl -sS http://127.0.0.1:8787/health
 ```
 
-There is no device-side equivalent: Android ships neither `curl` nor `wget` in
-the shell, so `adb shell` cannot make the request. Reachability from a device is
-what the app itself demonstrates.
+The same check runs from the device, which confirms an emulator alias or an
+`adb reverse` forward without waiting for an app to be wired. Android ships no
+`curl` or `wget`, and the shell does have `nc`:
+
+```bash
+adb shell '{ printf "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"; sleep 2; } | nc 127.0.0.1 8787'
+```
+
+The response is chunked, so it ends with `{"ok":true}` between a length line and
+a `0`. Use whichever address the table above gives for that caller: `127.0.0.1`
+with a forward in place, `10.0.2.2` from an emulator.
+
+Keep the `sleep`. Piping the request alone lets `nc` close the connection before
+the response arrives, and the command then prints nothing at all, which looks
+identical to a forward that is not working. Measured on phones at API 33 and 36:
+the bare form returns no output, the form above returns the body.
 
 A `PayabliTokenProvider` implementation reads `accessToken` from the response and
 returns it as a `String`.
