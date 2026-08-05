@@ -11,10 +11,16 @@ import kotlinx.coroutines.sync.withLock
  * key is minted into the pending slot, attested there, and becomes active only once the service has accepted
  * it; until then the active key keeps signing.
  *
- * **A name is never dropped without being reported.** The private half of a key never leaves the platform key
- * store, so a name is the only handle anything has on it: overwrite or delete a name silently and that key
- * stays in the store for the life of the install with nothing able to name it for deletion. Every operation
- * here either refuses to displace a name or returns the one it displaced.
+ * **No call here displaces a name without returning it.** The private half of a key never leaves the platform
+ * key store, so a name is the only handle anything has on it: drop a name silently and that key stays in the
+ * store for the life of the install with nothing able to name it for deletion. Every operation either refuses
+ * to displace a name or hands back the one it displaced.
+ *
+ * That holds for the call. It does not survive the process: a return value reaches nobody if the process dies
+ * after the write that produced it, and the name is then gone from these slots. Closing that needs a durable
+ * record of names awaiting deletion, acknowledged once the key is gone, which is a protocol for whatever
+ * drives attestation and is not built here. A caller that must not strand a key across a restart reads
+ * [active] and [pending] first and keeps them where it keeps the rest of its own progress.
  *
  * Only the two names live here, which is what makes them safe to keep in ordinary storage: a name is useless
  * without the key it points at.
@@ -69,7 +75,9 @@ internal class DeviceKeySlots(
         }
 
     /**
-     * Forgets both names, reporting them, so the keys they pointed at can be deleted rather than stranded.
+     * Forgets both names and reports them, so the keys they pointed at can be deleted.
+     *
+     * The report reaches a caller that is still running. See the durability limit on the class.
      */
     suspend fun forget(): Forgotten =
         transition {
