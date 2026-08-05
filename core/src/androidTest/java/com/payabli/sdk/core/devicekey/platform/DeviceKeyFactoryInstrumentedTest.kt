@@ -4,9 +4,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.logging.LogCategory
+import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
+import com.payabli.sdk.core.logging.impl.LogSink
 import com.payabli.sdk.core.storage.platform.SecureStorageFactory
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -19,9 +22,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.security.KeyStore
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.seconds
 
 private const val PROVIDER = "AndroidKeyStore"
+private const val DISPATCH_THREAD = "device-key-test-dispatcher"
 private val TEST_TIMEOUT = 30.seconds
 
 /**
@@ -97,6 +103,51 @@ class DeviceKeyFactoryInstrumentedTest {
             // Minting is not attestation. Reporting a candidate as active would sign with material the service
             // has never seen.
             assertNull("a minted candidate is not an attested one", DeviceKeyFactory.active(context, logger))
+        }
+
+    /**
+     * The blocking work runs on the dispatcher it was given, not on the caller's thread.
+     *
+     * Both halves matter. A suspend signature does not make a function main-safe, and the two blocking things
+     * here sit between the suspending reads: resolving the store's canonical path, and every Keystore call,
+     * generation included. On Main that is a stall for as long as a secure element takes.
+     *
+     * Observed through the line `createKey` emits, because that is the one point inside the dispatched body
+     * that names itself. A named single thread makes the assertion an equality rather than a guess about
+     * which pool the work landed in.
+     */
+    @Test
+    fun theKeystoreWorkRunsOnTheDispatcherItWasGiven() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val generatedOn = AtomicReference<String>()
+            val watching =
+                DefaultSdkLogger(
+                    LogCategory.CORE,
+                    object : LogSink {
+                        override fun isLoggable(
+                            level: LogLevel,
+                            tag: String,
+                        ): Boolean = true
+
+                        override fun write(
+                            level: LogLevel,
+                            tag: String,
+                            message: String,
+                        ) {
+                            if ("device key created" in message) generatedOn.set(Thread.currentThread().name)
+                        }
+                    },
+                )
+            val executor = Executors.newSingleThreadExecutor { Thread(it, DISPATCH_THREAD) }
+
+            try {
+                val key = DeviceKeyFactory.candidate(context, watching, executor.asCoroutineDispatcher())
+                minted += key.keyId
+
+                assertEquals(DISPATCH_THREAD, generatedOn.get())
+            } finally {
+                executor.shutdown()
+            }
         }
 
     @Test

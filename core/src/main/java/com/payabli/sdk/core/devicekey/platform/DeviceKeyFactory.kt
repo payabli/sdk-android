@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.storage.platform.SecureStorageFactory
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -26,6 +27,9 @@ import kotlinx.coroutines.withContext
  * signature covers what happens here: resolving the store's canonical path, and every Keystore call, are
  * blocking, and they run between the suspending reads rather than inside them. Generating a key in a secure
  * element takes tens of milliseconds, so the whole body is dispatched.
+ *
+ * The dispatcher is a parameter with a default, the shape `FileSecureStorage` uses for its own, so a test can
+ * substitute one and the production caller names nothing.
  */
 internal object DeviceKeyFactory {
     /**
@@ -47,8 +51,9 @@ internal object DeviceKeyFactory {
     suspend fun candidate(
         context: Context,
         logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
+        dispatcher: CoroutineDispatcher = Dispatchers.IO,
     ): DeviceKey =
-        withContext(Dispatchers.IO) {
+        withContext(dispatcher) {
             val alias = slots(context, logger).pendingOrNew()
             KeystoreDeviceKey(alias, logger).apply { ensureKey(mayCreate = true) }
         }
@@ -62,8 +67,9 @@ internal object DeviceKeyFactory {
     suspend fun active(
         context: Context,
         logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
+        dispatcher: CoroutineDispatcher = Dispatchers.IO,
     ): DeviceKey? =
-        withContext(Dispatchers.IO) {
+        withContext(dispatcher) {
             val alias = slots(context, logger).active() ?: return@withContext null
             KeystoreDeviceKey(alias, logger).apply { ensureKey(mayCreate = false) }
         }
