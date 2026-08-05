@@ -479,18 +479,19 @@ class KeystoreSecureStorageInstrumentedTest {
                 "secret-value".toByteArray(),
                 subject.get("refresh"),
             )
-            // Below 31 the platform cannot report a level, only the coarser question, so that is what is asked.
+            // Not-StrongBox, rather than software. A device without a secure element can still have a trusted
+            // execution environment, and the fallback lands there: asserting software failed on a TEE-only
+            // handset, which is a correct fallback reported as a defect. What this test is for is that the
+            // fallback ran at all, and a StrongBox key is the only result that proves it did not.
+            //
+            // Below 31 the platform cannot report a level, only whether the key is in secure hardware, and
+            // that question cannot separate a TEE fallback from a StrongBox key. There the round trip above is
+            // the whole assertion.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                assertEquals(
+                assertNotEquals(
                     "no StrongBox is present, so a StrongBox key means the fallback did not run",
-                    KeyProperties.SECURITY_LEVEL_SOFTWARE,
+                    KeyProperties.SECURITY_LEVEL_STRONGBOX,
                     keyInfo().securityLevel,
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                assertFalse(
-                    "an emulator cannot back a key in secure hardware, so the fallback did not run",
-                    keyInfo().isInsideSecureHardware,
                 )
             }
         }
