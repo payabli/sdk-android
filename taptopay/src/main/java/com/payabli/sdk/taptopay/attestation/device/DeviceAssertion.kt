@@ -93,6 +93,14 @@ internal class DeviceAssertion(
             require(value.all { it in FIRST_PRINTABLE..LAST_PRINTABLE }) {
                 "$field must be usable as an HTTP header value"
             }
+            // A space is the printable floor, so the range check above accepts one at either end. HTTP treats
+            // leading and trailing whitespace as optional padding around a field value rather than part of it,
+            // so the server can legitimately read back a trimmed string. For `timestamp` that is fatal and
+            // silent: the signer hashed the untrimmed value, the server hashes what it received, and the
+            // signature fails as "assertion verification failed" with nothing pointing at whitespace. The
+            // other three would mismatch a stored alias or device id the same way. Rejected here, where the
+            // field is still named, rather than surfacing as a verification failure two calls later.
+            require(value.trim() == value) { "$field must not begin or end with whitespace" }
         }
     }
 }

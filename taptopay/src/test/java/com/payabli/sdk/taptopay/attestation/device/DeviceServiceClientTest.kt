@@ -206,6 +206,7 @@ class DeviceServiceClientTest {
                 body.keys,
             )
             assertEquals("Android", body.text("platform"))
+            assertEquals(ENTRY, body.text("entry"))
             assertEquals(CHALLENGE_ID, body.text("challengeId"))
             assertEquals(DEVICE_ID, body.text("deviceId"))
             assertEquals(KEY_ID, body.text("keyId"))
@@ -249,8 +250,14 @@ class DeviceServiceClientTest {
                 ),
                 transport.request.headers,
             )
-            assertEquals(setOf("entry", "deviceId", "activationCode"), transport.bodyJson().keys)
-            assertEquals("123456", transport.bodyJson().text("activationCode"))
+            val body = transport.bodyJson()
+            assertEquals(setOf("entry", "deviceId", "activationCode"), body.keys)
+            // Values, not just the key set: all three are strings, so a transposed pair would keep the
+            // set identical and the suite green. The distinct self-naming constants only guard anything
+            // if each one is actually asserted against the key it belongs to.
+            assertEquals(ENTRY, body.text("entry"))
+            assertEquals(DEVICE_ID, body.text("deviceId"))
+            assertEquals("123456", body.text("activationCode"))
         }
 
     @Test

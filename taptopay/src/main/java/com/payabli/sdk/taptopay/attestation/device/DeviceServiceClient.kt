@@ -38,10 +38,18 @@ import kotlinx.serialization.SerializationException
  *
  * **Two things about the credential, both inherited and neither fixable here.** The attestation row the server
  * writes at `/attest` pins the exact bearer token that made that call, and `/activate` and `/config` require
- * the same one, so a token refresh in between fails activation as [DeviceServiceException.NotAttested]. And
- * the transport's own credential recovery replays only idempotent methods, which excludes every call here, so
- * a rejected credential surfaces rather than being retried behind our back. This client must not work around
- * either: narrowing the recovery policy so a refresh cannot break the binding at all is separate work.
+ * the same one, so a token refresh in between fails activation as [DeviceServiceException.NotAttested].
+ *
+ * And **the transport can send one of these a second time on its own.** Credential recovery replays either an
+ * idempotent method or *any* method whose rejection was an exact 401 — `mayReplay` is
+ * `statusCode == 401 || method.isIdempotent` — so a real HTTP 401 on these POSTs is refreshed and replayed
+ * without this client being consulted. A 2xx envelope decline is not a credential rejection and never triggers
+ * it, which is why the ordinary device failures are unaffected. The replay is survivable today only because a
+ * 401 is answered by the authorization layer before a controller runs, so nothing has been consumed or counted
+ * yet; it is not survivable by design, and it is not a property to build on. PLA-2297 narrows the policy so
+ * a refresh cannot touch these routes at all. Until then, whoever owns the sequence should assume a `/attest`
+ * or `/activate` may reach the service twice, and must not read "nothing is wrapped in `Retry`" as a promise
+ * that it cannot.
  */
 internal class DeviceServiceClient(
     private val transport: PayabliTransport,

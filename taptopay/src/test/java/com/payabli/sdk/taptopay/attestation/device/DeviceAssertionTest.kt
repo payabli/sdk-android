@@ -59,10 +59,31 @@ class DeviceAssertionTest {
     }
 
     @Test
-    fun `the timestamp's shape is not validated, deliberately`() {
-        // The server re-derives what was signed from this string alone, so it has to be the signer's bytes
-        // verbatim. Validating a format here would be this SDK asserting a shape it does not itself produce,
-        // and the first signer that spelled the offset differently would be refused by its own client.
+    fun `edge whitespace is refused in every position`() {
+        // A space is the printable floor, so the range check accepts one at either end while HTTP treats it as
+        // padding the server may strip. On the timestamp that is fatal and silent: the signer hashed the
+        // untrimmed string, the server hashes what arrived, and the assertion fails verification with nothing
+        // naming whitespace as the cause.
+        assertTrue(
+            runCatching { assertionWith(assertion = " $ASSERTION") }.exceptionOrNull() is IllegalArgumentException,
+        )
+        assertTrue(runCatching { assertionWith(keyId = "$KEY_ID ") }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(
+            runCatching { assertionWith(deviceId = " $DEVICE_ID ") }.exceptionOrNull() is IllegalArgumentException,
+        )
+        assertTrue(
+            runCatching { assertionWith(timestamp = "$TIMESTAMP ") }.exceptionOrNull() is IllegalArgumentException,
+        )
+    }
+
+    @Test
+    fun `the timestamp's shape is not validated, and an interior space survives`() {
+        // Two facts, one value, because the value demonstrates both. The server re-derives what was signed from
+        // this string alone, so it has to be the signer's bytes verbatim: validating a format here would be this
+        // SDK asserting a shape it does not itself produce, and the first signer spelling the offset differently
+        // would be refused by its own client. The interior space also shows the edge-whitespace rule above was
+        // not over-corrected into rejecting all whitespace — HTTP pads only the edges, so this survives the
+        // round trip byte for byte and a signer is free to have signed it.
         assertEquals("17 Aug 2026", assertionWith(timestamp = "17 Aug 2026").asHeaders()["X-Assertion-Timestamp"])
     }
 
