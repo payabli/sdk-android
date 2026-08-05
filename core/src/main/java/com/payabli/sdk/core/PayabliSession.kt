@@ -14,6 +14,7 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.TransportAssembly
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import kotlinx.coroutines.CoroutineDispatcher
@@ -160,7 +161,7 @@ public class PayabliSession private constructor(
             host.appContext.applicationContext.applyHostLogLevel()
 
             return install(ConfigIdentity(config)) { onAuthFailure ->
-                TransportFactory.authenticated(config, IO_DISPATCHER, onAuthFailure = onAuthFailure)
+                TransportFactory.authenticated(config, IO_DISPATCHER, TransportAssembly(onAuthFailure = onAuthFailure))
             }
         }
 
@@ -177,7 +178,12 @@ public class PayabliSession private constructor(
             config: PayabliConfig,
         ): Result<PayabliSession> =
             install(ConfigIdentity(config)) { onAuthFailure ->
-                TransportFactory.authenticatedAgainst(baseUrl, config, IO_DISPATCHER, onAuthFailure = onAuthFailure)
+                TransportFactory.authenticatedAgainst(
+                    baseUrl,
+                    config,
+                    IO_DISPATCHER,
+                    TransportAssembly(onAuthFailure = onAuthFailure),
+                )
             }
 
         /**
