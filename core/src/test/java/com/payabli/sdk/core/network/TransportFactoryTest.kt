@@ -81,8 +81,8 @@ class TransportFactoryTest {
                     environment = environment,
                 )
 
-            val first = TransportFactory.authenticated(config)
-            val second = TransportFactory.authenticated(config)
+            val first = TransportFactory.authenticated(config, Dispatchers.IO)
+            val second = TransportFactory.authenticated(config, Dispatchers.IO)
 
             // A holder per call, which is exactly why this is no longer what a capability calls: sharing
             // could only ever be requested here, and `PayabliSession` is where it became structural.
@@ -97,7 +97,12 @@ class TransportFactoryTest {
                 server.respondWith(200, "")
 
                 val transport =
-                    TransportFactory.authenticatedAgainst(server.baseUrl, config(), logger = logger())
+                    TransportFactory.authenticatedAgainst(
+                        server.baseUrl,
+                        config(),
+                        Dispatchers.IO,
+                        TransportAssembly(logger = logger()),
+                    )
                 completing("the call") { transport.execute(ping()) }
 
                 assertEquals("Bearer initial-token", server.onlyRequest.header(AUTHORIZATION))
@@ -115,7 +120,10 @@ class TransportFactoryTest {
                     TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED.also { calls.incrementAndGet() } },
-                        logger = logger(),
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                        ),
                     )
                 val response = completing("the recovered call") { transport.execute(ping()) }
 
@@ -137,7 +145,10 @@ class TransportFactoryTest {
                     TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED },
-                        logger = logger(),
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                        ),
                     )
                 val thrown = runCatching { transport.execute(ping()) }.exceptionOrNull()
 
@@ -164,8 +175,11 @@ class TransportFactoryTest {
                     TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED.also { calls.incrementAndGet() } },
-                        recovery = widened,
-                        logger = logger(),
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            recovery = widened,
+                            logger = logger(),
+                        ),
                     )
                 val response = completing("the widened recovery") { transport.execute(ping()) }
 
@@ -183,8 +197,24 @@ class TransportFactoryTest {
                 val calls = AtomicInteger()
                 val cfg = config { REFRESHED.also { calls.incrementAndGet() } }
 
-                val first = TransportFactory.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
-                val second = TransportFactory.authenticatedAgainst(server.baseUrl, cfg, logger = logger())
+                val first =
+                    TransportFactory.authenticatedAgainst(
+                        server.baseUrl,
+                        cfg,
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                        ),
+                    )
+                val second =
+                    TransportFactory.authenticatedAgainst(
+                        server.baseUrl,
+                        cfg,
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                        ),
+                    )
                 assertNotSame(first, second)
 
                 completing("first") { first.execute(ping()) }
@@ -206,8 +236,11 @@ class TransportFactoryTest {
                     TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config { REFRESHED },
-                        logger = logger(),
-                        authLogger = authLogger(),
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                            authLogger = authLogger(),
+                        ),
                     )
                 completing("the call") { transport.execute(ping()) }
 
@@ -261,8 +294,11 @@ class TransportFactoryTest {
                     TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         slowProvider,
-                        logger = logger(),
-                        authLogger = authLogger(),
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                            authLogger = authLogger(),
+                        ),
                     )
 
                 val response =
@@ -305,9 +341,12 @@ class TransportFactoryTest {
                     TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config(slowProvider),
-                        logger = logger(),
-                        authLogger = authLogger(),
-                        providerTimeoutMillis = 50,
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                            authLogger = authLogger(),
+                            providerTimeoutMillis = 50,
+                        ),
                     )
                 val failure =
                     withContext(Dispatchers.IO) {
@@ -320,8 +359,11 @@ class TransportFactoryTest {
                     TransportFactory.authenticatedAgainst(
                         server.baseUrl,
                         config(slowProvider),
-                        logger = logger(),
-                        authLogger = authLogger(),
+                        Dispatchers.IO,
+                        TransportAssembly(
+                            logger = logger(),
+                            authLogger = authLogger(),
+                        ),
                     )
                 val response =
                     withContext(Dispatchers.IO) { roomy.execute(ping()) }

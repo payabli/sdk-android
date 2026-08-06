@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
 import com.payabli.sdk.core.storage.impl.StoreIdentity
+import kotlinx.coroutines.CoroutineDispatcher
 import java.io.File
 
 /**
@@ -48,21 +49,48 @@ internal object SecureStorageFactory {
      */
     fun create(
         directory: File,
+        dispatcher: CoroutineDispatcher,
         fileName: String = DEFAULT_FILE_NAME,
         logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
-    ): PayabliSecureStorage {
+    ): PayabliSecureStorage = open(directory, dispatcher, fileName, logger).storage
+
+    /**
+     * The store together with the identity it was built from, for a caller that needs the identity as well.
+     *
+     * [create] discards it, which is right for a caller that only wants the store, and wrong for one that has
+     * to serialise against the same store: resolving it a second time is the split [StoreIdentity] exists to
+     * prevent, reappearing at a new composition point. A path whose canonical target changes between the two
+     * calls would hand one consumer one identity and the other a different one.
+     */
+    fun open(
+        directory: File,
+        dispatcher: CoroutineDispatcher,
+        fileName: String = DEFAULT_FILE_NAME,
+        logger: SdkLogger = LoggerRegistry.of(LogCategory.CORE),
+    ): OpenedStore {
         val file = File(directory, fileName)
         // Resolved once, here, and handed to both. Resolving separately for the alias and inside the store let a
         // path whose canonical target changed between the two calls, a repointed symlink being the plausible way,
         // give the cipher one identity and persistence another.
         val identity = StoreIdentity.of(file)
-        return FileSecureStorage(
-            file = file,
-            cipher = KeystoreValueCipher(aliasFor(identity), logger),
-            logger = logger,
+        return OpenedStore(
+            storage =
+                FileSecureStorage(
+                    file = file,
+                    cipher = KeystoreValueCipher(aliasFor(identity), logger),
+                    logger = logger,
+                    dispatcher = dispatcher,
+                    identity = identity,
+                ),
             identity = identity,
         )
     }
+
+    /** A store and the one identity every consumer of it must agree on. */
+    internal class OpenedStore(
+        val storage: PayabliSecureStorage,
+        val identity: String,
+    )
 
     /** The alias for an already-resolved identity, which is what [create] uses so nothing resolves twice. */
     fun aliasFor(identity: String): String = "$KEY_ALIAS_PREFIX.$identity"

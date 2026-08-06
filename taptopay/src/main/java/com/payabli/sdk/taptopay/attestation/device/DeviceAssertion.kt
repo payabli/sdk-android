@@ -7,8 +7,7 @@ private const val LAST_PRINTABLE = '~'
  * What identifies this device to the service: the handle it was registered under and its key.
  *
  * The three travel together and are required together by `/attest`, which is why they are one parameter rather
- * than three. [deviceId] comes from `/register`; [keyId] and [publicKey] come from the device key, which is
- * PLA-2350's work, so this is the shape that ticket produces and this one consumes.
+ * than three. [deviceId] comes from `/register`; [keyId] and [publicKey] come from the device key.
  *
  * Grouping them also removes a hazard the call site had: five same-typed strings in a row, where a transposed
  * pair compiles silently and fails as an attestation the service cannot verify. Three of them are now named
@@ -36,8 +35,7 @@ internal class DeviceIdentity(
  * shape the server parses is ISO-8601 with fractional seconds, and it accepts a window of 120 seconds plus 5
  * of skew, so an assertion is minted per call and never cached.
  *
- * This type only carries the values; producing them needs a Keystore EC key that nothing in this phase owns
- * yet (PLA-2182 consumes an assertion, PLA-2183's prerequisite produces one).
+ * This type only carries the values. [DeviceAssertionSigner] produces them from the device key.
  *
  * Values are checked for header safety at construction. `HttpURLConnection.setRequestProperty` rejects an
  * illegal character with an unchecked `IllegalArgumentException` that escapes before the transport can map

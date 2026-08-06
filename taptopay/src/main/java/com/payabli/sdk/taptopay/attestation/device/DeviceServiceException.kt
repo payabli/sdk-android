@@ -25,7 +25,7 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
  *
  * The field names in that `errors` map do not currently reach the caller. `:core` decodes `errors` as a map of
  * `{message, suggestion}` objects and this service sends a map of strings, so the map arrives empty and the one
- * fact worth having — which field was refused — is lost. PLA-2351 fixes it in `:core`, where every 400 in the
+ * fact worth having — which field was refused — is lost. The fix belongs in `:core`, where every 400 in the
  * SDK shares the same decode.
  *
  * Device-local rather than new `PayabliErrorCode` cases, on the precedent

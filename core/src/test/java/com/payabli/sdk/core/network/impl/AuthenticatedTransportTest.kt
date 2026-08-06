@@ -78,6 +78,7 @@ class AuthenticatedTransportTest {
                 PayabliService.create(
                     baseUrl = server.baseUrl,
                     auth = auth,
+                    dispatcher = Dispatchers.IO,
                     logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                     callTimeout = callTimeout,
                 ),
@@ -175,7 +176,7 @@ class AuthenticatedTransportTest {
                 // Through the base, not the wrapper: the chain is where this happens now, so asserting it
                 // through the wrapper would pass even if the wrapper were the one injecting.
                 PayabliService
-                    .create(server.baseUrl, auth, DefaultSdkLogger(LogCategory.NETWORK, sink))
+                    .create(server.baseUrl, auth, Dispatchers.IO, DefaultSdkLogger(LogCategory.NETWORK, sink))
                     .execute(ping())
 
                 assertEquals("Bearer $TEST_TOKEN", server.onlyRequest.header(AUTHORIZATION))
@@ -237,7 +238,7 @@ class AuthenticatedTransportTest {
                 val auth = testAuth()
 
                 PayabliService
-                    .create(server.baseUrl, auth, DefaultSdkLogger(LogCategory.NETWORK, sink))
+                    .create(server.baseUrl, auth, Dispatchers.IO, DefaultSdkLogger(LogCategory.NETWORK, sink))
                     .execute(
                         PayabliRequest(
                             HttpMethod.GET,
@@ -294,6 +295,7 @@ class AuthenticatedTransportTest {
                             PayabliService.createWithDecorations(
                                 baseUrl = server.baseUrl,
                                 decorations = listOf(BearerDecoration(auth), barrier),
+                                dispatcher = Dispatchers.IO,
                                 logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ),
                         auth = auth,
@@ -351,6 +353,7 @@ class AuthenticatedTransportTest {
                             PayabliService.createWithDecorations(
                                 baseUrl = server.baseUrl,
                                 decorations = listOf(gate, BearerDecoration(auth)),
+                                dispatcher = Dispatchers.IO,
                                 logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ),
                         auth = auth,
@@ -660,6 +663,7 @@ class AuthenticatedTransportTest {
                             PayabliService.create(
                                 baseUrl = server.baseUrl,
                                 auth = auth,
+                                dispatcher = Dispatchers.IO,
                                 logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                             ),
                         auth = auth,

@@ -7,7 +7,6 @@ import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.core.storage.requireRepresentableKey
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -32,7 +31,15 @@ internal class FileSecureStorage(
     private val file: File,
     private val cipher: ValueCipher,
     private val logger: SdkLogger,
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * Where the blocking file and cipher work runs. **No default: every call site states it.**
+     *
+     * A default here fails silently. A composition that omits one gets the real `Dispatchers.IO` while the
+     * layer above believes it supplied the dispatcher, so a test that substituted one measures a thread the
+     * code never used, and a caller that narrowed parallelism does not get the narrowing. Without a default
+     * the compiler names each site that has not been given one.
+     */
+    private val dispatcher: CoroutineDispatcher,
     /**
      * The store's resolved identity, injected so one composition resolves it once.
      *

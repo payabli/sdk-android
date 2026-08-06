@@ -252,8 +252,8 @@ class DeviceFailureMappingTest {
             // Empty, and it should not be: `errors` names the refused field, and the string above says which
             // property was missing. `:core` decodes that map as `{message, suggestion}` objects while the
             // service sends strings, so the decode fails and the map degrades to empty. Asserted as it stands
-            // rather than as it ought to be, so this test says what the SDK does today; PLA-2351 fixes the
-            // decode in `:core` and flips this line to the assertion it wants to be.
+            // rather than as it ought to be, so this test says what the SDK does today. Fixing the decode in
+            // `:core` flips this line to the assertion it wants to be.
             assertTrue((failure as PayabliValidationException).fieldErrors.isEmpty())
         }
 

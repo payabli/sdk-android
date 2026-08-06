@@ -10,6 +10,7 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.storage.impl.FileSecureStorage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -89,6 +90,7 @@ class KeystoreHardwareManualTest {
             file = File(directory, "store.json"),
             cipher = KeystoreValueCipher(keyAlias, logger),
             logger = logger,
+            dispatcher = Dispatchers.IO,
         )
 
     /**

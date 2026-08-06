@@ -47,10 +47,10 @@ import kotlinx.serialization.SerializationException
  * without this client being consulted. A 2xx envelope decline is not a credential rejection and never triggers
  * it, which is why the ordinary device failures are unaffected. The replay is survivable today only because a
  * 401 is answered by the authorization layer before a controller runs, so nothing has been consumed or counted
- * yet; it is not survivable by design, and it is not a property to build on. PLA-2297 narrows the policy so
- * a refresh cannot touch these routes at all. Until then, whoever owns the sequence should assume a `/attest`
- * or `/activate` may reach the service twice, and must not read "nothing is wrapped in `Retry`" as a promise
- * that it cannot.
+ * yet; it is not survivable by design, and it is not a property to build on. The credential-rejection policy
+ * is to be narrowed so a refresh cannot touch these routes at all. Until then, whoever owns the sequence
+ * should assume a `/attest` or `/activate` may reach the service twice, and must not read "nothing is wrapped
+ * in `Retry`" as a promise that it cannot.
  */
 internal class DeviceServiceClient(
     private val transport: PayabliTransport,

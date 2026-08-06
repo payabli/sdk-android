@@ -7,6 +7,7 @@ import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
 import org.junit.Assert.assertEquals
@@ -41,6 +42,7 @@ class PayabliServiceTest {
     ) = PayabliService.create(
         baseUrl = baseUrl,
         auth = testAuth(),
+        dispatcher = Dispatchers.IO,
         logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
         callTimeout = callTimeout,
     )
@@ -243,6 +245,7 @@ class PayabliServiceTest {
                     PayabliService.createWithDecorations(
                         baseUrl = server.baseUrl,
                         decorations = listOf(PayabliRequestDecoration { it.withHeaders(mapOf("X-Probe" to "1")) }),
+                        dispatcher = Dispatchers.IO,
                         logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
                     )
 
