@@ -6,16 +6,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 
 /**
- * @param dynamicColor off by default, unlike the Android Studio template it replaces. Dynamic colour
- *   derives the whole scheme from the user's wallpaper, so on any Android 12+ device it would put
- *   the Payabli brand out of a demo whose job is to show it, and would make two screenshots of the
- *   same screen on two devices incomparable. The parameter stays so an integrator can turn it on and
- *   see what their own app would look like.
+ * There is no dynamic-colour option.
+ *
+ * Dynamic colour derives the whole scheme from the user's wallpaper, so on any Android 12+ device it
+ * would put the Payabli brand out of a demo whose job is to show it, and would make two screenshots
+ * of the same screen on two devices incomparable. An integrator wanting to see their own scheme
+ * builds `MaterialTheme` with `dynamicLightColorScheme` in their own app, which is where the choice
+ * belongs.
  */
 @Composable
 fun PayabliDemoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = if (darkTheme) PayabliDarkColorScheme else PayabliLightColorScheme

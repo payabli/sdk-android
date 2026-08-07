@@ -109,9 +109,9 @@ WCAG formula and clears 4.5:1 in both schemes.
 The guide has no green, so a passing check reads teal. Inventing a green would put a colour in the app
 that appears in no token list.
 
-Dynamic colour is **off**. It would derive the scheme from the user's wallpaper, replacing the brand on
-any Android 12+ device. The parameter is still on `PayabliDemoTheme` if you want to see what an
-integrator's app would look like.
+There is no dynamic-colour option. It would derive the scheme from the user's wallpaper, replacing the
+brand on any Android 12+ device. Seeing an integrator's own scheme means building `MaterialTheme` with
+`dynamicLightColorScheme` in their app, which is where that choice belongs.
 
 ### Why this app is branded, and why the SDK's form should not be
 
