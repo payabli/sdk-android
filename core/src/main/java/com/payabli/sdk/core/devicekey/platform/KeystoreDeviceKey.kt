@@ -8,8 +8,10 @@ import android.security.keystore.StrongBoxUnavailableException
 import androidx.annotation.RequiresApi
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
+import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
 import com.payabli.sdk.core.devicekey.impl.EcdsaSigner
+import com.payabli.sdk.core.devicekey.impl.JwkThumbprint
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
@@ -41,20 +43,43 @@ import java.security.spec.ECGenParameterSpec
  * longer has, and it is a live reference to material whose lifetime this class does not own.
  */
 internal class KeystoreDeviceKey(
-    override val keyId: String,
     private val logger: SdkLogger,
     /**
      * Runs after the unsynchronized presence check and before the guarded generation. **A test seam, no-op in
      * production**, and it exists because the race it opens cannot be reached from outside this class.
      *
-     * Two instances over one alias both finding no key and both generating would leave the second key in place
-     * and the first attested key gone. From outside [ensureKey] the check and the creation are atomic, so
-     * nothing can interleave them, and a test that races two callers observes a consequence rather than the
-     * invariant. With a rendezvous here the test asserts the invariant instead: one alias, one generation,
-     * counted from the log line [createKey] emits.
+     * Two instances both finding no key and both generating would leave the second key in place and the first
+     * attested key gone. From outside [ensureKey] the check and the creation are atomic, so nothing can
+     * interleave them, and a test that races two callers observes a consequence rather than the invariant.
+     * With a rendezvous here the test asserts the invariant instead: one generation, counted from the log line
+     * [createKey] emits.
      */
     private val beforeKeyGeneration: () -> Unit = {},
 ) : DeviceKey {
+    /**
+     * There is no alias parameter, and that is the point.
+     *
+     * A parameter here could carry a per-key name, which is the shape this class exists to make unwritable:
+     * nothing would fail, and the key it replaced would be left in the store with nothing able to name it.
+     * The alias is the same on every install and is read from one place.
+     */
+    private val alias: String get() = DeviceKeyHandle.ALIAS
+
+    override fun identity(): String = JwkThumbprint.of(publicKeyPoint())
+
+    override fun delete() {
+        // Not `discarding()`: that reports the key gone because a signature proved it unusable. This is a
+        // caller acting on what the service said, and it succeeds rather than throwing when the key is
+        // already absent, because a repeat of an attempt that may have completed must not fail.
+        try {
+            keyStore().deleteEntry(alias)
+        } catch (e: GeneralSecurityException) {
+            throw DeviceKeyException.CryptoUnavailable(e)
+        } catch (e: ProviderException) {
+            throw asProviderFailure(e)
+        }
+    }
+
     override fun publicKeyPoint(): ByteArray {
         val key = existingPublicKey() ?: throw DeviceKeyException.KeyLost()
         return try {
@@ -78,16 +103,17 @@ internal class KeystoreDeviceKey(
     /**
      * Provisions the alias, and is the only place a key is ever created.
      *
-     * Double-checked under the per-alias monitor, so two callers arriving together generate once rather than
+     * Double-checked under the shared monitor, so two callers arriving together generate once rather than
      * racing to replace each other's key.
      *
-     * With [mayCreate] false it proves a key is present, which is what a caller resolving an already-attested
-     * alias wants: the answer to a missing key there is re-attestation, not a fresh key under the same name.
+     * With [mayCreate] false it proves a key is present, which is what a caller resolving a key the service has
+     * already accepted wants: the answer to a missing key there is enrolling again, not a fresh key under the
+     * same alias.
      */
     fun ensureKey(mayCreate: Boolean) {
         if (existingPrivateKey() != null) return
         beforeKeyGeneration()
-        synchronized(monitorFor(keyId)) {
+        synchronized(MONITOR) {
             if (existingPrivateKey() != null) return
             if (!mayCreate) throw DeviceKeyException.KeyLost()
             createKey()
@@ -130,7 +156,7 @@ internal class KeystoreDeviceKey(
      */
     private fun discarding(cause: Throwable): DeviceKeyException {
         logger.warn(LogField.safe("event", "device_key_discarded")) { "device key unusable, discarding alias" }
-        return if (runCatching { keyStore().deleteEntry(keyId) }.isSuccess) {
+        return if (runCatching { keyStore().deleteEntry(alias) }.isSuccess) {
             DeviceKeyException.KeyLost(cause)
         } else {
             DeviceKeyException.CryptoUnavailable(cause)
@@ -152,7 +178,7 @@ internal class KeystoreDeviceKey(
 
     private fun existingPrivateKey(): PrivateKey? =
         try {
-            keyStore().getKey(keyId, null) as? PrivateKey
+            keyStore().getKey(alias, null) as? PrivateKey
         } catch (e: UnrecoverableKeyException) {
             throw asFailure(e)
         } catch (e: GeneralSecurityException) {
@@ -169,7 +195,7 @@ internal class KeystoreDeviceKey(
      */
     private fun existingPublicKey(): ECPublicKey? =
         try {
-            keyStore().getCertificate(keyId)?.publicKey as? ECPublicKey
+            keyStore().getCertificate(alias)?.publicKey as? ECPublicKey
         } catch (e: GeneralSecurityException) {
             throw DeviceKeyException.CryptoUnavailable(e)
         } catch (e: ProviderException) {
@@ -219,7 +245,7 @@ internal class KeystoreDeviceKey(
      */
     private fun baseSpec(): KeyGenParameterSpec.Builder =
         KeyGenParameterSpec
-            .Builder(keyId, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
+            .Builder(alias, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
             .setAlgorithmParameterSpec(ECGenParameterSpec(CURVE))
             .setDigests(KeyProperties.DIGEST_SHA256)
 
@@ -254,13 +280,13 @@ internal class KeystoreDeviceKey(
         }
 
     private companion object {
-        /** One monitor per alias, shared by every key over it, mirroring the storage cipher's. */
-        private val monitors = HashMap<String, Any>()
-
-        private fun monitorFor(keyId: String): Any =
-            // A plain map under a monitor, not ConcurrentHashMap.computeIfAbsent, which is API 24 against this
-            // module's floor of 23.
-            synchronized(monitors) { monitors.getOrPut(keyId) { Any() } }
+        /**
+         * One monitor, shared by every instance.
+         *
+         * There is one alias, so there is one thing to serialise on. The storage cipher keys its monitor by
+         * alias because it has one per store; here a map would be a map with a single entry.
+         */
+        private val MONITOR = Any()
 
         const val PROVIDER = "AndroidKeyStore"
         const val CURVE = "secp256r1"

@@ -6,7 +6,7 @@ import android.security.keystore.KeyProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.ManualDeviceTest
-import com.payabli.sdk.core.devicekey.impl.DeviceKeyAliases
+import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
@@ -54,11 +54,11 @@ import kotlin.time.Duration.Companion.seconds
 @RunWith(AndroidJUnit4::class)
 class DeviceKeyHardwareManualTest {
     private val logger = DefaultSdkLogger(LogCategory.CORE, RecordingLogSink())
-    private lateinit var keyId: String
+    private val keyId = DeviceKeyHandle.ALIAS
 
     @Before
     fun setUp() {
-        keyId = DeviceKeyAliases.newAlias()
+        runCatching { KeyStore.getInstance(PROVIDER).apply { load(null) }.deleteEntry(keyId) }
     }
 
     @After
@@ -66,7 +66,7 @@ class DeviceKeyHardwareManualTest {
         runCatching { KeyStore.getInstance(PROVIDER).apply { load(null) }.deleteEntry(keyId) }
     }
 
-    private fun provisioned() = KeystoreDeviceKey(keyId, logger).apply { ensureKey(mayCreate = true) }
+    private fun provisioned() = KeystoreDeviceKey(logger).apply { ensureKey(mayCreate = true) }
 
     private fun keyInfo(): KeyInfo {
         val store = KeyStore.getInstance(PROVIDER).apply { load(null) }

@@ -22,13 +22,20 @@ import androidx.annotation.RestrictTo
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface DeviceKey {
     /**
-     * The key's alias, which is also the identifier the service records for it.
+     * The identifier the service records for this key, derived from its public half.
      *
-     * Stable for the life of the key. A rotated key gets a new one, so a caller holding an old value is
-     * holding a reference to a key that no longer exists rather than a stale name for the current one.
+     * Per key, so a replacement gets a different one. The alias the key is stored under is fixed and is the
+     * same on every install, which is why it cannot serve as this: the service would be unable to tell one
+     * install's key from another's, or a key from the one it replaced.
+     *
+     * Derived on every call rather than held, for the reason nothing else here is cached: the key can be
+     * deleted while a caller still holds this object, and a remembered identifier would then name material
+     * that is gone.
+     *
+     * @throws DeviceKeyException if the key is gone or the key store cannot be reached.
      */
-    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public val keyId: String
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public fun identity(): String
 
     /**
      * The public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes.
@@ -48,4 +55,22 @@ public interface DeviceKey {
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public fun sign(payload: ByteArray): ByteArray
+
+    /**
+     * Removes the key, so the next caller that may create one gets a new key at the same alias.
+     *
+     * For a caller that has read a definitive refusal to bind this key. Not for a failure it could not
+     * classify and not for a response reporting the key as already bound: deleting on either destroys a
+     * credential that is or may still be live, and the key store cannot tell afterwards that it happened.
+     *
+     * Distinct from clearing an identity record, which forgets what the service said about the key while
+     * leaving the key itself in place.
+     *
+     * Succeeds when there is no key to remove, so a caller that cannot tell whether an earlier attempt
+     * completed can repeat it.
+     *
+     * @throws DeviceKeyException if the key store cannot be reached, in which case the key is still there.
+     */
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public fun delete()
 }

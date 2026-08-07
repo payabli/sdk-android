@@ -6,7 +6,7 @@ import android.security.keystore.KeyProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicekey.DeviceKeyException
-import com.payabli.sdk.core.devicekey.impl.DeviceKeyAliases
+import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogLevel
@@ -47,18 +47,18 @@ private val TEST_TIMEOUT = 30.seconds
  * here cannot be shown off-device: `AndroidKeyStore` exists nowhere else, and the authorizations a key was
  * created with can only be read back from a key the platform actually generated.
  *
- * A unique alias per run, deleted afterwards, so a leftover key from a previous run cannot make a failing
- * implementation look like a passing one.
+ * There is one alias and the class takes no parameter for it, so this runs against the entry the app itself
+ * uses. It is deleted before and after every test: a leftover key from a previous run would otherwise make a
+ * failing implementation look like a passing one.
  */
 @RunWith(AndroidJUnit4::class)
 class KeystoreDeviceKeyInstrumentedTest {
     private val logger = DefaultSdkLogger(LogCategory.CORE, RecordingLogSink())
-    private lateinit var keyId: String
+    private val keyId = DeviceKeyHandle.ALIAS
 
     @Before
     fun setUp() {
-        // The namespace shape the slots accept, so this exercises an alias production would actually hold.
-        keyId = DeviceKeyAliases.newAlias()
+        runCatching { keyStore().deleteEntry(keyId) }
     }
 
     @After
@@ -71,7 +71,7 @@ class KeystoreDeviceKeyInstrumentedTest {
     private fun key(
         beforeKeyGeneration: () -> Unit = {},
         logger: SdkLogger = this.logger,
-    ) = KeystoreDeviceKey(keyId, logger, beforeKeyGeneration)
+    ) = KeystoreDeviceKey(logger, beforeKeyGeneration)
 
     private fun provisioned() = key().apply { ensureKey(mayCreate = true) }
 
@@ -182,6 +182,45 @@ class KeystoreDeviceKeyInstrumentedTest {
             // point recorded somewhere, and nothing records it, so the service is what rejects it.
             assertNotEquals(before.toList(), after.toList())
             assertTrue("the replacement must still be usable", key().sign("payload".toByteArray()).isNotEmpty())
+        }
+
+    @Test
+    fun theIdentityIsDerivedFromTheKeyRatherThanFromTheAlias() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val before = provisioned().identity()
+
+            keyStore().deleteEntry(keyId)
+            val after = key().apply { ensureKey(mayCreate = true) }.identity()
+
+            // The alias is identical across the replacement, so an identity taken from it would be identical
+            // too and the service would hold one identifier for two different keys.
+            assertNotEquals(before, after)
+            // Derived, not remembered: a second instance holding no state reports the same value.
+            assertEquals(after, key().identity())
+        }
+
+    @Test
+    fun theIdentityOfAnAbsentKeyReportsItGone() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val thrown = runCatching { key().identity() }.exceptionOrNull()
+
+            // Not an empty string and not a thumbprint of nothing, either of which the service would accept and
+            // then be unable to match against any key.
+            assertTrue("expected KeyLost, got $thrown", thrown is DeviceKeyException.KeyLost)
+        }
+
+    @Test
+    fun deleteRemovesTheKeyAndSucceedsWhenThereIsNothingToRemove() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val subject = provisioned()
+
+            subject.delete()
+            assertFalse("the key survived a delete", keyStore().containsAlias(keyId))
+
+            // A caller that could not tell whether its first attempt completed repeats it. Throwing here would
+            // turn a successful cleanup into a failure the second time it is asked for.
+            subject.delete()
+            assertFalse(keyStore().containsAlias(keyId))
         }
 
     /**

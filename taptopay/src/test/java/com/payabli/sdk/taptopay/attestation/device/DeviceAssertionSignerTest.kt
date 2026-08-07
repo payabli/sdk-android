@@ -147,9 +147,11 @@ private class FakeDeviceKey(
 ) : DeviceKey {
     val signed: MutableList<ByteArray> = CopyOnWriteArrayList()
 
-    override val keyId: String = KEY_ID
+    override fun identity(): String = KEY_ID
 
     override fun publicKeyPoint(): ByteArray = throw UnsupportedOperationException("not asked for here")
+
+    override fun delete(): Unit = throw UnsupportedOperationException("not asked for here")
 
     override fun sign(payload: ByteArray): ByteArray {
         signed += payload

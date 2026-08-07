@@ -42,7 +42,7 @@ internal class DeviceAssertionSigner(
         val timestamp = FORMATTER.format(clock.instant())
         return DeviceAssertion(
             assertion = Base64.getEncoder().encodeToString(deviceKey.sign(clientDataHash(timestamp))),
-            keyId = deviceKey.keyId,
+            keyId = deviceKey.identity(),
             deviceId = deviceId,
             timestamp = timestamp,
         )
