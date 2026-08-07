@@ -4,7 +4,7 @@ import android.os.Build
 import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.sdk.core.HardwareKeystoreTarget
 import com.payabli.sdk.core.ManualDeviceTest
 import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.logging.LogCategory
@@ -15,7 +15,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,7 +44,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * The capability signal is API-aware for the reason the storage tier documents: `FEATURE_HARDWARE_KEYSTORE`
  * arrived at API 31, so below it the signal is `FEATURE_FINGERPRINT` and the basis is the Compatibility
- * Definition Document clause quoted on [requiresHardwareBackedKeystore].
+ * Definition Document clause quoted on [HardwareKeystoreTarget.requiresHardwareBackedKeystore].
  *
  * **Not covered: `KeyPermanentlyInvalidatedException`.** This key omits `setUserAuthenticationRequired`, so no
  * enrollment or credential change voids it and there is no procedure that would. The reachable lost-key
@@ -56,14 +55,17 @@ class DeviceKeyHardwareManualTest {
     private val logger = DefaultSdkLogger(LogCategory.CORE, RecordingLogSink())
     private val keyId = DeviceKeyHandle.ALIAS
 
+    // Not wrapped in runCatching: an absent alias deletes successfully, so a throw here means the store is
+    // unusable. Swallowing it would let a leftover key answer the hardware assertions, which is the one thing
+    // this tier exists to establish about the key it just generated.
     @Before
     fun setUp() {
-        runCatching { KeyStore.getInstance(PROVIDER).apply { load(null) }.deleteEntry(keyId) }
+        KeyStore.getInstance(PROVIDER).apply { load(null) }.deleteEntry(keyId)
     }
 
     @After
     fun tearDown() {
-        runCatching { KeyStore.getInstance(PROVIDER).apply { load(null) }.deleteEntry(keyId) }
+        KeyStore.getInstance(PROVIDER).apply { load(null) }.deleteEntry(keyId)
     }
 
     private fun provisioned() = KeystoreDeviceKey(logger).apply { ensureKey(mayCreate = true) }
@@ -75,33 +77,11 @@ class DeviceKeyHardwareManualTest {
         return KeyFactory.getInstance(private.algorithm, PROVIDER).getKeySpec(private, KeyInfo::class.java)
     }
 
-    /**
-     * Whether this device is **required** to back its keystore with an isolated execution environment.
-     *
-     * `FEATURE_HARDWARE_KEYSTORE` was introduced at API 31, so an API 23 to 30 device does not advertise it
-     * even when its keystore is hardware-backed, and querying it there would fail a correct implementation.
-     * Below 31 the signal is `FEATURE_FINGERPRINT`: the Compatibility Definition Document requires at
-     * `[9.11/H-0-2]` that a device back its keystore with an isolated execution environment, and exempts
-     * devices launched earlier **unless** they declare that feature. One case is left unanswered, a pre-31
-     * device without fingerprint, which is genuinely exempt and skips.
-     */
-    private fun requiresHardwareBackedKeystore(): Boolean {
-        val features = InstrumentationRegistry.getInstrumentation().targetContext.packageManager
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            features.hasSystemFeature(HARDWARE_KEYSTORE_FEATURE)
-        } else {
-            features.hasSystemFeature(FINGERPRINT_FEATURE)
-        }
-    }
-
     @ManualDeviceTest
     @Test
     fun theDeviceKeyIsHardwareBacked() =
         runTest(timeout = TEST_TIMEOUT) {
-            Assume.assumeTrue(
-                "this device advertises no hardware keystore, so there is no hardware backing to assert",
-                requiresHardwareBackedKeystore(),
-            )
+            HardwareKeystoreTarget.assumeHardwareBackingIsAssertable()
             provisioned()
             val info = keyInfo()
 
@@ -123,21 +103,19 @@ class DeviceKeyHardwareManualTest {
     @Test
     fun theDeviceKeyUsesTheBestLevelTheDeviceAdvertises() =
         runTest(timeout = TEST_TIMEOUT) {
+            HardwareKeystoreTarget.assumeHardwareBackingIsAssertable()
             provisioned()
 
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-                Assume.assumeTrue(requiresHardwareBackedKeystore())
                 @Suppress("DEPRECATION")
                 assertTrue("the device key is not inside secure hardware", keyInfo().isInsideSecureHardware)
                 return@runTest
             }
 
-            val features = InstrumentationRegistry.getInstrumentation().targetContext.packageManager
             val expected =
                 when {
-                    features.hasSystemFeature(STRONGBOX_FEATURE) -> KeyProperties.SECURITY_LEVEL_STRONGBOX
-                    requiresHardwareBackedKeystore() -> KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
-                    else -> KeyProperties.SECURITY_LEVEL_SOFTWARE
+                    HardwareKeystoreTarget.hasStrongBox() -> KeyProperties.SECURITY_LEVEL_STRONGBOX
+                    else -> KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
                 }
 
             // The only test that catches a silent fall to a weaker level on a device that offers better.
@@ -148,7 +126,7 @@ class DeviceKeyHardwareManualTest {
     @Test
     fun aSignatureVerifiesUnderAHardwareBackedKey() =
         runTest(timeout = TEST_TIMEOUT) {
-            Assume.assumeTrue(requiresHardwareBackedKeystore())
+            HardwareKeystoreTarget.assumeHardwareBackingIsAssertable()
             val subject = provisioned()
             val payload = "the-signed-bytes".toByteArray()
 
@@ -175,8 +153,5 @@ class DeviceKeyHardwareManualTest {
     private companion object {
         val TEST_TIMEOUT = 30.seconds
         const val PROVIDER = "AndroidKeyStore"
-        const val STRONGBOX_FEATURE = "android.hardware.strongbox_keystore"
-        const val HARDWARE_KEYSTORE_FEATURE = "android.hardware.hardware_keystore"
-        const val FINGERPRINT_FEATURE = "android.hardware.fingerprint"
     }
 }
