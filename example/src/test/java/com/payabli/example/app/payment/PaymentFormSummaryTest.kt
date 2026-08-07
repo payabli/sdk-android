@@ -34,7 +34,7 @@ class PaymentFormSummaryTest {
                 .sectionsFor(PaymentMethodType.BankAccount)
                 .flatMap { it.fields }
                 .joinToString(", ") { it.fieldName }
-        assertEquals(expected, rowsOf(configuration)["Bank fields"])
+        assertEquals(expected, rowsOf(configuration)["Bank account fields"])
     }
 
     @Test
@@ -92,15 +92,53 @@ class PaymentFormSummaryTest {
 
     @Test
     fun `the masked row names exactly the fields the form hides`() {
-        val masked = rowsOf(PaymentFormConfiguration.capture())["Masked"]!!
-        PaymentField.entries.forEach { field ->
-            val named = masked.contains(field.fieldName)
-            assertEquals(
-                "${field.name} is ${if (field.input == FieldInput.Secret) "secret" else "not secret"} but the readout says otherwise",
-                field.input == FieldInput.Secret,
-                named,
+        val configuration = PaymentFormConfiguration.capture()
+        val masked = rowsOf(configuration)["Masked"]!!
+        configuration.allowedMethods
+            .flatMap { configuration.sectionsFor(it) }
+            .flatMap { it.fields }
+            .distinct()
+            .forEach { field ->
+                val named = masked.contains(field.fieldName)
+                assertEquals(
+                    "${field.name} is ${if (field.input == FieldInput.Secret) "secret" else "not secret"} but the readout says otherwise",
+                    field.input == FieldInput.Secret,
+                    named,
+                )
+            }
+    }
+
+    @Test
+    fun `a method the form will not offer is not described`() {
+        // The readout is what a reader checks the form against, so an inputs list for a method no
+        // payer can select reads as fields that are there and are not.
+        val cardOnly =
+            PaymentFormConfiguration.storePaymentMethod().copy(
+                allowedMethods = listOf(PaymentMethodType.Card),
+                defaultMethod = PaymentMethodType.Card,
             )
-        }
+        val rows = rowsOf(cardOnly)
+        assertTrue(rows.containsKey("Card fields"))
+        assertTrue(!rows.containsKey("Bank account fields"))
+    }
+
+    @Test
+    fun `masked names no field the form does not render`() {
+        val cardOnly =
+            PaymentFormConfiguration.storePaymentMethod().copy(
+                allowedMethods = listOf(PaymentMethodType.Card),
+                defaultMethod = PaymentMethodType.Card,
+            )
+        val bankOnlySecrets =
+            PaymentField.entries.filter { field ->
+                field.input == FieldInput.Secret &&
+                    cardOnly.sectionsFor(PaymentMethodType.Card).flatMap { it.fields }.none { it == field }
+            }
+        // Without this the test passes on an empty list, which reads the same as passing on the
+        // property it is here for.
+        assertTrue("no secret field is bank-only, so this proves nothing", bankOnlySecrets.isNotEmpty())
+        val masked = rowsOf(cardOnly)["Masked"]!!
+        bankOnlySecrets.forEach { assertTrue("${it.name} is named", !masked.contains(it.fieldName)) }
     }
 
     @Test
