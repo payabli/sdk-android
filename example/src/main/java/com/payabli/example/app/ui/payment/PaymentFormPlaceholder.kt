@@ -15,8 +15,6 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFormConfiguration
-import com.payabli.example.app.payment.PaymentResult
-import com.payabli.example.app.payment.StoredMethod
 import com.payabli.example.app.ui.components.BorderedButton
 import com.payabli.example.app.ui.components.DemoIcons
 import com.payabli.example.app.ui.components.PreviewSurface
@@ -42,7 +40,7 @@ import com.payabli.example.app.ui.theme.Dimens
 @Composable
 fun PaymentFormPlaceholder(
     configuration: PaymentFormConfiguration,
-    onCompleted: (PaymentResult) -> Unit,
+    onSubmit: () -> Unit,
     onError: (PaymentError) -> Unit,
     modifier: Modifier = Modifier,
     isSubmitting: Boolean = false,
@@ -80,7 +78,7 @@ fun PaymentFormPlaceholder(
         ProminentButton(
             text = if (isSubmitting) "Submitting…" else configuration.submitLabel,
             icon = DemoIcons.Pass,
-            onClick = { onCompleted(demoResult()) },
+            onClick = onSubmit,
             enabled = !isSubmitting,
         )
         BorderedButton(
@@ -95,21 +93,13 @@ fun PaymentFormPlaceholder(
     }
 }
 
-/** A result of the right shape, so the outcome screens render real content today. */
-private fun demoResult(): PaymentResult =
-    PaymentResult(
-        code = "1",
-        reason = "Success",
-        storedMethod = StoredMethod("demo-method-0001", "Payment method saved", "Approved"),
-    )
-
 @PreviewLightDark
 @Composable
 private fun PaymentFormPlaceholderPreview() {
     PreviewSurface {
         PaymentFormPlaceholder(
             configuration = PaymentFormConfiguration.capture(),
-            onCompleted = {},
+            onSubmit = {},
             onError = {},
         )
     }

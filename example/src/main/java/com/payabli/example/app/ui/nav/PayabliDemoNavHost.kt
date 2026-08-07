@@ -4,6 +4,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -82,14 +83,17 @@ fun PayabliDemoNavHost(
                             PaymentMethodViewModel.from(it)
                         }
                     val state by model.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(state.outcomeReady) {
+                        if (state.outcomeReady) {
+                            model.outcomeShown()
+                            navController.navigate(PaymentMethodSaved)
+                        }
+                    }
                     PaymentMethodScreen(
                         state = state,
                         onOpenSheet = model::openSheet,
                         onDismissSheet = model::dismissSheet,
-                        onCompleted = { result ->
-                            model.onCompleted(result)
-                            navController.navigate(PaymentMethodSaved)
-                        },
+                        onSubmit = model::submit,
                         onError = model::onError,
                     )
                 }
@@ -105,14 +109,17 @@ fun PayabliDemoNavHost(
                             CaptureViewModel.from(it)
                         }
                     val state by model.uiState.collectAsStateWithLifecycle()
+                    LaunchedEffect(state.outcomeReady) {
+                        if (state.outcomeReady) {
+                            model.outcomeShown()
+                            navController.navigate(CaptureResult)
+                        }
+                    }
                     CaptureScreen(
                         state = state,
                         onOpenSheet = model::openSheet,
                         onDismissSheet = model::dismissSheet,
-                        onCompleted = { result ->
-                            model.onCompleted(result)
-                            navController.navigate(CaptureResult)
-                        },
+                        onSubmit = model::submit,
                         onError = model::onError,
                     )
                 }

@@ -44,7 +44,7 @@ fun CaptureScreen(
     state: CaptureUiState,
     onOpenSheet: () -> Unit,
     onDismissSheet: () -> Unit,
-    onCompleted: (PaymentResult) -> Unit,
+    onSubmit: () -> Unit,
     onError: (PaymentError) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -59,7 +59,7 @@ fun CaptureScreen(
             SectionHeader(title = "Inline", note = "The same form, on the page.")
             PaymentFormHost(
                 configuration = state.configuration,
-                onCompleted = onCompleted,
+                onSubmit = onSubmit,
                 onError = onError,
                 isSubmitting = state.isSubmitting,
             )
@@ -79,7 +79,7 @@ fun CaptureScreen(
             Column(modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding)) {
                 PaymentFormHost(
                     configuration = state.configuration,
-                    onCompleted = onCompleted,
+                    onSubmit = onSubmit,
                     onError = onError,
                     isSubmitting = state.isSubmitting,
                 )
@@ -155,7 +155,7 @@ private fun CaptureScreenPreview() {
                 ),
             onOpenSheet = {},
             onDismissSheet = {},
-            onCompleted = {},
+            onSubmit = {},
             onError = {},
         )
     }

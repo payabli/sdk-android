@@ -17,6 +17,8 @@ import kotlinx.coroutines.launch
 data class CaptureUiState(
     val configuration: PaymentFormConfiguration,
     val resultText: String = "",
+    /** Raised only when the completion carried the payload this screen exists to show. */
+    val outcomeReady: Boolean = false,
     val lastResult: PaymentResult? = null,
     val diagnostics: List<String> = emptyList(),
     val diagnosticsEnabled: Boolean = true,
@@ -55,6 +57,20 @@ class CaptureViewModel(
 
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
+    /**
+     * Submits through the flow controller, so the result carries the shape this screen's operation
+     * produces. Fabricating one at the button meant Capture always received a stored-method result
+     * and reached its transaction screen with no transaction, while the controller was never called.
+     */
+    fun submit() {
+        _uiState.update { it.copy(isSubmitting = true) }
+        viewModelScope.launch {
+            flow.submit().fold(onSuccess = ::onCompleted, onFailure = {
+                onError(PaymentError.Unexpected(it.message ?: it.javaClass.simpleName))
+            })
+        }
+    }
+
     fun onCompleted(result: PaymentResult) {
         val transaction = result.transaction
         // Marked, and carrying the identifiers a reader would otherwise have to leave the screen for.
@@ -74,6 +90,7 @@ class CaptureViewModel(
                 lastResult = result,
                 isSheetOpen = false,
                 isSubmitting = false,
+                outcomeReady = transaction != null,
             )
         }
     }
@@ -92,9 +109,13 @@ class CaptureViewModel(
      * panel while every entry was still recorded and retained. A setting that changes what is shown
      * and not what is kept is the wrong half.
      */
+
     private fun record(line: String) {
         if (diagnosticsEnabled) diagnostics.record(line)
     }
+
+    /** Cleared once navigation has happened, so returning to this screen does not push again. */
+    fun outcomeShown() = _uiState.update { it.copy(outcomeReady = false) }
 
     companion object {
         fun from(container: AppContainer): CaptureViewModel =

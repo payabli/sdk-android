@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFormConfiguration
-import com.payabli.example.app.payment.PaymentResult
 
 /**
  * The seam. The only file in the app that knows whether the payment form is real.
@@ -21,14 +20,14 @@ import com.payabli.example.app.payment.PaymentResult
 @Composable
 fun PaymentFormHost(
     configuration: PaymentFormConfiguration,
-    onCompleted: (PaymentResult) -> Unit,
+    onSubmit: () -> Unit,
     onError: (PaymentError) -> Unit,
     modifier: Modifier = Modifier,
     isSubmitting: Boolean = false,
 ) {
     PaymentFormPlaceholder(
         configuration = configuration,
-        onCompleted = onCompleted,
+        onSubmit = onSubmit,
         onError = onError,
         modifier = modifier,
         isSubmitting = isSubmitting,
