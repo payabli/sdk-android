@@ -52,9 +52,15 @@ class DeviceKeyFactoryInstrumentedTest {
 
     private fun keyStore(): KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
 
+    /**
+     * Removes the key, and fails the test if it cannot.
+     *
+     * Deleting an absent alias succeeds, so a throw here means the key store is unusable. Swallowing it would
+     * leave the previous run's entry in place, and the one-entry and reuse assertions below would then hold
+     * for a key this run never generated.
+     */
     private fun wipe() {
-        runCatching { keyStore().deleteEntry(DeviceKeyHandle.ALIAS) }
-        Unit
+        keyStore().deleteEntry(DeviceKeyHandle.ALIAS)
     }
 
     private suspend fun deviceKey(): DeviceKey = DeviceKeyFactory.deviceKey(dispatcher, logger)

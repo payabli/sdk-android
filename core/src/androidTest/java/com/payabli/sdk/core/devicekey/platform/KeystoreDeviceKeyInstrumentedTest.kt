@@ -56,14 +56,18 @@ class KeystoreDeviceKeyInstrumentedTest {
     private val logger = DefaultSdkLogger(LogCategory.CORE, RecordingLogSink())
     private val keyId = DeviceKeyHandle.ALIAS
 
+    // Not wrapped in runCatching. `deleteEntry` is a successful no-op on an absent alias, verified by
+    // `deleteRemovesTheKeyAndSucceedsWhenThereIsNothingToRemove`, so it throws only when the store is
+    // genuinely unusable. Swallowing that leaves the previous run's key in place and every assertion below
+    // then describes a key this run never generated.
     @Before
     fun setUp() {
-        runCatching { keyStore().deleteEntry(keyId) }
+        keyStore().deleteEntry(keyId)
     }
 
     @After
     fun tearDown() {
-        runCatching { keyStore().deleteEntry(keyId) }
+        keyStore().deleteEntry(keyId)
     }
 
     private fun keyStore(): KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
