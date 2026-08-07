@@ -33,17 +33,29 @@ import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.Signature
 import java.security.interfaces.ECPublicKey
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration.Companion.seconds
 
 private const val PROVIDER = "AndroidKeyStore"
 private val TEST_TIMEOUT = 30.seconds
 
-/** Long enough that an unguarded replacement completes inside the signing window. */
-private const val REPLACEMENT_WINDOW_MILLIS = 2_000L
+/** Bound on waiting for something that must happen. Generous, since exceeding it fails the test. */
+private const val WAIT_MILLIS = 10_000L
+
+/**
+ * Bound on waiting for something that must **not** happen.
+ *
+ * Long enough that an unguarded replacement, which is one delete and one key generation, finishes inside it
+ * and is caught. Short enough that a held one does not stall the suite.
+ */
+private const val HELD_MILLIS = 2_000L
 
 /**
  * The real Android Keystore, which is the only part of the device key a device is required for.
@@ -243,12 +255,19 @@ class KeystoreDeviceKeyInstrumentedTest {
      * row by the identity it was sent and verifies against the public key it holds for that row, so the
      * assertion is refused and nothing in the failure names the replacement.
      *
-     * **Driven through the seam, not by timing.** The window is microseconds wide, so two threads launched
-     * together would almost never meet inside it and a green result would prove nothing. The seam puts the
-     * replacement provably inside the window; the shared monitor is what makes it wait there.
+     * **Nothing here waits on a duration.** An earlier version queued the replacement and slept, which proves
+     * neither that the worker started nor that it was held: a worker descheduled past the sleep leaves the
+     * old key in place, and the test then passes with the monitor removed. Three facts are established
+     * instead, each by a bounded wait that fails loudly rather than hanging.
      *
-     * Both halves are compared against the key that existed before signing, which is the only key the
-     * signature can have come from.
+     * 1. The worker is running, from a latch it counts down itself.
+     * 2. It cannot finish while the signature is being paired with its identity, from a `get` that must time
+     *    out. Without the monitor it finishes here instead, and that assertion fails.
+     * 3. It did finish afterwards **and** the key at the alias really changed, so a worker that silently did
+     *    nothing fails the test rather than passing it. This is the one that closes the hole the sleep left.
+     *
+     * Both halves of the returned pair are then compared against the key captured before signing, which is
+     * the only key the signature can have come from.
      */
     @Test
     fun aReplacementDuringSigningCannotSplitTheSignatureFromItsIdentity() =
@@ -259,27 +278,49 @@ class KeystoreDeviceKeyInstrumentedTest {
             val signerKey = keyStore().getCertificate(keyId).publicKey as ECPublicKey
             val payload = "the-signed-bytes".toByteArray()
             val replacing = Executors.newSingleThreadExecutor()
+            val started = CountDownLatch(1)
+            val replacement = AtomicReference<Future<*>>()
 
             try {
                 val subject =
                     KeystoreDeviceKey(
                         logger,
                         betweenSignAndIdentity = {
-                            // Started inside the window and deliberately not joined: it takes the same monitor,
-                            // so it cannot proceed until the signature and its identity have been read. Joining
-                            // it here would deadlock against exactly the guarantee under test.
-                            replacing.execute {
-                                KeystoreDeviceKey(logger).run {
-                                    delete()
-                                    ensureKey(mayCreate = true)
-                                }
-                            }
-                            // Generous enough that an unguarded replacement completes inside the window.
-                            Thread.sleep(REPLACEMENT_WINDOW_MILLIS)
+                            replacement.set(
+                                replacing.submit {
+                                    started.countDown()
+                                    KeystoreDeviceKey(logger).run {
+                                        delete()
+                                        ensureKey(mayCreate = true)
+                                    }
+                                },
+                            )
+                            assertTrue(
+                                "the replacement never started, so nothing was held back",
+                                started.await(WAIT_MILLIS, TimeUnit.MILLISECONDS),
+                            )
+                            // It holds the same monitor, so it cannot get past `delete` until this signature
+                            // and its identity have been read. Completing here is the defect.
+                            val finishedEarly =
+                                runCatching { replacement.get().get(HELD_MILLIS, TimeUnit.MILLISECONDS) }
+                            assertTrue(
+                                "the replacement completed while the signature was being paired with its identity",
+                                finishedEarly.exceptionOrNull() is TimeoutException,
+                            )
                         },
                     )
 
                 val signed = subject.sign(payload)
+
+                // The replacement must have gone through once the monitor was released. Without this a worker
+                // that never ran would satisfy everything above and below it.
+                replacement.get().get(WAIT_MILLIS, TimeUnit.MILLISECONDS)
+                val afterwards = keyStore().getCertificate(keyId).publicKey as ECPublicKey
+                assertNotEquals(
+                    "the key was never actually replaced, so this test proved nothing",
+                    EcPointEncoding.uncompressed(signerKey).toList(),
+                    EcPointEncoding.uncompressed(afterwards).toList(),
+                )
 
                 val verified =
                     Signature.getInstance("SHA256withECDSA").run {
