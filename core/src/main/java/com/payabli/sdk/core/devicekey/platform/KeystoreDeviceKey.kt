@@ -42,6 +42,17 @@ import java.security.spec.ECGenParameterSpec
  *
  * Neither half of the key is cached. A handle held across a delete keeps working against a key the store no
  * longer has, and it is a live reference to material whose lifetime this class does not own.
+ *
+ * **Synchronisation here is process-local, and the boundary is worth naming because a Keystore entry is not.**
+ * The alias belongs to the app UID, so every process of the app addresses the same entry, while `MONITOR` is
+ * companion state that each process gets its own copy of. Two processes can therefore both find the alias
+ * empty and both generate, or one can replace the key while the other is signing. This is the scope the SDK
+ * synchronises at everywhere: the session is one per process, and the storage lock is not an OS file lock.
+ *
+ * What that costs is bounded and already has a route back. One key exists at the alias afterwards rather than
+ * two, which is what the design requires; the process whose key was replaced signs with material the service
+ * did not attest, is refused, and enrols again. Under a generated alias the same collision left two keys and
+ * stranded one of them, which is the failure the fixed alias exists to remove.
  */
 internal class KeystoreDeviceKey(
     private val logger: SdkLogger,
@@ -114,6 +125,9 @@ internal class KeystoreDeviceKey(
      * The private half and the public half are two reads of the key store. Between them a replacement would
      * otherwise leave the signature made by one key and the identity naming another, which the service
      * rejects because it verifies against the public key it holds for the identity it was sent.
+     *
+     * The monitor is process-local, so this closes the window against every caller inside this process and
+     * none outside it. See the class.
      */
     override fun sign(payload: ByteArray): DeviceSignature =
         synchronized(MONITOR) {
@@ -133,7 +147,9 @@ internal class KeystoreDeviceKey(
      * Provisions the alias, and is the only place a key is ever created.
      *
      * Double-checked under the shared monitor, so two callers arriving together generate once rather than
-     * racing to replace each other's key.
+     * racing to replace each other's key. Two *processes* can still both find the alias empty and both
+     * generate, and the later generation replaces the earlier: see the class for why that is stated rather
+     * than prevented.
      *
      * With [mayCreate] false it proves a key is present, which is what a caller resolving a key the service has
      * already accepted wants: the answer to a missing key there is enrolling again, not a fresh key under the
@@ -318,6 +334,9 @@ internal class KeystoreDeviceKey(
          * It covers two invariants rather than one: that two callers finding no key generate once, and that a
          * signature and the identity labelling it come from the same key. The second is why [sign] takes it,
          * since signing alone needs no mutual exclusion.
+         *
+         * Both hold **within one process only**, which is the scope this SDK synchronises at throughout. See
+         * the class for what that leaves open.
          */
         private val MONITOR = Any()
 

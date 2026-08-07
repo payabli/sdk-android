@@ -57,7 +57,13 @@ public interface DeviceKey {
      * replacement landing between them yields a signature by the old key labelled with the new key's
      * identity: the service selects an attestation row by that identity and verifies against a public key
      * the signature was never made with, so the assertion is refused with nothing pointing at the cause.
-     * One call, one observation of the key, and no way to write the interleaved version.
+     * One call, so a caller cannot write the interleaved version.
+     *
+     * **Within one process.** Serialisation against replacement is process-local, as everywhere else in this
+     * SDK: the session is per process and the storage lock is not an OS file lock. An app running the SDK
+     * under `android:process` gets a second copy of that state, and a replacement from the other process can
+     * still land between the two reads. Nothing here coordinates across that boundary and nothing pretends
+     * to.
      *
      * The signature is DER rather than the raw `R || S` pair, because that is what the verifier expects; the
      * two are the same numbers in different envelopes and are not interchangeable.
