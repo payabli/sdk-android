@@ -1,20 +1,21 @@
 package com.payabli.example.app.ui.components
 
 import android.provider.Settings
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
 /**
@@ -23,12 +24,16 @@ import kotlinx.coroutines.delay
  * Used to stagger the parts of an outcome screen behind the mark that heads it, so a reader's eye
  * lands on the result before the sentence explaining it.
  *
- * Nothing is hidden while it waits: the content is laid out from the first frame and only its
- * appearance is animated, so a reader with animations turned off sees the finished screen and a
- * screen reader reaches every part of it either way.
+ * Nothing is withheld while it waits. The content is composed and laid out from the first frame and
+ * only how it is drawn changes, so it is in the semantics tree the whole time and a screen reader
+ * reaches every part of the screen from the moment it opens. `AnimatedVisibility` does not compose
+ * its content until it becomes visible, which would leave the parts of an outcome unreachable for as
+ * long as the stagger lasts.
+ *
+ * With animations turned off the finished screen is what is drawn on the first frame.
  */
 @Composable
-fun ColumnScope.EntersAfter(
+fun EntersAfter(
     delayMillis: Int,
     content: @Composable () -> Unit,
 ) {
@@ -42,14 +47,18 @@ fun ColumnScope.EntersAfter(
         }
     }
 
-    AnimatedVisibility(
-        visible = shown,
-        enter =
-            fadeIn(animationSpec = tween(ENTER_MILLIS)) +
-                slideInVertically(
-                    animationSpec = tween(ENTER_MILLIS, easing = FastOutSlowInEasing),
-                    initialOffsetY = { it / 3 },
-                ),
+    val entered by animateFloatAsState(
+        targetValue = if (shown) 1f else 0f,
+        animationSpec = tween(ENTER_MILLIS, easing = FastOutSlowInEasing),
+        label = "entersAfter",
+    )
+
+    Box(
+        modifier =
+            Modifier.graphicsLayer {
+                alpha = entered
+                translationY = (1f - entered) * LIFT.toPx()
+            },
     ) {
         content()
     }
@@ -66,3 +75,6 @@ private fun animationsEnabled(): Boolean {
 }
 
 private const val ENTER_MILLIS = 260
+
+/** How far the content lifts as it arrives. */
+private val LIFT = 12.dp
