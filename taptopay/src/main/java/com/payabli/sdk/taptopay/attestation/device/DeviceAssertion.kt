@@ -15,7 +15,12 @@ private const val LAST_PRINTABLE = '~'
  */
 internal class DeviceIdentity(
     val deviceId: String,
-    /** The device key's Keystore alias. */
+    /**
+     * The device key's identifier: the thumbprint of its public half, per key.
+     *
+     * Not the alias the key is stored under. That is fixed and identical on every install, so persisting or
+     * reconstructing it as this value would name every device's key the same thing.
+     */
     val keyId: String,
     /** Base64 of the 65-byte X9.62 uncompressed EC point. Required on this platform. */
     val publicKey: String,
@@ -46,7 +51,9 @@ internal class DeviceIdentity(
 internal class DeviceAssertion(
     /** Base64 of the DER ECDSA signature over `SHA256(UTF8(timestamp))`. */
     val assertion: String,
-    /** The signing key's Keystore alias, matched against the attestation row. */
+    /**
+     * The signing key's identifier, matched against the attestation row. Derived from the key, not its alias.
+     */
     val keyId: String,
     val deviceId: String,
     /** The signed timestamp, verbatim. */
