@@ -168,6 +168,19 @@ class PaymentSeamTest {
     }
 
     @Test
+    fun `a wide amount keeps every digit`() {
+        // Double holds about 15 significant digits, so this value loses the cents before it is ever
+        // displayed. It is the case that makes BigDecimal the right type rather than a preference.
+        assertEquals("$ 12345678901234567.89", TransactionSummary.formatAmount("12345678901234567.89"))
+    }
+
+    @Test
+    fun `a fraction binary floating point cannot hold is not disturbed`() {
+        assertEquals("$ 1.10", TransactionSummary.formatAmount("1.10"))
+        assertEquals("$ 0.07", TransactionSummary.formatAmount("0.07"))
+    }
+
+    @Test
     fun `an amount that will not parse is shown as it arrived`() {
         assertEquals("about a tenner", TransactionSummary.formatAmount("about a tenner"))
     }
