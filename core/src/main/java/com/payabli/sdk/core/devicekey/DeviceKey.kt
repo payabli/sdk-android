@@ -120,7 +120,7 @@ public class DeviceSignature(
     /** The DER ECDSA signature over the payload. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val signature: ByteArray,
-    /** The signing key's identity, as [DeviceKey.identity] derives it. */
+    /** The signing key's identity: the JWK thumbprint of its public half, as [DevicePublicKey.identity]. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val identity: String,
 ) {
