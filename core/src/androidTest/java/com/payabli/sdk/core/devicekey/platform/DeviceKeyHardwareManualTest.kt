@@ -130,7 +130,7 @@ class DeviceKeyHardwareManualTest {
             val subject = provisioned()
             val payload = "the-signed-bytes".toByteArray()
 
-            val signature = subject.sign(payload)
+            val signature = subject.sign(payload).signature
 
             val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
             val verified =

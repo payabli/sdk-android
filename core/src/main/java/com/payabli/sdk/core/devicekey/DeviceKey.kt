@@ -24,6 +24,9 @@ public interface DeviceKey {
     /**
      * The identifier the service records for this key, derived from its public half.
      *
+     * For a caller that needs the identity without a signature, which is what registration and enrollment
+     * send. A caller that needs both takes them from [sign] instead, so the pair cannot disagree.
+     *
      * Per key, so a replacement gets a different one. The alias the key is stored under is fixed and is the
      * same on every install, which is why it cannot serve as this: the service would be unable to tell one
      * install's key from another's, or a key from the one it replaced.
@@ -46,15 +49,23 @@ public interface DeviceKey {
     public fun publicKeyPoint(): ByteArray
 
     /**
-     * Signs [payload] with `SHA256withECDSA`, returning the DER signature.
+     * Signs [payload] with `SHA256withECDSA`, returning the signature together with the identity of the key
+     * that produced it.
      *
-     * DER rather than the raw `R || S` pair, because that is what the verifier expects; the two are the
-     * same numbers in different envelopes and are not interchangeable.
+     * **The two are returned together because they must describe one key, and asking for them separately
+     * cannot guarantee that.** The signature and the identity come from two reads of the key store, and a
+     * replacement landing between them yields a signature by the old key labelled with the new key's
+     * identity: the service selects an attestation row by that identity and verifies against a public key
+     * the signature was never made with, so the assertion is refused with nothing pointing at the cause.
+     * One call, one observation of the key, and no way to write the interleaved version.
+     *
+     * The signature is DER rather than the raw `R || S` pair, because that is what the verifier expects; the
+     * two are the same numbers in different envelopes and are not interchangeable.
      *
      * @throws DeviceKeyException if the key is gone, the key store cannot be reached, or signing fails.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public fun sign(payload: ByteArray): ByteArray
+    public fun sign(payload: ByteArray): DeviceSignature
 
     /**
      * Removes the key, so the next caller that may create one gets a new key at the same alias.
@@ -73,4 +84,23 @@ public interface DeviceKey {
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public fun delete()
+}
+
+/**
+ * A signature and the identity of the key that made it, from one observation of that key.
+ *
+ * Separate values would let a caller pair a signature with an identity taken before or after a replacement.
+ * This type exists so that pairing is done once, where the key is read, rather than at every call site.
+ */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public class DeviceSignature(
+    /** The DER ECDSA signature over the payload. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val signature: ByteArray,
+    /** The signing key's identity, as [DeviceKey.identity] derives it. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val identity: String,
+) {
+    /** Never the signature or the identity: both are device identity. */
+    override fun toString(): String = "DeviceSignature()"
 }

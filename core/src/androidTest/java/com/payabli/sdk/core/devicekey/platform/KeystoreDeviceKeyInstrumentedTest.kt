@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
+import com.payabli.sdk.core.devicekey.impl.JwkThumbprint
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.RecordingLogSink
@@ -33,12 +34,16 @@ import java.security.PrivateKey
 import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 private const val PROVIDER = "AndroidKeyStore"
 private val TEST_TIMEOUT = 30.seconds
+
+/** Long enough that an unguarded replacement completes inside the signing window. */
+private const val REPLACEMENT_WINDOW_MILLIS = 2_000L
 
 /**
  * The real Android Keystore, which is the only part of the device key a device is required for.
@@ -121,7 +126,7 @@ class KeystoreDeviceKeyInstrumentedTest {
             val subject = provisioned()
             val payload = "the-signed-bytes".toByteArray()
 
-            val signature = subject.sign(payload)
+            val signature = subject.sign(payload).signature
 
             // Through the certificate's key rather than the one the class used, which is the same path the
             // service takes: it holds only the point that was sent to it.
@@ -185,7 +190,10 @@ class KeystoreDeviceKeyInstrumentedTest {
             // valid signature over a key the service never saw. Detecting that locally would need the attested
             // point recorded somewhere, and nothing records it, so the service is what rejects it.
             assertNotEquals(before.toList(), after.toList())
-            assertTrue("the replacement must still be usable", key().sign("payload".toByteArray()).isNotEmpty())
+            assertTrue(
+                "the replacement must still be usable",
+                key().sign("payload".toByteArray()).signature.isNotEmpty(),
+            )
         }
 
     @Test
@@ -225,6 +233,70 @@ class KeystoreDeviceKeyInstrumentedTest {
             // turn a successful cleanup into a failure the second time it is asked for.
             subject.delete()
             assertFalse(keyStore().containsAlias(keyId))
+        }
+
+    /**
+     * A replacement landing while an assertion is being made must not split the pair.
+     *
+     * `sign` reads the private half and then the public half. Between them a replacement would leave the
+     * signature made by the old key and the identity naming the new one. The service selects an attestation
+     * row by the identity it was sent and verifies against the public key it holds for that row, so the
+     * assertion is refused and nothing in the failure names the replacement.
+     *
+     * **Driven through the seam, not by timing.** The window is microseconds wide, so two threads launched
+     * together would almost never meet inside it and a green result would prove nothing. The seam puts the
+     * replacement provably inside the window; the shared monitor is what makes it wait there.
+     *
+     * Both halves are compared against the key that existed before signing, which is the only key the
+     * signature can have come from.
+     */
+    @Test
+    fun aReplacementDuringSigningCannotSplitTheSignatureFromItsIdentity() =
+        runTest(timeout = TEST_TIMEOUT) {
+            provisioned()
+            // The key object itself, held across the replacement. Reading it back afterwards would return
+            // whichever key won, which is the thing under test.
+            val signerKey = keyStore().getCertificate(keyId).publicKey as ECPublicKey
+            val payload = "the-signed-bytes".toByteArray()
+            val replacing = Executors.newSingleThreadExecutor()
+
+            try {
+                val subject =
+                    KeystoreDeviceKey(
+                        logger,
+                        betweenSignAndIdentity = {
+                            // Started inside the window and deliberately not joined: it takes the same monitor,
+                            // so it cannot proceed until the signature and its identity have been read. Joining
+                            // it here would deadlock against exactly the guarantee under test.
+                            replacing.execute {
+                                KeystoreDeviceKey(logger).run {
+                                    delete()
+                                    ensureKey(mayCreate = true)
+                                }
+                            }
+                            // Generous enough that an unguarded replacement completes inside the window.
+                            Thread.sleep(REPLACEMENT_WINDOW_MILLIS)
+                        },
+                    )
+
+                val signed = subject.sign(payload)
+
+                val verified =
+                    Signature.getInstance("SHA256withECDSA").run {
+                        initVerify(signerKey)
+                        update(payload)
+                        verify(signed.signature)
+                    }
+                assertTrue("the signature was not made by the key that existed when signing began", verified)
+                assertEquals(
+                    "the identity names a different key from the one that signed",
+                    JwkThumbprint.of(EcPointEncoding.uncompressed(signerKey)),
+                    signed.identity,
+                )
+            } finally {
+                replacing.shutdown()
+                replacing.awaitTermination(TEST_TIMEOUT.inWholeSeconds, TimeUnit.SECONDS)
+            }
         }
 
     /**

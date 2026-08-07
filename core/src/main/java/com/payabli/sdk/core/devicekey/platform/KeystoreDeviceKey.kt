@@ -8,6 +8,7 @@ import android.security.keystore.StrongBoxUnavailableException
 import androidx.annotation.RequiresApi
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
+import com.payabli.sdk.core.devicekey.DeviceSignature
 import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
 import com.payabli.sdk.core.devicekey.impl.EcdsaSigner
@@ -55,6 +56,16 @@ internal class KeystoreDeviceKey(
      * [createKey] emits.
      */
     private val beforeKeyGeneration: () -> Unit = {},
+    /**
+     * Runs inside [sign], between producing the signature and deriving the identity that labels it. **A test
+     * seam, no-op in production.**
+     *
+     * The window it opens is closed by the monitor both [sign] and [delete] take, so nothing outside this
+     * class can observe it: a replacement attempted here blocks until the signature and its identity have
+     * been read from one key. Without a seam a test could only assert that the pair happens to agree, which
+     * it does whether or not the monitor is there.
+     */
+    private val betweenSignAndIdentity: () -> Unit = {},
 ) : DeviceKey {
     /**
      * There is no alias parameter, and that is the point.
@@ -71,12 +82,18 @@ internal class KeystoreDeviceKey(
         // Not `discarding()`: that reports the key gone because a signature proved it unusable. This is a
         // caller acting on what the service said, and it succeeds rather than throwing when the key is
         // already absent, because a repeat of an attempt that may have completed must not fail.
-        try {
-            keyStore().deleteEntry(alias)
-        } catch (e: GeneralSecurityException) {
-            throw DeviceKeyException.CryptoUnavailable(e)
-        } catch (e: ProviderException) {
-            throw asProviderFailure(e)
+        //
+        // Under the same monitor as `sign` and `ensureKey`, so a replacement cannot land between a signature
+        // and the identity that labels it. Removing the key is one half of a replacement; the other half is
+        // `ensureKey`, which takes the monitor too, so the pair is serialised against signing as a whole.
+        synchronized(MONITOR) {
+            try {
+                keyStore().deleteEntry(alias)
+            } catch (e: GeneralSecurityException) {
+                throw DeviceKeyException.CryptoUnavailable(e)
+            } catch (e: ProviderException) {
+                throw asProviderFailure(e)
+            }
         }
     }
 
@@ -91,13 +108,25 @@ internal class KeystoreDeviceKey(
         }
     }
 
-    override fun sign(payload: ByteArray): ByteArray =
-        try {
-            EcdsaSigner.sign(privateKeyForSigning(), payload)
-        } catch (e: GeneralSecurityException) {
-            throw asFailure(e)
-        } catch (e: ProviderException) {
-            throw asProviderFailure(e)
+    /**
+     * Both values from one key, under the monitor that replacement also takes.
+     *
+     * The private half and the public half are two reads of the key store. Between them a replacement would
+     * otherwise leave the signature made by one key and the identity naming another, which the service
+     * rejects because it verifies against the public key it holds for the identity it was sent.
+     */
+    override fun sign(payload: ByteArray): DeviceSignature =
+        synchronized(MONITOR) {
+            val signature =
+                try {
+                    EcdsaSigner.sign(privateKeyForSigning(), payload)
+                } catch (e: GeneralSecurityException) {
+                    throw asFailure(e)
+                } catch (e: ProviderException) {
+                    throw asProviderFailure(e)
+                }
+            betweenSignAndIdentity()
+            DeviceSignature(signature, identity())
         }
 
     /**
@@ -281,10 +310,14 @@ internal class KeystoreDeviceKey(
 
     private companion object {
         /**
-         * One monitor, shared by every instance.
+         * One monitor, shared by every instance, held by [sign], [delete] and [ensureKey].
          *
          * There is one alias, so there is one thing to serialise on. The storage cipher keys its monitor by
          * alias because it has one per store; here a map would be a map with a single entry.
+         *
+         * It covers two invariants rather than one: that two callers finding no key generate once, and that a
+         * signature and the identity labelling it come from the same key. The second is why [sign] takes it,
+         * since signing alone needs no mutual exclusion.
          */
         private val MONITOR = Any()
 

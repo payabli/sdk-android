@@ -40,9 +40,13 @@ internal class DeviceAssertionSigner(
      */
     fun sign(deviceId: String): DeviceAssertion {
         val timestamp = FORMATTER.format(clock.instant())
+        // One call, so the signature and the identity that labels it describe the same key. Taken separately
+        // a replacement between them would send a signature the service cannot verify against the row that
+        // identity selects.
+        val signed = deviceKey.sign(clientDataHash(timestamp))
         return DeviceAssertion(
-            assertion = Base64.getEncoder().encodeToString(deviceKey.sign(clientDataHash(timestamp))),
-            keyId = deviceKey.identity(),
+            assertion = Base64.getEncoder().encodeToString(signed.signature),
+            keyId = signed.identity,
             deviceId = deviceId,
             timestamp = timestamp,
         )
