@@ -8,9 +8,10 @@ import androidx.annotation.RestrictTo
  * Held by the core rather than by a capability, because the device key is core identity: the same key backs
  * card-present activation today and is what a device-bound credential is issued against later.
  *
- * **Bytes, not encodings.** [publicKeyPoint] and [sign] return raw bytes, and whatever sends them decides
- * how they are encoded on the wire. A base64 helper here would put one channel's wire format in the core
- * and leave the next one converting away from it.
+ * **Bytes, not encodings.** [DevicePublicKey.point] and [DeviceSignature.signature] are raw bytes, and
+ * whatever sends them decides how they are encoded on the wire. A base64 helper here would put one channel's
+ * wire format in the core and leave the next one converting away from it. The identifier beside them is a
+ * string because the standard that defines it says so, not because this layer chose an encoding.
  *
  * **There is no accessor for the private key, at any visibility.** A caller gets signatures, never the key
  * that produced them, which is the same rule the token holder follows.

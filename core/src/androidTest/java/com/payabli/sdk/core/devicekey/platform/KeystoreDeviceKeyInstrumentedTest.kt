@@ -174,7 +174,7 @@ class KeystoreDeviceKeyInstrumentedTest {
             // Not a fresh key. Minting one here would sign with material the service has never attested, under
             // an identifier it already holds a different point for, and every assertion would fail afterwards.
             assertTrue("expected KeyLost from sign, got $signing", signing is DeviceKeyException.KeyLost)
-            assertTrue("expected KeyLost from publicKeyPoint, got $reading", reading is DeviceKeyException.KeyLost)
+            assertTrue("expected KeyLost from publicKey, got $reading", reading is DeviceKeyException.KeyLost)
             assertFalse("a read path created a key", keyStore().containsAlias(keyId))
         }
 
