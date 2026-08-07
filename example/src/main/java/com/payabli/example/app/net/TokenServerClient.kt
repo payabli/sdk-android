@@ -1,6 +1,7 @@
 package com.payabli.example.app.net
 
 import com.payabli.example.app.config.TokenServerTarget
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -23,6 +24,8 @@ import java.net.URL
  */
 class TokenServerClient(
     private val target: TokenServerTarget,
+    /** The socket work moves off the caller's thread. A test substitutes its own. */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -38,7 +41,7 @@ class TokenServerClient(
                         ?.content
                 }.getOrNull()
             when {
-                token.isNullOrBlank() -> TokenServerProbe.HttpStatus(HttpURLConnection.HTTP_OK)
+                token.isNullOrBlank() -> TokenServerProbe.Malformed("the body carried no token")
                 // Deliberately not the token, not a prefix of it, and not its length: a token is
                 // secret, and a sample app is the last place that should teach otherwise. That it
                 // arrived is the whole result.
@@ -54,7 +57,7 @@ class TokenServerClient(
         method: String,
         onSuccess: (String) -> TokenServerProbe,
     ): TokenServerProbe =
-        withContext(Dispatchers.IO) {
+        withContext(ioDispatcher) {
             var connection: HttpURLConnection? = null
             try {
                 connection =
