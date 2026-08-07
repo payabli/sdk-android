@@ -47,20 +47,22 @@ fun ResultCard(
     }
 }
 
+private const val PREVIEW_EMPTY = "Nothing stored yet"
+
 @PreviewLightDark
 @Composable
 private fun ResultCardPreview() {
     PreviewSurface {
         // Empty first: the state a reader sees before touching anything is the one most likely to
         // be wrong and the least likely to be looked at.
-        ResultCard(text = "", emptyText = "Nothing stored yet")
+        ResultCard(text = "", emptyText = PREVIEW_EMPTY)
         ResultCard(
             text = "Stored method: mth_2f9c1\nResponse: Success\nResult: Approved",
-            emptyText = "Nothing stored yet",
+            emptyText = PREVIEW_EMPTY,
         )
         ResultCard(
             text = "Could not store the payment method.\nThe card number failed validation.",
-            emptyText = "Nothing stored yet",
+            emptyText = PREVIEW_EMPTY,
         )
     }
 }

@@ -1,23 +1,20 @@
 package com.payabli.example.app.ui.components
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Contactless
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.GppGood
-import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TapAndPlay
 import androidx.compose.material.icons.filled.VerticalAlignBottom
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -45,18 +42,11 @@ object DemoIcons {
     val Activate: ImageVector get() = Icons.Filled.GppGood
     val Reinitialize: ImageVector get() = Icons.Filled.Refresh
 
-    /** In the expiry field, marking it as a date the payer picks. */
-    val Expiry: ImageVector get() = Icons.Filled.CalendarMonth
-
-    // On a masked field, to show and hide what was typed.
-    val Reveal: ImageVector get() = Icons.Filled.Visibility
-    val Hide: ImageVector get() = Icons.Filled.VisibilityOff
-
     // Status.
     val Pass: ImageVector get() = Icons.Filled.CheckCircle
     val Warn: ImageVector get() = Icons.Filled.Warning
     val Fail: ImageVector get() = Icons.Filled.Cancel
-    val Unknown: ImageVector get() = Icons.Filled.HelpOutline
+    val Unknown: ImageVector get() = Icons.AutoMirrored.Filled.HelpOutline
 
     /**
      * The overall verdict, in a different shape from [Fail]. An octagon reads as "stop here" where a
