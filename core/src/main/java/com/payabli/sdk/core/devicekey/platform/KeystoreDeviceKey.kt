@@ -89,17 +89,21 @@ internal class KeystoreDeviceKey(
     private val alias: String get() = DeviceKeyHandle.ALIAS
 
     /**
-     * The point and its identifier from one read, which is what makes them describe one key.
+     * The point and its identifier from one read, under the monitor replacement also takes.
      *
-     * No monitor, and deliberately: the identifier is derived from the point this just read rather than from
-     * a second read, so the pair cannot disagree whatever happens to the alias afterwards. A lock here would
-     * be released before the caller used either value and would guard nothing. What it replaces is a caller
-     * asking for the two separately, which is the shape this method exists to remove.
+     * Two things make the pair sound, and only one of them is the monitor. The identifier is derived from the
+     * point this just read rather than from a second read, so the two cannot describe different keys.
+     *
+     * **The monitor is here because this is not a read.** [uncompressedPoint] discards the entry when the
+     * certificate is not a P-256 point, so an earlier version of this method that took no lock could observe
+     * a stale certificate, be overtaken by a replacement, and then delete the key that replaced it. Read,
+     * validate and discard belong in one section for that reason.
      */
-    override fun publicKey(): DevicePublicKey {
-        val point = uncompressedPoint()
-        return DevicePublicKey(point, JwkThumbprint.of(point))
-    }
+    override fun publicKey(): DevicePublicKey =
+        synchronized(MONITOR) {
+            val point = uncompressedPoint()
+            DevicePublicKey(point, JwkThumbprint.of(point))
+        }
 
     override fun delete() {
         // Not `discarding()`: that reports the key gone because a signature proved it unusable. This is a
@@ -163,17 +167,20 @@ internal class KeystoreDeviceKey(
     /**
      * Provisions the alias, and is the only place a key is ever created.
      *
-     * Double-checked under the shared monitor, so two callers arriving together generate once rather than
-     * racing to replace each other's key. Two *processes* can still both find the alias empty and both
-     * generate, and the later generation replaces the earlier: see the class for why that is stated rather
-     * than prevented.
+     * Guarded by the shared monitor, so two callers arriving together generate once rather than racing to
+     * replace each other's key. Two *processes* can still both find the alias empty and both generate, and
+     * the later generation replaces the earlier: see the class for why that is stated rather than prevented.
+     *
+     * **The presence check is inside the monitor, not before it.** It reads the private half, which discards
+     * the entry when the platform reports it unrecoverable, so an unsynchronized probe could delete a key
+     * another caller had just generated. That is a mutation, and it does not belong outside the lock however
+     * cheap the fast path it bought was.
      *
      * With [mayCreate] false it proves a key is present, which is what a caller resolving a key the service has
      * already accepted wants: the answer to a missing key there is enrolling again, not a fresh key under the
      * same alias.
      */
     fun ensureKey(mayCreate: Boolean) {
-        if (existingPrivateKey() != null) return
         beforeKeyGeneration()
         synchronized(MONITOR) {
             if (existingPrivateKey() != null) return
