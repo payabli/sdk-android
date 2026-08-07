@@ -1,0 +1,48 @@
+package com.payabli.example.app.config
+
+/** Which rule decided where the token server is. */
+enum class TokenHostSource {
+    /** A `payabliTokenHost` string extra on the launch Intent. */
+    LaunchOverride,
+
+    /** `payabli.demo.tokenHost` in secrets.properties or on the Gradle command line. */
+    BuildSetting,
+
+    /** Nothing was configured, and this build is running on an emulator. */
+    Emulator,
+
+    /** Nothing was configured, and this build is running on a physical device. */
+    Device,
+}
+
+/**
+ * Where the local token server is, and why the app thinks so.
+ *
+ * The reason travels with the address because "cannot reach the token server" has four different
+ * fixes depending on which rule chose it, and the Setup screen showing [explanation] is what turns a
+ * failed probe into a next step.
+ */
+data class TokenServerTarget(
+    val baseUrl: String,
+    val source: TokenHostSource,
+) {
+    /**
+     * The route that mints a fresh token.
+     *
+     * `exchange-token`. The `access-token` route serves a cached value, and the SDK's token provider
+     * is contractually required to mint on every call. Probing the route the SDK will call is the only
+     * probe worth trusting.
+     */
+    val accessTokenUrl: String get() = "$baseUrl/payabli/exchange-token"
+
+    val healthUrl: String get() = "$baseUrl/health"
+
+    val explanation: String
+        get() =
+            when (source) {
+                TokenHostSource.LaunchOverride -> "overridden by the payabliTokenHost launch extra"
+                TokenHostSource.BuildSetting -> "set by payabli.demo.tokenHost"
+                TokenHostSource.Emulator -> "emulator, 10.0.2.2 reaches this machine's loopback"
+                TokenHostSource.Device -> "device, 127.0.0.1 via adb reverse tcp:8787 tcp:8787"
+            }
+}

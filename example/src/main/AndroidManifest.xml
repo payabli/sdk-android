@@ -4,7 +4,24 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      Package visibility, required from API 30. The tap-to-pay readiness screen reports whether Play
+      services and the Play Store are installed, because integrity verification needs both. Without
+      these two entries getPackageInfo throws NameNotFoundException and the check would report them
+      absent on a device that has them. Visibility only: no permission, and nothing is read from
+      either package.
+
+      No NFC permission is declared. The same screen reads NFC through hasSystemFeature and
+      NfcManager, neither of which requires one, and an unused permission in a sample app is exactly
+      what the SDK's own no-permissions policy exists to avoid.
+    -->
+    <queries>
+        <package android:name="com.google.android.gms" />
+        <package android:name="com.android.vending" />
+    </queries>
+
     <application
+        android:name=".PayabliDemoApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -16,7 +33,6 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="@string/app_name"
             android:theme="@style/Theme.PayabliDemo"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

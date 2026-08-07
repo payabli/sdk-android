@@ -30,8 +30,11 @@ sonar {
         // Android API with no JVM implementation, Keystore and `android.util.*`, so no unit test can reach a
         // line of it and the instrumented tier is what covers it. Kept as a package rule rather than a list
         // of files, so the boundary is something the code states rather than something this file remembers.
-        // See CLAUDE.md "Testing" for what belongs there.
-        property("sonar.coverage.exclusions", "**/platform/**")
+        // See CLAUDE.md "Testing" for what belongs there. A `ui` package under the sample app is the
+        // same case for the same reason: a composable needs a composition, and therefore a device.
+        // The sample app puts every composable under `ui` and every testable type outside it so this
+        // stays a package rule too.
+        property("sonar.coverage.exclusions", "**/platform/**,**/example/app/ui/**")
     }
 }
 
@@ -52,6 +55,9 @@ subprojects {
                 }
                 if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
                     add("ktlintAndroidTestSourceSetCheck")
+                }
+                if (layout.projectDirectory.dir("src/debug").asFile.isDirectory) {
+                    add("ktlintDebugSourceSetCheck")
                 }
             }
             property(

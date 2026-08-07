@@ -29,7 +29,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 **Capabilities**: `:taptopay` (card-present) · `:payin` (card-not-present)
 **Opt-in**: `:telemetry`
 **Aggregate**: `:payabli-android` (umbrella AAR: `:core` + `:payin` + `:telemetry`) · `:payabli-bom` (version constraints)
-**Infra**: `:example` (sample app, `com.payabli.example`), `build-logic` (convention plugins)
+**Infra**: `:example` (sample app, `com.payabli.example.app`; see `example/README.md`), `build-logic` (convention plugins)
 
 **Key Patterns**
 

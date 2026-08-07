@@ -1,6 +1,5 @@
 [versions]
 agp = "9.2.1"
-coreKtx = "1.10.1"
 junit = "4.13.2"
 junitVersion = "1.1.5"
 # The instrumentation runner itself, which androidx.test.ext:junit does not bring transitively: without
@@ -8,12 +7,18 @@ junitVersion = "1.1.5"
 # train as junitVersion above; keep the two moving together.
 androidxTestRunner = "1.5.2"
 espressoCore = "3.5.1"
-lifecycleRuntimeKtx = "2.6.1"
-activityCompose = "1.8.0"
+# 1.8.2 rather than 1.8.0 because navigation-compose depends on 1.8.0 and the graph resolves it up
+# anyway; declaring the resolved value keeps this file describing what the build actually uses.
+activityCompose = "1.8.2"
 kotlin = "2.2.10"
 composeBom = "2026.02.01"
-appcompat = "1.6.1"
-material = "1.10.0"
+# The sample app's navigation and its lifecycle-to-Compose bridges. Both are held to their last 2.9
+# stable: every artifact in those lines declares a kotlin-stdlib of 2.0.21 or 2.1.20, which a 2.2
+# compiler can read. That is the same ceiling the block further down describes, and it is the reason
+# to check the POM before raising either. The failure is "class file was compiled by a newer version
+# of the Kotlin compiler", not a warning.
+androidxNavigation = "2.9.8"
+androidxLifecycle = "2.9.4"
 fiservTtp = "1.1.4.1"
 ktlintGradle = "14.2.0"
 sonarqube = "7.3.1.8318"
@@ -25,13 +30,14 @@ kotlinxCoroutines = "1.10.2"
 playIntegrity = "1.6.0"
 
 [libraries]
-androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
-androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "androidxNavigation" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
+androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "androidxLifecycle" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
@@ -40,8 +46,11 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+# No version on these three: the Compose BOM manages all of them, at 1.7.8 for the icon set (Google
+# froze it there and stopped shipping new icons) and 1.4.0 for the navigation suite.
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-compose-material3-adaptive-navigation-suite = { group = "androidx.compose.material3", name = "material3-adaptive-navigation-suite" }
 fiserv-ttp = { group ="com.fiserv.ch", name ="ttp-payment", version.ref = "fiservTtp" }
 androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
