@@ -106,9 +106,13 @@ internal class KeystoreDeviceKey(
         // caller acting on what the service said, and it succeeds rather than throwing when the key is
         // already absent, because a repeat of an attempt that may have completed must not fail.
         //
-        // Under the same monitor as `sign` and `ensureKey`, so a replacement cannot land between a signature
-        // and the identity that labels it. Removing the key is one half of a replacement; the other half is
-        // `ensureKey`, which takes the monitor too, so the pair is serialised against signing as a whole.
+        // Under the same monitor as `sign`, so a deletion cannot land between a signature and the identity
+        // that labels it.
+        //
+        // That is the whole of what it buys, and deliberately not more: this releases the monitor before a
+        // caller invokes `ensureKey`, so delete-and-regenerate is two guarded steps rather than one. A `sign`
+        // arriving between them finds no key and reports it gone, which is a correct answer to a device with
+        // no key rather than a race, and a caller replacing a key handles that outcome anyway.
         synchronized(MONITOR) {
             try {
                 keyStore().deleteEntry(alias)
