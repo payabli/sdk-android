@@ -6,6 +6,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
@@ -27,6 +28,7 @@ import com.payabli.example.app.ui.method.PaymentMethodScreen
 import com.payabli.example.app.ui.method.PaymentMethodViewModel
 import com.payabli.example.app.ui.setup.SetupScreen
 import com.payabli.example.app.ui.setup.SetupViewModel
+import com.payabli.example.app.ui.taptopay.TapToPayActions
 import com.payabli.example.app.ui.taptopay.TapToPayScreen
 import com.payabli.example.app.ui.taptopay.TapToPayViewModel
 
@@ -145,17 +147,7 @@ fun PayabliDemoNavHost(
                     val state by model.uiState.collectAsStateWithLifecycle()
                     TapToPayScreen(
                         state = state,
-                        onAmountChange = model::setAmount,
-                        onActivationCodeChange = model::setActivationCode,
-                        onEnable = model::enableTerminal,
-                        onReinitialize = model::reinitialize,
-                        onCharge = model::charge,
-                        onOpenActivation = model::openActivation,
-                        onDismissActivation = model::dismissActivation,
-                        onActivate = model::activate,
-                        onClearEvents = model::clearEvents,
-                        onRecheck = model::recheck,
-                        onProbeToken = model::probeToken,
+                        actions = remember(model) { TapToPayActions.from(model) },
                     )
                 }
             }

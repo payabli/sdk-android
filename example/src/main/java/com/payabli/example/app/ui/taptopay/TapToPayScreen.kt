@@ -47,21 +47,10 @@ import com.payabli.example.app.ui.theme.Dimens
  * The order is the order the work happens in: what is configured, whether the device can do this at
  * all, turning the terminal on, taking a payment, activating, and finally what happened.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TapToPayScreen(
     state: TapToPayUiState,
-    onAmountChange: (String) -> Unit,
-    onActivationCodeChange: (String) -> Unit,
-    onEnable: () -> Unit,
-    onReinitialize: () -> Unit,
-    onCharge: () -> Unit,
-    onOpenActivation: () -> Unit,
-    onDismissActivation: () -> Unit,
-    onActivate: () -> Unit,
-    onClearEvents: () -> Unit,
-    onRecheck: () -> Unit,
-    onProbeToken: () -> Unit,
+    actions: TapToPayActions,
     modifier: Modifier = Modifier,
 ) {
     DemoScreen(
@@ -74,82 +63,25 @@ fun TapToPayScreen(
             )
         },
     ) {
-        Block(title = "Terminal", note = "What the terminal needs before it can start.") {
-            DetailRow(
-                label = "Entry point",
-                value = state.configuration.entryPoint,
-                problem = state.configuration.entryPointProblem,
-            )
-            DetailRow(label = "App ID", value = state.configuration.appId)
-            // Repeated from Setup on purpose: it is one of the values the terminal initialises
-            // against, and checking it should not mean leaving the screen that uses it.
-            DetailRow(
-                label = "Environment",
-                value = "${state.configuration.environment.label} · ${state.configuration.environment.host}",
-            )
-            // The route the button calls, not the host it lives on.
-            DetailRow(label = "Token endpoint", value = state.tokenServer.accessTokenUrl)
-            DetailRow(label = "Chosen because", value = state.tokenServer.explanation)
-            BorderedButton(
-                text = "Check token",
-                icon = DemoIcons.CheckToken,
-                onClick = onProbeToken,
-                enabled = !state.isWorking,
-            )
-            if (state.tokenProbeText.isNotEmpty()) {
-                Caption(state.tokenProbeText)
-            }
-        }
+        TerminalBlock(state, actions.onProbeToken)
 
         Block(title = "This device") {
             ReadinessCard(
                 readiness = state.readiness,
                 problems = state.problems,
-                onRecheck = onRecheck,
+                onRecheck = actions.onRecheck,
             )
         }
 
-        Block(title = "Terminal control") {
-            ProminentButton(
-                text = if (state.isReady) "Terminal is on" else "Turn on the terminal",
-                icon = if (state.isReady) DemoIcons.Pass else DemoIcons.TapToPay,
-                onClick = onEnable,
-                enabled = !state.isWorking && !state.isReady,
-            )
-            BorderedButton(
-                text = "Restart the session",
-                icon = DemoIcons.Reinitialize,
-                onClick = onReinitialize,
-                enabled = !state.isWorking,
-            )
-        }
+        ControlBlock(state, actions.onEnable, actions.onReinitialize)
 
-        Block(title = "Take a payment") {
-            OutlinedTextField(
-                value = state.amountText,
-                onValueChange = onAmountChange,
-                label = { Text("Amount") },
-                prefix = { Text("$") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            ProminentButton(
-                text = "Charge",
-                icon = DemoIcons.Charge,
-                onClick = onCharge,
-                enabled = !state.isWorking && state.isReady,
-            )
-            if (!state.isReady) {
-                Caption("Turn on the terminal first. Charging needs a prepared reader.")
-            }
-        }
+        PaymentBlock(state, actions.onAmountChange, actions.onCharge)
 
         Block(title = "Activation") {
             BorderedButton(
                 text = "Activate this device",
                 icon = DemoIcons.Activate,
-                onClick = onOpenActivation,
+                onClick = actions.onOpenActivation,
                 enabled = !state.isWorking,
             )
             Caption(
@@ -162,61 +94,163 @@ fun TapToPayScreen(
             ResultCard(text = state.resultText, emptyText = "Nothing done yet")
         }
 
-        Block(title = "Activity") {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                SectionHeader(title = "Events")
-                TextButton(onClick = onClearEvents, enabled = !state.events.isEmpty) {
-                    Text("Clear")
-                }
-            }
-            if (state.events.isEmpty) {
-                Caption("No activity yet")
-            } else {
-                state.events.entries.forEach { event ->
-                    EventRow(label = event.code.wireName, detail = event.detail)
-                }
-            }
-        }
+        ActivityBlock(state, actions.onClearEvents)
     }
 
     if (state.isActivationOpen) {
-        val sheetState = rememberModalBottomSheetState()
-        ModalBottomSheet(onDismissRequest = onDismissActivation, sheetState = sheetState) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding),
-                verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
-            ) {
-                SectionHeader(
-                    title = "Activate this device",
-                    note = "Enter the code Payabli issued for it.",
-                )
-                OutlinedTextField(
-                    value = state.activationCode,
-                    onValueChange = onActivationCodeChange,
-                    label = { Text("Activation code") },
-                    singleLine = true,
-                    keyboardOptions =
-                        KeyboardOptions(
-                            // Codes are issued in upper case, and autocorrect on a code is only ever
-                            // a way to get a wrong one.
-                            capitalization = KeyboardCapitalization.Characters,
-                            autoCorrectEnabled = false,
-                        ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Caption(
-                    "Type ${DemoTerminalController.REJECTED_ACTIVATION_CODE} to see what a rejected code looks like.",
-                )
-                ProminentButton(
-                    text = "Activate",
-                    icon = DemoIcons.Activate,
-                    onClick = onActivate,
-                    enabled = state.activationCode.isNotBlank(),
-                )
+        ActivationSheet(state, actions.onActivationCodeChange, actions.onActivate, actions.onDismissActivation)
+    }
+}
+
+@Composable
+private fun TerminalBlock(
+    state: TapToPayUiState,
+    onProbeToken: () -> Unit,
+) {
+    Block(title = "Terminal", note = "What the terminal needs before it can start.") {
+        DetailRow(
+            label = "Entry point",
+            value = state.configuration.entryPoint,
+            problem = state.configuration.entryPointProblem,
+        )
+        DetailRow(label = "App ID", value = state.configuration.appId)
+        // Repeated from Setup on purpose: it is one of the values the terminal initialises
+        // against, and checking it should not mean leaving the screen that uses it.
+        DetailRow(
+            label = "Environment",
+            value = "${state.configuration.environment.label} · ${state.configuration.environment.host}",
+        )
+        // The route the button calls, not the host it lives on.
+        DetailRow(label = "Token endpoint", value = state.tokenServer.accessTokenUrl)
+        DetailRow(label = "Chosen because", value = state.tokenServer.explanation)
+        BorderedButton(
+            text = "Check token",
+            icon = DemoIcons.CheckToken,
+            onClick = onProbeToken,
+            enabled = !state.isWorking,
+        )
+        if (state.tokenProbeText.isNotEmpty()) {
+            Caption(state.tokenProbeText)
+        }
+    }
+}
+
+@Composable
+private fun ControlBlock(
+    state: TapToPayUiState,
+    onEnable: () -> Unit,
+    onReinitialize: () -> Unit,
+) {
+    Block(title = "Terminal control") {
+        ProminentButton(
+            text = if (state.isReady) "Terminal is on" else "Turn on the terminal",
+            icon = if (state.isReady) DemoIcons.Pass else DemoIcons.TapToPay,
+            onClick = onEnable,
+            enabled = !state.isWorking && !state.isReady,
+        )
+        BorderedButton(
+            text = "Restart the session",
+            icon = DemoIcons.Reinitialize,
+            onClick = onReinitialize,
+            enabled = !state.isWorking,
+        )
+    }
+}
+
+@Composable
+private fun PaymentBlock(
+    state: TapToPayUiState,
+    onAmountChange: (String) -> Unit,
+    onCharge: () -> Unit,
+) {
+    Block(title = "Take a payment") {
+        OutlinedTextField(
+            value = state.amountText,
+            onValueChange = onAmountChange,
+            label = { Text("Amount") },
+            prefix = { Text("$") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        ProminentButton(
+            text = "Charge",
+            icon = DemoIcons.Charge,
+            onClick = onCharge,
+            enabled = !state.isWorking && state.isReady,
+        )
+        if (!state.isReady) {
+            Caption("Turn on the terminal first. Charging needs a prepared reader.")
+        }
+    }
+}
+
+@Composable
+private fun ActivityBlock(
+    state: TapToPayUiState,
+    onClearEvents: () -> Unit,
+) {
+    Block(title = "Activity") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            SectionHeader(title = "Events")
+            TextButton(onClick = onClearEvents, enabled = !state.events.isEmpty) {
+                Text("Clear")
             }
+        }
+        if (state.events.isEmpty) {
+            Caption("No activity yet")
+        } else {
+            state.events.entries.forEach { event ->
+                EventRow(label = event.code.wireName, detail = event.detail)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ActivationSheet(
+    state: TapToPayUiState,
+    onActivationCodeChange: (String) -> Unit,
+    onActivate: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding),
+            verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
+        ) {
+            SectionHeader(
+                title = "Activate this device",
+                note = "Enter the code Payabli issued for it.",
+            )
+            OutlinedTextField(
+                value = state.activationCode,
+                onValueChange = onActivationCodeChange,
+                label = { Text("Activation code") },
+                singleLine = true,
+                keyboardOptions =
+                    KeyboardOptions(
+                        // Codes are issued in upper case, and autocorrect on a code is only ever
+                        // a way to get a wrong one.
+                        capitalization = KeyboardCapitalization.Characters,
+                        autoCorrectEnabled = false,
+                    ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Caption(
+                "Type ${DemoTerminalController.REJECTED_ACTIVATION_CODE} to see what a rejected code looks like.",
+            )
+            ProminentButton(
+                text = "Activate",
+                icon = DemoIcons.Activate,
+                onClick = onActivate,
+                enabled = state.activationCode.isNotBlank(),
+            )
         }
     }
 }
@@ -260,17 +294,7 @@ private fun TapToPayScreenPreview() {
                             .add(TerminalEvent(TerminalEventCode.ReaderReady))
                             .add(TerminalEvent(TerminalEventCode.ChargeInitiated, "amount=1.00")),
                 ),
-            onAmountChange = {},
-            onActivationCodeChange = {},
-            onEnable = {},
-            onReinitialize = {},
-            onCharge = {},
-            onOpenActivation = {},
-            onDismissActivation = {},
-            onActivate = {},
-            onClearEvents = {},
-            onRecheck = {},
-            onProbeToken = {},
+            actions = TapToPayActions.none(),
         )
     }
 }
