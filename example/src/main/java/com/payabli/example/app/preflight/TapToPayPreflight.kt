@@ -19,16 +19,21 @@ object TapToPayPreflight {
     /** The floor the card-present module builds against. Below this the reader APIs do not exist. */
     const val READER_MIN_API: Int = 30
 
+    /**
+     * @param expectedCertificate SHA-256 of the certificate this build should carry, in any
+     *   punctuation. Blank when none is configured, and the signing key is then not checked.
+     */
     fun checks(
         facts: DeviceFacts,
         configuredAppId: String,
+        expectedCertificate: String = "",
     ): List<PreflightCheck> =
         listOf(
             hostCheck(facts),
             integrityCheck(facts),
             nfcCheck(facts),
             apiLevelCheck(facts),
-            appIdCheck(facts, configuredAppId),
+            appIdCheck(facts, configuredAppId, expectedCertificate),
         )
 
     private fun hostCheck(facts: DeviceFacts): PreflightCheck =
@@ -98,9 +103,13 @@ object TapToPayPreflight {
             PreflightCheck("Android version", "API ${facts.apiLevel}.", CheckStatus.Pass)
         }
 
+    /** Case and punctuation vary between the Play Console, `keytool` and `apksigner`. */
+    private fun String.asDigest(): String = filter { it.isLetterOrDigit() }.uppercase()
+
     private fun appIdCheck(
         facts: DeviceFacts,
         configuredAppId: String,
+        expectedCertificate: String,
     ): PreflightCheck =
         when {
             configuredAppId.isBlank() ->
@@ -128,6 +137,36 @@ object TapToPayPreflight {
                     status = CheckStatus.Unknown,
                 )
 
-            else -> PreflightCheck("App ID", "${facts.packageName}, signed and matching.", CheckStatus.Pass)
+            expectedCertificate.isBlank() ->
+                PreflightCheck(
+                    title = "App ID",
+                    // A readable digest says some certificate signed this build, not that it was
+                    // the right one, so this stops short of claiming the key was verified. The
+                    // digest is shown on Setup, to be copied into the setting below.
+                    detail =
+                        "${facts.packageName}. Set payabli.demo.signingCertificate in " +
+                            "example/secrets.properties to check the signing key too.",
+                    status = CheckStatus.Pass,
+                )
+
+            facts.signingCertificateDigest.asDigest() != expectedCertificate.asDigest() ->
+                PreflightCheck(
+                    title = "Signing certificate does not match",
+                    // The case worth catching. Integrity binds its verdict to the app id and the
+                    // signing key together, so a build signed by the wrong key passes every other
+                    // check here and is rejected by attestation much later, with nothing on this
+                    // screen pointing at why.
+                    detail =
+                        "Expected $expectedCertificate, but this build is signed with " +
+                            "${facts.signingCertificateDigest}.",
+                    status = CheckStatus.Fail,
+                )
+
+            else ->
+                PreflightCheck(
+                    "App ID and signing certificate",
+                    "${facts.packageName}, signed with the expected certificate.",
+                    CheckStatus.Pass,
+                )
         }
 }

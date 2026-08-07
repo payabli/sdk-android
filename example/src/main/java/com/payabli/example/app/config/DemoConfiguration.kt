@@ -26,6 +26,8 @@ enum class DemoEnvironment(
 data class DemoConfiguration(
     val entryPoint: String,
     val appId: String,
+    /** Blank when no expected certificate is configured, which means the check is not run. */
+    val signingCertificate: String,
     val environment: DemoEnvironment,
     val diagnosticsEnabled: Boolean,
 ) {
@@ -39,6 +41,7 @@ data class DemoConfiguration(
             DemoConfiguration(
                 entryPoint = BuildConfig.DEMO_ENTRY_POINT,
                 appId = BuildConfig.DEMO_APP_ID,
+                signingCertificate = BuildConfig.DEMO_SIGNING_CERTIFICATE,
                 // Sandbox: the environment an outside integrator can reach, and this app is the
                 // thing they read first.
                 environment = DemoEnvironment.SANDBOX,

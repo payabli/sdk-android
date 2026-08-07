@@ -250,7 +250,7 @@ private fun TapToPayScreenPreview() {
             state =
                 TapToPayUiState(
                     configuration =
-                        DemoConfiguration("test6", "com.payabli.example.app", DemoEnvironment.SANDBOX, true),
+                        DemoConfiguration("test6", "com.payabli.example.app", "", DemoEnvironment.SANDBOX, true),
                     tokenServer = TokenServerTarget("http://10.0.2.2:8787", TokenHostSource.Emulator),
                     session = TerminalSessionState.Ready,
                     isReady = true,

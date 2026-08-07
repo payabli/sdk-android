@@ -80,7 +80,7 @@ class TapToPayViewModel(
     fun clearEvents() = _uiState.update { it.copy(events = it.events.cleared()) }
 
     fun recheck() {
-        val checks = TapToPayPreflight.checks(deviceFacts, configuration.appId)
+        val checks = TapToPayPreflight.checks(deviceFacts, configuration.appId, configuration.signingCertificate)
         _uiState.update { it.copy(readiness = readinessFrom(checks), problems = problemsIn(checks)) }
     }
 

@@ -53,6 +53,11 @@ android {
 
         buildConfigField("String", "DEMO_ENTRY_POINT", quoted(demoSetting("payabli.demo.entryPoint", "")))
         buildConfigField("String", "DEMO_APP_ID", quoted(demoSetting("payabli.demo.appId", "")))
+        buildConfigField(
+            "String",
+            "DEMO_SIGNING_CERTIFICATE",
+            quoted(demoSetting("payabli.demo.signingCertificate", "")),
+        )
         // Blank means resolve per run: emulator to 10.0.2.2, device to 127.0.0.1 over adb reverse.
         buildConfigField("String", "DEMO_TOKEN_HOST", quoted(demoSetting("payabli.demo.tokenHost", "")))
         buildConfigField("boolean", "DEMO_DIAGNOSTICS", demoSetting("payabli.demo.diagnostics", "true"))

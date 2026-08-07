@@ -122,6 +122,60 @@ class TapToPayPreflightTest {
         assertTrue(check.detail.contains(appId))
     }
 
+    // --- signing certificate ---
+
+    private fun appIdCheckWith(
+        expectedCertificate: String,
+        facts: DeviceFacts = healthy(),
+    ): PreflightCheck =
+        TapToPayPreflight
+            .checks(facts, appId, expectedCertificate)
+            .first { it.title.contains("App ID", ignoreCase = true) || it.title.contains("certificate") }
+
+    @Test
+    fun `with no expected certificate configured the signing key is not claimed to be checked`() {
+        val check = appIdCheckWith("")
+        assertEquals(CheckStatus.Pass, check.status)
+        assertTrue("does not say how to check it", check.detail.contains("payabli.demo.signingCertificate"))
+    }
+
+    @Test
+    fun `a build signed by the wrong key fails`() {
+        // The reason the setting exists. Every other check passes on such a build, and attestation
+        // rejects it much later with nothing on this screen pointing at why.
+        assertEquals(CheckStatus.Fail, appIdCheckWith("EF:01").status)
+    }
+
+    @Test
+    fun `a mismatch names both sides`() {
+        val check = appIdCheckWith("EF:01")
+        assertTrue(check.detail.contains("EF:01"))
+        assertTrue(check.detail.contains("AB:CD"))
+    }
+
+    @Test
+    fun `the expected certificate matches`() {
+        assertEquals(CheckStatus.Pass, appIdCheckWith("AB:CD").status)
+    }
+
+    @Test
+    fun `punctuation and case in the expected certificate are not the comparison`() {
+        // The Play Console, keytool and apksigner each print this differently, and retyping one of
+        // them into the setting must not read as a build signed by the wrong key.
+        assertEquals(CheckStatus.Pass, appIdCheckWith("abcd").status)
+        assertEquals(CheckStatus.Pass, appIdCheckWith("ab:cd").status)
+        assertEquals(CheckStatus.Pass, appIdCheckWith(" AB CD ").status)
+    }
+
+    @Test
+    fun `an unreadable certificate stays unknown even with one configured`() {
+        // Nothing observed says the key is wrong, so this is not the mismatch failure.
+        assertEquals(
+            CheckStatus.Unknown,
+            appIdCheckWith("AB:CD", healthy().copy(signingCertificateDigest = null)).status,
+        )
+    }
+
     @Test
     fun `an unreadable signing certificate is unknown`() {
         // Nothing observed says the signature is wrong, only that this device cannot show it.

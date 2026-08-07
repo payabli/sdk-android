@@ -182,6 +182,7 @@ private fun SetupScreenPreview() {
                         DemoConfiguration(
                             entryPoint = "",
                             appId = "com.payabli.example.app",
+                            signingCertificate = "",
                             environment = DemoEnvironment.SANDBOX,
                             diagnosticsEnabled = true,
                         ),
