@@ -53,14 +53,20 @@ class DeviceKeyFactoryInstrumentedTest {
     private fun keyStore(): KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
 
     /**
-     * Removes the key, and fails the test if it cannot.
+     * Empties the namespace the assertions inspect, and fails the test if it cannot.
+     *
+     * **The whole namespace, not just the fixed alias.** The assertions below enumerate everything under the
+     * prefix, which includes the generated `<prefix>.<suffix>` aliases the previous implementation minted. A
+     * device carrying one from an interrupted run of that implementation would fail the one-entry assertion
+     * while the code under test had done exactly the right thing. Clearing less than the assertions read is
+     * how a correct implementation gets reported as broken.
      *
      * Deleting an absent alias succeeds, so a throw here means the key store is unusable. Swallowing it would
-     * leave the previous run's entry in place, and the one-entry and reuse assertions below would then hold
-     * for a key this run never generated.
+     * leave the previous run's entry in place, and the one-entry and reuse assertions would then hold for a
+     * key this run never generated.
      */
     private fun wipe() {
-        keyStore().deleteEntry(DeviceKeyHandle.ALIAS)
+        entriesInNamespace().forEach { keyStore().deleteEntry(it) }
     }
 
     private suspend fun deviceKey(): DeviceKey = DeviceKeyFactory.deviceKey(dispatcher, logger)
