@@ -26,7 +26,7 @@ data class PaymentMethodUiState(
 class PaymentMethodViewModel(
     private val flow: PaymentFlowController,
     private val diagnostics: DiagnosticsStore,
-    diagnosticsEnabled: Boolean,
+    private val diagnosticsEnabled: Boolean,
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
@@ -64,15 +64,26 @@ class PaymentMethodViewModel(
                     "Result: ${method.resultText}",
                 ).joinToString("\n")
             }
-        diagnostics.record("RESPONSE ${result.code} paymentMethod\nreason=${result.reason}")
+        record("RESPONSE ${result.code} paymentMethod\nreason=${result.reason}")
         _uiState.update { it.copy(resultText = text, isSheetOpen = false, isSubmitting = false) }
     }
 
     fun onError(error: PaymentError) {
-        diagnostics.record("ERROR paymentMethod\n${error.displayMessage}")
+        record("ERROR paymentMethod\n${error.displayMessage}")
         _uiState.update {
             it.copy(resultText = "✗ ${error.displayMessage}", isSheetOpen = false, isSubmitting = false)
         }
+    }
+
+    /**
+     * Records only when diagnostics are on.
+     *
+     * The flag previously reached the UI state and nothing else, so turning diagnostics off hid the
+     * panel while every entry was still recorded and retained. A setting that changes what is shown
+     * and not what is kept is the wrong half.
+     */
+    private fun record(line: String) {
+        if (diagnosticsEnabled) diagnostics.record(line)
     }
 
     companion object {
