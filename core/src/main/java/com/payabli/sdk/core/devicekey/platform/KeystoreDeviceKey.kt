@@ -8,8 +8,12 @@ import android.security.keystore.StrongBoxUnavailableException
 import androidx.annotation.RequiresApi
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
+import com.payabli.sdk.core.devicekey.DevicePublicKey
+import com.payabli.sdk.core.devicekey.DeviceSignature
+import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
 import com.payabli.sdk.core.devicekey.impl.EcdsaSigner
+import com.payabli.sdk.core.devicekey.impl.JwkThumbprint
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
@@ -39,23 +43,92 @@ import java.security.spec.ECGenParameterSpec
  *
  * Neither half of the key is cached. A handle held across a delete keeps working against a key the store no
  * longer has, and it is a live reference to material whose lifetime this class does not own.
+ *
+ * **Synchronisation here is process-local, and the boundary is worth naming because a Keystore entry is not.**
+ * The alias belongs to the app UID, so every process of the app addresses the same entry, while `MONITOR` is
+ * companion state that each process gets its own copy of. Two processes can therefore both find the alias
+ * empty and both generate, or one can replace the key while the other is signing. This is the scope the SDK
+ * synchronises at everywhere: the session is one per process, and the storage lock is not an OS file lock.
+ *
+ * What that costs is bounded and already has a route back. One key exists at the alias afterwards rather than
+ * two, which is what the design requires; the process whose key was replaced signs with material the service
+ * did not attest, is refused, and enrols again. Under a generated alias the same collision left two keys and
+ * stranded one of them, which is the failure the fixed alias exists to remove.
  */
 internal class KeystoreDeviceKey(
-    override val keyId: String,
     private val logger: SdkLogger,
     /**
      * Runs after the unsynchronized presence check and before the guarded generation. **A test seam, no-op in
      * production**, and it exists because the race it opens cannot be reached from outside this class.
      *
-     * Two instances over one alias both finding no key and both generating would leave the second key in place
-     * and the first attested key gone. From outside [ensureKey] the check and the creation are atomic, so
-     * nothing can interleave them, and a test that races two callers observes a consequence rather than the
-     * invariant. With a rendezvous here the test asserts the invariant instead: one alias, one generation,
-     * counted from the log line [createKey] emits.
+     * Two instances both finding no key and both generating would leave the second key in place and the first
+     * attested key gone. From outside [ensureKey] the check and the creation are atomic, so nothing can
+     * interleave them, and a test that races two callers observes a consequence rather than the invariant.
+     * With a rendezvous here the test asserts the invariant instead: one generation, counted from the log line
+     * [createKey] emits.
      */
     private val beforeKeyGeneration: () -> Unit = {},
+    /**
+     * Runs inside [sign], between producing the signature and deriving the identity that labels it. **A test
+     * seam, no-op in production.**
+     *
+     * The window it opens is closed by the monitor both [sign] and [delete] take, so nothing outside this
+     * class can observe it: a replacement attempted here blocks until the signature and its identity have
+     * been read from one key. Without a seam a test could only assert that the pair happens to agree, which
+     * it does whether or not the monitor is there.
+     */
+    private val betweenSignAndIdentity: () -> Unit = {},
 ) : DeviceKey {
-    override fun publicKeyPoint(): ByteArray {
+    /**
+     * There is no alias parameter, and that is the point.
+     *
+     * A parameter here could carry a per-key name, which is the shape this class exists to make unwritable:
+     * nothing would fail, and the key it replaced would be left in the store with nothing able to name it.
+     * The alias is the same on every install and is read from one place.
+     */
+    private val alias: String get() = DeviceKeyHandle.ALIAS
+
+    /**
+     * The point and its identifier from one read, under the monitor replacement also takes.
+     *
+     * Two things make the pair sound, and only one of them is the monitor. The identifier is derived from the
+     * point this just read rather than from a second read, so the two cannot describe different keys.
+     *
+     * **The monitor is here because this is not a read.** [uncompressedPoint] discards the entry when the
+     * certificate is not a P-256 point, so an earlier version of this method that took no lock could observe
+     * a stale certificate, be overtaken by a replacement, and then delete the key that replaced it. Read,
+     * validate and discard belong in one section for that reason.
+     */
+    override fun publicKey(): DevicePublicKey =
+        synchronized(MONITOR) {
+            val point = uncompressedPoint()
+            DevicePublicKey(point, JwkThumbprint.of(point))
+        }
+
+    override fun delete() {
+        // Not `discarding()`: that reports the key gone because a signature proved it unusable. This is a
+        // caller acting on what the service said, and it succeeds rather than throwing when the key is
+        // already absent, because a repeat of an attempt that may have completed must not fail.
+        //
+        // Under the same monitor as `sign`, so a deletion cannot land between a signature and the identity
+        // that labels it.
+        //
+        // That is the whole of what it buys, and deliberately not more: this releases the monitor before a
+        // caller invokes `ensureKey`, so delete-and-regenerate is two guarded steps rather than one. A `sign`
+        // arriving between them finds no key and reports it gone, which is a correct answer to a device with
+        // no key rather than a race, and a caller replacing a key handles that outcome anyway.
+        synchronized(MONITOR) {
+            try {
+                keyStore().deleteEntry(alias)
+            } catch (e: GeneralSecurityException) {
+                throw DeviceKeyException.CryptoUnavailable(e)
+            } catch (e: ProviderException) {
+                throw asProviderFailure(e)
+            }
+        }
+    }
+
+    private fun uncompressedPoint(): ByteArray {
         val key = existingPublicKey() ?: throw DeviceKeyException.KeyLost()
         return try {
             EcPointEncoding.uncompressed(key)
@@ -66,28 +139,50 @@ internal class KeystoreDeviceKey(
         }
     }
 
-    override fun sign(payload: ByteArray): ByteArray =
-        try {
-            EcdsaSigner.sign(privateKeyForSigning(), payload)
-        } catch (e: GeneralSecurityException) {
-            throw asFailure(e)
-        } catch (e: ProviderException) {
-            throw asProviderFailure(e)
+    /**
+     * Both values from one key, under the monitor that replacement also takes.
+     *
+     * The private half and the public half are two reads of the key store. Between them a replacement would
+     * otherwise leave the signature made by one key and the identity naming another, which the service
+     * rejects because it verifies against the public key it holds for the identity it was sent.
+     *
+     * The monitor is process-local, so this closes the window against every caller inside this process and
+     * none outside it. See the class.
+     */
+    override fun sign(payload: ByteArray): DeviceSignature =
+        synchronized(MONITOR) {
+            val signature =
+                try {
+                    EcdsaSigner.sign(privateKeyForSigning(), payload)
+                } catch (e: GeneralSecurityException) {
+                    throw asFailure(e)
+                } catch (e: ProviderException) {
+                    throw asProviderFailure(e)
+                }
+            betweenSignAndIdentity()
+            // Reentrant on the monitor already held, so the pair still comes from one observation.
+            DeviceSignature(signature, publicKey().identity)
         }
 
     /**
      * Provisions the alias, and is the only place a key is ever created.
      *
-     * Double-checked under the per-alias monitor, so two callers arriving together generate once rather than
-     * racing to replace each other's key.
+     * Guarded by the shared monitor, so two callers arriving together generate once rather than racing to
+     * replace each other's key. Two *processes* can still both find the alias empty and both generate, and
+     * the later generation replaces the earlier: see the class for why that is stated rather than prevented.
      *
-     * With [mayCreate] false it proves a key is present, which is what a caller resolving an already-attested
-     * alias wants: the answer to a missing key there is re-attestation, not a fresh key under the same name.
+     * **The presence check is inside the monitor, not before it.** It reads the private half, which discards
+     * the entry when the platform reports it unrecoverable, so an unsynchronized probe could delete a key
+     * another caller had just generated. That is a mutation, and it does not belong outside the lock however
+     * cheap the fast path it bought was.
+     *
+     * With [mayCreate] false it proves a key is present, which is what a caller resolving a key the service has
+     * already accepted wants: the answer to a missing key there is enrolling again, not a fresh key under the
+     * same alias.
      */
     fun ensureKey(mayCreate: Boolean) {
-        if (existingPrivateKey() != null) return
         beforeKeyGeneration()
-        synchronized(monitorFor(keyId)) {
+        synchronized(MONITOR) {
             if (existingPrivateKey() != null) return
             if (!mayCreate) throw DeviceKeyException.KeyLost()
             createKey()
@@ -130,7 +225,7 @@ internal class KeystoreDeviceKey(
      */
     private fun discarding(cause: Throwable): DeviceKeyException {
         logger.warn(LogField.safe("event", "device_key_discarded")) { "device key unusable, discarding alias" }
-        return if (runCatching { keyStore().deleteEntry(keyId) }.isSuccess) {
+        return if (runCatching { keyStore().deleteEntry(alias) }.isSuccess) {
             DeviceKeyException.KeyLost(cause)
         } else {
             DeviceKeyException.CryptoUnavailable(cause)
@@ -152,7 +247,7 @@ internal class KeystoreDeviceKey(
 
     private fun existingPrivateKey(): PrivateKey? =
         try {
-            keyStore().getKey(keyId, null) as? PrivateKey
+            keyStore().getKey(alias, null) as? PrivateKey
         } catch (e: UnrecoverableKeyException) {
             throw asFailure(e)
         } catch (e: GeneralSecurityException) {
@@ -169,7 +264,7 @@ internal class KeystoreDeviceKey(
      */
     private fun existingPublicKey(): ECPublicKey? =
         try {
-            keyStore().getCertificate(keyId)?.publicKey as? ECPublicKey
+            keyStore().getCertificate(alias)?.publicKey as? ECPublicKey
         } catch (e: GeneralSecurityException) {
             throw DeviceKeyException.CryptoUnavailable(e)
         } catch (e: ProviderException) {
@@ -219,7 +314,7 @@ internal class KeystoreDeviceKey(
      */
     private fun baseSpec(): KeyGenParameterSpec.Builder =
         KeyGenParameterSpec
-            .Builder(keyId, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
+            .Builder(alias, KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY)
             .setAlgorithmParameterSpec(ECGenParameterSpec(CURVE))
             .setDigests(KeyProperties.DIGEST_SHA256)
 
@@ -254,13 +349,20 @@ internal class KeystoreDeviceKey(
         }
 
     private companion object {
-        /** One monitor per alias, shared by every key over it, mirroring the storage cipher's. */
-        private val monitors = HashMap<String, Any>()
-
-        private fun monitorFor(keyId: String): Any =
-            // A plain map under a monitor, not ConcurrentHashMap.computeIfAbsent, which is API 24 against this
-            // module's floor of 23.
-            synchronized(monitors) { monitors.getOrPut(keyId) { Any() } }
+        /**
+         * One monitor, shared by every instance, held by [sign], [delete] and [ensureKey].
+         *
+         * There is one alias, so there is one thing to serialise on. The storage cipher keys its monitor by
+         * alias because it has one per store; here a map would be a map with a single entry.
+         *
+         * It covers two invariants rather than one: that two callers finding no key generate once, and that a
+         * signature and the identity labelling it come from the same key. The second is why [sign] takes it,
+         * since signing alone needs no mutual exclusion.
+         *
+         * Both hold **within one process only**, which is the scope this SDK synchronises at throughout. See
+         * the class for what that leaves open.
+         */
+        private val MONITOR = Any()
 
         const val PROVIDER = "AndroidKeyStore"
         const val CURVE = "secp256r1"

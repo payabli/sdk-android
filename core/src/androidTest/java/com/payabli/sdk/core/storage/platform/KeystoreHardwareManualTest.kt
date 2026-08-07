@@ -5,6 +5,7 @@ import android.security.keystore.KeyInfo
 import android.security.keystore.KeyProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.sdk.core.HardwareKeystoreTarget
 import com.payabli.sdk.core.ManualDeviceTest
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
@@ -17,7 +18,6 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,16 +51,16 @@ import kotlin.time.Duration.Companion.seconds
  * a software key when the platform offers nothing better, so asserting hardware backing needs a signal rather than
  * an assumption. Above API 31 that is `FEATURE_HARDWARE_KEYSTORE`. Below it, that feature does not exist and
  * querying it returns a misleading false, so the signal is `FEATURE_FINGERPRINT` and the basis is the CDD clause
- * quoted on [requiresHardwareBackedKeystore]. Old devices keep their coverage.
+ * quoted on [HardwareKeystoreTarget.requiresHardwareBackedKeystore]. Old devices keep their coverage.
  *
- * **Two devices skip, so read a manual run's skips accordingly.** A pre-31 device without fingerprint, which the
- * CDD genuinely exempts, and an API 31+ device that does not advertise `FEATURE_HARDWARE_KEYSTORE`. In both cases
- * the two hardware-only tests opt out while the best-level test still runs, because software is a legitimate
- * expectation there. A skip costs no reported count, since the nightly does not run this tier.
+ * **Three targets skip, so read a manual run's skips accordingly.** An emulator, which advertises the hardware
+ * keystore and then produces a software key, so its claim cannot be believed; a pre-31 device without fingerprint,
+ * which the CDD genuinely exempts; and an API 31+ device that does not advertise `FEATURE_HARDWARE_KEYSTORE`.
+ * [HardwareKeystoreTarget] decides all three and names which one applied. A skip costs no reported count, since
+ * the nightly does not run this tier.
  *
- * **Gaps worth naming rather than hiding:** both phones available here advertise StrongBox *and* a hardware
- * keystore, so neither the `TRUSTED_ENVIRONMENT` branch nor the software branch of
- * [theStorageKeyUsesTheBestLevelTheDeviceAdvertises] is executed, and neither `Assume` has been observed to skip.
+ * **Gap worth naming rather than hiding:** no available target takes the software branch, because a target that
+ * would is one this tier now skips.
  *
  * **Not covered here: `KeyPermanentlyInvalidatedException`.** This key is not bound to user authentication,
  * so an enrollment or credential change does not invalidate it, and there is no procedure that would. The
@@ -108,10 +108,7 @@ class KeystoreHardwareManualTest {
     @Test
     fun theStorageKeyIsHardwareBacked() =
         runTest(timeout = 30.seconds) {
-            Assume.assumeTrue(
-                "this device advertises no hardware keystore, so there is no hardware backing to assert",
-                requiresHardwareBackedKeystore(),
-            )
+            HardwareKeystoreTarget.assumeHardwareBackingIsAssertable()
             storage().set("refresh", "secret-value".toByteArray())
             val info = keyInfo()
 
@@ -135,48 +132,36 @@ class KeystoreHardwareManualTest {
      * belongs here because it *is* the question, rather than being a device adaptation bolted onto something
      * else.
      *
-     * Below 31 the platform cannot report a level at all, so the question drops to hardware backing, gated on the
-     * CDD signal described on [requiresHardwareBackedKeystore]. From 31 no gate is needed, because software is a
-     * legitimate expectation for a device that advertises no hardware keystore.
+     * Below 31 the platform cannot report a level at all, so the question drops to hardware backing. The gate runs
+     * first either way, so by the time a level is compared the target is a real device required to provide
+     * hardware backing, and software is not among the outcomes.
      *
-     * **The `TRUSTED_ENVIRONMENT` branch is unexecuted here.** Both phones on hand advertise StrongBox, so no
-     * available device takes it, and the emulator has no secure element at all.
+     * Both branches are exercised by the bench: a handset advertising StrongBox takes the first, and one with a
+     * hardware keystore and no secure element takes `TRUSTED_ENVIRONMENT`.
      */
     @ManualDeviceTest
     @Test
     fun theStorageKeyUsesTheBestLevelTheDeviceAdvertises() =
         runTest(timeout = 30.seconds) {
+            HardwareKeystoreTarget.assumeHardwareBackingIsAssertable()
             storage().set("refresh", "secret-value".toByteArray())
             val info = keyInfo()
 
-            // Both branches derive the expectation from the capability rather than assuming a secure element. They
-            // differ in what the platform can tell them: from 31 a level is readable, so software is a legitimate
-            // expectation for a device claiming nothing better and no skip is needed. Before 31 there is no level,
-            // so the coarse question needs the CDD signal and skips where the CDD exempts the device.
+            // Both branches derive the expectation from the capability rather than assuming a secure element, and
+            // differ only in what the platform can tell them: from 31 a level is readable, before 31 it is not.
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
                 // Before 31 there is no level to read, so this is the same question at lower resolution: the key is
-                // in secure hardware. Gated rather than assumed, on the CDD signal described above, so a genuinely
-                // exempt device skips instead of failing.
-                Assume.assumeTrue(
-                    "this device is not required to back its keystore in hardware, so there is nothing to assert",
-                    requiresHardwareBackedKeystore(),
-                )
+                // in secure hardware.
                 @Suppress("DEPRECATION")
                 assertTrue("the storage key is not inside secure hardware", info.isInsideSecureHardware)
                 return@runTest
             }
 
-            val hasStrongBox =
-                InstrumentationRegistry
-                    .getInstrumentation()
-                    .targetContext
-                    .packageManager
-                    .hasSystemFeature(STRONGBOX_FEATURE)
+            val hasStrongBox = HardwareKeystoreTarget.hasStrongBox()
             val expected =
                 when {
                     hasStrongBox -> KeyProperties.SECURITY_LEVEL_STRONGBOX
-                    requiresHardwareBackedKeystore() -> KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
-                    else -> KeyProperties.SECURITY_LEVEL_SOFTWARE
+                    else -> KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
                 }
 
             assertEquals(
@@ -198,10 +183,7 @@ class KeystoreHardwareManualTest {
     @Test
     fun aValueRoundTripsUnderAHardwareBackedKey() =
         runTest(timeout = 30.seconds) {
-            Assume.assumeTrue(
-                "this device advertises no hardware keystore, so there is no hardware backing to assert",
-                requiresHardwareBackedKeystore(),
-            )
+            HardwareKeystoreTarget.assumeHardwareBackingIsAssertable()
             val subject = storage()
             subject.set("refresh", "secret-value".toByteArray())
 
@@ -224,35 +206,6 @@ class KeystoreHardwareManualTest {
             }
         }
 
-    /**
-     * Whether this device is **required** to back its keystore with an isolated execution environment.
-     *
-     * API-aware, because the obvious query is wrong below 31. `FEATURE_HARDWARE_KEYSTORE` was introduced at API 31,
-     * verified in the SDK's own `api-versions.xml`, so an API 23 to 30 device does not advertise it even when its
-     * keystore *is* hardware-backed. Querying it there returns false and would fail a correct implementation, which
-     * is the defect this helper previously had.
-     *
-     * Below 31 the signal is `FEATURE_FINGERPRINT`, which exists from API 23, this module's floor. Android's
-     * Compatibility Definition Document requires at `[9.11/H-0-2]` that a device "MUST back up the keystore
-     * implementation with an isolated execution environment", and exempts devices launched on earlier versions
-     * **unless they declare the `android.hardware.fingerprint` feature flag**. A device declaring fingerprint is
-     * therefore not exempt, which makes hardware backing a requirement rather than a hope.
-     *
-     * The one case left unanswered is a pre-31 device without fingerprint, genuinely exempt, which skips.
-     */
-    private fun requiresHardwareBackedKeystore(): Boolean {
-        val features =
-            InstrumentationRegistry
-                .getInstrumentation()
-                .targetContext
-                .packageManager
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            features.hasSystemFeature(HARDWARE_KEYSTORE_FEATURE)
-        } else {
-            features.hasSystemFeature(FINGERPRINT_FEATURE)
-        }
-    }
-
     private fun keyInfo(): KeyInfo {
         val store = KeyStore.getInstance(PROVIDER).apply { load(null) }
         val key = store.getKey(keyAlias, null) as SecretKey
@@ -262,8 +215,5 @@ class KeystoreHardwareManualTest {
 
     private companion object {
         const val PROVIDER = "AndroidKeyStore"
-        const val STRONGBOX_FEATURE = "android.hardware.strongbox_keystore"
-        const val HARDWARE_KEYSTORE_FEATURE = "android.hardware.hardware_keystore"
-        const val FINGERPRINT_FEATURE = "android.hardware.fingerprint"
     }
 }

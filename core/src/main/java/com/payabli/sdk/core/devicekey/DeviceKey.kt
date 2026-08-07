@@ -8,9 +8,10 @@ import androidx.annotation.RestrictTo
  * Held by the core rather than by a capability, because the device key is core identity: the same key backs
  * card-present activation today and is what a device-bound credential is issued against later.
  *
- * **Bytes, not encodings.** [publicKeyPoint] and [sign] return raw bytes, and whatever sends them decides
- * how they are encoded on the wire. A base64 helper here would put one channel's wire format in the core
- * and leave the next one converting away from it.
+ * **Bytes, not encodings.** [DevicePublicKey.point] and [DeviceSignature.signature] are raw bytes, and
+ * whatever sends them decides how they are encoded on the wire. A base64 helper here would put one channel's
+ * wire format in the core and leave the next one converting away from it. The identifier beside them is a
+ * string because the standard that defines it says so, not because this layer chose an encoding.
  *
  * **There is no accessor for the private key, at any visibility.** A caller gets signatures, never the key
  * that produced them, which is the same rule the token holder follows.
@@ -22,30 +23,108 @@ import androidx.annotation.RestrictTo
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface DeviceKey {
     /**
-     * The key's alias, which is also the identifier the service records for it.
+     * The public half of the key, and the identifier the service records for it, from one observation.
      *
-     * Stable for the life of the key. A rotated key gets a new one, so a caller holding an old value is
-     * holding a reference to a key that no longer exists rather than a stale name for the current one.
-     */
-    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public val keyId: String
-
-    /**
-     * The public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes.
+     * **Both, because registration sends both and they must describe one key.** `/attest` stores the point
+     * against the identifier, and a replacement landing between two separate reads would store one key's
+     * point under another key's identifier: every later assertion then verifies against a point its signing
+     * key never had, and the device is left enrolled in a state no retry recovers. The same reason [sign]
+     * returns its identity rather than leaving it to a second call.
+     *
+     * The identifier is per key, so a replacement gets a different one. The alias the key is stored under is
+     * fixed and identical on every install, which is why it cannot serve as this: the service would be unable
+     * to tell one install's key from another's, or a key from the one it replaced.
+     *
+     * Derived on every call rather than held, for the reason nothing else here is cached: the key can be
+     * deleted while a caller still holds this object, and a remembered value would then describe material
+     * that is gone.
+     *
+     * **Within one process**, as everywhere else in this SDK. See [sign].
      *
      * @throws DeviceKeyException if the key is gone or the key store cannot be reached.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public fun publicKeyPoint(): ByteArray
+    public fun publicKey(): DevicePublicKey
 
     /**
-     * Signs [payload] with `SHA256withECDSA`, returning the DER signature.
+     * Signs [payload] with `SHA256withECDSA`, returning the signature together with the identity of the key
+     * that produced it.
      *
-     * DER rather than the raw `R || S` pair, because that is what the verifier expects; the two are the
-     * same numbers in different envelopes and are not interchangeable.
+     * **The two are returned together because they must describe one key, and asking for them separately
+     * cannot guarantee that.** The signature and the identity come from two reads of the key store, and a
+     * replacement landing between them yields a signature by the old key labelled with the new key's
+     * identity: the service selects an attestation row by that identity and verifies against a public key
+     * the signature was never made with, so the assertion is refused with nothing pointing at the cause.
+     * One call, so a caller cannot write the interleaved version. [publicKey] pairs its two values for the
+     * same reason.
+     *
+     * **Within one process.** Serialisation against replacement is process-local, as everywhere else in this
+     * SDK: the session is per process and the storage lock is not an OS file lock. An app running the SDK
+     * under `android:process` gets a second copy of that state, and a replacement from the other process can
+     * still land between the two reads. Nothing here coordinates across that boundary and nothing pretends
+     * to.
+     *
+     * The signature is DER rather than the raw `R || S` pair, because that is what the verifier expects; the
+     * two are the same numbers in different envelopes and are not interchangeable.
      *
      * @throws DeviceKeyException if the key is gone, the key store cannot be reached, or signing fails.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public fun sign(payload: ByteArray): ByteArray
+    public fun sign(payload: ByteArray): DeviceSignature
+
+    /**
+     * Removes the key, so the next caller that may create one gets a new key at the same alias.
+     *
+     * For a caller that has read a definitive refusal to bind this key. Not for a failure it could not
+     * classify and not for a response reporting the key as already bound: deleting on either destroys a
+     * credential that is or may still be live, and the key store cannot tell afterwards that it happened.
+     *
+     * Distinct from clearing an identity record, which forgets what the service said about the key while
+     * leaving the key itself in place.
+     *
+     * Succeeds when there is no key to remove, so a caller that cannot tell whether an earlier attempt
+     * completed can repeat it.
+     *
+     * @throws DeviceKeyException if the key store cannot be reached, in which case the key is still there.
+     */
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public fun delete()
+}
+
+/**
+ * The public half of a key and the identifier derived from it, from one observation of that key.
+ *
+ * Registration sends both. Read separately they can describe two different keys, and the service would then
+ * hold a point that no assertion under that identifier can ever verify against.
+ */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public class DevicePublicKey(
+    /** The public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val point: ByteArray,
+    /** The identifier the service records for this key: the JWK thumbprint of [point]. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val identity: String,
+) {
+    /** Never the point or the identity: both are device identity. */
+    override fun toString(): String = "DevicePublicKey()"
+}
+
+/**
+ * A signature and the identity of the key that made it, from one observation of that key.
+ *
+ * Separate values would let a caller pair a signature with an identity taken before or after a replacement.
+ * This type exists so that pairing is done once, where the key is read, rather than at every call site.
+ */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public class DeviceSignature(
+    /** The DER ECDSA signature over the payload. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val signature: ByteArray,
+    /** The signing key's identity: the JWK thumbprint of its public half, as [DevicePublicKey.identity]. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val identity: String,
+) {
+    /** Never the signature or the identity: both are device identity. */
+    override fun toString(): String = "DeviceSignature()"
 }

@@ -78,7 +78,12 @@ internal class RegisterRequest(
     val entry: String,
     /** A stable app-generated identifier. The server keys its register state machine on it. */
     val hardwareId: String,
-    /** The device key's Keystore alias. */
+    /**
+     * The device key's identifier, which the server records and later looks the attestation up by.
+     *
+     * Not the alias the key is stored under. That is fixed and identical on every install, so the server
+     * could not tell one device's key from another's or from the key it replaced.
+     */
     val keyId: String,
     val deviceName: String?,
     val model: String?,

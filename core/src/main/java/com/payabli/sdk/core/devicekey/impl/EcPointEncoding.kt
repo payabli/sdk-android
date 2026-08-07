@@ -24,7 +24,8 @@ internal object EcPointEncoding {
 
     const val POINT_BYTES: Int = 1 + 2 * COORDINATE_BYTES
 
-    private const val UNCOMPRESSED_TAG: Byte = 0x04
+    /** Not private: [JwkThumbprint] reads the same tag, and two copies of a magic byte drift apart. */
+    const val UNCOMPRESSED_TAG: Byte = 0x04
 
     private const val CURVE = "secp256r1"
 

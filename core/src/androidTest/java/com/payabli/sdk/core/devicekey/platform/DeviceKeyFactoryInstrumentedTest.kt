@@ -1,27 +1,23 @@
 package com.payabli.sdk.core.devicekey.platform
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicekey.DeviceKey
+import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.logging.impl.LogSink
-import com.payabli.sdk.core.storage.platform.SecureStorageFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
 import java.security.KeyStore
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicReference
@@ -32,27 +28,21 @@ private const val DISPATCH_THREAD = "device-key-test-dispatcher"
 private val TEST_TIMEOUT = 30.seconds
 
 /**
- * The composition itself: the directory, the filename, and the identity that ties them to one Keystore alias.
+ * That one key exists at one alias, and that replacing it leaves nothing behind.
  *
- * Every part this assembles is tested on its own, and none of those tests can see this. The slot tests run over
- * in-memory storage, and the Keystore tests construct [KeystoreDeviceKey] against an alias they chose, so the
- * wiring that decides *which* store a key is named by is exactly what stays green while it breaks. A directory
- * that changed between calls, or a second identity resolved for the same file, would mint a new key on every
- * call and strand the one before it, and both component suites would still pass.
+ * Only a real key store answers this. On the JVM there is no `AndroidKeyStore` to hold a stray key, so a
+ * version of this test off-device would assert against a map it built itself.
  *
- * This runs against the real store the app would use. It is deleted before and after each test, so a leftover
- * from an earlier run cannot stand in for a key this test believes it minted.
+ * **This runs against the alias the app itself uses**, which is the only alias there is, so it deletes that
+ * entry before and after each test. A leftover from an earlier run would otherwise stand in for a key the
+ * test believes it generated.
  */
 @RunWith(AndroidJUnit4::class)
 class DeviceKeyFactoryInstrumentedTest {
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val logger = DefaultSdkLogger(LogCategory.CORE, RecordingLogSink())
 
     /** What the integrating layer would choose. Named once here, since nothing below it supplies a default. */
     private val dispatcher = Dispatchers.IO
-
-    /** Every alias this test caused to exist, so teardown deletes each one from the device's Keystore. */
-    private val minted = mutableListOf<String>()
 
     @Before
     fun clearStore() = wipe()
@@ -60,72 +50,99 @@ class DeviceKeyFactoryInstrumentedTest {
     @After
     fun tearDown() = wipe()
 
-    private fun storeFile() = File(context.applicationContext.noBackupFilesDir, DeviceKeyFactory.FILE_NAME)
+    private fun keyStore(): KeyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
 
+    /**
+     * Empties the namespace the assertions inspect, and fails the test if it cannot.
+     *
+     * **The whole namespace, not just the fixed alias.** The assertions below enumerate everything under the
+     * prefix, which includes the generated `<prefix>.<suffix>` aliases the previous implementation minted. A
+     * device carrying one from an interrupted run of that implementation would fail the one-entry assertion
+     * while the code under test had done exactly the right thing. Clearing less than the assertions read is
+     * how a correct implementation gets reported as broken.
+     *
+     * Deleting an absent alias succeeds, so a throw here means the key store is unusable. Swallowing it would
+     * leave the previous run's entry in place, and the one-entry and reuse assertions would then hold for a
+     * key this run never generated.
+     */
     private fun wipe() {
-        val keyStore = KeyStore.getInstance(PROVIDER).apply { load(null) }
-        minted.forEach { runCatching { keyStore.deleteEntry(it) } }
-        minted.clear()
-        // The store's own key, which is separate from the device keys it names.
-        runCatching { keyStore.deleteEntry(SecureStorageFactory.aliasFor(storeFile())) }
-        storeFile().delete()
+        entriesInNamespace().forEach { keyStore().deleteEntry(it) }
     }
 
-    private suspend fun candidate(): DeviceKey =
-        DeviceKeyFactory.candidate(context, dispatcher, logger).also {
-            minted +=
-                it.keyId
+    private suspend fun deviceKey(): DeviceKey = DeviceKeyFactory.deviceKey(dispatcher, logger)
+
+    /**
+     * Every entry in this SDK's device-key namespace.
+     *
+     * **The test enumerates and production must not.** Enumeration is the only way to observe a key that
+     * nothing names, which is exactly the failure this asserts cannot happen, so the check has to be able to
+     * see what the code under test is forbidden to look for.
+     */
+    private fun entriesInNamespace(): List<String> =
+        keyStore().aliases().toList().filter { it.startsWith(DeviceKeyHandle.ALIAS) }
+
+    @Test
+    fun theKeyLandsAtTheFixedAlias() =
+        runTest(timeout = TEST_TIMEOUT) {
+            deviceKey()
+
+            assertEquals(listOf(DeviceKeyHandle.ALIAS), entriesInNamespace())
         }
 
     @Test
-    fun theStoreLandsInTheNoBackupDirectoryUnderItsOwnName() =
+    fun aSecondCallReturnsTheKeyTheFirstGenerated() =
         runTest(timeout = TEST_TIMEOUT) {
-            candidate()
+            val first = deviceKey()
+            val second = deviceKey()
 
-            // Named concretely, because the two mistakes this guards against are silent: a store in filesDir
-            // travels in backup and device transfer, where the restored name points at a key that did not
-            // travel with it, and a store sharing the token file is cleared whenever that file is.
-            assertTrue("the device-key store is not where the factory documents it", storeFile().isFile)
-            assertEquals("payabli-devicekey.json", storeFile().name)
+            // The reuse a retry depends on, and it comes from the alias being fixed rather than from a stored
+            // name. Generating a second key would leave the first with nothing able to name it.
+            assertEquals(first.publicKey().identity, second.publicKey().identity)
+            assertArrayEquals(first.publicKey().point, second.publicKey().point)
+        }
+
+    /**
+     * Replacing the key leaves exactly one entry, however many times it is replaced.
+     *
+     * The whole safety argument for a fixed alias. Under a generated name, each replacement adds an entry
+     * beside the last and only the newest is reachable; here the namespace is asserted to hold one.
+     */
+    @Test
+    fun replacingTheKeyLeavesExactlyOneEntry() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val identities = mutableListOf<String>()
+
+            repeat(3) {
+                val key = deviceKey()
+                identities += key.publicKey().identity
+                key.delete()
+            }
+            val survivor = deviceKey()
+
+            assertEquals(listOf(DeviceKeyHandle.ALIAS), entriesInNamespace())
+            // Each replacement is a different key, so the identifier the service records changes with it even
+            // though the alias does not. Equal identities here would mean nothing was actually replaced.
+            assertEquals(identities.size, identities.toSet().size)
+            assertNotEquals(identities.last(), survivor.publicKey().identity)
         }
 
     @Test
-    fun aSecondCallReturnsTheKeyTheFirstMinted() =
+    fun deletingLeavesNothingInTheNamespace() =
         runTest(timeout = TEST_TIMEOUT) {
-            val first = candidate()
-            val second = candidate()
+            deviceKey().delete()
 
-            // A retry before attestation must attest the key it already has. Minting a second would leave the
-            // first named by nothing, once per attempt.
-            assertEquals(first.keyId, second.keyId)
-            assertArrayEquals(first.publicKeyPoint(), second.publicKeyPoint())
-        }
-
-    @Test
-    fun aMintedCandidateIsNotYetActive() =
-        runTest(timeout = TEST_TIMEOUT) {
-            assertNull("nothing is attested on a clean store", DeviceKeyFactory.active(context, dispatcher, logger))
-
-            candidate()
-
-            // Minting is not attestation. Reporting a candidate as active would sign with material the service
-            // has never seen.
-            assertNull(
-                "a minted candidate is not an attested one",
-                DeviceKeyFactory.active(context, dispatcher, logger),
-            )
+            assertEquals(emptyList<String>(), entriesInNamespace())
         }
 
     /**
      * The blocking work runs on the dispatcher it was given, not on the caller's thread.
      *
-     * Both halves matter. A suspend signature does not make a function main-safe, and the two blocking things
-     * here sit between the suspending reads: resolving the store's canonical path, and every Keystore call,
+     * A suspend signature does not make a function main-safe, and every Keystore call here is blocking,
      * generation included. On Main that is a stall for as long as a secure element takes.
      *
-     * Observed through the line `createKey` emits, the one point inside the dispatched body that reports
-     * which thread it ran on. The dispatcher is a single thread with a known name, so the assertion is an
-     * equality on that name.
+     * Observed through the line `createKey` emits, the one point inside the dispatched body that reports which
+     * thread it ran on. The dispatcher is a single thread with a known name, so the assertion is an equality
+     * on that name.
      */
     @Test
     fun theKeystoreWorkRunsOnTheDispatcherItWasGiven() =
@@ -152,28 +169,11 @@ class DeviceKeyFactoryInstrumentedTest {
             val executor = Executors.newSingleThreadExecutor { Thread(it, DISPATCH_THREAD) }
 
             try {
-                val key = DeviceKeyFactory.candidate(context, executor.asCoroutineDispatcher(), watching)
-                minted += key.keyId
+                DeviceKeyFactory.deviceKey(executor.asCoroutineDispatcher(), watching)
 
                 assertEquals(DISPATCH_THREAD, generatedOn.get())
             } finally {
                 executor.shutdown()
             }
-        }
-
-    @Test
-    fun promotingTheCandidateMakesTheSameKeyActive() =
-        runTest(timeout = TEST_TIMEOUT) {
-            val candidate = candidate()
-
-            val promoted = DeviceKeyFactory.slots(context, dispatcher, logger).promotePending()
-            val active = DeviceKeyFactory.active(context, dispatcher, logger)
-
-            // The same key, not merely a key: the alias survives the round trip through the store, and the
-            // Keystore entry it names is the one attestation was performed against.
-            assertEquals(candidate.keyId, promoted)
-            assertNotNull("the promoted alias did not resolve to a key", active)
-            assertEquals(candidate.keyId, active?.keyId)
-            assertArrayEquals(candidate.publicKeyPoint(), active?.publicKeyPoint())
         }
 }
