@@ -91,8 +91,8 @@ class DeviceKeyFactoryInstrumentedTest {
 
             // The reuse a retry depends on, and it comes from the alias being fixed rather than from a stored
             // name. Generating a second key would leave the first with nothing able to name it.
-            assertEquals(first.identity(), second.identity())
-            assertArrayEquals(first.publicKeyPoint(), second.publicKeyPoint())
+            assertEquals(first.publicKey().identity, second.publicKey().identity)
+            assertArrayEquals(first.publicKey().point, second.publicKey().point)
         }
 
     /**
@@ -108,7 +108,7 @@ class DeviceKeyFactoryInstrumentedTest {
 
             repeat(3) {
                 val key = deviceKey()
-                identities += key.identity()
+                identities += key.publicKey().identity
                 key.delete()
             }
             val survivor = deviceKey()
@@ -117,7 +117,7 @@ class DeviceKeyFactoryInstrumentedTest {
             // Each replacement is a different key, so the identifier the service records changes with it even
             // though the alias does not. Equal identities here would mean nothing was actually replaced.
             assertEquals(identities.size, identities.toSet().size)
-            assertNotEquals(identities.last(), survivor.identity())
+            assertNotEquals(identities.last(), survivor.publicKey().identity)
         }
 
     @Test

@@ -122,7 +122,7 @@ class KeystoreDeviceKeyInstrumentedTest {
         runTest(timeout = TEST_TIMEOUT) {
             val subject = provisioned()
 
-            val point = subject.publicKeyPoint()
+            val point = subject.publicKey().point
 
             assertEquals(65, point.size)
             assertEquals(0x04.toByte(), point[0])
@@ -154,12 +154,12 @@ class KeystoreDeviceKeyInstrumentedTest {
     @Test
     fun theKeyIsRediscoveredByAnotherInstanceOverTheSameAlias() =
         runTest(timeout = TEST_TIMEOUT) {
-            val point = provisioned().publicKeyPoint()
+            val point = provisioned().publicKey().point
 
             // A second instance holds no state from the first; the key lives in the Keystore. This is as close
             // as an instrumented run gets to a process restart, and the gap is worth knowing: nothing here
             // proves the key survives the process dying, only that it survives the object doing so.
-            assertArrayEquals(point, key().apply { ensureKey(mayCreate = false) }.publicKeyPoint())
+            assertArrayEquals(point, key().apply { ensureKey(mayCreate = false) }.publicKey().point)
         }
 
     @Test
@@ -169,7 +169,7 @@ class KeystoreDeviceKeyInstrumentedTest {
             keyStore().deleteEntry(keyId)
 
             val signing = runCatching { subject.sign("payload".toByteArray()) }.exceptionOrNull()
-            val reading = runCatching { subject.publicKeyPoint() }.exceptionOrNull()
+            val reading = runCatching { subject.publicKey().point }.exceptionOrNull()
 
             // Not a fresh key. Minting one here would sign with material the service has never attested, under
             // an identifier it already holds a different point for, and every assertion would fail afterwards.
@@ -192,10 +192,10 @@ class KeystoreDeviceKeyInstrumentedTest {
     @Test
     fun aReplacedKeyChangesThePointAndRaisesNothing() =
         runTest(timeout = TEST_TIMEOUT) {
-            val before = provisioned().publicKeyPoint()
+            val before = provisioned().publicKey().point
 
             keyStore().deleteEntry(keyId)
-            val after = key().apply { ensureKey(mayCreate = true) }.publicKeyPoint()
+            val after = key().apply { ensureKey(mayCreate = true) }.publicKey().point
 
             // Stated as it is rather than as the acceptance first wanted it. A signing key has no equivalent
             // of the storage cipher's tag check: signing under a replaced key succeeds and returns a perfectly
@@ -211,22 +211,22 @@ class KeystoreDeviceKeyInstrumentedTest {
     @Test
     fun theIdentityIsDerivedFromTheKeyRatherThanFromTheAlias() =
         runTest(timeout = TEST_TIMEOUT) {
-            val before = provisioned().identity()
+            val before = provisioned().publicKey().identity
 
             keyStore().deleteEntry(keyId)
-            val after = key().apply { ensureKey(mayCreate = true) }.identity()
+            val after = key().apply { ensureKey(mayCreate = true) }.publicKey().identity
 
             // The alias is identical across the replacement, so an identity taken from it would be identical
             // too and the service would hold one identifier for two different keys.
             assertNotEquals(before, after)
             // Derived, not remembered: a second instance holding no state reports the same value.
-            assertEquals(after, key().identity())
+            assertEquals(after, key().publicKey().identity)
         }
 
     @Test
     fun theIdentityOfAnAbsentKeyReportsItGone() =
         runTest(timeout = TEST_TIMEOUT) {
-            val thrown = runCatching { key().identity() }.exceptionOrNull()
+            val thrown = runCatching { key().publicKey().identity }.exceptionOrNull()
 
             // Not an empty string and not a thumbprint of nothing, either of which the service would accept and
             // then be unable to match against any key.
@@ -395,7 +395,7 @@ class KeystoreDeviceKeyInstrumentedTest {
             )
             // The consequence still holds, which is why generating once matters.
             assertTrue(keyStore().containsAlias(keyId))
-            assertEquals(65, key().publicKeyPoint().size)
+            assertEquals(65, key().publicKey().point.size)
         }
 
     @Test
@@ -408,7 +408,7 @@ class KeystoreDeviceKeyInstrumentedTest {
                     .packageManager
                     .hasSystemFeature("android.hardware.strongbox_keystore")
 
-            val point = provisioned().publicKeyPoint()
+            val point = provisioned().publicKey().point
 
             // On an emulator the fallback is the branch that runs, which is what proves
             // StrongBoxUnavailableException is not swallowed: swallowed, generation fails outright here.

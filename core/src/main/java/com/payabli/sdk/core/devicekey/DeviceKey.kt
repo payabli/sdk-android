@@ -22,31 +22,28 @@ import androidx.annotation.RestrictTo
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface DeviceKey {
     /**
-     * The identifier the service records for this key, derived from its public half.
+     * The public half of the key, and the identifier the service records for it, from one observation.
      *
-     * For a caller that needs the identity without a signature, which is what registration and enrollment
-     * send. A caller that needs both takes them from [sign] instead, so the pair cannot disagree.
+     * **Both, because registration sends both and they must describe one key.** `/attest` stores the point
+     * against the identifier, and a replacement landing between two separate reads would store one key's
+     * point under another key's identifier: every later assertion then verifies against a point its signing
+     * key never had, and the device is left enrolled in a state no retry recovers. The same reason [sign]
+     * returns its identity rather than leaving it to a second call.
      *
-     * Per key, so a replacement gets a different one. The alias the key is stored under is fixed and is the
-     * same on every install, which is why it cannot serve as this: the service would be unable to tell one
-     * install's key from another's, or a key from the one it replaced.
+     * The identifier is per key, so a replacement gets a different one. The alias the key is stored under is
+     * fixed and identical on every install, which is why it cannot serve as this: the service would be unable
+     * to tell one install's key from another's, or a key from the one it replaced.
      *
      * Derived on every call rather than held, for the reason nothing else here is cached: the key can be
-     * deleted while a caller still holds this object, and a remembered identifier would then name material
+     * deleted while a caller still holds this object, and a remembered value would then describe material
      * that is gone.
      *
-     * @throws DeviceKeyException if the key is gone or the key store cannot be reached.
-     */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public fun identity(): String
-
-    /**
-     * The public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes.
+     * **Within one process**, as everywhere else in this SDK. See [sign].
      *
      * @throws DeviceKeyException if the key is gone or the key store cannot be reached.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public fun publicKeyPoint(): ByteArray
+    public fun publicKey(): DevicePublicKey
 
     /**
      * Signs [payload] with `SHA256withECDSA`, returning the signature together with the identity of the key
@@ -57,7 +54,8 @@ public interface DeviceKey {
      * replacement landing between them yields a signature by the old key labelled with the new key's
      * identity: the service selects an attestation row by that identity and verifies against a public key
      * the signature was never made with, so the assertion is refused with nothing pointing at the cause.
-     * One call, so a caller cannot write the interleaved version.
+     * One call, so a caller cannot write the interleaved version. [publicKey] pairs its two values for the
+     * same reason.
      *
      * **Within one process.** Serialisation against replacement is process-local, as everywhere else in this
      * SDK: the session is per process and the storage lock is not an OS file lock. An app running the SDK
@@ -90,6 +88,25 @@ public interface DeviceKey {
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public fun delete()
+}
+
+/**
+ * The public half of a key and the identifier derived from it, from one observation of that key.
+ *
+ * Registration sends both. Read separately they can describe two different keys, and the service would then
+ * hold a point that no assertion under that identifier can ever verify against.
+ */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public class DevicePublicKey(
+    /** The public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val point: ByteArray,
+    /** The identifier the service records for this key: the JWK thumbprint of [point]. */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val identity: String,
+) {
+    /** Never the point or the identity: both are device identity. */
+    override fun toString(): String = "DevicePublicKey()"
 }
 
 /**

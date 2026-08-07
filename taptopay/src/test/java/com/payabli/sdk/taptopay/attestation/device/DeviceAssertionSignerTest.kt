@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.attestation.device
 
 import com.payabli.sdk.core.devicekey.DeviceKey
+import com.payabli.sdk.core.devicekey.DevicePublicKey
 import com.payabli.sdk.core.devicekey.DeviceSignature
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -148,9 +149,7 @@ private class FakeDeviceKey(
 ) : DeviceKey {
     val signed: MutableList<ByteArray> = CopyOnWriteArrayList()
 
-    override fun identity(): String = KEY_ID
-
-    override fun publicKeyPoint(): ByteArray = throw UnsupportedOperationException("not asked for here")
+    override fun publicKey(): DevicePublicKey = throw UnsupportedOperationException("not asked for here")
 
     override fun delete(): Unit = throw UnsupportedOperationException("not asked for here")
 

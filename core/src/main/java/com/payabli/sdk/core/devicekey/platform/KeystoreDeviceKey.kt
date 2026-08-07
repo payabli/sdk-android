@@ -8,6 +8,7 @@ import android.security.keystore.StrongBoxUnavailableException
 import androidx.annotation.RequiresApi
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
+import com.payabli.sdk.core.devicekey.DevicePublicKey
 import com.payabli.sdk.core.devicekey.DeviceSignature
 import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
@@ -87,7 +88,18 @@ internal class KeystoreDeviceKey(
      */
     private val alias: String get() = DeviceKeyHandle.ALIAS
 
-    override fun identity(): String = JwkThumbprint.of(publicKeyPoint())
+    /**
+     * The point and its identifier from one read, which is what makes them describe one key.
+     *
+     * No monitor, and deliberately: the identifier is derived from the point this just read rather than from
+     * a second read, so the pair cannot disagree whatever happens to the alias afterwards. A lock here would
+     * be released before the caller used either value and would guard nothing. What it replaces is a caller
+     * asking for the two separately, which is the shape this method exists to remove.
+     */
+    override fun publicKey(): DevicePublicKey {
+        val point = uncompressedPoint()
+        return DevicePublicKey(point, JwkThumbprint.of(point))
+    }
 
     override fun delete() {
         // Not `discarding()`: that reports the key gone because a signature proved it unusable. This is a
@@ -108,7 +120,7 @@ internal class KeystoreDeviceKey(
         }
     }
 
-    override fun publicKeyPoint(): ByteArray {
+    private fun uncompressedPoint(): ByteArray {
         val key = existingPublicKey() ?: throw DeviceKeyException.KeyLost()
         return try {
             EcPointEncoding.uncompressed(key)
@@ -140,7 +152,8 @@ internal class KeystoreDeviceKey(
                     throw asProviderFailure(e)
                 }
             betweenSignAndIdentity()
-            DeviceSignature(signature, identity())
+            // Reentrant on the monitor already held, so the pair still comes from one observation.
+            DeviceSignature(signature, publicKey().identity)
         }
 
     /**
