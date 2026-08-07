@@ -34,7 +34,18 @@ class AppContainer(
 
     val configuration: DemoConfiguration = DemoConfiguration.fromBuildConfig()
 
-    val deviceFacts: DeviceFacts = DeviceFactsReader.read(appContext)
+    /**
+     * Read on every call, never cached.
+     *
+     * NFC is a Settings toggle and the readiness check is the thing that tells a reader to go and
+     * flip it. Held as a snapshot, the "Recheck" button re-ran the same five checks against the
+     * facts read at process start and gave the same answer, so the one action offered for the
+     * problem appeared to do nothing.
+     */
+    val readDeviceFacts: () -> DeviceFacts = { DeviceFactsReader.read(appContext) }
+
+    /** Cannot change while the process runs, and the token host is resolved once. */
+    private val isEmulator: Boolean = readDeviceFacts().isEmulator
 
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
 
@@ -68,6 +79,6 @@ class AppContainer(
         TokenHostResolver.resolve(
             launchOverride = launchOverride,
             buildSettingHost = BuildConfig.DEMO_TOKEN_HOST,
-            isEmulator = deviceFacts.isEmulator,
+            isEmulator = isEmulator,
         )
 }

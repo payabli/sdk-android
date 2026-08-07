@@ -45,7 +45,7 @@ class TapToPayViewModel(
     private val terminal: TerminalController,
     private val tokenClient: TokenServerClient,
     private val configuration: DemoConfiguration,
-    private val deviceFacts: DeviceFacts,
+    private val readDeviceFacts: () -> DeviceFacts,
     tokenServer: TokenServerTarget,
 ) : ViewModel() {
     private val _uiState =
@@ -80,7 +80,8 @@ class TapToPayViewModel(
     fun clearEvents() = _uiState.update { it.copy(events = it.events.cleared()) }
 
     fun recheck() {
-        val checks = TapToPayPreflight.checks(deviceFacts, configuration.appId, configuration.signingCertificate)
+        val facts = readDeviceFacts()
+        val checks = TapToPayPreflight.checks(facts, configuration.appId, configuration.signingCertificate)
         _uiState.update { it.copy(readiness = readinessFrom(checks), problems = problemsIn(checks)) }
     }
 
@@ -163,7 +164,7 @@ class TapToPayViewModel(
                 terminal = container.terminal,
                 tokenClient = container.tokenClient,
                 configuration = container.configuration,
-                deviceFacts = container.deviceFacts,
+                readDeviceFacts = container.readDeviceFacts,
                 tokenServer = container.tokenServer,
             )
     }

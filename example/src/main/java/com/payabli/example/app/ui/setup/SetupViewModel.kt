@@ -38,7 +38,7 @@ class SetupViewModel(
     private val configuration: DemoConfiguration,
     private val tokenServer: TokenServerTarget,
     private val tokenClient: TokenServerClient,
-    private val deviceFacts: DeviceFacts,
+    private val readDeviceFacts: () -> DeviceFacts,
     formConfiguration: PaymentFormConfiguration,
 ) : ViewModel() {
     private val _uiState =
@@ -46,7 +46,7 @@ class SetupViewModel(
             SetupUiState(
                 configuration = configuration,
                 tokenServer = tokenServer,
-                deviceFacts = deviceFacts,
+                deviceFacts = readDeviceFacts(),
                 formConfiguration = formConfiguration,
             ),
         )
@@ -57,9 +57,10 @@ class SetupViewModel(
     }
 
     fun recheck() {
-        val checks = TapToPayPreflight.checks(deviceFacts, configuration.appId, configuration.signingCertificate)
+        val facts = readDeviceFacts()
+        val checks = TapToPayPreflight.checks(facts, configuration.appId, configuration.signingCertificate)
         _uiState.update {
-            it.copy(readiness = readinessFrom(checks), problems = problemsIn(checks))
+            it.copy(deviceFacts = facts, readiness = readinessFrom(checks), problems = problemsIn(checks))
         }
     }
 
@@ -99,7 +100,7 @@ class SetupViewModel(
                 configuration = container.configuration,
                 tokenServer = container.tokenServer,
                 tokenClient = container.tokenClient,
-                deviceFacts = container.deviceFacts,
+                readDeviceFacts = container.readDeviceFacts,
                 // The payment-method controller's own configuration, not a fresh copy. The two
                 // operations differ only in their summary section, so either describes the form.
                 formConfiguration = container.paymentMethodFlow.configuration,
