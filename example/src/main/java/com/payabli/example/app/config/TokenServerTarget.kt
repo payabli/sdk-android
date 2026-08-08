@@ -37,12 +37,30 @@ data class TokenServerTarget(
 
     val healthUrl: String get() = "$baseUrl/health"
 
+    /** `host:port` as chosen, so anything quoting an address quotes the one in use. */
+    private val authority: String get() = baseUrl.substringAfter("://")
+
+    /** Blank for an override that carried a scheme and no port; the default rows always have one. */
+    private val port: String get() = authority.substringAfterLast(':', "")
+
+    /**
+     * Why this address, in the words of the fix.
+     *
+     * The two default rows name the address and, for a device, the command that makes it work. Both
+     * are read from [baseUrl] and not written out: the hosts and the port are settings, so a sentence
+     * quoting 10.0.2.2 would be describing someone else's build the moment one of them is changed.
+     */
     val explanation: String
         get() =
             when (source) {
                 TokenHostSource.LaunchOverride -> "overridden by the payabliTokenHost launch extra"
                 TokenHostSource.BuildSetting -> "set by payabli.demo.tokenHost"
-                TokenHostSource.Emulator -> "emulator, 10.0.2.2 reaches this machine's loopback"
-                TokenHostSource.Device -> "device, 127.0.0.1 via adb reverse tcp:8787 tcp:8787"
+                TokenHostSource.Emulator -> "emulator, $authority reaches this machine's loopback"
+                TokenHostSource.Device ->
+                    if (port.isBlank()) {
+                        "device, $authority reached over adb reverse"
+                    } else {
+                        "device, $authority via adb reverse tcp:$port tcp:$port"
+                    }
             }
 }

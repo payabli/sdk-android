@@ -136,6 +136,25 @@ class TokenHostResolverTest {
     }
 
     @Test
+    fun `the explanation quotes the address in use, not a written-out one`() {
+        // The hosts and the port are settings. A sentence naming 10.0.2.2 describes someone else's
+        // build the moment one of them is changed, and this row is what a failed probe is read with.
+        val emulator = TokenHostResolver.resolve(null, "", isEmulator = true, defaults = defaults)
+        assertTrue(emulator.explanation, emulator.explanation.contains("emu.test:8787"))
+
+        val device = TokenHostResolver.resolve(null, "", isEmulator = false, defaults = defaults)
+        assertTrue(device.explanation, device.explanation.contains("dev.test:8787"))
+        assertTrue("the adb command lost its port", device.explanation.contains("tcp:8787 tcp:8787"))
+    }
+
+    @Test
+    fun `a changed port reaches the adb command in the explanation`() {
+        val moved = defaults.copy(port = 9191)
+        val device = TokenHostResolver.resolve(null, "", isEmulator = false, defaults = moved)
+        assertTrue(device.explanation, device.explanation.contains("tcp:9191 tcp:9191"))
+    }
+
+    @Test
     fun `every source explains itself`() {
         // assertTrue. Kotlin's `assert` compiles to a no-op unless the JVM is run with assertions
         // enabled, which would make this test pass without checking anything.
