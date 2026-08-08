@@ -81,6 +81,18 @@ class TokenServerClient(
                 // The message alone: on a demo screen "Connection refused" is the actionable half,
                 // and a stack trace is not.
                 TokenServerProbe.Unreachable(e.message ?: e.javaClass.simpleName)
+            } catch (e: RuntimeException) {
+                // A port out of range reaches here. `toIntOrNull` accepts 99999, so a typed override
+                // survives the resolver and the connection rejects it, and not as an IOException:
+                // measured on this JVM the throwable is a RuntimeException wrapping
+                // `IllegalArgumentException: port out of range:99999`, so catching the cause's type
+                // does not catch it. Escaping this block would fail the coroutine with the screen's
+                // busy flag still set, and that flag is what makes the operation single flight, so
+                // the button would stay disabled until the app was killed.
+                //
+                // Broad on purpose. This function's contract is that it returns an outcome, and a
+                // demo screen showing what went wrong beats a control that never works again.
+                TokenServerProbe.Unreachable(e.cause?.message ?: e.message ?: e.javaClass.simpleName)
             } finally {
                 connection?.disconnect()
             }

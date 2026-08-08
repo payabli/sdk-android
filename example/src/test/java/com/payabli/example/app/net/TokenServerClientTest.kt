@@ -166,6 +166,30 @@ class TokenServerClientTest {
         }
 
     @Test
+    fun `a port outside the range is unreachable, and does not fail the caller`() =
+        runTest {
+            // toIntOrNull accepts 99999, so a typed override reaches the connection and is rejected
+            // there with IllegalArgumentException. Escaping the handler left the screen's busy flag
+            // set, and that flag is what makes the operation single flight, so the button stayed
+            // disabled until the app was killed.
+            val target = TokenServerTarget("http://127.0.0.1:99999", TokenHostSource.LaunchOverride)
+            val probe = client(target).probeHealth()
+
+            assertTrue(probe is TokenServerProbe.Unreachable)
+            // The cause's message, not the wrapper's. Measured, the throwable is a RuntimeException
+            // wrapping IllegalArgumentException, and the wrapper's own message is the cause's
+            // toString, which would put a class name on the screen.
+            assertTrue(
+                "does not name the port: ${probe.displayText(TokenServerProbe.HEALTH_LABEL)}",
+                probe.displayText(TokenServerProbe.HEALTH_LABEL).contains("99999"),
+            )
+            assertTrue(
+                "shows a class name",
+                !probe.displayText(TokenServerProbe.HEALTH_LABEL).contains("java.lang"),
+            )
+        }
+
+    @Test
     fun `nothing listening is unreachable, and says so in the transport's words`() =
         runTest {
             // Port 1 on loopback: privileged, and nothing in this test ever binds it.
