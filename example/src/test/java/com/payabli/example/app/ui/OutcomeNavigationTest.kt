@@ -85,6 +85,18 @@ class OutcomeNavigationTest {
     }
 
     @Test
+    fun `capture reports a missing transaction as a failure, as the other screen does`() {
+        // Not navigating was half of it. The card behind still opened with a success glyph and a
+        // code, so the same response read as a captured payment here and as an error there.
+        val model = captureModel()
+        model.onCompleted(PaymentResult(code = "1", reason = "Approved"))
+        assertTrue(
+            model.uiState.value.resultText
+                .startsWith("✗"),
+        )
+    }
+
+    @Test
     fun `an error never raises it`() {
         val model = methodModel()
         model.onError(PaymentError.Payabli("Declined"))

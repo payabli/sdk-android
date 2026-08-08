@@ -73,16 +73,22 @@ class CaptureViewModel(
 
     fun onCompleted(result: PaymentResult) {
         val transaction = result.transaction
-        // Marked, and carrying the identifiers a reader would otherwise have to leave the screen for.
         val text =
-            listOfNotNull(
-                "✓ Code: ${result.code}",
-                result.reason?.let { "Reason: $it" },
-                transaction?.paymentTransactionId?.let { "Payment transaction: $it" },
-                transaction?.gatewayTransactionId?.let { "Gateway transaction: $it" },
-                transaction?.method?.let { "Method: $it" },
-                transaction?.operation?.let { "Operation: $it" },
-            ).joinToString("\n")
+            if (transaction == null) {
+                // The same response the payment-method screen calls a failure. A success glyph and a
+                // code here would report a captured payment on a response carrying no transaction.
+                "✗ The response carried no transaction."
+            } else {
+                // Marked, and carrying the identifiers a reader would otherwise leave the screen for.
+                listOfNotNull(
+                    "✓ Code: ${result.code}",
+                    result.reason?.let { "Reason: $it" },
+                    transaction.paymentTransactionId.let { "Payment transaction: $it" },
+                    transaction.gatewayTransactionId?.let { "Gateway transaction: $it" },
+                    transaction.method?.let { "Method: $it" },
+                    transaction.operation?.let { "Operation: $it" },
+                ).joinToString("\n")
+            }
         record("RESPONSE ${result.code} paymentTransaction\nreason=${result.reason}")
         _uiState.update {
             it.copy(
