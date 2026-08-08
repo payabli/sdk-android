@@ -63,8 +63,18 @@ class TokenServerClient(
         withContext(ioDispatcher) {
             var connection: HttpURLConnection? = null
             try {
+                // The launch override takes any value carrying a scheme, so `file://` or `ftp://`
+                // opens a connection that is not an `HttpURLConnection`. A cast throws
+                // `ClassCastException`, which is not an `IOException` and so passes the handler
+                // below and takes the probe down. This puts a line on the screen instead.
+                val opened = URL(url).openConnection()
+                if (opened !is HttpURLConnection) {
+                    return@withContext TokenServerProbe.Unreachable(
+                        "$url is not an http or https address.",
+                    )
+                }
                 connection =
-                    (URL(url).openConnection() as HttpURLConnection).apply {
+                    opened.apply {
                         requestMethod = method
                         connectTimeout = TIMEOUT_MILLIS
                         readTimeout = TIMEOUT_MILLIS

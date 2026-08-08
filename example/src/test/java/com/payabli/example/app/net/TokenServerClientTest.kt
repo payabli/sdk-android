@@ -122,6 +122,18 @@ class TokenServerClientTest {
         }
 
     @Test
+    fun `a scheme that is not http is unreachable, and does not take the probe down`() =
+        runTest {
+            // A mistyped launch override reaches here. `openConnection` returns something that is
+            // not an `HttpURLConnection`, and casting threw past the IOException handler.
+            val target = TokenServerTarget("file:///etc/hosts", TokenHostSource.LaunchOverride)
+            val probe = client(target).probeHealth()
+
+            assertTrue(probe is TokenServerProbe.Unreachable)
+            assertTrue(probe.displayText(TokenServerProbe.HEALTH_LABEL).contains("http"))
+        }
+
+    @Test
     fun `nothing listening is unreachable, and says so in the transport's words`() =
         runTest {
             // Port 1 on loopback: privileged, and nothing in this test ever binds it.
