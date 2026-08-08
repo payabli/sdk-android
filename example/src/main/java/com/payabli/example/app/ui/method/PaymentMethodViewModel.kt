@@ -102,7 +102,17 @@ class PaymentMethodViewModel(
     fun onError(error: PaymentError) {
         record("ERROR paymentMethod\n${error.displayMessage}")
         _uiState.update {
-            it.copy(resultText = "✗ ${error.displayMessage}", isSheetOpen = false, isSubmitting = false)
+            // The outcome signal and its payload are cleared, not left standing. A failure arriving
+            // after a completion but before navigation consumed the signal would otherwise push the
+            // "Payment method saved" screen on top of the error just recorded, and that screen reads
+            // storedMethod to decide it still has something to describe.
+            it.copy(
+                resultText = "✗ ${error.displayMessage}",
+                outcomeReady = false,
+                storedMethod = null,
+                isSheetOpen = false,
+                isSubmitting = false,
+            )
         }
     }
 

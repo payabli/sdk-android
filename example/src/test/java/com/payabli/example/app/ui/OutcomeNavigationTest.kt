@@ -117,6 +117,48 @@ class OutcomeNavigationTest {
     }
 
     @Test
+    fun `an error after a completion takes the signal back down`() {
+        // The window is real: the form's error callback is independent of submission, so a failure
+        // can arrive after a completion and before the navigation effect has consumed the signal.
+        // Left standing it pushed "Payment method saved" on top of the error just recorded.
+        val model = methodModel()
+        model.onCompleted(
+            PaymentResult(code = "1", storedMethod = StoredMethod("m", "saved", "Approved")),
+        )
+        assertTrue(model.uiState.value.outcomeReady)
+
+        model.onError(PaymentError.Payabli("Declined"))
+        assertFalse(model.uiState.value.outcomeReady)
+    }
+
+    @Test
+    fun `an error after a completion also clears what the pushed screen reads`() {
+        val model = methodModel()
+        model.onCompleted(
+            PaymentResult(code = "1", storedMethod = StoredMethod("m", "saved", "Approved")),
+        )
+        model.onError(PaymentError.Payabli("Declined"))
+        assertNull(model.uiState.value.storedMethod)
+    }
+
+    @Test
+    fun `an error after a capture clears the transaction it would have shown`() {
+        val model = captureModel()
+        model.onCompleted(
+            PaymentResult(
+                code = "1",
+                transaction =
+                    Transaction("txn", null, null, "card", "capture", "Captured", "1.00", "0.10", "demo"),
+            ),
+        )
+        assertTrue(model.uiState.value.outcomeReady)
+
+        model.onError(PaymentError.Payabli("Declined"))
+        assertFalse(model.uiState.value.outcomeReady)
+        assertNull("the previous payment is still there", model.uiState.value.lastResult)
+    }
+
+    @Test
     fun `an error never raises it`() {
         val model = methodModel()
         model.onError(PaymentError.Payabli("Declined"))

@@ -108,7 +108,17 @@ class CaptureViewModel(
     fun onError(error: PaymentError) {
         record("ERROR paymentTransaction\n${error.displayMessage}")
         _uiState.update {
-            it.copy(resultText = "✗ ${error.displayMessage}", isSheetOpen = false, isSubmitting = false)
+            // The outcome signal and its payload are cleared, not left standing. A failure arriving
+            // after a completion but before navigation consumed the signal would otherwise push the
+            // transaction screen on top of the error just recorded, showing the previous payment as
+            // though it were this one.
+            it.copy(
+                resultText = "✗ ${error.displayMessage}",
+                outcomeReady = false,
+                lastResult = null,
+                isSheetOpen = false,
+                isSubmitting = false,
+            )
         }
     }
 
