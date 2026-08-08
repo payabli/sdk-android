@@ -63,6 +63,10 @@ class CaptureViewModel(
      * and reached its transaction screen with no transaction, while the controller was never called.
      */
     fun submit() {
+        // Single flight, decided here. `isSubmitting` disables the button, but only once the state
+        // has recomposed, and a second callback landing before that would launch a second capture.
+        // Harmless against the demo controller and a duplicate payment against a real one.
+        if (_uiState.value.isSubmitting) return
         _uiState.update { it.copy(isSubmitting = true) }
         viewModelScope.launch {
             flow.submit().fold(onSuccess = ::onCompleted, onFailure = {

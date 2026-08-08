@@ -80,6 +80,9 @@ class SetupViewModel(
         label: String,
         publish: (String) -> Unit,
     ) {
+        // Single flight, as on the other screens. `isProbing` disables both buttons, but only once
+        // the state has recomposed, and this screen has two callers into it.
+        if (_uiState.value.isProbing) return
         publish("Checking…")
         _uiState.update { it.copy(isProbing = true) }
         viewModelScope.launch {

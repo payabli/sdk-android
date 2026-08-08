@@ -128,6 +128,7 @@ class TapToPayViewModel(
     }
 
     fun probeToken() {
+        if (_uiState.value.isWorking) return
         _uiState.update { it.copy(tokenProbeText = "Checking…", isWorking = true) }
         viewModelScope.launch {
             val outcome = tokenClient.probeAccessToken()
@@ -151,6 +152,11 @@ class TapToPayViewModel(
         action: TerminalAction,
         block: suspend () -> Result<String>,
     ) {
+        // Single flight, decided here. `isWorking` disables the buttons, but only once the state
+        // has recomposed, and a second callback landing before that would run a second action.
+        // Two charges would then be in flight, and whichever finished first would re-enable the
+        // controls while the other was still running.
+        if (_uiState.value.isWorking) return
         _uiState.update { it.copy(isWorking = true) }
         viewModelScope.launch {
             val outcome = TerminalActionOutcome.from(action, block())
