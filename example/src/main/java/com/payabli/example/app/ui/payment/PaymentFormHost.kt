@@ -13,9 +13,17 @@ import com.payabli.example.app.payment.PaymentFormConfiguration
  * the result and error models, the sheet chrome and both outcome screens. The form's interior belongs
  * to the SDK and is not built here: it would be thrown away the day the SDK's component lands.
  *
- * When that day comes, the body below becomes a call to the SDK's composable plus two mapping
- * functions onto [PaymentResult] and [PaymentError]. Nothing else in the app moves.
+ * **What moves when it lands, stated honestly.** [onSubmit] carries no value because nothing here
+ * produces one: the form signals intent, the screen's view model submits through its own
+ * [com.payabli.example.app.payment.PaymentFlowController], and that is where a [PaymentResult] comes
+ * from today. An SDK component that owns submission returns the result itself, so this signature
+ * gains a completion callback and the two view models lose their submit path. That callback is not
+ * declared in advance: a parameter nothing invokes is indistinguishable from one that is wired, and
+ * its shape is the SDK's to decide.
  *
+ * So the swap is this file's body plus a mapping onto [PaymentResult] and [PaymentError], and, if the
+ * component submits, this signature and the two call sites. Everything else in the app is unaffected
+ * either way.
  */
 @Composable
 fun PaymentFormHost(
