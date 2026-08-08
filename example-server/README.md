@@ -11,9 +11,13 @@ The server supports two local QA modes:
   to a configurable Payabli token endpoint, then return the token from that
   response as `accessToken`.
 
-Nothing in `:example` calls this server yet, and no workflow in `.github/` runs
-it. Keep it that way: it is a local developer tool rather than a CI dependency,
-and no workflow installs Node.
+The sample app calls this server. Its Setup and Tap to pay screens post to
+`/payabli/exchange-token` and get `/health`, and report what came back. That is
+the app fetching its own token over `HttpURLConnection`, not an SDK call: no
+session exists yet to hold a token provider.
+
+No workflow in `.github/` runs this server, and none should. It is a local
+developer tool rather than a CI dependency, and no workflow installs Node.
 
 ## Requirements
 

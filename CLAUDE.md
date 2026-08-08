@@ -29,12 +29,12 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 **Capabilities**: `:taptopay` (card-present) · `:payin` (card-not-present)
 **Opt-in**: `:telemetry`
 **Aggregate**: `:payabli-android` (umbrella AAR: `:core` + `:payin` + `:telemetry`) · `:payabli-bom` (version constraints)
-**Infra**: `:example` (sample app, `com.payabli.example`), `build-logic` (convention plugins)
+**Infra**: `:example` (sample app, `com.payabli.example.app`; see `example/README.md`), `build-logic` (convention plugins)
 
 **Key Patterns**
 
 - A capability module depends on `:core` and **never** on a sibling capability. The umbrella deliberately omits `:taptopay` so the card reader dependency stays opt-in; do not add it.
-- `minSdk` is **per module, not global**: `:taptopay` is **30**, required by the card reader dependency, and an app linking it must also be 30 or higher. Everything else is **23**. Do not raise the card-not-present modules to match card-present.
+- `minSdk` is **per module, not global**: `:taptopay` is **30**, required by the card reader dependency, and an app linking it must also be 30 or higher. Every published module is **23**. Do not raise the card-not-present modules to match card-present. `:example` is **24**, and publishes nothing: its debug build reaches the local token server over cleartext, and a network security config, which is the only way to permit that for two addresses instead of for everything, is ignored below 24.
 - Kotlin compiles through AGP's built-in Kotlin support (AGP 9.2.1, Kotlin 2.2.10, Gradle 9.4.1, daemon JVM 21). There is no `org.jetbrains.kotlin.android` plugin and none should be added.
 - Platform-native only: `HttpURLConnection`, Keystore and `javax.crypto`, `kotlinx.serialization`, `kotlinx.coroutines`, Compose. No third-party HTTP client, crypto engine, DI framework, reflection-based JSON mapper or logging framework.
 - Convention plugins in `build-logic` carry shared config: `payabli.publish` for publishing, `payabli.quality` for formatting and coverage. Prefer extending those over per-module blocks.

@@ -54,6 +54,7 @@ jobs:
         run: ./gradlew :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
+          :example:createDebugUnitTestCoverageReport
 
       - name: Upload reports
         if: always()
@@ -128,6 +129,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
+          :example:createDebugUnitTestCoverageReport
 
       # Card-present reports, only when the credential is available.
       - name: Produce card-present reports

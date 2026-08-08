@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="purple_200">#FFBB86FC</color>
-    <color name="purple_500">#FF6200EE</color>
-    <color name="purple_700">#FF3700B3</color>
-    <color name="teal_200">#FF03DAC5</color>
-    <color name="teal_700">#FF018786</color>
-    <color name="black">#FF000000</color>
-    <color name="white">#FFFFFFFF</color>
+    <!--
+      The window background only. Everything the app draws is themed in Compose; this exists so the
+      cold-start window and the area behind the composition match the scheme, which Compose cannot
+      reach. Kept in step with `surface` in Color.kt: light is Neutral 8, dark is Deep Blue.
+    -->
+    <color name="window_background">#F9F9FF</color>
 </resources>
