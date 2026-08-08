@@ -23,10 +23,19 @@ val demoSecrets: Properties =
         .getOrElse(Properties())
 
 // -Ppayabli.demo.* wins over the file, so a one-off run needs no edit.
+//
+// Blank counts as absent, which is not what either source hands back. `Properties.getProperty`
+// returns "" for a `key=` line rather than null, and the template ships exactly those lines, so a
+// blank overrode the default instead of falling through to it. A String field then carried "" and
+// resolved an address of "http://:8787"; an int or boolean field emitted `= ;` into generated Java
+// and the module stopped compiling for anyone who followed the README and copied the template.
 fun demoSetting(
     key: String,
     default: String,
-): String = providers.gradleProperty(key).orNull ?: demoSecrets.getProperty(key) ?: default
+): String =
+    providers.gradleProperty(key).orNull?.takeIf { it.isNotBlank() }
+        ?: demoSecrets.getProperty(key)?.takeIf { it.isNotBlank() }
+        ?: default
 
 // buildConfigField emits its value into generated Java verbatim, so an unescaped quote or backslash
 // produces a source file that does not compile, reporting the generated file rather than the setting
