@@ -8,6 +8,7 @@ import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFlowController
 import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.payment.PaymentResult
+import com.payabli.example.app.payment.StoredMethod
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +20,8 @@ data class PaymentMethodUiState(
     val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
+    /** What was stored, held so the pushed screen can check it is still describing something. */
+    val storedMethod: StoredMethod? = null,
     val diagnostics: List<String> = emptyList(),
     val diagnosticsEnabled: Boolean = true,
     val isSheetOpen: Boolean = false,
@@ -88,6 +91,7 @@ class PaymentMethodViewModel(
         _uiState.update {
             it.copy(
                 resultText = text,
+                storedMethod = method,
                 isSheetOpen = false,
                 isSubmitting = false,
                 outcomeReady = method != null,

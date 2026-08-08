@@ -109,7 +109,19 @@ private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController)
                 onError = model::onError,
             )
         }
-        composable<PaymentMethodSaved> {
+        composable<PaymentMethodSaved> { entry ->
+            // The same shape as the capture result below, and for the same reason. What was stored
+            // lives in the graph-scoped view model, and the process can be killed while this screen
+            // is on top; Navigation restores the destination and the model comes back empty, so the
+            // screen announced "Payment method saved" for an outcome it could no longer establish.
+            val model =
+                navController.graphViewModel<PaymentMethodGraph, PaymentMethodViewModel>(entry) {
+                    PaymentMethodViewModel.from(it)
+                }
+            val state by model.uiState.collectAsStateWithLifecycle()
+            LaunchedEffect(state.storedMethod) {
+                if (state.storedMethod == null) navController.popBackStack()
+            }
             PaymentMethodSavedScreen(onDone = { navController.popBackStack() })
         }
     }

@@ -85,6 +85,26 @@ class OutcomeNavigationTest {
     }
 
     @Test
+    fun `what was stored is held, so the pushed screen can check it still has something to show`() {
+        // The signal the pushed destination reads. Without it that screen announced "Payment method
+        // saved" after process death, when the model it reads had come back empty.
+        val model = methodModel()
+        assertNull(model.uiState.value.storedMethod)
+
+        model.onCompleted(
+            PaymentResult(code = "1", storedMethod = StoredMethod("m", "saved", "Approved")),
+        )
+        assertNotNull(model.uiState.value.storedMethod)
+    }
+
+    @Test
+    fun `a completion carrying no stored method leaves nothing for the pushed screen to show`() {
+        val model = methodModel()
+        model.onCompleted(PaymentResult(code = "1", reason = "Success"))
+        assertNull(model.uiState.value.storedMethod)
+    }
+
+    @Test
     fun `capture reports a missing transaction as a failure, as the other screen does`() {
         // Not navigating was half of it. The card behind still opened with a success glyph and a
         // code, so the same response read as a captured payment here and as an error there.
