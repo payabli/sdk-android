@@ -44,7 +44,12 @@ android {
 
     defaultConfig {
         applicationId = "com.payabli.example.app"
-        minSdk = 23
+        // 24, one above the SDK modules' floor of 23, because the debug build talks to the local
+        // token server over cleartext and a network security config is the only way to permit that
+        // for two addresses instead of for everything. The config is ignored below 24, so a 23 build
+        // would permit cleartext outright. Nothing published moves: :core and the capability modules
+        // stay at 23 and an integrator can still target it.
+        minSdk = 24
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"

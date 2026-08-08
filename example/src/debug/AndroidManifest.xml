@@ -3,10 +3,16 @@
   Debug-only. Points the app at the cleartext allowance for the local token server; a release build
   never sees this file, so it ships with the platform default of cleartext denied.
 
-  Lint reports this attribute as unused below API 24, which is accurate and harmless: an API 23
-  device has no network security config at all and permits cleartext outright, so the token server is
-  reachable there without it. The attribute is what makes 24 and above behave the same way.
+  The config names two addresses, so cleartext is permitted to those and to nothing else. It is
+  ignored below API 24, which is why the module's minSdk is 24 rather than the 23 the SDK modules
+  build against: a 23 build would have no config at all and would permit cleartext outright.
+
+  allowBackup is repeated from the main manifest rather than inherited. The merged value is the same
+  either way; stating it here keeps the file readable on its own, since a reader looking at what the
+  debug variant permits should not have to open a second file to learn what it stores.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:networkSecurityConfig="@xml/network_security_config" />
+    <application
+        android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security_config" />
 </manifest>
