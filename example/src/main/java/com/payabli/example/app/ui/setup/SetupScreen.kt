@@ -11,8 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
-import com.payabli.example.app.config.TokenHostSource
-import com.payabli.example.app.config.TokenServerTarget
+import com.payabli.example.app.config.TokenHostResolver
 import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.payment.PaymentFormSummary
 import com.payabli.example.app.preflight.CheckStatus
@@ -186,7 +185,14 @@ private fun SetupScreenPreview() {
                             environment = DemoEnvironment.SANDBOX,
                             diagnosticsEnabled = true,
                         ),
-                    tokenServer = TokenServerTarget("http://10.0.2.2:8787", TokenHostSource.Emulator),
+                    // Resolved, not typed out. A preview showing an address the resolver does not
+                    // choose is a preview of a screen that cannot happen.
+                    tokenServer =
+                        TokenHostResolver.resolve(
+                            launchOverride = null,
+                            buildSettingHost = "",
+                            isEmulator = true,
+                        ),
                     formConfiguration = PaymentFormConfiguration.storePaymentMethod(),
                     deviceFacts =
                         DeviceFacts(

@@ -20,8 +20,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
-import com.payabli.example.app.config.TokenHostSource
-import com.payabli.example.app.config.TokenServerTarget
+import com.payabli.example.app.config.TokenHostResolver
 import com.payabli.example.app.terminal.DemoTerminalController
 import com.payabli.example.app.terminal.EventBuffer
 import com.payabli.example.app.terminal.TerminalEvent
@@ -285,7 +284,14 @@ private fun TapToPayScreenPreview() {
                 TapToPayUiState(
                     configuration =
                         DemoConfiguration("test6", "com.payabli.example.app", "", DemoEnvironment.SANDBOX, true),
-                    tokenServer = TokenServerTarget("http://10.0.2.2:8787", TokenHostSource.Emulator),
+                    // Resolved, not typed out. A preview showing an address the resolver does not
+                    // choose is a preview of a screen that cannot happen.
+                    tokenServer =
+                        TokenHostResolver.resolve(
+                            launchOverride = null,
+                            buildSettingHost = "",
+                            isEmulator = true,
+                        ),
                     session = TerminalSessionState.Ready,
                     isReady = true,
                     resultText = "✓ Charge: demo-txn-0001",
