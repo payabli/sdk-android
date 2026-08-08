@@ -2,11 +2,13 @@
 <!--
   The local token server in example-server/ speaks http, and cleartext is denied by default: the
   platform's base-config is cleartextTrafficPermitted="false" from targetSdk 28, and the implicit
-  loopback exemption arrives only in API 37, so at this app's floor of 23 an explicit entry is
-  required rather than merely tidy.
+  loopback exemption arrives only in API 37, so an explicit entry is required rather than merely tidy.
 
-  Scoped to the two addresses that server is ever reached at, instead of a blanket
-  usesCleartextTraffic, so nothing else in the sample app can take a plaintext route to a real host.
+  Scoped to the two addresses that server is ever reached at. Both manifests set
+  usesCleartextTraffic="false", and the platform ignores that flag from API 24 wherever a config is
+  present, so this file is what permits the two and nothing else in the sample app can take a
+  plaintext route to a real host. The module's floor is 24 for that reason: below it there is no
+  config and the flag would decide.
 
   This file belongs to the debug variant alone and is never merged into a release build. A LAN
   address needs its own entry here as well as PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0 on the server,

@@ -20,8 +20,18 @@
         <package android:name="com.android.vending" />
     </queries>
 
+    <!--
+      allowBackup="false" is what denies cloud backup, and it does that at every level this app
+      supports. From Android 12 it stopped governing device-to-device transfer, which is what
+      dataExtractionRules denies.
+
+      Lint asks for fullBackupContent alongside it, on the grounds that dataExtractionRules applies
+      only from 12. That rule is written for an app whose backup is on: below 12 there is no backup
+      here at all, so a full-backup-content file would describe something that never happens.
+    -->
     <application
         android:name=".PayabliDemoApplication"
+        tools:ignore="DataExtractionRules"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"

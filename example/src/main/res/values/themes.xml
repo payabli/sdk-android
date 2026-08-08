@@ -3,8 +3,8 @@
     <!--
       Only the window is styled here; everything the app draws is themed in Compose.
 
-      Two files rather than one qualified theme because android:Theme.Material.DayNight arrives at
-      API 29 and this app supports 23, and there is no AppCompat dependency to borrow DayNight from.
+      Two files, and not one qualified theme, because android:Theme.Material.DayNight arrives at API
+      29 and this app supports 24, and there is no AppCompat dependency to borrow DayNight from.
       Compose's isSystemInDarkTheme() handles the composition either way, but not the window
       background or the cold-start splash, which is what would otherwise flash white on a dark device.
     -->
