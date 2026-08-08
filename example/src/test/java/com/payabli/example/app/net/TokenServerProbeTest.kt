@@ -4,14 +4,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Covers the mapping from outcome to on-screen line. The socket work in [TokenServerClient] is not
- * covered here.
+ * Covers the mapping from outcome to on-screen line, which is where the wording lives.
  *
- * The client's forty-odd lines of `HttpURLConnection` are left to the manual tier against a running
- * `example-server`. `:core` has a loopback harness that would suit, and the repository's own notes
- * foreclose reusing it: the fixtures are `internal`, and widening a published security SDK's API to
- * suit a sample app's test layout is not a trade worth making. So the wording lives in a type, and
- * the type is what gets pinned here.
+ * The socket work is [TokenServerClientTest]'s, against a real server on the loopback interface.
+ * `:core`'s own harness is not reused: its fixtures are `internal`, and widening a published
+ * security SDK's API to suit a sample app's test layout is not a trade worth making. The JDK's HTTP
+ * server needs neither.
  */
 class TokenServerProbeTest {
     @Test

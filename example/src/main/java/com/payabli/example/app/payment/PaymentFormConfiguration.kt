@@ -28,8 +28,10 @@ data class PaymentFormSection(
  * same object can drive the placeholder today and be mapped onto the SDK component's configuration
  * tomorrow, with the two screens unchanged either way.
  *
- * It is also what makes the placeholder worth having: it renders this, so a section in the wrong
- * order or a field in the wrong group is visible now, and not on the day the real form lands.
+ * The placeholder draws none of it: collecting a card number belongs to the SDK component and not to
+ * a sample app. What reads this today is the Setup screen's readout, which lists the methods, the
+ * fields under each and the ones that will be masked, so a field in the wrong group shows up there
+ * before the real form arrives.
  */
 data class PaymentFormConfiguration(
     val title: String,
