@@ -134,6 +134,15 @@ fun PayabliDemoNavHost(
                             CaptureViewModel.from(it)
                         }
                     val state by model.uiState.collectAsStateWithLifecycle()
+                    // The result lives in the view model, and the process can be killed while this
+                    // screen is on top. Navigation restores the destination and the model comes back
+                    // empty, which left a screen reading "No payment yet" with its Done button below
+                    // the early return, so nothing on it went anywhere. Going back is the only
+                    // honest answer: the payment happened, and this screen has nothing to say about
+                    // it any more.
+                    LaunchedEffect(state.lastResult) {
+                        if (state.lastResult == null) navController.popBackStack()
+                    }
                     CaptureResultScreen(
                         result = state.lastResult,
                         onDone = { navController.popBackStack() },
