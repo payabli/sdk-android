@@ -2,6 +2,7 @@ package com.payabli.example.app
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -66,11 +67,32 @@ class NavigationSmokeTest {
         launch()
 
         compose.onNodeWithText("Save payment method").performClick()
-        compose.onNodeWithText("Payment method saved").assertIsDisplayed()
+        // Waited for, not asserted straight away. The click starts a submission that suspends, and
+        // `assertIsDisplayed` runs once Compose is idle, which it is while that call is in flight.
+        // The screen is pushed when the result arrives, so the assertion could look for it first.
+        awaitText("Payment method saved")
 
         open(TopLevelDestination.Setup)
         open(TopLevelDestination.PaymentMethod)
 
         compose.onNodeWithText("Payment method saved").assertIsDisplayed()
+    }
+
+    /**
+     * Waits for a node carrying [text], failing with the wait's own message when it never arrives.
+     *
+     * The timeout is what makes a failure readable: without one this waits the harness out and
+     * reports a stall rather than a missing screen.
+     */
+    private fun awaitText(text: String) {
+        compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {
+            compose.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(text).assertIsDisplayed()
+    }
+
+    private companion object {
+        /** Generous against the demo controller's own delay, and short enough to fail rather than hang. */
+        const val APPEARS_WITHIN_MILLIS = 5_000L
     }
 }
