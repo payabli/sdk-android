@@ -11,9 +11,16 @@
       absent on a device that has them. Visibility only: no permission, and nothing is read from
       either package.
 
-      No NFC permission is declared. The same screen reads NFC through hasSystemFeature and
-      NfcManager, neither of which requires one, and an unused permission in a sample app is exactly
-      what the SDK's own no-permissions policy exists to avoid.
+      No NFC permission is declared, and that is checked rather than assumed. The readiness screen
+      reads PackageManager.hasSystemFeature and then NfcManager.getDefaultAdapter().isEnabled().
+      NfcAdapter carries @RequiresPermission on 27 of its methods, including two lines below
+      isEnabled(), and isEnabled() has none: its javadoc reads "Applications can use this to check if
+      NFC is enabled." getDefaultAdapter(Context) has none either and its own javadoc recommends the
+      NfcManager route used here. Android Lint reads those same annotations, and :example:lint runs
+      with no baseline.
+
+      An unused permission in a sample app is exactly what the SDK's own no-permissions policy exists
+      to avoid, so this stays undeclared until something needs it.
     -->
     <queries>
         <package android:name="com.google.android.gms" />

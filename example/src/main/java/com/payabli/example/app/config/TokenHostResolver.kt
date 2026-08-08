@@ -13,8 +13,13 @@ object TokenHostResolver {
     /** The name of the launch extra, so the resolver and whoever reads the Intent cannot disagree. */
     const val LAUNCH_EXTRA: String = "payabliTokenHost"
 
-    private const val EMULATOR_LOOPBACK_ALIAS = "10.0.2.2"
-    private const val DEVICE_LOOPBACK = "127.0.0.1"
+    // Both reviewed and marked. A literal address is worth a second look in general, and these two
+    // are the subject rather than a shortcut: 10.0.2.2 is the emulator's documented alias for the
+    // host machine's loopback interface and exists nowhere else, and 127.0.0.1 is loopback. Neither
+    // is reachable from another host, neither is a real endpoint, and the debug network security
+    // config permits cleartext to these two and to nothing else.
+    private const val EMULATOR_LOOPBACK_ALIAS = "10.0.2.2" // NOSONAR: see above
+    private const val DEVICE_LOOPBACK = "127.0.0.1" // NOSONAR: see above
 
     /**
      * In order: a launch extra, then a build setting, then the device kind.
