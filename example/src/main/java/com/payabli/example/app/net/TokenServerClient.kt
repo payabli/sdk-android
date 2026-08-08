@@ -7,7 +7,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -89,7 +91,12 @@ class TokenServerClient(
                 if (code !in SUCCESS_RANGE) {
                     TokenServerProbe.HttpStatus(code)
                 } else {
-                    onSuccess(connection.inputStream.bufferedReader().use { it.readText() })
+                    val body = connection.inputStream.use { readBounded(it) }
+                    if (body == null) {
+                        TokenServerProbe.Malformed("the body was over $MAX_BODY_BYTES bytes")
+                    } else {
+                        onSuccess(body)
+                    }
                 }
             } catch (e: IOException) {
                 // The message alone: on a demo screen "Connection refused" is the actionable half,
@@ -100,8 +107,35 @@ class TokenServerClient(
             }
         }
 
+    /**
+     * Reads at most [MAX_BODY_BYTES], returning null rather than growing without limit.
+     *
+     * An unbounded read lets a misconfigured or hostile token host exhaust the app's heap before any
+     * of this ever looks at the body, which is the reasoning `PayabliService.readBounded` records for
+     * the same shape in the SDK's own transport. Hand-rolled for the same reason it is there:
+     * `InputStream.readNBytes` is the right primitive and it is API 33, above this module's floor.
+     *
+     * The limit is generous against what this route returns, which is one JSON object carrying one
+     * token, so reaching it means the host is not the token server.
+     */
+    private fun readBounded(stream: InputStream): String? {
+        val sink = ByteArrayOutputStream()
+        val buffer = ByteArray(READ_CHUNK_BYTES)
+        var total = 0
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_BODY_BYTES) return null
+            sink.write(buffer, 0, read)
+        }
+        return sink.toString(Charsets.UTF_8.name())
+    }
+
     private companion object {
         const val TIMEOUT_MILLIS = 5_000
+        const val MAX_BODY_BYTES = 64 * 1024
+        const val READ_CHUNK_BYTES = 8 * 1024
         val SUCCESS_RANGE = 200..299
     }
 }

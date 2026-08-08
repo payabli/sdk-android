@@ -99,6 +99,31 @@ class TokenServerClientTest {
         }
 
     @Test
+    fun `an oversized body is refused instead of read`() =
+        runTest {
+            // A misconfigured or hostile host answering 200 with an unbounded body would otherwise
+            // be read to EOF and exhaust the heap before anything looked at it. This one is just
+            // over the limit, so it proves the bound rather than the machine's memory.
+            val target = serve { it.reply(200, "x".repeat(64 * 1024 + 1)) }
+            val probe = client(target).probeAccessToken()
+
+            assertTrue("read to the end", probe is TokenServerProbe.Malformed)
+            assertTrue(probe.displayText(TokenServerProbe.TOKEN_LABEL).contains("bytes"))
+        }
+
+    @Test
+    fun `a body just under the limit is still read`() =
+        runTest {
+            // The bound has to reject only what is over it. One that rejected a legitimate response
+            // would pass the test above and break every real probe.
+            val padding = "y".repeat(64 * 1024 - 64)
+            val body = """{"padding":"$padding","accessToken":"tok"}"""
+            assertTrue("the fixture is over the limit", body.length <= 64 * 1024)
+            val target = serve { it.reply(200, body) }
+            assertEquals(TokenServerProbe.Ok("returned a token"), client(target).probeAccessToken())
+        }
+
+    @Test
     fun `a failing status is reported with its code`() =
         runTest {
             val target = serve { it.reply(503, "down") }
