@@ -32,10 +32,17 @@ class TokenServerClientTest {
         server = null
     }
 
-    /** Returns the target pointing at it. Port 0, so parallel runs cannot collide. */
+    /**
+     * Returns the target pointing at it. Port 0, so parallel runs cannot collide.
+     *
+     * Pinned to the IPv4 loopback. `getLoopbackAddress()` lets the platform pick the family and
+     * answers `::1` on an IPv6-first JVM, where the target below is always `127.0.0.1`, so every
+     * test in this class would fail with connection refused. `:core`'s `LoopbackServer` pins it for
+     * the same reason and records what it cost to find.
+     */
     private fun serve(handle: (HttpExchange) -> Unit): TokenServerTarget {
         val started =
-            HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0).apply {
+            HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0).apply {
                 createContext("/", handle)
                 start()
             }
