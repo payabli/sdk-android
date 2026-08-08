@@ -77,7 +77,7 @@ Every URL below is written for one of those callers, and says which.
 For the app on an emulator:
 
 ```text
-http://10.0.2.2:8787/payabli/access-token
+http://10.0.2.2:8787/payabli/exchange-token
 ```
 
 The server keeps its `127.0.0.1` bind. `10.0.2.2` reaches a process bound to the
@@ -216,7 +216,7 @@ exchange at arbitrary URLs, because that would send the configured
 This mode does not change the app's address. Still, for the app on an emulator:
 
 ```text
-http://10.0.2.2:8787/payabli/access-token
+http://10.0.2.2:8787/payabli/exchange-token
 ```
 
 Credentials can also be passed per request for quick experiments. This one runs
@@ -260,7 +260,7 @@ adb reverse tcp:8787 tcp:8787
 The app then uses the same address a shell on the development machine does:
 
 ```text
-http://127.0.0.1:8787/payabli/access-token
+http://127.0.0.1:8787/payabli/exchange-token
 ```
 
 The server keeps its loopback bind, so nothing is exposed to the network. The
@@ -284,7 +284,7 @@ PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0 node server.mjs
 ```
 
 ```text
-http://<machine-lan-ip>:8787/payabli/access-token
+http://<machine-lan-ip>:8787/payabli/exchange-token
 ```
 
 Do this only on a trusted network, stop the process when finished, and prefer
