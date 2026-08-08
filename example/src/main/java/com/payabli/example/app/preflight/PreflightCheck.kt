@@ -5,7 +5,10 @@ enum class CheckStatus {
     /** Nothing to say. A passing check is not news and is not shown. */
     Pass,
 
-    /** Works, but not in a way worth trusting. Does not block the verdict. */
+    /**
+     * Works, and not right now. Keeps the verdict off [Readiness.Ready] without making it
+     * [Readiness.NotAvailable], because the device can do this once someone acts.
+     */
     Warn,
 
     /** Card-present cannot work on this device until this is fixed. */
