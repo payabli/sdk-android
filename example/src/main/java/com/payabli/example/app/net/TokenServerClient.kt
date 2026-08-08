@@ -38,6 +38,9 @@ class TokenServerClient(
                         .parseToJsonElement(body)
                         .jsonObject["accessToken"]
                         ?.jsonPrimitive
+                        // `content` renders a number or a boolean as text, so `{"accessToken":true}`
+                        // would read back as the token "true" and this route would report healthy.
+                        ?.takeIf { it.isString }
                         ?.content
                 }.getOrNull()
             when {

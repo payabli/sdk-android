@@ -106,6 +106,22 @@ class TokenServerClientTest {
         }
 
     @Test
+    fun `a non-string accessToken is not a token`() =
+        runTest {
+            // `JsonPrimitive.content` renders a number or a boolean as text, so this body reported
+            // the token "true" and the endpoint as healthy.
+            val target = serve { it.reply(200, """{"accessToken":true}""") }
+            assertTrue(client(target).probeAccessToken() is TokenServerProbe.Malformed)
+        }
+
+    @Test
+    fun `a numeric accessToken is not a token either`() =
+        runTest {
+            val target = serve { it.reply(200, """{"accessToken":12345}""") }
+            assertTrue(client(target).probeAccessToken() is TokenServerProbe.Malformed)
+        }
+
+    @Test
     fun `nothing listening is unreachable, and says so in the transport's words`() =
         runTest {
             // Port 1 on loopback: privileged, and nothing in this test ever binds it.
