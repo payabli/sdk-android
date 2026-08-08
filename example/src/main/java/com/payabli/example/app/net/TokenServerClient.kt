@@ -75,29 +75,8 @@ class TokenServerClient(
                         "$url is not an http or https address.",
                     )
                 }
-                connection =
-                    opened.apply {
-                        requestMethod = method
-                        connectTimeout = TIMEOUT_MILLIS
-                        readTimeout = TIMEOUT_MILLIS
-                        // The server accepts an empty body on this route; the flag is what makes
-                        // HttpURLConnection send the request at all for a POST.
-                        if (method == "POST") doOutput = true
-                    }
-                if (method == "POST") {
-                    connection.outputStream.use { it.write(ByteArray(0)) }
-                }
-                val code = connection.responseCode
-                if (code !in SUCCESS_RANGE) {
-                    TokenServerProbe.HttpStatus(code)
-                } else {
-                    val body = connection.inputStream.use { readBounded(it) }
-                    if (body == null) {
-                        TokenServerProbe.Malformed("the body was over $MAX_BODY_BYTES bytes")
-                    } else {
-                        onSuccess(body)
-                    }
-                }
+                connection = opened.prepared(method)
+                outcomeOf(connection, onSuccess)
             } catch (e: IOException) {
                 // The message alone: on a demo screen "Connection refused" is the actionable half,
                 // and a stack trace is not.
@@ -106,6 +85,31 @@ class TokenServerClient(
                 connection?.disconnect()
             }
         }
+
+    /** Configured and, for a POST, sent: the flag is what makes `HttpURLConnection` send at all. */
+    private fun HttpURLConnection.prepared(method: String): HttpURLConnection =
+        apply {
+            requestMethod = method
+            connectTimeout = TIMEOUT_MILLIS
+            readTimeout = TIMEOUT_MILLIS
+            if (method == "POST") {
+                // The server accepts an empty body on this route.
+                doOutput = true
+                outputStream.use { it.write(ByteArray(0)) }
+            }
+        }
+
+    private fun outcomeOf(
+        connection: HttpURLConnection,
+        onSuccess: (String) -> TokenServerProbe,
+    ): TokenServerProbe {
+        val code = connection.responseCode
+        if (code !in SUCCESS_RANGE) return TokenServerProbe.HttpStatus(code)
+        val body =
+            connection.inputStream.use { readBounded(it) }
+                ?: return TokenServerProbe.Malformed("the body was over $MAX_BODY_BYTES bytes")
+        return onSuccess(body)
+    }
 
     /**
      * Reads at most [MAX_BODY_BYTES], returning null rather than growing without limit.
