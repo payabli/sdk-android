@@ -65,6 +65,22 @@ android {
         )
         // Blank means resolve per run: emulator to 10.0.2.2, device to 127.0.0.1 over adb reverse.
         buildConfigField("String", "DEMO_TOKEN_HOST", quoted(demoSetting("payabli.demo.tokenHost", "")))
+        // The two addresses the local token server is reached at when nothing overrides it. Set
+        // here rather than in Kotlin because they are deployment values: an emulator that maps the
+        // host differently, or a device forwarded on another port, is a settings change and not a
+        // code change. The defaults are the standard ones and hold for everyone who changes
+        // nothing.
+        buildConfigField(
+            "String",
+            "DEMO_EMULATOR_TOKEN_HOST",
+            quoted(demoSetting("payabli.demo.emulatorTokenHost", "10.0.2.2")),
+        )
+        buildConfigField(
+            "String",
+            "DEMO_DEVICE_TOKEN_HOST",
+            quoted(demoSetting("payabli.demo.deviceTokenHost", "127.0.0.1")),
+        )
+        buildConfigField("int", "DEMO_TOKEN_PORT", demoSetting("payabli.demo.tokenPort", "8787"))
         buildConfigField("boolean", "DEMO_DIAGNOSTICS", demoSetting("payabli.demo.diagnostics", "true"))
     }
 

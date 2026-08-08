@@ -2,6 +2,7 @@ package com.payabli.example.app
 
 import android.content.Context
 import com.payabli.example.app.config.DemoConfiguration
+import com.payabli.example.app.config.TokenHostDefaults
 import com.payabli.example.app.config.TokenHostResolver
 import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.diagnostics.DiagnosticsRegistry
@@ -80,5 +81,6 @@ class AppContainer(
             launchOverride = launchOverride,
             buildSettingHost = BuildConfig.DEMO_TOKEN_HOST,
             isEmulator = isEmulator,
+            defaults = TokenHostDefaults.fromBuildConfig(),
         )
 }

@@ -44,6 +44,12 @@ Copy `secrets.properties.example` to `secrets.properties` and fill it in. That f
 the template is tracked. Nothing in it is a credential — the entry point and app id are identifiers,
 and the access token is minted at runtime by `example-server/`.
 
+`payabli.demo.emulatorTokenHost`, `payabli.demo.deviceTokenHost` and `payabli.demo.tokenPort` are
+where the local token server is reached when nothing overrides it. They default to `10.0.2.2`,
+`127.0.0.1` and `8787`, which is the standard arrangement described under **The token server** below,
+and they are settings rather than constants because an emulator that maps the host machine
+differently, or an `adb reverse` on another port, is a deployment change.
+
 `payabli.demo.signingCertificate` is the one worth explaining. Set it to the SHA-256 the Play Console
 shows for the certificate this build should carry, and the readiness check compares the running build
 against it; leave it blank and the check says the signing key was not verified. The digest of what is

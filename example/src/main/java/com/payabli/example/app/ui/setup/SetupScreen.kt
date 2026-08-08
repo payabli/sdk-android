@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
+import com.payabli.example.app.config.TokenHostDefaults
 import com.payabli.example.app.config.TokenHostResolver
 import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.payment.PaymentFormSummary
@@ -192,6 +193,7 @@ private fun SetupScreenPreview() {
                             launchOverride = null,
                             buildSettingHost = "",
                             isEmulator = true,
+                            defaults = TokenHostDefaults.fromBuildConfig(),
                         ),
                     formConfiguration = PaymentFormConfiguration.storePaymentMethod(),
                     deviceFacts =

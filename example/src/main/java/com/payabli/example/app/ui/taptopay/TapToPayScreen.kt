@@ -20,6 +20,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
+import com.payabli.example.app.config.TokenHostDefaults
 import com.payabli.example.app.config.TokenHostResolver
 import com.payabli.example.app.terminal.DemoTerminalController
 import com.payabli.example.app.terminal.EventBuffer
@@ -291,6 +292,7 @@ private fun TapToPayScreenPreview() {
                             launchOverride = null,
                             buildSettingHost = "",
                             isEmulator = true,
+                            defaults = TokenHostDefaults.fromBuildConfig(),
                         ),
                     session = TerminalSessionState.Ready,
                     isReady = true,

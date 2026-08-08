@@ -3,45 +3,38 @@ package com.payabli.example.app.config
 /**
  * Decides where the local token server is.
  *
- * Every input is a parameter: no `Context`, no `Build`, no `BuildConfig`. Reading those is
- * [com.payabli.example.app.preflight.platform.DeviceFactsReader]'s job, which keeps this rule
- * testable on a host JVM.
+ * Every input is a parameter: no `Context`, no `Build`, no `BuildConfig`, and no address of its own.
+ * Reading the device is [com.payabli.example.app.preflight.platform.DeviceFactsReader]'s job and
+ * reading the settings is [TokenHostDefaults]'s, which keeps this rule testable on a host JVM
+ * against addresses no machine here has.
  */
 object TokenHostResolver {
-    const val DEFAULT_PORT: Int = 8787
-
     /** The name of the launch extra, so the resolver and whoever reads the Intent cannot disagree. */
     const val LAUNCH_EXTRA: String = "payabliTokenHost"
-
-    // Both reviewed and marked. A literal address is worth a second look in general, and these two
-    // are the subject rather than a shortcut: 10.0.2.2 is the emulator's documented alias for the
-    // host machine's loopback interface and exists nowhere else, and 127.0.0.1 is loopback. Neither
-    // is reachable from another host, neither is a real endpoint, and the debug network security
-    // config permits cleartext to these two and to nothing else.
-    private const val EMULATOR_LOOPBACK_ALIAS = "10.0.2.2" // NOSONAR: see above
-    private const val DEVICE_LOOPBACK = "127.0.0.1" // NOSONAR: see above
 
     /**
      * In order: a launch extra, then a build setting, then the device kind.
      *
-     * A physical device gets `127.0.0.1`, which works with `adb reverse tcp:8787 tcp:8787` and needs
-     * no name resolution and no wide bind. A LAN address is what the first two rows are for.
+     * The last of those is [defaults], which arrives configured. A physical device gets its own
+     * loopback, which works with `adb reverse` and needs no name resolution and no wide bind. A LAN
+     * address is what the first two rows are for.
      */
     fun resolve(
         launchOverride: String?,
         buildSettingHost: String,
         isEmulator: Boolean,
+        defaults: TokenHostDefaults,
     ): TokenServerTarget {
         if (!launchOverride.isNullOrBlank()) {
-            return TokenServerTarget(normalize(launchOverride), TokenHostSource.LaunchOverride)
+            return TokenServerTarget(normalize(launchOverride, defaults), TokenHostSource.LaunchOverride)
         }
         if (buildSettingHost.isNotBlank()) {
-            return TokenServerTarget(normalize(buildSettingHost), TokenHostSource.BuildSetting)
+            return TokenServerTarget(normalize(buildSettingHost, defaults), TokenHostSource.BuildSetting)
         }
         return if (isEmulator) {
-            TokenServerTarget("http://$EMULATOR_LOOPBACK_ALIAS:$DEFAULT_PORT", TokenHostSource.Emulator)
+            TokenServerTarget("http://${defaults.emulatorHost}:${defaults.port}", TokenHostSource.Emulator)
         } else {
-            TokenServerTarget("http://$DEVICE_LOOPBACK:$DEFAULT_PORT", TokenHostSource.Device)
+            TokenServerTarget("http://${defaults.deviceHost}:${defaults.port}", TokenHostSource.Device)
         }
     }
 
@@ -49,15 +42,19 @@ object TokenHostResolver {
      * Turns whatever someone had to hand into a base URL: a bare host, `host:port`, or a full URL.
      *
      * A value that already carries a scheme is taken as written, minus any path. That is the only way
-     * to point the demo at an https endpoint. A value without one gets `http://` and the default port,
-     * which is the local-server case.
+     * to point the demo at an https endpoint. A value without one gets `http://` and the configured
+     * port, which is the local-server case.
      *
-     * A port that is not a number falls back to the default. This is a developer override typed by
-     * hand, not a parsed protocol, and failing to launch over a typo would be the worse outcome.
+     * A port that is not a number falls back to the configured one. This is a developer override
+     * typed by hand, not a parsed protocol, and failing to launch over a typo would be the worse
+     * outcome.
      */
-    internal fun normalize(raw: String): String {
+    internal fun normalize(
+        raw: String,
+        defaults: TokenHostDefaults,
+    ): String {
         val trimmed = raw.trim().trimEnd('/')
-        if (trimmed.isEmpty()) return "http://$DEVICE_LOOPBACK:$DEFAULT_PORT"
+        if (trimmed.isEmpty()) return "http://${defaults.deviceHost}:${defaults.port}"
 
         val schemeSeparator = trimmed.indexOf("://")
         if (schemeSeparator > 0) {
@@ -67,21 +64,24 @@ object TokenHostResolver {
             return "$scheme://$authority"
         }
 
-        return "http://" + withPort(trimmed.substringBefore('/'))
+        return "http://" + withPort(trimmed.substringBefore('/'), defaults.port)
     }
 
-    /** Appends the default port unless the authority already carries one. */
-    private fun withPort(authority: String): String {
+    /** Appends the configured port unless the authority already carries one. */
+    private fun withPort(
+        authority: String,
+        defaultPort: Int,
+    ): String {
         // An IPv6 literal is bracketed, and the colons inside the brackets are
         // part of the address, so the search for a port starts after the closing bracket.
         val portSearchFrom = if (authority.startsWith("[")) authority.indexOf(']') + 1 else 0
-        if (portSearchFrom <= 0 && authority.startsWith("[")) return "$authority:$DEFAULT_PORT"
+        if (portSearchFrom <= 0 && authority.startsWith("[")) return "$authority:$defaultPort"
 
         val colon = authority.indexOf(':', startIndex = portSearchFrom)
-        if (colon < 0) return "$authority:$DEFAULT_PORT"
+        if (colon < 0) return "$authority:$defaultPort"
 
         val host = authority.substring(0, colon)
         val port = authority.substring(colon + 1).toIntOrNull()
-        return if (port == null) "$host:$DEFAULT_PORT" else "$host:$port"
+        return if (port == null) "$host:$defaultPort" else "$host:$port"
     }
 }
