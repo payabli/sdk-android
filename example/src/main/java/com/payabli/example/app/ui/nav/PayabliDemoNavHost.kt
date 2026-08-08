@@ -14,6 +14,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -78,101 +79,113 @@ fun PayabliDemoNavHost(
         },
     ) {
         NavHost(navController = navController, startDestination = PaymentMethodGraph) {
-            navigation<PaymentMethodGraph>(startDestination = PaymentMethodHome) {
-                composable<PaymentMethodHome> { entry ->
-                    val model =
-                        navController.graphViewModel<PaymentMethodGraph, PaymentMethodViewModel>(entry) {
-                            PaymentMethodViewModel.from(it)
-                        }
-                    val state by model.uiState.collectAsStateWithLifecycle()
-                    LaunchedEffect(state.outcomeReady) {
-                        if (state.outcomeReady) {
-                            model.outcomeShown()
-                            navController.navigate(PaymentMethodSaved)
-                        }
-                    }
-                    PaymentMethodScreen(
-                        state = state,
-                        onOpenSheet = model::openSheet,
-                        onDismissSheet = model::dismissSheet,
-                        onSubmit = model::submit,
-                        onError = model::onError,
-                    )
-                }
-                composable<PaymentMethodSaved> {
-                    PaymentMethodSavedScreen(onDone = { navController.popBackStack() })
-                }
-            }
+            paymentMethodGraph(navController)
+            captureGraph(navController)
+            tapToPayGraph()
+            setupGraph()
+        }
+    }
+}
 
-            navigation<CaptureGraph>(startDestination = CaptureHome) {
-                composable<CaptureHome> { entry ->
-                    val model =
-                        navController.graphViewModel<CaptureGraph, CaptureViewModel>(entry) {
-                            CaptureViewModel.from(it)
-                        }
-                    val state by model.uiState.collectAsStateWithLifecycle()
-                    LaunchedEffect(state.outcomeReady) {
-                        if (state.outcomeReady) {
-                            model.outcomeShown()
-                            navController.navigate(CaptureResult)
-                        }
-                    }
-                    CaptureScreen(
-                        state = state,
-                        onOpenSheet = model::openSheet,
-                        onDismissSheet = model::dismissSheet,
-                        onSubmit = model::submit,
-                        onError = model::onError,
-                    )
+private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController) {
+    navigation<PaymentMethodGraph>(startDestination = PaymentMethodHome) {
+        composable<PaymentMethodHome> { entry ->
+            val model =
+                navController.graphViewModel<PaymentMethodGraph, PaymentMethodViewModel>(entry) {
+                    PaymentMethodViewModel.from(it)
                 }
-                composable<CaptureResult> { entry ->
-                    // The graph's entry, not this destination's, so the result the previous screen
-                    // produced is the one shown. Passing it as a navigation argument would mean
-                    // URL-encoding an arbitrary API response into a route.
-                    val model =
-                        navController.graphViewModel<CaptureGraph, CaptureViewModel>(entry) {
-                            CaptureViewModel.from(it)
-                        }
-                    val state by model.uiState.collectAsStateWithLifecycle()
-                    // The result lives in the view model, and the process can be killed while this
-                    // screen is on top. Navigation restores the destination and the model comes back
-                    // empty, which left a screen reading "No payment yet" with its Done button below
-                    // the early return, so nothing on it went anywhere. Going back is the only
-                    // honest answer: the payment happened, and this screen has nothing to say about
-                    // it any more.
-                    LaunchedEffect(state.lastResult) {
-                        if (state.lastResult == null) navController.popBackStack()
-                    }
-                    CaptureResultScreen(
-                        result = state.lastResult,
-                        onDone = { navController.popBackStack() },
-                    )
+            val state by model.uiState.collectAsStateWithLifecycle()
+            LaunchedEffect(state.outcomeReady) {
+                if (state.outcomeReady) {
+                    model.outcomeShown()
+                    navController.navigate(PaymentMethodSaved)
                 }
             }
+            PaymentMethodScreen(
+                state = state,
+                onOpenSheet = model::openSheet,
+                onDismissSheet = model::dismissSheet,
+                onSubmit = model::submit,
+                onError = model::onError,
+            )
+        }
+        composable<PaymentMethodSaved> {
+            PaymentMethodSavedScreen(onDone = { navController.popBackStack() })
+        }
+    }
+}
 
-            navigation<TapToPayGraph>(startDestination = TapToPayHome) {
-                composable<TapToPayHome> {
-                    val model = demoViewModel { TapToPayViewModel.from(it) }
-                    val state by model.uiState.collectAsStateWithLifecycle()
-                    TapToPayScreen(
-                        state = state,
-                        actions = remember(model) { TapToPayActions.from(model) },
-                    )
+private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
+    navigation<CaptureGraph>(startDestination = CaptureHome) {
+        composable<CaptureHome> { entry ->
+            val model =
+                navController.graphViewModel<CaptureGraph, CaptureViewModel>(entry) {
+                    CaptureViewModel.from(it)
+                }
+            val state by model.uiState.collectAsStateWithLifecycle()
+            LaunchedEffect(state.outcomeReady) {
+                if (state.outcomeReady) {
+                    model.outcomeShown()
+                    navController.navigate(CaptureResult)
                 }
             }
+            CaptureScreen(
+                state = state,
+                onOpenSheet = model::openSheet,
+                onDismissSheet = model::dismissSheet,
+                onSubmit = model::submit,
+                onError = model::onError,
+            )
+        }
+        composable<CaptureResult> { entry ->
+            // The graph's entry, not this destination's, so the result the previous screen
+            // produced is the one shown. Passing it as a navigation argument would mean
+            // URL-encoding an arbitrary API response into a route.
+            val model =
+                navController.graphViewModel<CaptureGraph, CaptureViewModel>(entry) {
+                    CaptureViewModel.from(it)
+                }
+            val state by model.uiState.collectAsStateWithLifecycle()
+            // The result lives in the view model, and the process can be killed while this screen is
+            // on top. Navigation restores the destination and the model comes back empty, which left
+            // a screen reading "No payment yet" with its Done button below the early return, so
+            // nothing on it went anywhere. Going back is the only honest answer: the payment
+            // happened, and this screen has nothing to say about it any more.
+            LaunchedEffect(state.lastResult) {
+                if (state.lastResult == null) navController.popBackStack()
+            }
+            CaptureResultScreen(
+                result = state.lastResult,
+                onDone = { navController.popBackStack() },
+            )
+        }
+    }
+}
 
-            navigation<SetupGraph>(startDestination = SetupHome) {
-                composable<SetupHome> {
-                    val model = demoViewModel { SetupViewModel.from(it) }
-                    val state by model.uiState.collectAsStateWithLifecycle()
-                    SetupScreen(
-                        state = state,
-                        onProbeToken = model::probeToken,
-                        onProbeHealth = model::probeHealth,
-                        onRecheck = model::recheck,
-                    )
-                }
-            }
+private fun NavGraphBuilder.tapToPayGraph() {
+    navigation<TapToPayGraph>(startDestination = TapToPayHome) {
+        composable<TapToPayHome> {
+            val model = demoViewModel { TapToPayViewModel.from(it) }
+            val state by model.uiState.collectAsStateWithLifecycle()
+            TapToPayScreen(
+                state = state,
+                actions = remember(model) { TapToPayActions.from(model) },
+            )
+        }
+    }
+}
+
+private fun NavGraphBuilder.setupGraph() {
+    navigation<SetupGraph>(startDestination = SetupHome) {
+        composable<SetupHome> {
+            val model = demoViewModel { SetupViewModel.from(it) }
+            val state by model.uiState.collectAsStateWithLifecycle()
+            SetupScreen(
+                state = state,
+                onProbeToken = model::probeToken,
+                onProbeHealth = model::probeHealth,
+                onRecheck = model::recheck,
+            )
         }
     }
 }
