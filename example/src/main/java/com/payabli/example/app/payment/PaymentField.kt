@@ -9,26 +9,28 @@ enum class PaymentMethodType(
 }
 
 /**
- * What kind of input a field needs, which is what decides the keyboard and the masking.
+ * What kind of input a field needs: the keyboard it asks for, and whether it is obscured.
  *
- * [label] is words, because the placeholder shows it on screen beside the field name and the enum
- * name would read as "monthyear" there.
+ * What reads this today is the Setup screen's masked row, through [Secret]. The rest describes fields
+ * for the component that will render them, and none of it is drawn here, because the form's interior
+ * is the SDK's.
+ *
+ * Each case carried a display word until the form fields left this module. Nothing read it after
+ * that, so it went too, and it comes back with whatever renders these.
  */
-enum class FieldInput(
-    val label: String,
-) {
-    Text("text"),
-    Number("digits"),
-    Email("email"),
+enum class FieldInput {
+    Text,
+    Number,
+    Email,
 
     /** Obscured as it is typed. */
-    Secret("hidden"),
+    Secret,
 
     /** Chosen from a fixed set. */
-    Choice("choice"),
+    Choice,
 
     /** Month and year, chosen from a picker. */
-    MonthYear("month / year"),
+    MonthYear,
 }
 
 /**
