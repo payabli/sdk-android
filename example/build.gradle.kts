@@ -55,9 +55,16 @@ android {
         applicationId = "com.payabli.example.app"
         // 24, one above the SDK modules' floor of 23, because the debug build talks to the local
         // token server over cleartext and a network security config is the only way to permit that
-        // for two addresses instead of for everything. The config is ignored below 24, so a 23 build
-        // would permit cleartext outright. Nothing published moves: :core and the capability modules
-        // stay at 23 and an integrator can still target it.
+        // for two addresses instead of for everything.
+        //
+        // API 23 has no such config, so the only lever there is the usesCleartextTraffic flag, which
+        // is all-or-nothing. Both manifests declare it false, so a 23 build would block the local
+        // token server; declaring it true to unblock it would permit cleartext to every host the app
+        // can reach. Neither is what this app wants, and 24 is where the choice stops being between
+        // those two.
+        //
+        // Nothing published moves: :core and the capability modules stay at 23 and an integrator can
+        // still target it.
         minSdk = 24
         targetSdk = 36
         versionCode = 1
