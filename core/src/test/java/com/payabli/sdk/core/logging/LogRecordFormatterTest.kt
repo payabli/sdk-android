@@ -42,7 +42,10 @@ class LogRecordFormatterTest {
         val line = LogRecordFormatter.format("é".repeat(5_000), "", null, tag)
 
         assertTrue(line.toByteArray().size <= LogRecordFormatter.MAX_PAYLOAD_BYTES)
-        assertFalse("cut mid code point", line.contains('�'))
+        // Written as an escape. Sonar reads a literal U+FFFD as a file that failed to decode,
+        // because that is the character a decoder emits for undecodable input, and reports the
+        // whole analysis as having an encoding problem.
+        assertFalse("cut mid code point", line.contains('\uFFFD'))
     }
 
     @Test

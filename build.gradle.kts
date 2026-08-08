@@ -45,20 +45,25 @@ subprojects {
             val reports = layout.buildDirectory.dir("reports").get().asFile
 
             // Enumerated: this property is a comma-separated list, not a glob.
+            //
+            // The test is for Kotlin under the source set, not for the source set. ktlint reports
+            // NO-SOURCE and writes no file for a source set holding no `.kt`, and Sonar then warns
+            // that a named report is missing, which is a warning nobody can act on: three fired at
+            // once, for the two template-only modules whose `src/main` is still empty and for the
+            // sample app's `src/debug`, which holds a manifest and one XML.
+            fun hasKotlin(sourceSet: String): Boolean =
+                layout.projectDirectory
+                    .dir("src/$sourceSet")
+                    .asFile
+                    .walkTopDown()
+                    .any { it.isFile && it.extension == "kt" }
+
             val ktlintTasks = buildList {
                 add("ktlintKotlinScriptCheck")
-                if (layout.projectDirectory.dir("src/main").asFile.isDirectory) {
-                    add("ktlintMainSourceSetCheck")
-                }
-                if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
-                    add("ktlintTestSourceSetCheck")
-                }
-                if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
-                    add("ktlintAndroidTestSourceSetCheck")
-                }
-                if (layout.projectDirectory.dir("src/debug").asFile.isDirectory) {
-                    add("ktlintDebugSourceSetCheck")
-                }
+                if (hasKotlin("main")) add("ktlintMainSourceSetCheck")
+                if (hasKotlin("test")) add("ktlintTestSourceSetCheck")
+                if (hasKotlin("androidTest")) add("ktlintAndroidTestSourceSetCheck")
+                if (hasKotlin("debug")) add("ktlintDebugSourceSetCheck")
             }
             property(
                 "sonar.kotlin.ktlint.reportPaths",
