@@ -40,7 +40,9 @@ class RecheckReadsTheDeviceAgainTest {
 
     private fun model(read: () -> DeviceFacts) =
         SetupViewModel(
-            configuration = DemoConfiguration("test6", appId, "", DemoEnvironment.SANDBOX, true),
+            // The digest [facts] reports, so the readiness check is fully configured and a warning
+            // in these tests can only have come from the device.
+            configuration = DemoConfiguration("test6", appId, "AB:CD", DemoEnvironment.SANDBOX, true),
             tokenServer = target,
             tokenClient = TokenServerClient(target),
             readDeviceFacts = read,

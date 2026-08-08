@@ -139,14 +139,17 @@ object TapToPayPreflight {
 
             expectedCertificate.isBlank() ->
                 PreflightCheck(
-                    title = "App ID",
-                    // A readable digest says some certificate signed this build, not that it was
-                    // the right one, so this stops short of claiming the key was verified. The
-                    // digest is shown on Setup, to be copied into the setting below.
+                    title = "Signing key not checked",
+                    // Unknown, the same status an unreadable digest gets, because it is the same
+                    // situation: this check did not run. A readable digest says some certificate
+                    // signed the build, not that it was the right one, and Pass hid the whole thing,
+                    // since problemsIn drops passing checks and the card shows only problems. The
+                    // instruction below was written into a detail nothing rendered.
                     detail =
-                        "${facts.packageName}. Set payabli.demo.signingCertificate in " +
-                            "example/secrets.properties to check the signing key too.",
-                    status = CheckStatus.Pass,
+                        "The app ID matches. Set payabli.demo.signingCertificate in " +
+                            "example/secrets.properties to the digest shown on Setup, and this " +
+                            "check compares the running build against it.",
+                    status = CheckStatus.Unknown,
                 )
 
             facts.signingCertificateDigest.asDigest() != expectedCertificate.asDigest() ->
