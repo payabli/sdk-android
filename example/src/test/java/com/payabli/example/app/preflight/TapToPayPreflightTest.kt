@@ -80,9 +80,12 @@ class TapToPayPreflightTest {
     }
 
     @Test
-    fun `NFC switched off does not block the verdict`() {
+    fun `NFC switched off does not block the verdict, and does not read as ready either`() {
+        // Two verdicts could not say what this device is. Rolled into Ready, the card announced
+        // "Ready to take payments" above the reason it could not; rolled into NotAvailable it would
+        // send a reader looking for a fault in the app.
         val checks = TapToPayPreflight.checks(healthy().copy(isNfcEnabled = false), appId)
-        assertEquals(Readiness.Ready, readinessFrom(checks))
+        assertEquals(Readiness.ActionNeeded, readinessFrom(checks))
     }
 
     // --- API level ---
@@ -188,7 +191,12 @@ class TapToPayPreflightTest {
     @Test
     fun `an unreadable signing certificate does not block the verdict`() {
         val checks = TapToPayPreflight.checks(healthy().copy(signingCertificateDigest = null), appId)
-        assertEquals(Readiness.Ready, readinessFrom(checks))
+        assertEquals(Readiness.ActionNeeded, readinessFrom(checks))
+    }
+
+    @Test
+    fun `only a clean sweep reads as ready`() {
+        assertEquals(Readiness.Ready, readinessFrom(TapToPayPreflight.checks(healthy(), appId)))
     }
 
     // --- the rollup ---

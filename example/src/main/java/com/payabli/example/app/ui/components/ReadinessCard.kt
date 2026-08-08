@@ -47,7 +47,14 @@ fun ReadinessCard(
     val verdictColor =
         when (readiness) {
             Readiness.Ready -> statusColors.success
+            Readiness.ActionNeeded -> statusColors.warning
             Readiness.NotAvailable -> MaterialTheme.colorScheme.error
+        }
+    val verdictIcon =
+        when (readiness) {
+            Readiness.Ready -> DemoIcons.Pass
+            Readiness.ActionNeeded -> DemoIcons.Warn
+            Readiness.NotAvailable -> DemoIcons.NotAvailable
         }
 
     Column(
@@ -56,8 +63,7 @@ fun ReadinessCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
-                imageVector =
-                    if (readiness == Readiness.Ready) DemoIcons.Pass else DemoIcons.NotAvailable,
+                imageVector = verdictIcon,
                 contentDescription = null,
                 tint = verdictColor,
                 modifier = Modifier.size(20.dp),
@@ -144,7 +150,7 @@ private fun ReadinessCardPreview() {
     PreviewSurface {
         ReadinessCard(readiness = Readiness.Ready, problems = emptyList(), onRecheck = {})
         ReadinessCard(
-            readiness = Readiness.Ready,
+            readiness = Readiness.ActionNeeded,
             problems =
                 listOf(
                     PreflightCheck(

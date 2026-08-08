@@ -32,18 +32,27 @@ enum class Readiness(
     val title: String,
 ) {
     Ready("Ready to take payments"),
+    ActionNeeded("Ready once these are fixed"),
     NotAvailable("Cannot take payments"),
 }
 
 /**
- * A hard failure blocks; a warning or an unrunnable check does not.
+ * Three verdicts, because two could not say what a device with NFC switched off is.
  *
- * Warnings do not block. A device with NFC switched off can take a payment as soon as someone turns
- * it on, and reporting that as "cannot take payments" would send a reader looking for a fault in the
- * app.
+ * A hard failure is [NotAvailable]: nothing anyone does to this device makes it take a payment. A
+ * warning or an unrunnable check is [ActionNeeded]: the device can do this, and not right now. Only
+ * a clean sweep is [Ready].
+ *
+ * With two verdicts a warning rolled into [Ready], so a phone with the radio switched off announced
+ * "Ready to take payments" above a card listing the reason it could not. Folding it the other way is
+ * no better, since "cannot take payments" sends a reader looking for a fault in the app.
  */
 fun readinessFrom(checks: List<PreflightCheck>): Readiness =
-    if (checks.any { it.status == CheckStatus.Fail }) Readiness.NotAvailable else Readiness.Ready
+    when {
+        checks.any { it.status == CheckStatus.Fail } -> Readiness.NotAvailable
+        checks.any { it.status != CheckStatus.Pass } -> Readiness.ActionNeeded
+        else -> Readiness.Ready
+    }
 
 /** The checks worth showing: the ones that are not simply fine. */
 fun problemsIn(checks: List<PreflightCheck>): List<PreflightCheck> = checks.filter { it.status != CheckStatus.Pass }
