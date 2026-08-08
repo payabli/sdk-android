@@ -57,8 +57,10 @@ MAX_SUMMARY_BYTES = 900_000
 # taptopay no classes yet · telemetry no classes yet`, which invites the reader to conclude coverage
 # collapsed rather than that it was never written.
 #
-# :example is absent deliberately, matching ci.yml. It has no coverage task, so it has nothing to omit.
-COVERAGE_MODULES = ("core", "payin", "taptopay", "telemetry")
+# :example is here because payabli.quality enables unit-test coverage for application modules as well as
+# libraries, so the sample app has a coverage task and both ci.yml and the nightly run it. It was absent
+# while that was not true.
+COVERAGE_MODULES = ("core", "example", "payin", "taptopay", "telemetry")
 
 # Attribution stops here, because the report cannot show more than this and the work is not free: each
 # failure costs two recursive source globs and up to two `git log` subprocesses. Measured against this repo

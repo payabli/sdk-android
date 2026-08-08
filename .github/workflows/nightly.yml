@@ -117,7 +117,8 @@ jobs:
       #
       # The coverage task rather than the plain test task, because it depends on it: this writes both the
       # JUnit results and the JaCoCo report, and the Slack summary reports coverage as well as failures.
-      # :example has no coverage task, matching ci.yml, so it runs its tests directly.
+      # :example is here for the same reason as the rest: payabli.quality enables unit-test coverage for
+      # application modules as well as libraries, so the task exists and ci.yml already runs it.
       #
       # continue-on-error throughout, so a failure still reaches Slack with its detail instead of aborting
       # the job at the first red suite. The final step turns any failure back into a red run.
@@ -133,7 +134,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:test
+          :example:createDebugUnitTestCoverageReport
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
       # when the credential is absent, matching the card-present job in ci.yml.
