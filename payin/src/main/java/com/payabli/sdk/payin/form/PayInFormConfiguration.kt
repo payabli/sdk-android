@@ -157,10 +157,9 @@ public class PayInFormConfiguration(
     /**
      * As a `data class` would, over the copies rather than over what was handed in.
      *
-     * One parameter per property, which is what makes it a copy. The count is the class's, and a
-     * generated `copy()` carries the same one.
+     * One parameter per property, which is what makes it a copy. The parameter-count rule is turned
+     * off for this file in the root `build.gradle.kts`, which says why.
      */
-    @Suppress("LongParameterList")
     public fun copy(
         allowedMethods: List<PayInMethodType> = this.allowedMethods,
         defaultMethod: PayInMethodType = this.defaultMethod,

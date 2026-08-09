@@ -166,8 +166,8 @@ private fun <T> PickerColumn(
     }
 }
 
-/** Tall enough for several rows and short enough that the dialog still fits a small screen. */
-private val PICKER_MAX_HEIGHT = 200.dp
-
 /** Android's minimum touch target. */
 private val ROW_MIN_HEIGHT = 48.dp
+
+/** Four rows: enough to scroll and short enough that a dialog of twenty-one years fits. */
+private val PICKER_MAX_HEIGHT = ROW_MIN_HEIGHT * 4

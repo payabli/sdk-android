@@ -53,6 +53,20 @@ class NoHardCodedAppearanceTest {
     /** The only measurements a file in [measurementExceptions] may carry. */
     private val iconGrid = Regex("""^default(Width|Height) = 24\.dp,$""")
 
+    /**
+     * The named constants allowed to hold a measurement, each for a stated reason.
+     *
+     * A constant is not a reason on its own. Allowing any `private val x = 16.dp` let a size an
+     * integrator cannot reach pass by being given a name, which is what `CLAUDE.md` calls a defect.
+     * What is left is a platform guideline and a layout threshold, neither of which is a theme value.
+     */
+    private val measurementConstants =
+        mapOf(
+            "MINIMUM_TOUCH_TARGET" to "Android's minimum touch target, which is not the host's to set",
+            "ROW_MIN_HEIGHT" to "the same target, for a row in the picker",
+            "PAIRED_FIELD_MIN_WIDTH" to "where two fields stop fitting, which is a layout rule and not an appearance",
+        )
+
     @Test
     fun `the source directory is where this test thinks it is`() {
         // Without this the walk returns nothing and every assertion below passes on an empty list.
@@ -87,7 +101,7 @@ class NoHardCodedAppearanceTest {
                 file
                     .readLines()
                     .withIndex()
-                    .filter { (_, line) -> MEASUREMENT.containsMatchIn(line) && !line.isConstantDeclaration() }
+                    .filter { (_, line) -> MEASUREMENT.containsMatchIn(line) && !line.isApprovedConstant() }
                     .filterNot { (_, line) -> exempt && iconGrid.matches(line.trim()) }
                     .map { (index, line) -> "${file.name}:${index + 1} ${line.trim()}" }
             }
@@ -152,6 +166,32 @@ class NoHardCodedAppearanceTest {
     }
 
     @Test
+    fun `naming a constant is not on its own a reason to hold a measurement`() {
+        // The rule that let SPINNER_SIZE = 16.dp through: it was private, it had a name, and an
+        // integrator still could not change it.
+        listOf(
+            "private val SPINNER_SIZE = 16.dp",
+            "private val CARD_HEIGHT = 220.dp",
+            "private const val PADDING = 8.dp",
+        ).forEach { assertTrue("$it is allowed", !it.isApprovedConstant()) }
+
+        listOf(
+            "private val MINIMUM_TOUCH_TARGET = 48.dp",
+            "private val ROW_MIN_HEIGHT = 48.dp",
+            "private val PAIRED_FIELD_MIN_WIDTH = 148.dp",
+        ).forEach { assertTrue("$it is refused", it.isApprovedConstant()) }
+    }
+
+    @Test
+    fun `every approved constant is one the module still declares`() {
+        // A name left here after its constant goes silently widens the rule.
+        val declared = uiSources.joinToString("\n") { it.readText() }
+        measurementConstants.keys.forEach {
+            assertTrue("$it is approved and no longer declared", declared.contains("val $it "))
+        }
+    }
+
+    @Test
     fun `an excepted file may carry the icon grid and no other measurement`() {
         listOf("defaultWidth = 24.dp,", "defaultHeight = 24.dp,").forEach {
             assertTrue("the grid it exists for", iconGrid.matches(it))
@@ -209,8 +249,11 @@ class NoHardCodedAppearanceTest {
         assertEquals("type comes from the host's typography", emptyList<String>(), offenders)
     }
 
-    private fun String.isConstantDeclaration(): Boolean =
-        trimStart().startsWith("private val ") || trimStart().startsWith("private const ")
+    /** True for a declaration of one of the constants named in [measurementConstants]. */
+    private fun String.isApprovedConstant(): Boolean =
+        measurementConstants.keys.any { name ->
+            trimStart().startsWith("private val $name ") || trimStart().startsWith("private const val $name ")
+        }
 
     private companion object {
         /** The one file that turns `MaterialTheme` into [com.payabli.sdk.payin.form.PayInThemeRoles]. */
