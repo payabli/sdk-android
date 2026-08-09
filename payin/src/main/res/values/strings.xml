@@ -47,6 +47,12 @@
     <string name="payabli_payin_holder_type_personal">Personal</string>
     <string name="payabli_payin_holder_type_business">Business</string>
 
+    <!-- SEC codes. The value sent is the lowercase form; these are what a payer reads. -->
+    <string name="payabli_payin_sec_code_web">WEB</string>
+    <string name="payabli_payin_sec_code_ppd">PPD</string>
+    <string name="payabli_payin_sec_code_ccd">CCD</string>
+    <string name="payabli_payin_sec_code_tel">TEL</string>
+
     <!-- Controls. -->
     <string name="payabli_payin_submit">Submit</string>
     <string name="payabli_payin_submitting">Submitting…</string>

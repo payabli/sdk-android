@@ -86,7 +86,13 @@ internal object PayInStrings {
                     "business" to stringResource(R.string.payabli_payin_holder_type_business),
                 )
 
-            PayInField.SecCode -> listOf("web", "ppd", "ccd", "tel").map { it to it.uppercase() }
+            PayInField.SecCode ->
+                listOf(
+                    "web" to stringResource(R.string.payabli_payin_sec_code_web),
+                    "ppd" to stringResource(R.string.payabli_payin_sec_code_ppd),
+                    "ccd" to stringResource(R.string.payabli_payin_sec_code_ccd),
+                    "tel" to stringResource(R.string.payabli_payin_sec_code_tel),
+                )
             else -> emptyList()
         }
 }

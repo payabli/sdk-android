@@ -153,7 +153,13 @@ public class PayInFormConfiguration(
         field.input == PayInFieldInput.Secret &&
             (field != PayInField.AccountNumber || formatting.masksAccountNumber)
 
-    /** As a `data class` would, over the copies rather than over what was handed in. */
+    /**
+     * As a `data class` would, over the copies rather than over what was handed in.
+     *
+     * One parameter per property, which is what makes it a copy. The count is the class's, and a
+     * generated `copy()` carries the same one.
+     */
+    @Suppress("LongParameterList")
     public fun copy(
         allowedMethods: List<PayInMethodType> = this.allowedMethods,
         defaultMethod: PayInMethodType = this.defaultMethod,

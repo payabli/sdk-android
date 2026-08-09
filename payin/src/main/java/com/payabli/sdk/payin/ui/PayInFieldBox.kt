@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,7 +90,7 @@ private fun TypedField(
     OutlinedTextField(
         value = value,
         onValueChange = { onValueChange(PayInFieldRules.filter(field, it)) },
-        modifier = Modifier.fillMaxWidth().then(context.fieldName(field, label)),
+        modifier = Modifier.fillMaxWidth().fieldName(context, field, label),
         enabled = context.enabled,
         isError = hasError,
         singleLine = true,
@@ -129,10 +130,14 @@ private fun ExpiryField(
 ) {
     var picking by remember { mutableStateOf(false) }
 
+    // The field goes flat when a submission starts; a dialog already over it does not, and its rows
+    // and its Done button would keep calling onValueChange while the request is in flight.
+    LaunchedEffect(context.enabled) { if (!context.enabled) picking = false }
+
     OutlinedTextField(
         value = value,
         onValueChange = { },
-        modifier = Modifier.fillMaxWidth().then(context.fieldName(field, label)),
+        modifier = Modifier.fillMaxWidth().fieldName(context, field, label),
         enabled = context.enabled,
         readOnly = true,
         singleLine = true,
@@ -180,6 +185,10 @@ private fun ChoiceField(
     val options = PayInStrings.choices(field)
     val shown = options.firstOrNull { it.first == value }?.second ?: value
 
+    // Same as the picker: an open menu survives the field being disabled, and its items would keep
+    // changing the value during a submission.
+    LaunchedEffect(context.enabled) { if (!context.enabled) expanded = false }
+
     ExposedDropdownMenuBox(
         expanded = expanded,
         onExpandedChange = { if (context.enabled) expanded = it },
@@ -190,7 +199,7 @@ private fun ChoiceField(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .then(context.fieldName(field, label))
+                    .fieldName(context, field, label)
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, context.enabled),
             enabled = context.enabled,
             readOnly = true,
@@ -201,10 +210,11 @@ private fun ChoiceField(
             placeholder = PayInStrings.placeholder(field, context.labels)?.let { { Text(it) } },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(expanded = expanded && context.enabled, onDismissRequest = { expanded = false }) {
             options.forEach { (wire, display) ->
                 DropdownMenuItem(
                     text = { Text(display) },
+                    enabled = context.enabled,
                     onClick = {
                         onValueChange(wire)
                         expanded = false
@@ -233,11 +243,11 @@ private fun PayInFormContext.floatingLabel(
  * semantics node, so a screen reader lands on the box and announces no field name. Where Material
  * does supply the label, adding this would have it announced twice.
  */
-private fun PayInFormContext.fieldName(
+private fun Modifier.fieldName(
+    context: PayInFormContext,
     field: PayInField,
     label: String,
-): Modifier =
-    if (configuration.showsFloatingLabelFor(field)) Modifier else Modifier.semantics { contentDescription = label }
+): Modifier = if (context.configuration.showsFloatingLabelFor(field)) this else semantics { contentDescription = label }
 
 /** Material's own colours unless the caller supplied a set. */
 @Composable

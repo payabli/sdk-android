@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.AlertDialog
@@ -117,6 +118,9 @@ private fun <T> PickerColumn(
             // Bounded, so a dialog holding twenty-one years still fits. A maximum and not a fixed
             // height, so a large font scale can still make each row taller.
             modifier = Modifier.heightIn(max = PICKER_MAX_HEIGHT).selectableGroup(),
+            // Opened on the selection. A fresh list starts at the top, so reopening 12/31 showed
+            // 2026 onwards with the selected 2031 below the fold.
+            state = rememberLazyListState(values.indexOf(selected).coerceAtLeast(0)),
         ) {
             items(values) { value ->
                 val isSelected = value == selected
