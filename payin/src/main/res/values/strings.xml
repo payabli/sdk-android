@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Everything the payment form puts on screen.
+
+  An integrator overrides any of these by declaring the same name in their own res/values, and a
+  translator adds a values-xx without touching the SDK. PayInFormLabels is the second route, for a
+  caller who decides a label at runtime.
+
+  Names are prefixed payabli_payin_ because they merge into the host application's resources.
+-->
+<resources>
+
+    <!-- Field labels. -->
+    <string name="payabli_payin_field_cardholder_name">Name on card</string>
+    <string name="payabli_payin_field_card_number">Card number</string>
+    <string name="payabli_payin_field_card_expiration">Expiration</string>
+    <string name="payabli_payin_field_card_security_code">CVV</string>
+    <string name="payabli_payin_field_card_postal_code">Postal code</string>
+    <string name="payabli_payin_field_account_holder">Account holder</string>
+    <string name="payabli_payin_field_routing_number">Routing number</string>
+    <string name="payabli_payin_field_account_number">Account number</string>
+    <string name="payabli_payin_field_account_type">Account type</string>
+    <string name="payabli_payin_field_account_holder_type">Holder type</string>
+    <string name="payabli_payin_field_sec_code">SEC code</string>
+    <string name="payabli_payin_field_device_id">Device</string>
+    <string name="payabli_payin_field_method_description">Description</string>
+    <string name="payabli_payin_field_first_name">First name</string>
+    <string name="payabli_payin_field_last_name">Last name</string>
+    <string name="payabli_payin_field_customer_number">Customer number</string>
+    <string name="payabli_payin_field_billing_email">Billing email</string>
+    <string name="payabli_payin_field_billing_postal_code">Billing postal code</string>
+    <string name="payabli_payin_field_amount">Amount</string>
+    <string name="payabli_payin_field_service_fee">Fee</string>
+
+    <!-- Section headings, used when a section carries no title of its own. -->
+    <string name="payabli_payin_section_card">Card details</string>
+    <string name="payabli_payin_section_bank">Bank account</string>
+    <string name="payabli_payin_section_summary">Payment</string>
+
+    <!-- The two instruments, as the selector names them. -->
+    <string name="payabli_payin_method_card">Card</string>
+    <string name="payabli_payin_method_bank_account">Bank account</string>
+
+    <!-- Account types, which are the values the API takes. -->
+    <string name="payabli_payin_account_type_checking">Checking</string>
+    <string name="payabli_payin_account_type_savings">Savings</string>
+    <string name="payabli_payin_holder_type_personal">Personal</string>
+    <string name="payabli_payin_holder_type_business">Business</string>
+
+    <!-- Controls. -->
+    <string name="payabli_payin_submit">Submit</string>
+    <string name="payabli_payin_submitting">Submitting…</string>
+    <string name="payabli_payin_expiry_choose">Choose an expiry</string>
+    <string name="payabli_payin_expiry_month">Month</string>
+    <string name="payabli_payin_expiry_year">Year</string>
+    <string name="payabli_payin_confirm">Done</string>
+    <string name="payabli_payin_cancel">Cancel</string>
+
+    <!-- What is wrong with a field. Each one is a PayInFieldError. -->
+    <string name="payabli_payin_error_digits_only">Digits only</string>
+    <string name="payabli_payin_error_shorter_than">At least %1$d digits</string>
+    <string name="payabli_payin_error_not_exactly">%1$d digits</string>
+    <string name="payabli_payin_error_outside_range">%1$d to %2$d digits</string>
+    <string name="payabli_payin_error_card_number">That card number is not valid</string>
+    <string name="payabli_payin_error_routing_number">That routing number is not valid</string>
+    <string name="payabli_payin_error_email">That does not look like an email address</string>
+    <string name="payabli_payin_error_expiry_incomplete">Choose a month and year</string>
+    <string name="payabli_payin_error_expiry_past">That card has expired</string>
+
+    <!--
+      Spoken, not shown. The card scheme's mark has no string yet because it has no artwork yet:
+      PayInCardBrandPlacement defaults to Hidden, and the description arrives with the vectors.
+    -->
+    <string name="payabli_payin_reveal">Show %1$s</string>
+    <string name="payabli_payin_hide">Hide %1$s</string>
+
+</resources>
