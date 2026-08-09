@@ -39,17 +39,19 @@ class NoHardCodedAppearanceTest {
     private val vectorFill = Regex("""^fill = SolidColor\(Color\.Black\),$""")
 
     /**
-     * Files allowed to carry a measurement, each for a stated reason.
+     * Files allowed to carry a measurement outside a named constant, each for a stated reason.
      *
-     * Named one by one, so widening the rule takes an edit here.
+     * One file, and two lines inside it. `PayInSubmitButton.kt` and `ExpiryPickerDialog.kt` were
+     * listed here and did not need to be: every measurement they carry is already a named constant,
+     * which the rule allows anywhere, so the entries only widened it.
      */
     private val measurementExceptions =
         mapOf(
             "PayInIcons.kt" to "Material's icon grid is 24dp square, and the paths are drawn against it",
-            "PayInSubmitButton.kt" to "the 48dp touch target is Android's guideline, and a spinner has no theme role",
-            "ExpiryPickerDialog.kt" to
-                "the list is bounded so a dialog of twenty-one years fits, and a row holds the 48dp target",
         )
+
+    /** The only measurements a file in [measurementExceptions] may carry. */
+    private val iconGrid = Regex("""^default(Width|Height) = 24\.dp,$""")
 
     @Test
     fun `the source directory is where this test thinks it is`() {
@@ -80,15 +82,15 @@ class NoHardCodedAppearanceTest {
     @Test
     fun `a measurement appears only in a named constant, or in a file that says why`() {
         val offenders =
-            uiSources
-                .filter { it.name !in measurementExceptions }
-                .flatMap { file ->
-                    file
-                        .readLines()
-                        .withIndex()
-                        .filter { (_, line) -> MEASUREMENT.containsMatchIn(line) && !line.isConstantDeclaration() }
-                        .map { (index, line) -> "${file.name}:${index + 1} ${line.trim()}" }
-                }
+            uiSources.flatMap { file ->
+                val exempt = file.name in measurementExceptions
+                file
+                    .readLines()
+                    .withIndex()
+                    .filter { (_, line) -> MEASUREMENT.containsMatchIn(line) && !line.isConstantDeclaration() }
+                    .filterNot { (_, line) -> exempt && iconGrid.matches(line.trim()) }
+                    .map { (index, line) -> "${file.name}:${index + 1} ${line.trim()}" }
+            }
 
         assertEquals(
             "spacing and sizes come from the style, so a measurement inline is one a caller cannot change",
@@ -147,6 +149,19 @@ class NoHardCodedAppearanceTest {
             "style.selectedContainer",
             "Color.Transparent",
         ).forEach { assertTrue("$it is flagged", !COLOUR_LITERAL.containsMatchIn(it)) }
+    }
+
+    @Test
+    fun `an excepted file may carry the icon grid and no other measurement`() {
+        listOf("defaultWidth = 24.dp,", "defaultHeight = 24.dp,").forEach {
+            assertTrue("the grid it exists for", iconGrid.matches(it))
+        }
+        listOf(
+            "padding(37.dp)",
+            "defaultWidth = 48.dp,",
+            "modifier = Modifier.height(24.dp),",
+            "viewportWidth = 24f,",
+        ).forEach { assertTrue("$it would be let through", !iconGrid.matches(it)) }
     }
 
     @Test

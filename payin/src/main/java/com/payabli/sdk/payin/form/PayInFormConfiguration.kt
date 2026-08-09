@@ -216,7 +216,9 @@ public class PayInFormConfiguration(
         "PayInFormConfiguration(allowedMethods=$allowedMethods, defaultMethod=$defaultMethod, " +
             "cardSections=$cardSections, bankSections=$bankSections, requiredFields=$requiredFields, " +
             "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting, " +
-            "summaryValues=$summaryValues)"
+            // Keys, never values. Nothing stops a caller putting a card field in here, and a
+            // toString reaches a log line and a crash report without anyone deciding it should.
+            "summaryValues=${summaryValues.keys})"
 
     public companion object {
         /** Card details, as a payer is asked for them. */

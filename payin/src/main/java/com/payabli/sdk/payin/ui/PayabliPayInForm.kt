@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
@@ -204,16 +206,16 @@ private fun FormSection(
             return@Column
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(style.spacing.fieldGroup)) {
-            InputRows(section.fields, typed, context, onValueChange)
-        }
+        InputRows(section.fields, typed, context, onValueChange)
     }
 }
 
 /**
  * Lays out a section's fields, pairing two short ones onto a row.
  *
- * Pairing stops at a large font scale, where two fields side by side would truncate.
+ * Two share a row only where each would still be at least [PAIRED_FIELD_MIN_WIDTH], grown by the
+ * font scale. That reads the width the form was actually given as well as the type size, so a form
+ * in a narrow container un-pairs for the same reason a large font scale does.
  */
 @Composable
 private fun InputRows(
@@ -222,19 +224,25 @@ private fun InputRows(
     context: PayInFormContext,
     onValueChange: (PayInField, String) -> Unit,
 ) {
-    val fontScale = LocalDensity.current.fontScale
-    val pairs = remember(fields, fontScale) { fields.intoRows(fontScale) }
+    val gap = context.style.spacing.pairedField
+    BoxWithConstraints {
+        val fontScale = LocalDensity.current.fontScale
+        val fitsTwo = maxWidth >= (PAIRED_FIELD_MIN_WIDTH * fontScale) * 2 + gap
+        val pairs = remember(fields, fitsTwo) { fields.intoRows(fitsTwo) }
 
-    pairs.forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(context.style.spacing.pairedField)) {
-            row.forEach { field ->
-                PayInFieldBox(
-                    field = field,
-                    value = typed[field].orEmpty(),
-                    context = context,
-                    onValueChange = { onValueChange(field, it) },
-                    modifier = Modifier.weight(1f),
-                )
+        Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.fieldGroup)) {
+            pairs.forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    row.forEach { field ->
+                        PayInFieldBox(
+                            field = field,
+                            value = typed[field].orEmpty(),
+                            context = context,
+                            onValueChange = { onValueChange(field, it) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
             }
         }
     }
@@ -261,9 +269,9 @@ private fun SummaryRows(
     }
 }
 
-/** Two narrow fields share a row while the text is small enough for both to fit. */
-private fun List<PayInField>.intoRows(fontScale: Float): List<List<PayInField>> {
-    if (fontScale > PAIRING_FONT_SCALE_LIMIT) return map { listOf(it) }
+/** Two narrow fields share a row while there is room for both. */
+private fun List<PayInField>.intoRows(fitsTwo: Boolean): List<List<PayInField>> {
+    if (!fitsTwo) return map { listOf(it) }
 
     val rows = mutableListOf<List<PayInField>>()
     var index = 0
@@ -281,8 +289,8 @@ private fun List<PayInField>.intoRows(fontScale: Float): List<List<PayInField>> 
     return rows
 }
 
-/** Above this the two halves of a paired row truncate, so each field takes the full width. */
-private const val PAIRING_FONT_SCALE_LIMIT = 1.3f
+/** Narrower than this a field's own label starts to wrap, so it takes the row to itself. */
+private val PAIRED_FIELD_MIN_WIDTH = 148.dp
 
 @Composable
 private fun defaultSectionTitle(

@@ -16,6 +16,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -112,15 +113,24 @@ private fun <T> PickerColumn(
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val listState = rememberLazyListState()
+
+    // The initial index alone only holds for the first list. Changing the year swaps 08..12 for
+    // 01..12 under a selection that stays put, and the row it points at moves out of the viewport.
+    LaunchedEffect(values, selected) {
+        val index = values.indexOf(selected)
+        if (index >= 0 && listState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+            listState.scrollToItem(index)
+        }
+    }
+
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(style.spacing.label)) {
         Text(heading, style = style.label)
         LazyColumn(
             // Bounded, so a dialog holding twenty-one years still fits. A maximum and not a fixed
             // height, so a large font scale can still make each row taller.
             modifier = Modifier.heightIn(max = PICKER_MAX_HEIGHT).selectableGroup(),
-            // Opened on the selection. A fresh list starts at the top, so reopening 12/31 showed
-            // 2026 onwards with the selected 2031 below the fold.
-            state = rememberLazyListState(values.indexOf(selected).coerceAtLeast(0)),
+            state = listState,
         ) {
             items(values) { value ->
                 val isSelected = value == selected
