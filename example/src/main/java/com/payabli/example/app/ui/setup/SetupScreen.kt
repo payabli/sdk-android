@@ -13,7 +13,7 @@ import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
 import com.payabli.example.app.config.TokenHostDefaults
 import com.payabli.example.app.config.TokenHostResolver
-import com.payabli.example.app.payment.PaymentFormConfiguration
+import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.PaymentFormSummary
 import com.payabli.example.app.preflight.CheckStatus
 import com.payabli.example.app.preflight.DeviceFacts
@@ -195,7 +195,7 @@ private fun SetupScreenPreview() {
                             isEmulator = true,
                             defaults = TokenHostDefaults.fromBuildConfig(),
                         ),
-                    formConfiguration = PaymentFormConfiguration.storePaymentMethod(),
+                    formConfiguration = DemoForms.storePaymentMethod().configuration,
                     deviceFacts =
                         DeviceFacts(
                             isEmulator = true,

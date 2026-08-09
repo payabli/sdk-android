@@ -1,86 +1,98 @@
 package com.payabli.example.app.payment
 
+import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInMethodType
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PaymentSeamTest {
-    // --- configuration ---
+    // --- what this app configures ---
 
     @Test
     fun `storing a method asks for no amount, because nothing is being charged`() {
-        val configuration = PaymentFormConfiguration.storePaymentMethod()
+        val configuration = DemoForms.storePaymentMethod().configuration
         val allFields =
-            (configuration.cardSections + configuration.bankSections).flatMap { it.fields }
-        assertFalse(allFields.contains(PaymentField.Amount))
-        assertFalse(allFields.contains(PaymentField.ServiceFee))
+            PayInMethodType.entries.flatMap { configuration.sectionsFor(it) }.flatMap { it.fields }
+        assertFalse(allFields.contains(PayInField.Amount))
+        assertFalse(allFields.contains(PayInField.ServiceFee))
     }
 
     @Test
-    fun `capture asks for an amount on both instruments`() {
-        val configuration = PaymentFormConfiguration.capture()
-        listOf(PaymentMethodType.Card, PaymentMethodType.BankAccount).forEach { method ->
-            val fields = configuration.sectionsFor(method).flatMap { it.fields }
-            assertTrue("$method has no amount", fields.contains(PaymentField.Amount))
+    fun `capture shows an amount on both instruments, and nobody types it`() {
+        val configuration = DemoForms.capture().configuration
+        PayInMethodType.entries.forEach { method ->
+            val shown = configuration.sectionsFor(method).flatMap { it.fields }
+            assertTrue("$method has no amount", shown.contains(PayInField.Amount))
+            assertFalse(
+                "$method lets the amount be typed",
+                configuration.inputFieldsFor(method).contains(PayInField.Amount),
+            )
         }
     }
 
     @Test
-    fun `the default method is one of the allowed ones`() {
-        listOf(PaymentFormConfiguration.storePaymentMethod(), PaymentFormConfiguration.capture())
-            .forEach { assertTrue(it.allowedMethods.contains(it.defaultMethod)) }
+    fun `both instruments are offered, starting on card`() {
+        listOf(DemoForms.storePaymentMethod(), DemoForms.capture()).forEach { setup ->
+            assertEquals(
+                listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
+                setup.configuration.methodsOffered,
+            )
+            assertEquals(PayInMethodType.Card, setup.configuration.startingMethod)
+        }
     }
 
     @Test
-    fun `sectionsFor returns the instrument's own sections`() {
-        val configuration = PaymentFormConfiguration.capture()
-        val card = configuration.sectionsFor(PaymentMethodType.Card).flatMap { it.fields }
-        val bank = configuration.sectionsFor(PaymentMethodType.BankAccount).flatMap { it.fields }
-        assertTrue(card.contains(PaymentField.CardNumber))
-        assertFalse(card.contains(PaymentField.RoutingNumber))
-        assertTrue(bank.contains(PaymentField.RoutingNumber))
-        assertFalse(bank.contains(PaymentField.CardNumber))
+    fun `each instrument asks for its own details`() {
+        val configuration = DemoForms.capture().configuration
+        val card = configuration.inputFieldsFor(PayInMethodType.Card)
+        val bank = configuration.inputFieldsFor(PayInMethodType.BankAccount)
+
+        assertTrue(card.contains(PayInField.CardNumber))
+        assertFalse(card.contains(PayInField.RoutingNumber))
+        assertTrue(bank.contains(PayInField.RoutingNumber))
+        assertFalse(bank.contains(PayInField.CardNumber))
     }
 
     @Test
-    fun `no section is empty and every section has a title`() {
-        listOf(PaymentFormConfiguration.storePaymentMethod(), PaymentFormConfiguration.capture())
-            .flatMap { it.cardSections + it.bankSections }
+    fun `no section is empty and every one this app writes is titled`() {
+        // The SDK falls back to a resource for an untitled section. This app titles all of its own,
+        // so a blank here is a mistake rather than a default.
+        listOf(DemoForms.storePaymentMethod(), DemoForms.capture())
+            .flatMap { it.configuration.cardSections + it.configuration.bankSections }
             .forEach { section ->
-                assertTrue("a section has no title", section.title.isNotBlank())
+                assertTrue("a section has no title", !section.title.isNullOrBlank())
                 assertTrue("${section.title} has no fields", section.fields.isNotEmpty())
             }
     }
 
     @Test
-    fun `the account number is obscured as it is typed`() {
-        assertEquals(FieldInput.Secret, PaymentField.AccountNumber.input)
+    fun `every label this app sets is filled in`() {
+        listOf(DemoForms.storePaymentMethod(), DemoForms.capture()).forEach { setup ->
+            assertTrue(!setup.labels.title.isNullOrBlank())
+            assertTrue(!setup.labels.subtitle.isNullOrBlank())
+            assertTrue(!setup.labels.submitButton.isNullOrBlank())
+        }
     }
 
     @Test
-    fun `every field has a label, and no two share one`() {
-        // Uniqueness. Some correct labels are single words that match the enum name, and two fields
-        // sharing a label on one form is the failure worth catching.
-        PaymentField.entries.forEach { field ->
-            assertTrue("${field.name} has no label", field.label.isNotBlank())
-        }
-        val labels = PaymentField.entries.map { it.label }
-        assertEquals(labels.size, labels.toSet().size)
-    }
-
-    @Test
-    fun `no label is camelCase`() {
-        val camelCase = Regex(".*[a-z][A-Z].*")
-        PaymentField.entries.forEach { field ->
-            assertFalse("${field.name} label is camelCase", camelCase.matches(field.label))
-        }
+    fun `the two operations differ, so a screen cannot be showing the wrong one`() {
+        assertNotEquals(
+            DemoForms.storePaymentMethod().labels.submitButton,
+            DemoForms.capture().labels.submitButton,
+        )
+        assertNotEquals(
+            DemoForms.storePaymentMethod().configuration,
+            DemoForms.capture().configuration,
+        )
     }
 
     // --- errors ---
@@ -285,14 +297,14 @@ class PaymentSeamTest {
         }
 
     @Test
-    fun `the controller's configuration matches its operation`() {
+    fun `the controller's form matches its operation`() {
         assertEquals(
-            PaymentFormConfiguration.capture(),
-            DemoPaymentFlowController(PaymentOperation.Capture).configuration,
+            DemoForms.capture(),
+            DemoPaymentFlowController(PaymentOperation.Capture).setup,
         )
         assertEquals(
-            PaymentFormConfiguration.storePaymentMethod(),
-            DemoPaymentFlowController(PaymentOperation.StoreMethod).configuration,
+            DemoForms.storePaymentMethod(),
+            DemoPaymentFlowController(PaymentOperation.StoreMethod).setup,
         )
     }
 

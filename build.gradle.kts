@@ -33,8 +33,8 @@ sonar {
         // See CLAUDE.md "Testing" for what belongs there. A `ui` package under the sample app is the
         // same case for the same reason: a composable needs a composition, and therefore a device.
         // The sample app puts every composable under `ui` and every testable type outside it so this
-        // stays a package rule too.
-        property("sonar.coverage.exclusions", "**/platform/**,**/example/app/ui/**")
+        // stays a package rule too, and `:payin` follows the same layout for its form component.
+        property("sonar.coverage.exclusions", "**/platform/**,**/example/app/ui/**,**/sdk/payin/ui/**")
     }
 }
 

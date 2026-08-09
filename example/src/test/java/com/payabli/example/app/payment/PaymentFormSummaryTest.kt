@@ -1,5 +1,10 @@
 package com.payabli.example.app.payment
 
+import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInFieldInput
+import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormSection
+import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -10,100 +15,91 @@ import org.junit.Test
  * A hand-written list would pass a test that compares it against itself. Each test below instead
  * changes the configuration and asserts the readout followed, which is the only way to catch the
  * failure this section is meant to prevent — a screen that describes a form it no longer matches.
+ *
+ * The configuration is the SDK's own type now, so these also read as a check on it: a form nobody
+ * can describe from its configuration is one an integrator cannot reason about either.
  */
 class PaymentFormSummaryTest {
-    private fun rowsOf(configuration: PaymentFormConfiguration) =
+    private fun rowsOf(configuration: PayInFormConfiguration) =
         PaymentFormSummary.rows(configuration).associate { it.label to it.value }
+
+    private val storeMethod get() = DemoForms.storePaymentMethod().configuration
 
     @Test
     fun `the readout names every card field the form actually renders, in order`() {
-        val configuration = PaymentFormConfiguration.storePaymentMethod()
-        val expected =
-            configuration
-                .sectionsFor(PaymentMethodType.Card)
-                .flatMap { it.fields }
-                .joinToString(", ") { it.fieldName }
-        assertEquals(expected, rowsOf(configuration)["Card fields"])
+        val expected = storeMethod.inputFieldsFor(PayInMethodType.Card).joinToString(", ") { it.fieldName }
+        assertEquals(expected, rowsOf(storeMethod)["Card fields"])
     }
 
     @Test
     fun `the readout names every bank field the form actually renders, in order`() {
-        val configuration = PaymentFormConfiguration.storePaymentMethod()
-        val expected =
-            configuration
-                .sectionsFor(PaymentMethodType.BankAccount)
-                .flatMap { it.fields }
-                .joinToString(", ") { it.fieldName }
-        assertEquals(expected, rowsOf(configuration)["Bank account fields"])
+        val expected = storeMethod.inputFieldsFor(PayInMethodType.BankAccount).joinToString(", ") { it.fieldName }
+        assertEquals(expected, rowsOf(storeMethod)["Bank account fields"])
     }
 
     @Test
     fun `adding a field to a section adds it to the readout`() {
         // The drift case, made to happen. A transcribed list would not notice.
-        val base = PaymentFormConfiguration.storePaymentMethod()
         val widened =
-            base.copy(
+            storeMethod.copy(
                 cardSections =
-                    base.cardSections.map { section ->
+                    storeMethod.cardSections.map { section ->
                         if (section.title == "Card") {
-                            section.copy(fields = section.fields + PaymentField.RoutingNumber)
+                            section.copy(fields = section.fields + PayInField.RoutingNumber)
                         } else {
                             section
                         }
                     },
             )
-        assertTrue(rowsOf(widened)["Card fields"]!!.contains(PaymentField.RoutingNumber.fieldName))
-        assertTrue(!rowsOf(base)["Card fields"]!!.contains(PaymentField.RoutingNumber.fieldName))
+
+        assertTrue(rowsOf(widened)["Card fields"]!!.contains(PayInField.RoutingNumber.fieldName))
+        assertTrue(!rowsOf(storeMethod)["Card fields"]!!.contains(PayInField.RoutingNumber.fieldName))
     }
 
     @Test
     fun `changing the allowed methods changes the readout`() {
-        val base = PaymentFormConfiguration.storePaymentMethod()
-        assertEquals("card, bank account", rowsOf(base)["Allowed methods"])
+        assertEquals("card, bank account", rowsOf(storeMethod)["Allowed methods"])
 
-        val cardOnly = base.copy(allowedMethods = listOf(PaymentMethodType.Card))
+        val cardOnly = storeMethod.copy(allowedMethods = listOf(PayInMethodType.Card))
         assertEquals("card", rowsOf(cardOnly)["Allowed methods"])
     }
 
     @Test
     fun `changing the default method changes the readout`() {
-        val base = PaymentFormConfiguration.storePaymentMethod()
-        assertEquals("card", rowsOf(base)["Default method"])
+        assertEquals("card", rowsOf(storeMethod)["Default method"])
         assertEquals(
             "bank account",
-            rowsOf(base.copy(defaultMethod = PaymentMethodType.BankAccount))["Default method"],
+            rowsOf(storeMethod.copy(defaultMethod = PayInMethodType.BankAccount))["Default method"],
         )
     }
 
     @Test
     fun `capture's amount fields are not listed as form fields, because nobody types them`() {
-        val capture = rowsOf(PaymentFormConfiguration.capture())
-        assertTrue(!capture["Card fields"]!!.contains(PaymentField.Amount.fieldName))
-        assertTrue(!capture["Card fields"]!!.contains(PaymentField.ServiceFee.fieldName))
+        val capture = rowsOf(DemoForms.capture().configuration)
+        assertTrue(!capture["Card fields"]!!.contains(PayInField.Amount.fieldName))
+        assertTrue(!capture["Card fields"]!!.contains(PayInField.ServiceFee.fieldName))
     }
 
     @Test
     fun `capture and store list the same typed fields, because only the summary section differs`() {
         assertEquals(
-            rowsOf(PaymentFormConfiguration.storePaymentMethod())["Card fields"],
-            rowsOf(PaymentFormConfiguration.capture())["Card fields"],
+            rowsOf(storeMethod)["Card fields"],
+            rowsOf(DemoForms.capture().configuration)["Card fields"],
         )
     }
 
     @Test
     fun `the masked row names exactly the fields the form hides`() {
-        val configuration = PaymentFormConfiguration.capture()
+        val configuration = DemoForms.capture().configuration
         val masked = rowsOf(configuration)["Masked"]!!
-        configuration.allowedMethods
-            .flatMap { configuration.sectionsFor(it) }
-            .flatMap { it.fields }
+        configuration.methodsOffered
+            .flatMap { configuration.inputFieldsFor(it) }
             .distinct()
             .forEach { field ->
-                val named = masked.contains(field.fieldName)
                 assertEquals(
-                    "${field.name} is ${if (field.input == FieldInput.Secret) "secret" else "not secret"} but the readout says otherwise",
-                    field.input == FieldInput.Secret,
-                    named,
+                    "${field.name} is ${if (field.input == PayInFieldInput.Secret) "secret" else "not secret"} but the readout says otherwise",
+                    field.input == PayInFieldInput.Secret,
+                    masked.contains(field.fieldName),
                 )
             }
     }
@@ -113,11 +109,12 @@ class PaymentFormSummaryTest {
         // The readout is what a reader checks the form against, so an inputs list for a method no
         // payer can select reads as fields that are there and are not.
         val cardOnly =
-            PaymentFormConfiguration.storePaymentMethod().copy(
-                allowedMethods = listOf(PaymentMethodType.Card),
-                defaultMethod = PaymentMethodType.Card,
+            storeMethod.copy(
+                allowedMethods = listOf(PayInMethodType.Card),
+                defaultMethod = PayInMethodType.Card,
             )
         val rows = rowsOf(cardOnly)
+
         assertTrue(rows.containsKey("Card fields"))
         assertTrue(!rows.containsKey("Bank account fields"))
     }
@@ -125,15 +122,14 @@ class PaymentFormSummaryTest {
     @Test
     fun `masked names no field the form does not render`() {
         val cardOnly =
-            PaymentFormConfiguration.storePaymentMethod().copy(
-                allowedMethods = listOf(PaymentMethodType.Card),
-                defaultMethod = PaymentMethodType.Card,
+            storeMethod.copy(
+                allowedMethods = listOf(PayInMethodType.Card),
+                defaultMethod = PayInMethodType.Card,
             )
+        val cardFields = cardOnly.inputFieldsFor(PayInMethodType.Card)
         val bankOnlySecrets =
-            PaymentField.entries.filter { field ->
-                field.input == FieldInput.Secret &&
-                    cardOnly.sectionsFor(PaymentMethodType.Card).flatMap { it.fields }.none { it == field }
-            }
+            PayInField.entries.filter { it.input == PayInFieldInput.Secret && it !in cardFields }
+
         // Without this the test passes on an empty list, which reads the same as passing on the
         // property it is here for.
         assertTrue("no secret field is bank-only, so this proves nothing", bankOnlySecrets.isNotEmpty())
@@ -143,9 +139,32 @@ class PaymentFormSummaryTest {
 
     @Test
     fun `every row has a label and a value`() {
-        PaymentFormSummary.rows(PaymentFormConfiguration.capture()).forEach { row ->
+        PaymentFormSummary.rows(DemoForms.capture().configuration).forEach { row ->
             assertTrue("a row has no label", row.label.isNotBlank())
             assertTrue("${row.label} has no value", row.value.isNotBlank())
         }
+    }
+
+    @Test
+    fun `the sections this app configures survive the SDK's own normalising`() {
+        // The app writes sections and the SDK de-duplicates and drops empties. A field this app asks
+        // for and the SDK removes would leave the readout describing a form it does not render.
+        listOf(DemoForms.storePaymentMethod(), DemoForms.capture()).forEach { setup ->
+            val configured =
+                setup.configuration.cardSections
+                    .filter { it.style == com.payabli.sdk.payin.form.PayInSectionStyle.Inputs }
+                    .flatMap { it.fields }
+            assertEquals(configured, setup.configuration.inputFieldsFor(PayInMethodType.Card))
+        }
+    }
+
+    @Test
+    fun `a section this app titles keeps that title`() {
+        val titles =
+            DemoForms
+                .capture()
+                .configuration.cardSections
+                .mapNotNull(PayInFormSection::title)
+        assertEquals(listOf("Card", "Customer", "Payment"), titles)
     }
 }

@@ -16,8 +16,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.PaymentError
-import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.ui.components.DemoIcons
 import com.payabli.example.app.ui.components.DemoScreen
 import com.payabli.example.app.ui.components.DiagnosticsPanel
@@ -52,9 +52,8 @@ fun PaymentMethodScreen(
         Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
             SectionHeader(title = "Inline", note = "The same form, on the page.")
             PaymentFormHost(
-                configuration = state.configuration,
+                setup = state.setup,
                 onSubmit = onSubmit,
-                onError = onError,
                 isSubmitting = state.isSubmitting,
             )
         }
@@ -72,9 +71,8 @@ fun PaymentMethodScreen(
         ModalBottomSheet(onDismissRequest = onDismissSheet, sheetState = sheetState) {
             Column(modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding)) {
                 PaymentFormHost(
-                    configuration = state.configuration,
+                    setup = state.setup,
                     onSubmit = onSubmit,
-                    onError = onError,
                     isSubmitting = state.isSubmitting,
                 )
             }
@@ -131,7 +129,7 @@ private fun PaymentMethodScreenPreview() {
         PaymentMethodScreen(
             state =
                 PaymentMethodUiState(
-                    configuration = PaymentFormConfiguration.storePaymentMethod(),
+                    setup = DemoForms.storePaymentMethod(),
                     resultText = "Stored method: demo-method-0001\nResponse: Payment method saved",
                     diagnostics = listOf("RESPONSE 1 paymentMethod\nreason=Success"),
                 ),

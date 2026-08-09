@@ -9,27 +9,28 @@ What integrating the Payabli Android SDK looks like. Four capability areas:
 | **Tap to pay** | See whether this device can take a contactless payment and why not. Turn the terminal on, restart the session, charge, activate the device, and watch the session state and event stream. |
 | **Setup** | Read back every value the SDK was configured with, and check the token endpoint is reachable. |
 
-## The SDK is not wired yet
+## The payment form is the SDK's
 
-Nothing here calls the SDK. `:core` currently exposes `initialize` and `setLogLevel` and nothing else a
-sample would use, and the capability modules are empty. The app is UI-complete against two seams:
+`ui/payment/PaymentFormHost.kt` calls `PayabliPayInForm` from `:payin`. This app writes the
+configuration and the wording in `payment/DemoForms.kt` and passes **nothing about appearance**: the
+form reads this app's `MaterialTheme`, so it arrives in the Payabli palette here and in an
+integrator's palette there. The Setup screen reads that same configuration back, so a field in the
+wrong group shows up in words as well as on screen.
 
-- `ui/payment/PaymentFormHost.kt` — the payment form. **The only file that changes when the SDK's
-  form component lands**: its body becomes a call to that composable plus two mapping functions onto
-  `PaymentResult` and `PaymentError`.
+The form collects and validates. It does not submit: it reports that the payer asked to, and this
+app's view model submits through its own `PaymentFlowController`.
+
+## What the SDK still does not do
+
+`:core` exposes `initialize` and `setLogLevel` and nothing else a sample would use, so there is no
+session, no token provider and no network call from the SDK. Two seams stand in:
+
+- `payment/PaymentFlowController.kt` — submission. `DemoPaymentFlowController` returns a result
+  shaped like the real one, so every outcome screen renders real content.
 - `terminal/TerminalController.kt` — the card-present terminal. `DemoTerminalController` stands in and
   is swapped for the real one in a single line of `AppContainer`.
 
-The app owns the call sites, the configuration objects, the result and error models, the sheet chrome
-and the outcome screens. Those do not move.
-
 `AppContainer.kt` marks each swap point with `⟵ swap point`.
-
-**The payment form deliberately renders nothing.** Collecting a card number, masking a security code
-and deciding whether an expiry is in the past are the component's, and a sample app that did them
-would be putting instrument capture in a file with none of the protections the component has, while
-inviting anyone reading it to copy the pattern. The Setup screen lists what the form is configured to
-collect, so the configuration is visible without the app implementing it.
 
 ## Running it
 

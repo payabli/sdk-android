@@ -21,10 +21,10 @@ class DemoPaymentFlowController(
     override val operation: PaymentOperation,
     private val stepDelayMillis: Long = DEFAULT_STEP_DELAY_MILLIS,
 ) : PaymentFlowController {
-    override val configuration: PaymentFormConfiguration =
+    override val setup: DemoFormSetup =
         when (operation) {
-            PaymentOperation.StoreMethod -> PaymentFormConfiguration.storePaymentMethod()
-            PaymentOperation.Capture -> PaymentFormConfiguration.capture()
+            PaymentOperation.StoreMethod -> DemoForms.storePaymentMethod()
+            PaymentOperation.Capture -> DemoForms.capture()
         }
 
     private var counter = 0

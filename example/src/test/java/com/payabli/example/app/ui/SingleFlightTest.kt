@@ -6,9 +6,9 @@ import com.payabli.example.app.config.TokenHostSource
 import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.diagnostics.DiagnosticsStore
 import com.payabli.example.app.net.TokenServerClient
+import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.DemoPaymentFlowController
 import com.payabli.example.app.payment.PaymentFlowController
-import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.payment.PaymentOperation
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.preflight.DeviceFacts
@@ -73,7 +73,7 @@ class SingleFlightTest {
 
         override val operation = PaymentOperation.Capture
 
-        override val configuration = DemoPaymentFlowController(PaymentOperation.Capture).configuration
+        override val setup = DemoPaymentFlowController(PaymentOperation.Capture).setup
 
         override suspend fun submit(): Result<PaymentResult> {
             calls.incrementAndGet()
@@ -280,7 +280,7 @@ class SingleFlightTest {
             tokenServer = target,
             tokenClient = TokenServerClient(target),
             readDeviceFacts = { facts },
-            formConfiguration = PaymentFormConfiguration.storePaymentMethod(),
+            formConfiguration = DemoForms.storePaymentMethod().configuration,
         )
 
     private val demoConfiguration =

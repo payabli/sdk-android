@@ -4,9 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.AppContainer
 import com.payabli.example.app.diagnostics.DiagnosticsStore
+import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFlowController
-import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.payment.PaymentResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class CaptureUiState(
-    val configuration: PaymentFormConfiguration,
+    val setup: DemoFormSetup,
     val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
@@ -39,7 +39,7 @@ class CaptureViewModel(
     private val _uiState =
         MutableStateFlow(
             CaptureUiState(
-                configuration = flow.configuration,
+                setup = flow.setup,
                 diagnosticsEnabled = diagnosticsEnabled,
             ),
         )

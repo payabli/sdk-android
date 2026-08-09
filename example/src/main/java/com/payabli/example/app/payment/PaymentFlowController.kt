@@ -18,7 +18,7 @@ enum class PaymentOperation {
 interface PaymentFlowController {
     val operation: PaymentOperation
 
-    val configuration: PaymentFormConfiguration
+    val setup: DemoFormSetup
 
     /** Submit whatever the form collected. Returns a result or an error, never throws. */
     suspend fun submit(): Result<PaymentResult>
