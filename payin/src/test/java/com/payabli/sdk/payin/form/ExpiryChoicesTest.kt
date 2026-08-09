@@ -121,4 +121,26 @@ class ExpiryChoicesTest {
             assertTrue(ExpiryChoices.coerceMonth(month, available) in available)
         }
     }
+
+    @Test
+    fun `an expired value opens the picker on a month the list contains`() {
+        // What the dialog does with `initial`, in the two lines it does it in. An expired card's
+        // 03/26 opened on a March the list has dropped, and Done handed that same past date back.
+        val today = august2026
+        listOf(ExpiryValue(3, 2026), ExpiryValue(1, 2020), null).forEach { initial ->
+            val years = ExpiryChoices.years(today)
+            val startingYear = initial?.year?.takeIf { it in years } ?: years.first()
+            val startingMonth =
+                ExpiryChoices.coerceMonth(initial?.month ?: today.month, ExpiryChoices.months(today, startingYear))
+
+            assertTrue(
+                "$initial opened on $startingMonth/$startingYear, which is not offered",
+                startingMonth in ExpiryChoices.months(today, startingYear),
+            )
+            assertFalse(
+                "$initial opened on a date already past",
+                ExpiryValue(startingMonth, startingYear).isExpired(today.year, today.month),
+            )
+        }
+    }
 }

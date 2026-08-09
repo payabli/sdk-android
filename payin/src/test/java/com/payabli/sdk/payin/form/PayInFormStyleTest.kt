@@ -27,6 +27,8 @@ class PayInFormStyleTest {
             onSurface = Color(0xFF1A1C1E),
             onSurfaceVariant = Color(0xFF43474E),
             error = Color(0xFFBA1A1A),
+            secondaryContainer = Color(0xFFD7E3F8),
+            onSecondaryContainer = Color(0xFF101C2B),
             titleType = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Medium),
             subtitleType = TextStyle(fontSize = 14.sp),
             sectionTitleType = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Medium),
@@ -41,6 +43,8 @@ class PayInFormStyleTest {
             onSurface = Color(0xFFE3E2E6),
             onSurfaceVariant = Color(0xFFC3C7CF),
             error = Color(0xFFFFB4AB),
+            secondaryContainer = Color(0xFF3B4858),
+            onSecondaryContainer = Color(0xFFD7E3F8),
             titleType = TextStyle(fontSize = 30.sp, fontWeight = FontWeight.Black),
             subtitleType = TextStyle(fontSize = 18.sp),
             sectionTitleType = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Bold),
@@ -53,7 +57,7 @@ class PayInFormStyleTest {
     fun `every colour in the style follows the theme it was resolved under`() {
         // Colour by colour, and not TextStyle by TextStyle. Comparing whole styles passes as soon as
         // any part of one differs, so a hard-coded colour survives it on the strength of the font
-        // size next to it. Measured: pinning the section title to a brand blue left this green.
+        // size next to it.
         val a = resolvePayInFormStyle(light)
         val b = resolvePayInFormStyle(other)
 
@@ -63,6 +67,8 @@ class PayInFormStyleTest {
         assertNotEquals("label", a.label.color, b.label.color)
         assertNotEquals("supporting", a.supporting.color, b.supporting.color)
         assertNotEquals("error", a.error.color, b.error.color)
+        assertNotEquals("selectedContainer", a.selectedContainer, b.selectedContainer)
+        assertNotEquals("selectedContent", a.selectedContent, b.selectedContent)
     }
 
     @Test
@@ -93,6 +99,8 @@ class PayInFormStyleTest {
         assertEquals(light.onSurfaceVariant, style.label.color)
         assertEquals(light.onSurfaceVariant, style.supporting.color)
         assertEquals(light.error, style.error.color)
+        assertEquals(light.secondaryContainer, style.selectedContainer)
+        assertEquals(light.onSecondaryContainer, style.selectedContent)
     }
 
     @Test
@@ -152,6 +160,8 @@ class PayInFormStyleTest {
                     error = text,
                     fieldShape = shape,
                     spacing = spacing,
+                    selectedContainer = Color(0xFF00FF00),
+                    selectedContent = Color(0xFFFF00FF),
                 ),
             )
 
@@ -159,6 +169,8 @@ class PayInFormStyleTest {
             .forEach { assertEquals(text, it) }
         assertEquals(shape, style.fieldShape)
         assertEquals(spacing, style.spacing)
+        assertEquals(Color(0xFF00FF00), style.selectedContainer)
+        assertEquals(Color(0xFFFF00FF), style.selectedContent)
     }
 
     @Test

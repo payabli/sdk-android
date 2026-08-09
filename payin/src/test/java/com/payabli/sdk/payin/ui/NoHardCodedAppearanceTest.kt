@@ -42,7 +42,8 @@ class NoHardCodedAppearanceTest {
         mapOf(
             "PayInIcons.kt" to "Material's icon grid is 24dp square, and the paths are drawn against it",
             "PayInSubmitButton.kt" to "the 48dp touch target is Android's guideline, and a spinner has no theme role",
-            "ExpiryPickerDialog.kt" to "the picker list is bounded so a dialog of twenty-one years still fits",
+            "ExpiryPickerDialog.kt" to
+                "the list is bounded so a dialog of twenty-one years fits, and a row holds the 48dp target",
         )
 
     @Test
@@ -90,6 +91,35 @@ class NoHardCodedAppearanceTest {
     }
 
     @Test
+    fun `only one file reads MaterialTheme`() {
+        // A second read is a value a caller's PayInFormStyle cannot reach, and it looks right on
+        // screen because the theme it reads is usually the same one the style came from. The
+        // colour rule below cannot see it: MaterialTheme.colorScheme.x is not a literal.
+        val offenders =
+            uiSources
+                .filter { it.name != THEME_BOUNDARY }
+                .flatMap { file ->
+                    file
+                        .readLines()
+                        .withIndex()
+                        .filter { (_, line) -> line.contains("MaterialTheme.") }
+                        .map { (index, line) -> "${file.name}:${index + 1} ${line.trim()}" }
+                }
+
+        assertEquals(
+            "the theme is read in $THEME_BOUNDARY and turned into roles; everything else takes the style",
+            emptyList<String>(),
+            offenders,
+        )
+    }
+
+    @Test
+    fun `the file that reads MaterialTheme is still there`() {
+        // Renaming it would leave the rule above passing over a module that reads the theme nowhere.
+        assertTrue("$THEME_BOUNDARY is gone", uiSources.any { it.name == THEME_BOUNDARY })
+    }
+
+    @Test
     fun `every exception is a file that still exists`() {
         // An exception left behind after its file is renamed silently widens the rule.
         val names = uiSources.map { it.name }.toSet()
@@ -127,6 +157,9 @@ class NoHardCodedAppearanceTest {
         trimStart().startsWith("private val ") || trimStart().startsWith("private const ")
 
     private companion object {
+        /** The one file that turns `MaterialTheme` into [com.payabli.sdk.payin.form.PayInThemeRoles]. */
+        const val THEME_BOUNDARY = "PayabliPayInFormDefaults.kt"
+
         /** `Color(0xFF…)` and `Color.Red`, but not `Color.Transparent` or a role read from the theme. */
         val COLOUR_LITERAL =
             Regex("""Color\(0x|Color\.(Red|Green|Blue|Yellow|Cyan|Magenta|White|Black|Gray|LightGray|DarkGray)\b""")

@@ -7,11 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -19,8 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -44,13 +43,23 @@ internal fun ExpiryPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val years = remember(today) { ExpiryChoices.years(today) }
-    var year by remember(today) { mutableIntStateOf(initial?.year?.takeIf { it in years } ?: years.first()) }
+    val startingYear = remember(today) { initial?.year?.takeIf { it in years } ?: years.first() }
+    var year by remember(today) { mutableIntStateOf(startingYear) }
     val months = remember(today, year) { ExpiryChoices.months(today, year) }
 
-    // Keyed on today alone. Keyed on year as well, changing the year re-initialised this, so picking
-    // August and then moving to a later year silently came back as January: the coercion below ran
-    // and was immediately overwritten. Measured on a device, which is the only place it shows.
-    var month by remember(today) { mutableIntStateOf(initial?.month ?: months.first()) }
+    // Keyed on today, not on year. Keyed on year as well, changing the year re-initialises this and
+    // overwrites the coercion in onSelect below.
+    var month by
+        remember(today) {
+            // Coerced, because an expired value can arrive: opening 03/26 in August 2026 lands on a
+            // year whose months start at 08, and an uncoerced 3 comes straight back out of Done.
+            mutableIntStateOf(
+                ExpiryChoices.coerceMonth(
+                    initial?.month ?: today.month,
+                    ExpiryChoices.months(today, startingYear),
+                ),
+            )
+        }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -112,16 +121,27 @@ private fun <T> PickerColumn(
                 val isSelected = value == selected
                 Text(
                     text = label(value),
-                    style = if (isSelected) style.sectionTitle else style.supporting,
+                    style =
+                        if (isSelected) {
+                            style.sectionTitle.copy(color = style.selectedContent)
+                        } else {
+                            style.supporting
+                        },
                     textAlign = TextAlign.Center,
                     modifier =
                         Modifier
                             .fillMaxWidth()
+                            // A row was the text plus its padding, around 34dp, which is under the
+                            // 48dp minimum target.
+                            .heightIn(min = ROW_MIN_HEIGHT)
                             .clickable { onSelect(value) }
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-                                style.fieldShape,
-                            ).padding(vertical = style.spacing.label),
+                            .then(
+                                if (isSelected) {
+                                    Modifier.background(style.selectedContainer, style.fieldShape)
+                                } else {
+                                    Modifier
+                                },
+                            ).wrapContentHeight(Alignment.CenterVertically),
                 )
             }
         }
@@ -130,3 +150,6 @@ private fun <T> PickerColumn(
 
 /** Tall enough for several rows and short enough that the dialog still fits a small screen. */
 private val PICKER_MAX_HEIGHT = 200.dp
+
+/** Android's minimum touch target. */
+private val ROW_MIN_HEIGHT = 48.dp

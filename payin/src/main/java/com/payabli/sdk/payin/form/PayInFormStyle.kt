@@ -48,6 +48,10 @@ public data class PayInFormStyle(
     val error: TextStyle,
     val fieldShape: Shape,
     val spacing: PayInFormSpacing,
+    /** Behind the chosen month and year in the expiry picker. */
+    val selectedContainer: Color,
+    /** On top of [selectedContainer]. */
+    val selectedContent: Color,
     val fieldColors: TextFieldColors? = null,
 )
 
@@ -61,6 +65,8 @@ public data class PayInThemeRoles(
     val onSurface: Color,
     val onSurfaceVariant: Color,
     val error: Color,
+    val secondaryContainer: Color,
+    val onSecondaryContainer: Color,
     val titleType: TextStyle,
     val subtitleType: TextStyle,
     val sectionTitleType: TextStyle,
@@ -82,6 +88,8 @@ public data class PayInFormStyleOverrides(
     val error: TextStyle? = null,
     val fieldShape: Shape? = null,
     val spacing: PayInFormSpacing? = null,
+    val selectedContainer: Color? = null,
+    val selectedContent: Color? = null,
     val fieldColors: TextFieldColors? = null,
 )
 
@@ -101,5 +109,7 @@ public fun resolvePayInFormStyle(
         error = overrides.error ?: roles.supportingType.copy(color = roles.error),
         fieldShape = overrides.fieldShape ?: roles.fieldShape,
         spacing = overrides.spacing ?: PayInFormSpacing(),
+        selectedContainer = overrides.selectedContainer ?: roles.secondaryContainer,
+        selectedContent = overrides.selectedContent ?: roles.onSecondaryContainer,
         fieldColors = overrides.fieldColors,
     )

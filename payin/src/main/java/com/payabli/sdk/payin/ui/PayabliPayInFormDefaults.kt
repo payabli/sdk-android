@@ -44,6 +44,8 @@ public object PayabliPayInFormDefaults {
             onSurface = MaterialTheme.colorScheme.onSurface,
             onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant,
             error = MaterialTheme.colorScheme.error,
+            secondaryContainer = MaterialTheme.colorScheme.secondaryContainer,
+            onSecondaryContainer = MaterialTheme.colorScheme.onSecondaryContainer,
             titleType = MaterialTheme.typography.titleMedium,
             subtitleType = MaterialTheme.typography.bodyMedium,
             sectionTitleType = MaterialTheme.typography.titleSmall,
