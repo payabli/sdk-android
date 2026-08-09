@@ -77,10 +77,7 @@
     <string name="payabli_payin_error_expiry_incomplete">Choose a month and year</string>
     <string name="payabli_payin_error_expiry_past">That card has expired</string>
 
-    <!--
-      Spoken, not shown. The card scheme's mark has no string here because it has no artwork here;
-      the description arrives with the vectors.
-    -->
+    <!-- The reveal button on a secret field, read by a screen reader. %1$s is the field's label. -->
     <string name="payabli_payin_reveal">Show %1$s</string>
     <string name="payabli_payin_hide">Hide %1$s</string>
 
