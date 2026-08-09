@@ -56,9 +56,8 @@ public fun PayabliPayInForm(
     onValuesChanged: (PayInFormValues) -> Unit = {},
     onSubmit: (PayInFormValues) -> Unit = {},
 ) {
-    // Read on every composition, not remembered. Held for the life of the form, a form left open
-    // across the turn of a month keeps accepting a card that expired at midnight and keeps offering
-    // that month in the picker.
+    // Read on every composition, so a form left open across the turn of a month validates against
+    // the new one.
     val today = ExpiryValue.today()
 
     var method by remember(configuration) { mutableStateOf(configuration.startingMethod) }
@@ -88,8 +87,8 @@ public fun PayabliPayInForm(
         if (configuration.methodsOffered.size > 1) {
             MethodSelector(configuration.methodsOffered, method, isSubmitting) { chosen ->
                 method = chosen
-                // Whatever the new instrument does not ask for goes. It keeps a card number out of
-                // the values a bank submission reports, and out of the map behind that form.
+                // Whatever the new instrument does not ask for goes, so a card number is neither
+                // reported with a bank submission nor held behind that form.
                 val kept = configuration.inputFieldsFor(chosen)
                 typed.keys.retainAll(kept.toSet())
                 onValuesChanged(PayInFormValues(chosen, kept.associateWith { typed[it].orEmpty() }))

@@ -17,8 +17,7 @@ public data class ExpiryValue(
      * read back.
      */
     public fun format(separator: String = "/"): String =
-        // Two formats and a join, because a separator is a caller's string and a "%" in a format
-        // string is an argument reference.
+        // A "%" in a caller's separator is an argument reference to String.format.
         String.format(Locale.ROOT, "%02d", month) + separator + String.format(Locale.ROOT, "%02d", year % 100)
 
     /**
@@ -45,10 +44,10 @@ public data class ExpiryValue(
         }
 
         /**
-         * Parses month, then anything that is not a digit, then a two-digit year in this century.
+         * Parses month, any run of non-digits, then a two-digit year in this century.
          *
-         * The separator is whatever [PayInFormatting] chose, and this reads a value back without
-         * being told which one, so validation stays a pure function of the text.
+         * Any separator [PayInFormatting] can produce reads back, so validation needs no
+         * configuration.
          */
         public fun parse(text: String): ExpiryValue? {
             val digits = Regex("^\\s*(\\d{1,2})\\D+(\\d{2})\\s*$").find(text) ?: return null

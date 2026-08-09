@@ -117,14 +117,7 @@ class PaymentMethodViewModel(
         }
     }
 
-    /**
-     * Records only when diagnostics are on.
-     *
-     * The flag previously reached the UI state and nothing else, so turning diagnostics off hid the
-     * panel while every entry was still recorded and retained. A setting that changes what is shown
-     * and not what is kept is the wrong half.
-     */
-
+    /** Records only when diagnostics are on, so the setting governs what is kept and not only what is shown. */
     private fun record(line: String) {
         if (diagnosticsEnabled) diagnostics.record(line)
     }

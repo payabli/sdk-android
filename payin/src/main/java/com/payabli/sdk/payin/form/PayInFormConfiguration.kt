@@ -6,7 +6,7 @@ import androidx.compose.runtime.Immutable
 public enum class PayInSectionStyle {
     Inputs,
 
-    /** Values the caller fixed, shown and not typed into. */
+    /** Values the caller fixed. A payer reads them; the form has no box for them. */
     Summary,
 }
 
@@ -58,8 +58,8 @@ public data class PayInFormatting(
  * Two inputs are corrected on construction: an empty [allowedMethods] becomes [defaultMethod], and a
  * [defaultMethod] outside the allowed set becomes the first allowed one.
  *
- * Every collection here is copied when this is built, and the form reads the copies. That is what
- * `@Immutable` promises Compose, and holding a caller's list on its own does not keep it.
+ * Every collection is copied on construction and the form reads the copies, which is what
+ * `@Immutable` states to Compose.
  */
 @Immutable
 public data class PayInFormConfiguration(

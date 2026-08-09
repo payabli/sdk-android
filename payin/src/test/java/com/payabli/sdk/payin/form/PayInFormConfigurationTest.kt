@@ -115,7 +115,7 @@ class PayInFormConfigurationTest {
 
     @Test
     fun `a section with no title of its own takes one from resources`() {
-        // Null and not an English default, so an unconfigured form is still translated.
+        // Null, so an unconfigured form falls through to the resource and stays translated.
         PayInFormConfiguration().sectionsFor(PayInMethodType.Card).forEach { assertNull(it.title) }
     }
 
@@ -132,7 +132,7 @@ class PayInFormConfigurationTest {
 
     @Test
     fun `blank means unset for the header and the button too, not just for a field`() {
-        // A blank submitButton won over the resource and drew a button with nothing written on it.
+        // Blank is unset, so the resource still supplies the wording.
         val blank = PayInFormLabels(title = "", subtitle = "   ", submitButton = " ")
         assertNull(blank.titleOrNull())
         assertNull(blank.subtitleOrNull())
@@ -210,8 +210,7 @@ class PayInFormConfigurationTest {
 
     @Test
     fun `a hidden label is shown in neither place`() {
-        // showsLabelFor answered false for a hidden field, and the renderer read false as "put it
-        // inside the box", so hiding a label moved it rather than removing it.
+        // A hidden label is drawn in neither place, under either layout.
         listOf(PayInLabelLayout.External, PayInLabelLayout.Placeholder).forEach { layout ->
             val configuration =
                 PayInFormConfiguration(
@@ -239,8 +238,8 @@ class PayInFormConfigurationTest {
 
     @Test
     fun `mutating a collection after building the configuration changes nothing it reports`() {
-        // What @Immutable promises Compose. Holding the caller's list would break the promise, and
-        // the cached method list would disagree with the property beside it.
+        // What @Immutable states to Compose: the form reads copies, so a caller's later edit to
+        // their own collection reaches nothing.
         val methods = mutableListOf(PayInMethodType.Card)
         val required = mutableSetOf(PayInField.CustomerNumber)
         val hidden = mutableSetOf(PayInField.CardNumber)

@@ -47,12 +47,11 @@ internal fun ExpiryPickerDialog(
     var year by remember(today) { mutableIntStateOf(startingYear) }
     val months = remember(today, year) { ExpiryChoices.months(today, year) }
 
-    // Keyed on today, not on year. Keyed on year as well, changing the year re-initialises this and
-    // overwrites the coercion in onSelect below.
+    // Keyed on the current month, so the selected month survives a year change; onSelect coerces it.
     var month by
         remember(today) {
-            // Coerced, because an expired value can arrive: opening 03/26 in August 2026 lands on a
-            // year whose months start at 08, and an uncoerced 3 comes straight back out of Done.
+            // An expired value can arrive: 03/26 opened in August 2026 lands on a year whose months
+            // start at 08.
             mutableIntStateOf(
                 ExpiryChoices.coerceMonth(
                     initial?.month ?: today.month,
@@ -113,8 +112,8 @@ private fun <T> PickerColumn(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(style.spacing.label)) {
         Text(heading, style = style.label)
         LazyColumn(
-            // Bounded so the dialog does not grow with twenty-one years in it. heightIn and not
-            // height, so a large font scale is allowed to make each row taller.
+            // Bounded, so a dialog holding twenty-one years still fits. A maximum and not a fixed
+            // height, so a large font scale can still make each row taller.
             modifier = Modifier.heightIn(max = PICKER_MAX_HEIGHT),
         ) {
             items(values) { value ->
@@ -131,8 +130,6 @@ private fun <T> PickerColumn(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            // A row was the text plus its padding, around 34dp, which is under the
-                            // 48dp minimum target.
                             .heightIn(min = ROW_MIN_HEIGHT)
                             .clickable { onSelect(value) }
                             .then(

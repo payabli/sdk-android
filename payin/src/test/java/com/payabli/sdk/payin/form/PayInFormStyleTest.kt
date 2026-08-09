@@ -16,10 +16,9 @@ import org.junit.Test
 /**
  * The component takes its appearance from the host's theme and names none of its own.
  *
- * That claim is the reason this module resolves style through a plain function instead of building it
- * inside a composable: a form that hard-coded a colour would render correctly under the theme it was
- * written against and pass every screenshot taken there. Here it fails, because resolving under two
- * different themes has to produce two different styles.
+ * Resolving under two unrelated themes has to produce two different styles. A hard-coded colour
+ * renders correctly under the theme it was written against, so a screenshot cannot catch it and this
+ * can.
  */
 class PayInFormStyleTest {
     private val light =
@@ -37,7 +36,7 @@ class PayInFormStyleTest {
             fieldShape = RoundedCornerShape(4.dp),
         )
 
-    /** Deliberately unlike [light] in every role, so nothing can pass by coincidence. */
+    /** Unlike [light] in every role, so no value can match across the two by coincidence. */
     private val other =
         PayInThemeRoles(
             onSurface = Color(0xFFE3E2E6),
@@ -55,9 +54,8 @@ class PayInFormStyleTest {
 
     @Test
     fun `every colour in the style follows the theme it was resolved under`() {
-        // Colour by colour, and not TextStyle by TextStyle. Comparing whole styles passes as soon as
-        // any part of one differs, so a hard-coded colour survives it on the strength of the font
-        // size next to it.
+        // Colour by colour. Comparing whole TextStyle objects passes as soon as any part of one
+        // differs, which a hard-coded colour survives on the strength of the font size beside it.
         val a = resolvePayInFormStyle(light)
         val b = resolvePayInFormStyle(other)
 
@@ -105,7 +103,7 @@ class PayInFormStyleTest {
 
     @Test
     fun `type comes from the role, and the colour does not replace the rest of it`() {
-        // copy(color = ...) and not a fresh TextStyle: the host's size, weight and family survive.
+        // copy(color = ...) keeps the host's size, weight and family.
         val style = resolvePayInFormStyle(light)
         assertEquals(light.titleType.fontSize, style.title.fontSize)
         assertEquals(light.titleType.fontWeight, style.title.fontWeight)
@@ -175,8 +173,7 @@ class PayInFormStyleTest {
 
     @Test
     fun `field colours are the host's Material defaults until a caller supplies their own`() {
-        // null and not a set this module invents: Material's own already follow the host theme, and
-        // reimplementing them here is how a component stops matching the app around it.
+        // null means Material's own, which already follow the host theme.
         assertNull(resolvePayInFormStyle(light).fieldColors)
     }
 

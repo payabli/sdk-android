@@ -6,12 +6,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
 
-/**
- * The five things every part of the form needs and none of them changes on its own.
- *
- * They travelled as five parameters through four levels of composable, which is most of what each
- * signature was.
- */
+/** What every part of the form reads, and what none of it changes. */
 @Immutable
 internal data class PayInFormContext(
     val configuration: PayInFormConfiguration,

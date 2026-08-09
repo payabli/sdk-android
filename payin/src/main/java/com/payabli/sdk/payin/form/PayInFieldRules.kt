@@ -6,16 +6,15 @@ package com.payabli.sdk.payin.form
  * Pure functions over strings: no Android, no Compose, no state, no logging. The caller holds the
  * text.
  *
- * Every check here catches something the API also rejects, so none can refuse a value the server
- * would have taken.
+ * Every check here catches something the API also rejects, so none refuses a value the server
+ * accepts.
  */
 public object PayInFieldRules {
     /** Digits only, no separators. Callers strip formatting before asking. */
     private val DIGITS = Regex("^[0-9]*$")
 
-    // A postal code is length-limited and nothing more. Requiring five digits rejects ZIP+4, and
-    // every Canadian and British code, which the API accepts: a client rule that refuses a value the
-    // server would have taken is worse than no rule.
+    // A postal code is length-limited and nothing more: ZIP+4, Canadian and British codes are all
+    // accepted by the API.
 
     private const val CARD_NUMBER_MIN = 12
     private const val POSTAL_CODE_MAX = 12

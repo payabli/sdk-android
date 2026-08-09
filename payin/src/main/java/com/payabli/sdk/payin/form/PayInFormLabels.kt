@@ -8,8 +8,8 @@ import androidx.compose.runtime.Immutable
  * Anything left null or blank comes from `res/values`, where an integrator can redeclare any
  * `payabli_payin_*` string and a translator can add a `values-xx`.
  *
- * The two maps are copied when this is built, so what the form reads cannot change afterwards. That
- * is what `@Immutable` promises Compose, and a caller's map on its own does not keep it.
+ * The two maps are copied on construction, so what the form reads cannot change afterwards, which
+ * is what `@Immutable` states to Compose.
  */
 @Immutable
 public data class PayInFormLabels(

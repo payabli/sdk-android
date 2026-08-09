@@ -12,8 +12,7 @@ import java.io.File
  * prove that the composables use the resolved value, because a composable that ignored the style and
  * wrote `Color(0xFF008BCE)` would still pass it. This reads the source instead.
  *
- * Crude on purpose. A rule that greps beats one that needs a device, and every job here runs without
- * one.
+ * It greps rather than renders because every CI job here runs without a device.
  */
 class NoHardCodedAppearanceTest {
     private val uiSources: List<File> =
@@ -36,7 +35,7 @@ class NoHardCodedAppearanceTest {
     /**
      * Files allowed to carry a measurement, each for a stated reason.
      *
-     * A list and not a pattern, so adding one is a decision somebody made on purpose.
+     * Named one by one, so widening the rule takes an edit here.
      */
     private val measurementExceptions =
         mapOf(

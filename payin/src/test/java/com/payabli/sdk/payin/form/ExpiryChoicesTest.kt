@@ -124,8 +124,8 @@ class ExpiryChoicesTest {
 
     @Test
     fun `an expired value opens the picker on a month the list contains`() {
-        // What the dialog does with `initial`, in the two lines it does it in. An expired card's
-        // 03/26 opened on a March the list has dropped, and Done handed that same past date back.
+        // The two lines the dialog opens with. An expired card's 03/26 has to land on a month the
+        // list contains.
         val today = august2026
         listOf(ExpiryValue(3, 2026), ExpiryValue(1, 2020), null).forEach { initial ->
             val years = ExpiryChoices.years(today)

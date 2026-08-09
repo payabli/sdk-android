@@ -19,8 +19,8 @@ class PayInFieldRulesTest {
 
     @Test
     fun `a pasted value is truncated to the field's limit`() {
-        // A keyboard type is a hint. A paste, an autofill entry and a hardware keyboard all ignore it,
-        // which is why filtering happens on the value and not on the keyboard.
+        // A keyboard type is a hint: a paste, an autofill entry and a hardware keyboard all ignore
+        // it, so the filter runs on the value.
         assertEquals("941071234", PayInFieldRules.filter(PayInField.CardPostalCode, "941071234"))
         assertEquals("1234", PayInFieldRules.filter(PayInField.CardSecurityCode, "123456"))
         assertEquals("021000021", PayInFieldRules.filter(PayInField.RoutingNumber, "0210000219999"))
@@ -207,8 +207,7 @@ class PayInFieldRulesTest {
 
     @Test
     fun `the separator reaches the value and the value still parses`() {
-        // The configured separator used to reach the placeholder only, so a form set to "-" showed
-        // MM-YY and produced 07/30.
+        // A form set to "-" has to show MM-YY and write 07-30, and read that back.
         val expiry = ExpiryValue(7, 2030)
         listOf("-", ".", " / ", "%s").forEach { separator ->
             val written = expiry.format(separator)

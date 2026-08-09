@@ -89,8 +89,7 @@ class DemoPaymentFlowController(
 
     private fun capturedResponseJson(id: String): JsonObject =
         buildJsonObject {
-            // Deliberately not in alphabetical order here: ResponseJson sorts on the way to the
-            // screen, and a fixture that is already sorted would not show that it does.
+            // Unsorted, so the sort ResponseJson applies on the way to the screen is visible.
             put("responseText", JsonPrimitive("Approved"))
             put("isSuccess", JsonPrimitive(true))
             put("authCode", JsonPrimitive("DEMO01"))

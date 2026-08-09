@@ -206,7 +206,7 @@ private fun ChoiceField(
 /**
  * Material's floating label, or none.
  *
- * Three outcomes and not two: a hidden label is not the same as a label that moved inside the box.
+ * A hidden label is drawn in neither place.
  */
 private fun PayInFormContext.floatingLabel(
     field: PayInField,
