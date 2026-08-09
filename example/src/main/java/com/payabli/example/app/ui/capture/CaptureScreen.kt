@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.example.app.payment.DemoForms
-import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.ResponseJson
 import com.payabli.example.app.payment.Transaction
@@ -36,6 +35,7 @@ import com.payabli.example.app.ui.components.SelectableMonospaceBlock
 import com.payabli.example.app.ui.components.SuccessMark
 import com.payabli.example.app.ui.payment.PaymentFormHost
 import com.payabli.example.app.ui.theme.Dimens
+import com.payabli.sdk.payin.form.PayInFormValues
 
 /** Charge a card or bank account now. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -44,8 +44,7 @@ fun CaptureScreen(
     state: CaptureUiState,
     onOpenSheet: () -> Unit,
     onDismissSheet: () -> Unit,
-    onSubmit: () -> Unit,
-    onError: (PaymentError) -> Unit,
+    onSubmit: (PayInFormValues) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     DemoScreen(title = "Capture", modifier = modifier) {
@@ -154,7 +153,6 @@ private fun CaptureScreenPreview() {
             onOpenSheet = {},
             onDismissSheet = {},
             onSubmit = {},
-            onError = {},
         )
     }
 }

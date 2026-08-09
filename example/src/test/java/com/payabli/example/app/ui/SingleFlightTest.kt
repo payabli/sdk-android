@@ -20,6 +20,8 @@ import com.payabli.example.app.ui.capture.CaptureViewModel
 import com.payabli.example.app.ui.method.PaymentMethodViewModel
 import com.payabli.example.app.ui.setup.SetupViewModel
 import com.payabli.example.app.ui.taptopay.TapToPayViewModel
+import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -43,6 +45,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
+
+/** Nothing under test here reads the values; only which instrument they came from. */
+private val cardEntry = PayInFormValues(PayInMethodType.Card, emptyMap())
 
 private const val WAIT_MILLIS = 5_000L
 private const val POLL_MILLIS = 10L
@@ -75,7 +80,7 @@ class SingleFlightTest {
 
         override val setup = DemoPaymentFlowController(PaymentOperation.Capture).setup
 
-        override suspend fun submit(): Result<PaymentResult> {
+        override suspend fun submit(values: PayInFormValues): Result<PaymentResult> {
             calls.incrementAndGet()
             suspendCoroutine { continuation -> waiting += { continuation.resume(Unit) } }
             return Result.success(PaymentResult(code = "1"))
@@ -120,8 +125,8 @@ class SingleFlightTest {
             val flow = BlockingFlow()
             val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
 
-            model.submit()
-            model.submit()
+            model.submit(cardEntry)
+            model.submit(cardEntry)
             flow.release()
 
             assertEquals("submitted twice", 1, flow.calls.get())
@@ -133,8 +138,8 @@ class SingleFlightTest {
             val flow = BlockingFlow()
             val model = PaymentMethodViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
 
-            model.submit()
-            model.submit()
+            model.submit(cardEntry)
+            model.submit(cardEntry)
             flow.release()
 
             assertEquals("submitted twice", 1, flow.calls.get())
@@ -162,9 +167,9 @@ class SingleFlightTest {
             val flow = BlockingFlow()
             val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
 
-            model.submit()
+            model.submit(cardEntry)
             flow.release()
-            model.submit()
+            model.submit(cardEntry)
             flow.release()
 
             assertEquals(2, flow.calls.get())

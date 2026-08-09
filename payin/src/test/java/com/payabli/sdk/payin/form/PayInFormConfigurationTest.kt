@@ -131,6 +131,32 @@ class PayInFormConfigurationTest {
     }
 
     @Test
+    fun `blank means unset for the header and the button too, not just for a field`() {
+        // A blank submitButton won over the resource and drew a button with nothing written on it.
+        val blank = PayInFormLabels(title = "", subtitle = "   ", submitButton = " ")
+        assertNull(blank.titleOrNull())
+        assertNull(blank.subtitleOrNull())
+        assertNull(blank.submitButtonOrNull())
+
+        val given = PayInFormLabels(title = "Pay", subtitle = "Now", submitButton = "Go")
+        assertEquals("Pay", given.titleOrNull())
+        assertEquals("Now", given.subtitleOrNull())
+        assertEquals("Go", given.submitButtonOrNull())
+    }
+
+    @Test
+    fun `mutating a label map after building does not change what the labels report`() {
+        val fields = mutableMapOf(PayInField.CardNumber to "Card")
+        val labels = PayInFormLabels(fieldLabels = fields)
+
+        fields[PayInField.CardNumber] = "Something else"
+        fields[PayInField.CardholderName] = "Name"
+
+        assertEquals("Card", labels.labelFor(PayInField.CardNumber))
+        assertNull(labels.labelFor(PayInField.CardholderName))
+    }
+
+    @Test
     fun `an external layout shows labels and a placeholder layout does not`() {
         assertTrue(PayInFormConfiguration().showsLabelFor(PayInField.CardNumber))
         assertFalse(
@@ -180,8 +206,69 @@ class PayInFormConfigurationTest {
         assertEquals("/", formatting.expirySeparator)
     }
 
+    // --- labels ---
+
     @Test
-    fun `the card brand mark is hidden until this module ships artwork for it`() {
-        assertEquals(PayInCardBrandPlacement.Hidden, PayInFormConfiguration().cardBrandPlacement)
+    fun `a hidden label is shown in neither place`() {
+        // showsLabelFor answered false for a hidden field, and the renderer read false as "put it
+        // inside the box", so hiding a label moved it rather than removing it.
+        listOf(PayInLabelLayout.External, PayInLabelLayout.Placeholder).forEach { layout ->
+            val configuration =
+                PayInFormConfiguration(
+                    labelLayout = layout,
+                    hiddenFieldLabels = setOf(PayInField.CardNumber),
+                )
+
+            assertFalse(layout.toString(), configuration.showsLabelFor(PayInField.CardNumber))
+            assertFalse(layout.toString(), configuration.showsFloatingLabelFor(PayInField.CardNumber))
+        }
+    }
+
+    @Test
+    fun `the layout decides where a label that is not hidden goes`() {
+        val external = PayInFormConfiguration(labelLayout = PayInLabelLayout.External)
+        assertTrue(external.showsLabelFor(PayInField.CardNumber))
+        assertFalse(external.showsFloatingLabelFor(PayInField.CardNumber))
+
+        val inside = PayInFormConfiguration(labelLayout = PayInLabelLayout.Placeholder)
+        assertFalse(inside.showsLabelFor(PayInField.CardNumber))
+        assertTrue(inside.showsFloatingLabelFor(PayInField.CardNumber))
+    }
+
+    // --- the collections are the configuration's own ---
+
+    @Test
+    fun `mutating a collection after building the configuration changes nothing it reports`() {
+        // What @Immutable promises Compose. Holding the caller's list would break the promise, and
+        // the cached method list would disagree with the property beside it.
+        val methods = mutableListOf(PayInMethodType.Card)
+        val required = mutableSetOf(PayInField.CustomerNumber)
+        val hidden = mutableSetOf(PayInField.CardNumber)
+        val summary = mutableMapOf(PayInField.Amount to "$ 1.00")
+        val sectionFields = mutableListOf(PayInField.CardNumber)
+
+        val configuration =
+            PayInFormConfiguration(
+                allowedMethods = methods,
+                requiredFields = required,
+                hiddenFieldLabels = hidden,
+                summaryValues = summary,
+                cardSections = listOf(PayInFormSection(fields = sectionFields)),
+            )
+
+        methods += PayInMethodType.BankAccount
+        required += PayInField.MethodDescription
+        hidden.clear()
+        summary[PayInField.Amount] = "$ 999.00"
+        sectionFields += PayInField.CardholderName
+
+        assertEquals(listOf(PayInMethodType.Card), configuration.methodsOffered)
+        assertFalse(configuration.isRequired(PayInField.MethodDescription))
+        assertFalse(configuration.showsLabelFor(PayInField.CardNumber))
+        assertEquals("$ 1.00", configuration.summaryValueFor(PayInField.Amount))
+        assertEquals(
+            listOf(PayInField.CardNumber),
+            configuration.sectionsFor(PayInMethodType.Card).single().fields,
+        )
     }
 }

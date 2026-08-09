@@ -1,5 +1,7 @@
 package com.payabli.example.app.payment
 
+import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -29,13 +31,13 @@ class DemoPaymentFlowController(
 
     private var counter = 0
 
-    override suspend fun submit(): Result<PaymentResult> {
+    override suspend fun submit(values: PayInFormValues): Result<PaymentResult> {
         delay(stepDelayMillis)
         counter += 1
         return Result.success(
             when (operation) {
                 PaymentOperation.StoreMethod -> storedMethodResult()
-                PaymentOperation.Capture -> capturedResult()
+                PaymentOperation.Capture -> capturedResult(values.method)
             },
         )
     }
@@ -60,7 +62,7 @@ class DemoPaymentFlowController(
         )
     }
 
-    private fun capturedResult(): PaymentResult {
+    private fun capturedResult(method: PayInMethodType): PaymentResult {
         val id = "demo-txn-%04d".format(counter)
         return PaymentResult(
             code = "1",
@@ -72,7 +74,9 @@ class DemoPaymentFlowController(
                     paymentTransactionId = id,
                     gatewayTransactionId = "demo-gw-%04d".format(counter),
                     orderId = "demo-order-%04d".format(counter),
-                    method = "card",
+                    // The payer's choice, not the screen's default. It reads "card" for a bank
+                    // account only if the form never says which instrument was filled.
+                    method = method.wireName,
                     operation = "capture",
                     status = "Captured",
                     totalAmount = "1.10",

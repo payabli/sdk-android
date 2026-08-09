@@ -3,6 +3,7 @@ package com.payabli.example.app.ui.payment
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.payabli.example.app.payment.DemoFormSetup
+import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.ui.PayabliPayInForm
 
 /**
@@ -22,14 +23,14 @@ import com.payabli.sdk.payin.ui.PayabliPayInForm
 @Composable
 fun PaymentFormHost(
     setup: DemoFormSetup,
-    onSubmit: () -> Unit,
+    onSubmit: (PayInFormValues) -> Unit,
     modifier: Modifier = Modifier,
     isSubmitting: Boolean = false,
 ) {
     PayabliPayInForm(
         configuration = setup.configuration,
-        labels = setup.labels,
         modifier = modifier,
+        labels = setup.labels,
         isSubmitting = isSubmitting,
         onSubmit = onSubmit,
     )

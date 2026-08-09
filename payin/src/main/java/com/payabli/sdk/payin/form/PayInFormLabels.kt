@@ -7,6 +7,9 @@ import androidx.compose.runtime.Immutable
  *
  * Anything left null or blank comes from `res/values`, where an integrator can redeclare any
  * `payabli_payin_*` string and a translator can add a `values-xx`.
+ *
+ * The two maps are copied when this is built, so what the form reads cannot change afterwards. That
+ * is what `@Immutable` promises Compose, and a caller's map on its own does not keep it.
  */
 @Immutable
 public data class PayInFormLabels(
@@ -16,9 +19,21 @@ public data class PayInFormLabels(
     val fieldLabels: Map<PayInField, String> = emptyMap(),
     val fieldPlaceholders: Map<PayInField, String> = emptyMap(),
 ) {
+    private val labels: Map<PayInField, String> = fieldLabels.toMap()
+    private val placeholders: Map<PayInField, String> = fieldPlaceholders.toMap()
+
     /** The caller's label for a field, or null to use the resource. */
-    public fun labelFor(field: PayInField): String? = fieldLabels[field]?.takeIf { it.isNotBlank() }
+    public fun labelFor(field: PayInField): String? = labels[field]?.takeIf { it.isNotBlank() }
 
     /** The caller's placeholder for a field, or null for none. */
-    public fun placeholderFor(field: PayInField): String? = fieldPlaceholders[field]?.takeIf { it.isNotBlank() }
+    public fun placeholderFor(field: PayInField): String? = placeholders[field]?.takeIf { it.isNotBlank() }
+
+    /** The heading above the form, or null for none. */
+    public fun titleOrNull(): String? = title?.takeIf { it.isNotBlank() }
+
+    /** The line under the heading, or null for none. */
+    public fun subtitleOrNull(): String? = subtitle?.takeIf { it.isNotBlank() }
+
+    /** The wording on the submit button, or null to use the resource. */
+    public fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
 }

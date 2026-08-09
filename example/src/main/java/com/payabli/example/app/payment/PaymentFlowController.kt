@@ -1,5 +1,7 @@
 package com.payabli.example.app.payment
 
+import com.payabli.sdk.payin.form.PayInFormValues
+
 /** What a payment screen is for. */
 enum class PaymentOperation {
     /** Store an instrument and get a token. */
@@ -20,6 +22,11 @@ interface PaymentFlowController {
 
     val setup: DemoFormSetup
 
-    /** Submit whatever the form collected. Returns a result or an error, never throws. */
-    suspend fun submit(): Result<PaymentResult>
+    /**
+     * Submit what the form collected. Returns a result or an error, never throws.
+     *
+     * [values] carries the instrument the payer chose, which is the one thing a host cannot work
+     * out from its own configuration.
+     */
+    suspend fun submit(values: PayInFormValues): Result<PaymentResult>
 }

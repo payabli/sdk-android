@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
@@ -30,8 +31,6 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
-import com.payabli.sdk.payin.form.PayInFormLabels
-import com.payabli.sdk.payin.form.PayInFormStyle
 
 /**
  * One field, whichever kind it is.
@@ -43,35 +42,26 @@ import com.payabli.sdk.payin.form.PayInFormStyle
 internal fun PayInFieldBox(
     field: PayInField,
     value: String,
-    today: ExpiryValue,
-    configuration: PayInFormConfiguration,
-    labels: PayInFormLabels,
-    style: PayInFormStyle,
-    enabled: Boolean,
+    context: PayInFormContext,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val error = PayInFieldRules.error(field, value, today)
-    val label = PayInStrings.label(field, labels)
+    val error = PayInFieldRules.error(field, value, context.today)
+    val label = PayInStrings.label(field, context.labels)
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(style.spacing.label)) {
-        if (configuration.showsLabelFor(field)) {
-            Text(text = label, style = style.label)
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(context.style.spacing.label)) {
+        if (context.configuration.showsLabelFor(field)) {
+            Text(text = label, style = context.style.label)
         }
 
         when (field.input) {
-            PayInFieldInput.MonthYear ->
-                ExpiryField(field, value, today, label, configuration, labels, style, enabled, onValueChange)
-
-            PayInFieldInput.Choice ->
-                ChoiceField(field, value, label, configuration, labels, style, enabled, onValueChange)
-
-            else ->
-                TypedField(field, value, label, configuration, labels, style, enabled, onValueChange)
+            PayInFieldInput.MonthYear -> ExpiryField(field, value, label, context, onValueChange)
+            PayInFieldInput.Choice -> ChoiceField(field, value, label, context, onValueChange)
+            else -> TypedField(field, value, label, context, onValueChange)
         }
 
         if (error != null) {
-            Text(text = PayInStrings.error(error), style = style.error)
+            Text(text = PayInStrings.error(error), style = context.style.error)
         }
     }
 }
@@ -81,10 +71,7 @@ private fun TypedField(
     field: PayInField,
     value: String,
     label: String,
-    configuration: PayInFormConfiguration,
-    labels: PayInFormLabels,
-    style: PayInFormStyle,
-    enabled: Boolean,
+    context: PayInFormContext,
     onValueChange: (String) -> Unit,
 ) {
     val isSecret = field.input == PayInFieldInput.Secret
@@ -95,21 +82,21 @@ private fun TypedField(
         value = value,
         onValueChange = { onValueChange(PayInFieldRules.filter(field, it)) },
         modifier = Modifier.fillMaxWidth(),
-        enabled = enabled,
+        enabled = context.enabled,
         isError = hasError,
         singleLine = true,
-        shape = style.fieldShape,
-        colors = configuration.fieldColorsOrDefault(style),
-        label = if (configuration.showsLabelFor(field)) null else ({ Text(label) }),
-        placeholder = PayInStrings.placeholder(field, labels)?.let { { Text(it) } },
-        visualTransformation = field.transformation(configuration, revealed),
+        shape = context.style.fieldShape,
+        colors = context.fieldColors(),
+        label = context.floatingLabel(field, label),
+        placeholder = PayInStrings.placeholder(field, context.labels)?.let { { Text(it) } },
+        visualTransformation = field.transformation(context.configuration, revealed),
         keyboardOptions = field.keyboardOptions(),
         trailingIcon =
             if (!isSecret) {
                 null
             } else {
                 {
-                    IconButton(onClick = { revealed = !revealed }, enabled = enabled) {
+                    IconButton(onClick = { revealed = !revealed }, enabled = context.enabled) {
                         Icon(
                             imageVector = if (revealed) RevealOffIcon else RevealIcon,
                             contentDescription =
@@ -128,12 +115,8 @@ private fun TypedField(
 private fun ExpiryField(
     field: PayInField,
     value: String,
-    today: ExpiryValue,
     label: String,
-    configuration: PayInFormConfiguration,
-    labels: PayInFormLabels,
-    style: PayInFormStyle,
-    enabled: Boolean,
+    context: PayInFormContext,
     onValueChange: (String) -> Unit,
 ) {
     var picking by remember { mutableStateOf(false) }
@@ -142,16 +125,18 @@ private fun ExpiryField(
         value = value,
         onValueChange = { },
         modifier = Modifier.fillMaxWidth(),
-        enabled = enabled,
+        enabled = context.enabled,
         readOnly = true,
         singleLine = true,
-        shape = style.fieldShape,
-        colors = configuration.fieldColorsOrDefault(style),
-        label = if (configuration.showsLabelFor(field)) null else ({ Text(label) }),
-        placeholder = { Text(PayInStrings.placeholder(field, labels) ?: expiryHint(configuration)) },
-        isError = PayInFieldRules.error(field, value, today) != null,
+        shape = context.style.fieldShape,
+        colors = context.fieldColors(),
+        label = context.floatingLabel(field, label),
+        placeholder = {
+            Text(PayInStrings.placeholder(field, context.labels) ?: expiryHint(context.configuration))
+        },
+        isError = PayInFieldRules.error(field, value, context.today) != null,
         trailingIcon = {
-            IconButton(onClick = { picking = true }, enabled = enabled) {
+            IconButton(onClick = { picking = true }, enabled = context.enabled) {
                 Icon(imageVector = ExpiryIcon, contentDescription = label)
             }
         },
@@ -159,11 +144,11 @@ private fun ExpiryField(
 
     if (picking) {
         ExpiryPickerDialog(
-            today = today,
+            today = context.today,
             initial = ExpiryValue.parse(value),
-            style = style,
+            style = context.style,
             onPicked = {
-                onValueChange(it.format(configuration.formatting.expirySeparator))
+                onValueChange(it.format(context.configuration.formatting.expirySeparator))
                 picking = false
             },
             onDismiss = { picking = false },
@@ -177,28 +162,31 @@ private fun ChoiceField(
     field: PayInField,
     value: String,
     label: String,
-    configuration: PayInFormConfiguration,
-    labels: PayInFormLabels,
-    style: PayInFormStyle,
-    enabled: Boolean,
+    context: PayInFormContext,
     onValueChange: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val options = PayInStrings.choices(field)
     val shown = options.firstOrNull { it.first == value }?.second ?: value
 
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (enabled) expanded = it }) {
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { if (context.enabled) expanded = it },
+    ) {
         OutlinedTextField(
             value = shown,
             onValueChange = { },
-            modifier = Modifier.fillMaxWidth().menuAnchor(),
-            enabled = enabled,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, context.enabled),
+            enabled = context.enabled,
             readOnly = true,
             singleLine = true,
-            shape = style.fieldShape,
-            colors = configuration.fieldColorsOrDefault(style),
-            label = if (configuration.showsLabelFor(field)) null else ({ Text(label) }),
-            placeholder = PayInStrings.placeholder(field, labels)?.let { { Text(it) } },
+            shape = context.style.fieldShape,
+            colors = context.fieldColors(),
+            label = context.floatingLabel(field, label),
+            placeholder = PayInStrings.placeholder(field, context.labels)?.let { { Text(it) } },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -215,10 +203,19 @@ private fun ChoiceField(
     }
 }
 
+/**
+ * Material's floating label, or none.
+ *
+ * Three outcomes and not two: a hidden label is not the same as a label that moved inside the box.
+ */
+private fun PayInFormContext.floatingLabel(
+    field: PayInField,
+    label: String,
+): (@Composable () -> Unit)? = if (configuration.showsFloatingLabelFor(field)) ({ Text(label) }) else null
+
 /** Material's own colours unless the caller supplied a set. */
 @Composable
-private fun PayInFormConfiguration.fieldColorsOrDefault(style: PayInFormStyle) =
-    style.fieldColors ?: OutlinedTextFieldDefaults.colors()
+private fun PayInFormContext.fieldColors() = style.fieldColors ?: OutlinedTextFieldDefaults.colors()
 
 private fun PayInField.keyboardOptions(): KeyboardOptions =
     KeyboardOptions(
@@ -243,7 +240,6 @@ private fun PayInField.transformation(
 private fun PayInField.shouldMask(configuration: PayInFormConfiguration): Boolean =
     this != PayInField.AccountNumber || configuration.formatting.masksAccountNumber
 
-@Composable
 private fun expiryHint(configuration: PayInFormConfiguration): String =
     "MM${configuration.formatting.expirySeparator}YY"
 

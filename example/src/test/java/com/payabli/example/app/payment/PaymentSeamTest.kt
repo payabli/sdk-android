@@ -1,6 +1,7 @@
 package com.payabli.example.app.payment
 
 import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
@@ -13,6 +14,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+
+/** Nothing under test here reads the values; only which instrument they came from. */
+private val cardEntry = PayInFormValues(PayInMethodType.Card, emptyMap())
 
 class PaymentSeamTest {
     // --- what this app configures ---
@@ -262,7 +266,7 @@ class PaymentSeamTest {
     fun `storing a method returns a stored method and no transaction`() =
         runTest {
             val controller = DemoPaymentFlowController(PaymentOperation.StoreMethod, stepDelayMillis = 0)
-            val result = controller.submit().getOrThrow()
+            val result = controller.submit(cardEntry).getOrThrow()
             assertNotNull(result.storedMethod)
             assertNull(result.transaction)
         }
@@ -271,7 +275,7 @@ class PaymentSeamTest {
     fun `capture returns a transaction and no stored method`() =
         runTest {
             val controller = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0)
-            val result = controller.submit().getOrThrow()
+            val result = controller.submit(cardEntry).getOrThrow()
             assertNotNull(result.transaction)
             assertNull(result.storedMethod)
         }
@@ -282,13 +286,13 @@ class PaymentSeamTest {
             val controller = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0)
             val first =
                 controller
-                    .submit()
+                    .submit(cardEntry)
                     .getOrThrow()
                     .transaction
                     ?.paymentTransactionId
             val second =
                 controller
-                    .submit()
+                    .submit(cardEntry)
                     .getOrThrow()
                     .transaction
                     ?.paymentTransactionId
@@ -312,7 +316,7 @@ class PaymentSeamTest {
     fun `the demo result renders through the summary and the json without special casing`() =
         runTest {
             val controller = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0)
-            val result = controller.submit().getOrThrow()
+            val result = controller.submit(cardEntry).getOrThrow()
             assertEquals(13, TransactionSummary.rows(result).size)
             assertFalse(ResponseJson.render(result.apiResponse) == ResponseJson.UNRENDERABLE)
         }

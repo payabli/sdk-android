@@ -8,6 +8,7 @@ import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFlowController
 import com.payabli.example.app.payment.PaymentResult
+import com.payabli.sdk.payin.form.PayInFormValues
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -62,14 +63,14 @@ class CaptureViewModel(
      * produces. Fabricating one at the button meant Capture always received a stored-method result
      * and reached its transaction screen with no transaction, while the controller was never called.
      */
-    fun submit() {
+    fun submit(values: PayInFormValues) {
         // Single flight, decided here. `isSubmitting` disables the button, but only once the state
         // has recomposed, and a second callback landing before that would launch a second capture.
         // Harmless against the demo controller and a duplicate payment against a real one.
         if (_uiState.value.isSubmitting) return
         _uiState.update { it.copy(isSubmitting = true) }
         viewModelScope.launch {
-            flow.submit().fold(onSuccess = ::onCompleted, onFailure = {
+            flow.submit(values).fold(onSuccess = ::onCompleted, onFailure = {
                 onError(PaymentError.Unexpected(it.message ?: it.javaClass.simpleName))
             })
         }

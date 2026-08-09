@@ -4,13 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +26,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 
@@ -35,62 +34,101 @@ import com.payabli.sdk.payin.form.PayInSectionStyle
  * The Payabli payment form.
  *
  * Collects a card or a bank account. It does not submit: [onSubmit] fires when the payer asks to,
- * and the host does the rest.
+ * carrying what they entered, and the host does the rest.
  *
  * **It looks like the app it is in.** With no [style] it takes its colours, type and shapes from the
  * host's `MaterialTheme`, so light, dark and dynamic colour arrive with nothing passed. Use
- * [PayInFormStyleOverrides] to change one value, or [LocalPayInFormStyle] for every form in a tree.
+ * `PayInFormStyleOverrides` to change one value, or [LocalPayInFormStyle] for every form in a tree.
  *
  * @param configuration what to collect and how to arrange it.
- * @param labels wording decided at runtime; anything left out comes from string resources.
+ * @param labels wording decided at runtime; anything left out or blank comes from string resources.
  * @param style null takes [LocalPayInFormStyle], then the host's theme.
- * @param onValuesChanged every field's current value, keyed by field, on each edit.
+ * @param onValuesChanged every edit, and every instrument change.
  * @param onSubmit the payer asked to submit, and every required field is filled and valid.
  */
 @Composable
 public fun PayabliPayInForm(
-    configuration: PayInFormConfiguration = PayInFormConfiguration(),
+    configuration: PayInFormConfiguration,
+    modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
-    modifier: Modifier = Modifier,
     isSubmitting: Boolean = false,
-    onValuesChanged: (Map<PayInField, String>) -> Unit = {},
-    onSubmit: () -> Unit = {},
+    onValuesChanged: (PayInFormValues) -> Unit = {},
+    onSubmit: (PayInFormValues) -> Unit = {},
 ) {
-    val resolved = rememberResolvedStyle(style)
-    val today = remember { ExpiryValue.today() }
+    // Read on every composition, not remembered. Held for the life of the form, a form left open
+    // across the turn of a month keeps accepting a card that expired at midnight and keeps offering
+    // that month in the picker.
+    val today = ExpiryValue.today()
+
     var method by remember(configuration) { mutableStateOf(configuration.startingMethod) }
     val typed = remember(configuration) { mutableStateMapOf<PayInField, String>() }
 
     val sections = configuration.sectionsFor(method)
     val inputs = configuration.inputFieldsFor(method)
+    val context =
+        PayInFormContext(
+            configuration = configuration,
+            labels = labels,
+            style = rememberResolvedStyle(style),
+            today = today,
+            enabled = !isSubmitting,
+        )
+
     val complete =
         inputs.none { configuration.isRequired(it) && PayInFieldRules.missing(it, typed[it].orEmpty()) } &&
             inputs.none { PayInFieldRules.error(it, typed[it].orEmpty(), today) != null }
 
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(resolved.spacing.content),
+        verticalArrangement = Arrangement.spacedBy(context.style.spacing.content),
     ) {
+        FormHeader(labels, context.style)
+
         if (configuration.methodsOffered.size > 1) {
-            MethodSelector(configuration.methodsOffered, method, isSubmitting) { method = it }
+            MethodSelector(configuration.methodsOffered, method, isSubmitting) { chosen ->
+                method = chosen
+                // Whatever the new instrument does not ask for goes. It keeps a card number out of
+                // the values a bank submission reports, and out of the map behind that form.
+                val kept = configuration.inputFieldsFor(chosen)
+                typed.keys.retainAll(kept.toSet())
+                onValuesChanged(PayInFormValues(chosen, kept.associateWith { typed[it].orEmpty() }))
+            }
         }
 
-        sections.forEach { section ->
-            FormSection(section, method, typed, today, configuration, labels, resolved, !isSubmitting) { field, value ->
-                typed[field] = value
-                onValuesChanged(typed.toMap())
+        Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.section)) {
+            sections.forEach { section ->
+                FormSection(section, method, typed, context) { field, value ->
+                    typed[field] = value
+                    onValuesChanged(PayInFormValues(method, inputs.associateWith { typed[it].orEmpty() }))
+                }
             }
         }
 
         PayInSubmitButton(
-            text = labels.submitButton ?: stringResource(R.string.payabli_payin_submit),
+            text = labels.submitButtonOrNull() ?: stringResource(R.string.payabli_payin_submit),
             busyText = stringResource(R.string.payabli_payin_submitting),
             enabled = complete && !isSubmitting,
             isSubmitting = isSubmitting,
-            style = resolved,
-            onClick = onSubmit,
+            style = context.style,
+            onClick = { onSubmit(PayInFormValues(method, inputs.associateWith { typed[it].orEmpty() })) },
         )
+    }
+}
+
+/** The caller's heading and standfirst, each shown only when they gave one. */
+@Composable
+private fun FormHeader(
+    labels: PayInFormLabels,
+    style: PayInFormStyle,
+) {
+    val title = labels.titleOrNull()
+    val subtitle = labels.subtitleOrNull()
+    if (title == null && subtitle == null) return
+
+    Column(verticalArrangement = Arrangement.spacedBy(style.spacing.header)) {
+        title?.let { Text(text = it, style = style.title) }
+        subtitle?.let { Text(text = it, style = style.subtitle) }
     }
 }
 
@@ -119,24 +157,21 @@ private fun MethodSelector(
 private fun FormSection(
     section: PayInFormSection,
     method: PayInMethodType,
-    typed: MutableMap<PayInField, String>,
-    today: ExpiryValue,
-    configuration: PayInFormConfiguration,
-    labels: PayInFormLabels,
-    style: PayInFormStyle,
-    enabled: Boolean,
+    typed: Map<PayInField, String>,
+    context: PayInFormContext,
     onValueChange: (PayInField, String) -> Unit,
 ) {
+    val style = context.style
     Column(verticalArrangement = Arrangement.spacedBy(style.spacing.sectionTitle)) {
         Text(text = section.title ?: defaultSectionTitle(section, method), style = style.sectionTitle)
 
         if (section.style == PayInSectionStyle.Summary) {
-            SummaryRows(section, configuration, labels, style)
+            SummaryRows(section, context)
             return@Column
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(style.spacing.fieldGroup)) {
-            InputRows(section.fields, typed, today, configuration, labels, style, enabled, onValueChange)
+            InputRows(section.fields, typed, context, onValueChange)
         }
     }
 }
@@ -149,28 +184,20 @@ private fun FormSection(
 @Composable
 private fun InputRows(
     fields: List<PayInField>,
-    typed: MutableMap<PayInField, String>,
-    today: ExpiryValue,
-    configuration: PayInFormConfiguration,
-    labels: PayInFormLabels,
-    style: PayInFormStyle,
-    enabled: Boolean,
+    typed: Map<PayInField, String>,
+    context: PayInFormContext,
     onValueChange: (PayInField, String) -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
     val pairs = remember(fields, fontScale) { fields.intoRows(fontScale) }
 
     pairs.forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(style.spacing.pairedField)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(context.style.spacing.pairedField)) {
             row.forEach { field ->
                 PayInFieldBox(
                     field = field,
                     value = typed[field].orEmpty(),
-                    today = today,
-                    configuration = configuration,
-                    labels = labels,
-                    style = style,
-                    enabled = enabled,
+                    context = context,
                     onValueChange = { onValueChange(field, it) },
                     modifier = Modifier.weight(1f),
                 )
@@ -182,15 +209,13 @@ private fun InputRows(
 @Composable
 private fun SummaryRows(
     section: PayInFormSection,
-    configuration: PayInFormConfiguration,
-    labels: PayInFormLabels,
-    style: PayInFormStyle,
+    context: PayInFormContext,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(style.spacing.label)) {
+    Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.label)) {
         section.fields.forEach { field ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = PayInStrings.label(field, labels), style = style.label)
-                Text(text = configuration.summaryValues[field].orEmpty(), style = style.supporting)
+                Text(text = PayInStrings.label(field, context.labels), style = context.style.label)
+                Text(text = context.configuration.summaryValueFor(field), style = context.style.supporting)
             }
         }
     }
@@ -235,7 +260,5 @@ private fun defaultSectionTitle(
 @PreviewLightDark
 @Composable
 private fun PayabliPayInFormPreview() {
-    CompositionLocalProvider(LocalTextStyle provides LocalTextStyle.current) {
-        PayabliPayInForm(configuration = PayInFormConfiguration())
-    }
+    PayabliPayInForm(configuration = PayInFormConfiguration())
 }
