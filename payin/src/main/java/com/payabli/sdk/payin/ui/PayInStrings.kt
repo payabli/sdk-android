@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.ui
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.PayInField
@@ -44,10 +45,19 @@ internal object PayInStrings {
     fun error(error: PayInFieldError): String =
         when (error) {
             PayInFieldError.DigitsOnly -> stringResource(R.string.payabli_payin_error_digits_only)
-            is PayInFieldError.ShorterThan -> stringResource(R.string.payabli_payin_error_shorter_than, error.minimum)
-            is PayInFieldError.NotExactly -> stringResource(R.string.payabli_payin_error_not_exactly, error.length)
+            is PayInFieldError.ShorterThan ->
+                pluralStringResource(R.plurals.payabli_payin_error_shorter_than, error.minimum, error.minimum)
+
+            is PayInFieldError.NotExactly ->
+                pluralStringResource(R.plurals.payabli_payin_error_not_exactly, error.length, error.length)
+
             is PayInFieldError.OutsideRange ->
-                stringResource(R.string.payabli_payin_error_outside_range, error.minimum, error.maximum)
+                pluralStringResource(
+                    R.plurals.payabli_payin_error_outside_range,
+                    error.maximum,
+                    error.minimum,
+                    error.maximum,
+                )
 
             PayInFieldError.CardNumberNotValid -> stringResource(R.string.payabli_payin_error_card_number)
             PayInFieldError.RoutingNumberNotValid -> stringResource(R.string.payabli_payin_error_routing_number)

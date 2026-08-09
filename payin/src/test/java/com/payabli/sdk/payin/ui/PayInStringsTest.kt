@@ -20,10 +20,36 @@ class PayInStringsTest {
     private val declaredNames: List<String> =
         Regex("""<string name="([^"]+)"""").findAll(strings).map { it.groupValues[1] }.toList()
 
+    private val declaredPlurals: List<String> =
+        Regex("""<plurals name="([^"]+)"""").findAll(strings).map { it.groupValues[1] }.toList()
+
     @Test
     fun `the resource file is where this test thinks it is`() {
         // Without this every assertion below passes on an empty file.
         assertTrue("strings.xml looks empty", declaredNames.size > 20)
+        assertTrue("no plurals found", declaredPlurals.isNotEmpty())
+    }
+
+    @Test
+    fun `every plural the code asks for is declared, and every declared one is read`() {
+        val referenced =
+            File("src/main/java/com/payabli/sdk/payin")
+                .walkTopDown()
+                .filter { it.isFile && it.extension == "kt" }
+                .flatMap { file ->
+                    Regex("""R\.plurals\.([a-z_]+)""").findAll(file.readText()).map { it.groupValues[1] }
+                }.toSet()
+
+        assertEquals(
+            "a composable names a plural that is not in strings.xml",
+            emptyList<String>(),
+            referenced.filterNot { it in declaredPlurals }.sorted(),
+        )
+        assertEquals(
+            "a plural is declared and never read",
+            emptyList<String>(),
+            declaredPlurals.filterNot { it in referenced }.sorted(),
+        )
     }
 
     @Test
@@ -68,13 +94,16 @@ class PayInStringsTest {
         // reach here. What it cannot check is that the branch names a resource that exists.
         val sourced = File("src/main/java/com/payabli/sdk/payin/ui/PayInStrings.kt").readText()
         val referenced =
-            Regex("""R\.string\.(payabli_payin_error_[a-z_]+)""").findAll(sourced).map { it.groupValues[1] }.toSet()
+            Regex("""R\.(?:string|plurals)\.(payabli_payin_error_[a-z_]+)""")
+                .findAll(sourced)
+                .map { it.groupValues[1] }
+                .toSet()
 
         assertTrue("no error strings referenced", referenced.isNotEmpty())
         assertEquals(
             "an error message names a resource that does not exist",
             emptyList<String>(),
-            referenced.filterNot { it in declaredNames },
+            referenced.filterNot { it in declaredNames || it in declaredPlurals },
         )
     }
 

@@ -58,9 +58,19 @@
 
     <!-- What is wrong with a field. Each one is a PayInFieldError. -->
     <string name="payabli_payin_error_digits_only">Digits only</string>
-    <string name="payabli_payin_error_shorter_than">At least %1$d digits</string>
-    <string name="payabli_payin_error_not_exactly">%1$d digits</string>
-    <string name="payabli_payin_error_outside_range">%1$d to %2$d digits</string>
+    <plurals name="payabli_payin_error_shorter_than">
+        <item quantity="one">At least %1$d digit</item>
+        <item quantity="other">At least %1$d digits</item>
+    </plurals>
+    <plurals name="payabli_payin_error_not_exactly">
+        <item quantity="one">%1$d digit</item>
+        <item quantity="other">%1$d digits</item>
+    </plurals>
+    <!-- Counted on the maximum, which is the number the payer is short of when this appears. -->
+    <plurals name="payabli_payin_error_outside_range">
+        <item quantity="one">%1$d to %2$d digit</item>
+        <item quantity="other">%1$d to %2$d digits</item>
+    </plurals>
     <string name="payabli_payin_error_card_number">That card number is not valid</string>
     <string name="payabli_payin_error_routing_number">That routing number is not valid</string>
     <string name="payabli_payin_error_email">That does not look like an email address</string>

@@ -15,12 +15,12 @@ public sealed interface PayInFieldError {
         val minimum: Int,
     ) : PayInFieldError
 
-    /** A field with one acceptable length: a postal code, a routing number. */
+    /** A field with one acceptable length. A routing number is the only one. */
     public data class NotExactly(
         val length: Int,
     ) : PayInFieldError
 
-    /** A field with a range: a security code, an account number. */
+    /** A field with a range of acceptable lengths: a security code, an account number. */
     public data class OutsideRange(
         val minimum: Int,
         val maximum: Int,
