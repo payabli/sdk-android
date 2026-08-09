@@ -10,6 +10,12 @@ public data class ExpiryValue(
     public val month: Int,
     public val year: Int,
 ) {
+    init {
+        // Everything downstream assumes it. A 13 formats to 13/30, which parse refuses, and it makes
+        // ExpiryChoices.months return nothing, which coerceMonth reads the first element of.
+        require(month in 1..12) { "a month is 1 to 12, not $month" }
+    }
+
     /**
      * `MM/YY`, in [Locale.ROOT], with [separator] between the two.
      *

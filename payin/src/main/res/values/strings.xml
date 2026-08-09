@@ -69,8 +69,8 @@
         <item quantity="other">At most %1$d digits</item>
     </plurals>
     <plurals name="payabli_payin_error_not_exactly">
-        <item quantity="one">%1$d digit</item>
-        <item quantity="other">%1$d digits</item>
+        <item quantity="one">Exactly %1$d digit</item>
+        <item quantity="other">Exactly %1$d digits</item>
     </plurals>
     <!-- Counted on the maximum, which is the number the payer is short of when this appears. -->
     <plurals name="payabli_payin_error_outside_range">

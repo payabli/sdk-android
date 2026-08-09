@@ -240,7 +240,10 @@ private fun PayInField.keyboardOptions(): KeyboardOptions =
     KeyboardOptions(
         keyboardType =
             when (input) {
-                PayInFieldInput.Number, PayInFieldInput.Secret -> KeyboardType.Number
+                PayInFieldInput.Number -> KeyboardType.Number
+                // NumberPassword, so the IME does not learn or suggest a security code or an
+                // account number. PasswordVisualTransformation only masks the drawing.
+                PayInFieldInput.Secret -> KeyboardType.NumberPassword
                 PayInFieldInput.Email -> KeyboardType.Email
                 else -> KeyboardType.Text
             },

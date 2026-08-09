@@ -130,6 +130,37 @@ class PayInApiBoundsTest {
         )
     }
 
+    // --- a month outside 1..12 reaches three things that assume it is inside ---
+
+    @Test
+    fun `an impossible month is refused where the value is built`() {
+        listOf(0, 13, -1, 99).forEach { month ->
+            val failed =
+                try {
+                    ExpiryValue(month, 2030)
+                    false
+                } catch (expected: IllegalArgumentException) {
+                    true
+                }
+            assertTrue("month $month was accepted", failed)
+        }
+    }
+
+    @Test
+    fun `every month the picker offers builds a value, and every built value round-trips`() {
+        // The three that assumed it: format wrote 13/30, parse refused its own output, and months
+        // returned an empty list that coerceMonth reads the first element of.
+        val today = ExpiryValue(8, 2026)
+        ExpiryChoices.years(today).forEach { year ->
+            val months = ExpiryChoices.months(today, year)
+            assertTrue("no months offered for $year", months.isNotEmpty())
+            months.forEach { month ->
+                val value = ExpiryValue(month, year)
+                assertEquals(value, ExpiryValue.parse(value.format()))
+            }
+        }
+    }
+
     @Test
     fun `a section's field list is copied too`() {
         val fields = mutableListOf(PayInField.CardNumber)

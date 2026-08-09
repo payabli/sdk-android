@@ -64,7 +64,22 @@ public fun PayabliPayInForm(
     val typed = remember(configuration) { mutableStateMapOf<PayInField, String>() }
 
     val sections = configuration.sectionsFor(method)
-    val inputs = configuration.inputFieldsFor(method)
+
+    // Both read the state rather than closing over a list from the composition that built them. A
+    // click or an edit lands before the next composition, and `method` is state while a captured
+    // field list is not, so the two could describe different tabs.
+    fun collect(chosen: PayInMethodType): PayInFormValues =
+        PayInFormValues(chosen, configuration.inputFieldsFor(chosen).associateWith { typed[it].orEmpty() })
+
+    fun isComplete(
+        chosen: PayInMethodType,
+        at: ExpiryValue,
+    ): Boolean {
+        val fields = configuration.inputFieldsFor(chosen)
+        return fields.none { configuration.isRequired(it) && PayInFieldRules.missing(it, typed[it].orEmpty()) } &&
+            fields.none { PayInFieldRules.error(it, typed[it].orEmpty(), at) != null }
+    }
+
     val context =
         PayInFormContext(
             configuration = configuration,
@@ -74,9 +89,7 @@ public fun PayabliPayInForm(
             enabled = !isSubmitting,
         )
 
-    val complete =
-        inputs.none { configuration.isRequired(it) && PayInFieldRules.missing(it, typed[it].orEmpty()) } &&
-            inputs.none { PayInFieldRules.error(it, typed[it].orEmpty(), today) != null }
+    val complete = isComplete(method, today)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -89,9 +102,8 @@ public fun PayabliPayInForm(
                 method = chosen
                 // Whatever the new instrument does not ask for goes, so a card number is neither
                 // reported with a bank submission nor held behind that form.
-                val kept = configuration.inputFieldsFor(chosen)
-                typed.keys.retainAll(kept.toSet())
-                onValuesChanged(PayInFormValues(chosen, kept.associateWith { typed[it].orEmpty() }))
+                typed.keys.retainAll(configuration.inputFieldsFor(chosen).toSet())
+                onValuesChanged(collect(chosen))
             }
         }
 
@@ -99,7 +111,7 @@ public fun PayabliPayInForm(
             sections.forEach { section ->
                 FormSection(section, method, typed, context) { field, value ->
                     typed[field] = value
-                    onValuesChanged(PayInFormValues(method, inputs.associateWith { typed[it].orEmpty() }))
+                    onValuesChanged(collect(method))
                 }
             }
         }
@@ -111,14 +123,12 @@ public fun PayabliPayInForm(
             isSubmitting = isSubmitting,
             style = context.style,
             onClick = {
-                // The clock again, at the one moment it decides something. A form left untouched
-                // across the turn of a month is not recomposing, so the value read above is the
-                // month it was opened in.
+                // Everything again, against the state as it is now. `enabled` reflects the last
+                // composition, so a field cleared or a tab switched in the frame before this click
+                // would otherwise submit on a gate that no longer holds. The clock is re-read for
+                // the same reason: an untouched form is not recomposing.
                 val now = ExpiryValue.today()
-                val stillValid = inputs.none { PayInFieldRules.error(it, typed[it].orEmpty(), now) != null }
-                if (stillValid) {
-                    onSubmit(PayInFormValues(method, inputs.associateWith { typed[it].orEmpty() }))
-                }
+                if (isComplete(method, now)) onSubmit(collect(method))
             },
         )
     }
