@@ -55,10 +55,10 @@ private const val POLL_MILLIS = 10L
 /**
  * A second callback before the first has finished must not start a second operation.
  *
- * Every one of these screens disables its button through state, which the reviewer's finding is
- * about: state disables it only once the composition has caught up, and a callback landing before
- * that reaches a function which used to accept it. Against the demo controllers that is a duplicate
- * line on a card. Behind a real SDK it is a second charge and a second stored instrument.
+ * Every one of these screens disables its button through state, which takes effect only once the
+ * composition has caught up. A callback landing before that reaches the function anyway: against the
+ * demo controllers a duplicate line on a card, behind a real SDK a second charge and a second stored
+ * instrument.
  *
  * The controllers here suspend until released, so the second call always lands while the first is in
  * flight. A controller that returned immediately would let the first finish and prove nothing.

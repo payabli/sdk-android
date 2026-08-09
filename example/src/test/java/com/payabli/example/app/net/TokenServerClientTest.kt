@@ -176,9 +176,9 @@ class TokenServerClientTest {
             val probe = client(target).probeHealth()
 
             assertTrue(probe is TokenServerProbe.Unreachable)
-            // The cause's message, not the wrapper's. Measured, the throwable is a RuntimeException
-            // wrapping IllegalArgumentException, and the wrapper's own message is the cause's
-            // toString, which would put a class name on the screen.
+            // The throwable is a RuntimeException wrapping IllegalArgumentException, and the
+            // wrapper's message is the cause's toString, which puts a class name on the screen. The
+            // cause's own message carries the port.
             assertTrue(
                 "does not name the port: ${probe.displayText(TokenServerProbe.HEALTH_LABEL)}",
                 probe.displayText(TokenServerProbe.HEALTH_LABEL).contains("99999"),

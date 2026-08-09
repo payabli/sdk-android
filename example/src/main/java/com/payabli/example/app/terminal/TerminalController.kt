@@ -34,7 +34,7 @@ interface TerminalController {
     suspend fun activateDevice(activationCode: String): Result<Unit>
 }
 
-/** What a successful charge produced. Deliberately carries no card data of any kind. */
+/** What a successful charge produced. Carries no card data of any kind. */
 data class ChargeReceipt(
     val paymentTransactionId: String,
 )

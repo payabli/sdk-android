@@ -47,9 +47,8 @@ class TokenServerClient(
                 }.getOrNull()
             when {
                 token.isNullOrBlank() -> TokenServerProbe.Malformed("the body carried no token")
-                // Deliberately not the token, not a prefix of it, and not its length: a token is
-                // secret, and a sample app is the last place that should teach otherwise. That it
-                // arrived is the whole result.
+                // That a token arrived is the whole result. The token, a prefix of it and its
+                // length are all secret, and a sample app is the last place to teach otherwise.
                 else -> TokenServerProbe.Ok("returned a token")
             }
         }
@@ -90,8 +89,8 @@ class TokenServerClient(
                 // busy flag still set, and that flag is what makes the operation single flight, so
                 // the button would stay disabled until the app was killed.
                 //
-                // Broad on purpose. This function's contract is that it returns an outcome, and a
-                // demo screen showing what went wrong beats a control that never works again.
+                // Broad, because this function's contract is that it returns an outcome. A demo
+                // screen showing what went wrong beats a control that never works again.
                 TokenServerProbe.Unreachable(e.cause?.message ?: e.message ?: e.javaClass.simpleName)
             } finally {
                 connection?.disconnect()

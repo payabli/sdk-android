@@ -6,8 +6,8 @@ import org.junit.Test
 
 class TokenHostResolverTest {
     /**
-     * Stands in for the settings. Deliberately not the shipped defaults: these tests are about the
-     * precedence rules, and a fixture equal to the default cannot show that the default was read.
+     * Stands in for the settings. Unequal to the shipped defaults, so a test of the precedence
+     * rules can tell a default that was read from one that was assumed.
      */
     private val defaults = TokenHostDefaults(emulatorHost = "emu.test", deviceHost = "dev.test", port = 8787)
 
@@ -118,8 +118,8 @@ class TokenHostResolverTest {
 
     @Test
     fun `the shipped defaults are the standard local ones`() {
-        // The fixture above deliberately is not these, so without this nothing pins them and a typo
-        // in the build file would reach a device before anyone noticed.
+        // The fixture above is not these, so this is the only thing pinning them and a typo in the
+        // build file reaches a device without it.
         val shipped = TokenHostDefaults.fromBuildConfig()
         assertEquals("10.0.2.2", shipped.emulatorHost)
         assertEquals("127.0.0.1", shipped.deviceHost)

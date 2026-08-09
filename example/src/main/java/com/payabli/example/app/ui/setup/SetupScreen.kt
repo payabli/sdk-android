@@ -65,9 +65,8 @@ fun SetupScreen(
             note = "Resolved for this run. The app fetches its own token here; the SDK is not involved.",
         ) {
             DetailRow(label = "Server", value = state.tokenServer.baseUrl)
-            // The routes, not just the host. "Check token" calls exchange-token deliberately, because
-            // the access-token route serves a cached value and a token provider has to mint on every
-            // call. A row that showed only the host would leave that decision invisible.
+            // The routes, not just the host. "Check token" calls exchange-token: the access-token
+            // route serves a cached value, and a token provider has to mint on every call.
             DetailRow(label = "Token route", value = state.tokenServer.accessTokenUrl)
             DetailRow(label = "Health route", value = state.tokenServer.healthUrl)
             DetailRow(label = "Chosen because", value = state.tokenServer.explanation)
