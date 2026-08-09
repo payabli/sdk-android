@@ -163,7 +163,7 @@ private fun ExpiryField(
             initial = ExpiryValue.parse(value),
             style = style,
             onPicked = {
-                onValueChange(it.format())
+                onValueChange(it.format(configuration.formatting.expirySeparator))
                 picking = false
             },
             onDismiss = { picking = false },

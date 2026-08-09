@@ -11,12 +11,15 @@ public data class ExpiryValue(
     val year: Int,
 ) {
     /**
-     * `MM/YY`, in [Locale.ROOT].
+     * `MM/YY`, in [Locale.ROOT], with [separator] between the two.
      *
      * The default locale renders non-ASCII digits under `ar-EG` and `hi-IN`, which [parse] cannot
      * read back.
      */
-    public fun format(): String = String.format(Locale.ROOT, "%02d/%02d", month, year % 100)
+    public fun format(separator: String = "/"): String =
+        // Two formats and a join, because a separator is a caller's string and a "%" in a format
+        // string is an argument reference.
+        String.format(Locale.ROOT, "%02d", month) + separator + String.format(Locale.ROOT, "%02d", year % 100)
 
     /**
      * A card is good through the last day of its expiry month, so that month is not yet expired.
@@ -41,14 +44,17 @@ public data class ExpiryValue(
             )
         }
 
-        /** Parses `MM/YY`, taking a two-digit year as being in the current century. */
+        /**
+         * Parses month, then anything that is not a digit, then a two-digit year in this century.
+         *
+         * The separator is whatever [PayInFormatting] chose, and this reads a value back without
+         * being told which one, so validation stays a pure function of the text.
+         */
         public fun parse(text: String): ExpiryValue? {
-            val parts = text.split("/")
-            if (parts.size != 2) return null
-            val month = parts[0].trim().toIntOrNull() ?: return null
-            val shortYear = parts[1].trim().toIntOrNull() ?: return null
+            val digits = Regex("^\\s*(\\d{1,2})\\D+(\\d{2})\\s*$").find(text) ?: return null
+            val month = digits.groupValues[1].toInt()
+            val shortYear = digits.groupValues[2].toInt()
             if (month !in 1..12) return null
-            if (shortYear !in 0..99) return null
             return ExpiryValue(month, 2000 + shortYear)
         }
     }

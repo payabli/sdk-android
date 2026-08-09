@@ -206,6 +206,25 @@ class PayInFieldRulesTest {
     }
 
     @Test
+    fun `the separator reaches the value and the value still parses`() {
+        // The configured separator used to reach the placeholder only, so a form set to "-" showed
+        // MM-YY and produced 07/30.
+        val expiry = ExpiryValue(7, 2030)
+        listOf("-", ".", " / ", "%s").forEach { separator ->
+            val written = expiry.format(separator)
+            assertEquals(separator, "07${separator}30", written)
+            assertEquals(separator, expiry, ExpiryValue.parse(written))
+        }
+    }
+
+    @Test
+    fun `a value that is not a month and a year does not parse`() {
+        listOf("", "0730", "13/30", "00/30", "7/3", "//", "07/", "/30", "07/30/31").forEach {
+            assertEquals(it, null, ExpiryValue.parse(it))
+        }
+    }
+
+    @Test
     fun `an expiry round-trips under a locale whose digits are not ASCII`() {
         // The default locale would decide the digits, and parse reads only ASCII, so the value would
         // not survive its own format on a device set to one of these.
