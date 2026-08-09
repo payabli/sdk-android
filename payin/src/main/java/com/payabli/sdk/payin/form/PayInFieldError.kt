@@ -20,6 +20,11 @@ public sealed interface PayInFieldError {
         public val maximum: Int,
     ) : PayInFieldError
 
+    /** Longer than the field accepts, counted in characters. A postal code is not digits. */
+    public data class TooManyCharacters(
+        val maximum: Int,
+    ) : PayInFieldError
+
     /** A field with one acceptable length. A routing number is the only one. */
     public data class NotExactly(
         public val length: Int,

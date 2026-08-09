@@ -76,8 +76,9 @@ public data class PayInFormatting(
 /**
  * What the form collects and how it is arranged. Colours, type and spacing are [PayInFormStyle]'s.
  *
- * Two inputs are corrected on construction: an empty [allowedMethods] becomes [defaultMethod], and a
- * [defaultMethod] outside the allowed set becomes the first allowed one.
+ * [allowedMethods] and [defaultMethod] are what a caller passed, unchanged. Two corrections apply to
+ * what the form reads instead: [methodsOffered] drops duplicates and is never empty, and
+ * [startingMethod] is always one of it. Read those two rather than the raw pair.
  *
  * Every collection is copied at construction, which is what `@Immutable` states to Compose. The
  * parameters are not `val`, as `PayabliResponse` in `:core` writes it: a property beside the copy

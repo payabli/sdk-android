@@ -223,6 +223,32 @@ class PayInApiBoundsTest {
         assertEquals(CardBrand.Unknown, CardBrand.of("٤١١١١١١١"))
     }
 
+    // --- the fields that are not digits still have a length ---
+
+    @Test
+    fun `a postal code past the length the field holds is an error`() {
+        listOf(PayInField.CardPostalCode, PayInField.BillingPostalCode).forEach { field ->
+            assertEquals("${field.name} has no maximum", 12, PayInFieldRules.maxLength(field))
+            assertNull(field.name, PayInFieldRules.error(field, "SW1A 1AA"))
+            assertNull(field.name, PayInFieldRules.error(field, "1".repeat(12)))
+            assertEquals(
+                field.name,
+                PayInFieldError.TooManyCharacters(12),
+                PayInFieldRules.error(field, "1".repeat(13)),
+            )
+        }
+    }
+
+    @Test
+    fun `an address with whitespace in it is refused`() {
+        // The shape check read around the spaces, so "a b@example.com" had an at-sign, a dot in the
+        // domain and no second at-sign, and passed.
+        listOf("a b@example.com", "a@b .com", " a@b.com", "a@b.com ", "a\tb@c.com").forEach {
+            assertEquals(it, PayInFieldError.EmailNotValid, PayInFieldRules.error(PayInField.BillingEmail, it))
+        }
+        assertNull(PayInFieldRules.error(PayInField.BillingEmail, "test.cardholder@example.com"))
+    }
+
     // --- masking is one rule, and a host can read it ---
 
     @Test

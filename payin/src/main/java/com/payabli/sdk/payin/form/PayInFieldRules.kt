@@ -38,7 +38,7 @@ public object PayInFieldRules {
         when (field) {
             PayInField.CardNumber -> CARD_NUMBER_MAX
             PayInField.CardSecurityCode -> SECURITY_CODE_RANGE.last
-            PayInField.CardPostalCode -> POSTAL_CODE_MAX
+            PayInField.CardPostalCode, PayInField.BillingPostalCode -> POSTAL_CODE_MAX
             PayInField.RoutingNumber -> ROUTING_NUMBER_LENGTH
             PayInField.AccountNumber -> ACCOUNT_NUMBER_RANGE.last
             else -> null
@@ -88,6 +88,9 @@ public object PayInFieldRules {
         if (value.isBlank()) return null
         return when (field) {
             PayInField.CardNumber -> cardNumberError(value)
+            PayInField.CardPostalCode, PayInField.BillingPostalCode ->
+                if (value.length > POSTAL_CODE_MAX) PayInFieldError.TooManyCharacters(POSTAL_CODE_MAX) else null
+
             PayInField.CardExpiration -> expiryError(value, today)
             PayInField.CardSecurityCode -> rangeError(value, SECURITY_CODE_RANGE)
             PayInField.RoutingNumber -> routingNumberError(value)
@@ -172,6 +175,7 @@ public object PayInFieldRules {
      * Whether the address exists is the mail server's answer.
      */
     private fun emailError(value: String): PayInFieldError? {
+        if (value.any { it.isWhitespace() }) return PayInFieldError.EmailNotValid
         val at = value.indexOf('@')
         val domain = value.substringAfter('@', "")
         val looksLikeAnAddress =

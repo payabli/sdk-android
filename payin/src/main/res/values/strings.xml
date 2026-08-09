@@ -74,6 +74,10 @@
         <item quantity="one">At most %1$d digit</item>
         <item quantity="other">At most %1$d digits</item>
     </plurals>
+    <plurals name="payabli_payin_error_too_many_characters">
+        <item quantity="one">At most %1$d character</item>
+        <item quantity="other">At most %1$d characters</item>
+    </plurals>
     <plurals name="payabli_payin_error_not_exactly">
         <item quantity="one">Exactly %1$d digit</item>
         <item quantity="other">Exactly %1$d digits</item>

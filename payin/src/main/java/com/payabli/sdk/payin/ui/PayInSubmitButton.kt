@@ -29,10 +29,11 @@ internal fun PayInSubmitButton(
     style: PayInFormStyle,
     onClick: () -> Unit,
 ) {
+    // No shape here. Material gives a Button the host's button shape, and passing the field shape
+    // made this one unlike every other button in the app, and made fieldShape move two things.
     Button(
         onClick = onClick,
         enabled = enabled,
-        shape = style.fieldShape,
         modifier =
             Modifier
                 .fillMaxWidth()

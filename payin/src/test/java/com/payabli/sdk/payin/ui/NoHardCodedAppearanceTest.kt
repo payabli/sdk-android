@@ -26,11 +26,17 @@ class NoHardCodedAppearanceTest {
      *
      * One entry, and it names no colour anything sees: an `ImageVector` path has to declare a fill,
      * and `Icon` paints its tint over it. Material's own icons are built the same way.
+     *
+     * The exception is one line rather than the whole file, so a colour added anywhere else in that
+     * file is still caught.
      */
     private val colourExceptions =
         mapOf(
             "PayInIcons.kt" to "a vector path needs a fill, and Icon tints over it",
         )
+
+    /** The only colour a file in [colourExceptions] may carry. */
+    private val vectorFill = Regex("""^fill = SolidColor\(Color\.Black\),$""")
 
     /**
      * Files allowed to carry a measurement, each for a stated reason.
@@ -54,11 +60,13 @@ class NoHardCodedAppearanceTest {
     @Test
     fun `no composable names a colour`() {
         val offenders =
-            uiSources.filter { it.name !in colourExceptions }.flatMap { file ->
+            uiSources.flatMap { file ->
+                val exempt = file.name in colourExceptions
                 file
                     .readLines()
                     .withIndex()
                     .filter { (_, line) -> COLOUR_LITERAL.containsMatchIn(line) }
+                    .filterNot { (_, line) -> exempt && vectorFill.matches(line.trim()) }
                     .map { (index, line) -> "${file.name}:${index + 1} ${line.trim()}" }
             }
 
@@ -139,6 +147,17 @@ class NoHardCodedAppearanceTest {
             "style.selectedContainer",
             "Color.Transparent",
         ).forEach { assertTrue("$it is flagged", !COLOUR_LITERAL.containsMatchIn(it)) }
+    }
+
+    @Test
+    fun `an excepted file may carry the vector fill and nothing else`() {
+        assertTrue("the fill it exists for", vectorFill.matches("fill = SolidColor(Color.Black),"))
+        listOf(
+            "background(Color.Red)",
+            "tint = Color(0xFF008BCE)",
+            "fill = SolidColor(Color.Red),",
+            "val brand = Color(255, 0, 0)",
+        ).forEach { assertTrue("$it would be let through", !vectorFill.matches(it)) }
     }
 
     @Test

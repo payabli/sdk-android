@@ -248,7 +248,13 @@ private fun SummaryRows(
     Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.label)) {
         section.fields.forEach { field ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(text = PayInStrings.label(field, context.labels), style = context.style.label)
+                // The label yields. Two unconstrained children let a long one take the row and
+                // leave the amount at zero width, which is the half a payer needs.
+                Text(
+                    text = PayInStrings.label(field, context.labels),
+                    style = context.style.label,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
                 Text(text = context.configuration.summaryValueFor(field), style = context.style.supporting)
             }
         }
