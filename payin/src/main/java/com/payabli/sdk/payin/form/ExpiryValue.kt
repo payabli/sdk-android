@@ -7,8 +7,8 @@ import java.util.Locale
  * A card expiry, as a month and a four-digit year. The payer sees `MM/YY`.
  */
 public data class ExpiryValue(
-    val month: Int,
-    val year: Int,
+    public val month: Int,
+    public val year: Int,
 ) {
     /**
      * `MM/YY`, in [Locale.ROOT], with [separator] between the two.

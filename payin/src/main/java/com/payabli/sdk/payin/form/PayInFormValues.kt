@@ -10,8 +10,8 @@ import androidx.compose.runtime.Immutable
  */
 @Immutable
 public data class PayInFormValues(
-    val method: PayInMethodType,
-    val values: Map<PayInField, String>,
+    public val method: PayInMethodType,
+    public val values: Map<PayInField, String>,
 ) {
     /** The value for a field, or empty when it was never typed into. */
     public operator fun get(field: PayInField): String = values[field].orEmpty()

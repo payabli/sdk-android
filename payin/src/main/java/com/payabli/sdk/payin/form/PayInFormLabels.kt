@@ -13,11 +13,11 @@ import androidx.compose.runtime.Immutable
  */
 @Immutable
 public data class PayInFormLabels(
-    val title: String? = null,
-    val subtitle: String? = null,
-    val submitButton: String? = null,
-    val fieldLabels: Map<PayInField, String> = emptyMap(),
-    val fieldPlaceholders: Map<PayInField, String> = emptyMap(),
+    public val title: String? = null,
+    public val subtitle: String? = null,
+    public val submitButton: String? = null,
+    public val fieldLabels: Map<PayInField, String> = emptyMap(),
+    public val fieldPlaceholders: Map<PayInField, String> = emptyMap(),
 ) {
     private val labels: Map<PayInField, String> = fieldLabels.toMap()
     private val placeholders: Map<PayInField, String> = fieldPlaceholders.toMap()

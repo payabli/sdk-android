@@ -16,13 +16,13 @@ import androidx.compose.ui.unit.dp
  */
 @Immutable
 public data class PayInFormSpacing(
-    val content: Dp = 20.dp,
-    val header: Dp = 4.dp,
-    val fieldGroup: Dp = 12.dp,
-    val pairedField: Dp = 12.dp,
-    val label: Dp = 7.dp,
-    val section: Dp = 18.dp,
-    val sectionTitle: Dp = 10.dp,
+    public val content: Dp = 20.dp,
+    public val header: Dp = 4.dp,
+    public val fieldGroup: Dp = 12.dp,
+    public val pairedField: Dp = 12.dp,
+    public val label: Dp = 7.dp,
+    public val section: Dp = 18.dp,
+    public val sectionTitle: Dp = 10.dp,
 ) {
     init {
         require(listOf(content, header, fieldGroup, pairedField, label, section, sectionTitle).none { it < 0.dp }) {
@@ -40,19 +40,19 @@ public data class PayInFormSpacing(
  */
 @Immutable
 public data class PayInFormStyle(
-    val title: TextStyle,
-    val subtitle: TextStyle,
-    val sectionTitle: TextStyle,
-    val label: TextStyle,
-    val supporting: TextStyle,
-    val error: TextStyle,
-    val fieldShape: Shape,
-    val spacing: PayInFormSpacing,
+    public val title: TextStyle,
+    public val subtitle: TextStyle,
+    public val sectionTitle: TextStyle,
+    public val label: TextStyle,
+    public val supporting: TextStyle,
+    public val error: TextStyle,
+    public val fieldShape: Shape,
+    public val spacing: PayInFormSpacing,
     /** Behind the chosen month and year in the expiry picker. */
-    val selectedContainer: Color,
+    public val selectedContainer: Color,
     /** On top of [selectedContainer]. */
-    val selectedContent: Color,
-    val fieldColors: TextFieldColors? = null,
+    public val selectedContent: Color,
+    public val fieldColors: TextFieldColors? = null,
 )
 
 /**
@@ -62,17 +62,17 @@ public data class PayInFormStyle(
  */
 @Immutable
 public data class PayInThemeRoles(
-    val onSurface: Color,
-    val onSurfaceVariant: Color,
-    val error: Color,
-    val secondaryContainer: Color,
-    val onSecondaryContainer: Color,
-    val titleType: TextStyle,
-    val subtitleType: TextStyle,
-    val sectionTitleType: TextStyle,
-    val labelType: TextStyle,
-    val supportingType: TextStyle,
-    val fieldShape: Shape,
+    public val onSurface: Color,
+    public val onSurfaceVariant: Color,
+    public val error: Color,
+    public val secondaryContainer: Color,
+    public val onSecondaryContainer: Color,
+    public val titleType: TextStyle,
+    public val subtitleType: TextStyle,
+    public val sectionTitleType: TextStyle,
+    public val labelType: TextStyle,
+    public val supportingType: TextStyle,
+    public val fieldShape: Shape,
 )
 
 /**
@@ -80,17 +80,17 @@ public data class PayInThemeRoles(
  */
 @Immutable
 public data class PayInFormStyleOverrides(
-    val title: TextStyle? = null,
-    val subtitle: TextStyle? = null,
-    val sectionTitle: TextStyle? = null,
-    val label: TextStyle? = null,
-    val supporting: TextStyle? = null,
-    val error: TextStyle? = null,
-    val fieldShape: Shape? = null,
-    val spacing: PayInFormSpacing? = null,
-    val selectedContainer: Color? = null,
-    val selectedContent: Color? = null,
-    val fieldColors: TextFieldColors? = null,
+    public val title: TextStyle? = null,
+    public val subtitle: TextStyle? = null,
+    public val sectionTitle: TextStyle? = null,
+    public val label: TextStyle? = null,
+    public val supporting: TextStyle? = null,
+    public val error: TextStyle? = null,
+    public val fieldShape: Shape? = null,
+    public val spacing: PayInFormSpacing? = null,
+    public val selectedContainer: Color? = null,
+    public val selectedContent: Color? = null,
+    public val fieldColors: TextFieldColors? = null,
 )
 
 /**

@@ -12,23 +12,23 @@ public sealed interface PayInFieldError {
 
     /** Shorter than any card scheme issues. */
     public data class ShorterThan(
-        val minimum: Int,
+        public val minimum: Int,
     ) : PayInFieldError
 
     /** Longer than any card scheme issues. The form's own field truncates before this. */
     public data class LongerThan(
-        val maximum: Int,
+        public val maximum: Int,
     ) : PayInFieldError
 
     /** A field with one acceptable length. A routing number is the only one. */
     public data class NotExactly(
-        val length: Int,
+        public val length: Int,
     ) : PayInFieldError
 
     /** A field with a range of acceptable lengths: a security code, an account number. */
     public data class OutsideRange(
-        val minimum: Int,
-        val maximum: Int,
+        public val minimum: Int,
+        public val maximum: Int,
     ) : PayInFieldError
 
     /** Well formed and fails the Luhn check digit. */

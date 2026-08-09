@@ -26,9 +26,9 @@ public enum class PayInLabelLayout {
  */
 @Immutable
 public data class PayInFormSection(
-    val fields: List<PayInField>,
-    val title: String? = null,
-    val style: PayInSectionStyle = PayInSectionStyle.Inputs,
+    public val fields: List<PayInField>,
+    public val title: String? = null,
+    public val style: PayInSectionStyle = PayInSectionStyle.Inputs,
 )
 
 /** The same section over a list nobody else holds a reference to. */
@@ -43,9 +43,9 @@ internal fun PayInFormSection.copySnapshot(): PayInFormSection = copy(fields = f
  */
 @Immutable
 public data class PayInFormatting(
-    val groupsCardNumber: Boolean = true,
-    val expirySeparator: String = "/",
-    val masksAccountNumber: Boolean = true,
+    public val groupsCardNumber: Boolean = true,
+    public val expirySeparator: String = "/",
+    public val masksAccountNumber: Boolean = true,
 ) {
     init {
         require(expirySeparator.isNotEmpty()) { "an expiry separator of nothing runs the month into the year" }
@@ -68,16 +68,16 @@ public data class PayInFormatting(
  */
 @Immutable
 public data class PayInFormConfiguration(
-    val allowedMethods: List<PayInMethodType> = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
-    val defaultMethod: PayInMethodType = PayInMethodType.Card,
-    val cardSections: List<PayInFormSection> = defaultCardSections(),
-    val bankSections: List<PayInFormSection> = defaultBankSections(),
-    val requiredFields: Set<PayInField> = emptySet(),
-    val labelLayout: PayInLabelLayout = PayInLabelLayout.External,
-    val hiddenFieldLabels: Set<PayInField> = emptySet(),
-    val formatting: PayInFormatting = PayInFormatting(),
+    public val allowedMethods: List<PayInMethodType> = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
+    public val defaultMethod: PayInMethodType = PayInMethodType.Card,
+    public val cardSections: List<PayInFormSection> = defaultCardSections(),
+    public val bankSections: List<PayInFormSection> = defaultBankSections(),
+    public val requiredFields: Set<PayInField> = emptySet(),
+    public val labelLayout: PayInLabelLayout = PayInLabelLayout.External,
+    public val hiddenFieldLabels: Set<PayInField> = emptySet(),
+    public val formatting: PayInFormatting = PayInFormatting(),
     /** Values for a [PayInSectionStyle.Summary] section, already formatted by the caller. */
-    val summaryValues: Map<PayInField, String> = emptyMap(),
+    public val summaryValues: Map<PayInField, String> = emptyMap(),
 ) {
     private val methods: List<PayInMethodType> =
         allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
