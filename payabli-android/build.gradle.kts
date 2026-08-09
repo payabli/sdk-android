@@ -11,6 +11,8 @@ extra["payabliArtifactId"] = "sdk-android"
 // integrated modules so consumers can depend on a single coordinate. Card-present is
 // intentionally excluded and stays opt-in; consumers who need it add it explicitly
 // (its version is pinned by the BOM).
+//
+// :payin ships the Compose payment form, so this artifact carries the Compose runtime.
 android {
     namespace = "com.payabli.sdk.bundle"
     compileSdk {
