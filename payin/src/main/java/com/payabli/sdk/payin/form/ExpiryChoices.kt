@@ -7,8 +7,14 @@ public object ExpiryChoices {
     /** How far ahead a card may expire. Longer than any card issued today, and bounded. */
     public const val YEARS_AHEAD: Int = 20
 
-    /** This year and the next [YEARS_AHEAD]. No earlier year is offered. */
-    public fun years(today: ExpiryValue): List<Int> = (today.year..today.year + YEARS_AHEAD).toList()
+    /**
+     * This year and the next [YEARS_AHEAD], stopping at the last year [ExpiryValue] can hold.
+     *
+     * Without the cap the list runs past 2099 from 2080 onwards, and picking one of those years
+     * throws where the picker builds the value.
+     */
+    public fun years(today: ExpiryValue): List<Int> =
+        (today.year..minOf(today.year + YEARS_AHEAD, ExpiryValue.SUPPORTED_YEARS.last)).toList()
 
     /**
      * Every month, except in the current year where the months already gone are dropped.

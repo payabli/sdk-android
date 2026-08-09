@@ -4,6 +4,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
+import com.payabli.sdk.payin.form.PayInFormatting
 import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -97,11 +98,25 @@ class PaymentFormSummaryTest {
             .distinct()
             .forEach { field ->
                 assertEquals(
-                    "${field.name} is ${if (field.input == PayInFieldInput.Secret) "secret" else "not secret"} but the readout says otherwise",
-                    field.input == PayInFieldInput.Secret,
+                    "${field.name}: the readout disagrees with configuration.masks",
+                    configuration.masks(field),
                     masked.contains(field.fieldName),
                 )
             }
+    }
+
+    @Test
+    fun `turning off account masking takes the account number out of the readout`() {
+        // The readout is what a reader checks the form against, so naming a field as masked while
+        // the form shows it in clear text is the one thing it must not do.
+        val open =
+            DemoForms.capture().configuration.copy(
+                formatting = PayInFormatting(masksAccountNumber = false),
+            )
+        val masked = rowsOf(open)["Masked"]!!
+
+        assertTrue("the account number is still named", !masked.contains(PayInField.AccountNumber.fieldName))
+        assertTrue("the security code stopped being named", masked.contains(PayInField.CardSecurityCode.fieldName))
     }
 
     @Test

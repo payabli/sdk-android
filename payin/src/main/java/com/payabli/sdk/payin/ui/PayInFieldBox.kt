@@ -79,7 +79,7 @@ private fun TypedField(
 ) {
     // Masked, not merely secret. With masksAccountNumber off the account number is always in clear
     // text, and a reveal control over it toggles nothing.
-    val isMasked = field.input == PayInFieldInput.Secret && field.shouldMask(context.configuration)
+    val isMasked = context.configuration.masks(field)
 
     // Keyed on the field. A configuration that puts a different secret field in this slot would
     // otherwise inherit the reveal state and show what the payer types next in clear text.
@@ -145,7 +145,10 @@ private fun ExpiryField(
         isError = PayInFieldRules.error(field, value, context.today) != null,
         trailingIcon = {
             IconButton(onClick = { picking = true }, enabled = context.enabled) {
-                Icon(imageVector = ExpiryIcon, contentDescription = label)
+                Icon(
+                    imageVector = ExpiryIcon,
+                    contentDescription = stringResource(R.string.payabli_payin_expiry_choose),
+                )
             }
         },
     )
@@ -259,12 +262,9 @@ private fun PayInField.transformation(
 ): VisualTransformation =
     when {
         this == PayInField.CardNumber && configuration.formatting.groupsCardNumber -> CardNumberSpacing
-        input == PayInFieldInput.Secret && !revealed && shouldMask(configuration) -> PasswordVisualTransformation()
+        !revealed && configuration.masks(this) -> PasswordVisualTransformation()
         else -> VisualTransformation.None
     }
-
-private fun PayInField.shouldMask(configuration: PayInFormConfiguration): Boolean =
-    this != PayInField.AccountNumber || configuration.formatting.masksAccountNumber
 
 @Composable
 @ReadOnlyComposable

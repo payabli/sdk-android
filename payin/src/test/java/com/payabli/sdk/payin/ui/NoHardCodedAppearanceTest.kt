@@ -119,6 +119,29 @@ class NoHardCodedAppearanceTest {
     }
 
     @Test
+    fun `the colour rule catches every way a colour can be written`() {
+        // Each is a deliberate break. The rule read only Color(0x…) and the named constants, so the
+        // two constructor forms below sat in a composable with it green.
+        listOf(
+            "Color(0xFF008BCE)",
+            "Color(255, 0, 0)",
+            "Color(red = 1f, green = 0f, blue = 0f)",
+            "Color.Red",
+            "background(Color.Magenta)",
+        ).forEach { assertTrue("$it is not caught", COLOUR_LITERAL.containsMatchIn(it)) }
+    }
+
+    @Test
+    fun `the colour rule leaves a theme role and a transparent alone`() {
+        // A rule that flagged these would be turned off, and then it would catch nothing.
+        listOf(
+            "MaterialTheme.colorScheme.onSurface",
+            "style.selectedContainer",
+            "Color.Transparent",
+        ).forEach { assertTrue("$it is flagged", !COLOUR_LITERAL.containsMatchIn(it)) }
+    }
+
+    @Test
     fun `every exception is a file that still exists`() {
         // An exception left behind after its file is renamed silently widens the rule.
         val names = uiSources.map { it.name }.toSet()
@@ -159,9 +182,14 @@ class NoHardCodedAppearanceTest {
         /** The one file that turns `MaterialTheme` into [com.payabli.sdk.payin.form.PayInThemeRoles]. */
         const val THEME_BOUNDARY = "PayabliPayInFormDefaults.kt"
 
-        /** `Color(0xFF…)` and `Color.Red`, but not `Color.Transparent` or a role read from the theme. */
+        /**
+         * Any `Color(...)` and any named `Color.Red`, but not `Color.Transparent`.
+         *
+         * `Color(0x…)` alone left `Color(255, 0, 0)` and `Color(red = 1f, …)` through, so a literal
+         * could sit in a composable with this green.
+         */
         val COLOUR_LITERAL =
-            Regex("""Color\(0x|Color\.(Red|Green|Blue|Yellow|Cyan|Magenta|White|Black|Gray|LightGray|DarkGray)\b""")
+            Regex("""Color\(|Color\.(Red|Green|Blue|Yellow|Cyan|Magenta|White|Black|Gray|LightGray|DarkGray)\b""")
 
         /** A number followed by a Compose unit, which is a measurement written into the code. */
         val MEASUREMENT = Regex("""\b\d+(\.\d+)?\.(dp|sp)\b""")

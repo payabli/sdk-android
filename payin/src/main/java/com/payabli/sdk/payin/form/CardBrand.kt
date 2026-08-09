@@ -18,10 +18,12 @@ public enum class CardBrand {
          * [Unknown] covers both too few digits to tell and no matching range.
          *
          * Issuer identifiers: Visa 4; Mastercard 51-55 and 2221-2720; American Express 34 and 37;
-         * Discover 6011, 644-649 and 65.
+         * Discover 6011, 622126-622925, 644-649 and 65.
          */
         public fun of(digits: String): CardBrand {
-            val number = digits.filter { it.isDigit() }
+            // ASCII, as PayInFieldRules filters to. Char.isDigit keeps Arabic-Indic digits, which
+            // parse to a number here and would brand a value the rules refuse.
+            val number = digits.filter { it in '0'..'9' }
             if (number.isEmpty()) return Unknown
 
             val two = number.prefix(2)
@@ -33,6 +35,7 @@ public enum class CardBrand {
                 four in 2221..2720 -> Mastercard
                 two == 34 || two == 37 -> AmericanExpress
                 four == 6011 -> Discover
+                number.prefix(6) in 622126..622925 -> Discover
                 number.prefix(3) in 644..649 -> Discover
                 two == 65 -> Discover
                 else -> Unknown

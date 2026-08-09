@@ -143,6 +143,16 @@ public class PayInFormConfiguration(
     public fun showsFloatingLabelFor(field: PayInField): Boolean =
         labelLayout == PayInLabelLayout.Placeholder && field !in hiddenFieldLabels
 
+    /**
+     * True when this field is obscured as it is typed.
+     *
+     * A secret field is, except an account number under [PayInFormatting.masksAccountNumber] off.
+     * Public because a host that describes its own form has no other way to know.
+     */
+    public fun masks(field: PayInField): Boolean =
+        field.input == PayInFieldInput.Secret &&
+            (field != PayInField.AccountNumber || formatting.masksAccountNumber)
+
     /** As a `data class` would, over the copies rather than over what was handed in. */
     public fun copy(
         allowedMethods: List<PayInMethodType> = this.allowedMethods,

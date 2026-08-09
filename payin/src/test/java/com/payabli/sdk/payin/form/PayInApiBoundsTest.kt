@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.form
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -173,6 +174,67 @@ class PayInApiBoundsTest {
                 }
             assertTrue("year $year was accepted", failed)
         }
+    }
+
+    // --- the picker cannot offer a year the value type refuses ---
+
+    @Test
+    fun `every year the picker offers builds a value, from every starting year`() {
+        // The cap exists because YEARS_AHEAD runs past 2099 from 2080 onwards, and the picker
+        // builds an ExpiryValue from whatever the list holds.
+        ExpiryValue.SUPPORTED_YEARS.forEach { year ->
+            val today = ExpiryValue(6, year)
+            val years = ExpiryChoices.years(today)
+            assertTrue("no year offered in $year", years.isNotEmpty())
+            years.forEach { offered ->
+                assertTrue("$offered is outside what ExpiryValue holds", offered in ExpiryValue.SUPPORTED_YEARS)
+                ExpiryChoices.months(today, offered).forEach { ExpiryValue(it, offered) }
+            }
+        }
+    }
+
+    // --- card brands ---
+
+    @Test
+    fun `Discover's six digit range is recognised`() {
+        listOf("622126", "622500", "622925").forEach {
+            assertEquals(it, CardBrand.Discover, CardBrand.of(it))
+        }
+        listOf("622125", "622926").forEach {
+            assertEquals(it, CardBrand.Unknown, CardBrand.of(it))
+        }
+    }
+
+    @Test
+    fun `the brands already covered still answer the same`() {
+        assertEquals(CardBrand.Visa, CardBrand.of("4111111111111111"))
+        assertEquals(CardBrand.Mastercard, CardBrand.of("5500005555555559"))
+        assertEquals(CardBrand.Mastercard, CardBrand.of("2221000000000009"))
+        assertEquals(CardBrand.AmericanExpress, CardBrand.of("378282246310005"))
+        assertEquals(CardBrand.Discover, CardBrand.of("6011111111111117"))
+        assertEquals(CardBrand.Discover, CardBrand.of("6445000000000000"))
+        assertEquals(CardBrand.Discover, CardBrand.of("6500000000000000"))
+        assertEquals(CardBrand.Unknown, CardBrand.of(""))
+        assertEquals(CardBrand.Unknown, CardBrand.of("9999999999999999"))
+    }
+
+    @Test
+    fun `a non-ASCII digit brands nothing, as the rules would refuse it`() {
+        assertEquals(CardBrand.Unknown, CardBrand.of("٤١١١١١١١"))
+    }
+
+    // --- masking is one rule, and a host can read it ---
+
+    @Test
+    fun `masking follows the configuration, and a security code is always masked`() {
+        val masked = PayInFormConfiguration()
+        assertTrue(masked.masks(PayInField.CardSecurityCode))
+        assertTrue(masked.masks(PayInField.AccountNumber))
+        assertFalse(masked.masks(PayInField.CardNumber))
+
+        val open = PayInFormConfiguration(formatting = PayInFormatting(masksAccountNumber = false))
+        assertTrue("a security code is not the account number's setting", open.masks(PayInField.CardSecurityCode))
+        assertFalse(open.masks(PayInField.AccountNumber))
     }
 
     // --- copy() has to follow the copies, as equals does ---

@@ -43,7 +43,7 @@ object PaymentFormSummary {
         configuration.methodsOffered
             .flatMap { configuration.inputFieldsFor(it) }
             .distinct()
-            .filter { it.input == PayInFieldInput.Secret }
+            .filter { it.input == PayInFieldInput.Secret && configuration.masks(it) }
             .joinToString(", ") { it.fieldName }
             .ifEmpty { "none" }
 

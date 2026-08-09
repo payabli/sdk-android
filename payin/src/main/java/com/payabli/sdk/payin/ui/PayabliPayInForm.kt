@@ -9,11 +9,13 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -62,6 +64,17 @@ public fun PayabliPayInForm(
 
     var method by remember(configuration) { mutableStateOf(configuration.startingMethod) }
     val typed = remember(configuration) { mutableStateMapOf<PayInField, String>() }
+
+    // `enabled` only stops the second tap once the host has set isSubmitting and the button has
+    // recomposed, which is a frame away. Two taps inside that frame are two payments. The latch
+    // clears itself on the next frame, so a host that never sets isSubmitting cannot wedge it.
+    var justSubmitted by remember { mutableStateOf(false) }
+    LaunchedEffect(justSubmitted) {
+        if (justSubmitted) {
+            withFrameNanos { }
+            justSubmitted = false
+        }
+    }
 
     val sections = configuration.sectionsFor(method)
 
@@ -128,7 +141,10 @@ public fun PayabliPayInForm(
                 // would otherwise submit on a gate that no longer holds. The clock is re-read for
                 // the same reason: an untouched form is not recomposing.
                 val now = ExpiryValue.today()
-                if (isComplete(method, now)) onSubmit(collect(method))
+                if (!justSubmitted && isComplete(method, now)) {
+                    justSubmitted = true
+                    onSubmit(collect(method))
+                }
             },
         )
     }
