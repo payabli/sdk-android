@@ -22,17 +22,33 @@ public enum class PayInLabelLayout {
 /**
  * One group of fields, with a heading.
  *
+ * [fields] is copied at construction, for the reason given on [PayInFormConfiguration].
+ *
  * @param title null takes the section's default from string resources.
  */
 @Immutable
-public data class PayInFormSection(
-    public val fields: List<PayInField>,
+public class PayInFormSection(
+    fields: List<PayInField>,
     public val title: String? = null,
     public val style: PayInSectionStyle = PayInSectionStyle.Inputs,
-)
+) {
+    public val fields: List<PayInField> = fields.toList()
 
-/** The same section over a list nobody else holds a reference to. */
-internal fun PayInFormSection.copySnapshot(): PayInFormSection = copy(fields = fields.toList())
+    /** As a `data class` would, over the copy rather than over what was handed in. */
+    public fun copy(
+        fields: List<PayInField> = this.fields,
+        title: String? = this.title,
+        style: PayInSectionStyle = this.style,
+    ): PayInFormSection = PayInFormSection(fields, title, style)
+
+    override fun equals(other: Any?): Boolean =
+        this === other ||
+            (other is PayInFormSection && fields == other.fields && title == other.title && style == other.style)
+
+    override fun hashCode(): Int = (31 * (31 * fields.hashCode() + title.hashCode())) + style.hashCode()
+
+    override fun toString(): String = "PayInFormSection(fields=$fields, title=$title, style=$style)"
+}
 
 /**
  * How a value is written on screen.
@@ -63,29 +79,33 @@ public data class PayInFormatting(
  * Two inputs are corrected on construction: an empty [allowedMethods] becomes [defaultMethod], and a
  * [defaultMethod] outside the allowed set becomes the first allowed one.
  *
- * Every collection is copied on construction and the form reads the copies, which is what
- * `@Immutable` states to Compose.
+ * Every collection is copied at construction, which is what `@Immutable` states to Compose. The
+ * parameters are not `val`, as `PayabliResponse` in `:core` writes it: a property beside the copy
+ * would publish the uncopied original, and a `data class`'s generated `copy()` would rebuild from
+ * it, so a no-argument copy could differ from its source.
  */
 @Immutable
-public data class PayInFormConfiguration(
-    public val allowedMethods: List<PayInMethodType> = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
+public class PayInFormConfiguration(
+    allowedMethods: List<PayInMethodType> = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
     public val defaultMethod: PayInMethodType = PayInMethodType.Card,
-    public val cardSections: List<PayInFormSection> = defaultCardSections(),
-    public val bankSections: List<PayInFormSection> = defaultBankSections(),
-    public val requiredFields: Set<PayInField> = emptySet(),
+    cardSections: List<PayInFormSection> = defaultCardSections(),
+    bankSections: List<PayInFormSection> = defaultBankSections(),
+    requiredFields: Set<PayInField> = emptySet(),
     public val labelLayout: PayInLabelLayout = PayInLabelLayout.External,
-    public val hiddenFieldLabels: Set<PayInField> = emptySet(),
+    hiddenFieldLabels: Set<PayInField> = emptySet(),
     public val formatting: PayInFormatting = PayInFormatting(),
     /** Values for a [PayInSectionStyle.Summary] section, already formatted by the caller. */
-    public val summaryValues: Map<PayInField, String> = emptyMap(),
+    summaryValues: Map<PayInField, String> = emptyMap(),
 ) {
+    public val allowedMethods: List<PayInMethodType> = allowedMethods.toList()
+    public val cardSections: List<PayInFormSection> = cardSections.toList()
+    public val bankSections: List<PayInFormSection> = bankSections.toList()
+    public val requiredFields: Set<PayInField> = requiredFields.toSet()
+    public val hiddenFieldLabels: Set<PayInField> = hiddenFieldLabels.toSet()
+    public val summaryValues: Map<PayInField, String> = summaryValues.toMap()
+
     private val methods: List<PayInMethodType> =
-        allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
-    private val card: List<PayInFormSection> = cardSections.map { it.copySnapshot() }
-    private val bank: List<PayInFormSection> = bankSections.map { it.copySnapshot() }
-    private val required: Set<PayInField> = requiredFields.toSet()
-    private val hiddenLabels: Set<PayInField> = hiddenFieldLabels.toSet()
-    private val summary: Map<PayInField, String> = summaryValues.toMap()
+        this.allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
 
     /** The allowed methods, with duplicates dropped and never empty. */
     public val methodsOffered: List<PayInMethodType> get() = methods
@@ -95,11 +115,11 @@ public data class PayInFormConfiguration(
         get() = if (defaultMethod in methods) defaultMethod else methods.first()
 
     /** What the caller fixed for a summary field, or empty when they fixed nothing. */
-    public fun summaryValueFor(field: PayInField): String = summary[field].orEmpty()
+    public fun summaryValueFor(field: PayInField): String = summaryValues[field].orEmpty()
 
     /** The sections for one instrument, with any field appearing twice dropped after its first use. */
     public fun sectionsFor(method: PayInMethodType): List<PayInFormSection> {
-        val sections = if (method == PayInMethodType.Card) card else bank
+        val sections = if (method == PayInMethodType.Card) cardSections else bankSections
         val seen = mutableSetOf<PayInField>()
         return sections
             .map { section -> section.copy(fields = section.fields.filter { seen.add(it) }) }
@@ -113,23 +133,40 @@ public data class PayInFormConfiguration(
             .flatMap { it.fields }
 
     /** True when the field must be filled before the form will submit. */
-    public fun isRequired(field: PayInField): Boolean = field in required || PayInFieldRules.missing(field, "")
+    public fun isRequired(field: PayInField): Boolean = field in requiredFields || PayInFieldRules.missing(field, "")
 
     /** True when this field's label sits on its own line above the box. */
     public fun showsLabelFor(field: PayInField): Boolean =
-        labelLayout == PayInLabelLayout.External && field !in hiddenLabels
+        labelLayout == PayInLabelLayout.External && field !in hiddenFieldLabels
 
     /** True when this field's label sits inside the box, as Material's floating label. */
     public fun showsFloatingLabelFor(field: PayInField): Boolean =
-        labelLayout == PayInLabelLayout.Placeholder && field !in hiddenLabels
+        labelLayout == PayInLabelLayout.Placeholder && field !in hiddenFieldLabels
 
-    /**
-     * Compares the copies, which is what every accessor above reads.
-     *
-     * The generated equality compares the constructor properties, so two configurations holding one
-     * list that was mutated between them compare equal while their copies differ. Compose is then
-     * entitled to skip a form whose fields have changed.
-     */
+    /** As a `data class` would, over the copies rather than over what was handed in. */
+    public fun copy(
+        allowedMethods: List<PayInMethodType> = this.allowedMethods,
+        defaultMethod: PayInMethodType = this.defaultMethod,
+        cardSections: List<PayInFormSection> = this.cardSections,
+        bankSections: List<PayInFormSection> = this.bankSections,
+        requiredFields: Set<PayInField> = this.requiredFields,
+        labelLayout: PayInLabelLayout = this.labelLayout,
+        hiddenFieldLabels: Set<PayInField> = this.hiddenFieldLabels,
+        formatting: PayInFormatting = this.formatting,
+        summaryValues: Map<PayInField, String> = this.summaryValues,
+    ): PayInFormConfiguration =
+        PayInFormConfiguration(
+            allowedMethods,
+            defaultMethod,
+            cardSections,
+            bankSections,
+            requiredFields,
+            labelLayout,
+            hiddenFieldLabels,
+            formatting,
+            summaryValues,
+        )
+
     override fun equals(other: Any?): Boolean =
         this === other ||
             (
@@ -137,17 +174,32 @@ public data class PayInFormConfiguration(
                     defaultMethod == other.defaultMethod &&
                     labelLayout == other.labelLayout &&
                     formatting == other.formatting &&
-                    methods == other.methods &&
-                    card == other.card &&
-                    bank == other.bank &&
-                    required == other.required &&
-                    hiddenLabels == other.hiddenLabels &&
-                    summary == other.summary
+                    allowedMethods == other.allowedMethods &&
+                    cardSections == other.cardSections &&
+                    bankSections == other.bankSections &&
+                    requiredFields == other.requiredFields &&
+                    hiddenFieldLabels == other.hiddenFieldLabels &&
+                    summaryValues == other.summaryValues
             )
 
     override fun hashCode(): Int =
-        listOf(defaultMethod, labelLayout, formatting, methods, card, bank, required, hiddenLabels, summary)
-            .fold(0) { hash, part -> 31 * hash + part.hashCode() }
+        listOf(
+            defaultMethod,
+            labelLayout,
+            formatting,
+            allowedMethods,
+            cardSections,
+            bankSections,
+            requiredFields,
+            hiddenFieldLabels,
+            summaryValues,
+        ).fold(0) { hash, part -> 31 * hash + part.hashCode() }
+
+    override fun toString(): String =
+        "PayInFormConfiguration(allowedMethods=$allowedMethods, defaultMethod=$defaultMethod, " +
+            "cardSections=$cardSections, bankSections=$bankSections, requiredFields=$requiredFields, " +
+            "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting, " +
+            "summaryValues=$summaryValues)"
 
     public companion object {
         /** Card details, as a payer is asked for them. */

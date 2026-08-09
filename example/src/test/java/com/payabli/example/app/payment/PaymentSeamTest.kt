@@ -281,6 +281,31 @@ class PaymentSeamTest {
         }
 
     @Test
+    fun `the transaction reports the instrument the payer chose, not the screen's default`() =
+        runTest {
+            // Every other test here submits a card, so hard-coding "card" again would stay green.
+            val controller = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0)
+            val bank = PayInFormValues(PayInMethodType.BankAccount, emptyMap())
+
+            assertEquals(
+                "ach",
+                controller
+                    .submit(bank)
+                    .getOrThrow()
+                    .transaction
+                    ?.method,
+            )
+            assertEquals(
+                "card",
+                controller
+                    .submit(cardEntry)
+                    .getOrThrow()
+                    .transaction
+                    ?.method,
+            )
+        }
+
+    @Test
     fun `each submission gets its own identifier`() =
         runTest {
             val controller = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0)

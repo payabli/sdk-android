@@ -89,7 +89,7 @@ private fun TypedField(
     OutlinedTextField(
         value = value,
         onValueChange = { onValueChange(PayInFieldRules.filter(field, it)) },
-        modifier = Modifier.fillMaxWidth().fieldName(label),
+        modifier = Modifier.fillMaxWidth().then(context.fieldName(field, label)),
         enabled = context.enabled,
         isError = hasError,
         singleLine = true,
@@ -132,7 +132,7 @@ private fun ExpiryField(
     OutlinedTextField(
         value = value,
         onValueChange = { },
-        modifier = Modifier.fillMaxWidth().fieldName(label),
+        modifier = Modifier.fillMaxWidth().then(context.fieldName(field, label)),
         enabled = context.enabled,
         readOnly = true,
         singleLine = true,
@@ -187,7 +187,7 @@ private fun ChoiceField(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .fieldName(label)
+                    .then(context.fieldName(field, label))
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, context.enabled),
             enabled = context.enabled,
             readOnly = true,
@@ -223,14 +223,18 @@ private fun PayInFormContext.floatingLabel(
 ): (@Composable () -> Unit)? = if (configuration.showsFloatingLabelFor(field)) ({ Text(label) }) else null
 
 /**
- * Names the control for a screen reader.
+ * Names the control for a screen reader, where Material does not.
  *
  * Material takes a field's accessible name from its `label`, and this form draws that label as a
- * sibling `Text` under the default layout. A sibling is its own semantics node, so without this a
- * screen reader lands on the box and announces no field name. A hidden label has none to announce
- * at all.
+ * sibling `Text` under the default layout, or not at all when it is hidden. A sibling is its own
+ * semantics node, so a screen reader lands on the box and announces no field name. Where Material
+ * does supply the label, adding this would have it announced twice.
  */
-private fun Modifier.fieldName(label: String): Modifier = semantics { contentDescription = label }
+private fun PayInFormContext.fieldName(
+    field: PayInField,
+    label: String,
+): Modifier =
+    if (configuration.showsFloatingLabelFor(field)) Modifier else Modifier.semantics { contentDescription = label }
 
 /** Material's own colours unless the caller supplied a set. */
 @Composable

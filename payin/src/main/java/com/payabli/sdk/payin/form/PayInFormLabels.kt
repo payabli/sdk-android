@@ -8,25 +8,27 @@ import androidx.compose.runtime.Immutable
  * Anything left null or blank comes from `res/values`, where an integrator can redeclare any
  * `payabli_payin_*` string and a translator can add a `values-xx`.
  *
- * The two maps are copied on construction, so what the form reads cannot change afterwards, which
- * is what `@Immutable` states to Compose.
+ * The two maps are copied at construction, so what the form reads cannot change afterwards, which is
+ * what `@Immutable` states to Compose. The parameters are not `val`, as `PayabliResponse` in
+ * `:core` writes it: a property beside the copy would publish the uncopied original, and a
+ * `data class`'s generated `copy()` would rebuild from it.
  */
 @Immutable
-public data class PayInFormLabels(
+public class PayInFormLabels(
     public val title: String? = null,
     public val subtitle: String? = null,
     public val submitButton: String? = null,
-    public val fieldLabels: Map<PayInField, String> = emptyMap(),
-    public val fieldPlaceholders: Map<PayInField, String> = emptyMap(),
+    fieldLabels: Map<PayInField, String> = emptyMap(),
+    fieldPlaceholders: Map<PayInField, String> = emptyMap(),
 ) {
-    private val labels: Map<PayInField, String> = fieldLabels.toMap()
-    private val placeholders: Map<PayInField, String> = fieldPlaceholders.toMap()
+    public val fieldLabels: Map<PayInField, String> = fieldLabels.toMap()
+    public val fieldPlaceholders: Map<PayInField, String> = fieldPlaceholders.toMap()
 
     /** The caller's label for a field, or null to use the resource. */
-    public fun labelFor(field: PayInField): String? = labels[field]?.takeIf { it.isNotBlank() }
+    public fun labelFor(field: PayInField): String? = fieldLabels[field]?.takeIf { it.isNotBlank() }
 
     /** The caller's placeholder for a field, or null for none. */
-    public fun placeholderFor(field: PayInField): String? = placeholders[field]?.takeIf { it.isNotBlank() }
+    public fun placeholderFor(field: PayInField): String? = fieldPlaceholders[field]?.takeIf { it.isNotBlank() }
 
     /** The heading above the form, or null for none. */
     public fun titleOrNull(): String? = title?.takeIf { it.isNotBlank() }
@@ -37,12 +39,15 @@ public data class PayInFormLabels(
     /** The wording on the submit button, or null to use the resource. */
     public fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
 
-    /**
-     * Compares the copies, which is what [labelFor] and [placeholderFor] read.
-     *
-     * The generated equality compares the constructor properties, so two instances holding one map
-     * that was mutated between them compare equal while their copies differ.
-     */
+    /** As a `data class` would, over the copies rather than over what was handed in. */
+    public fun copy(
+        title: String? = this.title,
+        subtitle: String? = this.subtitle,
+        submitButton: String? = this.submitButton,
+        fieldLabels: Map<PayInField, String> = this.fieldLabels,
+        fieldPlaceholders: Map<PayInField, String> = this.fieldPlaceholders,
+    ): PayInFormLabels = PayInFormLabels(title, subtitle, submitButton, fieldLabels, fieldPlaceholders)
+
     override fun equals(other: Any?): Boolean =
         this === other ||
             (
@@ -50,11 +55,15 @@ public data class PayInFormLabels(
                     title == other.title &&
                     subtitle == other.subtitle &&
                     submitButton == other.submitButton &&
-                    labels == other.labels &&
-                    placeholders == other.placeholders
+                    fieldLabels == other.fieldLabels &&
+                    fieldPlaceholders == other.fieldPlaceholders
             )
 
     override fun hashCode(): Int =
-        listOf(title, subtitle, submitButton, labels, placeholders)
+        listOf(title, subtitle, submitButton, fieldLabels, fieldPlaceholders)
             .fold(0) { hash, part -> 31 * hash + part.hashCode() }
+
+    override fun toString(): String =
+        "PayInFormLabels(title=$title, subtitle=$subtitle, submitButton=$submitButton, " +
+            "fieldLabels=$fieldLabels, fieldPlaceholders=$fieldPlaceholders)"
 }

@@ -14,6 +14,9 @@ public data class ExpiryValue(
         // Everything downstream assumes it. A 13 formats to 13/30, which parse refuses, and it makes
         // ExpiryChoices.months return nothing, which coerceMonth reads the first element of.
         require(month in 1..12) { "a month is 1 to 12, not $month" }
+        // format writes two digits and parse restores the century, so only this range survives its
+        // own round trip: 1999 formats to 99 and reads back as 2099.
+        require(year in SUPPORTED_YEARS) { "a year outside $SUPPORTED_YEARS cannot be written as two digits" }
     }
 
     /**
@@ -35,6 +38,9 @@ public data class ExpiryValue(
     ): Boolean = year < currentYear || (year == currentYear && month < currentMonth)
 
     public companion object {
+        /** The century [parse] restores, which is the only one [format] can round-trip. */
+        public val SUPPORTED_YEARS: IntRange = 2000..2099
+
         /**
          * The current month, in the device's time zone. The only clock read in this file.
          *

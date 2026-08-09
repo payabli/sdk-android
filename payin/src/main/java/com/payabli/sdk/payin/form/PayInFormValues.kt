@@ -9,10 +9,19 @@ import androidx.compose.runtime.Immutable
  * one had, so a card number is not still in here behind a bank form.
  */
 @Immutable
-public data class PayInFormValues(
+public class PayInFormValues(
     public val method: PayInMethodType,
-    public val values: Map<PayInField, String>,
+    values: Map<PayInField, String>,
 ) {
+    public val values: Map<PayInField, String> = values.toMap()
+
     /** The value for a field, or empty when it was never typed into. */
     public operator fun get(field: PayInField): String = values[field].orEmpty()
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is PayInFormValues && method == other.method && values == other.values)
+
+    override fun hashCode(): Int = 31 * method.hashCode() + values.hashCode()
+
+    override fun toString(): String = "PayInFormValues(method=$method, fields=${values.keys})"
 }

@@ -162,6 +162,70 @@ class PayInApiBoundsTest {
     }
 
     @Test
+    fun `a year outside the century format can write is refused`() {
+        listOf(1999, 2100, 0, -1).forEach { year ->
+            val failed =
+                try {
+                    ExpiryValue(1, year)
+                    false
+                } catch (expected: IllegalArgumentException) {
+                    true
+                }
+            assertTrue("year $year was accepted", failed)
+        }
+    }
+
+    // --- copy() has to follow the copies, as equals does ---
+
+    @Test
+    fun `a no-argument copy equals its source after the caller mutates what they passed in`() {
+        // The generated copy of a data class rebuilds from the constructor properties, so it would
+        // pick up the mutation while the source keeps its snapshot, and the two would differ.
+        val methods = mutableListOf(PayInMethodType.Card)
+        val labels = mutableMapOf(PayInField.CardNumber to "Card")
+        val configuration = PayInFormConfiguration(allowedMethods = methods)
+        val wording = PayInFormLabels(fieldLabels = labels)
+
+        methods += PayInMethodType.BankAccount
+        labels[PayInField.CardNumber] = "Something else"
+
+        assertEquals(configuration, configuration.copy())
+        assertEquals(wording, wording.copy())
+        assertEquals(listOf(PayInMethodType.Card), configuration.copy().methodsOffered)
+        assertEquals("Card", wording.copy().labelFor(PayInField.CardNumber))
+    }
+
+    @Test
+    fun `copy changes the one value it is given and nothing else`() {
+        val configuration = PayInFormConfiguration(requiredFields = setOf(PayInField.Amount))
+        val moved = configuration.copy(labelLayout = PayInLabelLayout.Placeholder)
+
+        assertEquals(PayInLabelLayout.Placeholder, moved.labelLayout)
+        assertTrue(moved.isRequired(PayInField.Amount))
+        assertEquals(configuration.methodsOffered, moved.methodsOffered)
+        assertNotEquals(configuration, moved)
+    }
+
+    @Test
+    fun `a section copies the field list it is given`() {
+        val fields = mutableListOf(PayInField.CardNumber)
+        val section = PayInFormSection(fields = fields)
+        fields += PayInField.CardholderName
+
+        assertEquals(listOf(PayInField.CardNumber), section.fields)
+        assertEquals(section, section.copy())
+    }
+
+    @Test
+    fun `reported values are a copy of what the form held`() {
+        val held = mutableMapOf(PayInField.CardNumber to "4111111111111111")
+        val reported = PayInFormValues(PayInMethodType.Card, held)
+        held[PayInField.CardNumber] = "something else"
+
+        assertEquals("4111111111111111", reported[PayInField.CardNumber])
+    }
+
+    @Test
     fun `a section's field list is copied too`() {
         val fields = mutableListOf(PayInField.CardNumber)
         val configuration = PayInFormConfiguration(cardSections = listOf(PayInFormSection(fields = fields)))
