@@ -78,8 +78,8 @@
     <string name="payabli_payin_error_expiry_past">That card has expired</string>
 
     <!--
-      Spoken, not shown. The card scheme's mark has no string yet because it has no artwork yet:
-      PayInCardBrandPlacement defaults to Hidden, and the description arrives with the vectors.
+      Spoken, not shown. The card scheme's mark has no string here because it has no artwork here;
+      the description arrives with the vectors.
     -->
     <string name="payabli_payin_reveal">Show %1$s</string>
     <string name="payabli_payin_hide">Hide %1$s</string>
