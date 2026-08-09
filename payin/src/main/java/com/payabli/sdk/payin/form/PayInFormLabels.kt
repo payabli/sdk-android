@@ -36,4 +36,25 @@ public data class PayInFormLabels(
 
     /** The wording on the submit button, or null to use the resource. */
     public fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
+
+    /**
+     * Compares the copies, which is what [labelFor] and [placeholderFor] read.
+     *
+     * The generated equality compares the constructor properties, so two instances holding one map
+     * that was mutated between them compare equal while their copies differ.
+     */
+    override fun equals(other: Any?): Boolean =
+        this === other ||
+            (
+                other is PayInFormLabels &&
+                    title == other.title &&
+                    subtitle == other.subtitle &&
+                    submitButton == other.submitButton &&
+                    labels == other.labels &&
+                    placeholders == other.placeholders
+            )
+
+    override fun hashCode(): Int =
+        listOf(title, subtitle, submitButton, labels, placeholders)
+            .fold(0) { hash, part -> 31 * hash + part.hashCode() }
 }

@@ -110,7 +110,16 @@ public fun PayabliPayInForm(
             enabled = complete && !isSubmitting,
             isSubmitting = isSubmitting,
             style = context.style,
-            onClick = { onSubmit(PayInFormValues(method, inputs.associateWith { typed[it].orEmpty() })) },
+            onClick = {
+                // The clock again, at the one moment it decides something. A form left untouched
+                // across the turn of a month is not recomposing, so the value read above is the
+                // month it was opened in.
+                val now = ExpiryValue.today()
+                val stillValid = inputs.none { PayInFieldRules.error(it, typed[it].orEmpty(), now) != null }
+                if (stillValid) {
+                    onSubmit(PayInFormValues(method, inputs.associateWith { typed[it].orEmpty() }))
+                }
+            },
         )
     }
 }

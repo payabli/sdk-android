@@ -17,6 +17,7 @@ public object PayInFieldRules {
     // accepted by the API.
 
     private const val CARD_NUMBER_MIN = 12
+    private const val CARD_NUMBER_MAX = 19
     private const val POSTAL_CODE_MAX = 12
     private const val ROUTING_NUMBER_LENGTH = 9
     private val SECURITY_CODE_RANGE = 3..4
@@ -35,7 +36,7 @@ public object PayInFieldRules {
     /** How many characters a field will accept, after formatting is stripped. */
     public fun maxLength(field: PayInField): Int? =
         when (field) {
-            PayInField.CardNumber -> 19
+            PayInField.CardNumber -> CARD_NUMBER_MAX
             PayInField.CardSecurityCode -> SECURITY_CODE_RANGE.last
             PayInField.CardPostalCode -> POSTAL_CODE_MAX
             PayInField.RoutingNumber -> ROUTING_NUMBER_LENGTH
@@ -65,7 +66,9 @@ public object PayInFieldRules {
         field: PayInField,
         raw: String,
     ): String {
-        val kept = if (isDigitsOnly(field)) raw.filter { it.isDigit() } else raw
+        // ASCII, matching DIGITS below. Char.isDigit keeps Arabic-Indic and Devanagari digits, which
+        // then fail the rules as DigitsOnly with no way for a payer to tell what is wrong.
+        val kept = if (isDigitsOnly(field)) raw.filter { it in '0'..'9' } else raw
         val limit = maxLength(field)
         return if (limit != null && kept.length > limit) kept.take(limit) else kept
     }
@@ -131,7 +134,10 @@ public object PayInFieldRules {
 
     private fun cardNumberError(value: String): PayInFieldError? {
         if (!DIGITS.matches(value)) return PayInFieldError.DigitsOnly
+        // Short while it is still being typed, so it keeps its own message. Long only ever arrives
+        // through this function, since the field truncates at maxLength.
         if (value.length < CARD_NUMBER_MIN) return PayInFieldError.ShorterThan(CARD_NUMBER_MIN)
+        if (value.length > CARD_NUMBER_MAX) return PayInFieldError.LongerThan(CARD_NUMBER_MAX)
         if (!passesLuhn(value)) return PayInFieldError.CardNumberNotValid
         return null
     }

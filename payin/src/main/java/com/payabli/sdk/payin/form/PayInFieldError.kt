@@ -15,6 +15,11 @@ public sealed interface PayInFieldError {
         val minimum: Int,
     ) : PayInFieldError
 
+    /** Longer than any card scheme issues. The form's own field truncates before this. */
+    public data class LongerThan(
+        val maximum: Int,
+    ) : PayInFieldError
+
     /** A field with one acceptable length. A routing number is the only one. */
     public data class NotExactly(
         val length: Int,

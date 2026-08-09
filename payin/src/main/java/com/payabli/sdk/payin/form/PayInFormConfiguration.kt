@@ -49,6 +49,11 @@ public data class PayInFormatting(
 ) {
     init {
         require(expirySeparator.isNotEmpty()) { "an expiry separator of nothing runs the month into the year" }
+        require(expirySeparator.none { it in '0'..'9' }) {
+            // "1" writes 07130, which ExpiryValue.parse reads as no month and year at all, so the
+            // picker's own value fails validation and the form never submits.
+            "an expiry separator of digits cannot be told from the month and year around it"
+        }
     }
 }
 
@@ -117,6 +122,32 @@ public data class PayInFormConfiguration(
     /** True when this field's label sits inside the box, as Material's floating label. */
     public fun showsFloatingLabelFor(field: PayInField): Boolean =
         labelLayout == PayInLabelLayout.Placeholder && field !in hiddenLabels
+
+    /**
+     * Compares the copies, which is what every accessor above reads.
+     *
+     * The generated equality compares the constructor properties, so two configurations holding one
+     * list that was mutated between them compare equal while their copies differ. Compose is then
+     * entitled to skip a form whose fields have changed.
+     */
+    override fun equals(other: Any?): Boolean =
+        this === other ||
+            (
+                other is PayInFormConfiguration &&
+                    defaultMethod == other.defaultMethod &&
+                    labelLayout == other.labelLayout &&
+                    formatting == other.formatting &&
+                    methods == other.methods &&
+                    card == other.card &&
+                    bank == other.bank &&
+                    required == other.required &&
+                    hiddenLabels == other.hiddenLabels &&
+                    summary == other.summary
+            )
+
+    override fun hashCode(): Int =
+        listOf(defaultMethod, labelLayout, formatting, methods, card, bank, required, hiddenLabels, summary)
+            .fold(0) { hash, part -> 31 * hash + part.hashCode() }
 
     public companion object {
         /** Card details, as a payer is asked for them. */

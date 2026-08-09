@@ -48,6 +48,9 @@ internal object PayInStrings {
             is PayInFieldError.ShorterThan ->
                 pluralStringResource(R.plurals.payabli_payin_error_shorter_than, error.minimum, error.minimum)
 
+            is PayInFieldError.LongerThan ->
+                pluralStringResource(R.plurals.payabli_payin_error_longer_than, error.maximum, error.maximum)
+
             is PayInFieldError.NotExactly ->
                 pluralStringResource(R.plurals.payabli_payin_error_not_exactly, error.length, error.length)
 

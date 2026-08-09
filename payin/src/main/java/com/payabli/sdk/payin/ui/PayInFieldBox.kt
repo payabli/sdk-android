@@ -15,6 +15,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,6 +23,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -74,14 +77,19 @@ private fun TypedField(
     context: PayInFormContext,
     onValueChange: (String) -> Unit,
 ) {
-    val isSecret = field.input == PayInFieldInput.Secret
-    var revealed by remember { mutableStateOf(false) }
+    // Masked, not merely secret. With masksAccountNumber off the account number is always in clear
+    // text, and a reveal control over it toggles nothing.
+    val isMasked = field.input == PayInFieldInput.Secret && field.shouldMask(context.configuration)
+
+    // Keyed on the field. A configuration that puts a different secret field in this slot would
+    // otherwise inherit the reveal state and show what the payer types next in clear text.
+    var revealed by remember(field) { mutableStateOf(false) }
     val hasError = PayInFieldRules.error(field, value) != null
 
     OutlinedTextField(
         value = value,
         onValueChange = { onValueChange(PayInFieldRules.filter(field, it)) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().fieldName(label),
         enabled = context.enabled,
         isError = hasError,
         singleLine = true,
@@ -92,7 +100,7 @@ private fun TypedField(
         visualTransformation = field.transformation(context.configuration, revealed),
         keyboardOptions = field.keyboardOptions(),
         trailingIcon =
-            if (!isSecret) {
+            if (!isMasked) {
                 null
             } else {
                 {
@@ -124,7 +132,7 @@ private fun ExpiryField(
     OutlinedTextField(
         value = value,
         onValueChange = { },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().fieldName(label),
         enabled = context.enabled,
         readOnly = true,
         singleLine = true,
@@ -179,6 +187,7 @@ private fun ChoiceField(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .fieldName(label)
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, context.enabled),
             enabled = context.enabled,
             readOnly = true,
@@ -213,6 +222,16 @@ private fun PayInFormContext.floatingLabel(
     label: String,
 ): (@Composable () -> Unit)? = if (configuration.showsFloatingLabelFor(field)) ({ Text(label) }) else null
 
+/**
+ * Names the control for a screen reader.
+ *
+ * Material takes a field's accessible name from its `label`, and this form draws that label as a
+ * sibling `Text` under the default layout. A sibling is its own semantics node, so without this a
+ * screen reader lands on the box and announces no field name. A hidden label has none to announce
+ * at all.
+ */
+private fun Modifier.fieldName(label: String): Modifier = semantics { contentDescription = label }
+
 /** Material's own colours unless the caller supplied a set. */
 @Composable
 private fun PayInFormContext.fieldColors() = style.fieldColors ?: OutlinedTextFieldDefaults.colors()
@@ -240,8 +259,10 @@ private fun PayInField.transformation(
 private fun PayInField.shouldMask(configuration: PayInFormConfiguration): Boolean =
     this != PayInField.AccountNumber || configuration.formatting.masksAccountNumber
 
+@Composable
+@ReadOnlyComposable
 private fun expiryHint(configuration: PayInFormConfiguration): String =
-    "MM${configuration.formatting.expirySeparator}YY"
+    stringResource(R.string.payabli_payin_expiry_hint, configuration.formatting.expirySeparator)
 
 private val RevealIcon: ImageVector get() = PayInIcons.Reveal
 private val RevealOffIcon: ImageVector get() = PayInIcons.RevealOff

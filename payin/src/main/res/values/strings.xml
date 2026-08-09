@@ -53,6 +53,8 @@
     <string name="payabli_payin_expiry_choose">Choose an expiry</string>
     <string name="payabli_payin_expiry_month">Month</string>
     <string name="payabli_payin_expiry_year">Year</string>
+    <!-- %1$s is the configured separator between month and year. -->
+    <string name="payabli_payin_expiry_hint">MM%1$sYY</string>
     <string name="payabli_payin_confirm">Done</string>
     <string name="payabli_payin_cancel">Cancel</string>
 
@@ -61,6 +63,10 @@
     <plurals name="payabli_payin_error_shorter_than">
         <item quantity="one">At least %1$d digit</item>
         <item quantity="other">At least %1$d digits</item>
+    </plurals>
+    <plurals name="payabli_payin_error_longer_than">
+        <item quantity="one">At most %1$d digit</item>
+        <item quantity="other">At most %1$d digits</item>
     </plurals>
     <plurals name="payabli_payin_error_not_exactly">
         <item quantity="one">%1$d digit</item>
