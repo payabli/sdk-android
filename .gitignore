@@ -57,3 +57,7 @@ proguard/
 .env
 .env.*
 !.env.example
+
+# Per-developer settings for the sample app. Kept at the repository root for the same reason as the
+# .env rules above. The template stays tracked.
+example/secrets.properties

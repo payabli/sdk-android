@@ -30,8 +30,11 @@ sonar {
         // Android API with no JVM implementation, Keystore and `android.util.*`, so no unit test can reach a
         // line of it and the instrumented tier is what covers it. Kept as a package rule rather than a list
         // of files, so the boundary is something the code states rather than something this file remembers.
-        // See CLAUDE.md "Testing" for what belongs there.
-        property("sonar.coverage.exclusions", "**/platform/**")
+        // See CLAUDE.md "Testing" for what belongs there. A `ui` package under the sample app is the
+        // same case for the same reason: a composable needs a composition, and therefore a device.
+        // The sample app puts every composable under `ui` and every testable type outside it so this
+        // stays a package rule too.
+        property("sonar.coverage.exclusions", "**/platform/**,**/example/app/ui/**")
     }
 }
 
@@ -42,17 +45,25 @@ subprojects {
             val reports = layout.buildDirectory.dir("reports").get().asFile
 
             // Enumerated: this property is a comma-separated list, not a glob.
+            //
+            // The test is for Kotlin under the source set, not for the source set. ktlint reports
+            // NO-SOURCE and writes no file for a source set holding no `.kt`, and Sonar then warns
+            // that a named report is missing, which is a warning nobody can act on: three fired at
+            // once, for the two template-only modules whose `src/main` is still empty and for the
+            // sample app's `src/debug`, which holds a manifest and one XML.
+            fun hasKotlin(sourceSet: String): Boolean =
+                layout.projectDirectory
+                    .dir("src/$sourceSet")
+                    .asFile
+                    .walkTopDown()
+                    .any { it.isFile && it.extension == "kt" }
+
             val ktlintTasks = buildList {
                 add("ktlintKotlinScriptCheck")
-                if (layout.projectDirectory.dir("src/main").asFile.isDirectory) {
-                    add("ktlintMainSourceSetCheck")
-                }
-                if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
-                    add("ktlintTestSourceSetCheck")
-                }
-                if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
-                    add("ktlintAndroidTestSourceSetCheck")
-                }
+                if (hasKotlin("main")) add("ktlintMainSourceSetCheck")
+                if (hasKotlin("test")) add("ktlintTestSourceSetCheck")
+                if (hasKotlin("androidTest")) add("ktlintAndroidTestSourceSetCheck")
+                if (hasKotlin("debug")) add("ktlintDebugSourceSetCheck")
             }
             property(
                 "sonar.kotlin.ktlint.reportPaths",

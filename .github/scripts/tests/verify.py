@@ -374,7 +374,8 @@ def test_collector():
         "payin/build/reports/coverage/test/debug/report.xml": COVERAGE.format(bm=0, bc=0, lm=0, lc=0),
     }), UNIT_OUTCOME="failure")
     branch = {m["module"]: m for m in r["facts"]["coverage"][0]["modules"]}
-    check("C16 every configured module is present", sorted(branch) == ["core", "payin", "taptopay", "telemetry"],
+    check("C16 every configured module is present",
+          sorted(branch) == ["core", "example", "payin", "taptopay", "telemetry"],
           str(sorted(branch)))
     check("C16 absent report is 'missing', not omitted", branch["core"]["state"] == "missing",
           json.dumps(branch["core"]))

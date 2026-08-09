@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher icon on API 24 and 25, which cannot read an adaptive icon.
+
+  `mipmap-anydpi-v26` holds the adaptive icon and wins from 26. Without this file the next best match
+  on 24 and 25 is the density-specific bitmap set, which is still the Android Studio template, so two
+  supported versions showed the default robot on an app whose point is the brand.
+
+  `anydpi` matches any density and outranks a density qualifier, which is the same rule that makes
+  the `-v26` file win where it applies. The layers are the adaptive icon's own two: the brand blue
+  behind, the mark in front. The mark's vector already insets itself to the adaptive safe zone, so it
+  sits inside the legacy icon's square with the same margin it has inside a mask.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item android:drawable="@drawable/ic_launcher_foreground" />
+</layer-list>

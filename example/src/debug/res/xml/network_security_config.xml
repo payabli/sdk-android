@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The local token server in example-server/ speaks http, and cleartext is denied by default: the
+  platform's base-config is cleartextTrafficPermitted="false" from targetSdk 28, and the implicit
+  loopback exemption arrives only in API 37, so an explicit entry is required rather than merely tidy.
+
+  Scoped to the two addresses that server is ever reached at. Both manifests set
+  usesCleartextTraffic="false", and the platform ignores that flag from API 24 wherever a config is
+  present, so this file is what permits the two and nothing else in the sample app can take a
+  plaintext route to a real host. The module's floor is 24 for that reason: below it there is no
+  config and the flag would decide.
+
+  This file belongs to the debug variant alone and is never merged into a release build. A LAN
+  address needs its own entry here as well as PAYABLI_LOCAL_TOKEN_SERVER_HOST=0.0.0.0 on the server,
+  because the cleartext permission is keyed on the address the app dials; prefer adb reverse, since
+  the wide bind publishes an unauthenticated token endpoint to the network.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- The device's own loopback. A physical handset reaches the development machine here once
+             `adb reverse tcp:8787 tcp:8787` is forwarding, and so does the server's default bind. -->
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- The emulator's alias for the development machine's loopback interface. Two addresses
+             rather than one because they reach different hosts: 127.0.0.1 is inside the device,
+             while 10.0.2.2 is the only address that reaches a process on the machine running the
+             emulator. -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
