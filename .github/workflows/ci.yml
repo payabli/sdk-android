@@ -50,8 +50,14 @@ jobs:
         run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
 
       # The aggregate module has no tests, so no coverage task.
+      #
+      # --stacktrace because this step has failed three times with "Unable to generate Jacoco
+      # report" and nothing else: a different module each time, passing on a re-run of the same
+      # commit, and never reproducing locally. Gradle prints the cause only when asked. It is not
+      # in the class the GRADLE_OPTS note warns about, which is --info and --debug printing
+      # repository credentials.
       - name: Coverage
-        run: ./gradlew :core:createDebugUnitTestCoverageReport
+        run: ./gradlew --stacktrace :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
           :example:createDebugUnitTestCoverageReport
