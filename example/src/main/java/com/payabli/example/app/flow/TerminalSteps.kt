@@ -57,11 +57,13 @@ object TerminalSteps {
                 // Ordered. Reading the recorded outcome first lets a stale failure report itself
                 // while the sequence is still on the step before.
                 enable != StepStatus.Done -> StepStatus.Blocked
+                // Before the session, for the same reason step 2 is: activating publishes Ready and
+                // stays suspended after it, so reading the session first finished this step and
+                // handed on the one after it while the activation was still running.
+                working == TerminalAction.Activate -> StepStatus.InProgress
                 // A terminal that reached Ready was activated already or never had to be, whatever
                 // an earlier attempt did.
                 session == TerminalSessionState.Ready -> StepStatus.NotNeeded
-                working == TerminalAction.Activate &&
-                    session == TerminalSessionState.PendingActivation -> StepStatus.InProgress
                 // The session cannot tell a refused activation from one that was never needed, so
                 // the outcome is recorded and read here.
                 activationFailed -> StepStatus.Failed

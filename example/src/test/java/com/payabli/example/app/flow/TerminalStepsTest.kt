@@ -221,6 +221,34 @@ class TerminalStepsTest {
     }
 
     @Test
+    fun `an action in flight belongs to one step, and holds every step after it`() {
+        // The rule the screen rests on, and the one three separate defects broke: each call
+        // publishes its final state and stays suspended after it, so a step reading the session
+        // before the action in flight finishes early and hands on over work still running.
+        val owner =
+            mapOf(
+                TerminalAction.Initialize to 1,
+                TerminalAction.Reinitialize to 1,
+                TerminalAction.Activate to 2,
+                TerminalAction.Charge to 3,
+            )
+        everyState.filter { it.working != null }.forEach { combination ->
+            val sequence = steps(combination)
+            val index = owner.getValue(combination.working!!)
+            val step = sequence[index]
+
+            // Blocked when something earlier is unfinished; otherwise it is the step working.
+            assertTrue(
+                "$combination left ${combination.working} reported by ${step.status}",
+                step.status == StepStatus.InProgress || step.status == StepStatus.Blocked,
+            )
+            sequence.drop(index + 1).forEach {
+                assertEquals("$combination handed on over a running action", StepStatus.Blocked, it.status)
+            }
+        }
+    }
+
+    @Test
     fun `charging is only ever offered by a ready terminal`() {
         everyState.forEach { combination ->
             val charge = steps(combination)[3]
