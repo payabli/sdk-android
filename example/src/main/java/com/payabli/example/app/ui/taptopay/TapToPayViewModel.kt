@@ -156,9 +156,8 @@ class TapToPayViewModel(
     /**
      * Runs one terminal action and turns its outcome into the single result line.
      *
-     * No spinner anywhere on this screen. Progress is already visible in three places — the session
-     * chip, the event list and the result line — and a fourth indicator over the top of them would
-     * add nothing. `isWorking` only disables the buttons.
+     * No spinner: the session chip, the event list and the result line already show progress.
+     * `isWorking` only disables the buttons.
      */
     private fun run(
         action: TerminalAction,

@@ -16,9 +16,7 @@ import com.payabli.example.app.ui.theme.Dimens
 /**
  * What this screen is pointed at, in one line.
  *
- * Every value is on the Setup screen in full. Repeating the set on each payment screen is what turns
- * one into a wall of rows nobody reads, and the entry point and the host are the two that decide
- * whether a request goes anywhere.
+ * The entry point and the host only. The full set is on the Setup screen.
  */
 @Composable
 fun ContextLine(
@@ -37,8 +35,8 @@ fun ContextLine(
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            // A blank value is left out rather than separated from nothing. An unconfigured clone
-            // has no entry point, and "· host" reads as a rendering fault.
+            // A blank value is left out. "· host" reads as a rendering fault, and a fresh clone
+            // has no entry point.
             text = listOf(entryPoint, host).filter { it.isNotBlank() }.joinToString(" · ").ifEmpty { "not configured" },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -54,7 +52,7 @@ fun ContextLine(
     }
 }
 
-/** One host across the preview, so the rows differ only in the thing each is showing. */
+/** One host, so the rows differ only in the entry point. */
 private const val PREVIEW_HOST = "api-sandbox.payabli.com"
 
 @PreviewLightDark

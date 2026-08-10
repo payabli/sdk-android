@@ -27,8 +27,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 /**
  * What the two card-not-present screens have in common, which is everything but their wording.
  *
- * Storing an instrument and taking a payment ask the SDK for the same three things in the same
- * order. Writing that twice left the two free to drift on what a step said or when it unlocked.
+ * Written twice, the two were free to drift on what a step said or when it unlocked.
  */
 interface PaymentFlowUiState {
     val setup: DemoFormSetup

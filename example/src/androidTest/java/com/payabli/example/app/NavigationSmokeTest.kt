@@ -27,9 +27,8 @@ import kotlin.concurrent.thread
 /**
  * Two things, and no more.
  *
- * CI runs no instrumented tests at all, and the nightly emulator job covers `:core` only, so nothing
- * here gates a merge. That is why this file is small: it covers the one behaviour a unit test cannot
- * reach, and stops. Anyone extending it is spending effort on a check no reviewer will see go red.
+ * No job runs these: CI has no emulator, and the nightly covers `:core` only. Nothing added here
+ * will be seen to go red.
  *
  * Run locally with `./gradlew :example:connectedAndroidTest`.
  */
@@ -42,10 +41,10 @@ class NavigationSmokeTest {
 
     /**
      * A token endpoint that answers, because the first step of each payment sequence gates the rest
-     * on one and the demo controller cannot reach a real backend from a test device.
+     * on one.
      *
-     * `applyLaunchOverride` is the app's own way of being pointed somewhere else, so this uses the
-     * supported path rather than adding a seam for the test.
+     * `applyLaunchOverride` is the app's own way of being pointed somewhere else, so no seam is
+     * added for the test.
      */
     @Before
     fun pointTheAppAtATokenServer() {
@@ -76,9 +75,8 @@ class NavigationSmokeTest {
     fun everyCapabilityIsReachable() {
         launch()
 
-        // Each assertion names the last step of its sequence, or a label unique to the screen. A
-        // step's title renders whatever its status, so this does not depend on how far the flow has
-        // got; its empty state does, which is what makes the title the thing to look for.
+        // By step title, which renders whatever the status. An empty state does not, so it would
+        // pin how far the flow had got.
         open(TopLevelDestination.Capture)
         compose.onNodeWithText("3. Transaction").assertIsDisplayed()
 
@@ -108,9 +106,8 @@ class NavigationSmokeTest {
         // Scrolled to first. The submit button sits below the fold, so the node composes without
         // being on screen and a bare click asserts against nothing.
         compose.onNodeWithText("Save payment method").performScrollTo().performClick()
-        // Waited for, not asserted straight away. The click starts a submission that suspends, and
-        // `assertIsDisplayed` runs once Compose is idle, which it is while that call is in flight.
-        // The screen is pushed when the result arrives, so the assertion could look for it first.
+        // Waited for. Compose is idle while the submission suspends, so a straight assertion runs
+        // before the result screen is pushed.
         awaitText("Payment method saved")
 
         open(TopLevelDestination.Setup)
@@ -122,8 +119,7 @@ class NavigationSmokeTest {
     /**
      * Fills every field the form requires, because it will not submit until they are all valid.
      *
-     * By the name each field announces, which the SDK sets for a screen reader, so this finds them
-     * the way someone using one would rather than by position.
+     * By the name each field announces to a screen reader, not by position.
      */
     private fun fillTheForm() {
         typeInto("Name on card", "Test Cardholder")
@@ -151,10 +147,9 @@ class NavigationSmokeTest {
     }
 
     /**
-     * Waits for a node carrying [text], failing with the wait's own message when it never arrives.
+     * Waits for a node carrying [text].
      *
-     * The timeout is what makes a failure readable: without one this waits the harness out and
-     * reports a stall rather than a missing screen.
+     * Without the timeout this waits the harness out, and a missing screen reports as a stall.
      */
     private fun awaitText(text: String) {
         awaitExists(text)
@@ -177,8 +172,8 @@ class NavigationSmokeTest {
 /**
  * Answers the one route the token step calls, with the one field it reads.
  *
- * A real socket rather than a stubbed client, so the check under test is the one the app runs. It
- * uses `java.net.ServerSocket` rather than `com.sun.*`, which is absent on Android.
+ * A real socket, so the app runs its own check. `java.net.ServerSocket`, since `com.sun.*` is
+ * absent on Android.
  */
 private class FakeTokenServer : Closeable {
     private val socket = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))

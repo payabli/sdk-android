@@ -41,8 +41,7 @@ import com.payabli.example.app.ui.taptopay.TapToPayViewModel
  * or an unfolded foldable, with no second layout to maintain.
  *
  * The `saveState`/`restoreState` pair on the navigation call is what keeps each area's stack alive:
- * push a result screen under Capture, look at Setup, come back, and the result is still there. That
- * is the behaviour the instrumented smoke test pins, because nothing else can.
+ * push a result screen under Capture, look at Setup, come back, and the result is still there.
  */
 @Composable
 fun PayabliDemoNavHost(

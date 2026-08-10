@@ -26,7 +26,7 @@ import com.payabli.example.app.ui.theme.LocalStatusColors
  *
  * A screen that asks the SDK for several things in order reads as a sequence, so what is required
  * and what is next are visible without running it. [com.payabli.example.app.flow.StepStatus] decides
- * which step shows its controls, and the derivations that produce it are tested.
+ * which step shows its controls.
  */
 @Composable
 fun StepRow(

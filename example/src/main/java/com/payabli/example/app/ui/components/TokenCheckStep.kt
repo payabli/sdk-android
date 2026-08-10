@@ -12,8 +12,7 @@ import com.payabli.example.app.ui.theme.Dimens
 /**
  * The control and the answer for the token-backend step, shared by both payment screens.
  *
- * One place, so the two screens cannot word the same check differently or drift apart on what a
- * failure looks like.
+ * One place, so the two cannot word the same check differently.
  */
 @Composable
 fun TokenCheckStep(

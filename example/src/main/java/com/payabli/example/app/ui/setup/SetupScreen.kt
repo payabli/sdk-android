@@ -31,9 +31,8 @@ import com.payabli.example.app.ui.theme.Dimens
 /**
  * Everything the SDK was configured with, read back.
  *
- * Read-only throughout, and that is the design. A session captures its configuration when it is
- * created, so a control here would appear to change something already decided. Each value says where
- * it came from, so a wrong one is fixed at the source.
+ * Read-only. A session captures its configuration when it is created, so a control here would
+ * appear to change something already decided. Each value says where it came from.
  */
 @Composable
 fun SetupScreen(

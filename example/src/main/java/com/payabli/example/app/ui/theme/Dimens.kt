@@ -5,8 +5,7 @@ import androidx.compose.ui.unit.dp
 /**
  * The spacing and shape constants the screens share.
  *
- * Named here so a card in one screen cannot quietly drift from a card in another, which is the
- * failure a demo app shows off most clearly.
+ * Named here so a card in one screen cannot drift from a card in another.
  */
 object Dimens {
     /** Outer padding on every scrolling screen. */

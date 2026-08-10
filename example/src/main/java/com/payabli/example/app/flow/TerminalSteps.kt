@@ -46,9 +46,8 @@ object TerminalSteps {
 
         val activation =
             when {
-                // The order of these matters. Reading the recorded outcome first lets a failure from
-                // an earlier attempt report itself while the sequence is still on the step before,
-                // which puts two failures on screen and two steps asking to be fixed.
+                // Ordered. Reading the recorded outcome first lets a stale failure report itself
+                // while the sequence is still on the step before.
                 enable != StepStatus.Done -> StepStatus.Blocked
                 // A terminal that reached Ready was activated already or never had to be, whatever
                 // an earlier attempt did.
@@ -63,9 +62,8 @@ object TerminalSteps {
 
         val charge =
             when {
-                // Follows the step before rather than reading the session on its own. Checking only
-                // for a ready session let a device whose checks had not passed offer a charge
-                // alongside the check it was still asking for.
+                // From the step before. Checking only for a ready session let a device whose checks
+                // had not passed offer a charge alongside the check it was still asking for.
                 !activation.isFinished -> StepStatus.Blocked
                 working && session == TerminalSessionState.Ready -> StepStatus.InProgress
                 // The session stays Ready through a failed charge, so the outcome is recorded and

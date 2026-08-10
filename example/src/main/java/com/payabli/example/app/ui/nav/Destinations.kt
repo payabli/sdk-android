@@ -48,11 +48,8 @@ enum class TopLevelDestination(
     val icon: ImageVector,
 ) {
     // One word each where the capability allows it. Four items share the width of the narrowest
-    // supported screen, and a label that wraps to two lines grows taller than its neighbours and
-    // left-aligns its text under a centred icon.
-    //
-    // "Save" is the word the iOS demo uses for the same tab, so a reader moving between the two
-    // apps is looking for the same thing in both.
+    // supported screen, and a label that wraps grows taller than its neighbours and left-aligns
+    // its text under a centred icon.
     PaymentMethod("Save", DemoIcons.PaymentMethod),
     Capture("Capture", DemoIcons.Capture),
     TapToPay("Tap to pay", DemoIcons.TapToPay),

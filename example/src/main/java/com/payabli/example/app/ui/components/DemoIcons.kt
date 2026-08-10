@@ -26,9 +26,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 /**
  * Every icon the app uses, in one place, so a screen never names one directly.
  *
- * Most of these are not in `material-icons-core`, which is 49 icons and covers six of the sixteen
- * below. Three of the misses are the navigation bar itself, which is why the extended set is on the
- * dependency list.
+ * `material-icons-core` is 49 icons and covers six of the sixteen below, missing three of the
+ * navigation bar's own. Hence the extended set on the dependency list.
  */
 object DemoIcons {
     // Navigation.
@@ -47,8 +46,7 @@ object DemoIcons {
     val Reinitialize: ImageVector get() = Icons.Filled.Refresh
 
     // Status.
-    // Steps. A sequence needs one mark per status, and reusing Pass and Fail at either end keeps
-    // the vocabulary the readiness card already established.
+    // Steps. Pass and Fail are reused at either end, keeping the readiness card's vocabulary.
     val Current: ImageVector get() = Icons.Filled.PlayCircle
     val Working: ImageVector get() = Icons.Filled.HourglassTop
     val Waiting: ImageVector get() = Icons.Filled.RadioButtonUnchecked
