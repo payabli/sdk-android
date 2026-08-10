@@ -22,6 +22,8 @@ import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
 import com.payabli.example.app.config.TokenHostDefaults
 import com.payabli.example.app.config.TokenHostResolver
+import com.payabli.example.app.flow.FlowStep
+import com.payabli.example.app.flow.StepStatus
 import com.payabli.example.app.flow.TerminalSteps
 import com.payabli.example.app.terminal.DemoTerminalController
 import com.payabli.example.app.terminal.EventBuffer
@@ -92,6 +94,7 @@ fun TapToPayScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                FailureReason(steps[1], state.resultText)
                 ProminentButton(
                     text = "Turn on the terminal",
                     icon = DemoIcons.TapToPay,
@@ -114,6 +117,7 @@ fun TapToPayScreen(
 
         StepRow(index = 3, step = steps[2]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                FailureReason(steps[2], state.resultText)
                 BorderedButton(
                     text = "Activate this device",
                     icon = DemoIcons.Activate,
@@ -125,7 +129,10 @@ fun TapToPayScreen(
         }
 
         StepRow(index = 4, step = steps[3]) {
-            PaymentBlock(state, actions.onAmountChange, actions.onCharge)
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                FailureReason(steps[3], state.resultText)
+                PaymentBlock(state, actions.onAmountChange, actions.onCharge)
+            }
         }
 
         Block(title = "Last result") {
@@ -137,6 +144,22 @@ fun TapToPayScreen(
 
     if (state.isActivationOpen) {
         ActivationSheet(state, actions.onActivationCodeChange, actions.onActivate, actions.onDismissActivation)
+    }
+}
+
+/**
+ * The reason a step failed, beside the controls that retry it.
+ *
+ * The last result is shown further down as a running record. A failed step needs it here as well, or
+ * the retry is offered with the reason somewhere the reader has to go and find.
+ */
+@Composable
+private fun FailureReason(
+    step: FlowStep,
+    text: String,
+) {
+    if (step.status == StepStatus.Failed && text.isNotEmpty()) {
+        ResultCard(text = text, emptyText = "")
     }
 }
 
