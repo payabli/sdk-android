@@ -29,31 +29,19 @@ enum class StepStatus {
     /**
      * Whether this step shows its controls.
      *
-     * The step being acted on, one that failed, and one that is working. A failure keeps its
-     * controls because the reason and the retry belong together; hiding them would leave a reader
-     * told that something broke and given nothing to do about it. A step that is working keeps them
-     * because taking them off screen removes them from the composition, and anything they were
-     * holding goes with it: the payment form keeps what was typed in `remember`, so hiding it during
-     * a submission empties the form that a failure then asks the payer to fill in again.
-     *
-     * The controls of a working step are disabled by the state they are given, not by this.
+     * A working step keeps them because hiding them disposes the composition, and the payment form's
+     * typed values go with it.
      */
     val showsContent: Boolean get() = this == Current || this == Failed || this == InProgress
 
-    /**
-     * Whether this step is the one asking for something.
-     *
-     * Narrower than [showsContent]: a step that is working is on screen and is not asking.
-     */
+    /** Whether this step is the one asking for something. Narrower than [showsContent]. */
     val isActionable: Boolean get() = this == Current || this == Failed
 
     /**
-     * Whether the step after this one may proceed.
+     * Whether the step after this one may proceed. A skipped step counts as finished.
      *
-     * A step that was skipped counts as finished; a step still working, blocked or failed does not.
-     * Every sequence in this app reads this rather than deciding for itself, because a step that
-     * consults the underlying state instead can offer itself alongside an earlier step that is still
-     * asking for something.
+     * Every sequence reads this. A step that consults the underlying state instead can offer itself
+     * alongside an earlier step that is still asking for something.
      */
     val isFinished: Boolean get() = this == Done || this == NotNeeded
 }
@@ -73,8 +61,7 @@ data class FlowStep(
 /**
  * The rule every sequence in this app follows.
  *
- * Exactly one step is [StepStatus.Current], or none once the flow is finished. A second one would
- * put a reader in front of two things claiming to be next. A failure replaces it rather than joining
+ * Exactly one step is [StepStatus.Current], or none once the flow is finished. A failure replaces
  * it: the failed step is the one to act on, and everything after it waits.
  */
 fun List<FlowStep>.isWellFormed(): Boolean {

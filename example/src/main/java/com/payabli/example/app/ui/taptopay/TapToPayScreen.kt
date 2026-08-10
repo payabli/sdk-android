@@ -150,8 +150,7 @@ fun TapToPayScreen(
 /**
  * The reason a step failed, beside the controls that retry it.
  *
- * The last result is shown further down as a running record. A failed step needs it here as well, or
- * the retry is offered with the reason somewhere the reader has to go and find.
+ * The running record further down shows the same text, too far from the retry to answer it.
  */
 @Composable
 private fun FailureReason(

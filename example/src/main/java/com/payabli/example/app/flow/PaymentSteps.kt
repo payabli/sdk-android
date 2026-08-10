@@ -3,9 +3,6 @@ package com.payabli.example.app.flow
 /**
  * How far a card-not-present screen has got.
  *
- * One value rather than six flags, because every one of them is read together and a sequence derived
- * from a subset is a sequence that disagrees with the screen.
- *
  * @param backendReachable the token endpoint answered.
  * @param backendChecked the check has run at all, whatever it said.
  * @param isCheckingBackend the check is running now.
@@ -26,8 +23,7 @@ data class PaymentProgress(
  * What a card-not-present screen asks for, in the order the SDK needs it.
  *
  * Pure, and outside `ui`, so the sequence a reader is shown can be checked without a composition.
- * The two screens differ in what the last step is called and in nothing else, which is the point:
- * storing a method and taking a payment are the same three questions.
+ * Storing a method and taking a payment differ only in what the last step is called.
  */
 object PaymentSteps {
     /** Storing an instrument, which returns a token to reuse. */
@@ -53,8 +49,7 @@ object PaymentSteps {
     ): List<FlowStep> {
         val backend =
             when {
-                // Before the outcome, or the step keeps saying "do this next" and keeps its button
-                // while the request it started is still in flight.
+                // Before the outcome, or the step offers its button over a request already in flight.
                 progress.isCheckingBackend -> StepStatus.InProgress
                 progress.backendChecked && !progress.backendReachable -> StepStatus.Failed
                 progress.backendReachable -> StepStatus.Done
@@ -63,7 +58,6 @@ object PaymentSteps {
 
         val form =
             when {
-                // Waits rather than competing with the step above for attention.
                 !backend.isFinished -> StepStatus.Blocked
                 progress.isSubmitting -> StepStatus.InProgress
                 progress.submitFailed -> StepStatus.Failed
@@ -73,10 +67,7 @@ object PaymentSteps {
 
         val result =
             when {
-                // Read from the step before rather than from `finished`, which can be true while the
-                // form is blocked and would put two steps forward at once. A failure also belongs to
-                // the step that produced it: marking this one failed as well would leave the
-                // sequence with two things to fix and no order between them.
+                // From the step before, not `finished`, which can be true while the form is blocked.
                 form.isFinished -> StepStatus.Current
                 else -> StepStatus.Blocked
             }
