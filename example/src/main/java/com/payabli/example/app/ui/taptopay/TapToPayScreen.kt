@@ -31,6 +31,7 @@ import com.payabli.example.app.terminal.TerminalEvent
 import com.payabli.example.app.terminal.TerminalEventCode
 import com.payabli.example.app.terminal.TerminalSessionState
 import com.payabli.example.app.terminal.chipSpecFor
+import com.payabli.example.app.terminal.sessionFailureReason
 import com.payabli.example.app.ui.components.BorderedButton
 import com.payabli.example.app.ui.components.ContextLine
 import com.payabli.example.app.ui.components.DemoIcons
@@ -59,8 +60,8 @@ fun TapToPayScreen(
         TerminalSteps.forCharging(
             readiness = state.readiness,
             session = state.session,
-            activationFailed = state.activationFailed,
-            chargeFailed = state.chargeFailed,
+            activationFailed = state.activationFailure != null,
+            chargeFailed = state.chargeFailure != null,
             working = state.isWorking,
         )
 
@@ -91,7 +92,7 @@ fun TapToPayScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[1], state.resultText)
+                FailureReason(steps[1], sessionFailureReason(state.session))
                 ProminentButton(
                     text = "Turn on the terminal",
                     icon = DemoIcons.TapToPay,
@@ -106,15 +107,16 @@ fun TapToPayScreen(
                 )
                 TokenCheckStep(
                     text = state.tokenProbeText,
-                    isChecking = state.isWorking,
+                    isChecking = state.isProbingToken,
                     onCheck = actions.onProbeToken,
+                    enabled = !state.isWorking,
                 )
             }
         }
 
         StepRow(index = 3, step = steps[2]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[2], state.resultText)
+                FailureReason(steps[2], state.activationFailure.orEmpty())
                 BorderedButton(
                     text = "Activate this device",
                     icon = DemoIcons.Activate,
@@ -127,7 +129,7 @@ fun TapToPayScreen(
 
         StepRow(index = 4, step = steps[3]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[3], state.resultText)
+                FailureReason(steps[3], state.chargeFailure.orEmpty())
                 PaymentBlock(state, actions.onAmountChange, actions.onCharge)
             }
         }

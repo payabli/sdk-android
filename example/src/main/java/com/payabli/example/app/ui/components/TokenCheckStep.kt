@@ -20,13 +20,16 @@ fun TokenCheckStep(
     isChecking: Boolean,
     onCheck: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
         BorderedButton(
             text = if (isChecking) "Checking…" else "Check token endpoint",
             icon = DemoIcons.CheckToken,
             onClick = onCheck,
-            enabled = !isChecking,
+            // Two separate questions. A screen with other work in flight disables this without
+            // claiming a token check is what is running.
+            enabled = enabled && !isChecking,
         )
         if (text.isNotEmpty()) {
             Text(

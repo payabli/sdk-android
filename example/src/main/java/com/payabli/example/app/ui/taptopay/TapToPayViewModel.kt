@@ -38,13 +38,18 @@ data class TapToPayUiState(
     val session: TerminalSessionState = TerminalSessionState.Idle,
     val isReady: Boolean = false,
     /**
-     * The last activation attempt was refused. Recorded, because [session] reports the same
-     * thing for a device that was refused and one that never needed activating.
+     * Why the last activation attempt was refused, or null if it was not.
+     *
+     * The reason is captured here, not read from [resultText], which any later action overwrites
+     * while this step is still failed. [session] cannot answer either: it reports the same thing
+     * for a device that was refused and one that never needed activating.
      */
-    val activationFailed: Boolean = false,
-    /** The last charge attempt failed. The session reports Ready either way. */
-    val chargeFailed: Boolean = false,
+    val activationFailure: String? = null,
+    /** Why the last charge failed. The session reports Ready either way. */
+    val chargeFailure: String? = null,
     val isActivationOpen: Boolean = false,
+    /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
+    val isProbingToken: Boolean = false,
     val isWorking: Boolean = false,
 )
 
@@ -117,9 +122,9 @@ class TapToPayViewModel(
                             TerminalAction.Charge,
                             NumberFormatException("That is not an amount"),
                         ),
-                    // This path returns before `run`, which is the only other thing that sets the
-                    // flag, so without it the step reads "do this next" over a stated failure.
-                    chargeFailed = true,
+                    // This path returns before `run`, which is the only other thing that records a
+                    // charge failure, so without it the step reads "do this next" over a stated one.
+                    chargeFailure = "That is not an amount",
                 )
             }
             return
@@ -139,12 +144,13 @@ class TapToPayViewModel(
 
     fun probeToken() {
         if (_uiState.value.isWorking) return
-        _uiState.update { it.copy(tokenProbeText = "Checking…", isWorking = true) }
+        _uiState.update { it.copy(tokenProbeText = "Checking…", isProbingToken = true, isWorking = true) }
         viewModelScope.launch {
             val outcome = tokenClient.probeAccessToken()
             _uiState.update {
                 it.copy(
                     tokenProbeText = outcome.displayText(TokenServerProbe.TOKEN_LABEL),
+                    isProbingToken = false,
                     isWorking = false,
                 )
             }
@@ -170,16 +176,17 @@ class TapToPayViewModel(
         viewModelScope.launch {
             val result = block()
             val outcome = TerminalActionOutcome.from(action, result)
+            val reason = outcome.takeIf { result.isFailure }
             _uiState.update {
                 it.copy(
                     resultText = outcome,
                     isWorking = false,
                     // Only an activation attempt moves this, either way, so a later failure
                     // elsewhere does not leave the activation step reporting one of its own.
-                    activationFailed =
-                        if (action == TerminalAction.Activate) result.isFailure else it.activationFailed,
-                    chargeFailed =
-                        if (action == TerminalAction.Charge) result.isFailure else it.chargeFailed,
+                    activationFailure =
+                        if (action == TerminalAction.Activate) reason else it.activationFailure,
+                    chargeFailure =
+                        if (action == TerminalAction.Charge) reason else it.chargeFailure,
                 )
             }
         }
