@@ -40,6 +40,7 @@ fun PaymentMethodScreen(
             PaymentSteps.forStoringMethod(
                 backendReachable = state.backendReachable,
                 backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
+                isCheckingBackend = state.isCheckingToken,
                 isSubmitting = state.isSubmitting,
                 submitFailed = state.submitFailed,
                 finished = state.outcomeReady,

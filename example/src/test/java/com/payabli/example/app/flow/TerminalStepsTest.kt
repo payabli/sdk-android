@@ -13,15 +13,30 @@ import org.junit.Test
  * sequence would first offer two next things or hide a failure.
  */
 class TerminalStepsTest {
-    private val everyState: List<Triple<Readiness, TerminalSessionState, Boolean>> =
+    /** Readiness, session, activation refused, charge failed, an action in flight. */
+    private data class Combination(
+        val readiness: Readiness,
+        val session: TerminalSessionState,
+        val activationFailed: Boolean,
+        val chargeFailed: Boolean,
+        val working: Boolean,
+    )
+
+    private val everyState: List<Combination> =
         Readiness.entries.flatMap { readiness ->
             TerminalSessionState.entries.flatMap { session ->
-                listOf(true, false).map { failed -> Triple(readiness, session, failed) }
+                listOf(true, false).flatMap { activationFailed ->
+                    listOf(true, false).flatMap { chargeFailed ->
+                        listOf(true, false).map { working ->
+                            Combination(readiness, session, activationFailed, chargeFailed, working)
+                        }
+                    }
+                }
             }
         }
 
-    private fun steps(combination: Triple<Readiness, TerminalSessionState, Boolean>) =
-        TerminalSteps.forCharging(combination.first, combination.second, combination.third)
+    private fun steps(c: Combination) =
+        TerminalSteps.forCharging(c.readiness, c.session, c.activationFailed, c.chargeFailed, c.working)
 
     @Test
     fun `no two steps ask for something at once, in any session state`() {
@@ -118,6 +133,26 @@ class TerminalStepsTest {
     }
 
     @Test
+    fun `an action in flight is the app working, not the reader`() {
+        // The session reports Ready throughout a charge and PendingActivation throughout an
+        // activation, so neither step could say on its own that it was running.
+        val charging = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, true)
+        assertEquals(StepStatus.InProgress, charging[3].status)
+        assertTrue("a running charge asked for something", !charging[3].status.showsContent)
+
+        val activating =
+            TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.PendingActivation, false, false, true)
+        assertEquals(StepStatus.InProgress, activating[2].status)
+    }
+
+    @Test
+    fun `a failed charge is reported by the step that took it`() {
+        val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, true, false)
+        assertEquals(StepStatus.Failed, sequence[3].status)
+        assertTrue("the retry went with the reason", sequence[3].status.showsContent)
+    }
+
+    @Test
     fun `charging is only ever offered by a ready terminal`() {
         everyState.forEach { combination ->
             val charge = steps(combination)[3]
@@ -125,7 +160,7 @@ class TerminalStepsTest {
                 assertEquals(
                     "$combination offered a charge",
                     TerminalSessionState.Ready,
-                    combination.second,
+                    combination.session,
                 )
             }
         }

@@ -14,11 +14,17 @@ object TerminalSteps {
      * @param readiness what the device checks concluded.
      * @param session where the terminal session has got to.
      * @param activationFailed the last activation attempt was refused.
+     * @param chargeFailed the last charge attempt failed.
+     * @param working an action is in flight. The session reports [TerminalSessionState.Ready]
+     *   throughout a charge and [TerminalSessionState.PendingActivation] throughout an activation,
+     *   so it cannot say on its own that either is running.
      */
     fun forCharging(
         readiness: Readiness,
         session: TerminalSessionState,
         activationFailed: Boolean,
+        chargeFailed: Boolean = false,
+        working: Boolean = false,
     ): List<FlowStep> {
         val device =
             when (readiness) {
@@ -47,6 +53,7 @@ object TerminalSteps {
                 // A terminal that reached Ready was activated already or never had to be, whatever
                 // an earlier attempt did.
                 session == TerminalSessionState.Ready -> StepStatus.NotNeeded
+                working && session == TerminalSessionState.PendingActivation -> StepStatus.InProgress
                 // The session cannot tell a refused activation from one that was never needed, so
                 // the outcome is recorded and read here.
                 activationFailed -> StepStatus.Failed
@@ -60,6 +67,10 @@ object TerminalSteps {
                 // for a ready session let a device whose checks had not passed offer a charge
                 // alongside the check it was still asking for.
                 !activation.isFinished -> StepStatus.Blocked
+                working && session == TerminalSessionState.Ready -> StepStatus.InProgress
+                // The session stays Ready through a failed charge, so the outcome is recorded and
+                // read here or step 4 never reports one.
+                chargeFailed && session == TerminalSessionState.Ready -> StepStatus.Failed
                 session == TerminalSessionState.Ready -> StepStatus.Current
                 else -> StepStatus.Blocked
             }

@@ -13,12 +13,13 @@ import org.junit.Test
  */
 class PaymentStepsTest {
     private val everyCombination: List<List<Boolean>> =
-        (0 until 32).map { bits -> (0 until 5).map { bit -> bits shr bit and 1 == 1 } }
+        (0 until 64).map { bits -> (0 until 6).map { bit -> bits shr bit and 1 == 1 } }
 
     private fun steps(flags: List<Boolean>) =
         PaymentSteps.forStoringMethod(
             backendReachable = flags[0],
             backendChecked = flags[1],
+            isCheckingBackend = flags[5],
             isSubmitting = flags[2],
             submitFailed = flags[3],
             finished = flags[4],
@@ -58,7 +59,7 @@ class PaymentStepsTest {
 
     @Test
     fun `an unchecked backend is the first thing asked for`() {
-        val sequence = steps(listOf(false, false, false, false, false))
+        val sequence = steps(listOf(false, false, false, false, false, false))
         assertEquals(StepStatus.Current, sequence[0].status)
         assertEquals(StepStatus.Blocked, sequence[1].status)
         assertEquals(StepStatus.Blocked, sequence[2].status)
@@ -66,14 +67,14 @@ class PaymentStepsTest {
 
     @Test
     fun `a backend that answered hands the sequence to the form`() {
-        val sequence = steps(listOf(true, true, false, false, false))
+        val sequence = steps(listOf(true, true, false, false, false, false))
         assertEquals(StepStatus.Done, sequence[0].status)
         assertEquals(StepStatus.Current, sequence[1].status)
     }
 
     @Test
     fun `a backend that did not answer keeps the sequence and its retry`() {
-        val sequence = steps(listOf(false, true, false, false, false))
+        val sequence = steps(listOf(false, true, false, false, false, false))
         assertEquals(StepStatus.Failed, sequence[0].status)
         assertTrue("the retry went with the reason", sequence[0].status.showsContent)
         assertEquals(StepStatus.Blocked, sequence[1].status)
@@ -81,14 +82,14 @@ class PaymentStepsTest {
 
     @Test
     fun `submitting is the app waiting, not the reader`() {
-        val sequence = steps(listOf(true, true, true, false, false))
+        val sequence = steps(listOf(true, true, true, false, false, false))
         assertEquals(StepStatus.InProgress, sequence[1].status)
         assertTrue("a spinner asked for something", !sequence[1].status.showsContent)
     }
 
     @Test
     fun `a failed submission keeps its controls and leaves the result waiting`() {
-        val sequence = steps(listOf(true, true, false, true, false))
+        val sequence = steps(listOf(true, true, false, true, false, false))
         assertEquals(StepStatus.Failed, sequence[1].status)
         assertTrue(sequence[1].status.showsContent)
         assertEquals("the result must not read as failed too", StepStatus.Blocked, sequence[2].status)
@@ -96,20 +97,29 @@ class PaymentStepsTest {
 
     @Test
     fun `a finished submission moves the sequence to the result`() {
-        val sequence = steps(listOf(true, true, false, false, true))
+        val sequence = steps(listOf(true, true, false, false, true, false))
         assertEquals(StepStatus.Done, sequence[1].status)
         assertEquals(StepStatus.Current, sequence[2].status)
     }
 
     @Test
     fun `storing and capturing differ only in what the last step is called`() {
-        val flags = listOf(true, true, false, false, true)
-        val stored = PaymentSteps.forStoringMethod(flags[0], flags[1], flags[2], flags[3], flags[4])
-        val captured = PaymentSteps.forCapture(flags[0], flags[1], flags[2], flags[3], flags[4])
+        val stored = PaymentSteps.forStoringMethod(true, true, false, false, false, true)
+        val captured = PaymentSteps.forCapture(true, true, false, false, false, true)
 
         assertEquals(stored.map { it.status }, captured.map { it.status })
         assertEquals(stored.take(2).map { it.title }, captured.take(2).map { it.title })
         assertTrue("the two results read the same", stored.last().title != captured.last().title)
+    }
+
+    @Test
+    fun `a check in flight is the app working, not the reader`() {
+        // Without this the step kept saying "do this next" and kept its button while the request it
+        // started was still running.
+        val sequence = steps(listOf(false, false, false, false, false, true))
+        assertEquals(StepStatus.InProgress, sequence[0].status)
+        assertTrue("a running check asked for something", !sequence[0].status.showsContent)
+        assertEquals(StepStatus.Blocked, sequence[1].status)
     }
 
     @Test

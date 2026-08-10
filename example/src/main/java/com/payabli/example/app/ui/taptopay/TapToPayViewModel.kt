@@ -44,6 +44,8 @@ data class TapToPayUiState(
      * refused and one that never needed activating.
      */
     val activationFailed: Boolean = false,
+    /** The last charge attempt failed. The session reports Ready either way. */
+    val chargeFailed: Boolean = false,
     val isActivationOpen: Boolean = false,
     val isWorking: Boolean = false,
 )
@@ -176,6 +178,8 @@ class TapToPayViewModel(
                     // elsewhere does not leave the activation step reporting one of its own.
                     activationFailed =
                         if (action == TerminalAction.Activate) result.isFailure else it.activationFailed,
+                    chargeFailed =
+                        if (action == TerminalAction.Charge) result.isFailure else it.chargeFailed,
                 )
             }
         }

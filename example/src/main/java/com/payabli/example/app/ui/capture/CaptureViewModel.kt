@@ -137,7 +137,9 @@ class CaptureViewModel(
             it.copy(
                 resultText = text,
                 lastResult = result,
-                submitFailed = false,
+                // A response can arrive carrying no transaction, which the text above calls a
+                // failure. The flag has to agree with it.
+                submitFailed = transaction == null,
                 isSheetOpen = false,
                 isSubmitting = false,
                 outcomeReady = transaction != null,

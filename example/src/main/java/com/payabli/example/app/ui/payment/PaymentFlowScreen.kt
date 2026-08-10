@@ -10,6 +10,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import com.payabli.example.app.flow.FlowStep
+import com.payabli.example.app.flow.StepStatus
 import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.ui.components.ContextLine
 import com.payabli.example.app.ui.components.DemoIcons
@@ -86,6 +87,11 @@ fun PaymentFlowScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                // A failure here blocks the result step, which is the only other place the text
+                // appears, so without this the retry is offered with no reason beside it.
+                if (steps[1].status == StepStatus.Failed) {
+                    ResultCard(text = state.resultText, emptyText = resultEmptyText)
+                }
                 ProminentButton(
                     text = "Open in a bottom sheet",
                     icon = DemoIcons.OpenSheet,

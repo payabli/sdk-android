@@ -11,6 +11,7 @@ object PaymentSteps {
     /**
      * @param backendReachable the token endpoint answered.
      * @param backendChecked the check has run at all, whatever it said.
+     * @param isCheckingBackend the check is running now.
      * @param isSubmitting the SDK is submitting.
      * @param submitFailed the last submission failed.
      * @param finished a result came back and is on screen.
@@ -18,6 +19,7 @@ object PaymentSteps {
     fun forPayment(
         backendReachable: Boolean,
         backendChecked: Boolean,
+        isCheckingBackend: Boolean,
         isSubmitting: Boolean,
         submitFailed: Boolean,
         finished: Boolean,
@@ -26,6 +28,9 @@ object PaymentSteps {
     ): List<FlowStep> {
         val backend =
             when {
+                // Before the outcome, or the step keeps saying "do this next" and keeps its button
+                // while the request it started is still in flight.
+                isCheckingBackend -> StepStatus.InProgress
                 backendChecked && !backendReachable -> StepStatus.Failed
                 backendReachable -> StepStatus.Done
                 else -> StepStatus.Current
@@ -70,6 +75,7 @@ object PaymentSteps {
     fun forStoringMethod(
         backendReachable: Boolean,
         backendChecked: Boolean,
+        isCheckingBackend: Boolean,
         isSubmitting: Boolean,
         submitFailed: Boolean,
         finished: Boolean,
@@ -77,6 +83,7 @@ object PaymentSteps {
         forPayment(
             backendReachable = backendReachable,
             backendChecked = backendChecked,
+            isCheckingBackend = isCheckingBackend,
             isSubmitting = isSubmitting,
             submitFailed = submitFailed,
             finished = finished,
@@ -88,6 +95,7 @@ object PaymentSteps {
     fun forCapture(
         backendReachable: Boolean,
         backendChecked: Boolean,
+        isCheckingBackend: Boolean,
         isSubmitting: Boolean,
         submitFailed: Boolean,
         finished: Boolean,
@@ -95,6 +103,7 @@ object PaymentSteps {
         forPayment(
             backendReachable = backendReachable,
             backendChecked = backendChecked,
+            isCheckingBackend = isCheckingBackend,
             isSubmitting = isSubmitting,
             submitFailed = submitFailed,
             finished = finished,

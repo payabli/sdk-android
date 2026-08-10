@@ -131,7 +131,9 @@ class PaymentMethodViewModel(
             it.copy(
                 resultText = text,
                 storedMethod = method,
-                submitFailed = false,
+                // A response can arrive carrying nothing, which the text above calls a failure. The
+                // flag has to agree, or the sequence says "do this next" over a stated failure.
+                submitFailed = method == null,
                 isSheetOpen = false,
                 isSubmitting = false,
                 outcomeReady = method != null,
