@@ -6,6 +6,7 @@ import com.payabli.example.app.AppContainer
 import com.payabli.example.app.diagnostics.DiagnosticsStore
 import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.payment.PaymentError
+import com.payabli.example.app.payment.PaymentFailure
 import com.payabli.example.app.payment.PaymentFlowController
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.sdk.payin.form.PayInFormValues
@@ -71,7 +72,10 @@ class CaptureViewModel(
         _uiState.update { it.copy(isSubmitting = true) }
         viewModelScope.launch {
             flow.submit(values).fold(onSuccess = ::onCompleted, onFailure = {
-                onError(PaymentError.Unexpected(it.message ?: it.javaClass.simpleName))
+                // A controller that knows what went wrong says so; anything else is unexpected.
+                onError(
+                    (it as? PaymentFailure)?.error ?: PaymentError.Unexpected(it.message ?: it.javaClass.simpleName),
+                )
             })
         }
     }

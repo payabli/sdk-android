@@ -70,3 +70,14 @@ sealed interface PaymentError {
         override val displayMessage: String get() = text
     }
 }
+
+/**
+ * Carries a [PaymentError] out of a `Result.failure`.
+ *
+ * A controller reports failure as a `Result`, and a bare exception arrives at the screens as text.
+ * This keeps the reason and the detail apart, so a decline reads as a decline rather than as
+ * whatever a message happened to say.
+ */
+class PaymentFailure(
+    val error: PaymentError,
+) : Exception(error.displayMessage)

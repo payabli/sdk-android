@@ -306,6 +306,31 @@ class PaymentSeamTest {
         }
 
     @Test
+    fun `the decline card fails, and says what went wrong rather than what threw`() =
+        runTest {
+            // The screens showed a failure through a button on the placeholder this branch deletes,
+            // so without a card that declines the error card is unreachable in the demo.
+            val controller = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0)
+            val declined =
+                PayInFormValues(
+                    PayInMethodType.Card,
+                    mapOf(PayInField.CardNumber to DemoPaymentFlowController.DECLINE_CARD_NUMBER),
+                )
+
+            val failure = controller.submit(declined).exceptionOrNull()
+            assertTrue("a decline is not a failure", failure is PaymentFailure)
+            assertEquals(
+                PaymentError.Payabli("Declined", "The card was declined by the issuer."),
+                (failure as PaymentFailure).error,
+            )
+
+            // Every other number still succeeds, or the demo would decline everything.
+            val accepted =
+                PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardNumber to "4111111111111111"))
+            assertNotNull(controller.submit(accepted).getOrThrow().transaction)
+        }
+
+    @Test
     fun `each submission gets its own identifier`() =
         runTest {
             val controller = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0)

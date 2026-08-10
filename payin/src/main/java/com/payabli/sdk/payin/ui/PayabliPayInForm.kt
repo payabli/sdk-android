@@ -60,9 +60,10 @@ public fun PayabliPayInForm(
     onValuesChanged: (PayInFormValues) -> Unit = {},
     onSubmit: (PayInFormValues) -> Unit = {},
 ) {
-    // Read on every composition, so a form left open across the turn of a month validates against
-    // the new one.
-    val today = ExpiryValue.today()
+    // State, so refreshing it recomposes. Read on every composition instead, an idle form across
+    // the turn of a month kept the month it opened in: the button stayed enabled, the expired field
+    // showed nothing, and only the click knew better, so tapping did nothing and said nothing.
+    var today by remember { mutableStateOf(ExpiryValue.today()) }
 
     var method by remember(configuration) { mutableStateOf(configuration.startingMethod) }
     val typed = remember(configuration) { mutableStateMapOf<PayInField, String>() }
@@ -140,10 +141,12 @@ public fun PayabliPayInForm(
             onClick = {
                 // Everything again, against the state as it is now. `enabled` reflects the last
                 // composition, so a field cleared or a tab switched in the frame before this click
-                // would otherwise submit on a gate that no longer holds. The clock is re-read for
-                // the same reason: an untouched form is not recomposing.
-                val now = ExpiryValue.today()
-                if (!justSubmitted && isComplete(method, now)) {
+                // would otherwise submit on a gate that no longer holds.
+                //
+                // The clock lands in state rather than a local, so a rollover that refuses this
+                // submission also disables the button and shows the expired field its error.
+                today = ExpiryValue.today()
+                if (!justSubmitted && isComplete(method, today)) {
                     justSubmitted = true
                     onSubmit(collect(method))
                 }

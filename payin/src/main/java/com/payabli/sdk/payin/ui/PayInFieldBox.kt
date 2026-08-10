@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -52,20 +53,25 @@ internal fun PayInFieldBox(
 ) {
     val error = PayInFieldRules.error(field, value, context.today)
     val label = PayInStrings.label(field, context.labels)
+    val message = error?.let { PayInStrings.error(it) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(context.style.spacing.label)) {
         if (context.configuration.showsLabelFor(field)) {
             Text(text = label, style = context.style.label)
         }
 
+        // The message is a sibling Text, which is its own semantics node, so isError alone tells a
+        // screen reader that something is wrong and never what. It goes on the control as well.
+        val naming = context.fieldName(field, label).invalid(message)
+
         when (field.input) {
-            PayInFieldInput.MonthYear -> ExpiryField(field, value, label, context, onValueChange)
-            PayInFieldInput.Choice -> ChoiceField(field, value, label, context, onValueChange)
-            else -> TypedField(field, value, label, context, onValueChange)
+            PayInFieldInput.MonthYear -> ExpiryField(field, value, naming, context, onValueChange)
+            PayInFieldInput.Choice -> ChoiceField(field, value, label, naming, context, onValueChange)
+            else -> TypedField(field, value, label, naming, context, onValueChange)
         }
 
-        if (error != null) {
-            Text(text = PayInStrings.error(error), style = context.style.error)
+        if (message != null) {
+            Text(text = message, style = context.style.error)
         }
     }
 }
@@ -75,6 +81,7 @@ private fun TypedField(
     field: PayInField,
     value: String,
     label: String,
+    naming: Modifier,
     context: PayInFormContext,
     onValueChange: (String) -> Unit,
 ) {
@@ -90,7 +97,7 @@ private fun TypedField(
     OutlinedTextField(
         value = value,
         onValueChange = { onValueChange(PayInFieldRules.filter(field, it)) },
-        modifier = Modifier.fillMaxWidth().fieldName(context, field, label),
+        modifier = Modifier.fillMaxWidth().then(naming),
         enabled = context.enabled,
         isError = hasError,
         singleLine = true,
@@ -124,10 +131,11 @@ private fun TypedField(
 private fun ExpiryField(
     field: PayInField,
     value: String,
-    label: String,
+    naming: Modifier,
     context: PayInFormContext,
     onValueChange: (String) -> Unit,
 ) {
+    val label = PayInStrings.label(field, context.labels)
     var picking by remember { mutableStateOf(false) }
 
     // The field goes flat when a submission starts; a dialog already over it does not, and its rows
@@ -137,7 +145,7 @@ private fun ExpiryField(
     OutlinedTextField(
         value = value,
         onValueChange = { },
-        modifier = Modifier.fillMaxWidth().fieldName(context, field, label),
+        modifier = Modifier.fillMaxWidth().then(naming),
         enabled = context.enabled,
         readOnly = true,
         singleLine = true,
@@ -178,6 +186,7 @@ private fun ChoiceField(
     field: PayInField,
     value: String,
     label: String,
+    naming: Modifier,
     context: PayInFormContext,
     onValueChange: (String) -> Unit,
 ) {
@@ -199,7 +208,7 @@ private fun ChoiceField(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .fieldName(context, field, label)
+                    .then(naming)
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, context.enabled),
             enabled = context.enabled,
             readOnly = true,
@@ -243,11 +252,14 @@ private fun PayInFormContext.floatingLabel(
  * semantics node, so a screen reader lands on the box and announces no field name. Where Material
  * does supply the label, adding this would have it announced twice.
  */
-private fun Modifier.fieldName(
-    context: PayInFormContext,
+private fun PayInFormContext.fieldName(
     field: PayInField,
     label: String,
-): Modifier = if (context.configuration.showsFloatingLabelFor(field)) this else semantics { contentDescription = label }
+): Modifier =
+    if (configuration.showsFloatingLabelFor(field)) Modifier else Modifier.semantics { contentDescription = label }
+
+/** Carries the message a sighted payer reads under the field into the control's own semantics. */
+private fun Modifier.invalid(message: String?): Modifier = if (message == null) this else semantics { error(message) }
 
 /** Material's own colours unless the caller supplied a set. */
 @Composable

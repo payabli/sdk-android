@@ -1,5 +1,6 @@
 package com.payabli.example.app.payment
 
+import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import kotlinx.coroutines.delay
@@ -34,6 +35,11 @@ class DemoPaymentFlowController(
     override suspend fun submit(values: PayInFormValues): Result<PaymentResult> {
         delay(stepDelayMillis)
         counter += 1
+        if (values[PayInField.CardNumber] == DECLINE_CARD_NUMBER) {
+            return Result.failure(
+                PaymentFailure(PaymentError.Payabli("Declined", "The card was declined by the issuer.")),
+            )
+        }
         return Result.success(
             when (operation) {
                 PaymentOperation.StoreMethod -> storedMethodResult()
@@ -98,5 +104,14 @@ class DemoPaymentFlowController(
 
     companion object {
         const val DEFAULT_STEP_DELAY_MILLIS: Long = 700
+
+        /**
+         * Submitting this card number fails, so the error path has something to reach it.
+         *
+         * The screens showed a failure through a "Simulate a failure" button on the placeholder
+         * this pull request deletes. A number is better placed than a button: it lives with the
+         * fake controller rather than in the form, and it is the shape a sandbox decline takes.
+         */
+        const val DECLINE_CARD_NUMBER: String = "4000000000000002"
     }
 }

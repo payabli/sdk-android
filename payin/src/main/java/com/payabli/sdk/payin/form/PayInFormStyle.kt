@@ -25,8 +25,13 @@ public data class PayInFormSpacing(
     public val sectionTitle: Dp = 10.dp,
 ) {
     init {
-        require(listOf(content, header, fieldGroup, pairedField, label, section, sectionTitle).none { it < 0.dp }) {
-            "spacing cannot be negative"
+        // Finite as well as positive. Dp.Unspecified is NaN, and NaN < 0.dp is false, so a check for
+        // negative alone let it through to fail in layout instead of here. Dp.Infinity likewise.
+        require(
+            listOf(content, header, fieldGroup, pairedField, label, section, sectionTitle)
+                .all { it.value.isFinite() && it >= 0.dp },
+        ) {
+            "a gap has to be a finite measurement of zero or more"
         }
     }
 }

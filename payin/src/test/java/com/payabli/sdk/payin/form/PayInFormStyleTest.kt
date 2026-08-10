@@ -2,14 +2,19 @@ package com.payabli.sdk.payin.form
 
 import androidx.compose.foundation.shape.CutCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -177,6 +182,66 @@ class PayInFormStyleTest {
         assertNull(resolvePayInFormStyle(light).fieldColors)
     }
 
+    @Test
+    fun `a caller's field colours reach the style`() {
+        // The one override the completeness test above cannot supply, because a TextFieldColors is
+        // ordinarily built by a composable. Without this, dropping `fieldColors = overrides.fieldColors`
+        // from the resolver leaves every other assertion in this file green.
+        val theirs = fieldColors()
+        assertSame(theirs, resolvePayInFormStyle(light, PayInFormStyleOverrides(fieldColors = theirs)).fieldColors)
+    }
+
+    /** A `TextFieldColors` with every role the same, which is all this needs to trace one reference. */
+    private fun fieldColors(): TextFieldColors {
+        val any = Color(0xFF00FF00)
+        val brush = SolidColor(any)
+        return TextFieldColors(
+            focusedTextColor = any,
+            unfocusedTextColor = any,
+            disabledTextColor = any,
+            errorTextColor = any,
+            focusedContainerColor = any,
+            unfocusedContainerColor = any,
+            disabledContainerColor = any,
+            errorContainerColor = any,
+            cursorColor = any,
+            errorCursorColor = any,
+            textSelectionColors = TextSelectionColors(any, any),
+            focusedIndicatorColor = any,
+            unfocusedIndicatorColor = any,
+            disabledIndicatorColor = any,
+            errorIndicatorColor = any,
+            focusedLeadingIconColor = any,
+            unfocusedLeadingIconColor = any,
+            disabledLeadingIconColor = any,
+            errorLeadingIconColor = any,
+            focusedTrailingIconColor = any,
+            unfocusedTrailingIconColor = any,
+            disabledTrailingIconColor = any,
+            errorTrailingIconColor = any,
+            focusedLabelColor = any,
+            unfocusedLabelColor = any,
+            disabledLabelColor = any,
+            errorLabelColor = any,
+            focusedPlaceholderColor = any,
+            unfocusedPlaceholderColor = any,
+            disabledPlaceholderColor = any,
+            errorPlaceholderColor = any,
+            focusedSupportingTextColor = any,
+            unfocusedSupportingTextColor = any,
+            disabledSupportingTextColor = any,
+            errorSupportingTextColor = any,
+            focusedPrefixColor = any,
+            unfocusedPrefixColor = any,
+            disabledPrefixColor = any,
+            errorPrefixColor = any,
+            focusedSuffixColor = any,
+            unfocusedSuffixColor = any,
+            disabledSuffixColor = any,
+            errorSuffixColor = any,
+        ).also { require(brush.value == any) { "the fixture built nothing" } }
+    }
+
     // --- spacing, the one group with no theme role ---
 
     @Test
@@ -207,6 +272,22 @@ class PayInFormStyleTest {
                     true
                 }
             assertTrue("a negative gap was accepted", failed)
+        }
+    }
+
+    @Test
+    fun `a gap that is not a finite measurement is refused`() {
+        // Dp.Unspecified is NaN, and NaN < 0.dp is false, so a check for negative alone passed it
+        // here and failed later where a layout turns it into pixels.
+        listOf(Dp.Unspecified, Dp.Infinity, Dp(Float.NEGATIVE_INFINITY), Dp(Float.NaN)).forEach { bad ->
+            val failed =
+                try {
+                    PayInFormSpacing(content = bad)
+                    false
+                } catch (expected: IllegalArgumentException) {
+                    true
+                }
+            assertTrue("$bad was accepted", failed)
         }
     }
 
