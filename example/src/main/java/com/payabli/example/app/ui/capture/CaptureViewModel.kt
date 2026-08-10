@@ -3,7 +3,11 @@ package com.payabli.example.app.ui.capture
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.AppContainer
+import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.diagnostics.DiagnosticsStore
+import com.payabli.example.app.net.TokenServerClient
+import com.payabli.example.app.net.TokenServerProbe
+import com.payabli.example.app.net.displayText
 import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFailure
@@ -25,6 +29,16 @@ data class CaptureUiState(
     val diagnostics: List<String> = emptyList(),
     val diagnosticsEnabled: Boolean = true,
     val isSheetOpen: Boolean = false,
+    /** What this screen is pointed at, shown in one line. The full set is on Setup. */
+    val entryPoint: String = "",
+    val host: String = "",
+    /** The last submission failed, so its step keeps the reason and the retry. */
+    val submitFailed: Boolean = false,
+    /** What the last token check said, empty until one has run. */
+    val tokenCheckText: String = "",
+    /** The token endpoint answered. The form stays blocked until it has. */
+    val backendReachable: Boolean = false,
+    val isCheckingToken: Boolean = false,
     val isSubmitting: Boolean = false,
 )
 
@@ -35,14 +49,18 @@ data class CaptureUiState(
  */
 class CaptureViewModel(
     private val flow: PaymentFlowController,
+    private val tokenClient: TokenServerClient,
     private val diagnostics: DiagnosticsStore,
     private val diagnosticsEnabled: Boolean,
+    private val configuration: DemoConfiguration,
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
             CaptureUiState(
                 setup = flow.setup,
                 diagnosticsEnabled = diagnosticsEnabled,
+                entryPoint = configuration.entryPoint,
+                host = configuration.environment.host,
             ),
         )
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
@@ -51,6 +69,27 @@ class CaptureViewModel(
         viewModelScope.launch {
             diagnostics.messages.collect { messages ->
                 _uiState.update { it.copy(diagnostics = messages) }
+            }
+        }
+    }
+
+    /**
+     * Asks the token endpoint for a token, and reports only that one arrived.
+     *
+     * The first step of the sequence. A form that submits before the backend answers fails at the
+     * end of a filled-in card rather than at the start of an empty one.
+     */
+    fun checkToken() {
+        if (_uiState.value.isCheckingToken) return
+        _uiState.update { it.copy(isCheckingToken = true, tokenCheckText = "Checking…") }
+        viewModelScope.launch {
+            val outcome = tokenClient.probeAccessToken()
+            _uiState.update {
+                it.copy(
+                    isCheckingToken = false,
+                    tokenCheckText = outcome.displayText(TokenServerProbe.TOKEN_LABEL),
+                    backendReachable = outcome is TokenServerProbe.Ok,
+                )
             }
         }
     }
@@ -103,6 +142,7 @@ class CaptureViewModel(
             it.copy(
                 resultText = text,
                 lastResult = result,
+                submitFailed = false,
                 isSheetOpen = false,
                 isSubmitting = false,
                 outcomeReady = transaction != null,
@@ -121,6 +161,7 @@ class CaptureViewModel(
                 resultText = "✗ ${error.displayMessage}",
                 outcomeReady = false,
                 lastResult = null,
+                submitFailed = true,
                 isSheetOpen = false,
                 isSubmitting = false,
             )
@@ -139,8 +180,10 @@ class CaptureViewModel(
         fun from(container: AppContainer): CaptureViewModel =
             CaptureViewModel(
                 flow = container.captureFlow,
+                tokenClient = container.tokenClient,
                 diagnostics = container.diagnostics.capture,
                 diagnosticsEnabled = container.configuration.diagnosticsEnabled,
+                configuration = container.configuration,
             )
     }
 }

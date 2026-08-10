@@ -123,7 +123,14 @@ class SingleFlightTest {
     fun `two taps on capture submit once`() =
         runTest {
             val flow = BlockingFlow()
-            val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
+            val model =
+                CaptureViewModel(
+                    flow,
+                    unusedTokenClient(),
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
 
             model.submit(cardEntry)
             model.submit(cardEntry)
@@ -136,7 +143,14 @@ class SingleFlightTest {
     fun `two taps on the payment method screen submit once`() =
         runTest {
             val flow = BlockingFlow()
-            val model = PaymentMethodViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
+            val model =
+                PaymentMethodViewModel(
+                    flow,
+                    unusedTokenClient(),
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
 
             model.submit(cardEntry)
             model.submit(cardEntry)
@@ -165,7 +179,14 @@ class SingleFlightTest {
             // The guard has to hold for one operation, not forever. A flag never cleared would pass
             // the three tests above and leave the screen dead after its first use.
             val flow = BlockingFlow()
-            val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
+            val model =
+                CaptureViewModel(
+                    flow,
+                    unusedTokenClient(),
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
 
             model.submit(cardEntry)
             flow.release()
@@ -322,3 +343,11 @@ class SingleFlightTest {
             signingCertificateDigest = "AB:CD",
         )
 }
+
+/**
+ * A token client pointed at a port nothing listens on.
+ *
+ * These tests never run the token check; the view models take the client so the first step of the
+ * sequence has something to call. Port 1 refuses immediately rather than waiting for a timeout.
+ */
+private fun unusedTokenClient() = TokenServerClient(TokenServerTarget("http://127.0.0.1:1", TokenHostSource.Emulator))

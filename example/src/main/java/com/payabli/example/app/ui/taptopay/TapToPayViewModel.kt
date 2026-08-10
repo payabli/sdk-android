@@ -37,6 +37,13 @@ data class TapToPayUiState(
     val problems: List<PreflightCheck> = emptyList(),
     val session: TerminalSessionState = TerminalSessionState.Idle,
     val isReady: Boolean = false,
+    /**
+     * The last activation attempt was refused.
+     *
+     * Recorded rather than read from [session], which reports the same thing for a device that was
+     * refused and one that never needed activating.
+     */
+    val activationFailed: Boolean = false,
     val isActivationOpen: Boolean = false,
     val isWorking: Boolean = false,
 )
@@ -159,8 +166,18 @@ class TapToPayViewModel(
         if (_uiState.value.isWorking) return
         _uiState.update { it.copy(isWorking = true) }
         viewModelScope.launch {
-            val outcome = TerminalActionOutcome.from(action, block())
-            _uiState.update { it.copy(resultText = outcome, isWorking = false) }
+            val result = block()
+            val outcome = TerminalActionOutcome.from(action, result)
+            _uiState.update {
+                it.copy(
+                    resultText = outcome,
+                    isWorking = false,
+                    // Only an activation attempt moves this, either way, so a later failure
+                    // elsewhere does not leave the activation step reporting one of its own.
+                    activationFailed =
+                        if (action == TerminalAction.Activate) result.isFailure else it.activationFailed,
+                )
+            }
         }
     }
 

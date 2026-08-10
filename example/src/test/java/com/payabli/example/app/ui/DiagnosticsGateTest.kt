@@ -1,6 +1,10 @@
 package com.payabli.example.app.ui
 
+import com.payabli.example.app.config.DemoConfiguration
+import com.payabli.example.app.config.TokenHostSource
+import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.diagnostics.DiagnosticsStore
+import com.payabli.example.app.net.TokenServerClient
 import com.payabli.example.app.payment.DemoPaymentFlowController
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentOperation
@@ -29,18 +33,22 @@ class DiagnosticsGateTest {
         store: DiagnosticsStore,
         enabled: Boolean,
     ) = PaymentMethodViewModel(
+        tokenClient = unusedTokenClient(),
         flow = DemoPaymentFlowController(PaymentOperation.StoreMethod, stepDelayMillis = 0),
         diagnostics = store,
         diagnosticsEnabled = enabled,
+        configuration = DemoConfiguration.fromBuildConfig(),
     )
 
     private fun captureModel(
         store: DiagnosticsStore,
         enabled: Boolean,
     ) = CaptureViewModel(
+        tokenClient = unusedTokenClient(),
         flow = DemoPaymentFlowController(PaymentOperation.Capture, stepDelayMillis = 0),
         diagnostics = store,
         diagnosticsEnabled = enabled,
+        configuration = DemoConfiguration.fromBuildConfig(),
     )
 
     @Test
@@ -88,3 +96,11 @@ class DiagnosticsGateTest {
         assertEquals(2, store.messages.value.size)
     }
 }
+
+/**
+ * A token client pointed at a port nothing listens on.
+ *
+ * These tests never run the token check; the view models take the client so the first step of the
+ * sequence has something to call. Port 1 refuses immediately rather than waiting for a timeout.
+ */
+private fun unusedTokenClient() = TokenServerClient(TokenServerTarget("http://127.0.0.1:1", TokenHostSource.Emulator))

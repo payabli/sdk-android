@@ -18,11 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.payabli.example.app.flow.PaymentSteps
 import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.ResponseJson
 import com.payabli.example.app.payment.Transaction
 import com.payabli.example.app.payment.TransactionSummary
+import com.payabli.example.app.ui.components.ContextLine
 import com.payabli.example.app.ui.components.DemoIcons
 import com.payabli.example.app.ui.components.DemoScreen
 import com.payabli.example.app.ui.components.DetailRow
@@ -32,7 +34,9 @@ import com.payabli.example.app.ui.components.ProminentButton
 import com.payabli.example.app.ui.components.ResultCard
 import com.payabli.example.app.ui.components.SectionHeader
 import com.payabli.example.app.ui.components.SelectableMonospaceBlock
+import com.payabli.example.app.ui.components.StepRow
 import com.payabli.example.app.ui.components.SuccessMark
+import com.payabli.example.app.ui.components.TokenCheckStep
 import com.payabli.example.app.ui.payment.PaymentFormHost
 import com.payabli.example.app.ui.theme.Dimens
 import com.payabli.sdk.payin.form.PayInFormValues
@@ -45,26 +49,47 @@ fun CaptureScreen(
     onOpenSheet: () -> Unit,
     onDismissSheet: () -> Unit,
     onSubmit: (PayInFormValues) -> Unit,
+    onCheckToken: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    DemoScreen(title = "Capture", modifier = modifier) {
-        ProminentButton(
-            text = "Open in a bottom sheet",
-            icon = DemoIcons.OpenSheet,
-            onClick = onOpenSheet,
+    val steps =
+        PaymentSteps.forCapture(
+            backendReachable = state.backendReachable,
+            backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
+            isSubmitting = state.isSubmitting,
+            submitFailed = state.submitFailed,
+            finished = state.outcomeReady,
         )
 
-        Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-            SectionHeader(title = "Inline", note = "The same form, on the page.")
-            PaymentFormHost(
-                setup = state.setup,
-                onSubmit = onSubmit,
-                isSubmitting = state.isSubmitting,
+    DemoScreen(title = "Capture", modifier = modifier) {
+        ContextLine(entryPoint = state.entryPoint, host = state.host)
+
+        SectionHeader(title = "Steps", note = "What the SDK needs, in the order it needs it.")
+
+        StepRow(index = 1, step = steps[0]) {
+            TokenCheckStep(
+                text = state.tokenCheckText,
+                isChecking = state.isCheckingToken,
+                onCheck = onCheckToken,
             )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-            SectionHeader(title = "Result")
+        StepRow(index = 2, step = steps[1]) {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                ProminentButton(
+                    text = "Open in a bottom sheet",
+                    icon = DemoIcons.OpenSheet,
+                    onClick = onOpenSheet,
+                )
+                PaymentFormHost(
+                    setup = state.setup,
+                    onSubmit = onSubmit,
+                    isSubmitting = state.isSubmitting,
+                )
+            }
+        }
+
+        StepRow(index = 3, step = steps[2]) {
             ResultCard(text = state.resultText, emptyText = "No payment yet")
         }
 
@@ -153,6 +178,7 @@ private fun CaptureScreenPreview() {
             onOpenSheet = {},
             onDismissSheet = {},
             onSubmit = {},
+            onCheckToken = {},
         )
     }
 }
