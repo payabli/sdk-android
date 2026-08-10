@@ -119,6 +119,9 @@ class TapToPayViewModel(
                             TerminalAction.Charge,
                             NumberFormatException("That is not an amount"),
                         ),
+                    // This path returns before `run`, which is the only other thing that sets the
+                    // flag, so without it the step reads "do this next" over a stated failure.
+                    chargeFailed = true,
                 )
             }
             return
