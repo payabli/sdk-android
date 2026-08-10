@@ -40,18 +40,20 @@ data object SetupHome
 /**
  * The four capability areas, and the order they appear in.
  *
- * Payment method first, because it is the simplest thing the SDK does and the first thing an
+ * Saving a method first, because it is the simplest thing the SDK does and the first thing an
  * integrator tries. Setup last, because it is a readout and not a task.
  */
 enum class TopLevelDestination(
     val navLabel: String,
     val icon: ImageVector,
 ) {
-    // Nav labels, which are shorter than the screen titles they lead to. Four items share the width
-    // of the narrowest supported screen, and "Payment method" wraps to two lines there: the item
-    // grows taller than its neighbours and its text left-aligns under a centred icon. The screen it
-    // opens still says "Payment method" in full in the title bar.
-    PaymentMethod("Method", DemoIcons.PaymentMethod),
+    // One word each where the capability allows it. Four items share the width of the narrowest
+    // supported screen, and a label that wraps to two lines grows taller than its neighbours and
+    // left-aligns its text under a centred icon.
+    //
+    // "Save" is the word the iOS demo uses for the same tab, so a reader moving between the two
+    // apps is looking for the same thing in both.
+    PaymentMethod("Save", DemoIcons.PaymentMethod),
     Capture("Capture", DemoIcons.Capture),
     TapToPay("Tap to pay", DemoIcons.TapToPay),
     Setup("Setup", DemoIcons.Setup),

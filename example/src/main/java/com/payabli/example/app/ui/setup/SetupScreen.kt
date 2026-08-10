@@ -110,7 +110,7 @@ fun SetupScreen(
 
         Section(
             title = "Card not present",
-            note = "What the payment form on the Payment method and Capture screens was configured with.",
+            note = "What the payment form on the Save and Capture screens was configured with.",
         ) {
             // Read from the configuration and the rules, never written out here. A transcribed list
             // would agree with the form today and stop agreeing the first time a field moved.
@@ -126,7 +126,7 @@ fun SetupScreen(
             val value = if (state.configuration.diagnosticsEnabled) "On" else "Off"
             // Two rows for two logs, both driven by one build setting. Listing them separately says
             // which screens are affected; collapsing them to one row would not.
-            DetailRow(label = "Payment method", value = value)
+            DetailRow(label = "Save", value = value)
             DetailRow(label = "Capture", value = value)
             DetailRow(label = "Set by", value = "payabli.demo.diagnostics")
         }

@@ -55,7 +55,7 @@ fun PaymentMethodScreen(
             finished = state.outcomeReady,
         )
 
-    DemoScreen(title = "Payment method", modifier = modifier) {
+    DemoScreen(title = "Save", modifier = modifier) {
         ContextLine(entryPoint = state.entryPoint, host = state.host)
 
         SectionHeader(title = "Steps", note = "What the SDK needs, in the order it needs it.")
