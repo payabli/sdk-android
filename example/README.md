@@ -163,3 +163,26 @@ the repository. It is on the follow-up list.
 **The emulator answers almost nothing here.** It reports no NFC and fails the host check, so the
 readiness screen looks identical on every emulator however wrong the code is. Run on real hardware and
 say which targets ran.
+
+### Manual device checks
+
+No job runs these, and none can until there is a service that provides remote physical devices. They
+are a checklist someone walks on hardware, on every attached device, and reports with the models and
+API levels that ran.
+
+**Readiness follows NFC.** Open Tap to pay with NFC on, and step 1 lists no NFC problem. Switch NFC
+off in Settings, return, and the step reports `NFC switched off` and the verdict drops off ready.
+Switch it back on, return, and both clear. No control is pressed in either direction: the checks are
+read again when the screen resumes, which is the only notification available. There is no broadcast
+for this. `ACTION_ADAPTER_STATE_CHANGED` was registered with `android.permission.NFC` held and the
+receiver confirmed in `dumpsys activity broadcasts`, and it was delivered on none of a Pixel 7a, a
+Galaxy S22 Ultra or a Galaxy A13, spanning API 33 and 36.
+
+**The NFC problem offers the switch.** With NFC off, the row carries `Turn it on`. From API 29 it
+opens the settings panel, which appears over this screen; dismissing it clears the problem. Below API
+29 it opens the full NFC settings screen. No app can switch NFC on: the platform call is a system one,
+and even the adb shell uid is refused.
+
+**Card-present needs the reader.** Everything past step 1 on Tap to pay runs against the demo
+controller. A real terminal session, an activation and a charge need hardware and the card reader
+dependency.
