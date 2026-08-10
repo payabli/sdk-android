@@ -15,7 +15,12 @@ public enum class PayInLabelLayout {
     /** Above the field, as its own line. */
     External,
 
-    /** Inside the field, as Material's floating label. */
+    /**
+     * Inside the field, as Material's floating label.
+     *
+     * Material owns its type here, so [PayInFormStyle.label] governs [External] and this one takes
+     * the host's typography. See that property for what was measured.
+     */
     Placeholder,
 }
 

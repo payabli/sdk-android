@@ -152,6 +152,10 @@ class NoHardCodedAppearanceTest {
             "Color(red = 1f, green = 0f, blue = 0f)",
             "Color.Red",
             "background(Color.Magenta)",
+            // Factories rather than constructors, which the constructor form does not cover.
+            "Color.hsl(210f, 0.8f, 0.5f)",
+            "Color.hsv(210f, 0.8f, 0.5f)",
+            "Color.parseColor(\"#FF0000\")",
         ).forEach { assertTrue("$it is not caught", COLOUR_LITERAL.containsMatchIn(it)) }
     }
 
@@ -266,7 +270,11 @@ class NoHardCodedAppearanceTest {
          * could sit in a composable with this green.
          */
         val COLOUR_LITERAL =
-            Regex("""Color\(|Color\.(Red|Green|Blue|Yellow|Cyan|Magenta|White|Black|Gray|LightGray|DarkGray)\b""")
+            Regex(
+                """Color\(""" +
+                    """|Color\.(Red|Green|Blue|Yellow|Cyan|Magenta|White|Black|Gray|LightGray|DarkGray)\b""" +
+                    """|Color\.(hsl|hsv|rgb|argb|valueOf|parseColor)\s*\(""",
+            )
 
         /** A number followed by a Compose unit, which is a measurement written into the code. */
         val MEASUREMENT = Regex("""\b\d+(\.\d+)?\.(dp|sp)\b""")

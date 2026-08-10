@@ -48,6 +48,15 @@ public data class PayInFormStyle(
     public val title: TextStyle,
     public val subtitle: TextStyle,
     public val sectionTitle: TextStyle,
+    /**
+     * The label the form draws above a field, under [PayInLabelLayout.External].
+     *
+     * Under [PayInLabelLayout.Placeholder] the label is Material's own, and Material interpolates
+     * its size between resting and floating. Measured on a device: passing this style there pins
+     * both states to one size, so the label stops shrinking as it floats and the resting one no
+     * longer matches the text typed under it. That layout follows the host's `MaterialTheme`
+     * typography, which is where its size comes from.
+     */
     public val label: TextStyle,
     public val supporting: TextStyle,
     public val error: TextStyle,
