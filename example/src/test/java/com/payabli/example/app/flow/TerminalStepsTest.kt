@@ -1,0 +1,133 @@
+package com.payabli.example.app.flow
+
+import com.payabli.example.app.preflight.Readiness
+import com.payabli.example.app.terminal.TerminalSessionState
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * The same rules as the card-not-present sequence, over every state the session can be in.
+ *
+ * This screen has the most states and the only one with a step that can be skipped, so it is where a
+ * sequence would first offer two next things or hide a failure.
+ */
+class TerminalStepsTest {
+    private val everyState: List<Triple<Readiness, TerminalSessionState, Boolean>> =
+        Readiness.entries.flatMap { readiness ->
+            TerminalSessionState.entries.flatMap { session ->
+                listOf(true, false).map { failed -> Triple(readiness, session, failed) }
+            }
+        }
+
+    private fun steps(combination: Triple<Readiness, TerminalSessionState, Boolean>) =
+        TerminalSteps.forCharging(combination.first, combination.second, combination.third)
+
+    @Test
+    fun `no two steps ask for something at once, in any session state`() {
+        everyState.forEach { combination ->
+            val sequence = steps(combination)
+            assertTrue(
+                "$combination produced ${sequence.map { it.status }}",
+                sequence.isWellFormed(),
+            )
+        }
+    }
+
+    @Test
+    fun `a failure is never reported by more than one step`() {
+        everyState.forEach { combination ->
+            val failed = steps(combination).count { it.status == StepStatus.Failed }
+            assertTrue("$combination reported $failed failures", failed <= 1)
+        }
+    }
+
+    @Test
+    fun `the sequence always has four steps and every one says what it is`() {
+        everyState.forEach { combination ->
+            val sequence = steps(combination)
+            assertEquals(4, sequence.size)
+            sequence.forEach {
+                assertTrue("a step has no title", it.title.isNotBlank())
+                assertTrue("${it.title} says nothing about the SDK", it.detail.isNotBlank())
+            }
+        }
+    }
+
+    // --- the order ---
+
+    @Test
+    fun `a device that cannot run Tap to Pay stops the sequence at the first step`() {
+        val sequence = TerminalSteps.forCharging(Readiness.NotAvailable, TerminalSessionState.Idle, false)
+        assertEquals(StepStatus.Failed, sequence[0].status)
+        assertTrue("the reason went without the checks", sequence[0].status.showsContent)
+        assertTrue("a later step asked for something", sequence.drop(1).none { it.status.isActionable })
+    }
+
+    @Test
+    fun `a ready device hands the sequence to turning the terminal on`() {
+        val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Idle, false)
+        assertEquals(StepStatus.Done, sequence[0].status)
+        assertEquals(StepStatus.Current, sequence[1].status)
+    }
+
+    @Test
+    fun `starting the terminal is the app waiting, not the reader`() {
+        listOf(
+            TerminalSessionState.AttestingDevice,
+            TerminalSessionState.FetchingConfig,
+            TerminalSessionState.InitializingReader,
+            TerminalSessionState.Reinitializing,
+        ).forEach { session ->
+            val sequence = TerminalSteps.forCharging(Readiness.Ready, session, false)
+            assertEquals(session.toString(), StepStatus.InProgress, sequence[1].status)
+            assertTrue("$session asked for something while working", !sequence[1].status.showsContent)
+        }
+    }
+
+    @Test
+    fun `a session that stopped keeps the step that can start it again`() {
+        listOf(TerminalSessionState.Error, TerminalSessionState.SessionExpired).forEach { session ->
+            val sequence = TerminalSteps.forCharging(Readiness.Ready, session, false)
+            assertEquals(session.toString(), StepStatus.Failed, sequence[1].status)
+            assertTrue("$session hid its retry", sequence[1].status.showsContent)
+        }
+    }
+
+    @Test
+    fun `a device awaiting registration is asked for a code, and cannot charge yet`() {
+        val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.PendingActivation, false)
+        assertEquals("turning it on got as far as it can", StepStatus.Done, sequence[1].status)
+        assertEquals(StepStatus.Current, sequence[2].status)
+        assertEquals(StepStatus.Blocked, sequence[3].status)
+    }
+
+    @Test
+    fun `a refused activation keeps its own step and blocks the charge`() {
+        val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.PendingActivation, true)
+        assertEquals(StepStatus.Failed, sequence[2].status)
+        assertTrue("the code field went with the failure", sequence[2].status.showsContent)
+        assertEquals(StepStatus.Blocked, sequence[3].status)
+    }
+
+    @Test
+    fun `a terminal that never needed activation says so rather than pretending it is done`() {
+        val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false)
+        assertEquals(StepStatus.NotNeeded, sequence[2].status)
+        assertEquals(StepStatus.Current, sequence[3].status)
+    }
+
+    @Test
+    fun `charging is only ever offered by a ready terminal`() {
+        everyState.forEach { combination ->
+            val charge = steps(combination)[3]
+            if (charge.status.isActionable) {
+                assertEquals(
+                    "$combination offered a charge",
+                    TerminalSessionState.Ready,
+                    combination.second,
+                )
+            }
+        }
+    }
+}
