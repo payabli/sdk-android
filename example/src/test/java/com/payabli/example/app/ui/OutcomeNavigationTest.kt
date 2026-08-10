@@ -9,6 +9,8 @@ import com.payabli.example.app.payment.StoredMethod
 import com.payabli.example.app.payment.Transaction
 import com.payabli.example.app.ui.capture.CaptureViewModel
 import com.payabli.example.app.ui.method.PaymentMethodViewModel
+import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -23,6 +25,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
+/** Nothing under test here reads the values; only which instrument they came from. */
+private val cardEntry = PayInFormValues(PayInMethodType.Card, emptyMap())
+
 /**
  * A completion without the payload its screen exists to show is a failure, and must not push an
  * outcome screen.
@@ -35,7 +40,7 @@ import org.junit.Test
 class OutcomeNavigationTest {
     /**
      * `viewModelScope` dispatches on `Dispatchers.Main`, which does not exist on a host JVM, so
-     * `submit()` would never run and the test would report the state it started in.
+     * `submit(cardEntry)` would never run and the test would report the state it started in.
      */
     @Before
     fun installMainDispatcher() = Dispatchers.setMain(UnconfinedTestDispatcher())
@@ -187,7 +192,7 @@ class OutcomeNavigationTest {
             // so Capture reached its transaction screen with no transaction, and the operation's own
             // controller was never called by anything outside a test.
             val model = captureModel()
-            model.submit()
+            model.submit(cardEntry)
             val result = model.uiState.value.lastResult
             assertNotNull(result)
             assertNotNull("capture produced no transaction", result!!.transaction)

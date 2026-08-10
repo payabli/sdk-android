@@ -119,6 +119,10 @@ android {
 }
 
 dependencies {
+    // The SDK's payment form. An integrator would take the umbrella; this app takes the module
+    // directly because it is in the same build.
+    implementation(project(":payin"))
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)

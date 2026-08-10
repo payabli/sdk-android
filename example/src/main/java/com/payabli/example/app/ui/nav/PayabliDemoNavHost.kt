@@ -106,7 +106,6 @@ private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController)
                 onOpenSheet = model::openSheet,
                 onDismissSheet = model::dismissSheet,
                 onSubmit = model::submit,
-                onError = model::onError,
             )
         }
         composable<PaymentMethodSaved> { entry ->
@@ -146,7 +145,6 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
                 onOpenSheet = model::openSheet,
                 onDismissSheet = model::dismissSheet,
                 onSubmit = model::submit,
-                onError = model::onError,
             )
         }
         composable<CaptureResult> { entry ->

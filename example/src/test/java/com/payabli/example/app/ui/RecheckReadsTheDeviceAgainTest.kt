@@ -5,7 +5,7 @@ import com.payabli.example.app.config.DemoEnvironment
 import com.payabli.example.app.config.TokenHostSource
 import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.net.TokenServerClient
-import com.payabli.example.app.payment.PaymentFormConfiguration
+import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.preflight.CheckStatus
 import com.payabli.example.app.preflight.DeviceFacts
 import com.payabli.example.app.ui.setup.SetupViewModel
@@ -46,7 +46,7 @@ class RecheckReadsTheDeviceAgainTest {
             tokenServer = target,
             tokenClient = TokenServerClient(target),
             readDeviceFacts = read,
-            formConfiguration = PaymentFormConfiguration.storePaymentMethod(),
+            formConfiguration = DemoForms.storePaymentMethod().configuration,
         )
 
     @Test

@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.AppContainer
 import com.payabli.example.app.diagnostics.DiagnosticsStore
+import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.payment.PaymentError
+import com.payabli.example.app.payment.PaymentFailure
 import com.payabli.example.app.payment.PaymentFlowController
-import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.StoredMethod
+import com.payabli.sdk.payin.form.PayInFormValues
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,7 +18,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class PaymentMethodUiState(
-    val configuration: PaymentFormConfiguration,
+    val setup: DemoFormSetup,
     val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
@@ -36,7 +38,7 @@ class PaymentMethodViewModel(
     private val _uiState =
         MutableStateFlow(
             PaymentMethodUiState(
-                configuration = flow.configuration,
+                setup = flow.setup,
                 diagnosticsEnabled = diagnosticsEnabled,
             ),
         )
@@ -59,15 +61,18 @@ class PaymentMethodViewModel(
      * produces. Fabricating one at the button meant Capture always received a stored-method result
      * and reached its transaction screen with no transaction, while the controller was never called.
      */
-    fun submit() {
+    fun submit(values: PayInFormValues) {
         // Single flight, decided here. `isSubmitting` disables the button, but only once the state
         // has recomposed, and a second callback landing before that would launch a second request.
         // Harmless against the demo controller and a duplicate stored instrument against a real one.
         if (_uiState.value.isSubmitting) return
         _uiState.update { it.copy(isSubmitting = true) }
         viewModelScope.launch {
-            flow.submit().fold(onSuccess = ::onCompleted, onFailure = {
-                onError(PaymentError.Unexpected(it.message ?: it.javaClass.simpleName))
+            flow.submit(values).fold(onSuccess = ::onCompleted, onFailure = {
+                // A controller that knows what went wrong says so; anything else is unexpected.
+                onError(
+                    (it as? PaymentFailure)?.error ?: PaymentError.Unexpected(it.message ?: it.javaClass.simpleName),
+                )
             })
         }
     }
@@ -116,14 +121,7 @@ class PaymentMethodViewModel(
         }
     }
 
-    /**
-     * Records only when diagnostics are on.
-     *
-     * The flag previously reached the UI state and nothing else, so turning diagnostics off hid the
-     * panel while every entry was still recorded and retained. A setting that changes what is shown
-     * and not what is kept is the wrong half.
-     */
-
+    /** Records only when diagnostics are on, so the setting governs what is kept and not only what is shown. */
     private fun record(line: String) {
         if (diagnosticsEnabled) diagnostics.record(line)
     }

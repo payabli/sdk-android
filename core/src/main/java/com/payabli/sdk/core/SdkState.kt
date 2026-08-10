@@ -3,24 +3,21 @@ package com.payabli.sdk.core
 import androidx.annotation.RestrictTo
 
 /**
- * What the SDK can do right now, and nothing else.
+ * What the SDK can do right now.
  *
- * Three values, so a host has one branch to write and one recovery to implement. The set is fixed by the
- * design rather than by this file; adding a fourth is not a local decision.
- *
- * **Claim-free**: no associated values, no token, no expiry, no assurance level. A state carrying a claim
- * would be a way to read one, which is what the App and SDK boundary exists to prevent.
+ * Carries no token and no expiry. Reading the state tells a host what it may do, never what the
+ * session holds.
  *
  * `@RestrictTo`, matching `PayabliSession.state`, until the set is frozen at GA.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public sealed interface SdkState {
     /**
-     * No session yet, which is what `PayabliSession.state` reads until `initialize` succeeds.
+     * No session yet. `PayabliSession.state` reads this until `initialize` succeeds.
      *
-     * Observable, and that is why the state is published on the companion rather than on a session: a value
-     * only a session could reach could never be this one, and a sealed set with an unreachable member makes
-     * every consumer write a branch that can never run.
+     * This is why the state lives on the companion. On a session instance it could never be read: you
+     * would need a session to observe the value that says there is not one, leaving every consumer
+     * with a branch that never runs.
      */
     public data object Uninitialized : SdkState
 

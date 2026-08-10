@@ -6,9 +6,9 @@ import com.payabli.example.app.config.TokenHostSource
 import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.diagnostics.DiagnosticsStore
 import com.payabli.example.app.net.TokenServerClient
+import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.DemoPaymentFlowController
 import com.payabli.example.app.payment.PaymentFlowController
-import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.payment.PaymentOperation
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.preflight.DeviceFacts
@@ -20,6 +20,8 @@ import com.payabli.example.app.ui.capture.CaptureViewModel
 import com.payabli.example.app.ui.method.PaymentMethodViewModel
 import com.payabli.example.app.ui.setup.SetupViewModel
 import com.payabli.example.app.ui.taptopay.TapToPayViewModel
+import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -44,16 +46,19 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
+/** Nothing under test here reads the values; only which instrument they came from. */
+private val cardEntry = PayInFormValues(PayInMethodType.Card, emptyMap())
+
 private const val WAIT_MILLIS = 5_000L
 private const val POLL_MILLIS = 10L
 
 /**
  * A second callback before the first has finished must not start a second operation.
  *
- * Every one of these screens disables its button through state, which the reviewer's finding is
- * about: state disables it only once the composition has caught up, and a callback landing before
- * that reaches a function which used to accept it. Against the demo controllers that is a duplicate
- * line on a card. Behind a real SDK it is a second charge and a second stored instrument.
+ * Every one of these screens disables its button through state, which takes effect only once the
+ * composition has caught up. A callback landing before that reaches the function anyway: against the
+ * demo controllers a duplicate line on a card, behind a real SDK a second charge and a second stored
+ * instrument.
  *
  * The controllers here suspend until released, so the second call always lands while the first is in
  * flight. A controller that returned immediately would let the first finish and prove nothing.
@@ -73,9 +78,9 @@ class SingleFlightTest {
 
         override val operation = PaymentOperation.Capture
 
-        override val configuration = DemoPaymentFlowController(PaymentOperation.Capture).configuration
+        override val setup = DemoPaymentFlowController(PaymentOperation.Capture).setup
 
-        override suspend fun submit(): Result<PaymentResult> {
+        override suspend fun submit(values: PayInFormValues): Result<PaymentResult> {
             calls.incrementAndGet()
             suspendCoroutine { continuation -> waiting += { continuation.resume(Unit) } }
             return Result.success(PaymentResult(code = "1"))
@@ -120,8 +125,8 @@ class SingleFlightTest {
             val flow = BlockingFlow()
             val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
 
-            model.submit()
-            model.submit()
+            model.submit(cardEntry)
+            model.submit(cardEntry)
             flow.release()
 
             assertEquals("submitted twice", 1, flow.calls.get())
@@ -133,8 +138,8 @@ class SingleFlightTest {
             val flow = BlockingFlow()
             val model = PaymentMethodViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
 
-            model.submit()
-            model.submit()
+            model.submit(cardEntry)
+            model.submit(cardEntry)
             flow.release()
 
             assertEquals("submitted twice", 1, flow.calls.get())
@@ -162,9 +167,9 @@ class SingleFlightTest {
             val flow = BlockingFlow()
             val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
 
-            model.submit()
+            model.submit(cardEntry)
             flow.release()
-            model.submit()
+            model.submit(cardEntry)
             flow.release()
 
             assertEquals(2, flow.calls.get())
@@ -280,7 +285,7 @@ class SingleFlightTest {
             tokenServer = target,
             tokenClient = TokenServerClient(target),
             readDeviceFacts = { facts },
-            formConfiguration = PaymentFormConfiguration.storePaymentMethod(),
+            formConfiguration = DemoForms.storePaymentMethod().configuration,
         )
 
     private val demoConfiguration =

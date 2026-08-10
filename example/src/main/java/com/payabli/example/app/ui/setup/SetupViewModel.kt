@@ -8,13 +8,13 @@ import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.net.TokenServerClient
 import com.payabli.example.app.net.TokenServerProbe
 import com.payabli.example.app.net.displayText
-import com.payabli.example.app.payment.PaymentFormConfiguration
 import com.payabli.example.app.preflight.DeviceFacts
 import com.payabli.example.app.preflight.PreflightCheck
 import com.payabli.example.app.preflight.Readiness
 import com.payabli.example.app.preflight.TapToPayPreflight
 import com.payabli.example.app.preflight.problemsIn
 import com.payabli.example.app.preflight.readinessFrom
+import com.payabli.sdk.payin.form.PayInFormConfiguration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +26,7 @@ data class SetupUiState(
     val tokenServer: TokenServerTarget,
     val deviceFacts: DeviceFacts,
     /** The very object the payment screen hands its form, so this screen cannot describe another one. */
-    val formConfiguration: PaymentFormConfiguration,
+    val formConfiguration: PayInFormConfiguration,
     val readiness: Readiness = Readiness.Ready,
     val problems: List<PreflightCheck> = emptyList(),
     val tokenProbeText: String = "",
@@ -39,7 +39,7 @@ class SetupViewModel(
     private val tokenServer: TokenServerTarget,
     private val tokenClient: TokenServerClient,
     private val readDeviceFacts: () -> DeviceFacts,
-    formConfiguration: PaymentFormConfiguration,
+    formConfiguration: PayInFormConfiguration,
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
@@ -106,7 +106,7 @@ class SetupViewModel(
                 readDeviceFacts = container.readDeviceFacts,
                 // The payment-method controller's own configuration, not a fresh copy. The two
                 // operations differ only in their summary section, so either describes the form.
-                formConfiguration = container.paymentMethodFlow.configuration,
+                formConfiguration = container.paymentMethodFlow.setup.configuration,
             )
     }
 }

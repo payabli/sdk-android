@@ -14,9 +14,8 @@ import org.junit.Test
 /**
  * Turning diagnostics off has to stop the recording, not just hide the panel.
  *
- * The flag previously reached the UI state and nothing else, so an integrator who switched it off
- * still had every request line recorded and retained in memory. Nothing on screen would have shown
- * that, which is why it needs a test rather than a look.
+ * A flag that reaches the UI state alone leaves every request line recorded and held in memory
+ * while the panel is hidden, and the screen looks the same either way.
  */
 class DiagnosticsGateTest {
     private fun storedMethodResult() =

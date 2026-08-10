@@ -1,5 +1,8 @@
 package com.payabli.example.app.payment
 
+import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -21,21 +24,26 @@ class DemoPaymentFlowController(
     override val operation: PaymentOperation,
     private val stepDelayMillis: Long = DEFAULT_STEP_DELAY_MILLIS,
 ) : PaymentFlowController {
-    override val configuration: PaymentFormConfiguration =
+    override val setup: DemoFormSetup =
         when (operation) {
-            PaymentOperation.StoreMethod -> PaymentFormConfiguration.storePaymentMethod()
-            PaymentOperation.Capture -> PaymentFormConfiguration.capture()
+            PaymentOperation.StoreMethod -> DemoForms.storePaymentMethod()
+            PaymentOperation.Capture -> DemoForms.capture()
         }
 
     private var counter = 0
 
-    override suspend fun submit(): Result<PaymentResult> {
+    override suspend fun submit(values: PayInFormValues): Result<PaymentResult> {
         delay(stepDelayMillis)
         counter += 1
+        if (values[PayInField.CardNumber] == DECLINE_CARD_NUMBER) {
+            return Result.failure(
+                PaymentFailure(PaymentError.Payabli("Declined", "The card was declined by the issuer.")),
+            )
+        }
         return Result.success(
             when (operation) {
                 PaymentOperation.StoreMethod -> storedMethodResult()
-                PaymentOperation.Capture -> capturedResult()
+                PaymentOperation.Capture -> capturedResult(values.method)
             },
         )
     }
@@ -60,7 +68,7 @@ class DemoPaymentFlowController(
         )
     }
 
-    private fun capturedResult(): PaymentResult {
+    private fun capturedResult(method: PayInMethodType): PaymentResult {
         val id = "demo-txn-%04d".format(counter)
         return PaymentResult(
             code = "1",
@@ -72,7 +80,9 @@ class DemoPaymentFlowController(
                     paymentTransactionId = id,
                     gatewayTransactionId = "demo-gw-%04d".format(counter),
                     orderId = "demo-order-%04d".format(counter),
-                    method = "card",
+                    // The payer's choice, not the screen's default. It reads "card" for a bank
+                    // account only if the form never says which instrument was filled.
+                    method = method.wireName,
                     operation = "capture",
                     status = "Captured",
                     totalAmount = "1.10",
@@ -85,8 +95,7 @@ class DemoPaymentFlowController(
 
     private fun capturedResponseJson(id: String): JsonObject =
         buildJsonObject {
-            // Deliberately not in alphabetical order here: ResponseJson sorts on the way to the
-            // screen, and a fixture that is already sorted would not show that it does.
+            // Unsorted, so the sort ResponseJson applies on the way to the screen is visible.
             put("responseText", JsonPrimitive("Approved"))
             put("isSuccess", JsonPrimitive(true))
             put("authCode", JsonPrimitive("DEMO01"))
@@ -95,5 +104,14 @@ class DemoPaymentFlowController(
 
     companion object {
         const val DEFAULT_STEP_DELAY_MILLIS: Long = 700
+
+        /**
+         * Submitting this card number fails, so the error path has something to reach it.
+         *
+         * The screens showed a failure through a "Simulate a failure" button on the placeholder
+         * this pull request deletes. A number is better placed than a button: it lives with the
+         * fake controller rather than in the form, and it is the shape a sandbox decline takes.
+         */
+        const val DECLINE_CARD_NUMBER: String = "4000000000000002"
     }
 }

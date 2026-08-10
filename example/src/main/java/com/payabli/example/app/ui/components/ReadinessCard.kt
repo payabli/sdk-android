@@ -140,7 +140,7 @@ private fun CheckStatus.tint(): Color =
         CheckStatus.Pass -> LocalStatusColors.current.success
         CheckStatus.Warn -> LocalStatusColors.current.warning
         CheckStatus.Fail -> MaterialTheme.colorScheme.error
-        // Deliberately the resting tone, not amber: "could not check" must not read as "problem".
+        // The resting tone. "Could not check" is not a problem, and amber reads as one.
         CheckStatus.Unknown -> LocalStatusColors.current.neutral
     }
 

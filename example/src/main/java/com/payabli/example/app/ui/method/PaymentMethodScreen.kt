@@ -16,8 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
-import com.payabli.example.app.payment.PaymentError
-import com.payabli.example.app.payment.PaymentFormConfiguration
+import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.ui.components.DemoIcons
 import com.payabli.example.app.ui.components.DemoScreen
 import com.payabli.example.app.ui.components.DiagnosticsPanel
@@ -30,6 +29,7 @@ import com.payabli.example.app.ui.components.SuccessMark
 import com.payabli.example.app.ui.payment.PaymentFormHost
 import com.payabli.example.app.ui.theme.Dimens
 import com.payabli.example.app.ui.theme.PayabliDemoTheme
+import com.payabli.sdk.payin.form.PayInFormValues
 
 /** Store a card or bank account and get a reusable token back. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,8 +38,7 @@ fun PaymentMethodScreen(
     state: PaymentMethodUiState,
     onOpenSheet: () -> Unit,
     onDismissSheet: () -> Unit,
-    onSubmit: () -> Unit,
-    onError: (PaymentError) -> Unit,
+    onSubmit: (PayInFormValues) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     DemoScreen(title = "Payment method", modifier = modifier) {
@@ -52,9 +51,8 @@ fun PaymentMethodScreen(
         Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
             SectionHeader(title = "Inline", note = "The same form, on the page.")
             PaymentFormHost(
-                configuration = state.configuration,
+                setup = state.setup,
                 onSubmit = onSubmit,
-                onError = onError,
                 isSubmitting = state.isSubmitting,
             )
         }
@@ -72,9 +70,8 @@ fun PaymentMethodScreen(
         ModalBottomSheet(onDismissRequest = onDismissSheet, sheetState = sheetState) {
             Column(modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding)) {
                 PaymentFormHost(
-                    configuration = state.configuration,
+                    setup = state.setup,
                     onSubmit = onSubmit,
-                    onError = onError,
                     isSubmitting = state.isSubmitting,
                 )
             }
@@ -131,14 +128,13 @@ private fun PaymentMethodScreenPreview() {
         PaymentMethodScreen(
             state =
                 PaymentMethodUiState(
-                    configuration = PaymentFormConfiguration.storePaymentMethod(),
+                    setup = DemoForms.storePaymentMethod(),
                     resultText = "Stored method: demo-method-0001\nResponse: Payment method saved",
                     diagnostics = listOf("RESPONSE 1 paymentMethod\nreason=Success"),
                 ),
             onOpenSheet = {},
             onDismissSheet = {},
             onSubmit = {},
-            onError = {},
         )
     }
 }

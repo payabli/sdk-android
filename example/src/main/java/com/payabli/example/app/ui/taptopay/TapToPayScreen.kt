@@ -114,8 +114,8 @@ private fun TerminalBlock(
             problem = state.configuration.entryPointProblem,
         )
         DetailRow(label = "App ID", value = state.configuration.appId)
-        // Repeated from Setup on purpose: it is one of the values the terminal initialises
-        // against, and checking it should not mean leaving the screen that uses it.
+        // Also on Setup. The terminal initialises against this value, so it is checkable without
+        // leaving the screen that uses it.
         DetailRow(
             label = "Environment",
             value = "${state.configuration.environment.label} · ${state.configuration.environment.host}",
