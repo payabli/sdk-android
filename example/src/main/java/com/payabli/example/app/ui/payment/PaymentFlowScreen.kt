@@ -9,6 +9,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import com.payabli.example.app.flow.FlowStep
 import com.payabli.example.app.flow.StepStatus
@@ -117,10 +119,18 @@ fun PaymentFlowScreen(
     if (state.isSheetOpen) {
         // Both halves, because a swipe and a back press take different routes to the same place:
         // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.
+        //
+        // The callback has to keep its identity. `rememberSheetState` passes it to `rememberSaveable`
+        // as a key, so a lambda capturing the state snapshot is a new key whenever the state changes,
+        // and the sheet is rebuilt from `Hidden` at the moment a submission starts. It reads the flag
+        // through `rememberUpdatedState` instead, which is a stable holder of a changing value.
+        val submitting = rememberUpdatedState(state.isSubmitting)
+        val holdWhileSubmitting =
+            remember { { value: SheetValue -> !submitting.value || value != SheetValue.Hidden } }
         val sheetState =
             rememberModalBottomSheetState(
                 skipPartiallyExpanded = true,
-                confirmValueChange = { !state.isSubmitting || it != SheetValue.Hidden },
+                confirmValueChange = holdWhileSubmitting,
             )
         ModalBottomSheet(
             onDismissRequest = { if (!state.isSubmitting) actions.onDismissSheet() },
