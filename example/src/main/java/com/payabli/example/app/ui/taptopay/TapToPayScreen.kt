@@ -163,7 +163,8 @@ private fun PaymentBlock(
     onAmountChange: (String) -> Unit,
     onCharge: () -> Unit,
 ) {
-    Block(title = "Take a payment") {
+    // No heading. The step above is titled "Take a payment", and a section header here repeats it.
+    Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
         OutlinedTextField(
             value = state.amountText,
             onValueChange = onAmountChange,
