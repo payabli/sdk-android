@@ -189,13 +189,15 @@ class TerminalStepsTest {
     }
 
     @Test
-    fun `starting the terminal does not read as a charge in flight`() {
-        // The session reaches Ready before initialize() returns, so the charge step saw an action in
-        // flight and a ready session and called itself working over somebody else's action.
+    fun `starting the terminal holds the steps after it`() {
+        // The session reaches Ready before initialize() returns. Reading it alone marked step 2 done
+        // and handed the sequence to step 4, both while the work that got there was still running.
         listOf(TerminalAction.Initialize, TerminalAction.Reinitialize).forEach { action ->
             val sequence =
                 TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, action)
-            assertEquals(action.toString(), StepStatus.Current, sequence[3].status)
+            assertEquals(action.toString(), StepStatus.InProgress, sequence[1].status)
+            assertEquals("$action handed on early", StepStatus.Blocked, sequence[2].status)
+            assertEquals("$action handed on early", StepStatus.Blocked, sequence[3].status)
         }
     }
 

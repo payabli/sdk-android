@@ -39,6 +39,11 @@ object TerminalSteps {
         val enable =
             when {
                 device != StepStatus.Done -> StepStatus.Blocked
+                // Before the session is read. The call that starts the terminal publishes its final
+                // state and stays suspended after it, so reading the session alone marked this step
+                // done and handed the sequence on while the work was still running.
+                working == TerminalAction.Initialize ||
+                    working == TerminalAction.Reinitialize -> StepStatus.InProgress
                 session == TerminalSessionState.Ready -> StepStatus.Done
                 // Activation is a separate step, so reaching it means this one finished.
                 session == TerminalSessionState.PendingActivation -> StepStatus.Done
