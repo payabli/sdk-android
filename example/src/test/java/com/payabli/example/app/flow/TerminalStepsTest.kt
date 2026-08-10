@@ -96,7 +96,7 @@ class TerminalStepsTest {
         ).forEach { session ->
             val sequence = TerminalSteps.forCharging(Readiness.Ready, session, false)
             assertEquals(session.toString(), StepStatus.InProgress, sequence[1].status)
-            assertTrue("$session asked for something while working", !sequence[1].status.showsContent)
+            assertTrue("$session asked for something while working", !sequence[1].status.isActionable)
         }
     }
 
@@ -138,7 +138,7 @@ class TerminalStepsTest {
         // activation, so neither step could say on its own that it was running.
         val charging = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, true)
         assertEquals(StepStatus.InProgress, charging[3].status)
-        assertTrue("a running charge asked for something", !charging[3].status.showsContent)
+        assertTrue("a running charge asked for something", !charging[3].status.isActionable)
 
         val activating =
             TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.PendingActivation, false, false, true)
@@ -150,6 +150,23 @@ class TerminalStepsTest {
         val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, true, false)
         assertEquals(StepStatus.Failed, sequence[3].status)
         assertTrue("the retry went with the reason", sequence[3].status.showsContent)
+    }
+
+    @Test
+    fun `a step that is working keeps what its controls are holding`() {
+        // Hiding them would take them out of the composition, and the amount typed in goes with
+        // them: a failed charge would come back to an empty field.
+        val charging = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, true)
+        assertTrue("the amount went off screen mid-charge", charging[3].status.showsContent)
+    }
+
+    @Test
+    fun `every step a reader can act on shows its controls`() {
+        everyState.forEach { combination ->
+            steps(combination).filter { it.status.isActionable }.forEach { step ->
+                assertTrue("${step.status} asks for something it does not show", step.status.showsContent)
+            }
+        }
     }
 
     @Test

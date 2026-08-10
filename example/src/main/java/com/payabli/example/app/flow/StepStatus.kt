@@ -29,14 +29,23 @@ enum class StepStatus {
     /**
      * Whether this step shows its controls.
      *
-     * Only the step being acted on, and one that failed. A failure keeps its controls because the
-     * reason and the retry belong together; hiding them would leave a reader told that something
-     * broke and given nothing to do about it.
+     * The step being acted on, one that failed, and one that is working. A failure keeps its
+     * controls because the reason and the retry belong together; hiding them would leave a reader
+     * told that something broke and given nothing to do about it. A step that is working keeps them
+     * because taking them off screen removes them from the composition, and anything they were
+     * holding goes with it: the payment form keeps what was typed in `remember`, so hiding it during
+     * a submission empties the form that a failure then asks the payer to fill in again.
+     *
+     * The controls of a working step are disabled by the state they are given, not by this.
      */
-    val showsContent: Boolean get() = this == Current || this == Failed
+    val showsContent: Boolean get() = this == Current || this == Failed || this == InProgress
 
-    /** Whether this step is the one asking for something. */
-    val isActionable: Boolean get() = showsContent
+    /**
+     * Whether this step is the one asking for something.
+     *
+     * Narrower than [showsContent]: a step that is working is on screen and is not asking.
+     */
+    val isActionable: Boolean get() = this == Current || this == Failed
 
     /**
      * Whether the step after this one may proceed.

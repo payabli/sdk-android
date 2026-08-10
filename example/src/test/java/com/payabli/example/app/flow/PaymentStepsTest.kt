@@ -17,12 +17,14 @@ class PaymentStepsTest {
 
     private fun steps(flags: List<Boolean>) =
         PaymentSteps.forStoringMethod(
-            backendReachable = flags[0],
-            backendChecked = flags[1],
-            isCheckingBackend = flags[5],
-            isSubmitting = flags[2],
-            submitFailed = flags[3],
-            finished = flags[4],
+            PaymentProgress(
+                backendReachable = flags[0],
+                backendChecked = flags[1],
+                isCheckingBackend = flags[5],
+                isSubmitting = flags[2],
+                submitFailed = flags[3],
+                finished = flags[4],
+            ),
         )
 
     @Test
@@ -45,12 +47,13 @@ class PaymentStepsTest {
     }
 
     @Test
-    fun `every step that hides its controls is one a reader cannot act on`() {
-        // The property the whole layout rests on: if a step shows nothing, it must not be the step
-        // the sequence is waiting for.
+    fun `every step a reader can act on shows its controls`() {
+        // The property the whole layout rests on. The converse does not hold: a step that is working
+        // keeps its controls on screen, disabled, so the payment form does not lose what was typed
+        // into it the moment a submission starts.
         everyCombination.forEach { flags ->
-            steps(flags).forEach { step ->
-                assertEquals(step.status.toString(), step.status.showsContent, step.status.isActionable)
+            steps(flags).filter { it.status.isActionable }.forEach { step ->
+                assertTrue("${step.status} asks for something it does not show", step.status.showsContent)
             }
         }
     }
@@ -84,7 +87,8 @@ class PaymentStepsTest {
     fun `submitting is the app waiting, not the reader`() {
         val sequence = steps(listOf(true, true, true, false, false, false))
         assertEquals(StepStatus.InProgress, sequence[1].status)
-        assertTrue("a spinner asked for something", !sequence[1].status.showsContent)
+        assertTrue("a submission in flight asked for something", !sequence[1].status.isActionable)
+        assertTrue("the form went off screen mid-submission", sequence[1].status.showsContent)
     }
 
     @Test
@@ -104,8 +108,9 @@ class PaymentStepsTest {
 
     @Test
     fun `storing and capturing differ only in what the last step is called`() {
-        val stored = PaymentSteps.forStoringMethod(true, true, false, false, false, true)
-        val captured = PaymentSteps.forCapture(true, true, false, false, false, true)
+        val done = PaymentProgress(backendReachable = true, backendChecked = true, finished = true)
+        val stored = PaymentSteps.forStoringMethod(done)
+        val captured = PaymentSteps.forCapture(done)
 
         assertEquals(stored.map { it.status }, captured.map { it.status })
         assertEquals(stored.take(2).map { it.title }, captured.take(2).map { it.title })
@@ -118,7 +123,7 @@ class PaymentStepsTest {
         // started was still running.
         val sequence = steps(listOf(false, false, false, false, false, true))
         assertEquals(StepStatus.InProgress, sequence[0].status)
-        assertTrue("a running check asked for something", !sequence[0].status.showsContent)
+        assertTrue("a running check asked for something", !sequence[0].status.isActionable)
         assertEquals(StepStatus.Blocked, sequence[1].status)
     }
 
