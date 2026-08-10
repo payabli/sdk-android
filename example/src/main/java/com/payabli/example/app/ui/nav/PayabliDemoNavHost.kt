@@ -27,6 +27,7 @@ import com.payabli.example.app.ui.capture.CaptureViewModel
 import com.payabli.example.app.ui.method.PaymentMethodSavedScreen
 import com.payabli.example.app.ui.method.PaymentMethodScreen
 import com.payabli.example.app.ui.method.PaymentMethodViewModel
+import com.payabli.example.app.ui.payment.PaymentFlowActions
 import com.payabli.example.app.ui.setup.SetupScreen
 import com.payabli.example.app.ui.setup.SetupViewModel
 import com.payabli.example.app.ui.taptopay.TapToPayActions
@@ -103,10 +104,13 @@ private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController)
             }
             PaymentMethodScreen(
                 state = state,
-                onOpenSheet = model::openSheet,
-                onDismissSheet = model::dismissSheet,
-                onSubmit = model::submit,
-                onCheckToken = model::checkToken,
+                actions =
+                    PaymentFlowActions(
+                        onCheckToken = model::checkToken,
+                        onOpenSheet = model::openSheet,
+                        onDismissSheet = model::dismissSheet,
+                        onSubmit = model::submit,
+                    ),
             )
         }
         composable<PaymentMethodSaved> { entry ->
@@ -143,10 +147,13 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
             }
             CaptureScreen(
                 state = state,
-                onOpenSheet = model::openSheet,
-                onDismissSheet = model::dismissSheet,
-                onSubmit = model::submit,
-                onCheckToken = model::checkToken,
+                actions =
+                    PaymentFlowActions(
+                        onCheckToken = model::checkToken,
+                        onOpenSheet = model::openSheet,
+                        onDismissSheet = model::dismissSheet,
+                        onSubmit = model::submit,
+                    ),
             )
         }
         composable<CaptureResult> { entry ->

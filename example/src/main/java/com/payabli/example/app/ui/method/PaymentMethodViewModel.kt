@@ -6,14 +6,14 @@ import com.payabli.example.app.AppContainer
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.diagnostics.DiagnosticsStore
 import com.payabli.example.app.net.TokenServerClient
-import com.payabli.example.app.net.TokenServerProbe
-import com.payabli.example.app.net.displayText
+import com.payabli.example.app.net.checkToken
 import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFailure
 import com.payabli.example.app.payment.PaymentFlowController
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.StoredMethod
+import com.payabli.example.app.ui.payment.PaymentFlowUiState
 import com.payabli.sdk.payin.form.PayInFormValues
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -22,27 +22,27 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class PaymentMethodUiState(
-    val setup: DemoFormSetup,
-    val resultText: String = "",
+    override val setup: DemoFormSetup,
+    override val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
     /** What was stored, held so the pushed screen can check it is still describing something. */
     val storedMethod: StoredMethod? = null,
-    val diagnostics: List<String> = emptyList(),
-    val diagnosticsEnabled: Boolean = true,
-    val isSheetOpen: Boolean = false,
+    override val diagnostics: List<String> = emptyList(),
+    override val diagnosticsEnabled: Boolean = true,
+    override val isSheetOpen: Boolean = false,
     /** What this screen is pointed at, shown in one line. The full set is on Setup. */
-    val entryPoint: String = "",
-    val host: String = "",
+    override val entryPoint: String = "",
+    override val host: String = "",
     /** The last submission failed, so its step keeps the reason and the retry. */
     val submitFailed: Boolean = false,
     /** What the last token check said, empty until one has run. */
-    val tokenCheckText: String = "",
+    override val tokenCheckText: String = "",
     /** The token endpoint answered. The form stays blocked until it has. */
     val backendReachable: Boolean = false,
-    val isCheckingToken: Boolean = false,
-    val isSubmitting: Boolean = false,
-)
+    override val isCheckingToken: Boolean = false,
+    override val isSubmitting: Boolean = false,
+) : PaymentFlowUiState
 
 class PaymentMethodViewModel(
     private val flow: PaymentFlowController,
@@ -70,22 +70,17 @@ class PaymentMethodViewModel(
         }
     }
 
-    /**
-     * Asks the token endpoint for a token, and reports only that one arrived.
-     *
-     * The first step of the sequence. A form that submits before the backend answers fails at the
-     * end of a filled-in card rather than at the start of an empty one.
-     */
+    /** The first step of the sequence. [checkToken] says what it reports and why. */
     fun checkToken() {
         if (_uiState.value.isCheckingToken) return
         _uiState.update { it.copy(isCheckingToken = true, tokenCheckText = "Checking…") }
         viewModelScope.launch {
-            val outcome = tokenClient.probeAccessToken()
+            val outcome = tokenClient.checkToken()
             _uiState.update {
                 it.copy(
                     isCheckingToken = false,
-                    tokenCheckText = outcome.displayText(TokenServerProbe.TOKEN_LABEL),
-                    backendReachable = outcome is TokenServerProbe.Ok,
+                    tokenCheckText = outcome.text,
+                    backendReachable = outcome.reachable,
                 )
             }
         }

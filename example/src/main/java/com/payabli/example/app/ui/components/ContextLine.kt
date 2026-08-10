@@ -54,15 +54,18 @@ fun ContextLine(
     }
 }
 
+/** One host across the preview, so the rows differ only in the thing each is showing. */
+private const val PREVIEW_HOST = "api-sandbox.payabli.com"
+
 @PreviewLightDark
 @Composable
 private fun ContextLinePreview() {
     PreviewSurface {
-        ContextLine(entryPoint = "my-entry-point", host = "api-sandbox.payabli.com")
+        ContextLine(entryPoint = "my-entry-point", host = PREVIEW_HOST)
         // A long entry point ellipsises rather than pushing the tail off the row.
-        ContextLine(entryPoint = "an-unusually-long-entry-point-name", host = "api-sandbox.payabli.com")
+        ContextLine(entryPoint = "an-unusually-long-entry-point-name", host = PREVIEW_HOST)
         // What a fresh clone shows before its entry point is set.
-        ContextLine(entryPoint = "", host = "api-sandbox.payabli.com")
+        ContextLine(entryPoint = "", host = PREVIEW_HOST)
         ContextLine(entryPoint = "", host = "")
     }
 }
