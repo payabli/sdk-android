@@ -19,6 +19,8 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -165,6 +167,65 @@ class TapToPayViewModelTest {
                 viewModel.uiState.value.resultText
                     .startsWith("✓"),
             )
+        }
+
+    @Test
+    fun `a rejected activation is recorded for its own step, and cleared by a retry`() =
+        runTest {
+            val viewModel = model()
+            viewModel.enableTerminal()
+
+            viewModel.setActivationCode(DemoTerminalController.REJECTED_ACTIVATION_CODE)
+            viewModel.activate()
+            val refused = viewModel.uiState.value
+            assertNotNull("the step has nothing to report", refused.activationFailure)
+            assertTrue("the reason is not the failure", refused.activationFailure!!.startsWith("✗"))
+            assertFalse("a refused device counted as activated", refused.activated)
+
+            viewModel.setActivationCode("ANY-CODE")
+            viewModel.activate()
+            val accepted = viewModel.uiState.value
+            assertNull("the old failure outlived the retry", accepted.activationFailure)
+            assertTrue("a completed activation was not recorded", accepted.activated)
+        }
+
+    @Test
+    fun `a failed charge is recorded for its own step, and cleared by one that works`() =
+        runTest {
+            val viewModel = model()
+            viewModel.readyTerminal()
+
+            // Rejected before the terminal is reached, which is the path that returns early.
+            viewModel.setAmount("not an amount")
+            viewModel.charge()
+            assertNotNull("the step has nothing to report", viewModel.uiState.value.chargeFailure)
+
+            viewModel.setAmount("0")
+            viewModel.charge()
+            assertNotNull("a refused amount left the step clean", viewModel.uiState.value.chargeFailure)
+
+            viewModel.setAmount("12.34")
+            viewModel.charge()
+            assertNull("the old failure outlived the charge that worked", viewModel.uiState.value.chargeFailure)
+        }
+
+    @Test
+    fun `a failure on one action does not become another step's failure`() =
+        runTest {
+            val viewModel = model()
+            viewModel.enableTerminal()
+            viewModel.setActivationCode(DemoTerminalController.REJECTED_ACTIVATION_CODE)
+            viewModel.activate()
+            assertNotNull(viewModel.uiState.value.activationFailure)
+
+            // Anything else running must leave that alone: the step it belongs to is still failed.
+            viewModel.reinitialize()
+
+            assertNotNull(
+                "the activation failure was cleared by another action",
+                viewModel.uiState.value.activationFailure,
+            )
+            assertNull("that action's outcome landed on the charge step", viewModel.uiState.value.chargeFailure)
         }
 
     @Test
