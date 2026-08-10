@@ -74,22 +74,26 @@ class TokenGateTest {
         }
 
     @Test
-    fun `a failed check can be retried, and a working backend then unlocks the form`() =
+    fun `a failed check can be retried on the same model, and then unlocks the form`() =
         runTest {
-            AnsweringServer().use { server ->
-                val model = methodModel(unreachable())
+            // One model, one address, two answers. A second model would only repeat the success
+            // case: what this pins is that the first failure leaves the model able to try again.
+            AnsweringServer(refuseFirst = true).use { server ->
+                val model = methodModel(server.target)
+
                 model.checkToken()
                 awaitCheck { model.uiState.value.isCheckingToken }
-                assertFalse(model.uiState.value.backendReachable)
+                assertFalse("the form unlocked on the failed check", model.uiState.value.backendReachable)
+                assertTrue(
+                    "the failure was not reported",
+                    model.uiState.value.tokenCheckText
+                        .startsWith("✗"),
+                )
 
-                // The same model, pointed at a backend that answers, which is what a retry is once
-                // the server is running. A busy flag left set would make this second call return
-                // early and the form would never unlock.
-                methodModel(server.target).also {
-                    it.checkToken()
-                    awaitCheck { it.uiState.value.isCheckingToken }
-                    assertTrue("the retry did not unlock the form", it.uiState.value.backendReachable)
-                }
+                model.checkToken()
+                awaitCheck { model.uiState.value.isCheckingToken }
+                assertTrue("the retry did not unlock the form", model.uiState.value.backendReachable)
+                assertEquals("the retry never reached the endpoint", 2, server.requests)
             }
         }
 
@@ -177,8 +181,15 @@ class TokenGateTest {
     /** Port 1, which refuses at once rather than waiting out a connect timeout. */
     private fun unreachable() = TokenServerTarget("http://127.0.0.1:1", TokenHostSource.Emulator)
 
-    /** Answers the one route with the one field the check reads. */
-    private class AnsweringServer : AutoCloseable {
+    /**
+     * Answers the one route with the one field the check reads.
+     *
+     * @param refuseFirst the first request is refused and the rest answered, so a retry against one
+     *   address can be told apart from a second check against a different one.
+     */
+    private class AnsweringServer(
+        private val refuseFirst: Boolean = false,
+    ) : AutoCloseable {
         var requests = 0
             private set
 
@@ -186,6 +197,11 @@ class TokenGateTest {
             HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0).apply {
                 createContext("/") { exchange ->
                     requests += 1
+                    if (refuseFirst && requests == 1) {
+                        exchange.sendResponseHeaders(503, -1)
+                        exchange.close()
+                        return@createContext
+                    }
                     val body = """{"accessToken":"not-a-real-token"}""".toByteArray()
                     exchange.sendResponseHeaders(200, body.size.toLong())
                     exchange.responseBody.use { it.write(body) }
