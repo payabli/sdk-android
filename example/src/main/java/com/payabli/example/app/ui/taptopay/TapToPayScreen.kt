@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
 import com.payabli.example.app.config.TokenHostDefaults
@@ -56,6 +57,15 @@ fun TapToPayScreen(
     actions: TapToPayActions,
     modifier: Modifier = Modifier,
 ) {
+    // The checks are read once when this model is created, and NFC is the one input to them a
+    // person can switch. Turning it off means leaving for Settings or the shade, so coming back is
+    // when the verdict is re-read. Step 1 stops offering its own recheck as soon as it reads Done,
+    // which is exactly the state this protects.
+    LifecycleResumeEffect(Unit) {
+        actions.onRecheck()
+        onPauseOrDispose { }
+    }
+
     val steps =
         TerminalSteps.forCharging(
             readiness = state.readiness,

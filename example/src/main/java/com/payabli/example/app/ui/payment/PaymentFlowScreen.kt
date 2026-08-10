@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -95,6 +96,8 @@ fun PaymentFlowScreen(
                     text = "Open in a bottom sheet",
                     icon = DemoIcons.OpenSheet,
                     onClick = actions.onOpenSheet,
+                    // A second, empty form beside a submission already in flight.
+                    enabled = !state.isSubmitting,
                 )
                 PaymentFormHost(
                     setup = state.setup,
@@ -112,8 +115,17 @@ fun PaymentFlowScreen(
     }
 
     if (state.isSheetOpen) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(onDismissRequest = actions.onDismissSheet, sheetState = sheetState) {
+        // Both halves, because a swipe and a back press take different routes to the same place:
+        // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.
+        val sheetState =
+            rememberModalBottomSheetState(
+                skipPartiallyExpanded = true,
+                confirmValueChange = { !state.isSubmitting || it != SheetValue.Hidden },
+            )
+        ModalBottomSheet(
+            onDismissRequest = { if (!state.isSubmitting) actions.onDismissSheet() },
+            sheetState = sheetState,
+        ) {
             Column(modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding)) {
                 PaymentFormHost(
                     setup = state.setup,
