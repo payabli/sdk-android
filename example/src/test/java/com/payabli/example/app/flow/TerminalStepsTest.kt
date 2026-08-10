@@ -1,6 +1,7 @@
 package com.payabli.example.app.flow
 
 import com.payabli.example.app.preflight.Readiness
+import com.payabli.example.app.terminal.TerminalAction
 import com.payabli.example.app.terminal.TerminalSessionState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -12,13 +13,13 @@ import org.junit.Test
  * This screen has the most states, and the only step that can be skipped.
  */
 class TerminalStepsTest {
-    /** Readiness, session, activation refused, charge failed, an action in flight. */
+    /** Readiness, session, activation refused, charge failed, which action is in flight. */
     private data class Combination(
         val readiness: Readiness,
         val session: TerminalSessionState,
         val activationFailed: Boolean,
         val chargeFailed: Boolean,
-        val working: Boolean,
+        val working: TerminalAction?,
     )
 
     private val everyState: List<Combination> =
@@ -26,7 +27,7 @@ class TerminalStepsTest {
             TerminalSessionState.entries.flatMap { session ->
                 listOf(true, false).flatMap { activationFailed ->
                     listOf(true, false).flatMap { chargeFailed ->
-                        listOf(true, false).map { working ->
+                        (TerminalAction.entries + null).map { working ->
                             Combination(readiness, session, activationFailed, chargeFailed, working)
                         }
                     }
@@ -135,18 +136,31 @@ class TerminalStepsTest {
     fun `an action in flight is the app working, not the reader`() {
         // The session reports Ready throughout a charge and PendingActivation throughout an
         // activation, so neither step can tell from it that it is running.
-        val charging = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, true)
+        val charging =
+            TerminalSteps.forCharging(
+                Readiness.Ready,
+                TerminalSessionState.Ready,
+                false,
+                false,
+                TerminalAction.Charge,
+            )
         assertEquals(StepStatus.InProgress, charging[3].status)
         assertTrue("a running charge asked for something", !charging[3].status.isActionable)
 
         val activating =
-            TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.PendingActivation, false, false, true)
+            TerminalSteps.forCharging(
+                Readiness.Ready,
+                TerminalSessionState.PendingActivation,
+                false,
+                false,
+                TerminalAction.Activate,
+            )
         assertEquals(StepStatus.InProgress, activating[2].status)
     }
 
     @Test
     fun `a failed charge is reported by the step that took it`() {
-        val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, true, false)
+        val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, true, null)
         assertEquals(StepStatus.Failed, sequence[3].status)
         assertTrue("the retry went with the reason", sequence[3].status.showsContent)
     }
@@ -154,7 +168,14 @@ class TerminalStepsTest {
     @Test
     fun `a step that is working keeps what its controls are holding`() {
         // Hiding them disposes the composition, and the amount typed in goes with it.
-        val charging = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, true)
+        val charging =
+            TerminalSteps.forCharging(
+                Readiness.Ready,
+                TerminalSessionState.Ready,
+                false,
+                false,
+                TerminalAction.Charge,
+            )
         assertTrue("the amount went off screen mid-charge", charging[3].status.showsContent)
     }
 
@@ -163,6 +184,36 @@ class TerminalStepsTest {
         everyState.forEach { combination ->
             steps(combination).filter { it.status.isActionable }.forEach { step ->
                 assertTrue("${step.status} asks for something it does not show", step.status.showsContent)
+            }
+        }
+    }
+
+    @Test
+    fun `starting the terminal does not read as a charge in flight`() {
+        // The session reaches Ready before initialize() returns, so the charge step saw an action in
+        // flight and a ready session and called itself working over somebody else's action.
+        listOf(TerminalAction.Initialize, TerminalAction.Reinitialize).forEach { action ->
+            val sequence =
+                TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, action)
+            assertEquals(action.toString(), StepStatus.Current, sequence[3].status)
+        }
+    }
+
+    @Test
+    fun `only the step an action belongs to reports it`() {
+        everyState.filter { it.working != null }.forEach { combination ->
+            val working = steps(combination).withIndex().filter { it.value.status == StepStatus.InProgress }
+            working.forEach { (index, _) ->
+                val expected =
+                    when (index) {
+                        2 -> TerminalAction.Activate
+                        3 -> TerminalAction.Charge
+                        // Step 2 reads the session, which reports its own progress.
+                        else -> null
+                    }
+                if (expected != null) {
+                    assertEquals("$combination", expected, combination.working)
+                }
             }
         }
     }

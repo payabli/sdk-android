@@ -50,8 +50,18 @@ data class TapToPayUiState(
     val isActivationOpen: Boolean = false,
     /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
     val isProbingToken: Boolean = false,
-    val isWorking: Boolean = false,
-)
+    /**
+     * Which terminal action is in flight, or null.
+     *
+     * Which one, not whether: the session reaches [TerminalSessionState.Ready] before the call that
+     * took it there returns, so a step reading a bare flag reports itself working over an action
+     * belonging to a different step.
+     */
+    val workingAction: TerminalAction? = null,
+) {
+    /** Any work at all, which is what disables the controls. */
+    val isWorking: Boolean get() = workingAction != null || isProbingToken
+}
 
 class TapToPayViewModel(
     private val terminal: TerminalController,
@@ -144,14 +154,13 @@ class TapToPayViewModel(
 
     fun probeToken() {
         if (_uiState.value.isWorking) return
-        _uiState.update { it.copy(tokenProbeText = "Checking…", isProbingToken = true, isWorking = true) }
+        _uiState.update { it.copy(tokenProbeText = "Checking…", isProbingToken = true) }
         viewModelScope.launch {
             val outcome = tokenClient.probeAccessToken()
             _uiState.update {
                 it.copy(
                     tokenProbeText = outcome.displayText(TokenServerProbe.TOKEN_LABEL),
                     isProbingToken = false,
-                    isWorking = false,
                 )
             }
         }
@@ -172,7 +181,7 @@ class TapToPayViewModel(
         // Two charges would then be in flight, and whichever finished first would re-enable the
         // controls while the other was still running.
         if (_uiState.value.isWorking) return
-        _uiState.update { it.copy(isWorking = true) }
+        _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
             val result = block()
             val outcome = TerminalActionOutcome.from(action, result)
@@ -180,7 +189,7 @@ class TapToPayViewModel(
             _uiState.update {
                 it.copy(
                     resultText = outcome,
-                    isWorking = false,
+                    workingAction = null,
                     // Only an activation attempt moves this, either way, so a later failure
                     // elsewhere does not leave the activation step reporting one of its own.
                     activationFailure =
