@@ -55,13 +55,12 @@ private const val POLL_MILLIS = 10L
 /**
  * A second callback before the first has finished must not start a second operation.
  *
- * Every one of these screens disables its button through state, which takes effect only once the
- * composition has caught up. A callback landing before that reaches the function anyway: against the
- * demo controllers a duplicate line on a card, behind a real SDK a second charge and a second stored
- * instrument.
+ * Each screen disables its button through state, which takes effect only once the composition has
+ * caught up. A callback landing before that reaches the function anyway: behind a real SDK, a second
+ * charge and a second stored instrument.
  *
  * The controllers here suspend until released, so the second call always lands while the first is in
- * flight. A controller that returned immediately would let the first finish and prove nothing.
+ * flight.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SingleFlightTest {
@@ -123,7 +122,14 @@ class SingleFlightTest {
     fun `two taps on capture submit once`() =
         runTest {
             val flow = BlockingFlow()
-            val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
+            val model =
+                CaptureViewModel(
+                    flow,
+                    unusedTokenClient(),
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
 
             model.submit(cardEntry)
             model.submit(cardEntry)
@@ -136,7 +142,14 @@ class SingleFlightTest {
     fun `two taps on the payment method screen submit once`() =
         runTest {
             val flow = BlockingFlow()
-            val model = PaymentMethodViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
+            val model =
+                PaymentMethodViewModel(
+                    flow,
+                    unusedTokenClient(),
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
 
             model.submit(cardEntry)
             model.submit(cardEntry)
@@ -165,7 +178,14 @@ class SingleFlightTest {
             // The guard has to hold for one operation, not forever. A flag never cleared would pass
             // the three tests above and leave the screen dead after its first use.
             val flow = BlockingFlow()
-            val model = CaptureViewModel(flow, DiagnosticsStore(), diagnosticsEnabled = false)
+            val model =
+                CaptureViewModel(
+                    flow,
+                    unusedTokenClient(),
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
 
             model.submit(cardEntry)
             flow.release()
@@ -181,8 +201,7 @@ class SingleFlightTest {
      * A server that answers one request at a time and not until released.
      *
      * The probes go through a concrete [TokenServerClient], so blocking them means blocking the
-     * socket. Held open, a second call lands while the first is genuinely in flight, which is the
-     * only arrangement under which the guard is the thing being tested.
+     * socket. Held open, a second call lands while the first is still in flight.
      */
     private class BlockingServer : AutoCloseable {
         val requests = AtomicInteger()
@@ -322,3 +341,11 @@ class SingleFlightTest {
             signingCertificateDigest = "AB:CD",
         )
 }
+
+/**
+ * A token client pointed at a port nothing listens on.
+ *
+ * These tests never run the token check; the view models take the client so the first step of the
+ * sequence has something to call. Port 1 refuses immediately rather than waiting for a timeout.
+ */
+private fun unusedTokenClient() = TokenServerClient(TokenServerTarget("http://127.0.0.1:1", TokenHostSource.Emulator))

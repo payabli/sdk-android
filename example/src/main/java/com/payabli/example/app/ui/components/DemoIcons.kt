@@ -9,9 +9,13 @@ import androidx.compose.material.icons.filled.Contactless
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.GppGood
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TapAndPlay
 import androidx.compose.material.icons.filled.VerticalAlignBottom
@@ -22,9 +26,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 /**
  * Every icon the app uses, in one place, so a screen never names one directly.
  *
- * Most of these are not in `material-icons-core`, which is 49 icons and covers six of the sixteen
- * below. Three of the misses are the navigation bar itself, which is why the extended set is on the
- * dependency list.
+ * `material-icons-core` is 49 icons and covers six of the sixteen below, missing three of the
+ * navigation bar's own. Hence the extended set on the dependency list.
  */
 object DemoIcons {
     // Navigation.
@@ -43,14 +46,19 @@ object DemoIcons {
     val Reinitialize: ImageVector get() = Icons.Filled.Refresh
 
     // Status.
+    // Steps. Pass and Fail are reused at either end, keeping the readiness card's vocabulary.
+    val Current: ImageVector get() = Icons.Filled.PlayCircle
+    val Working: ImageVector get() = Icons.Filled.HourglassTop
+    val Waiting: ImageVector get() = Icons.Filled.RadioButtonUnchecked
+    val NotNeeded: ImageVector get() = Icons.Filled.RemoveCircleOutline
+
     val Pass: ImageVector get() = Icons.Filled.CheckCircle
     val Warn: ImageVector get() = Icons.Filled.Warning
     val Fail: ImageVector get() = Icons.Filled.Cancel
     val Unknown: ImageVector get() = Icons.AutoMirrored.Filled.HelpOutline
 
     /**
-     * The overall verdict, in a different shape from [Fail]. An octagon reads as "stop here" where a
-     * circle reads as "this one item did not pass", and the readiness card shows both at once.
+     * The overall verdict. A different shape from [Fail], which the readiness card shows alongside it.
      */
     val NotAvailable: ImageVector get() = Icons.Filled.Dangerous
 }

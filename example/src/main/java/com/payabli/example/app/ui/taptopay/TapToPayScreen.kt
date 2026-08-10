@@ -22,30 +22,34 @@ import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
 import com.payabli.example.app.config.TokenHostDefaults
 import com.payabli.example.app.config.TokenHostResolver
+import com.payabli.example.app.flow.FlowStep
+import com.payabli.example.app.flow.StepStatus
+import com.payabli.example.app.flow.TerminalSteps
 import com.payabli.example.app.terminal.DemoTerminalController
 import com.payabli.example.app.terminal.EventBuffer
 import com.payabli.example.app.terminal.TerminalEvent
 import com.payabli.example.app.terminal.TerminalEventCode
 import com.payabli.example.app.terminal.TerminalSessionState
 import com.payabli.example.app.terminal.chipSpecFor
+import com.payabli.example.app.terminal.sessionFailureReason
 import com.payabli.example.app.ui.components.BorderedButton
+import com.payabli.example.app.ui.components.ContextLine
 import com.payabli.example.app.ui.components.DemoIcons
 import com.payabli.example.app.ui.components.DemoScreen
-import com.payabli.example.app.ui.components.DetailRow
 import com.payabli.example.app.ui.components.EventRow
 import com.payabli.example.app.ui.components.PreviewSurface
 import com.payabli.example.app.ui.components.ProminentButton
 import com.payabli.example.app.ui.components.ReadinessCard
+import com.payabli.example.app.ui.components.RecheckWhenFocused
 import com.payabli.example.app.ui.components.ResultCard
 import com.payabli.example.app.ui.components.SectionHeader
 import com.payabli.example.app.ui.components.StateChip
+import com.payabli.example.app.ui.components.StepRow
+import com.payabli.example.app.ui.components.TokenCheckStep
 import com.payabli.example.app.ui.theme.Dimens
 
 /**
  * Take a contactless payment on this device.
- *
- * The order is the order the work happens in: what is configured, whether the device can do this at
- * all, turning the terminal on, taking a payment, activating, and finally what happened.
  */
 @Composable
 fun TapToPayScreen(
@@ -53,6 +57,20 @@ fun TapToPayScreen(
     actions: TapToPayActions,
     modifier: Modifier = Modifier,
 ) {
+    // Step 1 stops offering its own recheck as soon as it reads Done, which is exactly the state
+    // this protects.
+    RecheckWhenFocused(actions.onRecheck)
+
+    val steps =
+        TerminalSteps.forCharging(
+            readiness = state.readiness,
+            session = state.session,
+            activationFailed = state.activationFailure != null,
+            chargeFailed = state.chargeFailure != null,
+            working = state.workingAction,
+            activated = state.activated,
+        )
+
     DemoScreen(
         title = "Tap to pay",
         modifier = modifier,
@@ -63,9 +81,14 @@ fun TapToPayScreen(
             )
         },
     ) {
-        TerminalBlock(state, actions.onProbeToken)
+        ContextLine(
+            entryPoint = state.configuration.entryPoint,
+            host = state.configuration.environment.host,
+        )
 
-        Block(title = "This device") {
+        SectionHeader(title = "Steps", note = "What the SDK needs, in the order it needs it.")
+
+        StepRow(index = 1, step = steps[0]) {
             ReadinessCard(
                 readiness = state.readiness,
                 problems = state.problems,
@@ -73,21 +96,48 @@ fun TapToPayScreen(
             )
         }
 
-        ControlBlock(state, actions.onEnable, actions.onReinitialize)
+        StepRow(index = 2, step = steps[1]) {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                FailureReason(steps[1], sessionFailureReason(state.session))
+                ProminentButton(
+                    text = "Turn on the terminal",
+                    icon = DemoIcons.TapToPay,
+                    onClick = actions.onEnable,
+                    enabled = !state.isWorking,
+                )
+                BorderedButton(
+                    text = "Start the session again",
+                    icon = DemoIcons.Reinitialize,
+                    onClick = actions.onReinitialize,
+                    enabled = !state.isWorking,
+                )
+                TokenCheckStep(
+                    text = state.tokenProbeText,
+                    isChecking = state.isProbingToken,
+                    onCheck = actions.onProbeToken,
+                    enabled = !state.isWorking,
+                )
+            }
+        }
 
-        PaymentBlock(state, actions.onAmountChange, actions.onCharge)
+        StepRow(index = 3, step = steps[2]) {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                FailureReason(steps[2], state.activationFailure.orEmpty())
+                BorderedButton(
+                    text = "Activate this device",
+                    icon = DemoIcons.Activate,
+                    onClick = actions.onOpenActivation,
+                    enabled = !state.isWorking,
+                )
+                Caption("Payabli issues the code.")
+            }
+        }
 
-        Block(title = "Activation") {
-            BorderedButton(
-                text = "Activate this device",
-                icon = DemoIcons.Activate,
-                onClick = actions.onOpenActivation,
-                enabled = !state.isWorking,
-            )
-            Caption(
-                "Needed when the session reports that the device is not activated. " +
-                    "Payabli issues the code.",
-            )
+        StepRow(index = 4, step = steps[3]) {
+            Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
+                FailureReason(steps[3], state.chargeFailure.orEmpty())
+                PaymentBlock(state, actions.onAmountChange, actions.onCharge)
+            }
         }
 
         Block(title = "Last result") {
@@ -102,58 +152,14 @@ fun TapToPayScreen(
     }
 }
 
+/** The reason a step failed, beside the controls that retry it. */
 @Composable
-private fun TerminalBlock(
-    state: TapToPayUiState,
-    onProbeToken: () -> Unit,
+private fun FailureReason(
+    step: FlowStep,
+    text: String,
 ) {
-    Block(title = "Terminal", note = "What the terminal needs before it can start.") {
-        DetailRow(
-            label = "Entry point",
-            value = state.configuration.entryPoint,
-            problem = state.configuration.entryPointProblem,
-        )
-        DetailRow(label = "App ID", value = state.configuration.appId)
-        // Also on Setup. The terminal initialises against this value, so it is checkable without
-        // leaving the screen that uses it.
-        DetailRow(
-            label = "Environment",
-            value = "${state.configuration.environment.label} · ${state.configuration.environment.host}",
-        )
-        // The route the button calls, not the host it lives on.
-        DetailRow(label = "Token endpoint", value = state.tokenServer.accessTokenUrl)
-        DetailRow(label = "Chosen because", value = state.tokenServer.explanation)
-        BorderedButton(
-            text = "Check token",
-            icon = DemoIcons.CheckToken,
-            onClick = onProbeToken,
-            enabled = !state.isWorking,
-        )
-        if (state.tokenProbeText.isNotEmpty()) {
-            Caption(state.tokenProbeText)
-        }
-    }
-}
-
-@Composable
-private fun ControlBlock(
-    state: TapToPayUiState,
-    onEnable: () -> Unit,
-    onReinitialize: () -> Unit,
-) {
-    Block(title = "Terminal control") {
-        ProminentButton(
-            text = if (state.isReady) "Terminal is on" else "Turn on the terminal",
-            icon = if (state.isReady) DemoIcons.Pass else DemoIcons.TapToPay,
-            onClick = onEnable,
-            enabled = !state.isWorking && !state.isReady,
-        )
-        BorderedButton(
-            text = "Restart the session",
-            icon = DemoIcons.Reinitialize,
-            onClick = onReinitialize,
-            enabled = !state.isWorking,
-        )
+    if (step.status == StepStatus.Failed && text.isNotEmpty()) {
+        ResultCard(text = text, emptyText = "")
     }
 }
 
@@ -163,7 +169,8 @@ private fun PaymentBlock(
     onAmountChange: (String) -> Unit,
     onCharge: () -> Unit,
 ) {
-    Block(title = "Take a payment") {
+    // No heading. The step above is titled "Take a payment", and a section header here repeats it.
+    Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
         OutlinedTextField(
             value = state.amountText,
             onValueChange = onAmountChange,
@@ -171,6 +178,9 @@ private fun PaymentBlock(
             prefix = { Text("$") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            // A working step keeps its controls, disabled. Left editable, the amount on screen can
+            // stop matching the one being charged.
+            enabled = !state.isWorking,
             modifier = Modifier.fillMaxWidth(),
         )
         ProminentButton(

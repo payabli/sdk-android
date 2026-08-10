@@ -3,13 +3,17 @@ package com.payabli.example.app.ui.method
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.AppContainer
+import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.diagnostics.DiagnosticsStore
+import com.payabli.example.app.net.TokenServerClient
+import com.payabli.example.app.net.checkToken
 import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentFailure
 import com.payabli.example.app.payment.PaymentFlowController
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.StoredMethod
+import com.payabli.example.app.ui.payment.PaymentFlowUiState
 import com.payabli.sdk.payin.form.PayInFormValues
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,28 +22,42 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class PaymentMethodUiState(
-    val setup: DemoFormSetup,
-    val resultText: String = "",
+    override val setup: DemoFormSetup,
+    override val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
     /** What was stored, held so the pushed screen can check it is still describing something. */
     val storedMethod: StoredMethod? = null,
-    val diagnostics: List<String> = emptyList(),
-    val diagnosticsEnabled: Boolean = true,
-    val isSheetOpen: Boolean = false,
-    val isSubmitting: Boolean = false,
-)
+    override val diagnostics: List<String> = emptyList(),
+    override val diagnosticsEnabled: Boolean = true,
+    override val isSheetOpen: Boolean = false,
+    /** What this screen is pointed at, shown in one line. The full set is on Setup. */
+    override val entryPoint: String = "",
+    override val host: String = "",
+    /** The last submission failed, so its step keeps the reason and the retry. */
+    val submitFailed: Boolean = false,
+    /** What the last token check said, empty until one has run. */
+    override val tokenCheckText: String = "",
+    /** The token endpoint answered. The form stays blocked until it has. */
+    val backendReachable: Boolean = false,
+    override val isCheckingToken: Boolean = false,
+    override val isSubmitting: Boolean = false,
+) : PaymentFlowUiState
 
 class PaymentMethodViewModel(
     private val flow: PaymentFlowController,
+    private val tokenClient: TokenServerClient,
     private val diagnostics: DiagnosticsStore,
     private val diagnosticsEnabled: Boolean,
+    private val configuration: DemoConfiguration,
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
             PaymentMethodUiState(
                 setup = flow.setup,
                 diagnosticsEnabled = diagnosticsEnabled,
+                entryPoint = configuration.entryPoint,
+                host = configuration.environment.host,
             ),
         )
     val uiState: StateFlow<PaymentMethodUiState> = _uiState.asStateFlow()
@@ -52,14 +70,30 @@ class PaymentMethodViewModel(
         }
     }
 
+    /** The first step of the sequence. [checkToken] says what it reports and why. */
+    fun checkToken() {
+        if (_uiState.value.isCheckingToken) return
+        _uiState.update { it.copy(isCheckingToken = true, tokenCheckText = "Checking…") }
+        viewModelScope.launch {
+            val outcome = tokenClient.checkToken()
+            _uiState.update {
+                it.copy(
+                    isCheckingToken = false,
+                    tokenCheckText = outcome.text,
+                    backendReachable = outcome.reachable,
+                )
+            }
+        }
+    }
+
     fun openSheet() = _uiState.update { it.copy(isSheetOpen = true) }
 
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
     /**
-     * Submits through the flow controller, so the result carries the shape this screen's operation
-     * produces. Fabricating one at the button meant Capture always received a stored-method result
-     * and reached its transaction screen with no transaction, while the controller was never called.
+     * Submits through the flow controller, so the result carries the shape this operation
+     * produces. Fabricated at the button, it was always a stored-method result, and Capture
+     * reached its transaction screen with no transaction.
      */
     fun submit(values: PayInFormValues) {
         // Single flight, decided here. `isSubmitting` disables the button, but only once the state
@@ -97,6 +131,9 @@ class PaymentMethodViewModel(
             it.copy(
                 resultText = text,
                 storedMethod = method,
+                // A response can arrive carrying nothing, which the text above calls a failure. The
+                // flag has to agree, or the sequence says "do this next" over a stated failure.
+                submitFailed = method == null,
                 isSheetOpen = false,
                 isSubmitting = false,
                 outcomeReady = method != null,
@@ -115,6 +152,7 @@ class PaymentMethodViewModel(
                 resultText = "✗ ${error.displayMessage}",
                 outcomeReady = false,
                 storedMethod = null,
+                submitFailed = true,
                 isSheetOpen = false,
                 isSubmitting = false,
             )
@@ -133,8 +171,10 @@ class PaymentMethodViewModel(
         fun from(container: AppContainer): PaymentMethodViewModel =
             PaymentMethodViewModel(
                 flow = container.paymentMethodFlow,
+                tokenClient = container.tokenClient,
                 diagnostics = container.diagnostics.paymentMethod,
                 diagnosticsEnabled = container.configuration.diagnosticsEnabled,
+                configuration = container.configuration,
             )
     }
 }

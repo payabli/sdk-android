@@ -1,17 +1,13 @@
 package com.payabli.example.app.preflight
 
+import android.provider.Settings
+
 /**
  * Whether this device could take a contactless payment, and if not, what to fix.
  *
- * Five checks, chosen for what they mean on Android. The iOS demo checks the Simulator, App Attest,
- * the ProximityReader framework, a provisioning entitlement and a `TeamID.bundleId` string; only the
- * first has a counterpart here, and mapping the rest one for one would produce five rows that say
- * nothing about an Android device.
- *
- * The one lesson worth carrying across is the iOS author's: compare the configured value against
- * reality, not against itself. Check five reads the running package and this binary's signing
- * certificate, so a configuration that disagrees with the installed app shows up here, before
- * attestation rejects it much later.
+ * Five checks, each comparing a configured value against the device rather than against itself.
+ * Check five reads the running package and this binary's signing certificate, so a configuration
+ * that disagrees with the installed app shows up here, before attestation rejects it much later.
  *
  * Pure. Every input arrives in [DeviceFacts]; nothing here touches a framework or the network.
  */
@@ -85,8 +81,9 @@ object TapToPayPreflight {
                     title = "NFC switched off",
                     // A warning. The hardware is there and one toggle away, which is a different
                     // situation from a device that can never do this.
-                    detail = "The hardware is present. Turn NFC on in Settings before taking a payment.",
+                    detail = "The hardware is present. Turn NFC on before taking a payment.",
                     status = CheckStatus.Warn,
+                    settingsAction = Settings.ACTION_NFC_SETTINGS,
                 )
 
             else -> PreflightCheck("NFC", "Present and switched on.", CheckStatus.Pass)

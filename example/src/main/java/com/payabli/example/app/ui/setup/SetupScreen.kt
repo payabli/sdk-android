@@ -25,15 +25,15 @@ import com.payabli.example.app.ui.components.DemoScreen
 import com.payabli.example.app.ui.components.DetailRow
 import com.payabli.example.app.ui.components.PreviewSurface
 import com.payabli.example.app.ui.components.ReadinessCard
+import com.payabli.example.app.ui.components.RecheckWhenFocused
 import com.payabli.example.app.ui.components.SectionHeader
 import com.payabli.example.app.ui.theme.Dimens
 
 /**
  * Everything the SDK was configured with, read back.
  *
- * Read-only throughout, and that is the design. A session captures its configuration when it is
- * created, so a control here would appear to change something already decided. Each value says where
- * it came from, so a wrong one is fixed at the source.
+ * Read-only. A session captures its configuration when it is created, so a control here would
+ * appear to change something already decided. Each value says where it came from.
  */
 @Composable
 fun SetupScreen(
@@ -101,6 +101,8 @@ fun SetupScreen(
         }
 
         Section(title = "Card present", note = "Whether this device can take a contactless payment.") {
+            RecheckWhenFocused(onRecheck)
+
             ReadinessCard(
                 readiness = state.readiness,
                 problems = state.problems,
@@ -110,7 +112,7 @@ fun SetupScreen(
 
         Section(
             title = "Card not present",
-            note = "What the payment form on the Payment method and Capture screens was configured with.",
+            note = "What the payment form on the Save and Capture screens was configured with.",
         ) {
             // Read from the configuration and the rules, never written out here. A transcribed list
             // would agree with the form today and stop agreeing the first time a field moved.
@@ -126,7 +128,7 @@ fun SetupScreen(
             val value = if (state.configuration.diagnosticsEnabled) "On" else "Off"
             // Two rows for two logs, both driven by one build setting. Listing them separately says
             // which screens are affected; collapsing them to one row would not.
-            DetailRow(label = "Payment method", value = value)
+            DetailRow(label = "Save", value = value)
             DetailRow(label = "Capture", value = value)
             DetailRow(label = "Set by", value = "payabli.demo.diagnostics")
         }

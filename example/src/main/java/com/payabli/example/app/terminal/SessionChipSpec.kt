@@ -19,6 +19,18 @@ data class SessionChipSpec(
     val tone: ChipTone,
 )
 
+/**
+ * Why the session stopped, for the step that offers to start it again. Empty when it has not.
+ *
+ * The session ends on its own clock, so no action outcome describes it.
+ */
+fun sessionFailureReason(state: TerminalSessionState): String =
+    when (state) {
+        TerminalSessionState.Error -> "The session stopped."
+        TerminalSessionState.SessionExpired -> "The session expired."
+        else -> ""
+    }
+
 fun chipSpecFor(state: TerminalSessionState): SessionChipSpec =
     when (state) {
         TerminalSessionState.Idle -> SessionChipSpec("Idle", ChipTone.Neutral)

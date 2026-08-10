@@ -37,9 +37,33 @@ data class TapToPayUiState(
     val problems: List<PreflightCheck> = emptyList(),
     val session: TerminalSessionState = TerminalSessionState.Idle,
     val isReady: Boolean = false,
+    /**
+     * Why the last activation attempt was refused, or null if it was not.
+     *
+     * The reason is captured here, not read from [resultText], which any later action overwrites
+     * while this step is still failed. [session] cannot answer either: it reports the same thing
+     * for a device that was refused and one that never needed activating.
+     */
+    val activationFailure: String? = null,
+    /** Why the last charge failed. The session reports Ready either way. */
+    val chargeFailure: String? = null,
+    /** An activation succeeded. [session] reads Ready whether one was needed or not. */
+    val activated: Boolean = false,
     val isActivationOpen: Boolean = false,
-    val isWorking: Boolean = false,
-)
+    /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
+    val isProbingToken: Boolean = false,
+    /**
+     * Which terminal action is in flight, or null.
+     *
+     * Which one, not whether: the session reaches [TerminalSessionState.Ready] before the call that
+     * took it there returns, so a step reading a bare flag reports itself working over an action
+     * belonging to a different step.
+     */
+    val workingAction: TerminalAction? = null,
+) {
+    /** Any work at all, which is what disables the controls. */
+    val isWorking: Boolean get() = workingAction != null || isProbingToken
+}
 
 class TapToPayViewModel(
     private val terminal: TerminalController,
@@ -110,6 +134,9 @@ class TapToPayViewModel(
                             TerminalAction.Charge,
                             NumberFormatException("That is not an amount"),
                         ),
+                    // This path returns before `run`, which is the only other thing that records a
+                    // charge failure, so without it the step reads "do this next" over a stated one.
+                    chargeFailure = "That is not an amount",
                 )
             }
             return
@@ -129,13 +156,13 @@ class TapToPayViewModel(
 
     fun probeToken() {
         if (_uiState.value.isWorking) return
-        _uiState.update { it.copy(tokenProbeText = "Checking…", isWorking = true) }
+        _uiState.update { it.copy(tokenProbeText = "Checking…", isProbingToken = true) }
         viewModelScope.launch {
             val outcome = tokenClient.probeAccessToken()
             _uiState.update {
                 it.copy(
                     tokenProbeText = outcome.displayText(TokenServerProbe.TOKEN_LABEL),
-                    isWorking = false,
+                    isProbingToken = false,
                 )
             }
         }
@@ -144,9 +171,8 @@ class TapToPayViewModel(
     /**
      * Runs one terminal action and turns its outcome into the single result line.
      *
-     * No spinner anywhere on this screen. Progress is already visible in three places — the session
-     * chip, the event list and the result line — and a fourth indicator over the top of them would
-     * add nothing. `isWorking` only disables the buttons.
+     * No spinner: the session chip, the event list and the result line already show progress.
+     * `isWorking` only disables the buttons.
      */
     private fun run(
         action: TerminalAction,
@@ -157,10 +183,25 @@ class TapToPayViewModel(
         // Two charges would then be in flight, and whichever finished first would re-enable the
         // controls while the other was still running.
         if (_uiState.value.isWorking) return
-        _uiState.update { it.copy(isWorking = true) }
+        _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
-            val outcome = TerminalActionOutcome.from(action, block())
-            _uiState.update { it.copy(resultText = outcome, isWorking = false) }
+            val result = block()
+            val outcome = TerminalActionOutcome.from(action, result)
+            val reason = outcome.takeIf { result.isFailure }
+            _uiState.update {
+                it.copy(
+                    resultText = outcome,
+                    workingAction = null,
+                    // Only an activation attempt moves this, either way, so a later failure
+                    // elsewhere does not leave the activation step reporting one of its own.
+                    activationFailure =
+                        if (action == TerminalAction.Activate) reason else it.activationFailure,
+                    activated =
+                        it.activated || (action == TerminalAction.Activate && result.isSuccess),
+                    chargeFailure =
+                        if (action == TerminalAction.Charge) reason else it.chargeFailure,
+                )
+            }
         }
     }
 

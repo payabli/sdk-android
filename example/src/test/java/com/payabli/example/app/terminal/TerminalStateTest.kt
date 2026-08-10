@@ -133,6 +133,24 @@ class TerminalStateTest {
     }
 
     @Test
+    fun `only a stopped session has a reason to report`() {
+        val withReason = TerminalSessionState.entries.filter { sessionFailureReason(it).isNotEmpty() }
+        assertEquals(
+            listOf(TerminalSessionState.SessionExpired, TerminalSessionState.Error).sorted(),
+            withReason.sorted(),
+        )
+    }
+
+    @Test
+    fun `every state the sequence marks failed can say why`() {
+        // The step derivation and this reason read the same states. A state added to one and not the
+        // other leaves a failed step with a blank reason and its retry unexplained.
+        TerminalSessionState.entries
+            .filter { chipSpecFor(it).tone == ChipTone.Alert }
+            .forEach { assertTrue("$it has no reason", sessionFailureReason(it).isNotEmpty()) }
+    }
+
+    @Test
     fun `from picks the right half of the mapping`() {
         assertEquals(
             "✓ Re-initialize succeeded",
