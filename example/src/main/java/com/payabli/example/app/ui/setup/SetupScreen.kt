@@ -25,6 +25,7 @@ import com.payabli.example.app.ui.components.DemoScreen
 import com.payabli.example.app.ui.components.DetailRow
 import com.payabli.example.app.ui.components.PreviewSurface
 import com.payabli.example.app.ui.components.ReadinessCard
+import com.payabli.example.app.ui.components.RecheckWhenFocused
 import com.payabli.example.app.ui.components.SectionHeader
 import com.payabli.example.app.ui.theme.Dimens
 
@@ -100,6 +101,8 @@ fun SetupScreen(
         }
 
         Section(title = "Card present", note = "Whether this device can take a contactless payment.") {
+            RecheckWhenFocused(onRecheck)
+
             ReadinessCard(
                 readiness = state.readiness,
                 problems = state.problems,
