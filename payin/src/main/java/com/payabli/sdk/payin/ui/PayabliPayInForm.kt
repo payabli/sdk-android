@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -103,6 +104,7 @@ public fun PayabliPayInForm(
             style = rememberResolvedStyle(style),
             today = today,
             enabled = !isSubmitting,
+            refreshClock = { today = ExpiryValue.today() },
         )
 
     val complete = isComplete(method, today)
@@ -237,13 +239,18 @@ private fun InputRows(
             pairs.forEach { row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                     row.forEach { field ->
-                        PayInFieldBox(
-                            field = field,
-                            value = typed[field].orEmpty(),
-                            context = context,
-                            onValueChange = { onValueChange(field, it) },
-                            modifier = Modifier.weight(1f),
-                        )
+                        // Keyed, so what a box remembers belongs to the field rather than to the
+                        // slot. A configuration that puts a different field here would otherwise
+                        // hand it an open menu, an opened picker, or a revealed secret.
+                        key(field) {
+                            PayInFieldBox(
+                                field = field,
+                                value = typed[field].orEmpty(),
+                                context = context,
+                                onValueChange = { onValueChange(field, it) },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }
