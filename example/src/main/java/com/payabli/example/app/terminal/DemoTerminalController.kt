@@ -22,6 +22,11 @@ import java.math.BigDecimal
  *  - [charge] fails on an amount that is not greater than zero.
  *  - [activateDevice] fails on [REJECTED_ACTIVATION_CODE].
  *
+ * The device starts unregistered, so [initialize] stops at [TerminalSessionState.PendingActivation]
+ * and the activation step is asked for. Going straight to ready left that step deriving
+ * [com.payabli.example.app.flow.StepStatus.NotNeeded], which hides its own control, so the activation
+ * path and its failure could not be reached by hand.
+ *
  * @param stepDelayMillis zero in tests, so the sequence can be asserted without waiting.
  */
 class DemoTerminalController(
@@ -43,12 +48,19 @@ class DemoTerminalController(
 
     private var chargeCounter = 0
 
+    /** A merchant registers a device once. Until then, starting the terminal asks for a code. */
+    private var activated = false
+
     override suspend fun initialize(): Result<Unit> {
         step(TerminalSessionState.AttestingDevice, TerminalEventCode.AttestationStarted)
         emit(TerminalEventCode.AttestationCompleted)
         step(TerminalSessionState.FetchingConfig, TerminalEventCode.ConfigReceived, "entryPoint captured at startup")
         step(TerminalSessionState.InitializingReader, TerminalEventCode.ReaderInitializing)
-        step(TerminalSessionState.Ready, TerminalEventCode.ReaderReady)
+        if (activated) {
+            step(TerminalSessionState.Ready, TerminalEventCode.ReaderReady)
+        } else {
+            step(TerminalSessionState.PendingActivation, TerminalEventCode.DevicePendingActivation)
+        }
         return Result.success(Unit)
     }
 
@@ -85,6 +97,8 @@ class DemoTerminalController(
             return Result.failure(IllegalArgumentException("That activation code was rejected"))
         }
         emit(TerminalEventCode.ActivationCompleted)
+        activated = true
+        step(TerminalSessionState.Ready, TerminalEventCode.ReaderReady)
         return Result.success(Unit)
     }
 

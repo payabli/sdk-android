@@ -46,7 +46,7 @@ class DemoTerminalControllerTest {
         }
 
     @Test
-    fun `initialize walks attest then config then reader then ready`() =
+    fun `initialize walks attest then config then reader, and stops for activation`() =
         runTest {
             val terminal = controller()
             val seen = collectInBackground(terminal.sessionState)
@@ -59,9 +59,26 @@ class DemoTerminalControllerTest {
                     TerminalSessionState.AttestingDevice,
                     TerminalSessionState.FetchingConfig,
                     TerminalSessionState.InitializingReader,
-                    TerminalSessionState.Ready,
+                    TerminalSessionState.PendingActivation,
                 ),
                 seen,
+            )
+        }
+
+    @Test
+    fun `initialize goes straight to ready once the device is activated`() =
+        runTest {
+            val terminal = controller()
+            terminal.initialize()
+            terminal.activateDevice("ANY-CODE")
+            val seen = collectInBackground(terminal.sessionState)
+
+            terminal.initialize()
+
+            assertEquals(TerminalSessionState.Ready, seen.last())
+            assertFalse(
+                "a registered device was asked to activate again",
+                TerminalSessionState.PendingActivation in seen,
             )
         }
 
@@ -79,18 +96,42 @@ class DemoTerminalControllerTest {
                     TerminalEventCode.AttestationCompleted,
                     TerminalEventCode.ConfigReceived,
                     TerminalEventCode.ReaderInitializing,
-                    TerminalEventCode.ReaderReady,
+                    TerminalEventCode.DevicePendingActivation,
                 ),
                 seen.map { it.code },
             )
         }
 
     @Test
-    fun `initialize reaches ready`() =
+    fun `initialize succeeds and leaves the device awaiting its code`() =
         runTest {
             val terminal = controller()
             assertTrue(terminal.initialize().isSuccess)
+            assertEquals(TerminalSessionState.PendingActivation, terminal.sessionState.value)
+            assertFalse("charging was offered before activation", terminal.isReady.value)
+        }
+
+    @Test
+    fun `activating reaches ready, which is what unlocks charging`() =
+        runTest {
+            val terminal = controller()
+            terminal.initialize()
+
+            assertTrue(terminal.activateDevice("ANY-CODE").isSuccess)
+
             assertEquals(TerminalSessionState.Ready, terminal.sessionState.value)
+            assertTrue(terminal.isReady.value)
+        }
+
+    @Test
+    fun `a rejected code leaves the device awaiting one`() =
+        runTest {
+            val terminal = controller()
+            terminal.initialize()
+
+            assertTrue(terminal.activateDevice(DemoTerminalController.REJECTED_ACTIVATION_CODE).isFailure)
+
+            assertEquals(TerminalSessionState.PendingActivation, terminal.sessionState.value)
         }
 
     @Test
@@ -98,6 +139,7 @@ class DemoTerminalControllerTest {
         runTest {
             val terminal = controller()
             terminal.initialize()
+            terminal.activateDevice("ANY-CODE")
             val seen = collectInBackground(terminal.events)
 
             assertTrue(terminal.reinitializeIfNeeded().isSuccess)
@@ -110,8 +152,14 @@ class DemoTerminalControllerTest {
         runTest {
             val terminal = controller()
             assertTrue(terminal.reinitializeIfNeeded().isSuccess)
-            assertEquals(TerminalSessionState.Ready, terminal.sessionState.value)
+            assertEquals(TerminalSessionState.PendingActivation, terminal.sessionState.value)
         }
+
+    /** Initialised and activated, which is what a charge needs. */
+    private suspend fun DemoTerminalController.ready() {
+        initialize()
+        activateDevice("ANY-CODE")
+    }
 
     // --- charge ---
 
@@ -146,7 +194,7 @@ class DemoTerminalControllerTest {
     fun `a successful charge returns a transaction id`() =
         runTest {
             val terminal = controller()
-            terminal.initialize()
+            terminal.ready()
             val receipt = terminal.charge(BigDecimal("1.00")).getOrThrow()
             assertEquals("demo-txn-0001", receipt.paymentTransactionId)
         }
@@ -155,7 +203,7 @@ class DemoTerminalControllerTest {
     fun `each charge gets its own transaction id`() =
         runTest {
             val terminal = controller()
-            terminal.initialize()
+            terminal.ready()
             val first = terminal.charge(BigDecimal("1.00")).getOrThrow()
             val second = terminal.charge(BigDecimal("2.00")).getOrThrow()
             assertEquals("demo-txn-0001", first.paymentTransactionId)
@@ -166,7 +214,7 @@ class DemoTerminalControllerTest {
     fun `a charge emits initiated then nfc started then nfc completed`() =
         runTest {
             val terminal = controller()
-            terminal.initialize()
+            terminal.ready()
             val seen = collectInBackground(terminal.events)
 
             terminal.charge(BigDecimal("1.00"))

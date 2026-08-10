@@ -101,11 +101,18 @@ class TapToPayViewModelTest {
             )
         }
 
+    /** Started and activated, which is what a charge needs from the demo device. */
+    private fun TapToPayViewModel.readyTerminal() {
+        enableTerminal()
+        setActivationCode("ANY-CODE")
+        activate()
+    }
+
     @Test
     fun `a well-formed amount charges and reports the transaction`() =
         runTest {
             val viewModel = model()
-            viewModel.enableTerminal()
+            viewModel.readyTerminal()
             viewModel.setAmount("12.34")
             viewModel.charge()
 
@@ -177,7 +184,14 @@ class TapToPayViewModelTest {
             assertEquals(TerminalSessionState.Idle, viewModel.uiState.value.session)
             assertFalse(viewModel.uiState.value.isReady)
 
+            // The demo device is unregistered, so starting the terminal stops at the step that
+            // asks for a code, and only activating it reaches ready.
             viewModel.enableTerminal()
+            assertEquals(TerminalSessionState.PendingActivation, viewModel.uiState.value.session)
+            assertFalse(viewModel.uiState.value.isReady)
+
+            viewModel.setActivationCode("ANY-CODE")
+            viewModel.activate()
             assertEquals(TerminalSessionState.Ready, viewModel.uiState.value.session)
             assertTrue(viewModel.uiState.value.isReady)
         }
