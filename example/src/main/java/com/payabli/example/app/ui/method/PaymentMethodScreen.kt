@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import com.payabli.example.app.flow.PaymentProgress
 import com.payabli.example.app.flow.PaymentSteps
 import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.ui.components.DemoIcons
@@ -38,12 +39,14 @@ fun PaymentMethodScreen(
         state = state,
         steps =
             PaymentSteps.forStoringMethod(
-                backendReachable = state.backendReachable,
-                backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
-                isCheckingBackend = state.isCheckingToken,
-                isSubmitting = state.isSubmitting,
-                submitFailed = state.submitFailed,
-                finished = state.outcomeReady,
+                PaymentProgress(
+                    backendReachable = state.backendReachable,
+                    backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
+                    isCheckingBackend = state.isCheckingToken,
+                    isSubmitting = state.isSubmitting,
+                    submitFailed = state.submitFailed,
+                    finished = state.outcomeReady,
+                ),
             ),
         resultEmptyText = "Nothing stored yet",
         actions = actions,

@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.payabli.example.app.flow.PaymentProgress
 import com.payabli.example.app.flow.PaymentSteps
 import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.PaymentResult
@@ -45,12 +46,14 @@ fun CaptureScreen(
         state = state,
         steps =
             PaymentSteps.forCapture(
-                backendReachable = state.backendReachable,
-                backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
-                isCheckingBackend = state.isCheckingToken,
-                isSubmitting = state.isSubmitting,
-                submitFailed = state.submitFailed,
-                finished = state.outcomeReady,
+                PaymentProgress(
+                    backendReachable = state.backendReachable,
+                    backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
+                    isCheckingBackend = state.isCheckingToken,
+                    isSubmitting = state.isSubmitting,
+                    submitFailed = state.submitFailed,
+                    finished = state.outcomeReady,
+                ),
             ),
         resultEmptyText = "No payment yet",
         actions = actions,
