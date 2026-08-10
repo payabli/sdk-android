@@ -18,7 +18,13 @@ public class PayabliValidationException(
     public val instance: String? = null,
     /** Payabli's own wire code, for example `E1001`. Absent when the body carried none. */
     public val rawCode: String? = null,
-    /** Parameter name to its failures. Empty when the body carried none or used an unexpected shape. */
+    /**
+     * Parameter name to its failures. Empty when the body carried none or used an unexpected shape.
+     *
+     * The platform sends each failure as a bare string, which arrives as [PayabliFieldError.message] with
+     * a null [PayabliFieldError.suggestion]. A key of `$` is the request body as a whole rather than a
+     * field in it, which is how a missing required property reports itself.
+     */
     public val fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
 ) : PayabliException(PayabliErrorCode.VALIDATION_ERROR, reason, detail) {
     public companion object {
