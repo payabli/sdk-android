@@ -23,11 +23,15 @@ enum class CheckStatus {
  *
  * @param detail what was actually observed, in enough words to act on. "NFC is switched off" is a
  *   next step; "NFC check failed" is not.
+ * @param settingsAction the settings screen that fixes this, or null where none does. A `Settings`
+ *   action constant is a compile-time string, so naming one here costs this file no Android import
+ *   and leaves it testable on a host JVM.
  */
 data class PreflightCheck(
     val title: String,
     val detail: String,
     val status: CheckStatus,
+    val settingsAction: String? = null,
 )
 
 /** The verdict across every check. */

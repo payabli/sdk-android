@@ -1,5 +1,7 @@
 package com.payabli.example.app.preflight
 
+import android.provider.Settings
+
 /**
  * Whether this device could take a contactless payment, and if not, what to fix.
  *
@@ -79,8 +81,9 @@ object TapToPayPreflight {
                     title = "NFC switched off",
                     // A warning. The hardware is there and one toggle away, which is a different
                     // situation from a device that can never do this.
-                    detail = "The hardware is present. Turn NFC on in Settings before taking a payment.",
+                    detail = "The hardware is present. Turn NFC on before taking a payment.",
                     status = CheckStatus.Warn,
+                    settingsAction = Settings.ACTION_NFC_SETTINGS,
                 )
 
             else -> PreflightCheck("NFC", "Present and switched on.", CheckStatus.Pass)

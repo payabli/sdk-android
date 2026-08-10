@@ -1,8 +1,12 @@
 package com.payabli.example.app.ui.components
 
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.example.app.preflight.CheckStatus
@@ -94,6 +99,19 @@ fun ReadinessCard(
     }
 }
 
+/**
+ * The compact panel where the platform has one, and the full settings screen otherwise.
+ *
+ * The panel slides over this screen instead of replacing it, so the toggle and the step that needed
+ * it stay in the same place.
+ */
+private fun panelOrScreenFor(action: String): String =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && action == Settings.ACTION_NFC_SETTINGS) {
+        Settings.Panel.ACTION_NFC
+    } else {
+        action
+    }
+
 @Composable
 private fun CheckRow(check: PreflightCheck) {
     Row(
@@ -121,6 +139,18 @@ private fun CheckRow(check: PreflightCheck) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // Only the checks that name a settings screen. No app can switch NFC on: the platform
+            // API is a system one, and even the adb shell uid is refused, so the most this can offer
+            // is the fastest route to the switch. The verdict is read again on the way back.
+            check.settingsAction?.let { action ->
+                val context = LocalContext.current
+                TextButton(
+                    onClick = { context.startActivity(Intent(panelOrScreenFor(action))) },
+                    contentPadding = PaddingValues(0.dp),
+                ) {
+                    Text("Turn it on")
+                }
+            }
         }
     }
 }
