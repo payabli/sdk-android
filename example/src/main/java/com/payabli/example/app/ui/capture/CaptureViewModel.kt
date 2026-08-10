@@ -94,9 +94,9 @@ class CaptureViewModel(
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
     /**
-     * Submits through the flow controller, so the result carries the shape this screen's operation
-     * produces. Fabricating one at the button meant Capture always received a stored-method result
-     * and reached its transaction screen with no transaction, while the controller was never called.
+     * Submits through the flow controller, so the result carries the shape this operation
+     * produces. Fabricated at the button, it was always a stored-method result, and Capture
+     * reached its transaction screen with no transaction.
      */
     fun submit(values: PayInFormValues) {
         // Single flight, decided here. `isSubmitting` disables the button, but only once the state

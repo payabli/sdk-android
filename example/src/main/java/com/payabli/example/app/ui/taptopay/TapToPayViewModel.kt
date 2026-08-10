@@ -38,10 +38,8 @@ data class TapToPayUiState(
     val session: TerminalSessionState = TerminalSessionState.Idle,
     val isReady: Boolean = false,
     /**
-     * The last activation attempt was refused.
-     *
-     * Recorded rather than read from [session], which reports the same thing for a device that was
-     * refused and one that never needed activating.
+     * The last activation attempt was refused. Recorded, because [session] reports the same
+     * thing for a device that was refused and one that never needed activating.
      */
     val activationFailed: Boolean = false,
     /** The last charge attempt failed. The session reports Ready either way. */

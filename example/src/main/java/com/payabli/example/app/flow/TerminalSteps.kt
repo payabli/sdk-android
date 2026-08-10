@@ -6,8 +6,7 @@ import com.payabli.example.app.terminal.TerminalSessionState
 /**
  * What taking a contactless payment asks for, in the order the SDK needs it.
  *
- * The session already moves through these in order; this says so on screen. Pure, and outside `ui`,
- * so the sequence can be checked against every state the session can be in.
+ * Pure, and outside `ui`, so the sequence can be checked against every state the session can be in.
  */
 object TerminalSteps {
     /**

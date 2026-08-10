@@ -64,8 +64,7 @@ fun CaptureScreen(
 /**
  * The full transaction, as the API described it.
  *
- * The summary and the raw response together, because the summary is what a reader checks and the
- * response is what they send to support when the summary says something surprising.
+ * The summary and the raw response together.
  */
 @Composable
 fun CaptureResultScreen(

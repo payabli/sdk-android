@@ -40,8 +40,7 @@ data object SetupHome
 /**
  * The four capability areas, and the order they appear in.
  *
- * Saving a method first, because it is the simplest thing the SDK does and the first thing an
- * integrator tries. Setup last, because it is a readout and not a task.
+ * Saving a method first, as the simplest thing the SDK does. Setup last, being a readout.
  */
 enum class TopLevelDestination(
     val navLabel: String,

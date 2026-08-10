@@ -22,11 +22,8 @@ import com.payabli.example.app.ui.theme.Dimens
 import com.payabli.example.app.ui.theme.LocalStatusColors
 
 /**
- * One step of a flow, numbered, with its controls shown only when there is something to do.
- *
- * A screen that asks the SDK for several things in order reads as a sequence, so what is required
- * and what is next are visible without running it. [com.payabli.example.app.flow.StepStatus] decides
- * which step shows its controls.
+ * One step of a flow, numbered. [com.payabli.example.app.flow.StepStatus] decides whether it shows
+ * its controls.
  */
 @Composable
 fun StepRow(

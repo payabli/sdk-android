@@ -2,9 +2,6 @@ package com.payabli.example.app.flow
 
 /**
  * Where one step of a flow has got to.
- *
- * A screen that asks the SDK for several things in order shows them as a numbered sequence, so a
- * reader can see what is required and what is next without running it.
  */
 enum class StepStatus {
     /** Finished, and nothing more to do here. */
@@ -40,8 +37,8 @@ enum class StepStatus {
     /**
      * Whether the step after this one may proceed. A skipped step counts as finished.
      *
-     * Every sequence reads this. A step that consults the underlying state instead can offer itself
-     * alongside an earlier step that is still asking for something.
+     * A step that reads the underlying state instead can offer itself alongside an earlier step
+     * that is still asking for something.
      */
     val isFinished: Boolean get() = this == Done || this == NotNeeded
 }

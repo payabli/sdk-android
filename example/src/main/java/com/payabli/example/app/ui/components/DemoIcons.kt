@@ -58,8 +58,7 @@ object DemoIcons {
     val Unknown: ImageVector get() = Icons.AutoMirrored.Filled.HelpOutline
 
     /**
-     * The overall verdict, in a different shape from [Fail]. An octagon reads as "stop here" where a
-     * circle reads as "this one item did not pass", and the readiness card shows both at once.
+     * The overall verdict. A different shape from [Fail], which the readiness card shows alongside it.
      */
     val NotAvailable: ImageVector get() = Icons.Filled.Dangerous
 }

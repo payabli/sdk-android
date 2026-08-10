@@ -48,9 +48,6 @@ import com.payabli.example.app.ui.theme.Dimens
 
 /**
  * Take a contactless payment on this device.
- *
- * The order is the order the work happens in: what is configured, whether the device can do this at
- * all, turning the terminal on, taking a payment, activating, and finally what happened.
  */
 @Composable
 fun TapToPayScreen(
@@ -147,11 +144,7 @@ fun TapToPayScreen(
     }
 }
 
-/**
- * The reason a step failed, beside the controls that retry it.
- *
- * The running record further down shows the same text, too far from the retry to answer it.
- */
+/** The reason a step failed, beside the controls that retry it. */
 @Composable
 private fun FailureReason(
     step: FlowStep,

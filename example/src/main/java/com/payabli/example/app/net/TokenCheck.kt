@@ -14,8 +14,8 @@ data class TokenCheckOutcome(
 /**
  * Asks the token endpoint for a token, and reports only that one arrived.
  *
- * Both card-not-present screens open with this. A form that submits before the backend answers
- * fails at the end of a filled-in card instead of the start of an empty one.
+ * A form that submits before the backend answers fails at the end of a filled-in card instead of
+ * the start of an empty one.
  */
 suspend fun TokenServerClient.checkToken(): TokenCheckOutcome {
     val outcome = probeAccessToken()

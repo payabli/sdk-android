@@ -8,7 +8,7 @@ import org.junit.Test
  * The rules a sequence follows, over every combination of state that can reach it.
  *
  * A sequence that offers two next things, or hides the reason a step failed, is wrong in a way no
- * rendering test would call out. Checking that here is why the derivation is a pure function.
+ * rendering test would call out.
  */
 class PaymentStepsTest {
     private val everyCombination: List<List<Boolean>> =

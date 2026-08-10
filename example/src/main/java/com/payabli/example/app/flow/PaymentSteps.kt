@@ -22,8 +22,7 @@ data class PaymentProgress(
 /**
  * What a card-not-present screen asks for, in the order the SDK needs it.
  *
- * Pure, and outside `ui`, so the sequence a reader is shown can be checked without a composition.
- * Storing a method and taking a payment differ only in what the last step is called.
+ * Pure, and outside `ui`, so the sequence can be checked without a composition.
  */
 object PaymentSteps {
     /** Storing an instrument, which returns a token to reuse. */

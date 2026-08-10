@@ -37,11 +37,11 @@ import com.payabli.example.app.ui.taptopay.TapToPayViewModel
 /**
  * The whole navigation graph: four capability areas, each with its own back stack.
  *
- * [NavigationSuiteScaffold] makes the app a bottom bar on a phone and a navigation rail on a tablet
- * or an unfolded foldable, with no second layout to maintain.
+ * [NavigationSuiteScaffold] is the bottom bar on a phone and the navigation rail on a tablet or an
+ * unfolded foldable, from one layout.
  *
- * The `saveState`/`restoreState` pair on the navigation call is what keeps each area's stack alive:
- * push a result screen under Capture, look at Setup, come back, and the result is still there.
+ * `saveState`/`restoreState` keeps each area's stack alive: push a result screen under Capture, look
+ * at Setup, come back, and the result is still there.
  */
 @Composable
 fun PayabliDemoNavHost(
@@ -164,11 +164,10 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
                     CaptureViewModel.from(it)
                 }
             val state by model.uiState.collectAsStateWithLifecycle()
-            // The result lives in the view model, and the process can be killed while this screen is
-            // on top. Navigation restores the destination and the model comes back empty, which left
-            // a screen reading "No payment yet" with its Done button below the early return, so
-            // nothing on it went anywhere. Going back is the only honest answer: the payment
-            // happened, and this screen has nothing to say about it any more.
+            // The result lives in the view model, and the process can be killed while this screen
+            // is on top. Navigation restores the destination and the model comes back empty, which
+            // left a screen reading "No payment yet" whose Done button sat below the early return
+            // and did nothing.
             LaunchedEffect(state.lastResult) {
                 if (state.lastResult == null) navController.popBackStack()
             }
