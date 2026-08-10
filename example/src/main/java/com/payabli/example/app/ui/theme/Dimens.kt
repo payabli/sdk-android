@@ -29,4 +29,7 @@ object Dimens {
 
     /** Minimum gap between a row's label and its value before the value wraps. */
     val LabelValueGap = 12.dp
+
+    /** Between a step's title and the line under it, which is tighter than the gap around them. */
+    val StepTitleGap = 2.dp
 }

@@ -9,9 +9,13 @@ import androidx.compose.material.icons.filled.Contactless
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.GppGood
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Paid
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TapAndPlay
 import androidx.compose.material.icons.filled.VerticalAlignBottom
@@ -43,6 +47,13 @@ object DemoIcons {
     val Reinitialize: ImageVector get() = Icons.Filled.Refresh
 
     // Status.
+    // Steps. A sequence needs one mark per status, and reusing Pass and Fail at either end keeps
+    // the vocabulary the readiness card already established.
+    val Current: ImageVector get() = Icons.Filled.PlayCircle
+    val Working: ImageVector get() = Icons.Filled.HourglassTop
+    val Waiting: ImageVector get() = Icons.Filled.RadioButtonUnchecked
+    val NotNeeded: ImageVector get() = Icons.Filled.RemoveCircleOutline
+
     val Pass: ImageVector get() = Icons.Filled.CheckCircle
     val Warn: ImageVector get() = Icons.Filled.Warning
     val Fail: ImageVector get() = Icons.Filled.Cancel
