@@ -7,9 +7,8 @@ import org.junit.Test
 /**
  * The rules a sequence follows, over every combination of state that can reach it.
  *
- * These are the reason the derivation is a pure function rather than a handful of conditions inside
- * a composable: a sequence that offers two next things, or hides the reason a step failed, is wrong
- * in a way no rendering test would call out.
+ * A sequence that offers two next things, or hides the reason a step failed, is wrong in a way no
+ * rendering test would call out. Checking that here is why the derivation is a pure function.
  */
 class PaymentStepsTest {
     private val everyCombination: List<List<Boolean>> =
@@ -48,9 +47,7 @@ class PaymentStepsTest {
 
     @Test
     fun `every step a reader can act on shows its controls`() {
-        // The property the whole layout rests on. The converse does not hold: a step that is working
-        // keeps its controls on screen, disabled, so the payment form does not lose what was typed
-        // into it the moment a submission starts.
+        // One way only. A working step shows its controls too, and is not asking for anything.
         everyCombination.forEach { flags ->
             steps(flags).filter { it.status.isActionable }.forEach { step ->
                 assertTrue("${step.status} asks for something it does not show", step.status.showsContent)
@@ -119,8 +116,6 @@ class PaymentStepsTest {
 
     @Test
     fun `a check in flight is the app working, not the reader`() {
-        // Without this the step kept saying "do this next" and kept its button while the request it
-        // started was still running.
         val sequence = steps(listOf(false, false, false, false, false, true))
         assertEquals(StepStatus.InProgress, sequence[0].status)
         assertTrue("a running check asked for something", !sequence[0].status.isActionable)

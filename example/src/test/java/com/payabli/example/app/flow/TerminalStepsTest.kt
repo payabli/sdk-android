@@ -9,8 +9,7 @@ import org.junit.Test
 /**
  * The same rules as the card-not-present sequence, over every state the session can be in.
  *
- * This screen has the most states and the only one with a step that can be skipped, so it is where a
- * sequence would first offer two next things or hide a failure.
+ * This screen has the most states, and the only step that can be skipped.
  */
 class TerminalStepsTest {
     /** Readiness, session, activation refused, charge failed, an action in flight. */
@@ -135,7 +134,7 @@ class TerminalStepsTest {
     @Test
     fun `an action in flight is the app working, not the reader`() {
         // The session reports Ready throughout a charge and PendingActivation throughout an
-        // activation, so neither step could say on its own that it was running.
+        // activation, so neither step can tell from it that it is running.
         val charging = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, true)
         assertEquals(StepStatus.InProgress, charging[3].status)
         assertTrue("a running charge asked for something", !charging[3].status.isActionable)
@@ -154,8 +153,7 @@ class TerminalStepsTest {
 
     @Test
     fun `a step that is working keeps what its controls are holding`() {
-        // Hiding them would take them out of the composition, and the amount typed in goes with
-        // them: a failed charge would come back to an empty field.
+        // Hiding them disposes the composition, and the amount typed in goes with it.
         val charging = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false, false, true)
         assertTrue("the amount went off screen mid-charge", charging[3].status.showsContent)
     }
