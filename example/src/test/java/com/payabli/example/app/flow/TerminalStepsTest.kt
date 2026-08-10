@@ -126,6 +126,21 @@ class TerminalStepsTest {
     }
 
     @Test
+    fun `an activation that succeeded reads as done, not as one that never applied`() {
+        // Both let step 4 run, and they say different things happened. The session reports Ready for
+        // either, so only the caller can tell them apart.
+        val activated =
+            TerminalSteps.forCharging(
+                Readiness.Ready,
+                TerminalSessionState.Ready,
+                activationFailed = false,
+                activated = true,
+            )
+        assertEquals(StepStatus.Done, activated[2].status)
+        assertEquals(StepStatus.Current, activated[3].status)
+    }
+
+    @Test
     fun `a terminal that never needed activation says so rather than pretending it is done`() {
         val sequence = TerminalSteps.forCharging(Readiness.Ready, TerminalSessionState.Ready, false)
         assertEquals(StepStatus.NotNeeded, sequence[2].status)

@@ -47,6 +47,8 @@ data class TapToPayUiState(
     val activationFailure: String? = null,
     /** Why the last charge failed. The session reports Ready either way. */
     val chargeFailure: String? = null,
+    /** An activation succeeded. [session] reads Ready whether one was needed or not. */
+    val activated: Boolean = false,
     val isActivationOpen: Boolean = false,
     /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
     val isProbingToken: Boolean = false,
@@ -194,6 +196,8 @@ class TapToPayViewModel(
                     // elsewhere does not leave the activation step reporting one of its own.
                     activationFailure =
                         if (action == TerminalAction.Activate) reason else it.activationFailure,
+                    activated =
+                        it.activated || (action == TerminalAction.Activate && result.isSuccess),
                     chargeFailure =
                         if (action == TerminalAction.Charge) reason else it.chargeFailure,
                 )

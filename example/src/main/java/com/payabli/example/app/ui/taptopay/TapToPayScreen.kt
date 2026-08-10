@@ -68,6 +68,7 @@ fun TapToPayScreen(
             activationFailed = state.activationFailure != null,
             chargeFailed = state.chargeFailure != null,
             working = state.workingAction,
+            activated = state.activated,
         )
 
     DemoScreen(

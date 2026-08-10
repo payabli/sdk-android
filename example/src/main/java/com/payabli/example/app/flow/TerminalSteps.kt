@@ -14,6 +14,9 @@ object TerminalSteps {
      * @param readiness what the device checks concluded.
      * @param session where the terminal session has got to.
      * @param activationFailed the last activation attempt was refused.
+     * @param activated an activation succeeded. The session cannot say so: it reports
+     *   [TerminalSessionState.Ready] both for a device that was activated and for one that never
+     *   had to be, and those are a finished step and a skipped one.
      * @param chargeFailed the last charge attempt failed.
      * @param working which action is in flight, or null. The session reports
      *   [TerminalSessionState.Ready] throughout a charge and [TerminalSessionState.PendingActivation]
@@ -28,6 +31,7 @@ object TerminalSteps {
         activationFailed: Boolean,
         chargeFailed: Boolean = false,
         working: TerminalAction? = null,
+        activated: Boolean = false,
     ): List<FlowStep> {
         val device =
             when (readiness) {
@@ -61,8 +65,9 @@ object TerminalSteps {
                 // stays suspended after it, so reading the session first finished this step and
                 // handed on the one after it while the activation was still running.
                 working == TerminalAction.Activate -> StepStatus.InProgress
-                // A terminal that reached Ready was activated already or never had to be, whatever
-                // an earlier attempt did.
+                // Done and NotNeeded both let the next step run. They say different things to a
+                // reader, and only the caller knows which happened.
+                activated -> StepStatus.Done
                 session == TerminalSessionState.Ready -> StepStatus.NotNeeded
                 // The session cannot tell a refused activation from one that was never needed, so
                 // the outcome is recorded and read here.
