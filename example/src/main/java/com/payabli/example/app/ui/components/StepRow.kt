@@ -138,7 +138,7 @@ private fun StepRowPreview() {
                 step =
                     FlowStep(
                         title = "Reach the token backend",
-                        detail = "The SDK asks your backend for a short-lived token.",
+                        detail = "This app asks your backend for a short-lived token, then hands it to the SDK.",
                         status = status,
                     ),
             ) {

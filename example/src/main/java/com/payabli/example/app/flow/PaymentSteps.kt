@@ -74,7 +74,7 @@ object PaymentSteps {
         return listOf(
             FlowStep(
                 title = "Reach the token backend",
-                detail = "The SDK asks your backend for a short-lived token before it submits anything.",
+                detail = "This app asks your backend for a short-lived token, then hands it to the SDK.",
                 status = backend,
             ),
             FlowStep(
