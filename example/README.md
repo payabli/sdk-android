@@ -173,8 +173,9 @@ API levels that ran.
 **Readiness follows NFC.** Open Tap to pay with NFC on, and step 1 lists no NFC problem. Switch NFC
 off in Settings, return, and the step reports `NFC switched off` and the verdict drops off ready.
 Switch it back on, return, and both clear. No control is pressed in either direction: the checks are
-read again when the screen resumes, which is the only notification available. There is no broadcast
-for this. `ACTION_ADAPTER_STATE_CHANGED` was registered with `android.permission.NFC` held and the
+read again whenever the window takes focus, which is the only notification available. Focus rather
+than resume, because the quick settings shade takes focus without pausing the activity. There is no
+broadcast for this. `ACTION_ADAPTER_STATE_CHANGED` was registered with `android.permission.NFC` held and the
 receiver confirmed in `dumpsys activity broadcasts`, and it was delivered on none of a Pixel 7a, a
 Galaxy S22 Ultra or a Galaxy A13, spanning API 33 and 36.
 
