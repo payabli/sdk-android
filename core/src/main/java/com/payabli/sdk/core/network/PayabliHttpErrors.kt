@@ -17,6 +17,10 @@ import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonTransformingSerializer
+import kotlinx.serialization.json.buildJsonObject
 import java.net.HttpURLConnection.HTTP_BAD_REQUEST
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import java.net.HttpURLConnection.HTTP_GONE
@@ -50,6 +54,18 @@ private val HTTP_DATE_FORMATS =
         "EEEE, dd-MMM-yy HH:mm:ss zzz",
         "EEE MMM d HH:mm:ss yyyy",
     )
+
+/**
+ * One field's failures, read through [PayabliHttpErrors.FieldError] so that either wire shape decodes.
+ *
+ * An alias because the serializer goes on the element type, which ktlint spreads over eight lines when
+ * it is written inline in [PayabliHttpErrors.ErrorsMap].
+ */
+private typealias FieldFailures =
+    List<
+        @Serializable(with = PayabliHttpErrors.FieldError::class)
+        PayabliFieldError,
+    >
 
 /**
  * Maps an HTTP status to a typed [PayabliException].
@@ -159,8 +175,31 @@ public object PayabliHttpErrors {
     /** The `errors` map alone, so an unexpected shape there costs only the field list. */
     @Serializable
     internal class ErrorsMap(
-        val errors: Map<String, List<PayabliFieldError>>? = null,
+        val errors: Map<String, FieldFailures>? = null,
     )
+
+    /**
+     * Reads one field error from either shape the platform uses: a bare JSON string, which becomes
+     * [PayabliFieldError.message] with no suggestion, or the `{message, suggestion}` object that
+     * [PayabliFieldError] declares.
+     *
+     * The string form is what ASP.NET model validation sends, and it is the only form observed from the
+     * platform so far: `{"errors":{"Entry":["The Entry field is required."]}}`. Reading only that one
+     * would lose the object form the public type documents, so both decode.
+     *
+     * Anything else in the array — a number, a null, a nested array — fails the [ErrorsMap] decode, so
+     * [PayabliValidationException.fieldErrors] is empty and the classification is untouched. Only a JSON
+     * string is taken as a message, so that outcome holds even under a lenient [PayabliJson].
+     */
+    internal object FieldError :
+        JsonTransformingSerializer<PayabliFieldError>(PayabliFieldError.serializer()) {
+        override fun transformDeserialize(element: JsonElement): JsonElement =
+            if (element is JsonPrimitive && element.isString) {
+                buildJsonObject { put("message", element) }
+            } else {
+                element
+            }
+    }
 
     /**
      * The 402 body. A dedicated shape rather than reusing [PayabliV2Envelope], so a decline can never

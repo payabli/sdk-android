@@ -6,6 +6,7 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.core.model.PayabliValidationException
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -125,12 +126,122 @@ class PayabliHttpErrorsTest {
     }
 
     @Test
-    fun `an unexpected errors shape costs only the field list`() {
-        // A stock ASP.NET validation filter emits Map<String, List<String>>, not objects.
-        val body = """{"title":"Invalid","errors":{"amount":["must be positive"]}}"""
+    fun `the string form the platform sends keeps the field name and the message`() {
+        // Captured verbatim from api-qa: POST /api/v2/device/taptopay/challenge with a blank `entry`. ASP.NET
+        // model validation emits Map<String, List<String>>, which is the shape of every 400 the platform
+        // returns, and the map key is the one thing a form needs to mark the offending field.
+        val body =
+            """
+            {"errors":{"Entry":["The Entry field is required."]},"status":400,
+             "title":"One or more validation errors occurred.",
+             "traceId":"00-0866011d65bd828be7d3f8f78e4adb09-c49ae1fadac8da6e-01",
+             "type":"https://tools.ietf.org/html/rfc9110#section-15.5.1"}
+            """.trimIndent()
+
         val mapped = map(400, body) as PayabliValidationException
-        assertEquals("Invalid", mapped.reason)
-        assertTrue(mapped.fieldErrors.isEmpty())
+
+        assertEquals("One or more validation errors occurred.", mapped.reason)
+        assertEquals(setOf("Entry"), mapped.fieldErrors.keys)
+        val entry = mapped.fieldErrors.getValue("Entry").single()
+        assertEquals("The Entry field is required.", entry.message)
+        assertNull(entry.suggestion)
+    }
+
+    @Test
+    fun `a missing required property reaches the caller naming itself`() {
+        // Also captured verbatim: POST /attest with the `platform` key absent. `$` is the body as a whole
+        // rather than a field in it, and the string under it is the most useful diagnostic in the family.
+        val body =
+            """
+            {"errors":{
+               "$":["JSON deserialization for type 'AttestRequest' was missing required properties including: 'platform'."],
+               "request":["The request field is required."]},
+             "status":400,"title":"One or more validation errors occurred.",
+             "type":"https://tools.ietf.org/html/rfc9110#section-15.5.1"}
+            """.trimIndent()
+
+        val mapped = map(400, body) as PayabliValidationException
+
+        assertEquals(setOf("$", "request"), mapped.fieldErrors.keys)
+        assertTrue(
+            mapped.fieldErrors
+                .getValue("$")
+                .single()
+                .message
+                .contains("'platform'"),
+        )
+        assertEquals(
+            "The request field is required.",
+            mapped.fieldErrors
+                .getValue("request")
+                .single()
+                .message,
+        )
+    }
+
+    @Test
+    fun `the two forms mix, within one body and within one field`() {
+        val body =
+            """
+            {"title":"Invalid","errors":{
+               "amount":["must be positive"],
+               "paymentMethod.cardExp":[{"message":"Expired","suggestion":"Use a future date"},"check the year"]}}
+            """.trimIndent()
+
+        val mapped = map(400, body) as PayabliValidationException
+
+        assertEquals(
+            "must be positive",
+            mapped.fieldErrors
+                .getValue("amount")
+                .single()
+                .message,
+        )
+        val expiry = mapped.fieldErrors.getValue("paymentMethod.cardExp")
+        assertEquals(listOf("Expired", "check the year"), expiry.map { it.message })
+        assertEquals(listOf("Use a future date", null), expiry.map { it.suggestion })
+    }
+
+    @Test
+    fun `an errors shape that is neither costs only the field list`() {
+        // A number, a null, a nested array, a bare value where an array belongs, and an `errors` that is an
+        // array. Each fails the map decode, and the fields that come from the problem-details decode survive
+        // it.
+        listOf(
+            """{"title":"Invalid","errors":{"amount":[42]}}""",
+            """{"title":"Invalid","errors":{"amount":[null]}}""",
+            """{"title":"Invalid","errors":{"amount":[["must be positive"]]}}""",
+            """{"title":"Invalid","errors":{"amount":"must be positive"}}""",
+            """{"title":"Invalid","errors":["must be positive"]}""",
+        ).forEach { body ->
+            val mapped = map(400, body) as PayabliValidationException
+            assertEquals(body, PayabliErrorCode.VALIDATION_ERROR, mapped.code)
+            assertEquals(body, "Invalid", mapped.reason)
+            assertTrue(body, mapped.fieldErrors.isEmpty())
+        }
+    }
+
+    @Test
+    fun `a number is not a message, whatever the codec's strictness`() {
+        // A lenient codec, because `PayabliJson` is strict and its strictness alone would keep 42 out. The
+        // string check in `FieldError` is what makes the outcome independent of that setting: without it, a
+        // lenient codec reads 42 as the message text.
+        val lenient =
+            Json {
+                isLenient = true
+                ignoreUnknownKeys = true
+                explicitNulls = false
+            }
+
+        val decoded =
+            runCatching {
+                lenient.decodeFromString(
+                    PayabliHttpErrors.ErrorsMap.serializer(),
+                    """{"errors":{"amount":[42]}}""",
+                )
+            }
+
+        assertTrue(decoded.isFailure)
     }
 
     @Test

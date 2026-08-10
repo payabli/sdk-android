@@ -249,12 +249,18 @@ class DeviceFailureMappingTest {
             assertFalse(failure is DeviceServiceException)
             assertEquals(PayabliErrorCode.VALIDATION_ERROR, (failure as PayabliException).code)
             assertEquals("One or more validation errors occurred.", failure.reason)
-            // Empty, and it should not be: `errors` names the refused field, and the string above says which
-            // property was missing. `:core` decodes that map as `{message, suggestion}` objects while the
-            // service sends strings, so the decode fails and the map degrades to empty. Asserted as it stands
-            // rather than as it ought to be, so this test says what the SDK does today. Fixing the decode in
-            // `:core` flips this line to the assertion it wants to be.
-            assertTrue((failure as PayabliValidationException).fieldErrors.isEmpty())
+            // `errors` names what was refused, and the string under `$` says which property was missing, so a
+            // caller can report it. `:core` reads the service's string arrays as well as the objects
+            // `PayabliFieldError` declares.
+            val fieldErrors = (failure as PayabliValidationException).fieldErrors
+            assertEquals(setOf("$", "request"), fieldErrors.keys)
+            assertTrue(
+                fieldErrors
+                    .getValue("$")
+                    .single()
+                    .message
+                    .contains("'platform'"),
+            )
         }
 
     @Test
