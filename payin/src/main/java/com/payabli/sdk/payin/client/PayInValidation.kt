@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.client
 
+import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFieldRules
@@ -65,11 +66,18 @@ internal object PayInValidation {
         }
     }
 
+    /**
+     * The amounts, checked at the scale they will be sent at.
+     *
+     * `0.001` is more than zero and reaches the wire as `0.00`, so checking the value as supplied would pass a
+     * total the service is asked to take as nothing. Both are rounded here exactly as [PayInAmountSerializer]
+     * rounds them.
+     */
     fun paymentDetails(details: PayInPaymentDetails) {
-        if (details.totalAmount <= BigDecimal.ZERO) {
+        if (details.totalAmount.atWireScale() <= BigDecimal.ZERO) {
             throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount must be more than zero")
         }
-        if (details.serviceFee != null && details.serviceFee < BigDecimal.ZERO) {
+        if (details.serviceFee != null && details.serviceFee.atWireScale() < BigDecimal.ZERO) {
             throw PayInException.InvalidInput("paymentDetails.serviceFee", "A service fee cannot be negative")
         }
     }
@@ -79,33 +87,42 @@ internal object PayInValidation {
     }
 
     /**
-     * The card, read out of its buffers.
+     * The card, read through [SensitiveDigits.useDigits] so each copy is overwritten before this returns.
      *
-     * The digits are copied out, checked, and dropped. Nothing here builds a `String` from them: the rules
-     * take a [CharArray] for that reason.
+     * Every check below can throw, which is why the scoped read is the one used here: a copy handed out by
+     * `read` and abandoned mid-validation is a card number left in a buffer nothing can reach.
      */
     private fun card(
         data: PayInCardData,
         options: PayInValidationOptions,
     ) {
-        val number = data.cardNumber.read()
-        if (number.isEmpty()) {
-            throw PayInException.InvalidInput(FIELD_CARD_NUMBER, "A card number is required")
-        }
-        // The switch is applied to the answer rather than passed into the rules: a caller turning the check
-        // off is saying it has its own opinion of the check digit, not that the length no longer matters.
-        val numberError = PayInFieldRules.error(PayInField.CardNumber, number)
-        if (numberError != null && !(numberError == PayInFieldError.CardNumberNotValid && !options.checksCardNumber)) {
-            throw PayInException.InvalidInput(FIELD_CARD_NUMBER, "The card number is not valid")
+        data.cardNumber.useDigits { number ->
+            if (number.isEmpty()) {
+                throw PayInException.InvalidInput(FIELD_CARD_NUMBER, "A card number is required")
+            }
+            // The switch is applied to the answer rather than passed into the rules: a caller turning the check
+            // off is saying it has its own opinion of the check digit, not that the length no longer matters.
+            val error = PayInFieldRules.error(PayInField.CardNumber, number)
+            val checkDigitWaived = error == PayInFieldError.CardNumberNotValid && !options.checksCardNumber
+            if (error != null && !checkDigitWaived) {
+                throw PayInException.InvalidInput(FIELD_CARD_NUMBER, "The card number is not valid")
+            }
         }
 
-        val securityCode = data.securityCode.read()
-        if (securityCode.isEmpty()) {
-            throw PayInException.InvalidInput(FIELD_CARD_CVV, "A security code is required")
+        data.securityCode.useDigits { securityCode ->
+            if (securityCode.isEmpty()) {
+                throw PayInException.InvalidInput(FIELD_CARD_CVV, "A security code is required")
+            }
+            PayInFieldRules
+                .error(PayInField.CardSecurityCode, securityCode)
+                ?.let { throw PayInException.InvalidInput(FIELD_CARD_CVV, "The security code is not valid") }
         }
-        PayInFieldRules
-            .error(PayInField.CardSecurityCode, securityCode)
-            ?.let { throw PayInException.InvalidInput(FIELD_CARD_CVV, "The security code is not valid") }
+
+        // The form refuses a past expiry and the service would too, one round trip later.
+        val today = ExpiryValue.today()
+        if (data.expiry.isExpired(today.year, today.month)) {
+            throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The card has expired")
+        }
 
         name(data.holderName, FIELD_CARD_HOLDER, "A cardholder name is required")
         required(data.postalCode, FIELD_CARD_ZIP, "A postal code is required")
@@ -118,13 +135,14 @@ internal object PayInValidation {
         data: PayInAchData,
         options: PayInValidationOptions,
     ) {
-        val account = data.accountNumber.read()
-        if (account.isEmpty()) {
-            throw PayInException.InvalidInput(FIELD_ACH_ACCOUNT, "An account number is required")
+        data.accountNumber.useDigits { account ->
+            if (account.isEmpty()) {
+                throw PayInException.InvalidInput(FIELD_ACH_ACCOUNT, "An account number is required")
+            }
+            PayInFieldRules
+                .error(PayInField.AccountNumber, account)
+                ?.let { throw PayInException.InvalidInput(FIELD_ACH_ACCOUNT, "The account number is not valid") }
         }
-        PayInFieldRules
-            .error(PayInField.AccountNumber, account)
-            ?.let { throw PayInException.InvalidInput(FIELD_ACH_ACCOUNT, "The account number is not valid") }
 
         val routingError = PayInFieldRules.error(PayInField.RoutingNumber, data.routingNumber.toCharArray())
         val checksumWaived = routingError == PayInFieldError.RoutingNumberNotValid && !options.checksRoutingNumber
@@ -171,6 +189,7 @@ internal object PayInValidation {
 
     internal val FIELD_CARD_NUMBER: String = inPaymentMethod(PayInRoutes.FIELD_CARD_NUMBER)
     internal val FIELD_CARD_CVV: String = inPaymentMethod(PayInRoutes.FIELD_CARD_SECURITY_CODE)
+    internal val FIELD_CARD_EXPIRY: String = inPaymentMethod(PayInRoutes.FIELD_CARD_EXPIRY)
     internal val FIELD_CARD_HOLDER: String = inPaymentMethod(PayInRoutes.FIELD_CARD_HOLDER)
     internal val FIELD_CARD_ZIP: String = inPaymentMethod(PayInRoutes.FIELD_CARD_POSTAL_CODE)
     internal val FIELD_ACH_ACCOUNT: String = inPaymentMethod(PayInRoutes.FIELD_ACH_ACCOUNT)

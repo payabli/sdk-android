@@ -21,6 +21,13 @@ import java.math.RoundingMode
 private const val AMOUNT_SCALE = 2
 
 /**
+ * The value as it will be written, so a check and the wire agree on what the amount is.
+ *
+ * Validation reads this rather than the value as supplied: `0.001` is more than zero and is sent as `0.00`.
+ */
+internal fun BigDecimal.atWireScale(): BigDecimal = setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
+
+/**
  * Money on the wire: an unquoted JSON number with exactly two decimal places.
  *
  * `10` is sent as `10.00` and `10.005` as `10.01`. The service's own request payloads write these fields as a
@@ -51,7 +58,7 @@ internal object PayInAmountSerializer : KSerializer<BigDecimal> {
         val json =
             encoder as? JsonEncoder
                 ?: throw SerializationException("Amounts are only encodable to JSON")
-        json.encodeJsonElement(JsonUnquotedLiteral(value.setScale(AMOUNT_SCALE, RoundingMode.HALF_UP).toPlainString()))
+        json.encodeJsonElement(JsonUnquotedLiteral(value.atWireScale().toPlainString()))
     }
 
     override fun deserialize(decoder: Decoder): BigDecimal {

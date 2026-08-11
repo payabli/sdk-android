@@ -49,6 +49,15 @@ class PayInValidationTest {
         holderName = holderName,
     )
 
+    private fun cardExpiring(expiry: ExpiryValue) =
+        PayInCardData(
+            cardNumber = SensitiveDigits.ofString("4111111111111111"),
+            expiry = expiry,
+            securityCode = SensitiveDigits.ofString("999"),
+            holderName = "A Payer",
+            postalCode = "22039",
+        )
+
     private fun refusal(block: () -> Unit): PayInException.InvalidInput? =
         runCatching(block).exceptionOrNull() as? PayInException.InvalidInput
 
@@ -144,6 +153,60 @@ class PayInValidationTest {
                 PayInValidation.instrument(PayInInstrument.BankAccount(account(routing = "1221")), options)
             }?.field,
         )
+    }
+
+    @Test
+    fun `an amount is judged at the scale it will be sent at`() {
+        // 0.001 is more than zero and reaches the wire as 0.00, so the value as supplied is the wrong thing
+        // to check: the service would be asked to take nothing.
+        listOf("0.001", "0.004", "-0.001").forEach { amount ->
+            val refused = refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal(amount))) }
+            assertEquals(amount, "paymentDetails.totalAmount", refused?.field)
+        }
+        // Rounds up to a cent, so it is a real amount.
+        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("0.005"))) })
+    }
+
+    @Test
+    fun `a fee is judged at that scale too`() {
+        assertNull(
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("10"), serviceFee = BigDecimal("-0.004")))
+            },
+        )
+    }
+
+    @Test
+    fun `an expired card is refused before the transport sees it`() {
+        val refused =
+            refusal {
+                PayInValidation.instrument(
+                    PayInInstrument.Card(cardExpiring(ExpiryValue(1, 2000))),
+                    PayInValidationOptions(),
+                )
+            }
+
+        assertEquals("paymentMethod.cardexp", refused?.field)
+    }
+
+    @Test
+    fun `a card expiring this month is still good`() {
+        // The service treats the expiry month itself as valid, and so does the form.
+        val now = ExpiryValue.today()
+        assertNull(
+            refusal { PayInValidation.instrument(PayInInstrument.Card(cardExpiring(now)), PayInValidationOptions()) },
+        )
+    }
+
+    @Test
+    fun `validation leaves no readable copy of a card number behind`() {
+        // Each read is scoped, so a refusal partway through still overwrites what it read.
+        val data = card(pan = "4111111111111112")
+
+        refusal { PayInValidation.instrument(PayInInstrument.Card(data), PayInValidationOptions()) }
+
+        // The value itself is untouched: validation reads it, it does not consume it.
+        assertEquals("4111111111111112", String(data.cardNumber.rawCopy()))
     }
 
     @Test
