@@ -29,6 +29,11 @@ internal object PayInValidation {
     /** The service's own limit, and the one bound not expressible as a field rule. */
     private const val NAME_MAX = 60
 
+    /** The service reads an amount as a `decimal`: at most 29 significant digits, at most 28 of them after
+     * the point. */
+    private const val MAX_SIGNIFICANT_DIGITS = 29L
+    private const val MAX_SCALE = 28L
+
     /** Letters, digits, spaces and the three punctuation marks a bank will accept in a name. */
     private val HOLDER_NAME = Regex("^[A-Za-z0-9 .'-]+$")
 
@@ -74,6 +79,16 @@ internal object PayInValidation {
      * rounds them.
      */
     fun paymentDetails(details: PayInPaymentDetails) {
+        // Range before rounding. `BigDecimal` is unbounded and `setScale` throws on a value whose scale
+        // cannot be shifted, measured at both extremes: 1E+2147483647 and 1E-2147483647 each raise
+        // ArithmeticException. Rounding first would hand a caller that instead of a refusal, and a merely
+        // large exponent would expand into a request body megabytes long.
+        if (!details.totalAmount.isSendable()) {
+            throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount is out of range")
+        }
+        if (details.serviceFee?.isSendable() == false) {
+            throw PayInException.InvalidInput("paymentDetails.serviceFee", "The service fee is out of range")
+        }
         if (details.totalAmount.atWireScale() <= BigDecimal.ZERO) {
             throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount must be more than zero")
         }
@@ -166,6 +181,19 @@ internal object PayInValidation {
                 "An account holder name takes letters, digits, spaces, and the characters . ' -",
             )
         }
+    }
+
+    /**
+     * Whether the service's own numeric type could hold this at all.
+     *
+     * It reads these fields as a `decimal`, which carries at most 29 significant digits and a scale of at
+     * most 28. A value outside that is not an amount the service can be asked for, whatever this SDK does
+     * with it, and both bounds are read from the exponent rather than from the expanded value so an absurd
+     * one costs nothing to refuse.
+     */
+    private fun BigDecimal.isSendable(): Boolean {
+        if (scale().toLong() > MAX_SCALE) return false
+        return precision().toLong() - scale().toLong() <= MAX_SIGNIFICANT_DIGITS
     }
 
     /**

@@ -194,6 +194,23 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `an amount the service could not hold is refused rather than thrown`() {
+        // BigDecimal is unbounded and setScale throws on a value whose scale cannot be shifted, at both
+        // extremes. Rounding before checking handed a caller an ArithmeticException instead of a refusal.
+        listOf("1E+2147483647", "1E-2147483647", "1E+100000").forEach { amount ->
+            val refused = refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal(amount))) }
+            assertEquals(amount, "paymentDetails.totalAmount", refused?.field)
+        }
+        val fee =
+            refusal {
+                PayInValidation.paymentDetails(
+                    PayInPaymentDetails(BigDecimal("10"), serviceFee = BigDecimal("1E+2147483647")),
+                )
+            }
+        assertEquals("paymentDetails.serviceFee", fee?.field)
+    }
+
+    @Test
     fun `an amount larger than a Double holds exactly is accepted`() {
         assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("12345678901234.56"))) })
     }
