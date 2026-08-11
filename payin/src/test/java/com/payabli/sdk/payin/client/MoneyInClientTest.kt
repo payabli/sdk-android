@@ -160,6 +160,33 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a blank idempotency key is refused rather than quietly dropped`() =
+        runTest(timeout = timeout) {
+            // Setting a key is what makes a caller's retry safe, so dropping " " would send an unprotected
+            // capture to a caller who believes it is protected and can be charged twice after a lost response.
+            val transport = FakePayInTransport.answering(approved)
+
+            val failure =
+                refusal {
+                    MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest(idempotencyKey = " "))
+                }
+
+            assertEquals("idempotencyKey", failure?.field)
+            assertNull(transport.request)
+        }
+
+    @Test
+    fun `no idempotency key at all is still allowed`() =
+        runTest(timeout = timeout) {
+            // null is how a caller says it did not set one, and stays the only way to say it.
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest(idempotencyKey = null))
+
+            assertNull(transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    @Test
     fun `an authorisation carries the key too`() =
         runTest(timeout = timeout) {
             // The same request type serves both calls, and an authorisation repeated without a key places a

@@ -69,8 +69,9 @@ internal fun String.trimOrNull(): String? = trim().takeIf { it.isNotEmpty() }
  * `Authorization` and the JSON content type are chain steps in `:core`, applied to every request, so a
  * client that added either would be duplicating a decision made once for the whole SDK.
  *
- * A blank value is left out rather than sent empty: an empty idempotency key would key the service's
- * middleware on nothing.
+ * `null` means the caller did not set one, and is the only way to say that. A value that is blank once trimmed
+ * is refused rather than dropped: setting an idempotency key is what makes a caller's retry safe, so silently
+ * omitting `" "` would send an unprotected money-moving request to a caller who believes it is protected.
  */
 internal fun payInHeaders(build: PayInHeaders.() -> Unit): Map<String, String> = PayInHeaders().apply(build).headers
 
@@ -98,7 +99,10 @@ internal class PayInHeaders {
         name: String,
         value: String?,
     ) {
-        val trimmed = value?.trimOrNull() ?: return
+        if (value == null) return
+        val trimmed =
+            value.trimOrNull()
+                ?: throw PayInException.InvalidInput(name, "The $name cannot be blank")
         if (trimmed.any { it != '\t' && (it < ' ' || it > '~') }) {
             throw PayInException.InvalidInput(name, "The $name may contain printable ASCII only")
         }
