@@ -85,6 +85,20 @@ class SensitiveDigitsTest {
     }
 
     @Test
+    fun `no member that reaches the digits is callable from Java`() {
+        // internal is a Kotlin rule only: these are emitted as public final read$payin() and friends, so
+        // without @JvmSynthetic a Java caller in another module takes a copy of a card number. javac refuses
+        // to resolve a synthetic method, which is what makes the annotation the enforcement.
+        val reaching =
+            SensitiveDigits::class.java.declaredMethods.filter {
+                it.name.substringBefore('$') in setOf("read", "useDigits", "rawCopy", "isWiped")
+            }
+
+        assertEquals(4, reaching.size)
+        reaching.forEach { assertTrue("${it.name} is reachable from Java", it.isSynthetic) }
+    }
+
+    @Test
     fun `an empty value is allowed here and refused by validation`() {
         // Constructing one is not the place to reject it: a caller passing a blank field deserves a typed
         // validation failure naming the field, not an exception from a constructor.

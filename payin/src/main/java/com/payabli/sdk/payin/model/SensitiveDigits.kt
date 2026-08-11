@@ -18,6 +18,12 @@ package com.payabli.sdk.payin.model
  * buffers it owns overwritten once the request has been written. Encrypting at the field is what closes the
  * rest, and that is not this type's job.
  *
+ * Every member that can reach the digits is `internal` **and** `@JvmSynthetic`. `internal` alone is a Kotlin
+ * rule: the compiler emits `read$payin()` and the rest as public final methods, so Java in another module can
+ * call them by their mangled names and take a copy of a card number. Measured with `javap` on the compiled
+ * class. `@JvmSynthetic` marks them synthetic, which javac refuses to resolve, and costs Kotlin callers
+ * inside this module nothing.
+ *
  * Not thread-safe. One value belongs to one call.
  */
 public class SensitiveDigits private constructor(
@@ -48,6 +54,7 @@ public class SensitiveDigits private constructor(
      * Returns a copy, which the reader is responsible for. Every use inside this module is a validator that
      * reads the copy and drops it, and validators are pure functions over characters.
      */
+    @JvmSynthetic
     internal fun read(): CharArray = if (wiped) CharArray(0) else digits.copyOf()
 
     /**
@@ -56,6 +63,7 @@ public class SensitiveDigits private constructor(
      * The only way to read these that leaves nothing behind. [read] hands out a copy the caller then owns, and
      * a caller that throws mid-validation never gets to wipe it.
      */
+    @JvmSynthetic
     internal fun <T> useDigits(block: (CharArray) -> T): T {
         val copy = read()
         try {
@@ -66,6 +74,7 @@ public class SensitiveDigits private constructor(
     }
 
     /** True once [close] has run. */
+    @get:JvmSynthetic
     internal val isWiped: Boolean get() = wiped
 
     /**
@@ -74,6 +83,7 @@ public class SensitiveDigits private constructor(
      * [read] answers empty once wiped, which is right for a reader and useless for proving the digits are
      * gone.
      */
+    @JvmSynthetic
     internal fun rawCopy(): CharArray = digits.copyOf()
 
     public companion object {
