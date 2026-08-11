@@ -5,6 +5,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Test
 import kotlin.time.Duration.Companion.seconds
 
@@ -34,6 +35,31 @@ class JsonBodyDecorationTest {
             val decorated = decoration.decorate(request())
 
             assertEquals("application/json", decorated.headers["Content-Type"])
+        }
+
+    @Test
+    fun `the body is carried through, not copied`() =
+        runTest(timeout = timeout) {
+            // A capability that assembles a body as bytes wipes that array once the call returns, which only
+            // clears what was sent if the chain hands the transport the same instance. A defensive copy here
+            // would leave the copy holding a card number, and no test in the capability could see it: its
+            // double is a bare transport with no chain in front of it.
+            val original = request()
+
+            val decorated = decoration.decorate(original)
+
+            assertSame(original.body, decorated.body)
+        }
+
+    @Test
+    fun `the chain carries the body through as well`() =
+        runTest(timeout = timeout) {
+            // Every step rebuilds the request, so the guarantee is the chain's rather than one decoration's.
+            val original = request()
+
+            val decorated = RequestDecorationFactory.chainFor(testAuth()).applyTo(original)
+
+            assertSame(original.body, decorated.body)
         }
 
     @Test
