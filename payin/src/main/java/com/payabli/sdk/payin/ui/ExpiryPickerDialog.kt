@@ -127,8 +127,8 @@ private fun <T> PickerColumn(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(style.spacing.label)) {
         Text(heading, style = style.label)
         LazyColumn(
-            // Bounded, so a dialog holding twenty-one years still fits. A maximum and not a fixed
-            // height, so a large font scale can still make each row taller.
+            // Bounded, so a dialog holding twenty-one years still fits and a large font scale can still
+            // make each row taller.
             modifier = Modifier.heightIn(max = PICKER_MAX_HEIGHT).selectableGroup(),
             state = listState,
         ) {

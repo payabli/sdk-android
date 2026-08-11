@@ -87,15 +87,35 @@ public object PayInFieldRules {
     ): PayInFieldError? {
         if (value.isBlank()) return null
         return when (field) {
+            PayInField.CardExpiration -> expiryError(value, today)
+            PayInField.BillingEmail -> emailError(value)
+            // One implementation for the counted-and-checksummed fields, reached from both overloads.
+            else -> error(field, value.toCharArray(), today)
+        }
+    }
+
+    /**
+     * The same answer for a value held in a buffer rather than a `String`.
+     *
+     * Here so a card number or an account number can be checked without being turned into a `String` that
+     * cannot afterwards be erased. The two fields this overload cannot answer without one — an expiry and an
+     * email address — build it, and neither is sensitive.
+     */
+    public fun error(
+        field: PayInField,
+        value: CharArray,
+        today: ExpiryValue? = null,
+    ): PayInFieldError? {
+        if (value.isEmpty() || value.all { it.isWhitespace() }) return null
+        return when (field) {
             PayInField.CardNumber -> cardNumberError(value)
             PayInField.CardPostalCode, PayInField.BillingPostalCode ->
-                if (value.length > POSTAL_CODE_MAX) PayInFieldError.TooManyCharacters(POSTAL_CODE_MAX) else null
+                if (value.size > POSTAL_CODE_MAX) PayInFieldError.TooManyCharacters(POSTAL_CODE_MAX) else null
 
-            PayInField.CardExpiration -> expiryError(value, today)
             PayInField.CardSecurityCode -> rangeError(value, SECURITY_CODE_RANGE)
             PayInField.RoutingNumber -> routingNumberError(value)
             PayInField.AccountNumber -> rangeError(value, ACCOUNT_NUMBER_RANGE)
-            PayInField.BillingEmail -> emailError(value)
+            PayInField.CardExpiration, PayInField.BillingEmail -> error(field, String(value), today)
             else -> null
         }
     }
@@ -111,8 +131,11 @@ public object PayInFieldRules {
      *
      * Says a number is well formed, never that an account exists.
      */
-    public fun passesLuhn(digits: String): Boolean {
-        if (digits.isEmpty() || !DIGITS.matches(digits)) return false
+    public fun passesLuhn(digits: String): Boolean = passesLuhn(digits.toCharArray())
+
+    /** As [passesLuhn], for a number held in a buffer rather than a `String`. */
+    public fun passesLuhn(digits: CharArray): Boolean {
+        if (digits.isEmpty() || !isAllDigits(digits)) return false
         var sum = 0
         var double = false
         for (index in digits.lastIndex downTo 0) {
@@ -128,44 +151,50 @@ public object PayInFieldRules {
     }
 
     /** The ABA routing checksum: weights 3, 7, 1 repeating, and the total is a multiple of ten. */
-    public fun passesAbaChecksum(digits: String): Boolean {
-        if (digits.length != ROUTING_NUMBER_LENGTH || !DIGITS.matches(digits)) return false
+    public fun passesAbaChecksum(digits: String): Boolean = passesAbaChecksum(digits.toCharArray())
+
+    /** As [passesAbaChecksum], for a number held in a buffer rather than a `String`. */
+    public fun passesAbaChecksum(digits: CharArray): Boolean {
+        if (digits.size != ROUTING_NUMBER_LENGTH || !isAllDigits(digits)) return false
         val weights = intArrayOf(3, 7, 1, 3, 7, 1, 3, 7, 1)
         val sum = digits.indices.sumOf { (digits[it] - '0') * weights[it] }
         return sum % 10 == 0
     }
 
-    private fun cardNumberError(value: String): PayInFieldError? {
-        if (!DIGITS.matches(value)) return PayInFieldError.DigitsOnly
+    /** ASCII digits, matching [DIGITS], which the `String` overloads used before the buffer ones existed. */
+    internal fun isAllDigits(value: CharArray): Boolean = value.all { it in '0'..'9' }
+
+    private fun cardNumberError(value: CharArray): PayInFieldError? {
+        if (!isAllDigits(value)) return PayInFieldError.DigitsOnly
         // Short while it is still being typed, so it keeps its own message. Long only ever arrives
         // through this function, since the field truncates at maxLength.
-        if (value.length < CARD_NUMBER_MIN) return PayInFieldError.ShorterThan(CARD_NUMBER_MIN)
-        if (value.length > CARD_NUMBER_MAX) return PayInFieldError.LongerThan(CARD_NUMBER_MAX)
+        if (value.size < CARD_NUMBER_MIN) return PayInFieldError.ShorterThan(CARD_NUMBER_MIN)
+        if (value.size > CARD_NUMBER_MAX) return PayInFieldError.LongerThan(CARD_NUMBER_MAX)
         if (!passesLuhn(value)) return PayInFieldError.CardNumberNotValid
         return null
     }
 
-    private fun routingNumberError(value: String): PayInFieldError? {
+    private fun routingNumberError(value: CharArray): PayInFieldError? {
         exactLengthError(value, ROUTING_NUMBER_LENGTH)?.let { return it }
         if (!passesAbaChecksum(value)) return PayInFieldError.RoutingNumberNotValid
         return null
     }
 
     private fun exactLengthError(
-        value: String,
+        value: CharArray,
         length: Int,
     ): PayInFieldError? {
-        if (!DIGITS.matches(value)) return PayInFieldError.DigitsOnly
-        if (value.length != length) return PayInFieldError.NotExactly(length)
+        if (!isAllDigits(value)) return PayInFieldError.DigitsOnly
+        if (value.size != length) return PayInFieldError.NotExactly(length)
         return null
     }
 
     private fun rangeError(
-        value: String,
+        value: CharArray,
         allowed: IntRange,
     ): PayInFieldError? {
-        if (!DIGITS.matches(value)) return PayInFieldError.DigitsOnly
-        if (value.length !in allowed) return PayInFieldError.OutsideRange(allowed.first, allowed.last)
+        if (!isAllDigits(value)) return PayInFieldError.DigitsOnly
+        if (value.size !in allowed) return PayInFieldError.OutsideRange(allowed.first, allowed.last)
         return null
     }
 

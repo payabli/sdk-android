@@ -82,9 +82,8 @@ public fun PayabliPayInForm(
 
     val sections = configuration.sectionsFor(method)
 
-    // Both read the state rather than closing over a list from the composition that built them. A
-    // click or an edit lands before the next composition, and `method` is state while a captured
-    // field list is not, so the two could describe different tabs.
+    // Both read the state. A click or an edit lands before the next composition, and `method` is state
+    // while a captured field list is not, so the two could describe different tabs.
     fun collect(chosen: PayInMethodType): PayInFormValues =
         PayInFormValues(chosen, configuration.inputFieldsFor(chosen).associateWith { typed[it].orEmpty() })
 
@@ -145,8 +144,8 @@ public fun PayabliPayInForm(
                 // composition, so a field cleared or a tab switched in the frame before this click
                 // would otherwise submit on a gate that no longer holds.
                 //
-                // The clock lands in state rather than a local, so a rollover that refuses this
-                // submission also disables the button and shows the expired field its error.
+                // The clock lands in state, so a rollover that refuses this submission also disables the
+                // button and shows the expired field its error.
                 today = ExpiryValue.today()
                 if (!justSubmitted && isComplete(method, today)) {
                     justSubmitted = true
