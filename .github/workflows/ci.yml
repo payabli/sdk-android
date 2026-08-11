@@ -51,11 +51,24 @@ jobs:
 
       # The aggregate module has no tests, so no coverage task.
       #
-      # --stacktrace because this step has failed three times with "Unable to generate Jacoco
-      # report" and nothing else: a different module each time, passing on a re-run of the same
-      # commit, and never reproducing locally. Gradle prints the cause only when asked. It is not
-      # in the class the GRADLE_OPTS note warns about, which is --info and --debug printing
-      # repository credentials.
+      # --stacktrace because this step has failed with "Unable to generate Jacoco report" and
+      # nothing else: a different module each time, passing on a re-run of the same commit, and
+      # never reproducing locally. Gradle prints the cause only when asked. It is not in the class
+      # the GRADLE_OPTS note warns about, which is --info and --debug printing repository
+      # credentials.
+      #
+      # The cause, captured on two runs since:
+      #
+      #   Caused by: java.lang.ExceptionInInitializerError
+      #   Caused by: java.lang.IllegalStateException: zip file closed
+      #       at com.android.Version.<clinit>(Version.java:38)
+      #       at java.util.zip.ZipFile.ensureOpen <- JarURLConnection.getInputStream
+      #
+      # A report worker initialises a class whose jar handle has already been closed. That accounts
+      # for every property above: which module fails is whichever worker draws the stale handle, a
+      # re-run gets fresh workers, and a warm local daemon holds its handles open. So it is a worker
+      # and classloader lifetime problem rather than anything about the coverage data, and the fix
+      # is this step's isolation rather than a module's tests.
       - name: Coverage
         run: ./gradlew --stacktrace :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
