@@ -73,7 +73,12 @@ jobs:
       # report tasks ran concurrently, each in a worker drawing from a shared classloader cache, and
       # serialising them removes the race the evidence describes. It is one flag rather than four
       # separate invocations because a second invocation would reuse the same daemon and could keep
-      # the same cache. Cost is a few seconds on four small reports.
+      # the same cache.
+      #
+      # Cost, measured on the four-module step with every task re-run and all 940 tests running: 9 and 11
+      # seconds unserialised against 16 and 17. Across a whole ci.yml run it does not separate from
+      # run-to-run noise, 491 to 558 seconds with the flag against 458 to 580 before it, because the step
+      # here builds one module and the sonar job's lint and format tasks stay parallel.
       #
       # **Every invocation that runs a coverage task carries this flag**, here, in the card-present
       # job, in both of the sonar job's report steps, and in nightly.yml. A mitigation on one of five
