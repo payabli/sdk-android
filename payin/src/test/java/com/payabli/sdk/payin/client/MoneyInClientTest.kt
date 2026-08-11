@@ -1,7 +1,6 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorCode
-import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
@@ -263,42 +262,11 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `an input problem the service reports as 401 keeps its field names`() =
+    fun `a 401 reaches the caller as an expired token, whatever the body says`() =
         runTest(timeout = timeout) {
-            // The service decides a v2 error's status from a lookup table rather than at the call site, so an
-            // input problem arrives as 401. Left as `:core` maps it, a host app would re-initialise a session
-            // that was never the problem.
-            val body =
-                """
-                {"status":401,"title":"One or more validation errors occurred.","code":"E9001",
-                 "errors":{"entryPoint":[{"message":"The entry point was not recognised",
-                                          "suggestion":"Check the entry point"}]}}
-                """.trimIndent()
-            val transport = FakePayInTransport.answering(body, statusCode = 401)
-
-            val failure =
-                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
-                    .exceptionOrNull()
-
-            assertTrue(failure is PayabliValidationException)
-            val validation = failure as PayabliValidationException
-            assertEquals(PayabliErrorCode.VALIDATION_ERROR, validation.code)
-            // The status the service actually sent, not the 400 the body was re-read under.
-            assertEquals(401, validation.httpStatus)
-            assertEquals("E9001", validation.rawCode)
-            assertEquals(
-                "The entry point was not recognised",
-                validation.fieldErrors
-                    .getValue("entryPoint")
-                    .single()
-                    .message,
-            )
-        }
-
-    @Test
-    fun `a 401 carrying no problem document is still a credential rejection`() =
-        runTest(timeout = timeout) {
-            // Only an input problem dressed as a 401 is reclassified. A bare 401 is what it says it is.
+            // Behind a session this never runs: the authenticated transport consumes a 401, refreshes, replays,
+            // and throws on the second one rather than returning it. What a bare transport does with a 401 is
+            // asserted here so the mapping is not mistaken for something this client decides.
             val transport = FakePayInTransport.answering("", statusCode = 401)
 
             val failure =

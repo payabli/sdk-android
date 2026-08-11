@@ -6,8 +6,6 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliException
-import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -22,8 +20,6 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
 import kotlinx.serialization.SerializationException
-import java.net.HttpURLConnection.HTTP_BAD_REQUEST
-import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
  * The three MoneyIn transaction calls: capture, authorise, and capture an authorisation.
@@ -44,6 +40,12 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
  * whose rejection was an exact 401, which for these routes is refused before the payment is processed, so it
  * costs a wasted refresh rather than a double charge. Do not read "not wrapped in `Retry`" as a promise that a
  * request reaches the service once.
+ *
+ * **An input problem the service reports as 401 reaches a caller as an expired token.** These routes take a v2
+ * error's status from a lookup table rather than from the call site, so a missing entry point can arrive as
+ * 401. The authenticated transport treats any 401 as a credential rejection: it refreshes, replays, and on the
+ * second 401 throws rather than returning the response, so this class never sees the body and cannot
+ * reclassify it. Telling the two apart has to happen in the layer that decides what a credential rejection is.
  */
 internal class MoneyInClient(
     private val transport: PayabliTransport,
@@ -165,7 +167,7 @@ internal class MoneyInClient(
     /**
      * Reads the outcome, in the order the classification depends on.
      *
-     * 1. The status first, with an override for 401, below.
+     * 1. The status first.
      * 2. Then the envelope, because a refusal arrives as a `D`-prefixed code behind a 2xx and skipping this
      *    is how a decline reads as an approval. A success is a 201 as often as a 200, so neither is asserted.
      * 3. Only then the payload.
@@ -174,11 +176,7 @@ internal class MoneyInClient(
         route: String,
         response: PayabliResponse,
     ): PayInResult {
-        val transportFailure =
-            PayabliHttpErrors.from(response) { status ->
-                inputProblemReportedAsUnauthorized(status, response)
-            }
-        transportFailure?.let { failure ->
+        PayabliHttpErrors.from(response)?.let { failure ->
             logger.warn(
                 LogField.safe("event", "payin_call_failed"),
                 LogField.safe("route", route),
@@ -220,50 +218,6 @@ internal class MoneyInClient(
             LogField.safe("statusCode", response.statusCode),
         ) { "the transaction call succeeded" }
         return PayInResult(code = envelope.code, transaction = envelope.payload?.toTransaction())
-    }
-
-    /**
-     * What a 401 means on these routes, which is not what it means anywhere else.
-     *
-     * The service decides the status of a v2 error from a lookup table rather than at the call site, and a
-     * missing entry point is one of the input problems that comes back as 401. Left alone, `:core` maps that
-     * to an expired token, and a host app reading that re-initialises a session that was never the problem.
-     *
-     * **This changes the classification only.** The refresh and the single replay happen inside the
-     * authenticated transport before this code sees the response, and nothing here can prevent them. A 400 is
-     * already right, and a 500 from the table's fallback is a server error by any reading, so neither is
-     * touched.
-     *
-     * The body is re-read through [PayabliHttpErrors] under a 400, which is the only way to reuse `:core`'s
-     * problem-details decode: the override is handed a status and not a body, and re-implementing that decode
-     * here would mean a second copy of the one that accepts both `errors` shapes. The status is then put back
-     * to what the service actually sent, so nothing downstream reports a 400 that never happened.
-     *
-     * **A 401 is only reclassified when the body says something about the input.** `:core` maps any 400 to a
-     * validation error, empty body included, so re-reading without this check would relabel a genuine
-     * credential rejection — which arrives with no body at all — as an input problem, and a host app would
-     * stop refreshing a token that really had expired. A field error or the service's own code is what makes
-     * it an input problem; neither present means it is what it says it is.
-     */
-    private fun inputProblemReportedAsUnauthorized(
-        statusCode: Int,
-        response: PayabliResponse,
-    ): PayabliException? {
-        if (statusCode != HTTP_UNAUTHORIZED) return null
-        val parsed =
-            PayabliHttpErrors.from(PayabliResponse(HTTP_BAD_REQUEST, response.headers, response.body))
-                as? PayabliValidationException
-                ?: return null
-        if (parsed.fieldErrors.isEmpty() && parsed.rawCode == null) return null
-        return PayabliValidationException(
-            httpStatus = statusCode,
-            reason = parsed.reason,
-            detail = parsed.detail,
-            type = parsed.type,
-            instance = parsed.instance,
-            rawCode = parsed.rawCode,
-            fieldErrors = parsed.fieldErrors,
-        )
     }
 
     private fun undecodable(
