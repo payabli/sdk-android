@@ -298,6 +298,21 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a blank routing number is refused`() {
+        // The field rules answer null for a blank value, since the form checks requiredness separately, so
+        // this is the one required bank field that reached the wire empty.
+        assertEquals(
+            "paymentMethod.achRouting",
+            refusal {
+                PayInValidation.instrument(
+                    PayInInstrument.BankAccount(account(routing = "  ")),
+                    PayInValidationOptions(),
+                )
+            }?.field,
+        )
+    }
+
+    @Test
     fun `no refusal message carries the value it refused`() {
         val pan = "4111111111111112"
         val refused =

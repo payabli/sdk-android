@@ -149,6 +149,7 @@ internal object PayInValidation {
                 ?.let { throw PayInException.InvalidInput(FIELD_ACH_ACCOUNT, "The account number is not valid") }
         }
 
+        required(data.routingNumber, FIELD_ACH_ROUTING, "A routing number is required")
         val routingError = PayInFieldRules.error(PayInField.RoutingNumber, data.routingNumber.toCharArray())
         val checksumWaived = routingError == PayInFieldError.RoutingNumberNotValid && !options.checksRoutingNumber
         if (routingError != null && !checksumWaived) {
