@@ -130,7 +130,9 @@ jobs:
         id: unit
         continue-on-error: true
         timeout-minutes: 20
-        run: ./gradlew --continue
+        # --max-workers=1 for the reason recorded in ci.yml's build job: concurrent report workers
+        # draw from a shared classloader cache and one of them meets a closed jar handle.
+        run: ./gradlew --continue --max-workers=1
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
@@ -151,7 +153,7 @@ jobs:
         env:
           GPR_USER: ${{ secrets.GPR_USER }}
           GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
-        run: ./gradlew :taptopay:createDebugUnitTestCoverageReport
+        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
       # Required on ubuntu-latest, and the step most often left out. Without it the emulator runs
       # unaccelerated, which is the one condition that makes the call-budget assertion flaky.

@@ -75,6 +75,11 @@ jobs:
       # separate invocations because a second invocation would reuse the same daemon and could keep
       # the same cache. Cost is a few seconds on four small reports.
       #
+      # **Every invocation that runs a coverage task carries this flag**, here, in the card-present
+      # job, in both of the sonar job's report steps, and in nightly.yml. A mitigation on one of five
+      # leaves the same race reachable from the other four, which is where the first version of this
+      # left it. When adding a coverage task anywhere, add the flag with it.
+      #
       # What would falsify it: this failing again with --max-workers=1 in effect. Then the sharing is
       # not between concurrent workers and the next thing to try is --no-daemon for this step alone.
       # Do not remove the flag without that evidence; the failure is intermittent, so a green run
@@ -127,7 +132,7 @@ jobs:
         run: ./gradlew :taptopay:lint
 
       - name: Coverage
-        run: ./gradlew :taptopay:createDebugUnitTestCoverageReport
+        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
   sonar:
     name: SonarCloud
@@ -156,6 +161,11 @@ jobs:
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
           :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
           :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
+
+      # Split from the step above so the serialising flag reaches the coverage tasks without also
+      # serialising eleven lint and format tasks. See the note in the build job.
+      - name: Produce coverage reports
+        run: ./gradlew --max-workers=1
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
@@ -165,7 +175,10 @@ jobs:
       - name: Produce card-present reports
         if: env.GPR_TOKEN != ''
         run: ./gradlew :taptopay:ktlintCheck :taptopay:lint
-          :taptopay:createDebugUnitTestCoverageReport
+
+      - name: Produce card-present coverage report
+        if: env.GPR_TOKEN != ''
+        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
       - name: Analyze
         run: ./gradlew sonar
