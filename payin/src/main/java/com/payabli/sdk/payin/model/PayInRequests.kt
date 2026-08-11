@@ -103,8 +103,7 @@ public class PayInValidationOptions(
 /**
  * A transaction to capture or authorise.
  *
- * The three flags and the header are the service's own parameters. [sameDayAch] in particular is a real
- * capability rather than a knob for symmetry, and none of the four is modelled by the sibling platform.
+ * The three flags and the header are the service's own parameters.
  */
 public class PayInRequest(
     public val paymentDetails: PayInPaymentDetails,

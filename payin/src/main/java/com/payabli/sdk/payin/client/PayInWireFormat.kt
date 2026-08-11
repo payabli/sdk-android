@@ -17,10 +17,9 @@ import java.math.BigDecimal
  * A path and a field name are the two things a reviewer cannot check by reading the client, so they are not
  * spread across the code that uses them. `:taptopay` keeps its device wire format the same way.
  *
- * **The casing is the service's, not a transcription slip.** `cardnumber`, `cardexp`, `cardcvv` and `cardzip`
- * are lower case while `cardHolder` and `achHolder` are camel; `achAccountType` values are capitalised while
- * `achHolderType` values are not. Verified in the service's own source and its own test payloads rather than
- * copied from the sibling platform. The Kotlin properties stay consistent, so none of that reaches a caller.
+ * **The casing is the service's.** `cardnumber`, `cardexp`, `cardcvv` and `cardzip` are lower case while
+ * `cardHolder` and `achHolder` are camel; `achAccountType` values are capitalised while `achHolderType` values
+ * are not. The Kotlin properties stay consistent, so none of that reaches a caller.
  *
  * Requests send exactly what the service reads. Responses additionally accept the other casings through
  * [JsonNames], so a field the service re-spells costs nothing instead of silently reading null.

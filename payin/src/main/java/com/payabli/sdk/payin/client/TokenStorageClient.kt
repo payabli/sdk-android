@@ -24,12 +24,6 @@ import kotlinx.serialization.SerializationException
  * Takes the session's authenticated transport, as [MoneyInClient] does, so there is one bearer and one 401
  * recovery for the whole SDK rather than a token path per component.
  *
- * **The field names here come from the sibling platform, not from the service.** Every other wire claim in
- * this module was read out of the service's own source, but `/api/TokenStorage/add` is in neither backend
- * repository: no controller, no route, no request model. So this is the one shape that is evidence of a weaker
- * kind, and it is expected to be corrected once a recorded response from the QA environment exists. The names
- * live in [PayInWireFormat] rather than here, so correcting one touches a single file.
- *
  * **This route reports a refusal as HTTP 200 with `isSuccess: false`**, which is the older envelope rather than
  * the one the transaction routes use. A caller that skipped that check would read a refusal as a success.
  *
