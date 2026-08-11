@@ -76,11 +76,22 @@ class TokenStorageClientTest {
             TokenStorageClient(transport, RecordingLogger()).storeMethod(
                 "e",
                 PayInInstrument.Card(testCard()),
-                PayInStoreOptions(achValidation = true, createAnonymous = false, temporary = true),
+                PayInStoreOptions(
+                    achValidation = true,
+                    createAnonymous = false,
+                    forceCustomerCreation = true,
+                    temporary = true,
+                ),
             )
 
+            // All four, since the name says four and an unset one is a spelling nothing checks.
             assertEquals(
-                listOf("achValidation" to "true", "createAnonymous" to "false", "temporary" to "true"),
+                listOf(
+                    "achValidation" to "true",
+                    "createAnonymous" to "false",
+                    "forceCustomerCreation" to "true",
+                    "temporary" to "true",
+                ),
                 transport.request?.query,
             )
         }
@@ -169,6 +180,28 @@ class TokenStorageClientTest {
                 }.exceptionOrNull()
 
             assertTrue(failure is PayInException.Refused)
+        }
+
+    @Test
+    fun `a success carrying no identifier is undecodable, not a stored method`() =
+        runTest(timeout = timeout) {
+            // A stored method exists to be charged later. Reporting one with no identifier hands a caller a
+            // token it does not have, which fails at the next transaction rather than here.
+            listOf(
+                """{"isSuccess":true,"responseText":"Success"}""",
+                """{"isSuccess":true,"responseData":{"resultCode":1}}""",
+                """{"isSuccess":true,"responseData":{"referenceId":"  ","resultCode":1}}""",
+            ).forEach { body ->
+                val transport = FakePayInTransport.answering(body)
+
+                val failure =
+                    runCatching {
+                        TokenStorageClient(transport, RecordingLogger())
+                            .storeMethod("e", PayInInstrument.Card(testCard()))
+                    }.exceptionOrNull()
+
+                assertTrue(body, failure is PayInException.Undecodable)
+            }
         }
 
     @Test

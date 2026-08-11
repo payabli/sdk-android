@@ -128,13 +128,16 @@ internal class TokenStorageClient(
                 ),
             )
         }
+        // A stored method exists to be charged later, so a success with no identifier is a response this
+        // client cannot use. Reporting it as stored hands a caller a token it does not have.
+        val storedMethodId = stored?.referenceId?.trimOrNull() ?: throw undecodable(response.statusCode, null)
         logger.debug(
             LogField.safe("event", "payin_store_succeeded"),
             LogField.safe("route", PayInRoutes.STORE_METHOD),
             LogField.safe("statusCode", response.statusCode),
         ) { "the method was stored" }
         return PayInStoredMethod(
-            storedMethodId = stored?.referenceId,
+            storedMethodId = storedMethodId,
             methodReferenceId = stored?.methodReferenceId,
             customerId = stored?.customerId,
             resultCode = stored?.resultCode,
