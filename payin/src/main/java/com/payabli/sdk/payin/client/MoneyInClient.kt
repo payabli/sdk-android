@@ -109,11 +109,7 @@ internal class MoneyInClient(
                 body = AuthorizedCaptureBody(request.paymentDetails.toBody()),
                 bodySerializer = AuthorizedCaptureBody.serializer(),
                 route = PayInRoutes.CAPTURE_AUTHORIZED,
-                headers =
-                    request.idempotencyKey
-                        ?.trimOrNull()
-                        ?.let { mapOf(PayInRoutes.HEADER_IDEMPOTENCY_KEY to it) }
-                        .orEmpty(),
+                headers = payInHeaders { idempotencyKey(request.idempotencyKey) },
             )
         return read(PayInRoutes.CAPTURE_AUTHORIZED, transport.execute(payabliRequest))
     }
@@ -154,7 +150,7 @@ internal class MoneyInClient(
                         path = path,
                         route = route,
                         query = request.query(allowsAchValidation),
-                        headers = request.headers() + JSON_CONTENT_TYPE,
+                        headers = request.headers(),
                         body = body,
                     ),
                 )
@@ -273,7 +269,7 @@ private fun PayInRequest.query(allowsAchValidation: Boolean): List<Pair<String, 
     }
 
 private fun PayInRequest.headers(): Map<String, String> =
-    buildMap {
-        idempotencyKey?.trimOrNull()?.let { put(PayInRoutes.HEADER_IDEMPOTENCY_KEY, it) }
-        validationCode?.trimOrNull()?.let { put(PayInRoutes.HEADER_VALIDATION_CODE, it) }
+    payInHeaders {
+        idempotencyKey(idempotencyKey)
+        validationCode(validationCode)
     }

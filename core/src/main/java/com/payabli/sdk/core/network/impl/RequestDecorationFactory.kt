@@ -14,6 +14,7 @@ internal object RequestDecorationFactory {
         listOf(
             // -- CONTRIBUTORS --
             BearerDecoration(auth),
+            JsonBodyDecoration(),
             // -- BINDERS -- (none yet, and always last)
         )
 }

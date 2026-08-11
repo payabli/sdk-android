@@ -14,7 +14,7 @@ class RequestDecorationFactoryTest {
     @Test
     fun `the declared chain is exactly what is expected`() {
         assertEquals(
-            listOf(BearerDecoration::class.java),
+            listOf(BearerDecoration::class.java, JsonBodyDecoration::class.java),
             RequestDecorationFactory.chainFor(testAuth()).map { it.javaClass },
         )
     }

@@ -60,7 +60,6 @@ class MoneyInClientTest {
             val result = MoneyInClient(transport, RecordingLogger()).capture("merchant-entry", cardRequest())
 
             assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
-            assertEquals("application/json", transport.request?.headers?.get("Content-Type"))
             val body = transport.bodyText()
             // The casing is the service's own.
             assertTrue(body, body.contains(""""method":"card""""))
@@ -108,9 +107,9 @@ class MoneyInClientTest {
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
             assertEquals("code-9", transport.request?.headers?.get("validationCode"))
-            // The byte-assembled body skips PayabliRequest.json, which is what would otherwise add this. The
-            // transport adds no header of its own, and an unset content type is sent as form encoding.
-            assertEquals("application/json", transport.request?.headers?.get("Content-Type"))
+            // Only the caller's own headers are here. `Authorization` and the JSON content type are chain
+            // steps applied inside the transport, so an undecorated request carries neither.
+            assertEquals(setOf("idempotencyKey", "validationCode"), transport.request?.headers?.keys)
         }
 
     @Test
@@ -180,7 +179,6 @@ class MoneyInClientTest {
                 .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50")))
 
             assertEquals("/api/v2/MoneyIn/capture/101-abc", transport.request?.path)
-            assertEquals("application/json", transport.request?.headers?.get("Content-Type"))
             // The template, because a resolved path embeds an identifier and is never loggable.
             assertEquals("/api/v2/MoneyIn/capture/{transId}", transport.request?.route)
             assertTrue(transport.bodyText().contains(""""totalAmount":4.50"""))

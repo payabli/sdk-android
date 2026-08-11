@@ -61,3 +61,26 @@ internal fun Boolean.wire(): String = if (this) "true" else "false"
 
 /** Trimmed, or absent when nothing is left. */
 internal fun String.trimOrNull(): String? = trim().takeIf { it.isNotEmpty() }
+
+/**
+ * The headers a caller contributes, which are the only ones a client here sets.
+ *
+ * `Authorization` and the JSON content type are chain steps in `:core`, applied to every request, so a
+ * client that added either would be duplicating a decision made once for the whole SDK.
+ *
+ * A blank value is left out rather than sent empty: an empty idempotency key would key the service's
+ * middleware on nothing.
+ */
+internal fun payInHeaders(build: PayInHeaders.() -> Unit): Map<String, String> = PayInHeaders().apply(build).headers
+
+internal class PayInHeaders {
+    val headers: MutableMap<String, String> = LinkedHashMap()
+
+    fun idempotencyKey(value: String?) {
+        value?.trimOrNull()?.let { headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY] = it }
+    }
+
+    fun validationCode(value: String?) {
+        value?.trimOrNull()?.let { headers[PayInRoutes.HEADER_VALIDATION_CODE] = it }
+    }
+}
