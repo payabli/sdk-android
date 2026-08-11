@@ -91,10 +91,19 @@ public object PayInFieldRules {
         return when (field) {
             PayInField.CardExpiration -> expiryError(value, today)
             PayInField.BillingEmail -> emailError(value)
-            // One implementation for the counted-and-checksummed fields, reached from both overloads. The
-            // copy is wiped: the caller's `String` cannot be erased, which is no reason to leave a second
-            // one that can be.
-            else -> value.toCharArray().useAndWipe { error(field, it, today) }
+            // The counted and checksummed fields, and only those: one implementation reached from both
+            // overloads, and the copy is wiped, since the caller's `String` cannot be erased but this one can.
+            // Every other field answers null without reading the value, and the form asks about all of them on
+            // each recomposition, so converting them would allocate on every keystroke for no answer.
+            PayInField.CardNumber,
+            PayInField.CardSecurityCode,
+            PayInField.CardPostalCode,
+            PayInField.BillingPostalCode,
+            PayInField.RoutingNumber,
+            PayInField.AccountNumber,
+            -> value.toCharArray().useAndWipe { error(field, it, today) }
+
+            else -> null
         }
     }
 
