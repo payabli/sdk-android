@@ -108,7 +108,7 @@ public class PayInValidationOptions(
 /**
  * A transaction to capture or authorise.
  *
- * The flags and the two headers are the service's own parameters, spelled as it reads them.
+ * The flags and headers are the service's own parameters.
  */
 public class PayInRequest(
     public val paymentDetails: PayInPaymentDetails,
