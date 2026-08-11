@@ -169,11 +169,43 @@ class PayInValidationTest {
 
     @Test
     fun `a fee is judged at that scale too`() {
+        // Rounds to 0.00, so there is nothing negative left to refuse.
         assertNull(
             refusal {
                 PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("10"), serviceFee = BigDecimal("-0.004")))
             },
         )
+        // The other side of the half boundary: HALF_UP is about magnitude, so this rounds to -0.01.
+        assertEquals(
+            "paymentDetails.serviceFee",
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("10"), serviceFee = BigDecimal("-0.005")))
+            }?.field,
+        )
+    }
+
+    @Test
+    fun `a total at the half boundary rounds up into a real amount`() {
+        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("0.005"))) })
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("0.00499"))) }?.field,
+        )
+    }
+
+    @Test
+    fun `an amount larger than a Double holds exactly is accepted`() {
+        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("12345678901234.56"))) })
+    }
+
+    @Test
+    fun `an exponent form is judged by its value`() {
+        // 1E-10 is more than zero and is sent as 0.00, so the check has to read the rounded value.
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1E-10"))) }?.field,
+        )
+        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1E+2"))) })
     }
 
     @Test
