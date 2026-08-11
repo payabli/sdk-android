@@ -107,6 +107,11 @@ internal class MoneyInClient(
                 body = AuthorizedCaptureBody(request.paymentDetails.toBody()),
                 bodySerializer = AuthorizedCaptureBody.serializer(),
                 route = PayInRoutes.CAPTURE_AUTHORIZED,
+                headers =
+                    request.idempotencyKey
+                        ?.trimOrNull()
+                        ?.let { mapOf(PayInRoutes.HEADER_IDEMPOTENCY_KEY to it) }
+                        .orEmpty(),
             )
         return read(PayInRoutes.CAPTURE_AUTHORIZED, transport.execute(payabliRequest))
     }

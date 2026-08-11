@@ -181,9 +181,39 @@ class MoneyInClientTest {
                 .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50")))
 
             assertEquals("/api/v2/MoneyIn/capture/101-abc", transport.request?.path)
+            assertEquals("application/json", transport.request?.headers?.get("Content-Type"))
             // The template, because a resolved path embeds an identifier and is never loggable.
             assertEquals("/api/v2/MoneyIn/capture/{transId}", transport.request?.route)
             assertTrue(transport.bodyText().contains(""""totalAmount":4.50"""))
+        }
+
+    @Test
+    fun `capturing an authorisation carries an idempotency key when one is given`() =
+        runTest(timeout = timeout) {
+            // Under the same middleware as a capture, and it moves money: without a key a lost response
+            // cannot be retried without risking a second partial capture.
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingLogger())
+                .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50"), idempotencyKey = "key-2"))
+
+            assertEquals("key-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    @Test
+    fun `capturing an authorisation sends no key when none is given`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingLogger())
+                .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50")))
+
+            assertFalse(
+                transport.request
+                    ?.headers
+                    .orEmpty()
+                    .containsKey("idempotencyKey"),
+            )
         }
 
     @Test

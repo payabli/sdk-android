@@ -145,4 +145,11 @@ public class PayInRequest(
 public class PayInAuthorizedRequest(
     public val transId: String,
     public val paymentDetails: PayInPaymentDetails,
+    /**
+     * Makes a repeated capture return the first one's result instead of capturing again.
+     *
+     * This route is under the same idempotency middleware as a capture, and it moves money: a response lost
+     * on the way back leaves a caller unable to retry without risking a second partial capture.
+     */
+    public val idempotencyKey: String? = null,
 )
