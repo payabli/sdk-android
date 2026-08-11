@@ -31,7 +31,7 @@ class PayInBodyWriterTest {
         val fragment = PayInBodyWriter.instrumentFragment(PayInInstrument.Card(testCard()))
 
         assertEquals(
-            """{"method":"card","cardnumber":"$TEST_PAN","cardexp":"12/30",""" +
+            """{"method":"card","cardnumber":"$TEST_PAN","cardexp":"$TEST_EXPIRY_WIRE",""" +
                 """"cardcvv":"$TEST_SECURITY_CODE","cardHolder":"Integration Test","cardzip":"22039"}""",
             fragmentText(fragment),
         )

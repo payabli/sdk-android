@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
@@ -64,7 +65,7 @@ class MoneyInClientTest {
             // The casing is the service's own.
             assertTrue(body, body.contains(""""method":"card""""))
             assertTrue(body, body.contains(""""cardnumber":"$TEST_PAN""""))
-            assertTrue(body, body.contains(""""cardexp":"12/30""""))
+            assertTrue(body, body.contains(""""cardexp":"$TEST_EXPIRY_WIRE""""))
             assertTrue(body, body.contains(""""cardcvv":"$TEST_SECURITY_CODE""""))
             assertTrue(body, body.contains(""""cardHolder":"Integration Test""""))
             assertTrue(body, body.contains(""""cardzip":"22039""""))
@@ -185,6 +186,16 @@ class MoneyInClientTest {
 
             assertNull(transport.request?.headers?.get("idempotencyKey"))
         }
+
+    @Test
+    fun `the shared card fixture cannot expire with the calendar`() {
+        // The clients validate against ExpiryValue.today() with no clock to inject, so a fixture written as a
+        // fixed year is a date on which this whole package turns red without a change having been made.
+        val today = ExpiryValue.today()
+
+        assertFalse(TEST_EXPIRY.isExpired(today.year, today.month))
+        assertTrue("$TEST_EXPIRY is not far enough ahead", TEST_EXPIRY.year > today.year + 1)
+    }
 
     @Test
     fun `an authorisation carries the key too`() =
@@ -471,7 +482,7 @@ class MoneyInClientTest {
             MoneyInClient(FakePayInTransport.answering(approved), logger).capture("e", cardRequest())
 
             val written = logger.everythingWritten()
-            listOf(TEST_PAN, TEST_SECURITY_CODE, "12/30", "Integration Test").forEach { value ->
+            listOf(TEST_PAN, TEST_SECURITY_CODE, TEST_EXPIRY_WIRE, "Integration Test").forEach { value ->
                 assertFalse(value, written.contains(value))
             }
         }

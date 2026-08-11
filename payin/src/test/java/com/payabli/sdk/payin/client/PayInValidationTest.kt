@@ -32,7 +32,7 @@ class PayInValidationTest {
         postalCode: String = "22039",
     ) = PayInCardData(
         cardNumber = SensitiveDigits.ofString(pan),
-        expiry = ExpiryValue(12, 2030),
+        expiry = TEST_EXPIRY,
         securityCode = SensitiveDigits.ofString(securityCode),
         holderName = holderName,
         postalCode = postalCode,

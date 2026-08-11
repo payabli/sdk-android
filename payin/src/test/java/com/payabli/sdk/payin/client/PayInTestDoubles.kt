@@ -125,12 +125,25 @@ internal const val TEST_ROUTING: String = "122105278"
 
 internal const val TEST_ACCOUNT: String = "00003400000"
 
+/**
+ * Far enough ahead that the calendar cannot expire it, and derived rather than written down.
+ *
+ * Both clients validate the expiry against `ExpiryValue.today()` and there is no clock to inject, so a fixed
+ * year here is a date on which every round-trip, wipe and logging test in this package turns red without any
+ * change having been made. [TEST_EXPIRY_WIRE] is derived from the same value, and `MM/YY` itself is pinned by
+ * a test on `format()`, which needs no clock and so can assert the literal.
+ */
+internal val TEST_EXPIRY: ExpiryValue = ExpiryValue(12, ExpiryValue.today().year + 5)
+
+/** What [TEST_EXPIRY] looks like on the wire. */
+internal val TEST_EXPIRY_WIRE: String = TEST_EXPIRY.format()
+
 internal fun testCard(
     pan: String = TEST_PAN,
     securityCode: String = TEST_SECURITY_CODE,
     holderName: String = "Integration Test",
     postalCode: String = "22039",
-    expiry: ExpiryValue = ExpiryValue(12, 2030),
+    expiry: ExpiryValue = TEST_EXPIRY,
 ): PayInCardData =
     PayInCardData(
         cardNumber = SensitiveDigits.ofString(pan),
