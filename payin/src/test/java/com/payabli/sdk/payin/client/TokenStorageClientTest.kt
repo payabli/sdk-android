@@ -126,6 +126,24 @@ class TokenStorageClientTest {
         }
 
     @Test
+    fun `an explicit refusal wins over a contradictory result code`() =
+        runTest(timeout = timeout) {
+            // The service saying no and its own payload saying approved is a contradiction, and the refusal is
+            // the half that must not be overridden.
+            val body =
+                """{"isSuccess":false,"responseData":{"referenceId":"tok-1","resultCode":1,"resultText":"Approved"}}"""
+            val transport = FakePayInTransport.answering(body)
+
+            val failure =
+                runCatching {
+                    TokenStorageClient(transport, RecordingLogger())
+                        .storeMethod("e", PayInInstrument.Card(testCard()))
+                }.exceptionOrNull()
+
+            assertTrue(failure is PayInException.Refused)
+        }
+
+    @Test
     fun `a result code of one approves even when isSuccess is absent`() =
         runTest(timeout = timeout) {
             val body = """{"responseData":{"referenceId":"tok-9","resultCode":1}}"""

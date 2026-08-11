@@ -101,7 +101,15 @@ internal class TokenStorageClient(
         // isSuccess null, and reading that as anything but a failure would report a stored method that was
         // never stored, with no identifier to show for it.
         val stored = envelope.responseData
-        val approved = envelope.isSuccess == true || stored?.resultCode == RESULT_CODE_APPROVED
+        // An explicit refusal wins. The result code is the fallback for an envelope that claims neither, and
+        // letting it override `isSuccess: false` would report a method as stored against the service's own
+        // word for it.
+        val approved =
+            when (envelope.isSuccess) {
+                true -> true
+                false -> false
+                null -> stored?.resultCode == RESULT_CODE_APPROVED
+            }
         if (!approved) {
             logger.warn(
                 LogField.safe("event", "payin_store_refused"),
