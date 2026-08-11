@@ -14,9 +14,9 @@ import java.math.BigDecimal
  * those redact. Each type here carries something that must not travel: a card number, an amount, a payer's
  * name, or server text that echoes what was submitted.
  *
- * The carriers at the end render nothing today because they never declared a `toString` and so get the
- * identity one. They are here as a guard rather than as a present risk: making any of them a `data class`
- * turns its every property into rendered output, and the change that did it would look harmless.
+ * The carriers at the end declare no `toString` and get the identity one, which renders no property value.
+ * They are here as a guard: making any of them a `data class` turns every property into rendered output, and
+ * the change that did it would look harmless.
  */
 class PayInRedactionTest {
     private val pan = "4111111111111111"
