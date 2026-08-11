@@ -6,15 +6,20 @@ import java.math.BigDecimal
 
 /** A method the service stored, identified for later use. */
 public class PayInStoredMethod(
-    /** The identifier a later transaction charges. */
-    public val storedMethodId: String?,
+    /**
+     * The identifier a later transaction charges.
+     *
+     * Never absent: a claimed success carrying none is refused as unreadable rather than returned, so a
+     * caller holding one of these holds something it can charge.
+     */
+    public val storedMethodId: String,
     public val methodReferenceId: Long?,
     public val customerId: Long?,
     public val resultCode: Int?,
     public val resultText: String?,
 ) {
-    /** Identifiers only, and not the text, which the service may echo request data into. */
-    override fun toString(): String = "PayInStoredMethod(hasId=${storedMethodId != null})"
+    /** The identifier charges a card, so it is a credential rather than a label, and it is not in a message. */
+    override fun toString(): String = "PayInStoredMethod"
 }
 
 /**
