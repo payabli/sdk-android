@@ -233,6 +233,36 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `an error code is not a decline`() =
+        runTest(timeout = timeout) {
+            // A `D` is the payer's card; an `E` is the service. Reporting the second as the first puts decline
+            // wording in front of a payer whose card was never asked.
+            val body = """{"code":"E4001","reason":"Processor unavailable","explanation":"Try later","action":"r"}"""
+            val transport = FakePayInTransport.answering(body)
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull()
+
+            assertTrue(failure is PayInException.ServiceError)
+            val error = failure as PayInException.ServiceError
+            assertEquals("E4001", error.failure.code)
+            assertEquals(PayabliErrorCode.SERVER_ERROR, error.code)
+        }
+
+    @Test
+    fun `a code family this SDK does not know is not a decline either`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering("""{"code":"X9999","reason":"Something else"}""")
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull()
+
+            assertTrue(failure is PayInException.ServiceError)
+        }
+
+    @Test
     fun `an approval on a 201 is still an approval`() =
         runTest(timeout = timeout) {
             // The service returns Created for a v2 success unless its own table says otherwise, so a client

@@ -61,8 +61,9 @@ public class PayInResult(
 /**
  * Why the service refused, in the shape it refuses in.
  *
- * The same type covers a declined transaction and a refused stored method, because a caller does the same
- * three things with either: show [reason], act on [action], and record [code].
+ * The same type covers a declined transaction, a service error and a refused stored method, because a caller
+ * does the same three things with any of them: show [reason], act on [action], and record [code]. Which of
+ * the three it was is the exception carrying it.
  */
 public class PayInFailure(
     /** The unified response code, `D`-prefixed for a decline and `E`-prefixed for an error. */
@@ -113,6 +114,23 @@ public sealed class PayInException(
     }
 
     /**
+     * The service could not process the transaction, which is not the same as refusing it.
+     *
+     * The unified codes separate the two: a `D` is a decline, and an `E` is an error the service raised
+     * about the request or about itself. Reporting one as the other puts decline wording in front of a
+     * payer whose card was never asked, and hides a condition a caller might retry.
+     */
+    public class ServiceError(
+        public val failure: PayInFailure,
+    ) : PayInException(
+            PayabliErrorCode.SERVER_ERROR,
+            failure.reason ?: DEFAULT_SERVICE_ERROR_REASON,
+            failure.explanation,
+        ) {
+        override fun toString(): String = "PayInException.ServiceError(code=${failure.code})"
+    }
+
+    /**
      * A 2xx that could not be read as either an approval or a refusal.
      *
      * A refusal and an unreadable answer call for different actions: one is about the payment, the other is
@@ -130,6 +148,7 @@ public sealed class PayInException(
 
     public companion object {
         internal const val DEFAULT_REFUSED_REASON: String = "The payment was refused"
+        internal const val DEFAULT_SERVICE_ERROR_REASON: String = "The payment could not be processed"
         internal const val DEFAULT_UNDECODABLE_REASON: String = "The response could not be read"
     }
 }

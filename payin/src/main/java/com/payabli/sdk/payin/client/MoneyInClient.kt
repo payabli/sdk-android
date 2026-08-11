@@ -193,20 +193,26 @@ internal class MoneyInClient(
                 throw undecodable(route, response.statusCode, failure)
             }
         if (!envelope.isApproved) {
-            logger.warn(
-                LogField.safe("event", "payin_transaction_refused"),
-                LogField.safe("route", route),
-                LogField.safe("errorCode", envelope.code),
-            ) { "the service refused the transaction" }
-            throw PayInException.Refused(
+            val failure =
                 PayInFailure(
                     code = envelope.code,
                     reason = envelope.reason,
                     explanation = envelope.explanation,
                     action = envelope.action,
                     httpStatus = response.statusCode,
-                ),
-            )
+                )
+            logger.warn(
+                LogField.safe("event", "payin_transaction_not_approved"),
+                LogField.safe("route", route),
+                LogField.safe("errorCode", envelope.code),
+            ) { "the service did not approve the transaction" }
+            // Only a `D` is a decline. An `E`, or a family this SDK does not know, is the service reporting a
+            // problem rather than the payment being refused, and a caller acts on the two differently.
+            throw if (envelope.isDeclined) {
+                PayInException.Refused(failure)
+            } else {
+                PayInException.ServiceError(failure)
+            }
         }
         logger.debug(
             LogField.safe("event", "payin_call_succeeded"),
