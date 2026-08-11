@@ -92,6 +92,7 @@ class PayInRedactionTest {
                 orderId = "order-1",
                 method = "card",
                 transStatus = 1,
+                paypointId = 42L,
                 totalAmount = BigDecimal("1234.56"),
                 netAmount = BigDecimal("1200.00"),
                 connectorName = "fiserv",

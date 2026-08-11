@@ -75,6 +75,7 @@ class MoneyInClientTest {
             assertEquals("A0000", result.code)
             assertEquals("101-abc", result.transaction?.paymentTransId)
             assertEquals(BigDecimal("10.00"), result.transaction?.totalAmount)
+            assertEquals(42L, result.transaction?.paypointId)
             assertEquals(7L, result.transaction?.customerId)
         }
 

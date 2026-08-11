@@ -32,6 +32,8 @@ public class PayInTransaction(
     public val method: String?,
     /** The service's own status number for the transaction. */
     public val transStatus: Int?,
+    /** The paypoint that took it, which is the service's key rather than the entry point a caller configured. */
+    public val paypointId: Long?,
     public val totalAmount: BigDecimal?,
     /** What is left after fees, where the paypoint splits them out. */
     public val netAmount: BigDecimal?,

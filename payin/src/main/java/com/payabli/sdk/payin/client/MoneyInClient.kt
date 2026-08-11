@@ -252,6 +252,7 @@ private fun TransactionPayload.toTransaction(): PayInTransaction =
         orderId = orderId,
         method = method,
         transStatus = transStatus,
+        paypointId = paypointId,
         totalAmount = totalAmount,
         netAmount = netAmount,
         connectorName = connectorName,
