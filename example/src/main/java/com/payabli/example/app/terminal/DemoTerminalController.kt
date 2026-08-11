@@ -14,8 +14,7 @@ import java.math.BigDecimal
  *
  * It walks the real state machine and emits the real event codes, so the screen that watches it is
  * exercising the sequence it will see for real: the chip changes four times, the event list fills in
- * order, and the charge button stays disabled until the reader is prepared. A stub that answered
- * Ready immediately would leave all of that untested.
+ * order, and the charge button stays disabled until the reader is prepared.
  *
  * Failures are deterministic and reachable without extra controls, so the error paths on screen are
  * live:

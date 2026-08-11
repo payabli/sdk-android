@@ -24,8 +24,8 @@ data class StatusColors(
 /**
  * Teal for success, because the style guide has no green.
  *
- * Teal is the nearest thing the palette offers to "this is fine". A green would have to be invented,
- * and a colour that appears in no token list is a colour that drifts away from the guide.
+ * Teal is the nearest thing the palette offers to "this is fine", and every colour here appears in
+ * the guide's token list.
  *
  * Measured on the surfaces these sit on: success 7.6:1 and warning 8.0:1 on a card, 8.2:1 and 8.7:1
  * on the page.

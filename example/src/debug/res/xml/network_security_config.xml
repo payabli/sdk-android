@@ -2,7 +2,7 @@
 <!--
   The local token server in example-server/ speaks http, and cleartext is denied by default: the
   platform's base-config is cleartextTrafficPermitted="false" from targetSdk 28, and the implicit
-  loopback exemption arrives only in API 37, so an explicit entry is required rather than merely tidy.
+  loopback exemption arrives only in API 37, so an explicit entry is required.
 
   Scoped to the two addresses that server is ever reached at. Both manifests set
   usesCleartextTraffic="false", and the platform ignores that flag from API 24 wherever a config is

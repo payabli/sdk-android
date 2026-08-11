@@ -14,9 +14,8 @@ import org.junit.Test
 import java.math.BigDecimal
 
 /**
- * The stand-in has to walk the same sequence the real terminal will, because the Tap to pay screen's
- * button states and chip transitions are driven entirely by it. A stub that answered Ready at once
- * would leave every one of those untested here and broken on the day the SDK lands.
+ * The stand-in has to walk the same sequence the real terminal will: the Tap to pay screen's button
+ * states and chip transitions are driven entirely by it, and nothing else here covers them.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DemoTerminalControllerTest {

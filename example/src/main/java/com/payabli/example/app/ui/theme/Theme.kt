@@ -8,11 +8,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 /**
  * There is no dynamic-colour option.
  *
- * Dynamic colour derives the whole scheme from the user's wallpaper, so on any Android 12+ device it
- * would put the Payabli brand out of a demo whose job is to show it, and would make two screenshots
- * of the same screen on two devices incomparable. An integrator wanting to see their own scheme
- * builds `MaterialTheme` with `dynamicLightColorScheme` in their own app, which is where the choice
- * belongs.
+ * Dynamic colour derives the whole scheme from the user's wallpaper on Android 12+, which replaces
+ * the brand this app exists to show and makes two devices' screenshots incomparable. An integrator
+ * seeing their own scheme builds `MaterialTheme` with `dynamicLightColorScheme` in their own app.
  */
 @Composable
 fun PayabliDemoTheme(

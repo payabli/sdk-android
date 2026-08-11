@@ -44,8 +44,7 @@ data class CaptureUiState(
 
 /**
  * Scoped to the capture graph, so the result screen reads the same instance the form screen wrote
- * to. Passing the result as a navigation argument would mean encoding an arbitrary API response into
- * a route.
+ * to. A route carries no arbitrary API response.
  */
 class CaptureViewModel(
     private val flow: PaymentFlowController,

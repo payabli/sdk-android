@@ -3,8 +3,8 @@ package com.payabli.example.app.terminal
 /**
  * Something the terminal reported while it was working.
  *
- * The wire names are kept as written. Anyone reading this stream is comparing it against a backend
- * log or a support ticket, where a friendlier label would have to be translated back first.
+ * The wire names are kept as written, so this stream compares directly against a backend log or a
+ * support ticket.
  */
 enum class TerminalEventCode {
     AttestationStarted,

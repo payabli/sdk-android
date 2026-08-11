@@ -11,10 +11,8 @@ plugins {
 // secrets.properties.example. Nothing here is a credential: the entry point and the app id are
 // identifiers, and the access token is minted at runtime by example-server.
 //
-// providers.fileContents rather than File.readText, because the configuration cache is on for the
-// whole repository and a raw file read at configuration time is not a tracked input. Editing
-// secrets.properties would not invalidate the cache, and the build would keep using stale values
-// without saying so. This provider is tracked, so an edit re-runs configuration.
+// providers.fileContents is tracked, so editing secrets.properties re-runs configuration. A plain
+// File.readText is not, and the configuration cache would serve the old values.
 val demoSecrets: Properties =
     providers
         .fileContents(layout.projectDirectory.file("secrets.properties"))
@@ -24,11 +22,8 @@ val demoSecrets: Properties =
 
 // -Ppayabli.demo.* wins over the file, so a one-off run needs no edit.
 //
-// Blank counts as absent, which is not what either source hands back. `Properties.getProperty`
-// returns "" for a `key=` line rather than null, and the template ships exactly those lines, so a
-// blank overrode the default instead of falling through to it. A String field then carried "" and
-// resolved an address of "http://:8787"; an int or boolean field emitted `= ;` into generated Java
-// and the module stopped compiling for anyone who followed the README and copied the template.
+// A `key=` line with nothing after it reads back as "", not as missing, and the template ships those
+// lines. Without isNotBlank the empty value would win over the default.
 fun demoSetting(
     key: String,
     default: String,
@@ -53,18 +48,8 @@ android {
 
     defaultConfig {
         applicationId = "com.payabli.example.app"
-        // 24, one above the SDK modules' floor of 23, because the debug build talks to the local
-        // token server over cleartext and a network security config is the only way to permit that
-        // for two addresses instead of for everything.
-        //
-        // API 23 has no such config, so the only lever there is the usesCleartextTraffic flag, which
-        // is all-or-nothing. Both manifests declare it false, so a 23 build would block the local
-        // token server; declaring it true to unblock it would permit cleartext to every host the app
-        // can reach. Neither is what this app wants, and 24 is where the choice stops being between
-        // those two.
-        //
-        // Nothing published moves: :core and the capability modules stay at 23 and an integrator can
-        // still target it.
+        // 24. The debug build reaches the local token server over cleartext, and the network
+        // security config that permits it for two addresses is ignored below 24.
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -84,11 +69,8 @@ android {
         )
         // Blank means resolve per run: emulator to 10.0.2.2, device to 127.0.0.1 over adb reverse.
         buildConfigField("String", "DEMO_TOKEN_HOST", quoted(demoSetting("payabli.demo.tokenHost", "")))
-        // The two addresses the local token server is reached at when nothing overrides it. Set
-        // here rather than in Kotlin because they are deployment values: an emulator that maps the
-        // host differently, or a device forwarded on another port, is a settings change and not a
-        // code change. The defaults are the standard ones and hold for everyone who changes
-        // nothing.
+        // 10.0.2.2 is the emulator's alias for the host machine's loopback; 127.0.0.1 is the
+        // device's own, which adb reverse forwards.
         buildConfigField(
             "String",
             "DEMO_EMULATOR_TOKEN_HOST",
@@ -147,10 +129,8 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
-    // testInstrumentationRunner names AndroidJUnitRunner, and androidx.test.ext:junit does not bring
-    // it transitively. Without this the test APK installs and dies with ClassNotFoundException
-    // before a single test runs, which is how the stale package assertion in ExampleInstrumentedTest
-    // survived: nobody had ever got an instrumented test to start here.
+    // androidx.test.ext:junit does not bring the runner transitively, and without it the test APK
+    // dies with ClassNotFoundException before any test runs.
     androidTestImplementation(libs.androidx.test.runner)
 
     debugImplementation(libs.androidx.compose.ui.test.manifest)

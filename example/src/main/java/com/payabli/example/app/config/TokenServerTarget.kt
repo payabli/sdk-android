@@ -46,9 +46,8 @@ data class TokenServerTarget(
     /**
      * Why this address, in the words of the fix.
      *
-     * The two default rows name the address and, for a device, the command that makes it work. Both
-     * are read from [baseUrl] and not written out: the hosts and the port are settings, so a sentence
-     * quoting 10.0.2.2 would be describing someone else's build the moment one of them is changed.
+     * The two default rows name the address and, for a device, the command that makes it work, both
+     * read from [baseUrl]. The hosts and the port are settings, so any address here is one build's.
      */
     val explanation: String
         get() =

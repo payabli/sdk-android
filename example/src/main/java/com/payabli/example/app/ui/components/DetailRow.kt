@@ -51,10 +51,9 @@ fun DetailRow(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         val shown = value.ifEmpty { "—" }
-        // A long value goes under its label instead of competing with it for the same line. Sharing
-        // one line, a URL or a sentence wraps at whatever column is left over, which leaves a short
-        // ragged first line and reads as a layout fault. The threshold is the point past which that
-        // starts happening at this text size on a phone.
+        // A long value goes under its label. Sharing one line, it wraps at whatever column is left
+        // over and leaves a short ragged first line. The threshold is where that starts at this text
+        // size on a phone.
         if (shown.length <= INLINE_VALUE_LIMIT) {
             Row(verticalAlignment = Alignment.Top) {
                 Text(

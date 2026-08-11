@@ -45,9 +45,7 @@ object TokenHostResolver {
      * to point the demo at an https endpoint. A value without one gets `http://` and the configured
      * port, which is the local-server case.
      *
-     * A port that is not a number falls back to the configured one. This is a developer override
-     * typed by hand, not a parsed protocol, and failing to launch over a typo would be the worse
-     * outcome.
+     * A port that is not a number falls back to the configured one, so a typo still launches.
      */
     internal fun normalize(
         raw: String,
