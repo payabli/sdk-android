@@ -194,23 +194,33 @@ class PayInValidationTest {
     }
 
     @Test
-    fun `the bound is the widest amount the service's own type holds`() {
-        // The service declares these as a decimal and imposes no maximum of its own, so the type is the
-        // limit: 29 significant digits, 28 of them after the point. Both edges, rather than a scatter of
-        // large values that all exercise the same branch.
-        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("9".repeat(29)))) })
-        assertEquals(
-            "paymentDetails.totalAmount",
-            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("9".repeat(30)))) }?.field,
+    fun `the bound is the largest amount the service holds at two decimal places`() {
+        // A decimal's mantissa is 96 bits, so at two places the largest it holds is this. One either side of
+        // that edge is the whole rule.
+        assertNull(
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("792281625142643375935439503.35")))
+            },
         )
-        // A value at both edges at once: 29 significant digits with 28 after the point. It has to survive
-        // rounding to test the range rather than the positive-total rule, which refuses anything that
-        // becomes 0.00.
-        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1." + "9".repeat(28)))) })
         assertEquals(
             "paymentDetails.totalAmount",
             refusal {
-                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1." + "9".repeat(29))))
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("792281625142643375935439503.36")))
+            }?.field,
+        )
+    }
+
+    @Test
+    fun `what is judged is the value as sent, not as it was written`() {
+        // Trailing zeros are a way of writing 10.00, not a reason to refuse it, and 29 digits with cents
+        // needs 31 to represent at two places however few of them the caller typed.
+        assertNull(
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("10." + "0".repeat(29)))) },
+        )
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("9".repeat(29) + ".99")))
             }?.field,
         )
     }

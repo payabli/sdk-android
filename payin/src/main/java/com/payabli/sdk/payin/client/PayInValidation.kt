@@ -12,6 +12,7 @@ import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInValidationOptions
 import java.math.BigDecimal
+import java.math.BigInteger
 
 /**
  * What this module refuses before it builds a request.
@@ -29,10 +30,17 @@ internal object PayInValidation {
     /** The service's own limit, and the one bound not expressible as a field rule. */
     private const val NAME_MAX = 60
 
-    /** The service reads an amount as a `decimal`: at most 29 significant digits, at most 28 of them after
-     * the point. */
-    private const val MAX_SIGNIFICANT_DIGITS = 29L
-    private const val MAX_SCALE = 28L
+    /** The largest mantissa a `decimal` holds, which is 96 bits, and the whole of the range check. */
+    private val MAX_MANTISSA = BigInteger("79228162514264337593543950335")
+
+    /**
+     * Loose enough to round anything a caller could mean, tight enough that `setScale` cannot explode.
+     *
+     * Neither is the range check. They only keep the rounding below from raising on a value whose exponent
+     * makes it unrepresentable in the first place.
+     */
+    private const val MAX_ROUNDABLE_SCALE = 1_000L
+    private const val MAX_INTEGER_DIGITS = 1_000L
 
     /** Letters, digits, spaces and the three punctuation marks a bank will accept in a name. */
     private val HOLDER_NAME = Regex("^[A-Za-z0-9 .'-]+$")
@@ -83,16 +91,18 @@ internal object PayInValidation {
         // cannot be shifted, measured at both extremes: 1E+2147483647 and 1E-2147483647 each raise
         // ArithmeticException. Rounding first would hand a caller that instead of a refusal, and a merely
         // large exponent would expand into a request body megabytes long.
-        if (!details.totalAmount.isSendable()) {
-            throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount is out of range")
-        }
-        if (details.serviceFee?.isSendable() == false) {
-            throw PayInException.InvalidInput("paymentDetails.serviceFee", "The service fee is out of range")
-        }
-        if (details.totalAmount.atWireScale() <= BigDecimal.ZERO) {
+        val total =
+            details.totalAmount.sendableOrNull()
+                ?: throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount is out of range")
+        if (total <= BigDecimal.ZERO) {
             throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount must be more than zero")
         }
-        if (details.serviceFee != null && details.serviceFee.atWireScale() < BigDecimal.ZERO) {
+        val fee =
+            details.serviceFee?.let {
+                it.sendableOrNull()
+                    ?: throw PayInException.InvalidInput("paymentDetails.serviceFee", "The service fee is out of range")
+            }
+        if (fee != null && fee < BigDecimal.ZERO) {
             throw PayInException.InvalidInput("paymentDetails.serviceFee", "A service fee cannot be negative")
         }
     }
@@ -184,18 +194,23 @@ internal object PayInValidation {
     }
 
     /**
-     * Whether the service's own numeric type could hold this at all.
+     * The value as it will be sent, or null when the service could not hold it.
      *
-     * It reads these fields as a `decimal`, which carries at most 29 significant digits and a scale of at
-     * most 28, and imposes no maximum of its own beyond refusing zero. So the type is the only bound there
-     * is, and a value outside it is not an amount the service can be asked for.
+     * The bound is on the **rounded** value, because that is what goes on the wire: `10.` followed by
+     * twenty-nine zeros is sendable as `10.00`, and twenty-nine digits with cents is not, however either one
+     * was written. The service reads these as a `decimal`, whose mantissa is 96 bits, so at two decimal
+     * places the largest it holds is `792281625142643375935439503.35`. It imposes no maximum of its own
+     * beyond refusing zero, so the type is the only bound there is.
      *
-     * Both edges are read from `precision` and `scale` rather than from the expanded value, so an absurd
-     * exponent costs nothing to refuse and never expands.
+     * The two guards before the rounding exist only so the rounding itself cannot throw: `setScale` raises
+     * `ArithmeticException` at both extremes of the exponent. Both read `precision` and `scale` rather than
+     * the expanded value, so an absurd one costs nothing to refuse.
      */
-    private fun BigDecimal.isSendable(): Boolean {
-        if (scale().toLong() > MAX_SCALE) return false
-        return precision().toLong() - scale().toLong() <= MAX_SIGNIFICANT_DIGITS
+    private fun BigDecimal.sendableOrNull(): BigDecimal? {
+        if (scale().toLong() > MAX_ROUNDABLE_SCALE) return null
+        if (precision().toLong() - scale().toLong() > MAX_INTEGER_DIGITS) return null
+        val rounded = atWireScale()
+        return rounded.takeIf { it.unscaledValue().abs() <= MAX_MANTISSA }
     }
 
     /**
