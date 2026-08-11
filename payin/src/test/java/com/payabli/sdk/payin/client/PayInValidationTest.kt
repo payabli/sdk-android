@@ -305,6 +305,21 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a fee of zero is sendable however it was written`() {
+        // Zero rescales at any scale, so the representation guards must not refuse it. A zero total is still
+        // refused, by the rule about the total rather than by the range.
+        val extreme = BigDecimal.ZERO.setScale(Int.MAX_VALUE)
+
+        assertNull(
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("10"), serviceFee = extreme)) },
+        )
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(extreme)) }?.field,
+        )
+    }
+
+    @Test
     fun `a fee may be zero and may not be negative`() {
         assertNull(
             refusal {

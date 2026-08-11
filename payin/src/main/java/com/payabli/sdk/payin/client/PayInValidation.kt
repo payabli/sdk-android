@@ -207,6 +207,10 @@ internal object PayInValidation {
      * the expanded value, so an absurd one costs nothing to refuse.
      */
     private fun BigDecimal.sendableOrNull(): BigDecimal? {
+        // Zero rescales at any scale: rounding `BigDecimal.ZERO.setScale(Int.MAX_VALUE)` to two places
+        // answers 0.00 without expanding, because zero short-circuits. The guards below would otherwise
+        // refuse a fee of zero written with an extreme scale, and a fee of zero is a value the service takes.
+        if (signum() == 0) return atWireScale()
         if (scale().toLong() > MAX_ROUNDABLE_SCALE) return null
         if (precision().toLong() - scale().toLong() > MAX_INTEGER_DIGITS) return null
         val rounded = atWireScale()
