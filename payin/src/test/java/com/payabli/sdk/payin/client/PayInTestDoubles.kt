@@ -28,6 +28,7 @@ import java.math.BigDecimal
  */
 internal class FakePayInTransport(
     private val response: PayabliResponse,
+    private val failure: Throwable? = null,
 ) : PayabliTransport {
     var request: PayabliRequest? = null
         private set
@@ -43,6 +44,7 @@ internal class FakePayInTransport(
         this.request = request
         bodyReference = request.body
         recordedBody = request.body?.copyOf()
+        failure?.let { throw it }
         return response
     }
 
@@ -68,6 +70,13 @@ internal class FakePayInTransport(
         ): FakePayInTransport =
             FakePayInTransport(
                 PayabliResponse(statusCode, emptyMap(), body.toByteArray(Charsets.UTF_8)),
+            )
+
+        /** Records the request, then throws, which is the path the body wipe depends on. */
+        fun failingWith(failure: Throwable): FakePayInTransport =
+            FakePayInTransport(
+                PayabliResponse(200, emptyMap(), ByteArray(0)),
+                failure = failure,
             )
     }
 }

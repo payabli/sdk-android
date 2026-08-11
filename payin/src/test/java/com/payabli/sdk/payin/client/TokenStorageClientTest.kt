@@ -1,9 +1,11 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInStoreOptions
+import com.payabli.sdk.payin.model.PayInVendorData
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -181,6 +183,46 @@ class TokenStorageClientTest {
             TokenStorageClient(transport, RecordingLogger()).storeMethod("e", PayInInstrument.Card(testCard()))
 
             assertTrue(transport.bodyReference!!.all { it == 0.toByte() })
+        }
+
+    @Test
+    fun `the body bytes are overwritten when the transport throws`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(java.io.IOException("connection reset"))
+
+            runCatching {
+                TokenStorageClient(transport, RecordingLogger())
+                    .storeMethod("e", PayInInstrument.Card(testCard()))
+            }
+
+            assertTrue(transport.bodyReference!!.all { it == 0.toByte() })
+        }
+
+    @Test
+    fun `storing sends the customer and vendor blocks`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(stored)
+            val options =
+                PayInStoreOptions(
+                    customerData = PayInCustomerData(firstName = "Test", lastName = "User", customerNumber = "C-1"),
+                    vendorData = PayInVendorData(vendorNumber = "V-1", name = "A Vendor", email = "v@example.com"),
+                    methodDescription = "Main card",
+                    fallbackAuth = true,
+                    fallbackAuthAmount = 100,
+                    source = "mobile",
+                )
+
+            TokenStorageClient(transport, RecordingLogger())
+                .storeMethod("merchant-entry", PayInInstrument.Card(testCard()), options)
+
+            val body = transport.bodyText()
+            assertTrue(body, body.contains(""""firstName":"Test""""))
+            assertTrue(body, body.contains(""""customerNumber":"C-1""""))
+            assertTrue(body, body.contains(""""vendorNumber":"V-1""""))
+            assertTrue(body, body.contains(""""name":"A Vendor""""))
+            assertTrue(body, body.contains(""""methodDescription":"Main card""""))
+            assertTrue(body, body.contains(""""fallbackAuth":true"""))
+            assertTrue(body, body.contains(""""fallbackAuthAmount":100"""))
         }
 
     @Test

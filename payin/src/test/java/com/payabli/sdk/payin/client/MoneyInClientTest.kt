@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.client
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
+import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
@@ -286,6 +287,64 @@ class MoneyInClientTest {
             // The same array the client handed the transport, which it wipes afterwards rather than before:
             // credential recovery may replay the request inside the transport and needs the bytes intact.
             assertTrue(transport.bodyReference!!.all { it == 0.toByte() })
+        }
+
+    @Test
+    fun `the body bytes are overwritten when the transport throws`() =
+        runTest(timeout = timeout) {
+            // The wipe lives in a finally, and a test that only ever sees a successful response would pass
+            // just as well if it did not.
+            val transport = FakePayInTransport.failingWith(java.io.IOException("connection reset"))
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull()
+
+            assertTrue(failure is java.io.IOException)
+            assertTrue(transport.bodyReference!!.all { it == 0.toByte() })
+        }
+
+    @Test
+    fun `a capture sends the customer block under the names the service reads`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val request =
+                PayInRequest(
+                    paymentDetails = testDetails(fee = "1.50"),
+                    paymentMethod = PayInPaymentMethod.Card(testCard()),
+                    customerData =
+                        PayInCustomerData(
+                            firstName = "Test",
+                            lastName = "User",
+                            billingEmail = "test@example.com",
+                            billingAddress1 = "123 Test St",
+                            billingCity = "Test City",
+                            billingState = "CA",
+                            billingZip = "90001",
+                            billingCountry = "US",
+                            // Blank is the same statement as absent, and the service defaults some of these.
+                            company = "  ",
+                            additionalData = mapOf("invoice" to "INV-1"),
+                        ),
+                    orderId = "order-1",
+                    orderDescription = "Two things",
+                    ipAddress = "203.0.113.4",
+                    subscriptionId = 9L,
+                )
+
+            MoneyInClient(transport, RecordingLogger()).capture("merchant-entry", request)
+
+            val body = transport.bodyText()
+            assertTrue(body, body.contains(""""firstName":"Test""""))
+            assertTrue(body, body.contains(""""billingEmail":"test@example.com""""))
+            assertTrue(body, body.contains(""""billingZip":"90001""""))
+            assertTrue(body, body.contains(""""additionalData":{"invoice":"INV-1"}"""))
+            // Lower case, which is the service's spelling for this one.
+            assertTrue(body, body.contains(""""ipaddress":"203.0.113.4""""))
+            assertTrue(body, body.contains(""""orderDescription":"Two things""""))
+            assertTrue(body, body.contains(""""subscriptionId":9"""))
+            assertTrue(body, body.contains(""""serviceFee":1.50"""))
+            assertFalse(body, body.contains("company"))
         }
 
     @Test
