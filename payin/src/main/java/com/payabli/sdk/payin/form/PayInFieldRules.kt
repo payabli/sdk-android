@@ -1,5 +1,7 @@
 package com.payabli.sdk.payin.form
 
+import com.payabli.sdk.payin.model.SensitiveDigits
+
 /**
  * What each field accepts, and what is wrong with it when it does not.
  *
@@ -89,8 +91,10 @@ public object PayInFieldRules {
         return when (field) {
             PayInField.CardExpiration -> expiryError(value, today)
             PayInField.BillingEmail -> emailError(value)
-            // One implementation for the counted-and-checksummed fields, reached from both overloads.
-            else -> error(field, value.toCharArray(), today)
+            // One implementation for the counted-and-checksummed fields, reached from both overloads. The
+            // copy is wiped: the caller's `String` cannot be erased, which is no reason to leave a second
+            // one that can be.
+            else -> value.toCharArray().useAndWipe { error(field, it, today) }
         }
     }
 
@@ -131,7 +135,7 @@ public object PayInFieldRules {
      *
      * Says a number is well formed, never that an account exists.
      */
-    public fun passesLuhn(digits: String): Boolean = passesLuhn(digits.toCharArray())
+    public fun passesLuhn(digits: String): Boolean = digits.toCharArray().useAndWipe { passesLuhn(it) }
 
     /** As [passesLuhn], for a number held in a buffer rather than a `String`. */
     public fun passesLuhn(digits: CharArray): Boolean {
@@ -151,7 +155,7 @@ public object PayInFieldRules {
     }
 
     /** The ABA routing checksum: weights 3, 7, 1 repeating, and the total is a multiple of ten. */
-    public fun passesAbaChecksum(digits: String): Boolean = passesAbaChecksum(digits.toCharArray())
+    public fun passesAbaChecksum(digits: String): Boolean = digits.toCharArray().useAndWipe { passesAbaChecksum(it) }
 
     /** As [passesAbaChecksum], for a number held in a buffer rather than a `String`. */
     public fun passesAbaChecksum(digits: CharArray): Boolean {
@@ -159,6 +163,20 @@ public object PayInFieldRules {
         val weights = intArrayOf(3, 7, 1, 3, 7, 1, 3, 7, 1)
         val sum = digits.indices.sumOf { (digits[it] - '0') * weights[it] }
         return sum % 10 == 0
+    }
+
+    /**
+     * Runs [block] over the copy and overwrites it, whichever way [block] ends.
+     *
+     * Every `String` overload here makes one of these, and a card number in it is as erasable as any other
+     * buffer even though the `String` it came from is not.
+     */
+    private inline fun <T> CharArray.useAndWipe(block: (CharArray) -> T): T {
+        try {
+            return block(this)
+        } finally {
+            fill(SensitiveDigits.WIPED)
+        }
     }
 
     /** ASCII digits, matching [DIGITS], which the `String` overloads used before the buffer ones existed. */

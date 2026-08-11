@@ -102,7 +102,7 @@ internal object PayInValidation {
         options: PayInValidationOptions,
     ) {
         data.cardNumber.useDigits { number ->
-            if (number.isEmpty()) {
+            if (number.isMissing()) {
                 throw PayInException.InvalidInput(FIELD_CARD_NUMBER, "A card number is required")
             }
             // The switch is applied to the answer rather than passed into the rules: a caller turning the check
@@ -115,7 +115,7 @@ internal object PayInValidation {
         }
 
         data.securityCode.useDigits { securityCode ->
-            if (securityCode.isEmpty()) {
+            if (securityCode.isMissing()) {
                 throw PayInException.InvalidInput(FIELD_CARD_CVV, "A security code is required")
             }
             PayInFieldRules
@@ -141,7 +141,7 @@ internal object PayInValidation {
         options: PayInValidationOptions,
     ) {
         data.accountNumber.useDigits { account ->
-            if (account.isEmpty()) {
+            if (account.isMissing()) {
                 throw PayInException.InvalidInput(FIELD_ACH_ACCOUNT, "An account number is required")
             }
             PayInFieldRules
@@ -165,6 +165,16 @@ internal object PayInValidation {
             )
         }
     }
+
+    /**
+     * Blank counts as absent, which the field rules cannot say for a buffer.
+     *
+     * `PayInFieldRules.error` answers null for a blank value, because the form asks about requiredness
+     * separately. A buffer holding only spaces is therefore not empty, passes every rule, and reaches the body
+     * writer, whose digit check raises an internal defect instead of the typed missing-field error a caller is
+     * owed.
+     */
+    private fun CharArray.isMissing(): Boolean = isEmpty() || all { it.isWhitespace() }
 
     private fun name(
         value: String,

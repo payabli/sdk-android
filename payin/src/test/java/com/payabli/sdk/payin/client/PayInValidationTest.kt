@@ -325,6 +325,24 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a buffer holding only spaces is a missing field, not an internal defect`() {
+        // The field rules answer null for a blank value, so a whitespace-only buffer passed every check and
+        // reached the body writer, whose digit assertion is an internal defect rather than a typed refusal.
+        val cases =
+            listOf(
+                "paymentMethod.cardnumber" to PayInInstrument.Card(card(pan = "   ")),
+                "paymentMethod.cardcvv" to PayInInstrument.Card(card(securityCode = "  ")),
+                "paymentMethod.achAccount" to PayInInstrument.BankAccount(account(number = "    ")),
+            )
+
+        cases.forEach { (field, instrument) ->
+            val refused = refusal { PayInValidation.instrument(instrument, PayInValidationOptions()) }
+            assertEquals(field, field, refused?.field)
+            assertTrue(field, refused?.reason?.contains("required") == true)
+        }
+    }
+
+    @Test
     fun `a closed buffer reads as a missing field rather than an exception`() {
         val data = card()
         data.cardNumber.close()
