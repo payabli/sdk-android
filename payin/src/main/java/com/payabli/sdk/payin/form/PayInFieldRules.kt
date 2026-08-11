@@ -111,8 +111,8 @@ public object PayInFieldRules {
      * The same answer for a value held in a buffer rather than a `String`.
      *
      * Here so a card number or an account number can be checked without being turned into a `String` that
-     * cannot afterwards be erased. The two fields this overload cannot answer without one — an expiry and an
-     * email address — build it, and neither is sensitive.
+     * cannot afterwards be erased. An expiry and an email address are the two this overload cannot answer
+     * without one, and they build it because their validators are text-based.
      */
     public fun error(
         field: PayInField,
