@@ -70,9 +70,17 @@ class PayInWireFormatTest {
                 """.trimIndent(),
             )
 
+        // Every populated field, as the lower-case case does: asserting four of ten leaves six aliases able
+        // to regress silently, which is the failure this whole class exists to catch.
         assertEquals("t-1", decoded.paymentTransId)
+        assertEquals("g-1", decoded.gatewayTransId)
+        assertEquals("o-1", decoded.orderId)
         assertEquals("card", decoded.method)
+        assertEquals(1, decoded.transStatus)
+        assertEquals(42L, decoded.paypointId)
         assertEquals(BigDecimal("10.00"), decoded.totalAmount)
+        assertEquals(BigDecimal("9.71"), decoded.netAmount)
+        assertEquals("fiserv", decoded.connectorName)
         assertEquals(7L, decoded.payorId)
     }
 
@@ -101,18 +109,25 @@ class PayInWireFormatTest {
     fun `the stored-method envelope decodes in three casings`() {
         val bodies =
             listOf(
-                """{"isSuccess":true,"responseText":"ok","responseData":{"referenceId":"tok-1","resultCode":1}}""",
-                """{"issuccess":true,"responsetext":"ok","responsedata":{"referenceid":"tok-1","resultcode":1}}""",
-                """{"IsSuccess":true,"ResponseText":"ok","ResponseData":{"ReferenceId":"tok-1","ResultCode":1}}""",
+                """{"isSuccess":true,"responseText":"ok","responseData":{"referenceId":"tok-1",
+                   "methodReferenceId":501,"customerId":88,"resultCode":1,"resultText":"Approved"}}""",
+                """{"issuccess":true,"responsetext":"ok","responsedata":{"referenceid":"tok-1",
+                   "methodreferenceid":501,"customerid":88,"resultcode":1,"resulttext":"Approved"}}""",
+                """{"IsSuccess":true,"ResponseText":"ok","ResponseData":{"ReferenceId":"tok-1",
+                   "MethodReferenceId":501,"CustomerId":88,"ResultCode":1,"ResultText":"Approved"}}""",
             )
 
+        // Every field of the payload in every casing: an alias omitted here is an alias nothing checks, and a
+        // typo in one reads as null rather than as a failure.
         bodies.forEach { body ->
             val decoded = stored(body)
             assertEquals(body, "ok", decoded.responseText)
-            assertEquals(body, "tok-1", decoded.responseData?.referenceId)
-            assertEquals(body, 1, decoded.responseData?.resultCode)
-            // Its absence here made a re-spelled success read as a refusal.
             assertEquals(body, true, decoded.isSuccess)
+            assertEquals(body, "tok-1", decoded.responseData?.referenceId)
+            assertEquals(body, 501L, decoded.responseData?.methodReferenceId)
+            assertEquals(body, 88L, decoded.responseData?.customerId)
+            assertEquals(body, 1, decoded.responseData?.resultCode)
+            assertEquals(body, "Approved", decoded.responseData?.resultText)
         }
     }
 
