@@ -216,6 +216,7 @@ internal class StoredMethodPayload(
  */
 @Serializable
 internal class StoredMethodEnvelope(
+    @JsonNames("issuccess", "IsSuccess")
     val isSuccess: Boolean? = null,
     @JsonNames("responsetext", "ResponseText")
     val responseText: String? = null,

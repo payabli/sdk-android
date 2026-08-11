@@ -102,8 +102,8 @@ class PayInWireFormatTest {
         val bodies =
             listOf(
                 """{"isSuccess":true,"responseText":"ok","responseData":{"referenceId":"tok-1","resultCode":1}}""",
-                """{"isSuccess":true,"responsetext":"ok","responsedata":{"referenceid":"tok-1","resultcode":1}}""",
-                """{"isSuccess":true,"ResponseText":"ok","ResponseData":{"ReferenceId":"tok-1","ResultCode":1}}""",
+                """{"issuccess":true,"responsetext":"ok","responsedata":{"referenceid":"tok-1","resultcode":1}}""",
+                """{"IsSuccess":true,"ResponseText":"ok","ResponseData":{"ReferenceId":"tok-1","ResultCode":1}}""",
             )
 
         bodies.forEach { body ->
@@ -111,6 +111,8 @@ class PayInWireFormatTest {
             assertEquals(body, "ok", decoded.responseText)
             assertEquals(body, "tok-1", decoded.responseData?.referenceId)
             assertEquals(body, 1, decoded.responseData?.resultCode)
+            // Its absence here made a re-spelled success read as a refusal.
+            assertEquals(body, true, decoded.isSuccess)
         }
     }
 
