@@ -131,8 +131,10 @@ internal object PayInValidation {
 
         name(data.holderName, FIELD_CARD_HOLDER, "A cardholder name is required")
         required(data.postalCode, FIELD_CARD_ZIP, "A postal code is required")
+        // Trimmed, because that is what the writer sends: judging the untrimmed value refuses a code that
+        // would have gone out inside the limit.
         PayInFieldRules
-            .error(PayInField.CardPostalCode, data.postalCode.toCharArray())
+            .error(PayInField.CardPostalCode, data.postalCode.trim().toCharArray())
             ?.let { throw PayInException.InvalidInput(FIELD_CARD_ZIP, "The postal code is too long") }
     }
 
@@ -150,7 +152,7 @@ internal object PayInValidation {
         }
 
         required(data.routingNumber, FIELD_ACH_ROUTING, "A routing number is required")
-        val routingError = PayInFieldRules.error(PayInField.RoutingNumber, data.routingNumber.toCharArray())
+        val routingError = PayInFieldRules.error(PayInField.RoutingNumber, data.routingNumber.trim().toCharArray())
         val checksumWaived = routingError == PayInFieldError.RoutingNumberNotValid && !options.checksRoutingNumber
         if (routingError != null && !checksumWaived) {
             throw PayInException.InvalidInput(FIELD_ACH_ROUTING, "The routing number is not valid")

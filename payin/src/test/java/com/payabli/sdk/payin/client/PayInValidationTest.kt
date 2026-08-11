@@ -298,6 +298,38 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a value is judged as it will be sent, not as it was typed`() {
+        // The writer trims both of these, so judging the untrimmed value refuses a request that would have
+        // gone out valid.
+        assertNull(
+            refusal {
+                PayInValidation.instrument(
+                    PayInInstrument.BankAccount(account(routing = "  122105278  ")),
+                    PayInValidationOptions(),
+                )
+            },
+        )
+        assertNull(
+            refusal {
+                PayInValidation.instrument(
+                    PayInInstrument.Card(card(postalCode = "  123456789012  ")),
+                    PayInValidationOptions(),
+                )
+            },
+        )
+        // Still too long once trimmed, so still refused.
+        assertEquals(
+            "paymentMethod.cardzip",
+            refusal {
+                PayInValidation.instrument(
+                    PayInInstrument.Card(card(postalCode = " 1234567890123 ")),
+                    PayInValidationOptions(),
+                )
+            }?.field,
+        )
+    }
+
+    @Test
     fun `a blank routing number is refused`() {
         // The field rules answer null for a blank value, since the form checks requiredness separately, so
         // this is the one required bank field that reached the wire empty.
