@@ -56,8 +56,8 @@ public class PayInCardData(
     public val holderName: String,
     public val postalCode: String,
 ) {
-    /** No field of a card belongs in a message, and the two that are buffers redact themselves anyway. */
-    override fun toString(): String = "PayInCardData(expiryYear=${expiry.year})"
+    /** No field of a card belongs in a message, the expiry included. */
+    override fun toString(): String = "PayInCardData"
 }
 
 /**

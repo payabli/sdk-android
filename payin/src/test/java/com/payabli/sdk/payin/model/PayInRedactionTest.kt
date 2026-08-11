@@ -29,12 +29,15 @@ class PayInRedactionTest {
         )
 
     @Test
-    fun `card data carries no number, code, or holder`() {
+    fun `card data carries nothing about the card, expiry included`() {
         val rendered = card().toString()
 
-        listOf(pan, securityCode, "A Payer", "22039").forEach { assertFalse(it, rendered.contains(it)) }
-        // The expiry year is not a secret and is what makes one card distinguishable from another in a report.
-        assertTrue(rendered.contains("2030"))
+        // The expiry is on the same never-logged list as the number and the security code, so it is absent
+        // too: an interpolated object in a crash report would otherwise carry it.
+        listOf(pan, securityCode, "A Payer", "22039", "2030", "12").forEach {
+            assertFalse(it, rendered.contains(it))
+        }
+        assertEquals("PayInCardData", rendered)
     }
 
     @Test
