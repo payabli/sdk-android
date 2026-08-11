@@ -24,7 +24,9 @@ import kotlinx.serialization.builtins.serializer
  * in this module rather than bad input.
  *
  * The caller owns the bytes that come back and is expected to overwrite them once the request has been
- * written. Every intermediate buffer this file allocates is overwritten before it is dropped.
+ * written. Every buffer here that can hold a [SensitiveDigits] value is overwritten before it is dropped:
+ * the fragment, the working buffers behind it, and the copy each read takes. The encoded outer body and the
+ * quoted field names are dropped without wiping, and hold none of those values.
  */
 internal object PayInBodyWriter {
     private const val OPEN_BRACE = '{'.code.toByte()

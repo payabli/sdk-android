@@ -117,6 +117,37 @@ class PayInWireFormatTest {
     }
 
     @Test
+    fun `an identifier stays one path segment`() {
+        // Without encoding these change the request rather than the identifier: a query, a fragment, or
+        // another route entirely.
+        assertEquals(
+            "/api/v2/MoneyIn/capture/101-abc%3Fx%3D1",
+            PayInRoutes.captureAuthorized("101-abc?x=1"),
+        )
+        assertEquals(
+            "/api/v2/MoneyIn/capture/101%2Fvoid",
+            PayInRoutes.captureAuthorized("101/void"),
+        )
+        assertEquals(
+            "/api/v2/MoneyIn/capture/101%23top",
+            PayInRoutes.captureAuthorized("101#top"),
+        )
+    }
+
+    @Test
+    fun `an ordinary identifier is left readable`() {
+        // The unreserved set survives, so a real transaction id is not turned into escape sequences.
+        assertEquals("/api/v2/MoneyIn/capture/101-abc_9.7~x", PayInRoutes.captureAuthorized("101-abc_9.7~x"))
+    }
+
+    @Test
+    fun `a space and a non-ascii character are encoded from their utf-8 bytes`() {
+        // URLEncoder would write a space as `+`, which is form encoding and wrong in a path.
+        assertEquals("/api/v2/MoneyIn/capture/a%20b", PayInRoutes.captureAuthorized("a b"))
+        assertEquals("/api/v2/MoneyIn/capture/%C3%A9", PayInRoutes.captureAuthorized("\u00e9"))
+    }
+
+    @Test
     fun `an absent field is null rather than a decode failure`() {
         val decoded = transaction("{}")
 

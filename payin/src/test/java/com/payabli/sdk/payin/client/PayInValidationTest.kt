@@ -288,6 +288,16 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a dot segment is not a transaction id`() {
+        // A dot is unreserved, so encoding leaves it intact and it would still address a different path.
+        listOf(".", "..", " .. ").forEach { value ->
+            assertEquals(value, "transId", refusal { PayInValidation.transId(value) }?.field)
+        }
+        // A dot inside an identifier is ordinary.
+        assertNull(refusal { PayInValidation.transId("101.abc") })
+    }
+
+    @Test
     fun `no refusal message carries the value it refused`() {
         val pan = "4111111111111112"
         val refused =

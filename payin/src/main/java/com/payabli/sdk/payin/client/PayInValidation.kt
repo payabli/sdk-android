@@ -84,6 +84,11 @@ internal object PayInValidation {
 
     fun transId(value: String) {
         if (value.isBlank()) throw PayInException.InvalidInput("transId", "A transaction id is required")
+        // A dot segment is unreserved, so encoding leaves it intact and it would still address a different
+        // path. No transaction the service issues looks like this.
+        if (value.trim() == "." || value.trim() == "..") {
+            throw PayInException.InvalidInput("transId", "A transaction id is required")
+        }
     }
 
     /**
