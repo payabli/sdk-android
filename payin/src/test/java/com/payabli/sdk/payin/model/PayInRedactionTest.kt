@@ -13,6 +13,10 @@ import java.math.BigDecimal
  * `toString` reaches a crash reporter, a debugger and any log line that interpolates an object, and none of
  * those redact. Each type here carries something that must not travel: a card number, an amount, a payer's
  * name, or server text that echoes what was submitted.
+ *
+ * The carriers at the end render nothing today because they never declared a `toString` and so get the
+ * identity one. They are here as a guard rather than as a present risk: making any of them a `data class`
+ * turns its every property into rendered output, and the change that did it would look harmless.
  */
 class PayInRedactionTest {
     private val pan = "4111111111111111"
@@ -160,5 +164,63 @@ class PayInRedactionTest {
 
         assertEquals("Insufficient funds", refused.reason)
         assertEquals("No funds", refused.detail)
+    }
+
+    @Test
+    fun `a request carries no key, address or nested instrument`() {
+        val rendered =
+            PayInRequest(
+                paymentDetails = PayInPaymentDetails(BigDecimal("10.00")),
+                paymentMethod = PayInPaymentMethod.Card(card()),
+                customerData = PayInCustomerData(firstName = "Ada", billingEmail = "ada@example.test"),
+                accountId = "acct-77",
+                ipAddress = "203.0.113.9",
+                idempotencyKey = "key-1",
+                validationCode = "code-9",
+            ).toString()
+
+        listOf(pan, securityCode, "Ada", "ada@example.test", "acct-77", "203.0.113.9", "key-1", "code-9")
+            .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+    }
+
+    @Test
+    fun `an authorised capture carries neither its transaction nor its key`() {
+        val rendered =
+            PayInAuthorizedRequest(
+                transId = "101-abc",
+                paymentDetails = PayInPaymentDetails(BigDecimal("4.50")),
+                idempotencyKey = "key-2",
+            ).toString()
+
+        listOf("101-abc", "key-2", "4.50").forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+    }
+
+    @Test
+    fun `store options carry no customer or vendor detail`() {
+        val rendered =
+            PayInStoreOptions(
+                customerData = PayInCustomerData(firstName = "Ada"),
+                vendorData = PayInVendorData(ein = "12-3456789", email = "ap@example.test", phone = "5551234567"),
+                methodDescription = "on file",
+            ).toString()
+
+        listOf("Ada", "12-3456789", "ap@example.test", "5551234567")
+            .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+    }
+
+    @Test
+    fun `vendor data carries neither its tax number nor its contact`() {
+        val rendered = PayInVendorData(ein = "12-3456789", email = "ap@example.test", phone = "5551234567").toString()
+
+        listOf("12-3456789", "ap@example.test", "5551234567")
+            .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+    }
+
+    @Test
+    fun `a stored payment method carries no token`() {
+        // The identifier is what charges the method, so it is a credential in everything but name.
+        val rendered = PayInPaymentMethod.Stored("tok-77").toString()
+
+        assertFalse(rendered.contains("tok-77"))
     }
 }
