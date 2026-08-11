@@ -61,6 +61,7 @@ class MoneyInClientTest {
             val result = MoneyInClient(transport, RecordingLogger()).capture("merchant-entry", cardRequest())
 
             assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
+            assertEquals("application/json", transport.request?.headers?.get("Content-Type"))
             val body = transport.bodyText()
             // The casing is the service's own.
             assertTrue(body, body.contains(""""method":"card""""))
@@ -108,6 +109,9 @@ class MoneyInClientTest {
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
             assertEquals("code-9", transport.request?.headers?.get("validationCode"))
+            // The byte-assembled body skips PayabliRequest.json, which is what would otherwise add this. The
+            // transport adds no header of its own, and an unset content type is sent as form encoding.
+            assertEquals("application/json", transport.request?.headers?.get("Content-Type"))
         }
 
     @Test

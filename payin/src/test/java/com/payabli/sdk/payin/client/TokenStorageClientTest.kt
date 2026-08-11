@@ -37,6 +37,8 @@ class TokenStorageClientTest {
                     .storeMethod("merchant-entry", PayInInstrument.Card(testCard()))
 
             assertEquals("/api/TokenStorage/add", transport.request?.path)
+            // Assembled as bytes, so the JSON content type is this client's to set.
+            assertEquals("application/json", transport.request?.headers?.get("Content-Type"))
             val body = transport.bodyText()
             assertTrue(body, body.contains(""""cardnumber":"$TEST_PAN""""))
             assertTrue(body, body.contains(""""cardHolder":"Integration Test""""))

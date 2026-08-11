@@ -164,16 +164,16 @@ internal object PayInBodyWriter {
             name: String,
             value: SensitiveDigits,
         ) {
-            val read = value.read()
-            check(PayInFieldRules.isAllDigits(read)) {
-                // No value in the message: this reads a card number.
-                "a buffered field reached the body writer holding something other than digits"
+            value.useDigits { read ->
+                check(PayInFieldRules.isAllDigits(read)) {
+                    // No value in the message: this reads a card number.
+                    "a buffered field reached the body writer holding something other than digits"
+                }
+                key(name)
+                buffer.write(QUOTE)
+                read.forEach { buffer.write(it.code.toByte()) }
+                buffer.write(QUOTE)
             }
-            key(name)
-            buffer.write(QUOTE)
-            read.forEach { buffer.write(it.code.toByte()) }
-            buffer.write(QUOTE)
-            read.fill(SensitiveDigits.WIPED)
         }
 
         fun finish(): ByteArray {

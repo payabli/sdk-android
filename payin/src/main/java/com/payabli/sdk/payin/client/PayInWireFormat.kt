@@ -6,6 +6,7 @@ package com.payabli.sdk.payin.client
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
+import com.payabli.sdk.core.network.PayabliRequest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonNames
 import java.math.BigDecimal
@@ -74,6 +75,17 @@ internal object PayInRoutes {
     const val METHOD_CHECK: String = "check"
     const val METHOD_CASH: String = "cash"
 }
+
+/**
+ * The media type every request here carries.
+ *
+ * `PayabliRequest.json` adds it, and these bodies are assembled as bytes rather than through that helper, so
+ * they have to add it themselves. The transport forwards the headers a request carries and sets none of its
+ * own, and `HttpURLConnection` defaults an unset content type to form encoding, which the service reads as
+ * an unsupported media type rather than as JSON.
+ */
+internal val JSON_CONTENT_TYPE: Map<String, String> =
+    mapOf(PayabliRequest.CONTENT_TYPE_HEADER to PayabliRequest.APPLICATION_JSON)
 
 /** What is being charged. The two amounts are unquoted numbers with two decimal places. */
 @Serializable

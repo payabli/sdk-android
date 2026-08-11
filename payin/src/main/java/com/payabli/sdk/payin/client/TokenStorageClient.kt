@@ -77,6 +77,7 @@ internal class TokenStorageClient(
                         path = PayInRoutes.STORE_METHOD,
                         route = PayInRoutes.STORE_METHOD,
                         query = options.query(),
+                        headers = JSON_CONTENT_TYPE,
                         body = body,
                     ),
                 )

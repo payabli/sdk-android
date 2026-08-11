@@ -147,7 +147,7 @@ internal class MoneyInClient(
                         path = path,
                         route = route,
                         query = request.query(allowsAchValidation),
-                        headers = request.headers(),
+                        headers = request.headers() + JSON_CONTENT_TYPE,
                         body = body,
                     ),
                 )

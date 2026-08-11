@@ -111,6 +111,8 @@ class PayInBodyWriterTest {
 
         assertTrue(failure is IllegalStateException)
         assertFalse(failure?.message?.contains("4111") ?: true)
+        // The copy the writer read is overwritten on the way out, which the check throwing must not skip.
+        assertTrue(data.cardNumber.rawCopy().isNotEmpty())
     }
 
     @Test
