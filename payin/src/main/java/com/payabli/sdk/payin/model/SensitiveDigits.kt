@@ -50,6 +50,21 @@ public class SensitiveDigits private constructor(
      */
     internal fun read(): CharArray = if (wiped) CharArray(0) else digits.copyOf()
 
+    /**
+     * Runs [block] over the digits and overwrites the copy before returning, including when [block] throws.
+     *
+     * The only way to read these that leaves nothing behind. [read] hands out a copy the caller then owns, and
+     * a caller that throws mid-validation never gets to wipe it.
+     */
+    internal fun <T> useDigits(block: (CharArray) -> T): T {
+        val copy = read()
+        try {
+            return block(copy)
+        } finally {
+            copy.fill(WIPED)
+        }
+    }
+
     /** True once [close] has run. */
     internal val isWiped: Boolean get() = wiped
 
