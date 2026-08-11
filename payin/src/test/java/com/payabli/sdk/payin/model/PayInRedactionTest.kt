@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.model
 
 import com.payabli.sdk.payin.form.ExpiryValue
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -157,6 +158,18 @@ class PayInRedactionTest {
     }
 
     @Test
+    fun `an undecodable failure keeps the frames that say what failed`() {
+        // Without them every decode failure points at the redacting wrapper's own constructor, which names no
+        // serializer, file or line. `:core` and `:taptopay` both keep the frames for that reason.
+        val cause = IllegalStateException("Unexpected JSON token at offset 42: $pan")
+
+        val redacted = PayInException.Undecodable(cause).cause
+
+        assertArrayEquals(cause.stackTrace, redacted?.stackTrace)
+        assertEquals("PayInRedactionTest", redacted?.stackTrace?.first()?.simpleClassName())
+    }
+
+    @Test
     fun `the reason a caller displays is still the server's`() {
         // Redaction is about what is written down, not about what a payer is shown: the reason stays readable
         // on the exception a caller catches.
@@ -223,4 +236,6 @@ class PayInRedactionTest {
 
         assertFalse(rendered.contains("tok-77"))
     }
+
+    private fun StackTraceElement.simpleClassName(): String = className.substringAfterLast('.')
 }

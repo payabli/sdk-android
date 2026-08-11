@@ -166,4 +166,10 @@ public sealed class PayInException(
  */
 private class RedactedCause(
     cause: Throwable,
-) : Throwable("${cause.javaClass.name} (message withheld)")
+) : Throwable("${cause.javaClass.name} (message withheld)") {
+    init {
+        // The frames are the whole diagnostic value: which serializer failed, in which file, at which line.
+        // Dropping them leaves every decode failure pointing at this constructor.
+        stackTrace = cause.stackTrace
+    }
+}
