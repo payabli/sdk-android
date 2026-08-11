@@ -145,12 +145,20 @@ class DemoEnvironmentTest {
     }
 
     @Test
-    fun `the shipped default setting names an environment`() {
-        // Pins the default in the build file against the labels here. They are two files, and a typo
-        // in the build file otherwise reaches a device as a silent fall back to sandbox with a
-        // warning on the Setup screen.
+    fun `the build file's default is the fallback environment`() {
+        // The literal and DEMO_ENVIRONMENT's fallback are in two files, and this is the only thing
+        // holding them equal. A default of "qa" resolves, reports no problem and reaches a device.
+        val configured = BuildFileDefaults.of("payabli.demo.environment")
+        assertNotNull("no payabli.demo.environment default in ${BuildFileDefaults.location}", configured)
+        assertEquals(DemoEnvironment.DEFAULT.label, configured)
+    }
+
+    @Test
+    fun `the setting this build resolved names an environment`() {
+        // Fails on a typo in a developer's own secrets.properties, which otherwise reaches a device
+        // as a silent fall back with a warning on the Setup screen.
         assertNotNull(
-            "payabli.demo.environment default names no environment",
+            "payabli.demo.environment=${BuildConfig.DEMO_ENVIRONMENT} names no environment",
             DemoEnvironment.named(BuildConfig.DEMO_ENVIRONMENT),
         )
         assertNull(DemoConfiguration.fromBuildConfig().environmentProblem)
