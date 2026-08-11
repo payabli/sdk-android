@@ -114,6 +114,18 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `an authorisation carries the key too`() =
+        runTest(timeout = timeout) {
+            // The same request type serves both calls, and an authorisation repeated without a key places a
+            // second hold on the payer's funds.
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingLogger()).authorize("e", cardRequest(idempotencyKey = "key-1"))
+
+            assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    @Test
     fun `only the flags that were set are sent`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)

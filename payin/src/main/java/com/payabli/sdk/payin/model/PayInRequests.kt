@@ -122,10 +122,13 @@ public class PayInRequest(
     public val subdomain: String? = null,
     public val subscriptionId: Long? = null,
     /**
-     * Makes a repeated capture return the first one's result instead of charging again.
+     * Makes a repeated request return the first one's result instead of acting again.
+     *
+     * This type serves both operations, so the key covers both: a capture repeated without one charges twice,
+     * and an authorisation repeated without one places a second hold on the payer's funds.
      *
      * Sent as the `idempotencyKey` header, which is the spelling the service reads. **Not** a client-side
-     * retry: nothing in this module retries a capture, and this is what makes a caller's own retry safe.
+     * retry: nothing in this module retries either call, and this is what makes a caller's own retry safe.
      */
     public val idempotencyKey: String? = null,
     public val achValidation: Boolean? = null,
