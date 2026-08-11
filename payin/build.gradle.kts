@@ -1,6 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
+    // @Serializable needs this plugin per module; the runtime comes from :core. Absent, every serializer()
+    // call reads as an unresolved reference.
+    alias(libs.plugins.kotlin.serialization)
     id("payabli.publish")
     id("payabli.quality")
 }
@@ -51,6 +54,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
 
     testImplementation(libs.junit)
+    // The clients are suspending, so their tests need a test dispatcher, as :core's and :taptopay's do.
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
     debugImplementation(libs.androidx.compose.ui.tooling)

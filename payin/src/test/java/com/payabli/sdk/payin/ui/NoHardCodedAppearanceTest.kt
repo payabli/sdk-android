@@ -12,7 +12,7 @@ import java.io.File
  * prove that the composables use the resolved value, because a composable that ignored the style and
  * wrote `Color(0xFF008BCE)` would still pass it. This reads the source instead.
  *
- * It greps rather than renders because every CI job here runs without a device.
+ * It reads the source, because every CI job here runs without a device.
  */
 class NoHardCodedAppearanceTest {
     private val uiSources: List<File> =
@@ -27,8 +27,7 @@ class NoHardCodedAppearanceTest {
      * One entry, and it names no colour anything sees: an `ImageVector` path has to declare a fill,
      * and `Icon` paints its tint over it. Material's own icons are built the same way.
      *
-     * The exception is one line rather than the whole file, so a colour added anywhere else in that
-     * file is still caught.
+     * The exception is a single line, so a colour added anywhere else in that file is still caught.
      */
     private val colourExceptions =
         mapOf(
@@ -152,7 +151,7 @@ class NoHardCodedAppearanceTest {
             "Color(red = 1f, green = 0f, blue = 0f)",
             "Color.Red",
             "background(Color.Magenta)",
-            // Factories rather than constructors, which the constructor form does not cover.
+            // Factory forms, which the constructor pattern does not match.
             "Color.hsl(210f, 0.8f, 0.5f)",
             "Color.hsv(210f, 0.8f, 0.5f)",
             "Color.parseColor(\"#FF0000\")",
@@ -161,7 +160,7 @@ class NoHardCodedAppearanceTest {
 
     @Test
     fun `the colour rule leaves a theme role and a transparent alone`() {
-        // A rule that flagged these would be turned off, and then it would catch nothing.
+        // Theme roles and a transparent, which the rule has to leave alone to stay usable.
         listOf(
             "MaterialTheme.colorScheme.onSurface",
             "style.selectedContainer",

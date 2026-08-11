@@ -51,13 +51,47 @@ jobs:
 
       # The aggregate module has no tests, so no coverage task.
       #
-      # --stacktrace because this step has failed three times with "Unable to generate Jacoco
-      # report" and nothing else: a different module each time, passing on a re-run of the same
-      # commit, and never reproducing locally. Gradle prints the cause only when asked. It is not
-      # in the class the GRADLE_OPTS note warns about, which is --info and --debug printing
-      # repository credentials.
+      # --stacktrace because this step has failed with "Unable to generate Jacoco report" and
+      # nothing else: a different module each time, passing on a re-run of the same commit, and
+      # never reproducing locally. Gradle prints the cause only when asked. It is not in the class
+      # the GRADLE_OPTS note warns about, which is --info and --debug printing repository
+      # credentials.
+      #
+      # The cause, captured on two runs since:
+      #
+      #   Caused by: java.lang.ExceptionInInitializerError
+      #   Caused by: java.lang.IllegalStateException: zip file closed
+      #       at com.android.Version.<clinit>(Version.java:38)
+      #       at java.util.zip.ZipFile.ensureOpen <- JarURLConnection.getInputStream
+      #
+      # A report worker initialises a class whose jar handle has already been closed. That accounts
+      # for every property above: which module fails is whichever worker draws the stale handle, a
+      # re-run gets fresh workers, and a warm local daemon holds its handles open. So it is a worker
+      # and classloader lifetime problem rather than anything about the coverage data.
+      #
+      # --max-workers=1 is the mitigation, and it is a hypothesis rather than a proven fix: four
+      # report tasks ran concurrently, each in a worker drawing from a shared classloader cache, and
+      # serialising them removes the race the evidence describes. It is one flag rather than four
+      # separate invocations because a second invocation would reuse the same daemon and could keep
+      # the same cache.
+      #
+      # Cost, measured on the four-module step with every task re-run and all 940 tests running: 9 and 11
+      # seconds unserialised against 16 and 17. Across a whole ci.yml run it does not separate from
+      # run-to-run noise, 491 to 558 seconds with the flag against 458 to 580 before it, because the step
+      # here builds one module and the sonar job's lint and format tasks stay parallel.
+      #
+      # **Every invocation that runs a coverage task carries this flag**, here, in the card-present
+      # job, in both of the sonar job's report steps, and in nightly.yml. A mitigation on one of five
+      # leaves the same race reachable from the other four, which is where the first version of this
+      # left it. When adding a coverage task anywhere, add the flag with it.
+      #
+      # What would falsify it: this failing again with --max-workers=1 in effect. Then the sharing is
+      # not between concurrent workers and the next thing to try is --no-daemon for this step alone.
+      # Do not remove the flag without that evidence; the failure is intermittent, so a green run
+      # after removing it proves nothing.
       - name: Coverage
-        run: ./gradlew --stacktrace :core:createDebugUnitTestCoverageReport
+        run: ./gradlew --stacktrace --max-workers=1
+          :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
           :example:createDebugUnitTestCoverageReport
@@ -103,7 +137,7 @@ jobs:
         run: ./gradlew :taptopay:lint
 
       - name: Coverage
-        run: ./gradlew :taptopay:createDebugUnitTestCoverageReport
+        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
   sonar:
     name: SonarCloud
@@ -132,6 +166,11 @@ jobs:
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
           :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
           :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
+
+      # Split from the step above so the serialising flag reaches the coverage tasks without also
+      # serialising eleven lint and format tasks. See the note in the build job.
+      - name: Produce coverage reports
+        run: ./gradlew --max-workers=1
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
@@ -141,7 +180,10 @@ jobs:
       - name: Produce card-present reports
         if: env.GPR_TOKEN != ''
         run: ./gradlew :taptopay:ktlintCheck :taptopay:lint
-          :taptopay:createDebugUnitTestCoverageReport
+
+      - name: Produce card-present coverage report
+        if: env.GPR_TOKEN != ''
+        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
       - name: Analyze
         run: ./gradlew sonar

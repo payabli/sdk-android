@@ -37,8 +37,7 @@ class CardNumberSpacingTest {
 
     @Test
     fun `the caret maps to the same place it would sit if the spaces were typed`() {
-        // Built rather than asserted one by one: the transformed offset for a caret after n digits
-        // is n plus the spaces that precede it.
+        // The transformed offset for a caret after n digits is n plus the spaces that precede it.
         val digits = "4111111111111111"
         val mapping = spaced(digits).offsetMapping
         (0..digits.length).forEach { offset ->
