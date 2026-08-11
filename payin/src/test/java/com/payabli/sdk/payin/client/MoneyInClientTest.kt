@@ -98,6 +98,9 @@ class MoneyInClientTest {
             assertTrue(body, body.contains(""""achCode":"WEB""""))
         }
 
+    private suspend fun refusal(block: suspend () -> Unit): PayInException.InvalidInput? =
+        runCatching { block() }.exceptionOrNull() as? PayInException.InvalidInput
+
     @Test
     fun `the idempotency key and the validation code are headers, spelled as the service reads them`() =
         runTest(timeout = timeout) {
@@ -111,6 +114,49 @@ class MoneyInClientTest {
             // Only the caller's own headers are here. `Authorization` and the JSON content type are chain
             // steps applied inside the transport, so an undecorated request carries neither.
             assertEquals(setOf("idempotencyKey", "validationCode"), transport.request?.headers?.keys)
+        }
+
+    @Test
+    fun `a header value carrying a line break is refused, naming the header`() =
+        runTest(timeout = timeout) {
+            // Measured: setRequestProperty throws IllegalArgumentException on this, so without the check the
+            // caller gets an unchecked exception out of the transport rather than a refusal it can handle.
+            val transport = FakePayInTransport.answering(approved)
+
+            val failure =
+                refusal {
+                    MoneyInClient(transport, RecordingLogger())
+                        .capture("e", cardRequest(idempotencyKey = "key-1\r\nX-Injected: v"))
+                }
+
+            assertEquals("idempotencyKey", failure?.field)
+            // Refused before the request was built, so nothing was sent at all.
+            assertNull(transport.request)
+        }
+
+    @Test
+    fun `a validation code carrying a control character is refused the same way`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            val failure =
+                refusal {
+                    MoneyInClient(transport, RecordingLogger())
+                        .capture("e", cardRequest(validationCode = "code\u0000nine"))
+                }
+
+            assertEquals("validationCode", failure?.field)
+        }
+
+    @Test
+    fun `surrounding whitespace is still trimmed rather than refused`() =
+        runTest(timeout = timeout) {
+            // The check looks at what trimming leaves, so an ordinary padded value keeps working.
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest(idempotencyKey = "  key-1  "))
+
+            assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
     @Test

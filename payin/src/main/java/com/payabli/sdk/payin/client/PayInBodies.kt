@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.payin.model.PayInCustomerData
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInVendorData
 
@@ -76,11 +77,31 @@ internal fun payInHeaders(build: PayInHeaders.() -> Unit): Map<String, String> =
 internal class PayInHeaders {
     val headers: MutableMap<String, String> = LinkedHashMap()
 
-    fun idempotencyKey(value: String?) {
-        value?.trimOrNull()?.let { headers[PayInRoutes.HEADER_IDEMPOTENCY_KEY] = it }
-    }
+    fun idempotencyKey(value: String?) = put(PayInRoutes.HEADER_IDEMPOTENCY_KEY, value)
 
-    fun validationCode(value: String?) {
-        value?.trimOrNull()?.let { headers[PayInRoutes.HEADER_VALIDATION_CODE] = it }
+    fun validationCode(value: String?) = put(PayInRoutes.HEADER_VALIDATION_CODE, value)
+
+    /**
+     * Refuses a value that cannot be a header, before the transport is asked to send it.
+     *
+     * Both of these come from public request fields, so a caller supplies them. `setRequestProperty` throws
+     * `IllegalArgumentException` on an embedded CR or LF, measured on the JVM these tests run on, so
+     * `"key\r\nX-Test: v"` would reach a caller as an unchecked exception from inside the transport instead of
+     * the typed refusal naming the field that every other bad value produces.
+     *
+     * The rule is narrower than the platform's: printable ASCII, space and tab. Trimming has already removed
+     * the ends, so what is left is interior. Being stricter than the check that provoked this means the answer
+     * does not depend on which `HttpURLConnection` is underneath, and a header value outside that range has no
+     * use here.
+     */
+    private fun put(
+        name: String,
+        value: String?,
+    ) {
+        val trimmed = value?.trimOrNull() ?: return
+        if (trimmed.any { it != '\t' && (it < ' ' || it > '~') }) {
+            throw PayInException.InvalidInput(name, "The $name may contain printable ASCII only")
+        }
+        headers[name] = trimmed
     }
 }
