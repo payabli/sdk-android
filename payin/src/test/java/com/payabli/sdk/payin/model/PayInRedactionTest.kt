@@ -76,6 +76,9 @@ class PayInRedactionTest {
             ).toString()
 
         listOf("Ada", "Lovelace", "ada@example.com", "90001").forEach { assertFalse(it, rendered.contains(it)) }
+        // The one flag is about the paypoint's extra fields, and says nothing about the payer: a customer
+        // with a name and an address but no additional data still renders false.
+        assertEquals("PayInCustomerData(hasAdditionalData=false)", rendered)
     }
 
     @Test

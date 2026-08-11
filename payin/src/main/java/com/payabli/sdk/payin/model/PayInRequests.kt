@@ -50,7 +50,12 @@ public class PayInCustomerData(
     public val shippingCountry: String? = null,
     public val additionalData: Map<String, String>? = null,
 ) {
-    /** A name and an address are personal data. The count says whether anything was sent. */
+    /**
+     * Every field here is personal data, so none of it is rendered.
+     *
+     * The one flag says whether the paypoint's own extra fields were supplied, which is a question about
+     * configuration rather than about the payer. It reports nothing about whether any customer data was sent.
+     */
     override fun toString(): String = "PayInCustomerData(hasAdditionalData=${additionalData != null})"
 }
 
