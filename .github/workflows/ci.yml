@@ -67,10 +67,21 @@ jobs:
       # A report worker initialises a class whose jar handle has already been closed. That accounts
       # for every property above: which module fails is whichever worker draws the stale handle, a
       # re-run gets fresh workers, and a warm local daemon holds its handles open. So it is a worker
-      # and classloader lifetime problem rather than anything about the coverage data, and the fix
-      # is this step's isolation rather than a module's tests.
+      # and classloader lifetime problem rather than anything about the coverage data.
+      #
+      # --max-workers=1 is the mitigation, and it is a hypothesis rather than a proven fix: four
+      # report tasks ran concurrently, each in a worker drawing from a shared classloader cache, and
+      # serialising them removes the race the evidence describes. It is one flag rather than four
+      # separate invocations because a second invocation would reuse the same daemon and could keep
+      # the same cache. Cost is a few seconds on four small reports.
+      #
+      # What would falsify it: this failing again with --max-workers=1 in effect. Then the sharing is
+      # not between concurrent workers and the next thing to try is --no-daemon for this step alone.
+      # Do not remove the flag without that evidence; the failure is intermittent, so a green run
+      # after removing it proves nothing.
       - name: Coverage
-        run: ./gradlew --stacktrace :core:createDebugUnitTestCoverageReport
+        run: ./gradlew --stacktrace --max-workers=1
+          :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
           :example:createDebugUnitTestCoverageReport
