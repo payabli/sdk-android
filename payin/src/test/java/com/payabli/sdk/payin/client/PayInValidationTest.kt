@@ -194,20 +194,47 @@ class PayInValidationTest {
     }
 
     @Test
-    fun `an amount the service could not hold is refused rather than thrown`() {
-        // BigDecimal is unbounded and setScale throws on a value whose scale cannot be shifted, at both
-        // extremes. Rounding before checking handed a caller an ArithmeticException instead of a refusal.
-        listOf("1E+2147483647", "1E-2147483647", "1E+100000").forEach { amount ->
-            val refused = refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal(amount))) }
-            assertEquals(amount, "paymentDetails.totalAmount", refused?.field)
-        }
-        val fee =
+    fun `the bound is the widest amount the service's own type holds`() {
+        // The service declares these as a decimal and imposes no maximum of its own, so the type is the
+        // limit: 29 significant digits, 28 of them after the point. Both edges, rather than a scatter of
+        // large values that all exercise the same branch.
+        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("9".repeat(29)))) })
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("9".repeat(30)))) }?.field,
+        )
+        // A value at both edges at once: 29 significant digits with 28 after the point. It has to survive
+        // rounding to test the range rather than the positive-total rule, which refuses anything that
+        // becomes 0.00.
+        assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1." + "9".repeat(28)))) })
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1." + "9".repeat(29))))
+            }?.field,
+        )
+    }
+
+    @Test
+    fun `an exponent that would throw is refused instead`() {
+        // setScale raises ArithmeticException at both extremes, so rounding before checking handed a caller
+        // that rather than a refusal. One case each way is the whole behaviour.
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1E+2147483647"))) }?.field,
+        )
+        assertEquals(
+            "paymentDetails.totalAmount",
+            refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1E-2147483647"))) }?.field,
+        )
+        assertEquals(
+            "paymentDetails.serviceFee",
             refusal {
                 PayInValidation.paymentDetails(
                     PayInPaymentDetails(BigDecimal("10"), serviceFee = BigDecimal("1E+2147483647")),
                 )
-            }
-        assertEquals("paymentDetails.serviceFee", fee?.field)
+            }?.field,
+        )
     }
 
     @Test

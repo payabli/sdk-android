@@ -187,9 +187,11 @@ internal object PayInValidation {
      * Whether the service's own numeric type could hold this at all.
      *
      * It reads these fields as a `decimal`, which carries at most 29 significant digits and a scale of at
-     * most 28. A value outside that is not an amount the service can be asked for, whatever this SDK does
-     * with it, and both bounds are read from the exponent rather than from the expanded value so an absurd
-     * one costs nothing to refuse.
+     * most 28, and imposes no maximum of its own beyond refusing zero. So the type is the only bound there
+     * is, and a value outside it is not an amount the service can be asked for.
+     *
+     * Both edges are read from `precision` and `scale` rather than from the expanded value, so an absurd
+     * exponent costs nothing to refuse and never expands.
      */
     private fun BigDecimal.isSendable(): Boolean {
         if (scale().toLong() > MAX_SCALE) return false
