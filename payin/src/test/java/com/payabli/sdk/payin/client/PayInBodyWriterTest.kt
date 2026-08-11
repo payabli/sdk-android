@@ -164,6 +164,31 @@ class PayInBodyWriterTest {
     }
 
     @Test
+    fun `a refused body still wipes the fragment it was given`() {
+        // The refusal runs while the caller's fragment already holds a card number, so an exit that skipped
+        // the wipe would leave it readable. Cash carries nothing, which is why the case above misses this.
+        val fragment = PayInBodyWriter.instrumentFragment(PayInInstrument.Card(testCard()))
+
+        runCatching { PayInBodyWriter.withPaymentMethod("[1,2]", fragment) }
+
+        assertTrue(fragment.all { it == 0.toByte() })
+    }
+
+    @Test
+    fun `a build that fails after writing a card number still produces nothing readable`() {
+        // A valid number followed by a security code that is not digits: the number is in the working buffer
+        // by the time the check throws. The buffer is not reachable from here, so what this pins is that the
+        // failure is the digit check and that no fragment escapes it.
+        val data = testCard(securityCode = "9a9")
+
+        val failure =
+            runCatching { PayInBodyWriter.instrumentFragment(PayInInstrument.Card(data)) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalStateException)
+        assertFalse(failure?.message?.contains(TEST_PAN) ?: true)
+    }
+
+    @Test
     fun `a body longer than the initial buffer still comes out intact`() {
         // The buffer grows by copying, and the array it replaces is overwritten. A body over 256 bytes is what
         // exercises that path, and a real one with customer data always is.

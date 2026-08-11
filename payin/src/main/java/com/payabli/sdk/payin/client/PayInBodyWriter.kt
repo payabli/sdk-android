@@ -45,22 +45,28 @@ internal object PayInBodyWriter {
         encodedBody: String,
         methodFragment: ByteArray,
     ): ByteArray {
-        val outer = encodedBody.toByteArray(Charsets.UTF_8)
-        require(outer.size >= 2 && outer[outer.size - 1] == CLOSE_BRACE) {
-            "the encoded body is not a JSON object"
-        }
         val buffer = ByteBuffer()
-        // Everything but the closing brace, then the new member, then the brace back.
-        buffer.write(outer, outer.size - 1)
-        // An empty object takes no separator. The bodies here always carry an entry point, so this is a
-        // guard rather than a live case.
-        if (outer.size > 2) buffer.write(COMMA)
-        buffer.write(quoted(PayInRoutes.FIELD_PAYMENT_METHOD))
-        buffer.write(COLON)
-        buffer.write(methodFragment, methodFragment.size)
-        buffer.write(CLOSE_BRACE)
-        methodFragment.fill(0)
-        return buffer.finishAndWipe()
+        try {
+            val outer = encodedBody.toByteArray(Charsets.UTF_8)
+            require(outer.size >= 2 && outer[outer.size - 1] == CLOSE_BRACE) {
+                "the encoded body is not a JSON object"
+            }
+            // Everything but the closing brace, then the new member, then the brace back.
+            buffer.write(outer, outer.size - 1)
+            // An empty object takes no separator. The bodies here always carry an entry point, so this is a
+            // guard rather than a live case.
+            if (outer.size > 2) buffer.write(COMMA)
+            buffer.write(quoted(PayInRoutes.FIELD_PAYMENT_METHOD))
+            buffer.write(COLON)
+            buffer.write(methodFragment, methodFragment.size)
+            buffer.write(CLOSE_BRACE)
+            return buffer.finishAndWipe()
+        } finally {
+            // Every exit, not just the one that returns: the refusal above runs while the caller's fragment
+            // already holds a card number, and the working buffer holds a copy of it by then.
+            methodFragment.fill(0)
+            buffer.wipe()
+        }
     }
 
     /** The `paymentMethod` object for a stored method being created. */
@@ -127,10 +133,20 @@ internal object PayInBodyWriter {
                 ?.let { field(PayInRoutes.FIELD_DEVICE, it) }
         }
 
+    /**
+     * Builds one fragment, wiping the working buffer whichever way [build] ends.
+     *
+     * A build can fail after it has written a sensitive field: a valid card number followed by a security
+     * code that is not digits leaves the number in the buffer, and an abandoned writer never wipes it.
+     */
     private fun fragment(build: FragmentWriter.() -> Unit): ByteArray {
         val writer = FragmentWriter()
-        writer.build()
-        return writer.finish()
+        try {
+            writer.build()
+            return writer.finish()
+        } finally {
+            writer.wipe()
+        }
     }
 
     /** One JSON string, escaped by the codec rather than by this file. */
@@ -183,6 +199,11 @@ internal object PayInBodyWriter {
             return buffer.finishAndWipe()
         }
 
+        /** Idempotent, so wiping a writer that already finished costs nothing. */
+        fun wipe() {
+            buffer.wipe()
+        }
+
         private fun key(name: String) {
             if (!empty) buffer.write(COMMA)
             empty = false
@@ -219,9 +240,14 @@ internal object PayInBodyWriter {
         /** The exact-size result, after which the working array holds zeros. */
         fun finishAndWipe(): ByteArray {
             val result = bytes.copyOf(size)
+            wipe()
+            return result
+        }
+
+        /** Overwrites what has been written so far, for an exit that produces no result. */
+        fun wipe() {
             bytes.fill(0)
             size = 0
-            return result
         }
 
         private fun ensure(extra: Int) {
