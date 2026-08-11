@@ -85,6 +85,43 @@ class SensitiveDigitsTest {
     }
 
     @Test
+    fun `useDigits wipes the copy it lent, including when the block throws`() {
+        // Retaining the argument is the only way to observe what the block was given, and nothing in production
+        // retains it. Measured: with the wipe removed, all 274 tests in this module still passed, so until this
+        // test existed the guarantee rested on reading the code.
+        val value = SensitiveDigits.ofString(pan)
+        var lent: CharArray? = null
+
+        val outcome =
+            runCatching {
+                value.useDigits { digits ->
+                    lent = digits
+                    throw IllegalStateException("sentinel")
+                }
+            }
+
+        assertEquals("sentinel", outcome.exceptionOrNull()?.message)
+        assertTrue("the lent copy still holds digits", lent!!.all { it == SensitiveDigits.WIPED })
+    }
+
+    @Test
+    fun `useDigits wipes the copy it lent on an ordinary return too`() {
+        val value = SensitiveDigits.ofString(pan)
+        var lent: CharArray? = null
+
+        val length =
+            value.useDigits { digits ->
+                lent = digits
+                digits.size
+            }
+
+        assertEquals(16, length)
+        assertTrue("the lent copy still holds digits", lent!!.all { it == SensitiveDigits.WIPED })
+        // The value itself is untouched: lending a copy is not closing the original.
+        assertEquals(pan, String(value.read()))
+    }
+
+    @Test
     fun `no member that reaches the digits is callable from Java`() {
         // internal is a Kotlin rule only: these are emitted as public final read$payin() and friends, so
         // without @JvmSynthetic a Java caller in another module takes a copy of a card number. javac refuses
