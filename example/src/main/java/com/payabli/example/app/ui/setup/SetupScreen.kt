@@ -57,6 +57,7 @@ fun SetupScreen(
             DetailRow(
                 label = "Environment",
                 value = "${state.configuration.environment.label} · ${state.configuration.environment.host}",
+                problem = state.configuration.environmentProblem,
             )
         }
 

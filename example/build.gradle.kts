@@ -74,6 +74,9 @@ android {
 
         buildConfigField("String", "DEMO_ENTRY_POINT", quoted(demoSetting("payabli.demo.entryPoint", "")))
         buildConfigField("String", "DEMO_APP_ID", quoted(demoSetting("payabli.demo.appId", "")))
+        // Unvalidated. Which labels exist is DemoEnvironment's to say, and a copy of the list here
+        // would be a second place to change and the one nothing compiles against.
+        buildConfigField("String", "DEMO_ENVIRONMENT", quoted(demoSetting("payabli.demo.environment", "sandbox")))
         buildConfigField(
             "String",
             "DEMO_SIGNING_CERTIFICATE",
