@@ -10,6 +10,7 @@ import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.PayInStartup
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentResult
+import com.payabli.example.app.payment.isSubmitting
 import com.payabli.example.app.payment.toPaymentError
 import com.payabli.example.app.payment.toPaymentResult
 import com.payabli.example.app.ui.payment.PaymentFlowUiState
@@ -109,6 +110,9 @@ class CaptureViewModel(
     /** The first step of the sequence. [checkToken] says what it reports and why. */
     fun checkToken() {
         if (_uiState.value.isCheckingToken) return
+        // A recheck builds a session and replaces the flow this screen submits through. Mid-payment that
+        // orphans a request the service may still take, so the step waits instead.
+        if (_uiState.value.payments.isSubmitting()) return
         _uiState.update { it.copy(isCheckingToken = true, tokenCheckText = "Checking…") }
         viewModelScope.launch {
             val started = startup.start(viewModelScope)
