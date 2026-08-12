@@ -18,6 +18,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
+import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -25,6 +26,7 @@ import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.form.TEST_EXPIRY
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -53,6 +55,9 @@ class PayInFormSeedInstrumentedTest {
             mapOf(
                 PayInField.CardholderName to "Ada Lovelace",
                 PayInField.CardNumber to TEST_PAN,
+                // The one value a keystroke cannot supply: a dialog picks it, and a seed fills it as the
+                // demo's prefill does.
+                PayInField.CardExpiration to TEST_EXPIRY,
                 PayInField.CardSecurityCode to TEST_SECURITY_CODE,
                 PayInField.CardPostalCode to "22039",
             ),
@@ -159,18 +164,7 @@ class PayInFormSeedInstrumentedTest {
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.Card),
                 defaultMethod = PayInMethodType.Card,
-                cardSections =
-                    listOf(
-                        PayInFormSection(
-                            fields =
-                                listOf(
-                                    PayInField.CardholderName,
-                                    PayInField.CardNumber,
-                                    PayInField.CardSecurityCode,
-                                    PayInField.CardPostalCode,
-                                ),
-                        ),
-                    ),
+                cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS)),
                 labelLayout = PayInLabelLayout.Placeholder,
             )
         rule.setContent {

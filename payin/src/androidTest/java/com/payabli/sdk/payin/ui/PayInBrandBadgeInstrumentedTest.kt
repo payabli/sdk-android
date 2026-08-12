@@ -15,8 +15,8 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
+import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CardBrand
-import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
@@ -155,7 +155,7 @@ class PayInBrandBadgeInstrumentedTest {
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.Card),
                 defaultMethod = PayInMethodType.Card,
-                cardSections = listOf(PayInFormSection(fields = listOf(PayInField.CardNumber))),
+                cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS)),
                 labelLayout = PayInLabelLayout.Placeholder,
             )
         rule.setContent {

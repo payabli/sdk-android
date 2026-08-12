@@ -58,13 +58,13 @@ class PayInFormConfigurationTest {
             PayInFormConfiguration(
                 cardSections =
                     listOf(
-                        PayInFormSection(fields = listOf(PayInField.CardNumber, PayInField.CardholderName)),
-                        PayInFormSection(fields = listOf(PayInField.CardNumber, PayInField.CardPostalCode)),
+                        PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
+                        PayInFormSection(fields = listOf(PayInField.CardNumber, PayInField.BillingEmail)),
                     ),
             )
 
         assertEquals(
-            listOf(PayInField.CardNumber, PayInField.CardholderName, PayInField.CardPostalCode),
+            CARD_INSTRUMENT_FIELDS + PayInField.BillingEmail,
             configuration.inputFieldsFor(PayInMethodType.Card),
         )
     }
@@ -75,7 +75,7 @@ class PayInFormConfigurationTest {
             PayInFormConfiguration(
                 cardSections =
                     listOf(
-                        PayInFormSection(fields = listOf(PayInField.CardNumber)),
+                        PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
                         PayInFormSection(title = "Empty", fields = listOf(PayInField.CardNumber)),
                     ),
             )
@@ -244,7 +244,7 @@ class PayInFormConfigurationTest {
         val required = mutableSetOf(PayInField.CustomerNumber)
         val hidden = mutableSetOf(PayInField.CardNumber)
         val summary = mutableMapOf(PayInField.Amount to "$ 1.00")
-        val sectionFields = mutableListOf(PayInField.CardNumber)
+        val sectionFields = CARD_INSTRUMENT_FIELDS.toMutableList()
 
         val configuration =
             PayInFormConfiguration(
@@ -259,14 +259,14 @@ class PayInFormConfigurationTest {
         required += PayInField.MethodDescription
         hidden.clear()
         summary[PayInField.Amount] = "$ 999.00"
-        sectionFields += PayInField.CardholderName
+        sectionFields += PayInField.BillingEmail
 
         assertEquals(listOf(PayInMethodType.Card), configuration.methodsOffered)
         assertFalse(configuration.isRequired(PayInField.MethodDescription))
         assertFalse(configuration.showsLabelFor(PayInField.CardNumber))
         assertEquals("$ 1.00", configuration.summaryValueFor(PayInField.Amount))
         assertEquals(
-            listOf(PayInField.CardNumber),
+            CARD_INSTRUMENT_FIELDS,
             configuration.sectionsFor(PayInMethodType.Card).single().fields,
         )
     }

@@ -35,6 +35,35 @@ public object PayInFieldRules {
             PayInField.DeviceId,
         )
 
+    private val CARD_INSTRUMENT =
+        setOf(
+            PayInField.CardNumber,
+            PayInField.CardExpiration,
+            PayInField.CardSecurityCode,
+            PayInField.CardholderName,
+            PayInField.CardPostalCode,
+        )
+
+    private val BANK_INSTRUMENT =
+        setOf(
+            PayInField.AccountNumber,
+            PayInField.RoutingNumber,
+            PayInField.AccountHolder,
+        )
+
+    /**
+     * The fields an instrument of this method cannot be built without, whichever fields a form renders.
+     *
+     * [missing] answers requiredness for a field that is on the form. These are required of the *form*: the
+     * request carries no absent value for any of them, so a method offered without one can never submit.
+     * `PayInInstrumentFieldsTest` holds this to what the client refuses, one field at a time.
+     */
+    public fun instrumentFields(method: PayInMethodType): Set<PayInField> =
+        when (method) {
+            PayInMethodType.Card -> CARD_INSTRUMENT
+            PayInMethodType.BankAccount -> BANK_INSTRUMENT
+        }
+
     /** How many characters a field will accept, after formatting is stripped. */
     public fun maxLength(field: PayInField): Int? =
         when (field) {

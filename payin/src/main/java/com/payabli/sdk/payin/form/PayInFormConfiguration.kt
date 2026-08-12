@@ -113,6 +113,19 @@ public class PayInFormConfiguration(
     private val methods: List<PayInMethodType> =
         this.allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
 
+    init {
+        // A method offered without one of these renders a form the payer can complete and the SDK cannot
+        // submit: the instrument is built from fields, and a missing one is refused naming the service's
+        // spelling for a box that is not on screen. Refused here instead, where the sections were written.
+        methods.forEach { method ->
+            val absent = PayInFieldRules.instrumentFields(method) - inputFieldsFor(method).toSet()
+            require(absent.isEmpty()) {
+                "a $method form cannot submit without ${absent.joinToString()}: add them to its sections, " +
+                    "or drop $method from allowedMethods"
+            }
+        }
+    }
+
     /** The allowed methods, with duplicates dropped and never empty. */
     public val methodsOffered: List<PayInMethodType> get() = methods
 

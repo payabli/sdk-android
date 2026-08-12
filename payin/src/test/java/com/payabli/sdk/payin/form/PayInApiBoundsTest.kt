@@ -317,12 +317,12 @@ class PayInApiBoundsTest {
 
     @Test
     fun `a section's field list is copied too`() {
-        val fields = mutableListOf(PayInField.CardNumber)
+        val fields = CARD_INSTRUMENT_FIELDS.toMutableList()
         val configuration = PayInFormConfiguration(cardSections = listOf(PayInFormSection(fields = fields)))
-        fields += PayInField.CardholderName
+        fields += PayInField.BillingEmail
 
         assertEquals(
-            listOf(PayInField.CardNumber),
+            CARD_INSTRUMENT_FIELDS,
             configuration.sectionsFor(PayInMethodType.Card).single().fields,
         )
     }
