@@ -50,4 +50,12 @@ public sealed interface PayInFieldError {
 
     /** A month that has already passed. */
     public data object ExpiryPast : PayInFieldError
+
+    /**
+     * The service refused this field.
+     *
+     * The one case no rule in this file produces: it comes back with a refusal, about a value that has already
+     * been sent. Its wording says only that, because the refusal's own reason may echo what the payer typed.
+     */
+    public data object NotAccepted : PayInFieldError
 }

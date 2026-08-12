@@ -23,7 +23,7 @@ import java.math.BigDecimal
  * `internal` `:core` fixtures. `:taptopay` has its own double.
  *
  * **The recorded body is a copy**, taken when the request is executed. The client overwrites the original once
- * the call returns, so a test reading `request.body` afterwards would see zeros — which is the behaviour under
+ * the call returns, so a test reading `request.body` afterwards would see zeros — which is the behavior under
  * test, not a detail to work around.
  */
 internal class FakePayInTransport(

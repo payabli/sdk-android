@@ -106,13 +106,15 @@ public class PayInValidationOptions(
 )
 
 /**
- * A transaction to capture or authorise.
+ * Everything a transaction carries except the instrument being charged.
+ *
+ * The parallel of [PayInStoreOptions]. A payment form supplies the instrument and this is the rest, so the
+ * two halves meet in one place and a caller configuring a screen never holds a card number.
  *
  * The flags and headers are the service's own parameters.
  */
-public class PayInRequest(
+public class PayInTransactionOptions(
     public val paymentDetails: PayInPaymentDetails,
-    public val paymentMethod: PayInPaymentMethod,
     public val customerData: PayInCustomerData? = null,
     public val accountId: String? = null,
     public val ipAddress: String? = null,
@@ -124,8 +126,8 @@ public class PayInRequest(
     /**
      * Makes a repeated request return the first one's result instead of acting again.
      *
-     * This type serves both operations, so the key covers both: a capture repeated without one charges twice,
-     * and an authorisation repeated without one places a second hold on the payer's funds.
+     * One key covers both operations it serves: a capture repeated without one charges twice, and an
+     * authorization repeated without one places a second hold on the payer's funds.
      *
      * Sent as the `idempotencyKey` header, which is the spelling the service reads. **Not** a client-side
      * retry: nothing in this module retries either call, and this is what makes a caller's own retry safe.
@@ -144,9 +146,22 @@ public class PayInRequest(
 )
 
 /**
- * An authorisation to capture, in full or in part.
+ * A transaction to capture or authorize: the instrument, and [PayInTransactionOptions] for the rest.
  *
- * [transId] is the service's identifier for the authorisation and goes in the path, which is what makes this
+ * Two parts rather than one flat list, because the two halves come from different places and at different
+ * times. A knob added to a transaction is added to [options] alone, so the two cannot drift.
+ */
+public class PayInRequest(
+    public val paymentMethod: PayInPaymentMethod,
+    public val options: PayInTransactionOptions,
+) {
+    public val paymentDetails: PayInPaymentDetails get() = options.paymentDetails
+}
+
+/**
+ * An authorization to capture, in full or in part.
+ *
+ * [transId] is the service's identifier for the authorization and goes in the path, which is what makes this
  * the one call in the module whose resolved path differs from its route template.
  */
 public class PayInAuthorizedRequest(

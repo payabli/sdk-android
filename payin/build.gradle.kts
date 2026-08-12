@@ -30,6 +30,16 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // Fixtures both test source sets need, as `:core` wires its loopback harness. An androidTest source set
+    // cannot see `test` classes, and the retention questions are only answerable on a device, so the transport
+    // doubles and the form fixtures are reachable from both. Compiled twice, once into each, so nothing here may
+    // be JVM-only. `kotlin`, not `java`: AGP's built-in Kotlin support keeps its own source directories, and
+    // adding to `java` alone leaves .kt files out of the Kotlin compilation.
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/java")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+    }
 }
 
 // As :core does. Everything this module exists for is a surface an integrator calls, and Kotlin makes
@@ -56,7 +66,23 @@ dependencies {
     testImplementation(libs.junit)
     // The clients are suspending, so their tests need a test dispatcher, as :core's and :taptopay's do.
     testImplementation(libs.kotlinx.coroutines.test)
+
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // ComponentActivity, which the retention tests launch and recreate. ui-test-manifest declares it
+    // in the test APK's manifest; this is what puts the class on the compile classpath.
+    androidTestImplementation(libs.androidx.activity.compose)
+    // The retention tests hold the flow in a ViewModel, which is how the KDoc tells a host to hold it.
+    // Nothing in main needs it: the flow takes the host's scope, so no lifecycle type reaches the AAR.
+    androidTestImplementation(libs.androidx.lifecycle.viewmodel)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    // Compose's idle waiting calls Espresso.onIdle, and the version ui-test-junit4 asks for throws on a
+    // current device. The catalog entry says what breaks.
+    androidTestImplementation(libs.androidx.espresso.core)
+    // runTest, as the unit tests use it: the holder's submit suspends.
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

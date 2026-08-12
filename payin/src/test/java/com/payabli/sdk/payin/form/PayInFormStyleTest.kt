@@ -21,7 +21,7 @@ import org.junit.Test
 /**
  * The component takes its appearance from the host's theme and names none of its own.
  *
- * Resolving under two unrelated themes has to produce two different styles. A hard-coded colour
+ * Resolving under two unrelated themes has to produce two different styles. A hard-coded color
  * renders correctly under the theme it was written against, so a screenshot cannot catch it and this
  * can.
  */
@@ -58,9 +58,9 @@ class PayInFormStyleTest {
         )
 
     @Test
-    fun `every colour in the style follows the theme it was resolved under`() {
-        // Colour by colour. Comparing whole TextStyle objects passes as soon as any part of one
-        // differs, which a hard-coded colour survives on the strength of the font size beside it.
+    fun `every color in the style follows the theme it was resolved under`() {
+        // Color by color. Comparing whole TextStyle objects passes as soon as any part of one
+        // differs, which a hard-coded color survives on the strength of the font size beside it.
         val a = resolvePayInFormStyle(light)
         val b = resolvePayInFormStyle(other)
 
@@ -93,7 +93,7 @@ class PayInFormStyleTest {
     }
 
     @Test
-    fun `text colours come from the role each one belongs to`() {
+    fun `text colors come from the role each one belongs to`() {
         val style = resolvePayInFormStyle(light)
 
         assertEquals(light.onSurface, style.title.color)
@@ -107,7 +107,7 @@ class PayInFormStyleTest {
     }
 
     @Test
-    fun `type comes from the role, and the colour does not replace the rest of it`() {
+    fun `type comes from the role, and the color does not replace the rest of it`() {
         // copy(color = ...) keeps the host's size, weight and family.
         val style = resolvePayInFormStyle(light)
         assertEquals(light.titleType.fontSize, style.title.fontSize)
@@ -116,7 +116,7 @@ class PayInFormStyleTest {
     }
 
     @Test
-    fun `the error style is the supporting type in the error colour`() {
+    fun `the error style is the supporting type in the error color`() {
         // One role decides the size of both, so a host that enlarges its supporting text enlarges the
         // message under a field with it.
         val style = resolvePayInFormStyle(light)
@@ -128,7 +128,7 @@ class PayInFormStyleTest {
 
     @Test
     fun `an override replaces one value and leaves the rest following the theme`() {
-        // The whole reason overrides are per property. Changing one colour must not cost the caller
+        // The whole reason overrides are per property. Changing one color must not cost the caller
         // the other six.
         val loud = TextStyle(fontSize = 40.sp, color = Color(0xFF00FF00))
         val style = resolvePayInFormStyle(light, PayInFormStyleOverrides(title = loud))
@@ -177,13 +177,13 @@ class PayInFormStyleTest {
     }
 
     @Test
-    fun `field colours are the host's Material defaults until a caller supplies their own`() {
+    fun `field colors are the host's Material defaults until a caller supplies their own`() {
         // null means Material's own, which already follow the host theme.
         assertNull(resolvePayInFormStyle(light).fieldColors)
     }
 
     @Test
-    fun `a caller's field colours reach the style`() {
+    fun `a caller's field colors reach the style`() {
         // The one override the completeness test above cannot supply, because a TextFieldColors is
         // ordinarily built by a composable. Without this, dropping `fieldColors = overrides.fieldColors`
         // from the resolver leaves every other assertion in this file green.

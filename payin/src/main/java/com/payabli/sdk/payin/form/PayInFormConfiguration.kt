@@ -79,7 +79,7 @@ public data class PayInFormatting(
 }
 
 /**
- * What the form collects and how it is arranged. Colours, type and spacing are [PayInFormStyle]'s.
+ * What the form collects and how it is arranged. Colors, type and spacing are [PayInFormStyle]'s.
  *
  * [allowedMethods] and [defaultMethod] are what a caller passed, unchanged. Two corrections apply to
  * what the form reads instead: [methodsOffered] drops duplicates and is never empty, and

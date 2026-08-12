@@ -196,7 +196,7 @@ class PayInApiBoundsTest {
     // --- card brands ---
 
     @Test
-    fun `Discover's six digit range is recognised`() {
+    fun `Discover's six digit range is recognized`() {
         listOf("622126", "622500", "622925").forEach {
             assertEquals(it, CardBrand.Discover, CardBrand.of(it))
         }

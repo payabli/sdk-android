@@ -24,10 +24,10 @@ public enum class PayInAccountHolderType(
 }
 
 /**
- * The NACHA authorisation the payer gave, upper case on the wire.
+ * The NACHA authorization the payer gave, upper case on the wire.
  *
  * [Web] is what the service assumes when none is sent, so it is the default a caller gets: a payer typing
- * their details into a screen authorised it over the internet.
+ * their details into a screen authorized it over the internet.
  */
 public enum class PayInSecCode(
     public val wireName: String,
@@ -100,7 +100,7 @@ public sealed class PayInInstrument {
  * How a transaction is being paid for.
  *
  * Wider than [PayInInstrument]: a transaction may also be charged to something already stored, taken on a
- * cloud terminal, or recorded as a cheque or as cash.
+ * cloud terminal, or recorded as a check or as cash.
  */
 public sealed class PayInPaymentMethod {
     /** A card the payer entered. */
@@ -123,7 +123,7 @@ public sealed class PayInPaymentMethod {
         public val deviceId: String,
     ) : PayInPaymentMethod()
 
-    /** A cheque, recorded rather than read. */
+    /** A check, recorded rather than read. */
     public class Check(
         public val holderName: String,
     ) : PayInPaymentMethod()
@@ -132,9 +132,9 @@ public sealed class PayInPaymentMethod {
     public object Cash : PayInPaymentMethod()
 
     /**
-     * True when this method can be authorised as well as captured.
+     * True when this method can be authorized as well as captured.
      *
-     * Only entered card data can. The service takes an authorisation against a card and nothing else, and
+     * Only entered card data can. The service takes an authorization against a card and nothing else, and
      * this is checked before a request is built so a caller learns it without a round trip.
      */
     internal val isAuthorizable: Boolean get() = this is Card

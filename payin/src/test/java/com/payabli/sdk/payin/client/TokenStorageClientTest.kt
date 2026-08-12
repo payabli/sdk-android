@@ -23,7 +23,7 @@ class TokenStorageClientTest {
     private val stored =
         """
         {"isSuccess":true,"responseText":"Success",
-         "responseData":{"referenceId":"tok-77","methodReferenceId":501,"customerId":88,
+         "responseData":{"referenceId":"tok-77","methodReferenceId":"65960bf4-46ea-42dd-ac89-250b181b3584-225810","customerId":88,
                          "resultCode":1,"resultText":"Approved"}}
         """.trimIndent()
 
@@ -50,7 +50,7 @@ class TokenStorageClientTest {
             assertTrue(body, body.contains(""""entryPoint":"merchant-entry""""))
 
             assertEquals("tok-77", result.storedMethodId)
-            assertEquals(501L, result.methodReferenceId)
+            assertEquals("65960bf4-46ea-42dd-ac89-250b181b3584-225810", result.methodReferenceId)
             assertEquals(88L, result.customerId)
             assertEquals(1, result.resultCode)
         }

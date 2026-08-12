@@ -7,6 +7,7 @@ import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -42,15 +43,18 @@ class MoneyInClientTest {
         useCaching: Boolean? = null,
         forceCustomerCreation: Boolean? = null,
     ) = PayInRequest(
-        paymentDetails = testDetails(),
         paymentMethod = method,
-        idempotencyKey = idempotencyKey,
-        validationCode = validationCode,
-        achValidation = achValidation,
-        sameDayAch = sameDayAch,
-        isAsync = isAsync,
-        useCaching = useCaching,
-        forceCustomerCreation = forceCustomerCreation,
+        options =
+            PayInTransactionOptions(
+                paymentDetails = testDetails(),
+                idempotencyKey = idempotencyKey,
+                validationCode = validationCode,
+                achValidation = achValidation,
+                sameDayAch = sameDayAch,
+                isAsync = isAsync,
+                useCaching = useCaching,
+                forceCustomerCreation = forceCustomerCreation,
+            ),
     )
 
     @Test
@@ -81,7 +85,7 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `a bank account sends the ach field names and defaults the authorisation`() =
+    fun `a bank account sends the ach field names and defaults the authorization`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
@@ -95,7 +99,7 @@ class MoneyInClientTest {
             // Capitalised, unlike achHolderType. The service's own payloads confirm it.
             assertTrue(body, body.contains(""""achAccountType":"Checking""""))
             assertTrue(body, body.contains(""""achHolder":"Integration Test""""))
-            // The default is sent, so the request states which authorisation applies.
+            // The default is sent, so the request states which authorization applies.
             assertTrue(body, body.contains(""""achCode":"WEB""""))
         }
 
@@ -120,8 +124,8 @@ class MoneyInClientTest {
     @Test
     fun `a header value carrying a line break is refused, naming the header`() =
         runTest(timeout = timeout) {
-            // Measured: setRequestProperty throws IllegalArgumentException on this, so without the check the
-            // caller gets an unchecked exception out of the transport rather than a refusal it can handle.
+            // `setRequestProperty` throws `IllegalArgumentException` on a line break, which reaches a caller
+            // as an unchecked exception out of the transport. This is the refusal it can handle instead.
             val transport = FakePayInTransport.answering(approved)
 
             val failure =
@@ -198,9 +202,9 @@ class MoneyInClientTest {
     }
 
     @Test
-    fun `an authorisation carries the key too`() =
+    fun `an authorization carries the key too`() =
         runTest(timeout = timeout) {
-            // The same request type serves both calls, and an authorisation repeated without a key places a
+            // The same request type serves both calls, and an authorization repeated without a key places a
             // second hold on the payer's funds.
             val transport = FakePayInTransport.answering(approved)
 
@@ -268,7 +272,7 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `capturing an authorisation resolves the path and logs the template`() =
+    fun `capturing an authorization resolves the path and logs the template`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
@@ -282,7 +286,7 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `capturing an authorisation carries an idempotency key when one is given`() =
+    fun `capturing an authorization carries an idempotency key when one is given`() =
         runTest(timeout = timeout) {
             // Under the same middleware as a capture, and it moves money: without a key a lost response
             // cannot be retried without risking a second partial capture.
@@ -295,7 +299,7 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `capturing an authorisation sends no key when none is given`() =
+    fun `capturing an authorization sends no key when none is given`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
@@ -437,26 +441,29 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering(approved)
             val request =
                 PayInRequest(
-                    paymentDetails = testDetails(fee = "1.50"),
                     paymentMethod = PayInPaymentMethod.Card(testCard()),
-                    customerData =
-                        PayInCustomerData(
-                            firstName = "Test",
-                            lastName = "User",
-                            billingEmail = "test@example.com",
-                            billingAddress1 = "123 Test St",
-                            billingCity = "Test City",
-                            billingState = "CA",
-                            billingZip = "90001",
-                            billingCountry = "US",
-                            // Blank is the same statement as absent, and the service defaults some of these.
-                            company = "  ",
-                            additionalData = mapOf("invoice" to "INV-1"),
+                    options =
+                        PayInTransactionOptions(
+                            paymentDetails = testDetails(fee = "1.50"),
+                            customerData =
+                                PayInCustomerData(
+                                    firstName = "Test",
+                                    lastName = "User",
+                                    billingEmail = "test@example.com",
+                                    billingAddress1 = "123 Test St",
+                                    billingCity = "Test City",
+                                    billingState = "CA",
+                                    billingZip = "90001",
+                                    billingCountry = "US",
+                                    // Blank is the same statement as absent, and the service defaults some.
+                                    company = "  ",
+                                    additionalData = mapOf("invoice" to "INV-1"),
+                                ),
+                            orderId = "order-1",
+                            orderDescription = "Two things",
+                            ipAddress = "203.0.113.4",
+                            subscriptionId = 9L,
                         ),
-                    orderId = "order-1",
-                    orderDescription = "Two things",
-                    ipAddress = "203.0.113.4",
-                    subscriptionId = 9L,
                 )
 
             MoneyInClient(transport, RecordingLogger()).capture("merchant-entry", request)

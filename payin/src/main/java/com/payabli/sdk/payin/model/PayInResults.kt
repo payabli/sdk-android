@@ -13,7 +13,7 @@ public class PayInStoredMethod(
      * caller holding one of these holds something it can charge.
      */
     public val storedMethodId: String,
-    public val methodReferenceId: Long?,
+    public val methodReferenceId: String?,
     public val customerId: Long?,
     public val resultCode: Int?,
     public val resultText: String?,
@@ -25,7 +25,7 @@ public class PayInStoredMethod(
 /**
  * A transaction the service accepted.
  *
- * **An authorisation code, an AVS result and a security-code result are not here.** The record a v2 approval
+ * **An authorization code, an AVS result and a security-code result are not here.** The record a v2 approval
  * carries is the service's detailed transaction record, and it holds none of the three: they exist only in the
  * older response shape this SDK does not use. Declaring them would give a caller three fields that are null on
  * every approval and imply the SDK went looking.
@@ -151,10 +151,36 @@ public sealed class PayInException(
         override fun toString(): String = "PayInException.Undecodable"
     }
 
+    /**
+     * The submission was canceled with the request in flight, so its outcome is unknown.
+     *
+     * The service may have taken the payment. [idempotencyKey] is what a retry sends to have it recognize
+     * the repeat instead of acting twice, and it is null when the operation carried none, in which case a
+     * retry can charge a second time.
+     */
+    public class Interrupted(
+        public val idempotencyKey: String?,
+    ) : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
+        override fun toString(): String = "PayInException.Interrupted(hasIdempotencyKey=${idempotencyKey != null})"
+    }
+
+    /**
+     * A submission was already in flight, so this one was refused and nothing was sent.
+     *
+     * A sequencing mistake by the caller rather than anything the service said, which is why it carries
+     * [PayabliErrorCode.INVALID_CONFIGURATION] and no failure from the wire.
+     */
+    public class AlreadySubmitting :
+        PayInException(PayabliErrorCode.INVALID_CONFIGURATION, DEFAULT_ALREADY_SUBMITTING_REASON) {
+        override fun toString(): String = "PayInException.AlreadySubmitting"
+    }
+
     public companion object {
         internal const val DEFAULT_REFUSED_REASON: String = "The payment was refused"
         internal const val DEFAULT_SERVICE_ERROR_REASON: String = "The payment could not be processed"
         internal const val DEFAULT_UNDECODABLE_REASON: String = "The response could not be read"
+        internal const val DEFAULT_INTERRUPTED_REASON: String = "The payment was interrupted before it finished"
+        internal const val DEFAULT_ALREADY_SUBMITTING_REASON: String = "A submission is already in flight"
     }
 }
 
@@ -164,7 +190,7 @@ public sealed class PayInException(
  * A decode failure's message quotes the input, which for these bodies can be a card number. `:core` draws the
  * same boundary for the same reason; this is that pattern rather than a new one.
  */
-private class RedactedCause(
+internal class RedactedCause(
     cause: Throwable,
 ) : Throwable("${cause.javaClass.name} (message withheld)") {
     init {

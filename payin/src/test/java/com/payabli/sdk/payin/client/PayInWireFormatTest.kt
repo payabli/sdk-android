@@ -110,11 +110,12 @@ class PayInWireFormatTest {
         val bodies =
             listOf(
                 """{"isSuccess":true,"responseText":"ok","responseData":{"referenceId":"tok-1",
-                   "methodReferenceId":501,"customerId":88,"resultCode":1,"resultText":"Approved"}}""",
+                   "methodReferenceId":"65960bf4-46ea-42dd-ac89-250b181b3584-225810","customerId":88,
+                   "resultCode":1,"resultText":"Approved"}}""",
                 """{"issuccess":true,"responsetext":"ok","responsedata":{"referenceid":"tok-1",
-                   "methodreferenceid":501,"customerid":88,"resultcode":1,"resulttext":"Approved"}}""",
+                   "methodreferenceid":"65960bf4-46ea-42dd-ac89-250b181b3584-225810","customerid":88,"resultcode":1,"resulttext":"Approved"}}""",
                 """{"IsSuccess":true,"ResponseText":"ok","ResponseData":{"ReferenceId":"tok-1",
-                   "MethodReferenceId":501,"CustomerId":88,"ResultCode":1,"ResultText":"Approved"}}""",
+                   "MethodReferenceId":"65960bf4-46ea-42dd-ac89-250b181b3584-225810","CustomerId":88,"ResultCode":1,"ResultText":"Approved"}}""",
             )
 
         // Every field of the payload in every casing: an alias omitted here is an alias nothing checks, and a
@@ -124,7 +125,7 @@ class PayInWireFormatTest {
             assertEquals(body, "ok", decoded.responseText)
             assertEquals(body, true, decoded.isSuccess)
             assertEquals(body, "tok-1", decoded.responseData?.referenceId)
-            assertEquals(body, 501L, decoded.responseData?.methodReferenceId)
+            assertEquals(body, "65960bf4-46ea-42dd-ac89-250b181b3584-225810", decoded.responseData?.methodReferenceId)
             assertEquals(body, 88L, decoded.responseData?.customerId)
             assertEquals(body, 1, decoded.responseData?.resultCode)
             assertEquals(body, "Approved", decoded.responseData?.resultText)

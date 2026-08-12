@@ -77,6 +77,13 @@ internal object PayInRoutes {
     /** `paymentMethod`, the one member the body writer adds itself, because two of its fields are buffers. */
     const val FIELD_PAYMENT_METHOD: String = "paymentMethod"
 
+    /** `paymentDetails` and the two members of it a refusal can name, as [PaymentDetailsBody] declares them. */
+    const val FIELD_PAYMENT_DETAILS: String = "paymentDetails"
+    const val FIELD_TOTAL_AMOUNT: String = "totalAmount"
+    const val FIELD_SERVICE_FEE: String = "serviceFee"
+
+    const val FIELD_ENTRY_POINT: String = "entryPoint"
+
     const val FIELD_METHOD: String = "method"
     const val FIELD_CARD_NUMBER: String = "cardnumber"
     const val FIELD_CARD_EXPIRY: String = "cardexp"
@@ -113,9 +120,15 @@ internal class PaymentDetailsBody(
     val checkUniqueId: String? = null,
 )
 
-/** Who is paying. Every field optional, because which ones a paypoint requires is the service's business. */
+/**
+ * Who is paying. Every field optional, because which ones a paypoint requires is the service's business.
+ *
+ * A `data class` for `copy` and for equality: a configured customer and a typed one are merged field by field,
+ * and "nothing was named on either side" is a comparison against an empty one. Both are in
+ * [PayInEnteredDetails]. The generated `toString` is replaced, because every field here is personal data.
+ */
 @Serializable
-internal class CustomerDataBody(
+internal data class CustomerDataBody(
     val customerId: Long? = null,
     val customerNumber: String? = null,
     val firstName: String? = null,
@@ -136,7 +149,9 @@ internal class CustomerDataBody(
     val shippingZip: String? = null,
     val shippingCountry: String? = null,
     val additionalData: Map<String, String>? = null,
-)
+) {
+    override fun toString(): String = "CustomerDataBody"
+}
 
 /** The vendor a stored method belongs to, where a paypoint tracks them. */
 @Serializable
@@ -149,7 +164,7 @@ internal class VendorDataBody(
 )
 
 /**
- * A capture or an authorisation, **without** `paymentMethod`.
+ * A capture or an authorization, **without** `paymentMethod`.
  *
  * Two of `paymentMethod`'s fields are buffers, so [PayInBodyWriter] appends that member as bytes.
  */
@@ -180,7 +195,7 @@ internal class StoreMethodBody(
     val subdomain: String? = null,
 )
 
-/** Capturing an authorisation carries only the amount: the method was settled when it was authorised. */
+/** Capturing an authorization carries only the amount: the method was settled when it was authorized. */
 @Serializable
 internal class AuthorizedCaptureBody(
     val paymentDetails: PaymentDetailsBody,
@@ -189,7 +204,7 @@ internal class AuthorizedCaptureBody(
 /**
  * The transaction record a v2 approval carries in `data`.
  *
- * The v2 payload is the service's detailed transaction record, which carries no authorisation code, AVS result
+ * The v2 payload is the service's detailed transaction record, which carries no authorization code, AVS result
  * or security-code result. Those three are in the older response shape only.
  */
 @Serializable
@@ -224,7 +239,7 @@ internal class StoredMethodPayload(
     @JsonNames("referenceid", "ReferenceId")
     val referenceId: String? = null,
     @JsonNames("methodreferenceid", "MethodReferenceId")
-    val methodReferenceId: Long? = null,
+    val methodReferenceId: String? = null,
     @JsonNames("customerid", "CustomerId")
     val customerId: Long? = null,
     @JsonNames("resultcode", "ResultCode")

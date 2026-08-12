@@ -21,14 +21,14 @@ import kotlinx.serialization.SerializationException
 /**
  * Stores a card or a bank account, so a later transaction can charge it without the details again.
  *
- * Takes the session's authenticated transport, as [MoneyInClient] does, so there is one bearer and one 401
- * recovery for the whole SDK rather than a token path per component.
+ * Takes the session's authenticated transport, as [MoneyInClient] does, so the whole SDK has one bearer and
+ * one 401 recovery.
  *
  * **This route reports a refusal as HTTP 200 with `isSuccess: false`**, which is the older envelope rather than
  * the one the transaction routes use. A caller that skipped that check would read a refusal as a success.
  *
  * No `idempotencyKey`: the service runs its idempotency middleware over the MoneyIn paths only, so a key sent
- * here is read by nobody. Offering the option would be a knob that does nothing.
+ * here is read by nobody.
  */
 internal class TokenStorageClient(
     private val transport: PayabliTransport,
@@ -44,6 +44,7 @@ internal class TokenStorageClient(
         entryPoint: String,
         instrument: PayInInstrument,
         options: PayInStoreOptions = PayInStoreOptions(),
+        entered: PayInEnteredDetails = PayInEnteredDetails.NONE,
     ): PayInStoredMethod {
         PayInValidation.entryPoint(entryPoint)
         PayInValidation.instrument(instrument, options.validation)
@@ -53,9 +54,9 @@ internal class TokenStorageClient(
                 StoreMethodBody.serializer(),
                 StoreMethodBody(
                     entryPoint = entryPoint.trim(),
-                    customerData = options.customerData?.toBody(),
+                    customerData = options.customerData.toBody(entered),
                     vendorData = options.vendorData?.toBody(),
-                    methodDescription = options.methodDescription?.trimOrNull(),
+                    methodDescription = entered.methodDescription ?: options.methodDescription?.trimOrNull(),
                     fallbackAuth = options.fallbackAuth,
                     fallbackAuthAmount = options.fallbackAuthAmount,
                     source = options.source?.trimOrNull(),
