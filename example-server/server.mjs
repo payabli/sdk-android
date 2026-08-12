@@ -468,8 +468,12 @@ async function payabliApi(path, { method = "GET", body = null, options = {} } = 
   const endpoint = new URL(path.replace(/^\/+/, ""), ensureTrailingSlash(apiBaseUrl));
   assertAllowedEndpoint(endpoint, "The resolved API endpoint");
 
+  // redirect: "manual", as the credential exchange does and for the same reason: the endpoint check
+  // above runs before the request, so it cannot see a redirect target, and a 307 or 308 replays the
+  // method, body and Authorization header to whatever origin the Location names.
   const upstream = await fetch(endpoint, {
     method,
+    redirect: "manual",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -477,6 +481,15 @@ async function payabliApi(path, { method = "GET", body = null, options = {} } = 
     },
     body: body === null ? undefined : JSON.stringify(body)
   });
+
+  if (upstream.status >= 300 && upstream.status < 400) {
+    throw new LocalTokenServerError(
+      502,
+      `${endpoint.origin} answered HTTP ${upstream.status} redirecting to ` +
+        `${upstream.headers.get("location") || "an unnamed target"}. The redirect was not followed, ` +
+        "because the access token would be sent to the target."
+    );
+  }
 
   const text = await upstream.text();
   let payload;
