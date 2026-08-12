@@ -131,6 +131,27 @@ class PayabliPayInPaymentFlowTest {
             assertNull(FakePayInTransport.answering(APPROVED_TRANSACTION).request)
         }
 
+    @Test
+    fun `the second start is refused without waiting for a dispatch`() =
+        runTest(timeout = timeout) {
+            // Two forms share one flow whenever a host mounts the sheet over the inline one. Launched
+            // dispatched, `start` returned before `Submitting` was published, so both callers were told their
+            // submission was accepted and both then waited on one outcome.
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val first = flow.start(captureOf(), cardForm())
+            val second = flow.start(captureOf(), cardForm())
+
+            assertTrue("the first start was refused", first)
+            assertFalse("a second submission was accepted", second)
+            assertEquals(PayInSubmissionState.Submitting, flow.state.value)
+
+            transport.arrived.await()
+            transport.release()
+            assertEquals("more than one request reached the wire", 1, transport.sent.size)
+        }
+
     private fun TestScope.flowOver(transport: PayabliTransport): PayabliPayInPaymentFlow =
         PayabliPayInPaymentFlow(
             transport = transport,

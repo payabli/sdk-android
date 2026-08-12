@@ -14,6 +14,7 @@ import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -102,7 +103,10 @@ public class PayabliPayInPaymentFlow private constructor(
         values: PayInFormValues,
     ): Boolean {
         if (state.value is PayInSubmissionState.Submitting) return false
-        scope.launch { submission.submit(entryPoint, operation, values) }
+        // Undispatched, so the guard is taken and `Submitting` is published before this returns. Dispatched,
+        // two forms on one flow both read a non-submitting state, both are told the submission was accepted,
+        // and both then wait for one outcome.
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { submission.submit(entryPoint, operation, values) }
         return true
     }
 
