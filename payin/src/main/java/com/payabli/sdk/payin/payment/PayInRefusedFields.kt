@@ -61,5 +61,13 @@ internal object PayInRefusedFields {
             PayInRoutes.FIELD_DEVICE to PayInField.DeviceId,
             PayInRoutes.FIELD_TOTAL_AMOUNT to PayInField.Amount,
             PayInRoutes.FIELD_SERVICE_FEE to PayInField.ServiceFee,
+            // The customer half. The form collects these and the request carries them, so a refusal naming
+            // one has a box to mark.
+            PayInRoutes.FIELD_CUSTOMER_FIRST_NAME to PayInField.FirstName,
+            PayInRoutes.FIELD_CUSTOMER_LAST_NAME to PayInField.LastName,
+            PayInRoutes.FIELD_CUSTOMER_NUMBER to PayInField.CustomerNumber,
+            PayInRoutes.FIELD_CUSTOMER_BILLING_EMAIL to PayInField.BillingEmail,
+            PayInRoutes.FIELD_CUSTOMER_BILLING_ZIP to PayInField.BillingPostalCode,
+            PayInRoutes.FIELD_METHOD_DESCRIPTION to PayInField.MethodDescription,
         ).mapKeys { it.key.lowercase() }
 }

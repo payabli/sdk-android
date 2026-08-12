@@ -35,6 +35,13 @@ class PayInRefusedFieldsTest {
                 "paymentMethod.device" to PayInField.DeviceId,
                 "paymentDetails.totalAmount" to PayInField.Amount,
                 "paymentDetails.serviceFee" to PayInField.ServiceFee,
+                // The customer half, which the request started carrying with `PayInEnteredDetails`.
+                "customerData.firstName" to PayInField.FirstName,
+                "customerData.lastName" to PayInField.LastName,
+                "customerData.customerNumber" to PayInField.CustomerNumber,
+                "customerData.billingEmail" to PayInField.BillingEmail,
+                "customerData.billingZip" to PayInField.BillingPostalCode,
+                "methodDescription" to PayInField.MethodDescription,
             )
 
         expected.forEach { (name, field) ->

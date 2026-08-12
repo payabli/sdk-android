@@ -84,6 +84,14 @@ internal object PayInRoutes {
 
     const val FIELD_ENTRY_POINT: String = "entryPoint"
 
+    /** `customerData`'s members a payer types into, and the description a stored method carries. */
+    const val FIELD_CUSTOMER_FIRST_NAME: String = "firstName"
+    const val FIELD_CUSTOMER_LAST_NAME: String = "lastName"
+    const val FIELD_CUSTOMER_NUMBER: String = "customerNumber"
+    const val FIELD_CUSTOMER_BILLING_EMAIL: String = "billingEmail"
+    const val FIELD_CUSTOMER_BILLING_ZIP: String = "billingZip"
+    const val FIELD_METHOD_DESCRIPTION: String = "methodDescription"
+
     const val FIELD_METHOD: String = "method"
     const val FIELD_CARD_NUMBER: String = "cardnumber"
     const val FIELD_CARD_EXPIRY: String = "cardexp"
