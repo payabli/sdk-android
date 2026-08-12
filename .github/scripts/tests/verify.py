@@ -1540,12 +1540,25 @@ def test_poster(mod):
     try:
         os.environ.update({"GITHUB_TOKEN": "ghs-not-real", "GITHUB_RUN_ID": "1",
                            "GITHUB_REPOSITORY": "payabli/sdk-android", "GITHUB_SHA": "a" * 40})
-        for status, total, expect in (("ahead", 12, True), ("behind", 0, False),
-                                      ("identical", 0, False), ("diverged", 7, False)):
+        # The claim is about the rendered range, not about the return being None: `behind` and `identical` now
+        # answer a comparison that came out empty, which the summary still refuses to render and the thread
+        # reply reads as "no new suspects". Only `diverged` and an unanswered compare stay unknown.
+        for status, total, kind in (("ahead", 12, "range"), ("behind", 0, "empty"),
+                                   ("identical", 0, "empty"), ("diverged", 7, "unknown")):
             captured["compare"] = {"status": status, "total_commits": total}
             got = mod.commits_since_last_green()
-            check(f"P38 status {status} {'renders' if expect else 'is refused'}",
-                  (got is not None) == expect, f"{status} -> {got}")
+            text = mod.summary_blocks(FACTS_RED, "success", got)[0][0]["text"]["text"]
+            check(f"P38 status {status} {'renders a range' if kind == 'range' else 'renders none'}",
+                  ("Since the last green nightly" in text) == (kind == "range"), f"{status} -> {text}")
+            if kind == "unknown":
+                check(f"P38 status {status} leaves ancestry unknown", got is None, f"{status} -> {got}")
+            elif kind == "empty":
+                check(f"P38 status {status} proves the range empty",
+                      got is not None and got.get("shas") == [] and bool(got.get("empty")),
+                      f"{status} -> {got}")
+            else:
+                check(f"P38 status {status} is a real range",
+                      got is not None and not got.get("empty"), f"{status} -> {got}")
     finally:
         mod.github_get = real_github_get
         os.environ.pop("GITHUB_TOKEN", None)
@@ -1688,6 +1701,75 @@ def test_poster(mod):
     check("P41 an unchanged culprit is never looked up",
           not [c for c in calls if c["method"] == "users.lookupByEmail"],
           str([c["method"] for c in calls]))
+
+    # P42 a comparison that came out empty is not the same as one that could not be made. Both used to answer
+    # None, so the two cases carrying the strongest evidence that nobody is to blame, a re-run of the very
+    # commit that went green and a re-run of a commit older than the green baseline, fell back to naming
+    # whoever last touched the file.
+    check("P42 an empty range reports every culprit as unchanged",
+          mod.landed_before_last_green({"sha": "b9a8e27"}, {"base": "b9a8e27", "shas": []}),
+          "an empty sha list was read as unknown")
+    check("P42 an unknown range still names the commit",
+          not mod.landed_before_last_green({"sha": "b9a8e27"}, {"base": "b9a8e27", "shas": None}),
+          "a missing sha list was read as empty")
+
+    # Same commit as the last green run, end to end. The lookup returns before the compare, so that call is
+    # also the assertion that it never happened.
+    FakeSlack.behaviour = {
+        "chat.postMessage": ok_parent,
+        "30609394288": {"workflow_id": 77},
+        "runs": {"workflow_runs": [{"id": 999, "head_sha": "045eebf"}]},
+    }
+    code, out, calls = run_poster(mod, FACTS_RED, SLACK_MENTION_CULPRITS="true",
+                                  GITHUB_TOKEN="ghs-fake-not-a-real-token", GITHUB_SHA="045eebf",
+                                  GITHUB_REF_NAME="main", GITHUB_API_URL=mod.SLACK_API)
+    summary_text = posts(calls)[0]["payload"]["blocks"][0]["text"]["text"]
+    threaded = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
+    check("P42 a re-run of the green commit renders no range",
+          "Since the last green nightly" not in summary_text, summary_text)
+    check("P42 and reports the files as unchanged",
+          "unchanged since the last green nightly" in threaded, threaded)
+    check("P42 and blames nobody", "last touched by" not in threaded, threaded)
+    check("P42 and looks nobody up even with mentions on",
+          not [c for c in calls if c["method"] == "users.lookupByEmail"], str([c["method"] for c in calls]))
+    check("P42 and never asks for a compare of a commit with itself",
+          not [c for c in calls if "/compare/" in str(c.get("path", ""))],
+          str([c.get("path") for c in calls]))
+
+    # A checkout older than the green baseline: every commit in it was in the tree that went green.
+    FakeSlack.behaviour = {
+        "chat.postMessage": ok_parent,
+        "30609394288": {"workflow_id": 77},
+        "runs": {"workflow_runs": [{"id": 999, "head_sha": "b9a8e27ffff"}]},
+        "b9a8e27ffff...045eebf": {"status": "behind", "total_commits": 0},
+    }
+    code, out, calls = run_poster(mod, FACTS_RED, SLACK_MENTION_CULPRITS="true",
+                                  GITHUB_TOKEN="ghs-fake-not-a-real-token", GITHUB_SHA="045eebf",
+                                  GITHUB_REF_NAME="main", GITHUB_API_URL=mod.SLACK_API)
+    summary_text = posts(calls)[0]["payload"]["blocks"][0]["text"]["text"]
+    threaded = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
+    check("P42 a checkout behind the baseline renders no range",
+          "Since the last green nightly" not in summary_text, summary_text)
+    check("P42 and reports the files as unchanged",
+          "unchanged since the last green nightly" in threaded, threaded)
+    check("P42 and blames nobody", "last touched by" not in threaded, threaded)
+    check("P42 and looks nobody up even with mentions on",
+          not [c for c in calls if c["method"] == "users.lookupByEmail"], str([c["method"] for c in calls]))
+
+    # Rewritten history stays unknown, so the fallback keeps naming the commit rather than clearing everyone.
+    FakeSlack.behaviour = {
+        "chat.postMessage": ok_parent,
+        "30609394288": {"workflow_id": 77},
+        "runs": {"workflow_runs": [{"id": 999, "head_sha": "b9a8e27ffff"}]},
+        "b9a8e27ffff...045eebf": {"status": "diverged", "total_commits": 7},
+    }
+    code, out, calls = run_poster(mod, FACTS_RED, GITHUB_TOKEN="ghs-fake-not-a-real-token",
+                                  GITHUB_SHA="045eebf", GITHUB_REF_NAME="main",
+                                  GITHUB_API_URL=mod.SLACK_API)
+    threaded = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
+    check("P42 rewritten history still names the commit", "last touched by" in threaded, threaded)
+    check("P42 and claims nothing about the last green run",
+          "unchanged since the last green nightly" not in threaded, threaded)
 
 
 HALVES = ("both", "collector", "poster")

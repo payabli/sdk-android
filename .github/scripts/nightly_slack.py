@@ -313,7 +313,11 @@ def summary_blocks(facts: dict, job_result: str = "success", since_green: dict |
 
     # The bounded suspect set, next to the per-file heuristic rather than replacing it. Absent when the answer
     # would be a guess, because a missing line is better than a wrong range.
-    if since_green:
+    #
+    # Also absent when the comparison came out empty, where the range is real and says nothing: a span from a
+    # commit to itself, or backwards from a newer baseline, over a count of zero. The thread reply is where an
+    # empty comparison is worth reading, because there it names the files nobody can be blamed for.
+    if since_green and not since_green.get("empty"):
         count = since_green.get("count")
         span = f"{mrkdwn(since_green['base'])}...{mrkdwn(since_green['head'])}"
         commits = f"{count} commit{'s' if count != 1 else ''}" if isinstance(count, int) else "the commits"
@@ -364,7 +368,10 @@ def landed_before_last_green(commit: dict, since_green: dict | None) -> bool:
     """
     shas = (since_green or {}).get("shas")
     short = str(commit.get("sha", ""))
-    if not shas or not short:
+    # `is None` rather than falsy, which is the difference between a comparison that could not be made and one
+    # that came out empty. An empty list is the case where nothing landed since the last green run, so every
+    # culprit is outside the range and none of them is a suspect; reading it as unknown put the blame back.
+    if shas is None or not short:
         return False
     return not any(full.startswith(short) for full in shas)
 
@@ -562,32 +569,42 @@ def commits_since_last_green() -> dict | None:
         return None
 
     base_sha = baseline["head_sha"]
+    facts = {
+        "base": base_sha[:7],
+        "head": sha[:7],
+        "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
+        "when": baseline.get("created_at", ""),
+    }
     if base_sha == sha:
-        # The same commit already went green, so nothing landed since and there is no range to report.
-        return None
+        # This is the commit that went green, so nothing landed since. `empty` rather than None, and the
+        # distinction is the whole point of the two keys: None means the comparison could not be made, while
+        # an empty sha list is a comparison that came out empty. Returning None here made a re-run of a green
+        # commit fall back to naming whoever last touched the file, which is the case with the strongest
+        # possible evidence that nobody is to blame.
+        return {**facts, "count": 0, "shas": [], "empty": True}
 
     compared = github_get(f"{api}/repos/{repo}/compare/{base_sha}...{sha}", token)
+    status = (compared or {}).get("status")
     total = (compared or {}).get("total_commits")
-    # `ahead` is the only status under which "commits since the last green nightly" is a true description.
-    # Measured against this repo: a reversed pair returns status `behind` with total_commits 0, and an
-    # identical pair returns `identical` with 0, so an integer count proves nothing about ancestry. Re-running
-    # an older failure after a newer success produces exactly the reversed case, and rewritten history
-    # produces `diverged`, where the count is real but is not a count of commits since anything.
-    if (compared or {}).get("status") != "ahead":
+
+    # `behind` means this checkout is an ancestor of the baseline and `identical` means it is the baseline, so
+    # under either one every commit here was already in the tree that went green. Measured against the real
+    # API, both also report `total_commits` 0, which is why a count cannot be read as ancestry. Re-running an
+    # older failure after a newer success produces the reversed case.
+    if status in ("behind", "identical"):
+        return {**facts, "count": 0, "shas": [], "empty": True}
+
+    # `ahead` is the only remaining status under which "commits since the last green nightly" is a true
+    # description. `diverged` carries a real count over rewritten history, where it counts commits since
+    # nothing, so ancestry there is unknown rather than empty and the attribution falls back accordingly.
+    if status != "ahead":
         return None
     if not isinstance(total, int):
         # The compare did not answer, which happens when a force-push leaves the previous success
         # incomparable. The link would 404 as well, so rendering a suspect range here would be a guess with a
         # dead reference attached. This function's contract is to return nothing rather than that.
         return None
-    return {
-        "base": base_sha[:7],
-        "head": sha[:7],
-        "count": total,
-        "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
-        "when": baseline.get("created_at", ""),
-        "shas": range_shas(compared, total),
-    }
+    return {**facts, "count": total, "shas": range_shas(compared, total)}
 
 
 def range_shas(compared: dict | None, total: int) -> list[str] | None:
