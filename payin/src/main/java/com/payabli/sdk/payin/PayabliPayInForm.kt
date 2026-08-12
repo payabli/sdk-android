@@ -3,6 +3,7 @@ package com.payabli.sdk.payin
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
@@ -12,6 +13,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
+import com.payabli.sdk.payin.payment.offering
 import com.payabli.sdk.payin.ui.PayInFormContent
 
 /**
@@ -24,15 +26,19 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * `MaterialTheme`, so light, dark and dynamic color arrive with nothing passed. Use
  * `PayInFormStyleOverrides` to change one value, or `LocalPayInFormStyle` for every form in a tree.
  *
- * **A refusal marks the field and keeps the values.** The form owns the screen at the moment a service refuses
- * a field, so the payer can correct it in place; [onFailed] carries the same failure for a host that logs it or
- * navigates away from it.
+ * **A refusal marks the field it named and empties the instrument.** The card number, expiry, security code,
+ * routing number and account number go on any outcome, because the instrument was submitted either way. What
+ * identifies the payer stays, so correcting a refused field is not a second round of typing.
+ *
+ * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can show it or navigate away
+ * from it. `PayabliException.reason` and `detail` are displayable only: the service echoes submitted values
+ * into some of them, so a record of a failure takes the exception's code, not its text.
  *
  * **Consumes no window insets.** Give it a scrolling viewport that accounts for the keyboard.
  *
  * **Retention is [flow]'s, not this composable's.** Hold the flow in something that survives a configuration
  * change and the outcome of a submission in flight is still delivered afterwards. This function keeps only
- * what the payer typed and which fields a refusal named.
+ * what the payer has typed and which fields a refusal named.
  *
  * @param flow where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.
@@ -61,9 +67,13 @@ public fun PayabliPayInForm(
 ) {
     val submission by flow.state.collectAsState()
 
+    // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
+    // made from.
+    val offered = remember(operation, configuration) { operation.offering(configuration) }
+
     PayInFormContent(
         submission = submission,
-        configuration = configuration,
+        configuration = offered,
         modifier = modifier,
         labels = labels,
         style = style,

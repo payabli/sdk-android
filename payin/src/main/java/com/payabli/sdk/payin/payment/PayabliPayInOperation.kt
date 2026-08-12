@@ -1,5 +1,7 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 
@@ -27,4 +29,37 @@ public sealed class PayabliPayInOperation {
     public class Authorize(
         public val options: PayInTransactionOptions,
     ) : PayabliPayInOperation()
+
+    /**
+     * The instruments this operation can carry.
+     *
+     * The service authorizes entered card data and nothing else, and `MoneyInClient` refuses the rest before
+     * sending. A form offering a bank tab for an authorization draws a form a payer can complete and no
+     * request can be made from, so the form reads this and offers what is left.
+     */
+    internal val instruments: Set<PayInMethodType>
+        get() =
+            when (this) {
+                is Authorize -> setOf(PayInMethodType.Card)
+                is Capture, is StoreMethod -> PayInMethodType.entries.toSet()
+            }
+}
+
+/**
+ * [configuration] with any instrument this operation cannot carry left out.
+ *
+ * Unchanged when every offered instrument works, and unchanged when none does: a caller pairing an
+ * authorization with a bank-only form has configured a form that cannot submit, and the refusal on the tap
+ * names the reason. Dropping to a card form there would mean offering card sections this configuration was
+ * never checked for, since only offered instruments are checked when one is built.
+ *
+ * iOS filters the same pairing in `availableMethods(operation:configuredMethods:)`.
+ */
+internal fun PayabliPayInOperation.offering(configuration: PayInFormConfiguration): PayInFormConfiguration {
+    val offered = configuration.methodsOffered.filter { it in instruments }
+    if (offered.isEmpty() || offered == configuration.methodsOffered) return configuration
+    return configuration.copy(
+        allowedMethods = offered,
+        defaultMethod = configuration.defaultMethod.takeIf { it in offered } ?: offered.first(),
+    )
 }
