@@ -8,7 +8,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
  * Test values for the payment form, so a QA run is one tap instead of eight fields.
  *
  * Handed to the form as `initialValues`, which is the SDK's own way in: nothing here reaches around the form to
- * write its state. iOS does the same thing from `DebugPrefill.json`.
+ * write its state.
  *
  * Test card numbers and a published test routing number, so there is nothing here to keep out of the
  * repository.

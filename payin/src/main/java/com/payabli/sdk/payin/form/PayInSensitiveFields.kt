@@ -7,9 +7,8 @@ package com.payabli.sdk.payin.form
  * again.
  *
  * **On a refusal as well as on a success.** The instrument was submitted either way, and a security code is
- * authentication data that has no reason to outlive the attempt it authenticated. iOS clears the same set after
- * a failure, so a payer meets one behaviour on both platforms. The cost is a re-entry after a decline for
- * insufficient funds, against an instrument that stays in a form's state until the screen goes away.
+ * authentication data with no reason to outlive the attempt it authenticated. A payer whose card is declined
+ * enters it again.
  */
 internal object PayInSensitiveFields {
     /**

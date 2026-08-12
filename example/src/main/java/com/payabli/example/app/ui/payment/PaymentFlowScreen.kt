@@ -175,8 +175,8 @@ fun PaymentFlowScreen(
             remember { { value: SheetValue -> !submitting.value || value != SheetValue.Hidden } }
         val sheetState =
             rememberModalBottomSheetState(
-                // Opens half height and expands, which is where the payer's thumb is and what the same sheet
-                // does on iOS. The hold below still refuses a dismiss mid-submission at either height.
+                // Opens half height and expands, which is where the payer's thumb is. The hold below refuses
+                // a dismiss mid-submission at either height.
                 skipPartiallyExpanded = false,
                 confirmValueChange = holdWhileSubmitting,
             )

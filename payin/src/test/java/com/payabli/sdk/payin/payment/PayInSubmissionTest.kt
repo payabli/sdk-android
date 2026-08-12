@@ -414,9 +414,8 @@ class PayInSubmissionTest {
     @Test
     fun `a reset while a submission is in flight is refused, and cannot land between two of its steps`() =
         runTest(timeout = timeout) {
-            // `reset` used to read `isLocked` and then write. A submit taking the guard between those two
-            // published `Idle` over its own `Submitting`, which is the state the acknowledgement promises not
-            // to touch.
+            // `reset` reads the guard and writes `Idle` under it, so a submit cannot take the guard between
+            // the two and have its own `Submitting` overwritten.
             val transport = GatedPayInTransport.answering(approved)
             val submission = submissionOver(transport)
 

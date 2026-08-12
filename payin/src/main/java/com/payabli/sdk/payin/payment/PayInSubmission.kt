@@ -31,9 +31,8 @@ import kotlin.coroutines.cancellation.CancellationException
  * with the screen. Canceling does not un-charge a card.
  *
  * **One holder per form, and no singleton.** A holder keeps its terminal state — a result, or an exception
- * carrying the service's own wording — for as long as it lives, so its lifetime is a screen's.
- * `PayInSubmissionViewModel` gives it that; a host on any other architecture holds it wherever its own screen
- * state lives.
+ * carrying the service's own wording — for as long as it lives, so its lifetime is a screen's. A host holds
+ * it wherever its own screen state lives.
  *
  * [state] is a `StateFlow`, which replays its latest value, so a collector arriving after a configuration
  * change sees `Submitting` or the outcome immediately.
@@ -117,8 +116,6 @@ internal class PayInSubmission(
      */
     fun reset(): Boolean {
         // The same lock a submission takes, so the state cannot be cleared between the check and the write.
-        // Read as `isLocked` and then written, a submit acquiring the guard in between had `Idle` published
-        // over its `Submitting`.
         if (!inFlight.tryLock()) return false
         try {
             sink.value = PayInSubmissionState.Idle
@@ -154,8 +151,7 @@ internal class PayInSubmission(
         } catch (failure: Exception) {
             outcome = failure.asFailed()
         } finally {
-            // Neither line suspends, so both run on the canceled path as they do on any other. A
-            // `NonCancellable` context around them protects nothing, and no test can tell the two apart.
+            // Neither line suspends, so both run on the canceled path as they do on any other.
             outcome?.let { sink.value = it }
             inFlight.unlock()
         }

@@ -83,8 +83,7 @@ android {
         )
         buildConfigField("int", "DEMO_TOKEN_PORT", demoSetting("payabli.demo.tokenPort", "8787"))
         buildConfigField("boolean", "DEMO_DIAGNOSTICS", demoSetting("payabli.demo.diagnostics", "true"))
-        // Off unless asked for, and the button it enables is drawn in a debug build only. Filling eight
-        // fields by hand is what a QA run costs without it.
+        // Off unless asked for, and the button it enables is drawn in a debug build only.
         buildConfigField("boolean", "DEMO_PREFILL", demoSetting("payabli.demo.prefill", "false"))
     }
 

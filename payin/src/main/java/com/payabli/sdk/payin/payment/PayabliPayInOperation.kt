@@ -52,8 +52,6 @@ public sealed class PayabliPayInOperation {
  * authorization with a bank-only form has configured a form that cannot submit, and the refusal on the tap
  * names the reason. Dropping to a card form there would mean offering card sections this configuration was
  * never checked for, since only offered instruments are checked when one is built.
- *
- * iOS filters the same pairing in `availableMethods(operation:configuredMethods:)`.
  */
 internal fun PayabliPayInOperation.offering(configuration: PayInFormConfiguration): PayInFormConfiguration {
     val offered = configuration.methodsOffered.filter { it in instruments }

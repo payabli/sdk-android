@@ -13,12 +13,9 @@ import org.junit.Test
 /**
  * These tests exist for one property: the readout is derived, not transcribed.
  *
- * A hand-written list would pass a test that compares it against itself. Each test below instead
- * changes the configuration and asserts the readout followed, which is the only way to catch the
- * failure this section is meant to prevent — a screen that describes a form it no longer matches.
- *
- * The configuration is the SDK's own type now, so these also read as a check on it: a form nobody
- * can describe from its configuration is one an integrator cannot reason about either.
+ * A hand-written list would pass a test that compares it against itself. Each test below changes the
+ * configuration and asserts the readout followed, which is what catches a screen describing a form it
+ * does not match.
  */
 class PaymentFormSummaryTest {
     private fun rowsOf(configuration: PayInFormConfiguration) =

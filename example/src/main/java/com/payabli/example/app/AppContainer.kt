@@ -19,15 +19,14 @@ import com.payabli.example.app.terminal.TerminalController
 /**
  * Everything the app is built from, assembled once per process.
  *
- * The SDK admits no dependency-injection framework. At seven objects a container is shorter than the
- * configuration a framework would need.
+ * The SDK admits no dependency-injection framework, so this is the whole of the wiring.
  *
  * Built once and never rebuilt, which is what makes the Setup screen honest. It reads these values
  * back and offers no way to change them: a session captures its configuration when it is created, so
  * a control here would appear to change something already decided.
  *
- * The one remaining `Demo*` line is the card-present seam. The payment screens are on the real SDK: they
- * start it through [payInStartup] and the SDK submits.
+ * The `Demo*` line is the card-present seam. The card-not-present screens start the SDK through
+ * [payInStartup] and it submits for them.
  */
 class AppContainer(
     context: Context,
@@ -39,10 +38,8 @@ class AppContainer(
     /**
      * Read on every call, never cached.
      *
-     * NFC is a Settings toggle and the readiness check is the thing that tells a reader to go and
-     * flip it. Held as a snapshot, the "Recheck" button re-ran the same five checks against the
-     * facts read at process start and gave the same answer, so the one action offered for the
-     * problem appeared to do nothing.
+     * NFC is a Settings toggle and the readiness check is what tells a reader to go and flip it, so
+     * "Recheck" reads the device again and can report the change.
      */
     val readDeviceFacts: () -> DeviceFacts = { DeviceFactsReader.read(appContext) }
 
@@ -75,9 +72,8 @@ class AppContainer(
     /**
      * Step one for both payment screens: the token server, then the SDK.
      *
-     * Read rather than held, for the same reason [tokenClient] is, and it has to be declared after
-     * [tokenServer]: built at construction it would capture a token server that has not been resolved yet,
-     * and a launch override would leave it pointed at the wrong host.
+     * Read per call, and declared after [tokenServer]: built at construction it would capture a token
+     * server the launch override has not rewritten yet.
      */
     val payInStartup: PayInStartup
         get() =

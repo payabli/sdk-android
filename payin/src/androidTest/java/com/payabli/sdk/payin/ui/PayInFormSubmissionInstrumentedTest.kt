@@ -87,8 +87,8 @@ class PayInFormSubmissionInstrumentedTest {
 
     @Test
     fun aRefusalEmptiesTheInstrumentAsAnApprovalDoes() {
-        // The instrument was submitted either way, and a security code has no reason to outlive the attempt it
-        // authenticated. iOS clears the same set after a failure.
+        // The instrument was submitted either way, and a security code has no reason to outlive the attempt
+        // it authenticated.
         showCardForm()
         fillCard()
         submit()

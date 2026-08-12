@@ -19,9 +19,8 @@ import java.net.URL
  * `HttpURLConnection` and `kotlinx.serialization`, matching the SDK, which admits no third-party
  * HTTP client and no reflection-based JSON mapper.
  *
- * This is the app fetching its own token, not an SDK call. When the SDK arrives, this is roughly what
- * goes behind its token provider. The provider must mint on every call, which is why the route here is
- * `exchange-token`.
+ * This is the app fetching its own token, not an SDK call, and it is what sits behind the SDK's token
+ * provider. The provider mints on every call, which is why the route here is `exchange-token`.
  */
 class TokenServerClient(
     private val target: TokenServerTarget,
