@@ -4,6 +4,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormSection
+import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 
@@ -26,18 +27,25 @@ data class DemoFormSetup(
  * theme with nothing passed, which is the property the Setup screen's readout is checking.
  */
 object DemoForms {
-    /** Store an instrument and get a reusable token back. No amount: nothing is being charged. */
+    /**
+     * Store an instrument and get a reusable token back. No amount: nothing is being charged.
+     *
+     * The customer section carries a customer number here and not on the capture form: a stored method belongs
+     * to a customer, and the store route refuses one it cannot identify with a `400` that names no field. An
+     * integrator sends their own customer's number.
+     */
     fun storePaymentMethod(): DemoFormSetup =
         DemoFormSetup(
             configuration =
                 PayInFormConfiguration(
-                    cardSections = listOf(cardDetails(), customerSection()),
-                    bankSections = listOf(bankDetails(), customerSection()),
+                    cardSections = listOf(cardDetails(), customerSection(identified = true)),
+                    bankSections = listOf(bankDetails(), customerSection(identified = true)),
+                    labelLayout = PayInLabelLayout.Placeholder,
                 ),
             labels =
                 PayInFormLabels(
-                    title = "Save a payment method",
-                    subtitle = "Store a card or bank account and get a reusable token back.",
+                    title = "Save Payment Method",
+                    subtitle = "Create a card or ACH token.",
                     submitButton = "Save payment method",
                 ),
         )
@@ -49,6 +57,7 @@ object DemoForms {
                 PayInFormConfiguration(
                     cardSections = listOf(cardDetails(), customerSection(), amountSection()),
                     bankSections = listOf(bankDetails(), customerSection(), amountSection()),
+                    labelLayout = PayInLabelLayout.Placeholder,
                     summaryValues =
                         mapOf(
                             PayInField.Amount to "$ 1.00",
@@ -57,21 +66,28 @@ object DemoForms {
                 ),
             labels =
                 PayInFormLabels(
-                    title = "Take a payment",
-                    subtitle = "Charge a card or bank account.",
+                    title = "Payment Capture",
+                    subtitle = "Submit a card or ACH payment.",
                     submitButton = "Submit payment",
                 ),
         )
 
     /** The instrument sections, which are the SDK's own defaults for both methods. */
-    private fun cardDetails() = PayInFormConfiguration.defaultCardSections().single().copy(title = "Card")
+    private fun cardDetails() = PayInFormConfiguration.defaultCardSections().single().copy(title = "Card Information")
 
-    private fun bankDetails() = PayInFormConfiguration.defaultBankSections().single().copy(title = "Bank account")
+    private fun bankDetails() = PayInFormConfiguration.defaultBankSections().single().copy(title = "ACH Information")
 
-    private fun customerSection() =
+    /** @param identified adds the customer number the stored-method route requires. */
+    private fun customerSection(identified: Boolean = false) =
         PayInFormSection(
-            title = "Customer",
-            fields = listOf(PayInField.FirstName, PayInField.LastName, PayInField.BillingEmail),
+            title = "Customer Information",
+            fields =
+                buildList {
+                    add(PayInField.FirstName)
+                    add(PayInField.LastName)
+                    if (identified) add(PayInField.CustomerNumber)
+                    add(PayInField.BillingEmail)
+                },
         )
 
     /**
@@ -81,7 +97,7 @@ object DemoForms {
      */
     private fun amountSection() =
         PayInFormSection(
-            title = "Payment",
+            title = "Payment Information",
             fields = listOf(PayInField.Amount, PayInField.ServiceFee),
             style = PayInSectionStyle.Summary,
         )

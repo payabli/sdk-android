@@ -3,8 +3,10 @@ package com.payabli.example.app.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,6 +44,7 @@ fun DemoScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
+        contentWindowInsets = WindowInsets.safeDrawing,
         topBar = {
             TopAppBar(
                 title = { Text(title) },
@@ -54,6 +57,7 @@ fun DemoScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
+                    // Before verticalScroll, so the keyboard takes height off the viewport.
                     .padding(insets)
                     .verticalScroll(rememberScrollState())
                     .padding(Dimens.ScreenPadding),

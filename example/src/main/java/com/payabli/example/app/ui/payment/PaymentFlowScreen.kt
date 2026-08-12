@@ -3,18 +3,28 @@ package com.payabli.example.app.ui.payment
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.flow.FlowStep
 import com.payabli.example.app.flow.StepStatus
 import com.payabli.example.app.payment.DemoFormSetup
+import com.payabli.example.app.payment.DemoPrefill
+import com.payabli.example.app.ui.components.BorderedButton
 import com.payabli.example.app.ui.components.ContextLine
 import com.payabli.example.app.ui.components.DemoIcons
 import com.payabli.example.app.ui.components.DemoScreen
@@ -26,6 +36,9 @@ import com.payabli.example.app.ui.components.StepRow
 import com.payabli.example.app.ui.components.TokenCheckStep
 import com.payabli.example.app.ui.theme.Dimens
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.payment.PayabliPayInOperation
+import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 
 /**
  * What the two card-not-present screens have in common, which is everything but their wording.
@@ -37,12 +50,14 @@ interface PaymentFlowUiState {
     val resultText: String
     val tokenCheckText: String
     val isCheckingToken: Boolean
-    val isSubmitting: Boolean
     val entryPoint: String
     val host: String
     val diagnostics: List<String>
     val diagnosticsEnabled: Boolean
     val isSheetOpen: Boolean
+
+    /** Offers the button that fills the form with [com.payabli.example.app.payment.DemoPrefill]'s values. */
+    val prefillEnabled: Boolean
 }
 
 /** What a payment screen can be asked to do. */
@@ -50,11 +65,12 @@ data class PaymentFlowActions(
     val onCheckToken: () -> Unit,
     val onOpenSheet: () -> Unit,
     val onDismissSheet: () -> Unit,
-    val onSubmit: (PayInFormValues) -> Unit,
+    val onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
+    val onFailed: (PayInSubmissionState.Failed) -> Unit,
 ) {
     companion object {
         /** For a preview, which renders the screen and drives nothing. */
-        fun none(): PaymentFlowActions = PaymentFlowActions({}, {}, {}, {})
+        fun none(): PaymentFlowActions = PaymentFlowActions({}, {}, {}, {}, {})
     }
 }
 
@@ -69,11 +85,25 @@ data class PaymentFlowActions(
 fun PaymentFlowScreen(
     title: String,
     state: PaymentFlowUiState,
+    flow: PayabliPayInPaymentFlow?,
+    operation: PayabliPayInOperation,
+    submission: PayInSubmissionState,
     steps: List<FlowStep>,
     resultEmptyText: String,
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
 ) {
+    val isSubmitting = submission is PayInSubmissionState.Submitting
+
+    // The screen's own, not the app's: it exists to save typing during a QA run, and no screen below reads it.
+    // Replacing it starts the form again from the new values, which is what the SDK's `initialValues` does.
+    var prefilled by remember { mutableStateOf<PayInFormValues?>(null) }
+
+    // Which instrument the form is on, which the form reports whenever the payer switches tabs. The card and
+    // the bank account take different fields, so the button has to fill the one on screen.
+    var method by remember { mutableStateOf(state.setup.configuration.startingMethod) }
+    val offersPrefill = BuildConfig.DEBUG && state.prefillEnabled
+
     DemoScreen(title = title, modifier = modifier) {
         ContextLine(entryPoint = state.entryPoint, host = state.host)
 
@@ -95,17 +125,33 @@ fun PaymentFlowScreen(
                     ResultCard(text = state.resultText, emptyText = resultEmptyText)
                 }
                 ProminentButton(
-                    text = "Open in a bottom sheet",
+                    text = "Open as a sheet instead",
                     icon = DemoIcons.OpenSheet,
                     onClick = actions.onOpenSheet,
                     // A second, empty form beside a submission already in flight.
-                    enabled = !state.isSubmitting,
+                    enabled = !isSubmitting,
                 )
-                PaymentFormHost(
-                    setup = state.setup,
-                    onSubmit = actions.onSubmit,
-                    isSubmitting = state.isSubmitting,
-                )
+                if (offersPrefill) {
+                    BorderedButton(
+                        text = "Prefill test data (Debug)",
+                        icon = DemoIcons.Prefill,
+                        onClick = { prefilled = DemoPrefill.valuesFor(method) },
+                        enabled = !isSubmitting,
+                        contentColor = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+                // Only once the session exists. Until then the step above is what the screen offers.
+                flow?.let { payments ->
+                    PaymentFormHost(
+                        setup = state.setup,
+                        flow = payments,
+                        operation = operation,
+                        initialValues = prefilled,
+                        onCompleted = actions.onCompleted,
+                        onFailed = actions.onFailed,
+                        onValuesChanged = { method = it.method },
+                    )
+                }
             }
         }
 
@@ -124,24 +170,41 @@ fun PaymentFlowScreen(
         // as a key, so a lambda capturing the state snapshot is a new key whenever the state changes,
         // and the sheet is rebuilt from `Hidden` at the moment a submission starts. It reads the flag
         // through `rememberUpdatedState` instead, which is a stable holder of a changing value.
-        val submitting = rememberUpdatedState(state.isSubmitting)
+        val submitting = rememberUpdatedState(isSubmitting)
         val holdWhileSubmitting =
             remember { { value: SheetValue -> !submitting.value || value != SheetValue.Hidden } }
         val sheetState =
             rememberModalBottomSheetState(
-                skipPartiallyExpanded = true,
+                // Opens half height and expands, which is where the payer's thumb is and what the same sheet
+                // does on iOS. The hold below still refuses a dismiss mid-submission at either height.
+                skipPartiallyExpanded = false,
                 confirmValueChange = holdWhileSubmitting,
             )
         ModalBottomSheet(
-            onDismissRequest = { if (!state.isSubmitting) actions.onDismissSheet() },
+            onDismissRequest = { if (!isSubmitting) actions.onDismissSheet() },
             sheetState = sheetState,
         ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding)) {
-                PaymentFormHost(
-                    setup = state.setup,
-                    onSubmit = actions.onSubmit,
-                    isSubmitting = state.isSubmitting,
-                )
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        // The sheet's own insets cover the system bars and not the keyboard.
+                        .imePadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(Dimens.ScreenPadding),
+            ) {
+                // Only once the session exists. Until then the step above is what the screen offers.
+                flow?.let { payments ->
+                    PaymentFormHost(
+                        setup = state.setup,
+                        flow = payments,
+                        operation = operation,
+                        initialValues = prefilled,
+                        onCompleted = actions.onCompleted,
+                        onFailed = actions.onFailed,
+                        onValuesChanged = { method = it.method },
+                    )
+                }
             }
         }
     }

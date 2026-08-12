@@ -45,7 +45,7 @@ class PaymentFormSummaryTest {
             storeMethod.copy(
                 cardSections =
                     storeMethod.cardSections.map { section ->
-                        if (section.title == "Card") {
+                        if (section.title == "Card Information") {
                             section.copy(fields = section.fields + PayInField.RoutingNumber)
                         } else {
                             section
@@ -82,11 +82,15 @@ class PaymentFormSummaryTest {
     }
 
     @Test
-    fun `capture and store list the same typed fields, because only the summary section differs`() {
-        assertEquals(
-            rowsOf(storeMethod)["Card fields"],
-            rowsOf(DemoForms.capture().configuration)["Card fields"],
-        )
+    fun `store asks for a customer number and capture does not, and nothing else differs`() {
+        // A stored method belongs to a customer and the service refuses one it cannot identify, so that field
+        // is on the store form only. Everything else the two collect is the same.
+        val store = storeMethod.inputFieldsFor(PayInMethodType.Card)
+        val capture = DemoForms.capture().configuration.inputFieldsFor(PayInMethodType.Card)
+
+        assertEquals(listOf(PayInField.CustomerNumber), store - capture.toSet())
+        assertEquals(emptyList<PayInField>(), capture - store.toSet())
+        assertTrue(rowsOf(storeMethod)["Card fields"]!!.contains(PayInField.CustomerNumber.fieldName))
     }
 
     @Test
@@ -180,6 +184,6 @@ class PaymentFormSummaryTest {
                 .capture()
                 .configuration.cardSections
                 .mapNotNull(PayInFormSection::title)
-        assertEquals(listOf("Card", "Customer", "Payment"), titles)
+        assertEquals(listOf("Card Information", "Customer Information", "Payment Information"), titles)
     }
 }

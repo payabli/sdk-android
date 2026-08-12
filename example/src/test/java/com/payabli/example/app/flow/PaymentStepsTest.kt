@@ -104,13 +104,16 @@ class PaymentStepsTest {
     }
 
     @Test
-    fun `storing and capturing differ only in what the last step is called`() {
+    fun `storing and capturing walk one sequence, named for what each is doing`() {
+        // The statuses are the sequence and they are shared; the wording is per operation, because a payer
+        // storing a method is not entering a payment and the result is not a transaction.
         val done = PaymentProgress(backendReachable = true, backendChecked = true, finished = true)
         val stored = PaymentSteps.forStoringMethod(done)
         val captured = PaymentSteps.forCapture(done)
 
         assertEquals(stored.map { it.status }, captured.map { it.status })
-        assertEquals(stored.take(2).map { it.title }, captured.take(2).map { it.title })
+        assertEquals(stored.first().title, captured.first().title)
+        assertTrue("the two forms read the same", stored[1].title != captured[1].title)
         assertTrue("the two results read the same", stored.last().title != captured.last().title)
     }
 

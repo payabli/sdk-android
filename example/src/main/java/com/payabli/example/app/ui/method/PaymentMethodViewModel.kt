@@ -5,16 +5,18 @@ import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.AppContainer
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.diagnostics.DiagnosticsStore
-import com.payabli.example.app.net.TokenServerClient
-import com.payabli.example.app.net.checkToken
 import com.payabli.example.app.payment.DemoFormSetup
+import com.payabli.example.app.payment.DemoForms
+import com.payabli.example.app.payment.PayInStartup
 import com.payabli.example.app.payment.PaymentError
-import com.payabli.example.app.payment.PaymentFailure
-import com.payabli.example.app.payment.PaymentFlowController
 import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.StoredMethod
+import com.payabli.example.app.payment.toPaymentError
+import com.payabli.example.app.payment.toPaymentResult
 import com.payabli.example.app.ui.payment.PaymentFlowUiState
-import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.payment.PayabliPayInOperation
+import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +32,7 @@ data class PaymentMethodUiState(
     val storedMethod: StoredMethod? = null,
     override val diagnostics: List<String> = emptyList(),
     override val diagnosticsEnabled: Boolean = true,
+    override val prefillEnabled: Boolean = false,
     override val isSheetOpen: Boolean = false,
     /** What this screen is pointed at, shown in one line. The full set is on Setup. */
     override val entryPoint: String = "",
@@ -41,12 +44,15 @@ data class PaymentMethodUiState(
     /** The token endpoint answered. The form stays blocked until it has. */
     val backendReachable: Boolean = false,
     override val isCheckingToken: Boolean = false,
-    override val isSubmitting: Boolean = false,
+    /** What this screen submits through, once the session behind it exists. */
+    val payments: PayabliPayInPaymentFlow? = null,
+    /** Storing an instrument, which carries no amount. */
+    val operation: PayabliPayInOperation = PayabliPayInOperation.StoreMethod(),
 ) : PaymentFlowUiState
 
 class PaymentMethodViewModel(
-    private val flow: PaymentFlowController,
-    private val tokenClient: TokenServerClient,
+    setup: DemoFormSetup,
+    private val startup: PayInStartup,
     private val diagnostics: DiagnosticsStore,
     private val diagnosticsEnabled: Boolean,
     private val configuration: DemoConfiguration,
@@ -54,8 +60,9 @@ class PaymentMethodViewModel(
     private val _uiState =
         MutableStateFlow(
             PaymentMethodUiState(
-                setup = flow.setup,
+                setup = setup,
                 diagnosticsEnabled = diagnosticsEnabled,
+                prefillEnabled = configuration.prefillEnabled,
                 entryPoint = configuration.entryPoint,
                 host = configuration.environment.host,
             ),
@@ -75,12 +82,13 @@ class PaymentMethodViewModel(
         if (_uiState.value.isCheckingToken) return
         _uiState.update { it.copy(isCheckingToken = true, tokenCheckText = "Checking…") }
         viewModelScope.launch {
-            val outcome = tokenClient.checkToken()
+            val started = startup.start(viewModelScope)
             _uiState.update {
                 it.copy(
                     isCheckingToken = false,
-                    tokenCheckText = outcome.text,
-                    backendReachable = outcome.reachable,
+                    tokenCheckText = started.text,
+                    backendReachable = started.isReady,
+                    payments = started.payments,
                 )
             }
         }
@@ -91,27 +99,20 @@ class PaymentMethodViewModel(
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
     /**
-     * Submits through the flow controller, so the result carries the shape this operation
-     * produces. Fabricated at the button, it was always a stored-method result, and Capture
-     * reached its transaction screen with no transaction.
+     * The SDK accepted it.
+     *
+     * Acknowledged straight away, so the retained outcome does not arrive again after a rotation and push the
+     * stored-method screen twice for one instrument.
      */
-    fun submit(values: PayInFormValues) {
-        // Single flight, decided here. `isSubmitting` disables the button, but only once the state
-        // has recomposed, and a second callback landing before that would launch a second request.
-        // Harmless against the demo controller and a duplicate stored instrument against a real one.
-        if (_uiState.value.isSubmitting) return
-        _uiState.update { it.copy(isSubmitting = true) }
-        viewModelScope.launch {
-            flow.submit(values).fold(onSuccess = ::onCompleted, onFailure = {
-                // A controller that knows what went wrong says so; anything else is unexpected.
-                onError(
-                    (it as? PaymentFailure)?.error ?: PaymentError.Unexpected(it.message ?: it.javaClass.simpleName),
-                )
-            })
-        }
+    fun onCompleted(outcome: PayInSubmissionState.Succeeded) {
+        _uiState.value.payments?.acknowledge()
+        onCompleted(outcome.toPaymentResult())
     }
 
-    fun onCompleted(result: PaymentResult) {
+    /** The SDK refused it. The form keeps what the payer typed; this records the reason beside the step. */
+    fun onFailed(outcome: PayInSubmissionState.Failed) = onError(outcome.toPaymentError())
+
+    private fun onCompleted(result: PaymentResult) {
         val method = result.storedMethod
         val text =
             if (method == null) {
@@ -135,13 +136,12 @@ class PaymentMethodViewModel(
                 // flag has to agree, or the sequence says "do this next" over a stated failure.
                 submitFailed = method == null,
                 isSheetOpen = false,
-                isSubmitting = false,
                 outcomeReady = method != null,
             )
         }
     }
 
-    fun onError(error: PaymentError) {
+    private fun onError(error: PaymentError) {
         record("ERROR paymentMethod\n${error.displayMessage}")
         _uiState.update {
             // The outcome signal and its payload are cleared, not left standing. A failure arriving
@@ -154,7 +154,6 @@ class PaymentMethodViewModel(
                 storedMethod = null,
                 submitFailed = true,
                 isSheetOpen = false,
-                isSubmitting = false,
             )
         }
     }
@@ -170,8 +169,8 @@ class PaymentMethodViewModel(
     companion object {
         fun from(container: AppContainer): PaymentMethodViewModel =
             PaymentMethodViewModel(
-                flow = container.paymentMethodFlow,
-                tokenClient = container.tokenClient,
+                setup = DemoForms.storePaymentMethod(),
+                startup = container.payInStartup,
                 diagnostics = container.diagnostics.paymentMethod,
                 diagnosticsEnabled = container.configuration.diagnosticsEnabled,
                 configuration = container.configuration,

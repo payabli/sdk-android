@@ -1,13 +1,17 @@
 package com.payabli.example.app.ui.nav
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.rememberNavigationSuiteScaffoldState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,8 +55,15 @@ fun PayabliDemoNavHost(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
+    // The bar's height comes off the content above it, keyboard up or not, so hiding it while a payer types
+    // gives that height to the form.
+    val barState = rememberNavigationSuiteScaffoldState()
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    LaunchedEffect(keyboardVisible) { if (keyboardVisible) barState.hide() else barState.show() }
+
     NavigationSuiteScaffold(
         modifier = modifier,
+        state = barState,
         navigationSuiteItems = {
             TopLevelDestination.entries.forEach { destination ->
                 val selected =
@@ -108,15 +119,15 @@ private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController)
                         onCheckToken = model::checkToken,
                         onOpenSheet = model::openSheet,
                         onDismissSheet = model::dismissSheet,
-                        onSubmit = model::submit,
+                        onCompleted = model::onCompleted,
+                        onFailed = model::onFailed,
                     ),
             )
         }
         composable<PaymentMethodSaved> { entry ->
-            // The same shape as the capture result below, and for the same reason. What was stored
-            // lives in the graph-scoped view model, and the process can be killed while this screen
-            // is on top; Navigation restores the destination and the model comes back empty, so the
-            // screen announced "Payment method saved" for an outcome it could no longer establish.
+            // The graph's entry, so what the form screen stored is what this one describes. Navigation
+            // restores this destination after process death with the model empty, which the effect below
+            // reads: "Payment method saved" needs something to name.
             val model =
                 navController.graphViewModel<PaymentMethodGraph, PaymentMethodViewModel>(entry) {
                     PaymentMethodViewModel.from(it)
@@ -151,7 +162,8 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
                         onCheckToken = model::checkToken,
                         onOpenSheet = model::openSheet,
                         onDismissSheet = model::dismissSheet,
-                        onSubmit = model::submit,
+                        onCompleted = model::onCompleted,
+                        onFailed = model::onFailed,
                     ),
             )
         }

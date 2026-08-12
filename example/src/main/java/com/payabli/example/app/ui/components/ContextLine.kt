@@ -45,7 +45,7 @@ fun ContextLine(
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = "details in Setup",
+            text = "details in Config",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
 import com.payabli.example.app.config.TokenHostDefaults
@@ -43,7 +44,7 @@ fun SetupScreen(
     onRecheck: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    DemoScreen(title = "Setup", modifier = modifier) {
+    DemoScreen(title = "Configuration", modifier = modifier) {
         Section(
             title = "Integration",
             note = "Set in example/secrets.properties and captured when the app started.",
@@ -132,6 +133,16 @@ fun SetupScreen(
             DetailRow(label = "Save", value = value)
             DetailRow(label = "Capture", value = value)
             DetailRow(label = "Set by", value = "payabli.demo.diagnostics")
+        }
+
+        Section(
+            title = "Prefill",
+            note = "Offers a button on the payment screens that fills the form with test values.",
+        ) {
+            // Both halves, because either one off means no button: a release build ignores the setting.
+            DetailRow(label = "Setting", value = if (state.configuration.prefillEnabled) "On" else "Off")
+            DetailRow(label = "Build", value = if (BuildConfig.DEBUG) "Debug" else "Release, so no button")
+            DetailRow(label = "Set by", value = "payabli.demo.prefill")
         }
 
         Section(title = "This build") {

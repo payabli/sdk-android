@@ -7,9 +7,10 @@ import com.payabli.example.app.config.TokenHostResolver
 import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.diagnostics.DiagnosticsRegistry
 import com.payabli.example.app.net.TokenServerClient
-import com.payabli.example.app.payment.DemoPaymentFlowController
-import com.payabli.example.app.payment.PaymentFlowController
-import com.payabli.example.app.payment.PaymentOperation
+import com.payabli.example.app.payment.PayInSessionSource
+import com.payabli.example.app.payment.PayInStartup
+import com.payabli.example.app.payment.payInFlowGate
+import com.payabli.example.app.payment.payInStartup
 import com.payabli.example.app.preflight.DeviceFacts
 import com.payabli.example.app.preflight.platform.DeviceFactsReader
 import com.payabli.example.app.terminal.DemoTerminalController
@@ -25,8 +26,8 @@ import com.payabli.example.app.terminal.TerminalController
  * back and offers no way to change them: a session captures its configuration when it is created, so
  * a control here would appear to change something already decided.
  *
- * The two `Demo*` lines are the seam. When the SDK arrives, each becomes a real instance and nothing
- * else in the app moves.
+ * The one remaining `Demo*` line is the card-present seam. The payment screens are on the real SDK: they
+ * start it through [payInStartup] and the SDK submits.
  */
 class AppContainer(
     context: Context,
@@ -53,12 +54,6 @@ class AppContainer(
     /** ⟵ swap point: the card-present SDK goes here. */
     val terminal: TerminalController = DemoTerminalController()
 
-    /** ⟵ swap point: the payment SDK goes here. */
-    val paymentMethodFlow: PaymentFlowController = DemoPaymentFlowController(PaymentOperation.StoreMethod)
-
-    /** ⟵ swap point: the same, for a charge. */
-    val captureFlow: PaymentFlowController = DemoPaymentFlowController(PaymentOperation.Capture)
-
     /**
      * Where the token server is.
      *
@@ -70,6 +65,26 @@ class AppContainer(
         private set
 
     val tokenClient: TokenServerClient get() = TokenServerClient(tokenServer)
+
+    /**
+     * The SDK session, held here because there is one per process and the second screen to ask has to reach
+     * the one the first installed. It reads [tokenClient] per call, so a launch override still applies.
+     */
+    private val sessionSource = PayInSessionSource(appContext, { tokenClient }, configuration)
+
+    /**
+     * Step one for both payment screens: the token server, then the SDK.
+     *
+     * Read rather than held, for the same reason [tokenClient] is, and it has to be declared after
+     * [tokenServer]: built at construction it would capture a token server that has not been resolved yet,
+     * and a launch override would leave it pointed at the wrong host.
+     */
+    val payInStartup: PayInStartup
+        get() =
+            payInStartup(
+                tokenClient = tokenClient,
+                gate = payInFlowGate(sessionSource = sessionSource, entryPoint = configuration.entryPoint),
+            )
 
     fun applyLaunchOverride(host: String?) {
         if (host.isNullOrBlank()) return
