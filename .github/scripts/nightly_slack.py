@@ -348,7 +348,33 @@ def summary_blocks(facts: dict, job_result: str = "success", since_green: dict |
     return blocks, f"{mrkdwn(facts['platform'])} {verdict.lower()}: {suite_text}"
 
 
-def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
+def landed_before_last_green(commit: dict, since_green: dict | None) -> bool:
+    """Whether a culprit commit was already in the tree the last time the suite was green.
+
+    The per-file culprit is `git log -1 -- <file>`, which answers who touched a file last and not what
+    changed. For a file nobody has touched in weeks it names a commit that has passed every nightly since,
+    and it names its author beside a failure they cannot have caused. Measured on 2026-08-12: a red nightly
+    attributed a transport test to a commit from Aug 5 that the Aug 6 nightly had run green, and five
+    nightlies after that; the test was timing-sensitive and the commit's only edit to either file was moving
+    a parameter. The range the summary already reports is what settles it, so the thread says the files have
+    not changed since the last green run rather than naming somebody.
+
+    False whenever the range is unknown or partial, which keeps the fallback at the sentence this reporter
+    always printed rather than at a claim the data does not support.
+    """
+    shas = (since_green or {}).get("shas")
+    short = str(commit.get("sha", ""))
+    if not shas or not short:
+        return False
+    return not any(full.startswith(short) for full in shas)
+
+
+def thread_blocks(
+    facts: dict,
+    token: str,
+    mention: bool,
+    since_green: dict | None = None,
+) -> list[dict]:
     """The thread reply: one entry per failed test, with its trace linked and its commit attributed.
 
     The trace is a link rather than text. It lives in the job summary, which renders without a download and
@@ -374,6 +400,16 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
             # change to a class and to its test normally ships together, and printing that commit twice with
             # only the leading noun different was the least readable thing in the message.
             subjects = " and ".join("test" if what == "test" else f"`{mrkdwn(what)}`" for what in whats)
+            if landed_before_last_green(commit, since_green):
+                # No author, and that is the finding rather than a saving. The author travels with a culprit
+                # because a name beside a commit is the cheapest route to the person who knows; the author of
+                # a commit that has been green for a week is not that person, and looking them up is what
+                # produces the 3am ping this reporter would rather not send.
+                entry += (
+                    f"\n  {subjects} unchanged since the last green nightly "
+                    f"`{mrkdwn(str((since_green or {}).get('base', '')))}`"
+                )
+                continue
             author = render_author(commit, token, mention, cache, deadline)
             entry += (
                 f"\n  {subjects} last touched by `{mrkdwn(commit['sha'])}"
@@ -550,7 +586,25 @@ def commits_since_last_green() -> dict | None:
         "count": total,
         "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
         "when": baseline.get("created_at", ""),
+        "shas": range_shas(compared, total),
     }
+
+
+def range_shas(compared: dict | None, total: int) -> list[str] | None:
+    """Every commit in the range, or None when the answer would be a partial list.
+
+    The compare endpoint pages its `commits` array at 250 entries while `total_commits` counts the whole
+    range, so a short list is a truncated one. A truncated list cannot support the one thing this is read for,
+    which is concluding that a commit is **not** in the range: every absence would be indistinguishable from a
+    page that was never fetched. None rather than partial, and the reader of this value falls back accordingly.
+    """
+    listed = (compared or {}).get("commits")
+    if not isinstance(listed, list):
+        return None
+    shas = [str(commit.get("sha", "")) for commit in listed if commit.get("sha")]
+    # One guard for both ways of coming up short, a truncated page and an entry with no sha, because the
+    # consequence is the same: fewer shas than the range holds, and an absence that means nothing.
+    return shas if len(shas) == total else None
 
 
 def slack_get(method: str, token: str, params: dict) -> dict | None:
@@ -826,6 +880,10 @@ def main() -> int:
         # which the sweep retains by design: the retry would create the duplicate the sweep refuses to resolve.
         warn("Posting the green summary because silence is not covered by exactly one pending alarm.")
 
+    # Looked up once and read twice: the summary reports the range, and the thread reply below uses it to tell
+    # a culprit that landed inside it from one that has been green for a week. A second lookup would spend
+    # three more Actions API calls to answer the same question.
+    since_green = None
     if facts is None:
         blocks, fallback = unreported_blocks(job_result)
     else:
@@ -834,7 +892,8 @@ def main() -> int:
             # otherwise pay for three Actions API calls the early decision exists to avoid, and it would print
             # a suspect range under a headline saying the nightly passed, which invites a hunt for a cause that
             # does not exist. The range answers "what might have broken it", so a green run has no question.
-            blocks, fallback = summary_blocks(facts, job_result, None if green else commits_since_last_green())
+            since_green = None if green else commits_since_last_green()
+            blocks, fallback = summary_blocks(facts, job_result, since_green)
         except SHAPE_ERRORS as error:
             # Something nested is not the shape the renderer expects. Report that rather than dying, because
             # the alternative is a channel that says nothing on a night when something is already wrong.
@@ -869,7 +928,7 @@ def main() -> int:
         return 0
 
     try:
-        detail = thread_blocks(facts, token, mention)
+        detail = thread_blocks(facts, token, mention, since_green)
     except SHAPE_ERRORS as error:
         # The summary has already landed, so this costs the detail and nothing else.
         warn(f"The failure detail could not be rendered ({type(error).__name__}: {error}).")

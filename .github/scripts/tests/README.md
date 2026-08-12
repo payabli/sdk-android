@@ -10,8 +10,8 @@ Python package is involved at all, which is deliberate: it matches the repositor
 code and means these tests add no supply-chain surface to a security SDK.
 
 ```bash
-python3 .github/scripts/tests/verify.py     # 369 checks, about 4 seconds
-python3 .github/scripts/tests/sabotage.py   # 38 deliberate breaks, about a minute
+python3 .github/scripts/tests/verify.py     # 385 checks, about 4 seconds
+python3 .github/scripts/tests/sabotage.py   # 41 deliberate breaks, about a minute
 ```
 
 Both run in CI through `.github/workflows/scripts.yml`, but only when `.github/scripts/**` or that

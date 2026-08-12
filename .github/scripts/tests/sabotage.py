@@ -111,6 +111,17 @@ MUTATIONS = [
      "    for commit, whats in merge_by_commit(failure[\"culprits\"]):",
      "    for commit, whats in [(c, [c['what']]) for c in failure['culprits']]:"),
 
+    ("A culprit that was already green is blamed again", POSTER, "poster",
+     "    return not any(full.startswith(short) for full in shas)",
+     "    return False and any(full.startswith(short) for full in shas)"),
+
+    ("A truncated compare read as a complete one, so every culprit looks unchanged", POSTER, "poster",
+     "    return shas if len(shas) == total else None", "    return shas"),
+
+    ("Thread reply no longer told which commits were already green", POSTER, "poster",
+     "        detail = thread_blocks(facts, token, mention, since_green)",
+     "        detail = thread_blocks(facts, token, mention)"),
+
     ("No-report message drops the platform name", POSTER, "poster",
      '"text": {"type": "mrkdwn", "text": f"{icon} *{platform} · Nightly · no report*\\n{cause}"}}',
      '"text": {"type": "mrkdwn", "text": f"{icon} *Nightly · no report*\\n{cause}"}}'),
