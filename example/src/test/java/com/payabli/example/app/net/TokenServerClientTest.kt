@@ -82,8 +82,8 @@ class TokenServerClientTest {
     @Test
     fun `a success carrying no token is malformed, not an HTTP status`() =
         runTest {
-            // The defect this separates out: folding it into HttpStatus rendered "returned HTTP
-            // 200", which points a reader at the one thing that was right.
+            // Its own probe type. Folded into HttpStatus this renders "returned HTTP 200", which
+            // points a reader at the one thing that was right.
             val target = serve { it.reply(200, """{"somethingElse":true}""") }
             val probe = client(target).probeAccessToken()
 
@@ -157,7 +157,7 @@ class TokenServerClientTest {
     fun `a scheme that is not http is unreachable, and does not take the probe down`() =
         runTest {
             // A mistyped launch override reaches here. `openConnection` returns something that is
-            // not an `HttpURLConnection`, and casting threw past the IOException handler.
+            // not an `HttpURLConnection`, and the cast escapes the IOException handler.
             val target = TokenServerTarget("file:///etc/hosts", TokenHostSource.LaunchOverride)
             val probe = client(target).probeHealth()
 
@@ -169,9 +169,9 @@ class TokenServerClientTest {
     fun `a port outside the range is unreachable, and does not fail the caller`() =
         runTest {
             // toIntOrNull accepts 99999, so a typed override reaches the connection and is rejected
-            // there with IllegalArgumentException. Escaping the handler left the screen's busy flag
-            // set, and that flag is what makes the operation single flight, so the button stayed
-            // disabled until the app was killed.
+            // there with IllegalArgumentException. Escaping the handler leaves the screen's busy flag
+            // set, and that flag is what makes the operation single flight, so the button stays
+            // disabled for the life of the process.
             val target = TokenServerTarget("http://127.0.0.1:99999", TokenHostSource.LaunchOverride)
             val probe = client(target).probeHealth()
 

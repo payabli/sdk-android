@@ -36,9 +36,8 @@ private val cardEntry = PayInFormValues(PayInMethodType.Card, emptyMap())
  * A completion without the payload its screen exists to show is a failure, and must not push an
  * outcome screen.
  *
- * The callback navigated unconditionally, so a result carrying no stored method presented "Payment
- * method saved" while the view model had already written an error line to the card behind it. The
- * reader saw a success that had not happened.
+ * Navigating unconditionally puts "Payment method saved" on screen while the card behind it carries
+ * an error line, which reads as a success that did not happen.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class OutcomeNavigationTest {
@@ -99,8 +98,8 @@ class OutcomeNavigationTest {
 
     @Test
     fun `what was stored is held, so the pushed screen can check it still has something to show`() {
-        // The signal the pushed destination reads. Without it that screen announced "Payment method
-        // saved" after process death, when the model it reads had come back empty.
+        // The signal the pushed destination reads. Absent, that screen announces "Payment method
+        // saved" against a model that came back empty from process death.
         val model = methodModel()
         assertNull(model.uiState.value.storedMethod)
 
@@ -119,8 +118,8 @@ class OutcomeNavigationTest {
 
     @Test
     fun `capture reports a missing transaction as a failure, as the other screen does`() {
-        // Not navigating was half of it. The card behind still opened with a success glyph and a
-        // code, so the same response read as a captured payment here and as an error there.
+        // Not navigating is only half of it: the card behind carries a success glyph and a code, so
+        // one response reads as a captured payment here and as an error on the other screen.
         val model = captureModel()
         model.onCompleted(PaymentResult(code = "1", reason = "Approved"))
         assertTrue(
@@ -131,9 +130,9 @@ class OutcomeNavigationTest {
 
     @Test
     fun `an error after a completion takes the signal back down`() {
-        // The window is real: the form's error callback is independent of submission, so a failure
-        // can arrive after a completion and before the navigation effect has consumed the signal.
-        // Left standing it pushed "Payment method saved" on top of the error just recorded.
+        // The form's error callback is independent of submission, so a failure can arrive after a
+        // completion and before the navigation effect consumes the signal. A signal left standing
+        // pushes "Payment method saved" on top of the error just recorded.
         val model = methodModel()
         model.onCompleted(
             PaymentResult(code = "1", storedMethod = StoredMethod("m", "saved", "Approved")),
@@ -196,9 +195,8 @@ class OutcomeNavigationTest {
     @Test
     fun `capture submits through its controller and gets a transaction, not a stored method`() =
         runTest {
-            // The defect this replaced: the button fabricated a stored-method result on both screens,
-            // so Capture reached its transaction screen with no transaction, and the operation's own
-            // controller was never called by anything outside a test.
+            // Capture submits through its own controller. A fabricated stored-method result reaches
+            // the transaction screen with no transaction, and leaves that controller uncalled.
             val model = captureModel()
             model.submit(cardEntry)
             val result = model.uiState.value.lastResult

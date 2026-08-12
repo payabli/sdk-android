@@ -14,8 +14,7 @@ import com.payabli.sdk.payin.ui.PayabliPayInForm
  * the result and error models, the sheet chrome and both outcome screens.
  *
  * **Nothing is passed about how it looks.** The form reads this app's `MaterialTheme`, so it arrives
- * in the Payabli palette here and in an integrator's palette there. Passing a style would be the
- * thing to do only if this app wanted one form to differ from the rest of it.
+ * in the Payabli palette here and in an integrator's palette there.
  *
  * The form does not submit. It reports that the payer asked to, and this app's view model submits
  * through its own flow controller, which is where a result still comes from.

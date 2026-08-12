@@ -56,8 +56,7 @@ private val DarkContainerHigh = Color(0xFF1A264A)
 //   light one. Blue 4 (#001C6E) carries the light scheme's filled buttons at 15.1:1 against white.
 //
 //   The guide has no green. Teal is the closest thing it offers to "this is fine", so a passing
-//   readiness check reads teal here. Inventing a green would be the alternative, and a colour that
-//   is in no token list is a colour that drifts.
+//   readiness check reads teal here. Every colour in this file is in the guide's token list.
 //
 // Every pair the app leans on was measured with the WCAG formula and clears 4.5:1 in both schemes.
 // The tightest is `neutral` status text on a card, at 5.4:1 light and 5.3:1 dark.

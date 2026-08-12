@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Nothing leaves the device. allowBackup="false" stops cloud backup, and on Android 12 and newer it
-  is this file that governs device-to-device transfer as well, so both are named here rather than
-  left to a default.
+  is this file that governs device-to-device transfer as well, so both are named here.
 
   There is nothing here worth carrying to another device. The entry point, the app id and the token
   host are per-install settings a developer types once, and the diagnostics buffer holds request and

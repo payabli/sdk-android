@@ -157,8 +157,7 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
         }
         composable<CaptureResult> { entry ->
             // The graph's entry, not this destination's, so the result the previous screen
-            // produced is the one shown. Passing it as a navigation argument would mean
-            // URL-encoding an arbitrary API response into a route.
+            // produced is the one shown. A route carries no arbitrary API response.
             val model =
                 navController.graphViewModel<CaptureGraph, CaptureViewModel>(entry) {
                     CaptureViewModel.from(it)

@@ -119,11 +119,12 @@ class TokenHostResolverTest {
     @Test
     fun `the shipped defaults are the standard local ones`() {
         // The fixture above is not these, so this is the only thing pinning them and a typo in the
-        // build file reaches a device without it.
-        val shipped = TokenHostDefaults.fromBuildConfig()
-        assertEquals("10.0.2.2", shipped.emulatorHost)
-        assertEquals("127.0.0.1", shipped.deviceHost)
-        assertEquals(8787, shipped.port)
+        // build file reaches a device without it. Read from the build file: TokenHostDefaults carries
+        // what this run resolved, so against BuildConfig this would fail for anyone using the
+        // -Ppayabli.demo.* overrides the README documents.
+        assertEquals("10.0.2.2", BuildFileDefaults.of("payabli.demo.emulatorTokenHost"))
+        assertEquals("127.0.0.1", BuildFileDefaults.of("payabli.demo.deviceTokenHost"))
+        assertEquals("8787", BuildFileDefaults.of("payabli.demo.tokenPort"))
     }
 
     // --- the derived routes ---

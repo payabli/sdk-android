@@ -16,9 +16,9 @@ import org.junit.Test
 /**
  * "Recheck" must read the device again.
  *
- * NFC is a Settings toggle, and the readiness check is the thing that tells a reader to go and flip
- * it. Against a snapshot taken at process start, the button re-ran the same five checks on the same
- * facts and gave the same answer, so the one action offered for the problem appeared to do nothing.
+ * NFC is a Settings toggle, and this check is what tells a reader to go and flip it. Against a
+ * snapshot taken at process start the button gives the same answer every time, so the one action
+ * offered for the problem does nothing.
  */
 class RecheckReadsTheDeviceAgainTest {
     private val appId = "com.payabli.example.app"

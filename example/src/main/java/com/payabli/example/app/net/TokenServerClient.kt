@@ -16,9 +16,8 @@ import java.net.URL
 /**
  * Talks to the local token server in `example-server/`.
  *
- * `HttpURLConnection` and `kotlinx.serialization`. The SDK admits no third-party HTTP client or
- * reflection-based JSON mapper, and a sample app that reached for one would be showing integrators
- * the wrong thing.
+ * `HttpURLConnection` and `kotlinx.serialization`, matching the SDK, which admits no third-party
+ * HTTP client and no reflection-based JSON mapper.
  *
  * This is the app fetching its own token, not an SDK call. When the SDK arrives, this is roughly what
  * goes behind its token provider. The provider must mint on every call, which is why the route here is
