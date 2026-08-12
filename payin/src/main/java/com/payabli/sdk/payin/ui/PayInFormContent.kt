@@ -121,9 +121,8 @@ internal fun PayInFormContent(
     /**
      * Whether a box still holds a value the service refused.
      *
-     * A marked box the payer has not touched holds exactly what was refused, so sending it again asks the
-     * same question and gets the same answer. Only what this instrument draws counts: a refusal naming a
-     * field that is not on screen would leave a form nobody could complete.
+     * Only fields this instrument draws: a refusal naming one that is not on screen would leave a form nobody
+     * can complete.
      */
     fun anyRefusalStands(chosen: PayInMethodType): Boolean =
         refused.keys.any { it in configuration.inputFieldsFor(chosen) }
@@ -138,29 +137,9 @@ internal fun PayInFormContent(
         // success they never asked for.
         val outcome = submission.takeIf { submissionPending } ?: return@LaunchedEffect
         refused = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
-        when (outcome) {
-            is PayInSubmissionState.Succeeded -> {
-                submissionPending = false
-                clearInstrument()
-                completed(outcome)
-            }
-
-            is PayInSubmissionState.Failed -> {
-                submissionPending = false
-                clearInstrument()
-                failed(outcome)
-            }
-
-            // A flow reading Idle has nothing of this form's in it. Restored from saved state, the flag can
-            // outlive the flow that carried the submission — the host builds a new one after process death,
-            // and it starts idle — and a form holding a stale flag would take the next outcome on that flow
-            // as its own, whichever screen submitted it.
-            PayInSubmissionState.Idle -> submissionPending = false
-
-            // Submitting is not an outcome. Reported on the composition's dispatcher, which is where this
-            // effect runs; moving either call onto the flow's coroutine would need withContext(Main).
-            PayInSubmissionState.Submitting -> Unit
-        }
+        // Reported on the composition's dispatcher, which is where this effect runs; moving either call onto
+        // the flow's coroutine would need withContext(Main).
+        submissionPending = outcome.deliver(::clearInstrument, completed, failed)
     }
 
     val context =
@@ -226,6 +205,35 @@ internal fun PayInFormContent(
         )
     }
 }
+
+/**
+ * Hands a terminal outcome to the caller, and answers whether a submission is still this form's to wait for.
+ *
+ * Idle says the flow holds nothing of this form's. Restored from saved state the pending flag can outlive the
+ * flow that carried the submission — a host builds a new one after process death, and it starts idle — and a
+ * form keeping the flag would take the next outcome on that flow as its own.
+ */
+private fun PayInSubmissionState.deliver(
+    clearInstrument: () -> Unit,
+    onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
+    onFailed: (PayInSubmissionState.Failed) -> Unit,
+): Boolean =
+    when (this) {
+        is PayInSubmissionState.Succeeded -> {
+            clearInstrument()
+            onCompleted(this)
+            false
+        }
+
+        is PayInSubmissionState.Failed -> {
+            clearInstrument()
+            onFailed(this)
+            false
+        }
+
+        PayInSubmissionState.Idle -> false
+        PayInSubmissionState.Submitting -> true
+    }
 
 /**
  * What the payer has typed for one instrument.
