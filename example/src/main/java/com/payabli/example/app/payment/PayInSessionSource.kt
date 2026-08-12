@@ -22,9 +22,10 @@ import kotlinx.coroutines.sync.withLock
  * [PayabliConfig.accessToken] and the provider, and goes nowhere else — not into screen state, not into
  * diagnostics, not into a log line.
  *
- * **One session for the process, held here.** The SDK installs one and refuses a second configuration with
- * `INVALID_CONFIGURATION`, and the access token is part of the identity it compares, so a freshly minted token
- * is a different configuration. The second screen to ask reuses the session the first one installed.
+ * **One session for the process, and the SDK is what holds it.** It installs one and refuses a second
+ * configuration with `INVALID_CONFIGURATION`, and the access token is part of the identity it compares, so a
+ * freshly minted token is a different configuration. What this class keeps is that configuration, so the second
+ * screen to ask gets the session the first one installed rather than a rejection.
  *
  * Keeping the token current is the provider's job, and it is called for every request that needs one.
  */
@@ -39,21 +40,33 @@ class PayInSessionSource(
 ) {
     private val lock = Mutex()
 
-    private var installed: PayabliSession? = null
+    /** The configuration a session was last started from, so the same one can be handed back. */
+    private var started: PayabliConfig? = null
 
     /**
      * An initialized session, or the reason there is none.
+     *
+     * `initialize` is called every time rather than a session being held here. With the same configuration it
+     * answers with the session it already installed and does no work; once that session has become
+     * unrecoverable, the same call installs a fresh one, which is the recovery the SDK documents. A session
+     * kept in a field instead was handed out after it had died, so the app could not submit again until the
+     * process restarted, however healthy the backend had become.
      *
      * The failure is a `String` because it goes to a demo screen beside the step it belongs to. A real
      * integration reads `PayabliException.code` instead.
      */
     suspend fun session(): Result<PayabliSession> =
         lock.withLock {
-            installed?.let { return@withLock Result.success(it) }
-            build().onSuccess { installed = it }
+            started?.let { config ->
+                start(config).onSuccess { return@withLock Result.success(it) }
+            }
+            // No configuration yet, or the one held could not start a session: mint a token and build one.
+            // A token minted after a rejection is a different configuration, which the SDK accepts because
+            // the session it replaces is finished.
+            build().onSuccess { started = it.first }.map { it.second }
         }
 
-    private suspend fun build(): Result<PayabliSession> {
+    private suspend fun build(): Result<Pair<PayabliConfig, PayabliSession>> {
         if (configuration.entryPoint.isBlank()) {
             return Result.failure(IllegalStateException("No entry point is configured, so nothing can be sent."))
         }
@@ -71,10 +84,11 @@ class PayInSessionSource(
                     tokenClient().mintAccessToken() ?: throw IllegalStateException(NO_TOKEN)
                 },
             )
-        }.mapCatching { config ->
-            PayabliSession.initialize(config, HostBindings(appContext)).getOrThrow()
-        }
+        }.mapCatching { config -> config to start(config).getOrThrow() }
     }
+
+    private suspend fun start(config: PayabliConfig): Result<PayabliSession> =
+        PayabliSession.initialize(config, HostBindings(appContext))
 
     private companion object {
         const val NO_TOKEN = "The token server returned no access token."
