@@ -275,41 +275,15 @@ class PayabliServiceTest {
      * The whole-call bound, which no socket-level timeout provides: the read timeout only ever bounds the
      * wait for the next byte.
      *
-     * **Asserts the elapsed time, not only the error.** An earlier version checked the error alone and passed
-     * at 810ms against a 200ms budget, because the call waited out the whole stall and failed afterwards. That
-     * is what a test looks like when the mechanism it covers does not work.
+     * The claim and its bound live in [assertTheCallBudgetCutsTheCallOutOfTheStall], shared with the
+     * instrumented copy: the mechanism is one deadline tearing down one socket, and two tiers asserting it
+     * with different numbers would let a regression be red on one and green on the other.
      */
     @Test
     fun `a call that outlives its budget fails as a network error`() =
         runTest {
-            val budgetMillis = 200L
-            val stallMillis = 800L
-            // The midpoint, which is what "ended nearer its budget than the stall" means. Derived rather
-            // than written as a number, so it cannot drift from the two values it sits between.
-            val cutoffMillis = (budgetMillis + stallMillis) / 2
-
-            LoopbackServer().use { server ->
-                server.respondWith(200, "").stallBeforeResponding(stallMillis)
-
-                val startedAt = System.currentTimeMillis()
-                val thrown =
-                    runCatching {
-                        service(server, callTimeout = budgetMillis.milliseconds)
-                            .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
-                    }.exceptionOrNull()
-                val elapsed = System.currentTimeMillis() - startedAt
-
-                assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
-                assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
-                // The request did reach the server, so the budget ended a call in flight rather than one
-                // that never started.
-                assertEquals("/api/ping", server.onlyRequest.path)
-                // The load-bearing assertion, and it fails if the deadline stops tearing the socket down.
-                assertTrue(
-                    "the call waited out the stall instead of being cut off: ${elapsed}ms of a " +
-                        "${stallMillis}ms stall, over a ${cutoffMillis}ms bound on a ${budgetMillis}ms budget",
-                    elapsed < cutoffMillis,
-                )
+            assertTheCallBudgetCutsTheCallOutOfTheStall { server, budget ->
+                service(server, callTimeout = budget)
             }
         }
 
@@ -326,13 +300,13 @@ class PayabliServiceTest {
             LoopbackServer().use { server ->
                 server.respondWith(200, "0123456789").dribbleBody(60)
 
-                val startedAt = System.currentTimeMillis()
+                val startedAt = System.nanoTime()
                 val thrown =
                     runCatching {
                         service(server, callTimeout = 250.milliseconds)
                             .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
                     }.exceptionOrNull()
-                val elapsed = System.currentTimeMillis() - startedAt
+                val elapsed = elapsedMillisSince(startedAt)
 
                 assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
                 assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)

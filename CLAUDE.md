@@ -70,7 +70,7 @@ job because the build outputs and the git history the culprit lookup needs are b
 has to be decided there because that is where the gate reads it.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
-runs 369 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
+runs 402 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
 `git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
 behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
 files in the tree, so it is safe to interrupt. No third-party Python package is involved.
@@ -120,6 +120,21 @@ the blast radius of a tampered facts artifact**, which is written in the job tha
 emulator action: the author email is looked up as given, so a compromised action could make the bot ping
 anyone. Off, nothing is looked up and no mention is emitted. Weigh that alongside the norm, not after it.
 
+**The per-file culprit only names a commit that landed since the last green nightly.** `git log -1 -- <file>`
+answers who touched a file last, which for an untouched file is a commit that has already passed every
+nightly since, so the report used to blame week-old work for a test that had merely turned flaky. Where the
+suspect range says the files have not changed, the thread reply says so and names nobody, and no author is
+looked up. Where the range is unknown or its commit list came back truncated, it falls back to naming the
+commit: a partial range cannot show that anything is outside it.
+
+**A comparison that came out empty is not a comparison that could not be made**, and the two answers are
+carried separately for that reason. A re-run of the very commit that went green, and a run of a commit older
+than the green baseline, both prove that every culprit was already in the tree when the suite last passed, so
+both clear everyone; the summary still renders no range for them, because a span from a commit to itself over
+a count of zero says nothing. Rewritten history is the unknown case and falls back. Conflating the two is
+what the first version of this did, and it put the blame back on precisely the runs that are flakes by
+definition.
+
 **Leave token rotation disabled on the Slack app.** The poster sends a static bearer token and implements no
 refresh, so enabling rotation would make the stored secret expire on Slack's schedule and the nightly would
 start warning and skipping. Nothing would go red, which is what makes it worth writing down: the failure is
@@ -146,6 +161,17 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   a parked `HttpURLConnection` read on this JVM within about two milliseconds, and the whole-call timeout
   tests assert exactly that. The entry was not describing a platform limit; it was shielding a defect from
   scrutiny, since the teardown had never fired at all. Before adding a behaviour to this list, measure it.
+- **A wall-clock assertion on an emulator is asserted over attempts, never once.** The call-budget claim is
+  the only one here that can only be shown by elapsed time, and on the nightly's emulator that measurement
+  is not reliable: under CPU load the same working cut-off landed at 591ms, 1195ms and 1230ms across 40 runs,
+  and once turned a nightly red at 1115ms against a 500ms bound. In 6 more of those runs the deadline expired
+  before the request reached the server, which is not a cut-off out of a stall either. So
+  `assertTheCallBudgetCutsTheCallOutOfTheStall` offers the cut-off three attempts, passes on the first that
+  lands, discards an attempt that never put a call in flight, and reports every number plus an unbudgeted
+  control when none of them does. A deadline that has stopped firing is late on all three, which is what the
+  count is chosen to keep red. Do not answer a timing flake by widening the bound: a bound loose enough for a
+  starved machine is loose enough to pass a broken deadline, which is how this test was once green while the
+  teardown had never fired.
 - **A `platform` package is the instrumented tier, and the boundary is structural rather than a list.** A file
   belongs there when it calls an Android API with no JVM implementation — Keystore, `android.util.*`, a
   `Context`. Nothing else does: "hard to test" is not a reason to move a file, and moving one to quiet a

@@ -313,7 +313,11 @@ def summary_blocks(facts: dict, job_result: str = "success", since_green: dict |
 
     # The bounded suspect set, next to the per-file heuristic rather than replacing it. Absent when the answer
     # would be a guess, because a missing line is better than a wrong range.
-    if since_green:
+    #
+    # Also absent when the comparison came out empty, where the range is real and says nothing: a span from a
+    # commit to itself, or backwards from a newer baseline, over a count of zero. The thread reply is where an
+    # empty comparison is worth reading, because there it names the files nobody can be blamed for.
+    if since_green and not since_green.get("empty"):
         count = since_green.get("count")
         span = f"{mrkdwn(since_green['base'])}...{mrkdwn(since_green['head'])}"
         commits = f"{count} commit{'s' if count != 1 else ''}" if isinstance(count, int) else "the commits"
@@ -348,7 +352,36 @@ def summary_blocks(facts: dict, job_result: str = "success", since_green: dict |
     return blocks, f"{mrkdwn(facts['platform'])} {verdict.lower()}: {suite_text}"
 
 
-def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
+def landed_before_last_green(commit: dict, since_green: dict | None) -> bool:
+    """Whether a culprit commit was already in the tree the last time the suite was green.
+
+    The per-file culprit is `git log -1 -- <file>`, which answers who touched a file last and not what
+    changed. For a file nobody has touched in weeks it names a commit that has passed every nightly since,
+    and it names its author beside a failure they cannot have caused. Measured on 2026-08-12: a red nightly
+    attributed a transport test to a commit from Aug 5 that the Aug 6 nightly had run green, and five
+    nightlies after that; the test was timing-sensitive and the commit's only edit to either file was moving
+    a parameter. The range the summary already reports is what settles it, so the thread says the files have
+    not changed since the last green run rather than naming somebody.
+
+    False whenever the range is unknown or partial, which keeps the fallback at the sentence this reporter
+    always printed rather than at a claim the data does not support.
+    """
+    shas = (since_green or {}).get("shas")
+    short = str(commit.get("sha", ""))
+    # `is None` rather than falsy, which is the difference between a comparison that could not be made and one
+    # that came out empty. An empty list is the case where nothing landed since the last green run, so every
+    # culprit is outside the range and none of them is a suspect; reading it as unknown put the blame back.
+    if shas is None or not short:
+        return False
+    return not any(full.startswith(short) for full in shas)
+
+
+def thread_blocks(
+    facts: dict,
+    token: str,
+    mention: bool,
+    since_green: dict | None = None,
+) -> list[dict]:
     """The thread reply: one entry per failed test, with its trace linked and its commit attributed.
 
     The trace is a link rather than text. It lives in the job summary, which renders without a download and
@@ -374,6 +407,16 @@ def thread_blocks(facts: dict, token: str, mention: bool) -> list[dict]:
             # change to a class and to its test normally ships together, and printing that commit twice with
             # only the leading noun different was the least readable thing in the message.
             subjects = " and ".join("test" if what == "test" else f"`{mrkdwn(what)}`" for what in whats)
+            if landed_before_last_green(commit, since_green):
+                # No author, and that is the finding rather than a saving. The author travels with a culprit
+                # because a name beside a commit is the cheapest route to the person who knows; the author of
+                # a commit that has been green for a week is not that person, and looking them up is what
+                # produces the 3am ping this reporter would rather not send.
+                entry += (
+                    f"\n  {subjects} unchanged since the last green nightly "
+                    f"`{mrkdwn(str((since_green or {}).get('base', '')))}`"
+                )
+                continue
             author = render_author(commit, token, mention, cache, deadline)
             entry += (
                 f"\n  {subjects} last touched by `{mrkdwn(commit['sha'])}"
@@ -526,31 +569,59 @@ def commits_since_last_green() -> dict | None:
         return None
 
     base_sha = baseline["head_sha"]
+    facts = {
+        "base": base_sha[:7],
+        "head": sha[:7],
+        "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
+        "when": baseline.get("created_at", ""),
+    }
     if base_sha == sha:
-        # The same commit already went green, so nothing landed since and there is no range to report.
-        return None
+        # This is the commit that went green, so nothing landed since. `empty` rather than None, and the
+        # distinction is the whole point of the two keys: None means the comparison could not be made, while
+        # an empty sha list is a comparison that came out empty. Returning None here made a re-run of a green
+        # commit fall back to naming whoever last touched the file, which is the case with the strongest
+        # possible evidence that nobody is to blame.
+        return {**facts, "count": 0, "shas": [], "empty": True}
 
     compared = github_get(f"{api}/repos/{repo}/compare/{base_sha}...{sha}", token)
+    status = (compared or {}).get("status")
     total = (compared or {}).get("total_commits")
-    # `ahead` is the only status under which "commits since the last green nightly" is a true description.
-    # Measured against this repo: a reversed pair returns status `behind` with total_commits 0, and an
-    # identical pair returns `identical` with 0, so an integer count proves nothing about ancestry. Re-running
-    # an older failure after a newer success produces exactly the reversed case, and rewritten history
-    # produces `diverged`, where the count is real but is not a count of commits since anything.
-    if (compared or {}).get("status") != "ahead":
+
+    # `behind` means this checkout is an ancestor of the baseline and `identical` means it is the baseline, so
+    # under either one every commit here was already in the tree that went green. Measured against the real
+    # API, both also report `total_commits` 0, which is why a count cannot be read as ancestry. Re-running an
+    # older failure after a newer success produces the reversed case.
+    if status in ("behind", "identical"):
+        return {**facts, "count": 0, "shas": [], "empty": True}
+
+    # `ahead` is the only remaining status under which "commits since the last green nightly" is a true
+    # description. `diverged` carries a real count over rewritten history, where it counts commits since
+    # nothing, so ancestry there is unknown rather than empty and the attribution falls back accordingly.
+    if status != "ahead":
         return None
     if not isinstance(total, int):
         # The compare did not answer, which happens when a force-push leaves the previous success
         # incomparable. The link would 404 as well, so rendering a suspect range here would be a guess with a
         # dead reference attached. This function's contract is to return nothing rather than that.
         return None
-    return {
-        "base": base_sha[:7],
-        "head": sha[:7],
-        "count": total,
-        "url": f"{server}/{repo}/compare/{base_sha}...{sha}",
-        "when": baseline.get("created_at", ""),
-    }
+    return {**facts, "count": total, "shas": range_shas(compared, total)}
+
+
+def range_shas(compared: dict | None, total: int) -> list[str] | None:
+    """Every commit in the range, or None when the answer would be a partial list.
+
+    The compare endpoint pages its `commits` array at 250 entries while `total_commits` counts the whole
+    range, so a short list is a truncated one. A truncated list cannot support the one thing this is read for,
+    which is concluding that a commit is **not** in the range: every absence would be indistinguishable from a
+    page that was never fetched. None rather than partial, and the reader of this value falls back accordingly.
+    """
+    listed = (compared or {}).get("commits")
+    if not isinstance(listed, list):
+        return None
+    shas = [str(commit.get("sha", "")) for commit in listed if commit.get("sha")]
+    # One guard for both ways of coming up short, a truncated page and an entry with no sha, because the
+    # consequence is the same: fewer shas than the range holds, and an absence that means nothing.
+    return shas if len(shas) == total else None
 
 
 def slack_get(method: str, token: str, params: dict) -> dict | None:
@@ -826,6 +897,10 @@ def main() -> int:
         # which the sweep retains by design: the retry would create the duplicate the sweep refuses to resolve.
         warn("Posting the green summary because silence is not covered by exactly one pending alarm.")
 
+    # Looked up once and read twice: the summary reports the range, and the thread reply below uses it to tell
+    # a culprit that landed inside it from one that has been green for a week. A second lookup would spend
+    # three more Actions API calls to answer the same question.
+    since_green = None
     if facts is None:
         blocks, fallback = unreported_blocks(job_result)
     else:
@@ -834,7 +909,8 @@ def main() -> int:
             # otherwise pay for three Actions API calls the early decision exists to avoid, and it would print
             # a suspect range under a headline saying the nightly passed, which invites a hunt for a cause that
             # does not exist. The range answers "what might have broken it", so a green run has no question.
-            blocks, fallback = summary_blocks(facts, job_result, None if green else commits_since_last_green())
+            since_green = None if green else commits_since_last_green()
+            blocks, fallback = summary_blocks(facts, job_result, since_green)
         except SHAPE_ERRORS as error:
             # Something nested is not the shape the renderer expects. Report that rather than dying, because
             # the alternative is a channel that says nothing on a night when something is already wrong.
@@ -869,7 +945,7 @@ def main() -> int:
         return 0
 
     try:
-        detail = thread_blocks(facts, token, mention)
+        detail = thread_blocks(facts, token, mention, since_green)
     except SHAPE_ERRORS as error:
         # The summary has already landed, so this costs the detail and nothing else.
         warn(f"The failure detail could not be rendered ({type(error).__name__}: {error}).")

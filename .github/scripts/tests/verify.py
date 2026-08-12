@@ -1540,12 +1540,25 @@ def test_poster(mod):
     try:
         os.environ.update({"GITHUB_TOKEN": "ghs-not-real", "GITHUB_RUN_ID": "1",
                            "GITHUB_REPOSITORY": "payabli/sdk-android", "GITHUB_SHA": "a" * 40})
-        for status, total, expect in (("ahead", 12, True), ("behind", 0, False),
-                                      ("identical", 0, False), ("diverged", 7, False)):
+        # The claim is about the rendered range, not about the return being None: `behind` and `identical` now
+        # answer a comparison that came out empty, which the summary still refuses to render and the thread
+        # reply reads as "no new suspects". Only `diverged` and an unanswered compare stay unknown.
+        for status, total, kind in (("ahead", 12, "range"), ("behind", 0, "empty"),
+                                   ("identical", 0, "empty"), ("diverged", 7, "unknown")):
             captured["compare"] = {"status": status, "total_commits": total}
             got = mod.commits_since_last_green()
-            check(f"P38 status {status} {'renders' if expect else 'is refused'}",
-                  (got is not None) == expect, f"{status} -> {got}")
+            text = mod.summary_blocks(FACTS_RED, "success", got)[0][0]["text"]["text"]
+            check(f"P38 status {status} {'renders a range' if kind == 'range' else 'renders none'}",
+                  ("Since the last green nightly" in text) == (kind == "range"), f"{status} -> {text}")
+            if kind == "unknown":
+                check(f"P38 status {status} leaves ancestry unknown", got is None, f"{status} -> {got}")
+            elif kind == "empty":
+                check(f"P38 status {status} proves the range empty",
+                      got is not None and got.get("shas") == [] and bool(got.get("empty")),
+                      f"{status} -> {got}")
+            else:
+                check(f"P38 status {status} is a real range",
+                      got is not None and not got.get("empty"), f"{status} -> {got}")
     finally:
         mod.github_get = real_github_get
         os.environ.pop("GITHUB_TOKEN", None)
@@ -1612,6 +1625,151 @@ def test_poster(mod):
     code, out, calls = run_poster(mod, same, SLACK_MENTION_CULPRITS="true")
     lookups = [c for c in calls if c["method"] == "users.lookupByEmail"]
     check("P13 merging also halves the lookups", len(lookups) == 1, str(len(lookups)))
+
+    # P41 a culprit that was already green is reported as unchanged rather than blamed. `git log -1 -- <file>`
+    # names whoever touched a file last, which for an untouched file is a commit that has passed every nightly
+    # since: measured on 2026-08-12, a timing-sensitive transport test was attributed to a commit six nightlies
+    # old, beside its author's name. The suspect range the summary already reports is what separates the two.
+    import inspect as _inspect2
+    if len(_inspect2.signature(mod.thread_blocks).parameters) < 4 or not hasattr(mod, "landed_before_last_green"):
+        check("P41 a culprit outside the range is not blamed", False,
+              "thread_blocks takes no since_green argument, or landed_before_last_green is absent")
+        return
+
+    inside = {"base": "b9a8e27", "head": "045eebf", "count": 2, "url": "https://x/compare", "when": "x",
+              "shas": ["b9a8e27ffffffffffffffffffffffffffffffffff", "5ded50affffffffffffffffffffffffffffffff00"]}
+    outside = {**inside, "shas": ["1111111ffffffffffffffffffffffffffffffffff"]}
+
+    text_inside = mod.thread_blocks(FACTS_RED, "", False, inside)[0]["text"]["text"]
+    check("P41 a culprit inside the range is still named", "last touched by" in text_inside, text_inside)
+    check("P41 and is not called unchanged", "unchanged since the last green nightly" not in text_inside,
+          text_inside)
+
+    text_outside = mod.thread_blocks(FACTS_RED, "", False, outside)[0]["text"]["text"]
+    check("P41 a culprit outside the range is reported as unchanged",
+          text_outside.count("unchanged since the last green nightly") == 2, text_outside)
+    check("P41 the unchanged line names the baseline", "`b9a8e27`" in text_outside, text_outside)
+    check("P41 the unchanged line names no author",
+          "Dana Rivera" not in text_outside and "Sam Okafor" not in text_outside, text_outside)
+    check("P41 the unchanged line still names what was unchanged",
+          "test unchanged since" in text_outside and "`Retry` unchanged since" in text_outside, text_outside)
+
+    # No range, and a range whose commit list is short of its own count, both fall back to the sentence this
+    # reporter always printed. A truncated list would otherwise read every unfetched page as an absence and
+    # call every culprit unchanged.
+    for label, rng in (("no range", None), ("a range with no shas", {**inside, "shas": None})):
+        fallback = mod.thread_blocks(FACTS_RED, "", False, rng)[0]["text"]["text"]
+        check(f"P41 {label} falls back to naming the commit", "last touched by" in fallback, fallback)
+
+    check("P41 a truncated compare yields no sha list",
+          mod.range_shas({"commits": [{"sha": "a" * 40}]}, 12) is None)
+    check("P41 a complete compare yields every sha",
+          mod.range_shas({"commits": [{"sha": "a" * 40}, {"sha": "b" * 40}]}, 2) == ["a" * 40, "b" * 40])
+    check("P41 a compare that listed nothing yields no sha list", mod.range_shas({}, 3) is None)
+
+    # The baseline reaches Slack from the API rather than from the facts artifact, and is escaped like
+    # everything else dynamic: an unescaped one closes the code span and the rest is parsed as mrkdwn.
+    poisoned = mod.thread_blocks(FACTS_RED, "", False, {**outside, "base": "a<!channel>"})
+    check("P41 the baseline never reaches Slack unescaped", "<!" not in json.dumps(poisoned),
+          json.dumps(poisoned))
+
+    # End to end, through the same fake Actions API the range checks use: the compare lists one commit that is
+    # neither culprit, so both files predate the last green run.
+    FakeSlack.behaviour = {
+        "chat.postMessage": ok_parent,
+        "30609394288": {"workflow_id": 77},
+        "runs": {"workflow_runs": [{"id": 999, "head_sha": "b9a8e27ffff"}]},
+        "b9a8e27ffff...045eebf": {"status": "ahead", "total_commits": 1,
+                                  "commits": [{"sha": "9999999ffffffffffffffffffffffffffffffffff"}]},
+    }
+    code, out, calls = run_poster(mod, FACTS_RED, GITHUB_TOKEN="ghs-fake-not-a-real-token",
+                                  GITHUB_SHA="045eebf", GITHUB_REF_NAME="main",
+                                  GITHUB_API_URL=mod.SLACK_API)
+    threaded = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
+    check("P41 the posted thread reports the files as unchanged",
+          "unchanged since the last green nightly" in threaded, threaded)
+    check("P41 the posted thread blames nobody for them", "last touched by" not in threaded, threaded)
+    check("P41 the range is looked up once for both readers",
+          len([c for c in calls if "/compare/" in str(c.get("path", ""))]) == 1,
+          str([c.get("path") for c in calls]))
+
+    # Mentions on against the same night: nothing is looked up, because the author of a commit that has been
+    # green for a week is not the person who knows, and the lookup is what turns the heuristic into a 3am ping.
+    code, out, calls = run_poster(mod, FACTS_RED, SLACK_MENTION_CULPRITS="true",
+                                  GITHUB_TOKEN="ghs-fake-not-a-real-token", GITHUB_SHA="045eebf",
+                                  GITHUB_REF_NAME="main", GITHUB_API_URL=mod.SLACK_API)
+    check("P41 an unchanged culprit is never looked up",
+          not [c for c in calls if c["method"] == "users.lookupByEmail"],
+          str([c["method"] for c in calls]))
+
+    # P42 a comparison that came out empty is not the same as one that could not be made. Both used to answer
+    # None, so the two cases carrying the strongest evidence that nobody is to blame, a re-run of the very
+    # commit that went green and a re-run of a commit older than the green baseline, fell back to naming
+    # whoever last touched the file.
+    check("P42 an empty range reports every culprit as unchanged",
+          mod.landed_before_last_green({"sha": "b9a8e27"}, {"base": "b9a8e27", "shas": []}),
+          "an empty sha list was read as unknown")
+    check("P42 an unknown range still names the commit",
+          not mod.landed_before_last_green({"sha": "b9a8e27"}, {"base": "b9a8e27", "shas": None}),
+          "a missing sha list was read as empty")
+
+    # Same commit as the last green run, end to end. The lookup returns before the compare, so that call is
+    # also the assertion that it never happened.
+    FakeSlack.behaviour = {
+        "chat.postMessage": ok_parent,
+        "30609394288": {"workflow_id": 77},
+        "runs": {"workflow_runs": [{"id": 999, "head_sha": "045eebf"}]},
+    }
+    code, out, calls = run_poster(mod, FACTS_RED, SLACK_MENTION_CULPRITS="true",
+                                  GITHUB_TOKEN="ghs-fake-not-a-real-token", GITHUB_SHA="045eebf",
+                                  GITHUB_REF_NAME="main", GITHUB_API_URL=mod.SLACK_API)
+    summary_text = posts(calls)[0]["payload"]["blocks"][0]["text"]["text"]
+    threaded = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
+    check("P42 a re-run of the green commit renders no range",
+          "Since the last green nightly" not in summary_text, summary_text)
+    check("P42 and reports the files as unchanged",
+          "unchanged since the last green nightly" in threaded, threaded)
+    check("P42 and blames nobody", "last touched by" not in threaded, threaded)
+    check("P42 and looks nobody up even with mentions on",
+          not [c for c in calls if c["method"] == "users.lookupByEmail"], str([c["method"] for c in calls]))
+    check("P42 and never asks for a compare of a commit with itself",
+          not [c for c in calls if "/compare/" in str(c.get("path", ""))],
+          str([c.get("path") for c in calls]))
+
+    # A checkout older than the green baseline: every commit in it was in the tree that went green.
+    FakeSlack.behaviour = {
+        "chat.postMessage": ok_parent,
+        "30609394288": {"workflow_id": 77},
+        "runs": {"workflow_runs": [{"id": 999, "head_sha": "b9a8e27ffff"}]},
+        "b9a8e27ffff...045eebf": {"status": "behind", "total_commits": 0},
+    }
+    code, out, calls = run_poster(mod, FACTS_RED, SLACK_MENTION_CULPRITS="true",
+                                  GITHUB_TOKEN="ghs-fake-not-a-real-token", GITHUB_SHA="045eebf",
+                                  GITHUB_REF_NAME="main", GITHUB_API_URL=mod.SLACK_API)
+    summary_text = posts(calls)[0]["payload"]["blocks"][0]["text"]["text"]
+    threaded = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
+    check("P42 a checkout behind the baseline renders no range",
+          "Since the last green nightly" not in summary_text, summary_text)
+    check("P42 and reports the files as unchanged",
+          "unchanged since the last green nightly" in threaded, threaded)
+    check("P42 and blames nobody", "last touched by" not in threaded, threaded)
+    check("P42 and looks nobody up even with mentions on",
+          not [c for c in calls if c["method"] == "users.lookupByEmail"], str([c["method"] for c in calls]))
+
+    # Rewritten history stays unknown, so the fallback keeps naming the commit rather than clearing everyone.
+    FakeSlack.behaviour = {
+        "chat.postMessage": ok_parent,
+        "30609394288": {"workflow_id": 77},
+        "runs": {"workflow_runs": [{"id": 999, "head_sha": "b9a8e27ffff"}]},
+        "b9a8e27ffff...045eebf": {"status": "diverged", "total_commits": 7},
+    }
+    code, out, calls = run_poster(mod, FACTS_RED, GITHUB_TOKEN="ghs-fake-not-a-real-token",
+                                  GITHUB_SHA="045eebf", GITHUB_REF_NAME="main",
+                                  GITHUB_API_URL=mod.SLACK_API)
+    threaded = posts(calls)[1]["payload"]["blocks"][0]["text"]["text"]
+    check("P42 rewritten history still names the commit", "last touched by" in threaded, threaded)
+    check("P42 and claims nothing about the last green run",
+          "unchanged since the last green nightly" not in threaded, threaded)
 
 
 HALVES = ("both", "collector", "poster")

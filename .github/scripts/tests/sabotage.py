@@ -111,6 +111,33 @@ MUTATIONS = [
      "    for commit, whats in merge_by_commit(failure[\"culprits\"]):",
      "    for commit, whats in [(c, [c['what']]) for c in failure['culprits']]:"),
 
+    ("A culprit that was already green is blamed again", POSTER, "poster",
+     "    return not any(full.startswith(short) for full in shas)",
+     "    return False and any(full.startswith(short) for full in shas)"),
+
+    ("A truncated compare read as a complete one, so every culprit looks unchanged", POSTER, "poster",
+     "    return shas if len(shas) == total else None", "    return shas"),
+
+    ("Thread reply no longer told which commits were already green", POSTER, "poster",
+     "        detail = thread_blocks(facts, token, mention, since_green)",
+     "        detail = thread_blocks(facts, token, mention)"),
+
+    # The conflation the second review round found: an empty comparison read as an impossible one, which put
+    # the blame back on exactly the two cases that prove nobody is to blame.
+    ("An empty comparison read as an unknown one, so a re-run gets blamed", POSTER, "poster",
+     "    if shas is None or not short:", "    if not shas or not short:"),
+
+    ("A re-run of the green commit treated as an unknown comparison", POSTER, "poster",
+     '        return {**facts, "count": 0, "shas": [], "empty": True}\n\n    compared = github_get',
+     "        return None\n\n    compared = github_get"),
+
+    ("A checkout behind the green baseline treated as an unknown comparison", POSTER, "poster",
+     '    if status in ("behind", "identical"):\n        return {**facts, "count": 0, "shas": [], "empty": True}',
+     '    if status in ("behind", "identical"):\n        return None'),
+
+    ("Summary renders a range for a comparison that came out empty", POSTER, "poster",
+     '    if since_green and not since_green.get("empty"):', "    if since_green:"),
+
     ("No-report message drops the platform name", POSTER, "poster",
      '"text": {"type": "mrkdwn", "text": f"{icon} *{platform} · Nightly · no report*\\n{cause}"}}',
      '"text": {"type": "mrkdwn", "text": f"{icon} *Nightly · no report*\\n{cause}"}}'),
