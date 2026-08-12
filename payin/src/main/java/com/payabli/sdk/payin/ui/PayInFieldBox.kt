@@ -35,7 +35,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.ExpiryValue
@@ -282,7 +281,7 @@ private fun brandBadge(
             Image(
                 painter = painterResource(mark),
                 contentDescription = brand.schemeName(),
-                modifier = Modifier.size(width = BRAND_MARK_WIDTH, height = BRAND_MARK_HEIGHT),
+                modifier = Modifier.size(context.style.brandMark),
                 contentScale = ContentScale.Fit,
             )
         }
@@ -374,8 +373,6 @@ private fun expiryHint(configuration: PayInFormConfiguration): String =
     stringResource(R.string.payabli_payin_expiry_hint, configuration.formatting.expirySeparator)
 
 /** The box a scheme's mark is drawn into. Card-shaped, which is the shape each mark's tile is drawn to. */
-private val BRAND_MARK_WIDTH = 30.dp
-private val BRAND_MARK_HEIGHT = 20.dp
 
 private val RevealIcon: ImageVector get() = PayInIcons.Reveal
 private val RevealOffIcon: ImageVector get() = PayInIcons.RevealOff

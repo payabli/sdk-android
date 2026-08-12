@@ -6,7 +6,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+
+/** The box the six pieces of scheme artwork are drawn for, and the ratio they are cut to. */
+private val DEFAULT_BRAND_MARK = DpSize(30.dp, 20.dp)
 
 /**
  * The gaps the form leaves between things.
@@ -62,6 +66,13 @@ public data class PayInFormStyle(
     public val error: TextStyle,
     public val fieldShape: Shape,
     public val spacing: PayInFormSpacing,
+    /**
+     * The box a card scheme's mark is drawn into, at the end of the card number field.
+     *
+     * One box for all six marks, so Visa and Amex carry the same visual weight whatever it is set to: the
+     * artwork is fitted inside it and keeps its own proportions.
+     */
+    public val brandMark: DpSize = DEFAULT_BRAND_MARK,
     /** Behind the chosen month and year in the expiry picker. */
     public val selectedContainer: Color,
     /** On top of [selectedContainer]. */
@@ -102,6 +113,7 @@ public data class PayInFormStyleOverrides(
     public val error: TextStyle? = null,
     public val fieldShape: Shape? = null,
     public val spacing: PayInFormSpacing? = null,
+    public val brandMark: DpSize? = null,
     public val selectedContainer: Color? = null,
     public val selectedContent: Color? = null,
     public val fieldColors: TextFieldColors? = null,
@@ -123,6 +135,7 @@ public fun resolvePayInFormStyle(
         error = overrides.error ?: roles.supportingType.copy(color = roles.error),
         fieldShape = overrides.fieldShape ?: roles.fieldShape,
         spacing = overrides.spacing ?: PayInFormSpacing(),
+        brandMark = overrides.brandMark ?: DEFAULT_BRAND_MARK,
         selectedContainer = overrides.selectedContainer ?: roles.secondaryContainer,
         selectedContent = overrides.selectedContent ?: roles.onSecondaryContainer,
         fieldColors = overrides.fieldColors,

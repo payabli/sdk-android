@@ -73,8 +73,6 @@ class NoHardCodedAppearanceTest {
             "MINIMUM_TOUCH_TARGET" to "Android's minimum touch target, which is not the host's to set",
             "ROW_MIN_HEIGHT" to "the same target, for a row in the picker",
             "PAIRED_FIELD_MIN_WIDTH" to "where two fields stop fitting, which is a layout rule and not an appearance",
-            "BRAND_MARK_WIDTH" to "the box a scheme's mark is letterboxed into, so the marks line up",
-            "BRAND_MARK_HEIGHT" to "the same box",
         )
 
     @Test
