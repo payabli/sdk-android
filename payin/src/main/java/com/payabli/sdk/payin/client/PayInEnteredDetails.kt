@@ -37,7 +37,7 @@ internal class PayInEnteredDetails(
                 methodDescription = values.entered(PayInField.MethodDescription),
             )
 
-        private fun PayInFormValues.entered(field: PayInField): String? = get(field).trim().takeIf { it.isNotEmpty() }
+        private fun PayInFormValues.entered(field: PayInField): String? = this[field].trim().takeIf { it.isNotEmpty() }
     }
 }
 
