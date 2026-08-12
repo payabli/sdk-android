@@ -149,7 +149,7 @@ fun PaymentFlowScreen(
                         initialValues = prefilled,
                         onCompleted = actions.onCompleted,
                         onFailed = actions.onFailed,
-                        onValuesChanged = { method = it.method },
+                        onMethodChanged = { method = it },
                     )
                 }
             }
@@ -202,7 +202,7 @@ fun PaymentFlowScreen(
                         initialValues = prefilled,
                         onCompleted = actions.onCompleted,
                         onFailed = actions.onFailed,
-                        onValuesChanged = { method = it.method },
+                        onMethodChanged = { method = it },
                     )
                 }
             }

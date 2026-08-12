@@ -61,7 +61,7 @@ internal fun PayInFormContent(
     onSubmit: (PayInFormValues) -> Boolean = { false },
     onCompleted: (PayInSubmissionState.Succeeded) -> Unit = {},
     onFailed: (PayInSubmissionState.Failed) -> Unit = {},
-    onValuesChanged: (PayInFormValues) -> Unit = {},
+    onMethodChanged: (PayInMethodType) -> Unit = {},
 ) {
     // The newest lambdas without re-registering anything. A host that writes them inline passes new objects
     // on every recomposition, and the effect below is keyed on the submission rather than on them.
@@ -115,19 +115,8 @@ internal fun PayInFormContent(
 
     val sections = configuration.sectionsFor(method)
 
-    // Both read the state. A click or an edit lands before the next composition, and `method` is state
-    // while a captured field list is not, so the two could describe different tabs.
-    fun collect(chosen: PayInMethodType): PayInFormValues =
-        PayInFormValues(chosen, configuration.inputFieldsFor(chosen).associateWith { typed[it].orEmpty() })
-
-    fun isComplete(
-        chosen: PayInMethodType,
-        at: ExpiryValue,
-    ): Boolean {
-        val fields = configuration.inputFieldsFor(chosen)
-        return fields.none { configuration.isRequired(it) && PayInFieldRules.missing(it, typed[it].orEmpty()) } &&
-            fields.none { PayInFieldRules.error(it, typed[it].orEmpty(), at) != null }
-    }
+    /** The instrument goes as soon as the submission has an outcome, whichever outcome it is. */
+    fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { typed.remove(it) }
 
     // Keyed on the state itself, so a second refusal of the same field marks it again. `Succeeded` and
     // `Failed` are not data classes, so two identical consecutive refusals are two instances and the
@@ -142,18 +131,13 @@ internal fun PayInFormContent(
         when (outcome) {
             is PayInSubmissionState.Succeeded -> {
                 submissionPending = false
-                val emptied = PayInSensitiveFields.CLEARED_ON_SUCCESS.filter { typed.containsKey(it) }
-                if (emptied.isNotEmpty()) {
-                    emptied.forEach { typed.remove(it) }
-                    // The host holds the last values this form gave it, so clearing without reporting would
-                    // empty the boxes and leave a card number in that copy.
-                    onValuesChanged(collect(method))
-                }
+                clearInstrument()
                 completed(outcome)
             }
 
             is PayInSubmissionState.Failed -> {
                 submissionPending = false
+                clearInstrument()
                 failed(outcome)
             }
 
@@ -180,7 +164,7 @@ internal fun PayInFormContent(
             refreshClock = { today = ExpiryValue.today() },
         )
 
-    val complete = isComplete(method, today)
+    val complete = configuration.isComplete(typed, method, today)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -196,7 +180,7 @@ internal fun PayInFormContent(
                 typed.keys.retainAll(configuration.inputFieldsFor(chosen).toSet())
                 // The refusal was about the instrument that is no longer on screen.
                 refused = emptyMap()
-                onValuesChanged(collect(chosen))
+                onMethodChanged(chosen)
             }
         }
 
@@ -205,7 +189,6 @@ internal fun PayInFormContent(
                 FormSection(section, method, typed, context) { field, value ->
                     typed[field] = value
                     refused = refused - field
-                    onValuesChanged(collect(method))
                 }
             }
         }
@@ -224,14 +207,36 @@ internal fun PayInFormContent(
                 // The clock lands in state, so a rollover that refuses this submission also disables the
                 // button and shows the expired field its error.
                 today = ExpiryValue.today()
-                if (!justSubmitted && isComplete(method, today)) {
+                if (!justSubmitted && configuration.isComplete(typed, method, today)) {
                     justSubmitted = true
                     // Only once it was accepted. Refused, nothing was sent, so nothing is pending.
-                    submissionPending = onSubmit(collect(method))
+                    submissionPending = onSubmit(configuration.valuesFor(method, typed))
                 }
             },
         )
     }
+}
+
+/**
+ * What the payer has typed for one instrument.
+ *
+ * Reads the live map rather than a captured list: a click or an edit lands before the next composition, and the
+ * method is state while a field list taken earlier is not, so the two could describe different tabs.
+ */
+private fun PayInFormConfiguration.valuesFor(
+    method: PayInMethodType,
+    typed: Map<PayInField, String>,
+): PayInFormValues = PayInFormValues(method, inputFieldsFor(method).associateWith { typed[it].orEmpty() })
+
+/** Whether every field this instrument asks for is filled in and none of them is wrong. */
+private fun PayInFormConfiguration.isComplete(
+    typed: Map<PayInField, String>,
+    method: PayInMethodType,
+    at: ExpiryValue,
+): Boolean {
+    val fields = inputFieldsFor(method)
+    return fields.none { isRequired(it) && PayInFieldRules.missing(it, typed[it].orEmpty()) } &&
+        fields.none { PayInFieldRules.error(it, typed[it].orEmpty(), at) != null }
 }
 
 /** The caller's heading and standfirst, each shown only when they gave one. */

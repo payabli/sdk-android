@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import com.payabli.example.app.payment.DemoFormSetup
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
@@ -28,11 +29,11 @@ fun PaymentFormHost(
     setup: DemoFormSetup,
     flow: PayabliPayInPaymentFlow,
     operation: PayabliPayInOperation,
-    initialValues: PayInFormValues? = null,
     onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
     onFailed: (PayInSubmissionState.Failed) -> Unit,
-    onValuesChanged: (PayInFormValues) -> Unit = {},
     modifier: Modifier = Modifier,
+    initialValues: PayInFormValues? = null,
+    onMethodChanged: (PayInMethodType) -> Unit = {},
 ) {
     PayabliPayInForm(
         flow = flow,
@@ -43,6 +44,6 @@ fun PaymentFormHost(
         initialValues = initialValues,
         onCompleted = onCompleted,
         onFailed = onFailed,
-        onValuesChanged = onValuesChanged,
+        onMethodChanged = onMethodChanged,
     )
 }

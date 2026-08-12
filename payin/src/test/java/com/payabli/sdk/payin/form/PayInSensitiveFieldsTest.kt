@@ -5,7 +5,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Which fields a success empties, pinned as a list.
+ * Which fields an outcome empties, pinned as a list.
  *
  * Both halves are written out, so a field added to [PayInField] fails here until somebody has decided whether a
  * payer should have to type it again. Asserting only the cleared half passes on a new card field being kept.
@@ -31,7 +31,7 @@ class PayInSensitiveFieldsTest {
         )
 
     @Test
-    fun `the instrument is what a success empties`() {
+    fun `the instrument is what an outcome empties`() {
         assertEquals(
             setOf(
                 PayInField.CardNumber,
@@ -40,7 +40,7 @@ class PayInSensitiveFieldsTest {
                 PayInField.RoutingNumber,
                 PayInField.AccountNumber,
             ),
-            PayInSensitiveFields.CLEARED_ON_SUCCESS,
+            PayInSensitiveFields.CLEARED_ON_OUTCOME,
         )
     }
 
@@ -49,7 +49,7 @@ class PayInSensitiveFieldsTest {
         assertEquals(
             "a field was added to the form and neither cleared nor kept",
             kept,
-            PayInField.entries.toSet() - PayInSensitiveFields.CLEARED_ON_SUCCESS,
+            PayInField.entries.toSet() - PayInSensitiveFields.CLEARED_ON_OUTCOME,
         )
     }
 
@@ -61,7 +61,7 @@ class PayInSensitiveFieldsTest {
         assertTrue("no masked field to check", secret.isNotEmpty())
         assertEquals(
             emptyList<PayInField>(),
-            secret.filterNot { it in PayInSensitiveFields.CLEARED_ON_SUCCESS },
+            secret.filterNot { it in PayInSensitiveFields.CLEARED_ON_OUTCOME },
         )
     }
 }

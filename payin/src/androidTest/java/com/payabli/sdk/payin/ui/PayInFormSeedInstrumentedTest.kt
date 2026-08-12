@@ -38,7 +38,7 @@ import org.junit.runner.RunWith
  *
  * The seed reaches the same state the payer's typing does, so what it has to prove is that a seeded form is a
  * filled form and not just a decorated one: the boxes show the values, the button is enabled without a
- * keystroke, what the form reports back is what it was given, and the payer can still edit it.
+ * keystroke, what a submission carries is what was given, and the payer can still edit it.
  */
 @RunWith(AndroidJUnit4::class)
 class PayInFormSeedInstrumentedTest {
@@ -46,8 +46,6 @@ class PayInFormSeedInstrumentedTest {
     val rule = createAndroidComposeRule<ComponentActivity>()
 
     private var seed by mutableStateOf<PayInFormValues?>(null)
-
-    private var reported: PayInFormValues? = null
 
     private val cardSeed =
         PayInFormValues(
@@ -102,7 +100,7 @@ class PayInFormSeedInstrumentedTest {
     }
 
     @Test
-    fun theSeedIsReportedAsTheFormsValuesOnTheFirstEdit() {
+    fun typingInOneFieldLeavesTheOtherSeededValuesAlone() {
         showCardForm(cardSeed)
 
         rule
@@ -110,8 +108,8 @@ class PayInFormSeedInstrumentedTest {
             .performTextInput("-1234")
         rule.waitForIdle()
 
-        val values = requireNotNull(reported) { "the form reported nothing" }
-        assertEquals("the seed was lost when the payer typed", TEST_PAN, values[PayInField.CardNumber])
+        rule.onNodeWithText("4111 1111 1111 1111").assertExists()
+        rule.onNodeWithText("Ada Lovelace").assertExists()
     }
 
     @Test
@@ -123,7 +121,8 @@ class PayInFormSeedInstrumentedTest {
             .performTextReplacement("Grace Hopper")
         rule.waitForIdle()
 
-        assertEquals("Grace Hopper", requireNotNull(reported)[PayInField.CardholderName])
+        rule.onNodeWithText("Grace Hopper").assertExists()
+        rule.onNodeWithText("Ada Lovelace").assertDoesNotExist()
     }
 
     @Test
@@ -177,7 +176,6 @@ class PayInFormSeedInstrumentedTest {
                         onSubmit(it)
                         true
                     },
-                    onValuesChanged = { reported = it },
                 )
             }
         }

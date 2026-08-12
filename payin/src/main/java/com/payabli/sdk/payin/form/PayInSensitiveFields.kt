@@ -1,14 +1,15 @@
 package com.payabli.sdk.payin.form
 
 /**
- * Which fields a form empties once a submission has succeeded.
+ * Which fields a form empties once a submission has an outcome.
  *
  * A value, so a test pins the list and a field added to the form has to be classified before that test passes
  * again.
  *
- * **On success only.** The instrument has been used by then. After a failure the values stay: a refusal naming
- * the card number has to be readable beside the number it names, and a decline for insufficient funds would
- * otherwise cost a re-entry of an instrument that was never the problem.
+ * **On a refusal as well as on a success.** The instrument was submitted either way, and a security code is
+ * authentication data that has no reason to outlive the attempt it authenticated. iOS clears the same set after
+ * a failure, so a payer meets one behaviour on both platforms. The cost is a re-entry after a decline for
+ * insufficient funds, against an instrument that stays in a form's state until the screen goes away.
  */
 internal object PayInSensitiveFields {
     /**
@@ -18,7 +19,7 @@ internal object PayInSensitiveFields {
      * account, and the payer entered the pair together. The cardholder name, both postal codes and every billing
      * field stay, so a payer taking a second payment does not type them again.
      */
-    val CLEARED_ON_SUCCESS: Set<PayInField> =
+    val CLEARED_ON_OUTCOME: Set<PayInField> =
         setOf(
             PayInField.CardNumber,
             PayInField.CardExpiration,

@@ -8,6 +8,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
@@ -42,7 +43,8 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  *   exactly as typed input is, and replacing it starts the form again from the new values.
  * @param onCompleted the service accepted it. Call [PayabliPayInPaymentFlow.acknowledge] once handled.
  * @param onFailed it did not go through, with the typed cause and the fields the refusal named.
- * @param onValuesChanged every edit, every instrument change, and the clearing after a success.
+ * @param onMethodChanged the payer switched instrument. The values themselves stay in the form: a card
+ *   number and a security code have no reason to cross into a host that no longer submits them.
  */
 @Composable
 public fun PayabliPayInForm(
@@ -55,7 +57,7 @@ public fun PayabliPayInForm(
     initialValues: PayInFormValues? = null,
     onCompleted: (PayInSubmissionState.Succeeded) -> Unit = {},
     onFailed: (PayInSubmissionState.Failed) -> Unit = {},
-    onValuesChanged: (PayInFormValues) -> Unit = {},
+    onMethodChanged: (PayInMethodType) -> Unit = {},
 ) {
     val submission by flow.state.collectAsState()
 
@@ -69,6 +71,6 @@ public fun PayabliPayInForm(
         onSubmit = { values -> flow.start(operation, values) },
         onCompleted = onCompleted,
         onFailed = onFailed,
-        onValuesChanged = onValuesChanged,
+        onMethodChanged = onMethodChanged,
     )
 }
