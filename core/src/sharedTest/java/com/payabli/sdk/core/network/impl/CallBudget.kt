@@ -65,9 +65,9 @@ internal suspend fun assertTheCallBudgetCutsTheCallOutOfTheStall(
         LoopbackServer().use { server ->
             server.respondWith(200, "").stallBeforeResponding(CALL_BUDGET_STALL_MILLIS)
 
-            val startedAt = System.currentTimeMillis()
+            val startedAt = System.nanoTime()
             val thrown = server.callAndCatch(transportFor, CALL_BUDGET_MILLIS.milliseconds)
-            val elapsed = System.currentTimeMillis() - startedAt
+            val elapsed = elapsedMillisSince(startedAt)
 
             // Both hold however the machine is behaving, so every attempt asserts them.
             assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
@@ -108,10 +108,10 @@ internal suspend fun assertTheCallBudgetCutsTheCallOutOfTheStall(
 private suspend fun measureUnbudgetedStall(transportFor: (LoopbackServer, Duration) -> PayabliTransport): Long =
     LoopbackServer().use { server ->
         server.respondWith(200, "").stallBeforeResponding(CALL_BUDGET_STALL_MILLIS)
-        val startedAt = System.currentTimeMillis()
+        val startedAt = System.nanoTime()
         // Discarded: this measures the machine, and a control that failed still measured it.
         server.callAndCatch(transportFor, UNBUDGETED)
-        System.currentTimeMillis() - startedAt
+        elapsedMillisSince(startedAt)
     }
 
 private suspend fun LoopbackServer.callAndCatch(
