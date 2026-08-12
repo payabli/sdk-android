@@ -118,6 +118,16 @@ internal fun PayInFormContent(
     /** The instrument goes as soon as the submission has an outcome, whichever outcome it is. */
     fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { typed.remove(it) }
 
+    /**
+     * Whether a box still holds a value the service refused.
+     *
+     * A marked box the payer has not touched holds exactly what was refused, so sending it again asks the
+     * same question and gets the same answer. Only what this instrument draws counts: a refusal naming a
+     * field that is not on screen would leave a form nobody could complete.
+     */
+    fun anyRefusalStands(chosen: PayInMethodType): Boolean =
+        refused.keys.any { it in configuration.inputFieldsFor(chosen) }
+
     // Keyed on the state itself, so a second refusal of the same field marks it again. `Succeeded` and
     // `Failed` are not data classes, so two identical consecutive refusals are two instances and the
     // StateFlow publishes both; `PayInSubmissionStateIdentityTest` pins that.
@@ -164,7 +174,7 @@ internal fun PayInFormContent(
             refreshClock = { today = ExpiryValue.today() },
         )
 
-    val complete = configuration.isComplete(typed, method, today)
+    val complete = !anyRefusalStands(method) && configuration.isComplete(typed, method, today)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -207,7 +217,7 @@ internal fun PayInFormContent(
                 // The clock lands in state, so a rollover that refuses this submission also disables the
                 // button and shows the expired field its error.
                 today = ExpiryValue.today()
-                if (!justSubmitted && configuration.isComplete(typed, method, today)) {
+                if (!justSubmitted && !anyRefusalStands(method) && configuration.isComplete(typed, method, today)) {
                     justSubmitted = true
                     // Only once it was accepted. Refused, nothing was sent, so nothing is pending.
                     submissionPending = onSubmit(configuration.valuesFor(method, typed))

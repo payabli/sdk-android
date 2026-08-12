@@ -19,6 +19,7 @@ import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
+import com.payabli.sdk.payin.form.BANK_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
@@ -102,9 +103,8 @@ class PayInFormSubmissionInstrumentedTest {
     @Test
     fun aBankSuccessEmptiesTheAccountAndTheRoutingNumber() {
         showBankForm()
-        type(R.string.payabli_payin_field_account_holder, "Ada Lovelace")
-        type(R.string.payabli_payin_field_routing_number, TEST_ROUTING)
-        type(R.string.payabli_payin_field_account_number, TEST_ACCOUNT)
+        fillBank()
+        type(R.string.payabli_payin_field_first_name, "Ada")
         submit()
 
         rule.runOnIdle { submission = succeeded }
@@ -169,6 +169,28 @@ class PayInFormSubmissionInstrumentedTest {
     }
 
     @Test
+    fun aRefusedValueCannotBeSentAgainUntilItIsEdited() {
+        // Bank, because every field it needs can be typed: after an outcome the instrument is empty and a
+        // card expiry can only be picked from a dialog.
+        //
+        // The refusal names a field outside the instrument, so re-entering the account leaves the refused
+        // value standing. Submit stays off until that box changes, or the same rejected value goes out
+        // again under the message that says it was rejected.
+        showBankForm()
+        fillBank()
+        type(R.string.payabli_payin_field_first_name, "Ada")
+        submit()
+        rule.runOnIdle { submission = refusing(PayInField.FirstName) }
+        fillBank()
+
+        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsNotEnabled()
+
+        type(R.string.payabli_payin_field_first_name, "h")
+
+        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsEnabled()
+    }
+
+    @Test
     fun aRefusalOfValuesThisFormNeverSentMarksNothing() {
         // Two forms on one flow, which a host mounting a sheet over the inline form has. The field the service
         // named is a field in the *other* form's values, and marking it here points the payer at a box whose
@@ -188,6 +210,12 @@ class PayInFormSubmissionInstrumentedTest {
         type(R.string.payabli_payin_field_card_postal_code, "22039")
     }
 
+    private fun fillBank() {
+        type(R.string.payabli_payin_field_account_holder, "Ada Lovelace")
+        type(R.string.payabli_payin_field_routing_number, TEST_ROUTING)
+        type(R.string.payabli_payin_field_account_number, TEST_ACCOUNT)
+    }
+
     private fun showCardForm() =
         showForm(
             PayInMethodType.Card,
@@ -197,14 +225,7 @@ class PayInFormSubmissionInstrumentedTest {
     private fun showBankForm() =
         showForm(
             PayInMethodType.BankAccount,
-            PayInFormSection(
-                fields =
-                    listOf(
-                        PayInField.AccountHolder,
-                        PayInField.RoutingNumber,
-                        PayInField.AccountNumber,
-                    ),
-            ),
+            PayInFormSection(fields = BANK_INSTRUMENT_FIELDS + PayInField.FirstName),
         )
 
     /** The expiry is picked from a dialog, so the form is completed by typing only with it seeded. */
