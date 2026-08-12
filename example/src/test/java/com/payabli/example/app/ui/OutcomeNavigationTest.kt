@@ -185,4 +185,36 @@ class OutcomeNavigationTest {
         model.outcomeShown()
         assertFalse(model.uiState.value.outcomeReady)
     }
+
+    @Test
+    fun `a refusal leaves the sheet open, because it holds the values the service refused`() {
+        // The sheet's form is its own instance, separate from the one under it. Closed on a refusal, the payer
+        // is left looking at an empty form and the values the service named are gone.
+        val model = captureModel()
+        model.openSheet()
+
+        model.onFailed(refusedOutcome())
+
+        assertTrue("the sheet closed over a refusal", model.uiState.value.isSheetOpen)
+    }
+
+    @Test
+    fun `a stored-method refusal leaves that sheet open too`() {
+        val model = methodModel()
+        model.openSheet()
+
+        model.onFailed(refusedOutcome())
+
+        assertTrue("the sheet closed over a refusal", model.uiState.value.isSheetOpen)
+    }
+
+    @Test
+    fun `a success closes the sheet, because there is nothing left to correct`() {
+        val model = captureModel()
+        model.openSheet()
+
+        model.onCompleted(capturedPaymentOutcome())
+
+        assertFalse("the sheet stayed open over a completed payment", model.uiState.value.isSheetOpen)
+    }
 }

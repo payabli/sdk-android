@@ -141,6 +141,12 @@ class PaymentMethodViewModel(
         }
     }
 
+    /**
+     * The SDK refused it.
+     *
+     * The sheet is left as it is. It holds the form holding the values the service refused, and the form
+     * beneath it is a different instance with its own: dismissed, the payer has nothing left to correct.
+     */
     private fun onError(error: PaymentError) {
         record("ERROR paymentMethod\n${error.displayMessage}")
         _uiState.update {
@@ -153,7 +159,6 @@ class PaymentMethodViewModel(
                 outcomeReady = false,
                 storedMethod = null,
                 submitFailed = true,
-                isSheetOpen = false,
             )
         }
     }

@@ -13,6 +13,7 @@ import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.toPaymentError
 import com.payabli.example.app.payment.toPaymentResult
 import com.payabli.example.app.ui.payment.PaymentFlowUiState
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -24,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.util.UUID
 
 data class CaptureUiState(
     override val setup: DemoFormSetup,
@@ -48,19 +50,29 @@ data class CaptureUiState(
     /** What this screen submits through, once the session behind it exists. */
     val payments: PayabliPayInPaymentFlow? = null,
     /**
-     * A capture of the demo amount.
+     * A capture of the demo amount, carrying the key that makes a repeat safe.
      *
-     * Fixed here because the form this screen configures collects no amount: a real integration takes it from
-     * the order it is charging for.
+     * The amount is fixed here because the form this screen configures collects no amount: a real integration
+     * takes it from the order it is charging for.
      */
-    val operation: PayabliPayInOperation =
-        PayabliPayInOperation.Capture(
-            PayInTransactionOptions(
-                paymentDetails = PayInPaymentDetails(totalAmount = BigDecimal("1.10"), serviceFee = BigDecimal("0.10")),
-                orderId = "android-example",
-            ),
-        ),
+    val operation: PayabliPayInOperation = captureOf(UUID.randomUUID().toString()),
 ) : PaymentFlowUiState
+
+/**
+ * A capture of the demo amount under [idempotencyKey].
+ *
+ * Without a key the service cannot recognize a repeat, so a submission whose outcome is unknown cannot be
+ * retried: `PayInException.Interrupted` carries the key precisely so it can be. One key per attempt, kept while
+ * that attempt's outcome is unknown and replaced once the service has answered.
+ */
+private fun captureOf(idempotencyKey: String): PayabliPayInOperation.Capture =
+    PayabliPayInOperation.Capture(
+        PayInTransactionOptions(
+            paymentDetails = PayInPaymentDetails(totalAmount = BigDecimal("1.10"), serviceFee = BigDecimal("0.10")),
+            orderId = "android-example",
+            idempotencyKey = idempotencyKey,
+        ),
+    )
 
 /**
  * Scoped to the capture graph, so the result screen reads the same instance the form screen wrote
@@ -122,11 +134,15 @@ class CaptureViewModel(
      */
     fun onCompleted(outcome: PayInSubmissionState.Succeeded) {
         _uiState.value.payments?.acknowledge()
+        rotateIdempotencyKey(outcome)
         onCompleted(outcome.toPaymentResult())
     }
 
     /** The SDK refused it. The form keeps what the payer typed; this records the reason beside the step. */
-    fun onFailed(outcome: PayInSubmissionState.Failed) = onError(outcome.toPaymentError())
+    fun onFailed(outcome: PayInSubmissionState.Failed) {
+        rotateIdempotencyKey(outcome)
+        onError(outcome.toPaymentError())
+    }
 
     private fun onCompleted(result: PaymentResult) {
         val transaction = result.transaction
@@ -160,6 +176,12 @@ class CaptureViewModel(
         }
     }
 
+    /**
+     * The SDK refused it.
+     *
+     * The sheet is left as it is. It holds the form holding the values the service refused, and the form
+     * beneath it is a different instance with its own: dismissed, the payer has nothing left to correct.
+     */
     private fun onError(error: PaymentError) {
         record("ERROR paymentTransaction\n${error.displayMessage}")
         _uiState.update {
@@ -172,7 +194,6 @@ class CaptureViewModel(
                 outcomeReady = false,
                 lastResult = null,
                 submitFailed = true,
-                isSheetOpen = false,
             )
         }
     }
@@ -184,6 +205,17 @@ class CaptureViewModel(
 
     /** Cleared once navigation has happened, so returning to this screen does not push again. */
     fun outcomeShown() = _uiState.update { it.copy(outcomeReady = false) }
+
+    /**
+     * A new key for the next attempt, once the service has answered this one.
+     *
+     * Kept after an interruption, which is the one outcome where the service may have taken the payment: the
+     * retry has to carry the same key for it to be recognized as a repeat.
+     */
+    private fun rotateIdempotencyKey(outcome: PayInSubmissionState) {
+        if (outcome is PayInSubmissionState.Failed && outcome.cause is PayInException.Interrupted) return
+        _uiState.update { it.copy(operation = captureOf(UUID.randomUUID().toString())) }
+    }
 
     companion object {
         fun from(container: AppContainer): CaptureViewModel =
