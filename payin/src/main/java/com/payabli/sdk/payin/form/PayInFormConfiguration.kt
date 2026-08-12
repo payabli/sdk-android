@@ -124,6 +124,16 @@ public class PayInFormConfiguration(
                     "or drop $method from allowedMethods"
             }
         }
+
+        // The amounts are the operation's. A box a payer types into would take a figure the request does not
+        // carry, so the screen would show one amount and the service would take another.
+        methods.forEach { method ->
+            val typed = inputFieldsFor(method).filter { it in READ_BACK_ONLY }
+            require(typed.isEmpty()) {
+                "${typed.joinToString()} cannot be typed into: the amounts come from the operation. " +
+                    "Put them in a PayInSectionStyle.Summary section with summaryValues"
+            }
+        }
     }
 
     /** The allowed methods, with duplicates dropped and never empty. */
@@ -238,6 +248,14 @@ public class PayInFormConfiguration(
             "summaryValues=${summaryValues.keys})"
 
     public companion object {
+        /**
+         * Fields a form shows and never collects.
+         *
+         * Both amounts are set on the operation, and nothing reads them back out of the form, so a box a
+         * payer could type into would take a figure no request carries.
+         */
+        private val READ_BACK_ONLY = setOf(PayInField.Amount, PayInField.ServiceFee)
+
         /** Card details, as a payer is asked for them. */
         public fun defaultCardSections(): List<PayInFormSection> =
             listOf(

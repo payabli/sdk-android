@@ -78,6 +78,43 @@ class PayInInstrumentFieldsTest {
     }
 
     @Test
+    fun `an amount a payer could type into is refused`() {
+        // The amounts belong to the operation and nothing reads them back out of the form, so a box for one
+        // would show a figure the request does not carry: the screen says $5 and the service takes $1.10.
+        listOf(PayInField.Amount, PayInField.ServiceFee).forEach { field ->
+            val refusal =
+                runCatching {
+                    PayInFormConfiguration(
+                        allowedMethods = listOf(PayInMethodType.Card),
+                        cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS + field)),
+                    )
+                }.exceptionOrNull()
+
+            assertTrue("$field was accepted as a box to type into", refusal is IllegalArgumentException)
+            assertTrue(
+                "does not say where it goes instead: ${refusal?.message}",
+                refusal?.message?.contains("Summary") == true,
+            )
+        }
+    }
+
+    @Test
+    fun `an amount read back in a summary section is what a caller does instead`() {
+        PayInFormConfiguration(
+            allowedMethods = listOf(PayInMethodType.Card),
+            cardSections =
+                listOf(
+                    PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
+                    PayInFormSection(
+                        fields = listOf(PayInField.Amount, PayInField.ServiceFee),
+                        style = PayInSectionStyle.Summary,
+                    ),
+                ),
+            summaryValues = mapOf(PayInField.Amount to "$ 1.10"),
+        )
+    }
+
+    @Test
     fun `the SDK's own defaults collect everything both instruments need`() {
         val configuration = PayInFormConfiguration()
 
