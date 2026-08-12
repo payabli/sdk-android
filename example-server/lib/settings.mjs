@@ -25,14 +25,11 @@ if (process.env.PAYABLI_ENV_FILE && !existsSync(envFilePath)) {
 }
 loadEnv(envFilePath);
 
-loadEnv(envFilePath);
-
 export { envFilePath };
 export const port = Number.parseInt(process.env.PORT || "8787", 10);
 export const bindHost = stringValue(process.env.PAYABLI_LOCAL_TOKEN_SERVER_HOST) || "127.0.0.1";
 export const defaultApiBaseUrl = process.env.PAYABLI_API_BASE_URL || "https://api-sandbox.payabli.com/api";
 export const defaultTokenPath = process.env.PAYABLI_TOKEN_PATH || "/v2/token/serverside";
-// The entry point the card-present routes act on when a request names none.
 // The entry point the card-present routes act on when a request names none.
 export const defaultEntry = stringValue(process.env.PAYABLI_ENTRY);
 export const responseTokenField = (process.env.PAYABLI_RESPONSE_TOKEN_FIELD || "").trim();
@@ -49,11 +46,8 @@ export function stringValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-// A malformed numeric setting stops the server at startup instead of quietly changing behaviour. Two
-// values defeat a comparison guard rather than merely being wrong, and both have to be refused here.
-// NaN, from a non-numeric value, loses every comparison. Infinity, from a digit string too long to
-// represent, wins every one. Either leaves `totalBytes > limit` false for a body of any size, so the
-// digit test alone is not enough and the parsed number is checked as well.
+// A bad value stops the server at startup rather than quietly changing a limit. NaN and Infinity are
+// both refused, because either one makes a `>` comparison against the limit answer false.
 export function integerSetting(name, fallback) {
   const raw = (process.env[name] || "").trim();
   if (!raw) {

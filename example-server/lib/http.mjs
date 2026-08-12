@@ -61,12 +61,6 @@ export async function readJsonBody(req) {
   return parsed;
 }
 
-// A malformed numeric setting stops the server at startup instead of quietly changing behaviour. Two
-// values defeat a comparison guard rather than merely being wrong, and both have to be refused here.
-// NaN, from a non-numeric value, loses every comparison. Infinity, from a digit string too long to
-// represent, wins every one. Either leaves `totalBytes > limit` false for a body of any size, so the
-// digit test alone is not enough and the parsed number is checked as well.
-
 function isAllowedCorsOrigin(origin) {
   if (configuredCorsOrigins.has(origin.toLowerCase())) {
     return true;

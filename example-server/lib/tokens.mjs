@@ -16,9 +16,6 @@ import { ensureTrailingSlash, normalizeBaseUrl, normalizeTokenPath, assertAllowe
 
 const tokenCache = new Map();
 
-// Observed values. Anything else is passed through as its raw number rather
-// than guessed at.
-
 export async function resolveAccessToken(options = {}) {
   const directToken = stringValue(options.accessToken) || stringValue(process.env.PAYABLI_ACCESS_TOKEN);
   if (directToken) {
