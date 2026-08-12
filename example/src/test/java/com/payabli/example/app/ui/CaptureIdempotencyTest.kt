@@ -7,7 +7,10 @@ import com.payabli.example.app.payment.capturedPaymentOutcome
 import com.payabli.example.app.payment.readyStartup
 import com.payabli.example.app.payment.refusedOutcome
 import com.payabli.example.app.ui.capture.CaptureViewModel
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import kotlinx.coroutines.Dispatchers
@@ -92,8 +95,7 @@ class CaptureIdempotencyTest {
 
     @Test
     fun `an interrupted attempt keeps the key its retry needs`() {
-        // The one outcome where the service may have taken the payment. A new key would send the retry as a
-        // second payment instead of a repeat the service can recognize.
+        // A new key would send the retry as a second payment instead of a repeat the service can recognize.
         val model = captureModel()
         val interrupted =
             model.uiState.value.operation
@@ -107,7 +109,49 @@ class CaptureIdempotencyTest {
                 .keyOrNull(),
         )
     }
+
+    @Test
+    fun `every outcome that leaves the attempt unanswered keeps its key`() {
+        // A cancellation is not the only one. The request may have reached the service and been taken in each
+        // of these: a read that timed out, a 5xx, a 2xx that would not decode. Retried under a fresh key, all
+        // of them charge the payer a second time.
+        //
+        // `AlreadySubmitting` is here for a different reason: the submission still in flight is the one
+        // carrying this key, and rotating would leave its own retry unable to name it.
+        val unanswered =
+            mapOf(
+                "a read that timed out" to PayabliNetworkException("timeout"),
+                "a service error" to PayInException.ServiceError(serviceFailure()),
+                "a 2xx that would not decode" to PayInException.Undecodable(),
+                "a submission already in flight" to PayInException.AlreadySubmitting(),
+                "a value refused before sending" to PayInException.InvalidInput(null, "Enter a card number"),
+            )
+
+        unanswered.forEach { (outcome, cause) ->
+            val model = captureModel()
+            val key =
+                model.uiState.value.operation
+                    .keyOrNull()
+
+            model.onFailed(PayInSubmissionState.Failed(cause))
+
+            assertEquals(
+                "$outcome rotated the key, so a retry charges again",
+                key,
+                model.uiState.value.operation
+                    .keyOrNull(),
+            )
+        }
+    }
 }
+
+/** A transport failure, which arrives as the core type rather than one of `PayInException`'s. */
+private class PayabliNetworkException(
+    detail: String,
+) : PayabliException(PayabliErrorCode.NETWORK_ERROR, "The request did not complete", detail)
+
+private fun serviceFailure() =
+    PayInFailure(code = "E0002", reason = "Service error", explanation = null, action = null, httpStatus = 500)
 
 /** The key an operation carries, for the attempts above to compare. */
 private fun PayabliPayInOperation.keyOrNull(): String? =

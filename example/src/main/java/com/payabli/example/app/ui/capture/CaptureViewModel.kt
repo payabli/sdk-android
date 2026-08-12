@@ -13,7 +13,8 @@ import com.payabli.example.app.payment.PaymentResult
 import com.payabli.example.app.payment.toPaymentError
 import com.payabli.example.app.payment.toPaymentResult
 import com.payabli.example.app.ui.payment.PaymentFlowUiState
-import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -213,13 +214,18 @@ class CaptureViewModel(
     fun outcomeShown() = _uiState.update { it.copy(outcomeReady = false) }
 
     /**
-     * A new key for the next attempt, once the service has answered this one.
+     * A new key for the next attempt, once the service has answered about the payment.
      *
-     * Kept after an interruption, which is the one outcome where the service may have taken the payment: the
-     * retry has to carry the same key for it to be recognized as a repeat.
+     * An approval and a decline are answers: the service acted, so the next attempt is a second payment and
+     * needs a key of its own. Every other outcome leaves the attempt's fate unknown — a read that timed out, a
+     * 5xx, a 2xx that would not decode, a cancellation — and the key is kept, because a retry carrying it is
+     * recognized as the repeat it is instead of charging the payer twice.
+     *
+     * A refusal this module raised before sending also keeps the key, which costs nothing: the service never
+     * saw it. `AlreadySubmitting` has to keep it, because the submission still in flight is the one holding it.
      */
     private fun rotateIdempotencyKey(outcome: PayInSubmissionState) {
-        if (outcome is PayInSubmissionState.Failed && outcome.cause is PayInException.Interrupted) return
+        if (outcome is PayInSubmissionState.Failed && !outcome.cause.isAnswerAboutThePayment()) return
         _uiState.update { it.copy(operation = captureOf(UUID.randomUUID().toString())) }
     }
 
@@ -234,3 +240,11 @@ class CaptureViewModel(
             )
     }
 }
+
+/**
+ * Whether the service answered about the payment itself.
+ *
+ * Read from the code rather than the exception type, so a transport failure and a refusal the module raised are
+ * covered by the same rule.
+ */
+private fun PayabliException.isAnswerAboutThePayment(): Boolean = code == PayabliErrorCode.PAYMENT_DECLINED
