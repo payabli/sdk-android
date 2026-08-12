@@ -43,7 +43,7 @@ fun CaptureScreen(
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
 ) {
-    // One place reads the SDK.s state: the flag below and the form both come from it.
+    // One place reads the SDK's state: the flag below and the form both come from it.
     val submission =
         state.payments
             ?.state

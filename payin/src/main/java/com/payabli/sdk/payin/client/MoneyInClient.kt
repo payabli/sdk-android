@@ -33,7 +33,7 @@ import kotlinx.serialization.SerializationException
  * the order of calls.
  *
  * **Nothing here is wrapped in `Retry`, and that is per route.** A capture is not repeatable: sending it twice
- * charges twice unless the service can recognize the repeat, which is what [PayInRequest.idempotencyKey] is
+ * charges twice unless the service can recognize the repeat, which is what [PayInTransactionOptions.idempotencyKey] is
  * for. The service runs its idempotency middleware over these paths, so a caller that sets a key can retry
  * safely and a caller that does not cannot.
  *
