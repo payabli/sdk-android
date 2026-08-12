@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
-import com.payabli.sdk.payin.form.PayInCardBrand
+import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
@@ -44,7 +44,7 @@ class PayInBrandBadgeInstrumentedTest {
 
         typeNumber("4111111111111111")
 
-        rule.onNodeWithContentDescription(PayInCardBrand.Visa.display).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
     }
 
     @Test
@@ -52,15 +52,15 @@ class PayInBrandBadgeInstrumentedTest {
         showCardForm()
 
         mapOf(
-            "4111111111111111" to PayInCardBrand.Visa,
-            "5555555555554444" to PayInCardBrand.Mastercard,
-            "378282246310005" to PayInCardBrand.AmericanExpress,
-            "6011111111111117" to PayInCardBrand.Discover,
-            "30569309025904" to PayInCardBrand.DinersClub,
-            "3530111333300000" to PayInCardBrand.Jcb,
+            "4111111111111111" to CardBrand.Visa,
+            "5555555555554444" to CardBrand.Mastercard,
+            "378282246310005" to CardBrand.AmericanExpress,
+            "6011111111111117" to CardBrand.Discover,
+            "30569309025904" to CardBrand.DinersClub,
+            "3530111333300000" to CardBrand.Jcb,
         ).forEach { (number, brand) ->
             typeNumber(number)
-            rule.onNodeWithContentDescription(brand.display).assertExists()
+            rule.onNodeWithContentDescription(brand.name).assertExists()
         }
     }
 
@@ -68,12 +68,12 @@ class PayInBrandBadgeInstrumentedTest {
     fun theMarkSwapsWhenTheNumberChanges() {
         showCardForm()
         typeNumber("4111111111111111")
-        rule.onNodeWithContentDescription(PayInCardBrand.Visa.display).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
 
         typeNumber("5555555555554444")
 
-        rule.onNodeWithContentDescription(PayInCardBrand.Visa.display).assertDoesNotExist()
-        rule.onNodeWithContentDescription(PayInCardBrand.Mastercard.display).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertDoesNotExist()
+        rule.onNodeWithContentDescription(CardBrand.Mastercard.name).assertExists()
     }
 
     @Test
@@ -82,9 +82,9 @@ class PayInBrandBadgeInstrumentedTest {
 
         typeNumber("9999999999999999")
 
-        PayInCardBrand.entries
-            .filter { it != PayInCardBrand.Unknown }
-            .forEach { rule.onNodeWithContentDescription(it.display).assertDoesNotExist() }
+        CardBrand.entries
+            .filter { it != CardBrand.Unknown }
+            .forEach { rule.onNodeWithContentDescription(it.name).assertDoesNotExist() }
     }
 
     @Test
@@ -92,10 +92,10 @@ class PayInBrandBadgeInstrumentedTest {
         showCardForm()
 
         typeNumber("4111111111111111")
-        rule.onNodeWithContentDescription(PayInCardBrand.Visa.display).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
         numberField().performTextClearance()
 
-        rule.onNodeWithContentDescription(PayInCardBrand.Visa.display).assertDoesNotExist()
+        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertDoesNotExist()
     }
 
     @Test
@@ -108,13 +108,13 @@ class PayInBrandBadgeInstrumentedTest {
         showCardForm()
 
         mapOf(
-            "4111111111111111" to PayInCardBrand.Visa,
-            "378282246310005" to PayInCardBrand.AmericanExpress,
-            "3530111333300000" to PayInCardBrand.Jcb,
+            "4111111111111111" to CardBrand.Visa,
+            "378282246310005" to CardBrand.AmericanExpress,
+            "3530111333300000" to CardBrand.Jcb,
         ).forEach { (number, brand) ->
             typeNumber(number)
             rule
-                .onNodeWithContentDescription(brand.display, useUnmergedTree = true)
+                .onNodeWithContentDescription(brand.name, useUnmergedTree = true)
                 .assertWidthIsEqualTo(30.dp)
                 .assertHeightIsEqualTo(20.dp)
         }
@@ -128,7 +128,17 @@ class PayInBrandBadgeInstrumentedTest {
 
         typeNumber("6212345678901232")
 
-        rule.onNodeWithText(PayInCardBrand.UnionPay.display).assertExists()
+        rule.onNodeWithText("UnionPay").assertExists()
+    }
+
+    @Test
+    fun theRangeDiscoverAcquiredFromUnionPayDrawsDiscover() {
+        // 622126-622925 is issued on Discover's network. Branded UnionPay it would draw no mark at all.
+        showCardForm()
+
+        typeNumber("6221260000000000")
+
+        rule.onNodeWithContentDescription(CardBrand.Discover.name).assertExists()
     }
 
     private fun typeNumber(number: String) {

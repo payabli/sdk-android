@@ -196,12 +196,14 @@ class PayInApiBoundsTest {
     // --- card brands ---
 
     @Test
-    fun `Discover's six digit range is recognized`() {
+    fun `Discover's six digit range is recognized, and its neighbours are UnionPay`() {
         listOf("622126", "622500", "622925").forEach {
             assertEquals(it, CardBrand.Discover, CardBrand.of(it))
         }
+        // Either side of the range Discover acquired is UnionPay's own. Both read Unknown before UnionPay
+        // was a case, so a UnionPay card carried no badge at all.
         listOf("622125", "622926").forEach {
-            assertEquals(it, CardBrand.Unknown, CardBrand.of(it))
+            assertEquals(it, CardBrand.UnionPay, CardBrand.of(it))
         }
     }
 

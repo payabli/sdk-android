@@ -18,7 +18,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
-import com.payabli.sdk.payin.form.PayInCardBrand
+import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
@@ -78,7 +78,7 @@ class PayInFormSeedInstrumentedTest {
     fun aSeededNumberDrawsItsSchemeMark() {
         showCardForm(cardSeed)
 
-        rule.onNodeWithContentDescription(PayInCardBrand.Visa.display).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
     }
 
     @Test
@@ -145,9 +145,9 @@ class PayInFormSeedInstrumentedTest {
 
         rule.onNodeWithText("Ada Lovelace").assertDoesNotExist()
         rule.onNodeWithText("4111 1111 1111 1111").assertDoesNotExist()
-        PayInCardBrand.entries
-            .filter { it != PayInCardBrand.Unknown }
-            .forEach { rule.onNodeWithContentDescription(it.display).assertDoesNotExist() }
+        CardBrand.entries
+            .filter { it != CardBrand.Unknown }
+            .forEach { rule.onNodeWithContentDescription(it.name).assertDoesNotExist() }
     }
 
     private fun showCardForm(

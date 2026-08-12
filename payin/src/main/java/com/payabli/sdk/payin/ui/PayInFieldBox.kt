@@ -37,8 +37,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
+import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.ExpiryValue
-import com.payabli.sdk.payin.form.PayInCardBrand
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInFieldRules
@@ -271,17 +271,17 @@ private fun brandBadge(
     context: PayInFormContext,
 ): (@Composable () -> Unit)? {
     if (field != PayInField.CardNumber) return null
-    val brand = PayInCardBrand.of(value).takeIf { it != PayInCardBrand.Unknown } ?: return null
+    val brand = CardBrand.of(value).takeIf { it != CardBrand.Unknown } ?: return null
     val mark = brand.markResource()
     return {
         if (mark == null) {
-            Text(text = brand.display, style = context.style.supporting)
+            Text(text = brand.schemeName(), style = context.style.supporting)
         } else {
             // Every mark is a tile of the same shape, so one box holds any of them and a field's slot is
             // the same width whichever card a payer types.
             Image(
                 painter = painterResource(mark),
-                contentDescription = brand.display,
+                contentDescription = brand.schemeName(),
                 modifier = Modifier.size(width = BRAND_MARK_WIDTH, height = BRAND_MARK_HEIGHT),
                 contentScale = ContentScale.Fit,
             )
@@ -291,15 +291,27 @@ private fun brandBadge(
 
 /** The scheme's own artwork, or null where this SDK carries none. */
 @DrawableRes
-private fun PayInCardBrand.markResource(): Int? =
+private fun CardBrand.markResource(): Int? =
     when (this) {
-        PayInCardBrand.Visa -> R.drawable.payabli_payin_brand_visa
-        PayInCardBrand.Mastercard -> R.drawable.payabli_payin_brand_mastercard
-        PayInCardBrand.AmericanExpress -> R.drawable.payabli_payin_brand_amex
-        PayInCardBrand.Discover -> R.drawable.payabli_payin_brand_discover
-        PayInCardBrand.DinersClub -> R.drawable.payabli_payin_brand_dinersclub
-        PayInCardBrand.Jcb -> R.drawable.payabli_payin_brand_jcb
-        PayInCardBrand.UnionPay, PayInCardBrand.Unknown -> null
+        CardBrand.Visa -> R.drawable.payabli_payin_brand_visa
+        CardBrand.Mastercard -> R.drawable.payabli_payin_brand_mastercard
+        CardBrand.AmericanExpress -> R.drawable.payabli_payin_brand_amex
+        CardBrand.Discover -> R.drawable.payabli_payin_brand_discover
+        CardBrand.DinersClub -> R.drawable.payabli_payin_brand_dinersclub
+        CardBrand.Jcb -> R.drawable.payabli_payin_brand_jcb
+        CardBrand.UnionPay, CardBrand.Unknown -> null
+    }
+
+/**
+ * What the field shows for a scheme with no artwork here.
+ *
+ * A brand name, so it is not a translated resource. Only UnionPay reaches this, and the web surfaces show a
+ * generic card glyph for it.
+ */
+private fun CardBrand.schemeName(): String =
+    when (this) {
+        CardBrand.UnionPay -> "UnionPay"
+        else -> name
     }
 
 /**
