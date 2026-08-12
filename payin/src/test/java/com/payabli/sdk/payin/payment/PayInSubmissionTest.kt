@@ -17,6 +17,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -410,6 +411,30 @@ class PayInSubmissionTest {
                     methodDescription?.let { put(PayInField.MethodDescription, it) }
                 },
         )
+
+    @Test
+    fun `the outcome a collector sees can be acknowledged from inside the emission`() =
+        runTest(timeout = timeout) {
+            // A collector on `Unconfined` runs in the emitting thread's stack, so its `reset` lands while the
+            // submission still holds its guard. A host is told to acknowledge once.
+            val submission = submissionOver(FakePayInTransport.answering(approved))
+            var acknowledged: Boolean? = null
+
+            val collector =
+                launch(Dispatchers.Unconfined) {
+                    submission.state.collect { state ->
+                        if (state is PayInSubmissionState.Succeeded && acknowledged == null) {
+                            acknowledged = submission.reset()
+                        }
+                    }
+                }
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            assertEquals(true, acknowledged)
+            assertEquals(PayInSubmissionState.Idle, submission.state.value)
+            collector.cancel()
+        }
 
     @Test
     fun `a reset while a submission is in flight is refused, and cannot land between two of its steps`() =

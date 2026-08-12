@@ -115,14 +115,12 @@ internal class PayInSubmission(
      * Refused while a submission is in flight, so a caller cannot clear the state out from under one.
      */
     fun reset(): Boolean {
-        // The same lock a submission takes, so the state cannot be cleared between the check and the write.
-        if (!inFlight.tryLock()) return false
-        try {
-            sink.value = PayInSubmissionState.Idle
-        } finally {
-            inFlight.unlock()
-        }
-        return true
+        val current = sink.value
+        if (current == PayInSubmissionState.Idle) return true
+        // The state, not the submission's lock: that lock is still held while the outcome is published, and a
+        // collector acknowledging what it just saw runs inside that window.
+        if (current == PayInSubmissionState.Submitting) return false
+        return sink.compareAndSet(current, PayInSubmissionState.Idle)
     }
 
     /**
