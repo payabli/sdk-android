@@ -159,7 +159,19 @@ Two routes back the Tap to pay screen's device and activation steps. Both act on
 ```bash
 curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
   http://127.0.0.1:8787/payabli/devices
+
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"deviceId":"4da924ef-..."}' \
+  http://127.0.0.1:8787/payabli/activation-code
 ```
+
+`deviceId` targets one device. Omitted, the newest **pending** device is used and the response says so
+in `resolvedFrom`, which is a convenience for a single-device setup rather than a guess to rely on. A
+serial number cannot stand in: it is the app's install identifier and every record a reinstall leaves
+behind shares it.
+
+`/payabli/devices` also returns `unavailable`, the devices whose per-device lookup was declined, with
+the code and text. They are named rather than dropped from the list.
 
 These mirror the iOS demo's token server, which has served them for longer. The sample
 app's terminal is still `DemoTerminalController`, so nothing in the app calls them yet.
