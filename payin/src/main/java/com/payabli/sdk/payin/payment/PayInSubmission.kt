@@ -116,8 +116,15 @@ internal class PayInSubmission(
      * Refused while a submission is in flight, so a caller cannot clear the state out from under one.
      */
     fun reset(): Boolean {
-        if (inFlight.isLocked) return false
-        sink.value = PayInSubmissionState.Idle
+        // The same lock a submission takes, so the state cannot be cleared between the check and the write.
+        // Read as `isLocked` and then written, a submit acquiring the guard in between had `Idle` published
+        // over its `Submitting`.
+        if (!inFlight.tryLock()) return false
+        try {
+            sink.value = PayInSubmissionState.Idle
+        } finally {
+            inFlight.unlock()
+        }
         return true
     }
 

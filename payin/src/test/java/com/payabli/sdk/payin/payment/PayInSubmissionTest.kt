@@ -411,6 +411,28 @@ class PayInSubmissionTest {
                 },
         )
 
+    @Test
+    fun `a reset while a submission is in flight is refused, and cannot land between two of its steps`() =
+        runTest(timeout = timeout) {
+            // `reset` used to read `isLocked` and then write. A submit taking the guard between those two
+            // published `Idle` over its own `Submitting`, which is the state the acknowledgement promises not
+            // to touch.
+            val transport = GatedPayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val submitting = launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+            transport.arrived.await()
+
+            assertFalse("the state was cleared under an active payment", submission.reset())
+            assertEquals(PayInSubmissionState.Submitting, submission.state.value)
+
+            transport.release()
+            submitting.join()
+            assertTrue("$submission", submission.state.value is PayInSubmissionState.Succeeded)
+            assertTrue("a terminal state cannot be acknowledged", submission.reset())
+            assertEquals(PayInSubmissionState.Idle, submission.state.value)
+        }
+
     private fun TestScope.submissionOver(transport: PayabliTransport): PayInSubmission {
         val logger = RecordingLogger()
         return PayInSubmission(
