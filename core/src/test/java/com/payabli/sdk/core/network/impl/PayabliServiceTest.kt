@@ -300,13 +300,13 @@ class PayabliServiceTest {
             LoopbackServer().use { server ->
                 server.respondWith(200, "0123456789").dribbleBody(60)
 
-                val startedAt = System.currentTimeMillis()
+                val startedAt = System.nanoTime()
                 val thrown =
                     runCatching {
                         service(server, callTimeout = 250.milliseconds)
                             .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
                     }.exceptionOrNull()
-                val elapsed = System.currentTimeMillis() - startedAt
+                val elapsed = elapsedMillisSince(startedAt)
 
                 assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
                 assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
