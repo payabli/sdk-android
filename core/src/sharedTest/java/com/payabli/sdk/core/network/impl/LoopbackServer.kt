@@ -103,8 +103,10 @@ internal class LoopbackServer : AutoCloseable {
      * Waiting costs nothing once the request is there, which is every case where the client got a response.
      */
     fun awaitOnlyRequestOrNull(timeoutMillis: Long = REQUEST_WAIT_TIMEOUT_MILLIS): Recorded? {
-        val deadline = System.currentTimeMillis() + timeoutMillis
-        while (requests.isEmpty() && System.currentTimeMillis() < deadline) {
+        // Monotonic, per `elapsedMillisSince`: a wall-clock deadline can be crossed by a clock correction
+        // rather than by time passing, which would answer null while the request was still arriving.
+        val startedAt = System.nanoTime()
+        while (requests.isEmpty() && elapsedMillisSince(startedAt) < timeoutMillis) {
             Thread.sleep(REQUEST_WAIT_POLL_MILLIS)
         }
         return if (requests.isEmpty()) null else onlyRequest
