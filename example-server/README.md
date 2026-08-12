@@ -146,6 +146,40 @@ This one belongs in the main manifest rather than the debug manifest above, sinc
 every variant that talks to Payabli needs it and a release build would otherwise
 be unable to reach any endpoint. Only the cleartext config is debug-scoped.
 
+## Card-present routes
+
+Two routes back the Tap to pay screen's device and activation steps. Both act on
+`PAYABLI_ENTRY` unless the request names an `entry` of its own.
+
+| Route | Method | Returns |
+|---|---|---|
+| `/payabli/devices` | GET or POST | the SoftPOS devices registered to the entry point, with a readable status |
+| `/payabli/activation-code` | POST | an activation code for a device |
+
+```bash
+curl -s -X POST -H 'Content-Type: application/json' -d '{}' \
+  http://127.0.0.1:8787/payabli/devices
+```
+
+These mirror the iOS demo's token server, which has served them for longer. The sample
+app's terminal is still `DemoTerminalController`, so nothing in the app calls them yet.
+
+## Selecting an environment
+
+The server serves one upstream per run, chosen by `PAYABLI_API_BASE_URL` in the env file
+it loads. `PAYABLI_ENV_FILE` picks the file, so a second environment is a second file:
+
+```bash
+node server.mjs                                  # .env
+PAYABLI_ENV_FILE=.env.sandbox node server.mjs    # .env.sandbox
+```
+
+`.gitignore` covers `.env.*`, so the second file stays untracked. Naming a file that does
+not exist exits rather than falling back to the built-in sandbox defaults.
+
+An entry point exists in one environment. The server's upstream and the app's
+`-Ppayabli.demo.environment` have to agree, or the refusal reads as a bad entry point.
+
 ## Token caching and the SDK's provider contract
 
 `PayabliTokenProvider`'s documented contract is to "mint a token rather than
