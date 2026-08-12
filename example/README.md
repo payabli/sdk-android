@@ -74,8 +74,11 @@ falls back to the development machine's Bonjour name, where a device here gets `
   `initialize()` and `setLogLevel()`.
 - Compose's own lint checks ship at error severity, also with no baseline. Run `:example:lint` per
   commit.
-- `payabli.quality` enables unit-test coverage for application modules too, and everything under
-  `app/ui/**` is excluded from it, so every unit-testable type lives outside that package.
+- `payabli.quality` enables unit-test coverage for application modules too, so JaCoCo measures this
+  one. Sonar then drops `**/example/app/ui/**` through `sonar.coverage.exclusions` in the root
+  `build.gradle.kts`, which is a separate setting from `payabli.quality`. The view models under that
+  package are unit tested and measured locally, and absent from the number Sonar reports, so read the
+  JaCoCo report before concluding they are uncovered.
 
 ## Styling
 
