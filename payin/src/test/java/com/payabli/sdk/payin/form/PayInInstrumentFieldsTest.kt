@@ -91,10 +91,7 @@ class PayInInstrumentFieldsTest {
                 }.exceptionOrNull()
 
             assertTrue("$field was accepted as a box to type into", refusal is IllegalArgumentException)
-            assertTrue(
-                "does not say where it goes instead: ${refusal?.message}",
-                refusal?.message?.contains("Summary") == true,
-            )
+            assertTrue("does not name the field: ${refusal?.message}", refusal?.message?.contains("$field") == true)
         }
     }
 

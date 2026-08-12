@@ -119,10 +119,7 @@ public class PayInFormConfiguration(
         // spelling for a box that is not on screen. Refused here instead, where the sections were written.
         methods.forEach { method ->
             val absent = PayInFieldRules.instrumentFields(method) - inputFieldsFor(method).toSet()
-            require(absent.isEmpty()) {
-                "a $method form cannot submit without ${absent.joinToString()}: add them to its sections, " +
-                    "or drop $method from allowedMethods"
-            }
+            require(absent.isEmpty()) { "a $method form cannot submit without ${absent.joinToString()}" }
         }
 
         // The amounts are the operation's. A box a payer types into would take a figure the request does not
@@ -130,8 +127,7 @@ public class PayInFormConfiguration(
         methods.forEach { method ->
             val typed = inputFieldsFor(method).filter { it in READ_BACK_ONLY }
             require(typed.isEmpty()) {
-                "${typed.joinToString()} cannot be typed into: the amounts come from the operation. " +
-                    "Put them in a PayInSectionStyle.Summary section with summaryValues"
+                "${typed.joinToString()} cannot be typed into: the amounts come from the operation"
             }
         }
     }
