@@ -5,6 +5,8 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.RecordingLogger
 import com.payabli.sdk.payin.client.TEST_PAN
+import com.payabli.sdk.payin.client.testDetails
+import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -45,6 +47,30 @@ class PayabliPayInPaymentFlowTest {
             val outcome = flow.storeMethod(cardForm())
 
             assertEquals("tok-77", outcome.getOrNull()?.storedMethodId)
+        }
+
+    @Test
+    fun `an authorization answers with the transaction, having placed a hold`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val outcome = flow.authorize(testOptions(), cardForm())
+
+            assertEquals("A0000", outcome.getOrNull()?.code)
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+        }
+
+    @Test
+    fun `capturing an authorization answers with the transaction and reads no form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+
+            val outcome = flow.captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails()))
+
+            assertEquals("A0000", outcome.getOrNull()?.code)
+            assertEquals("/api/v2/MoneyIn/capture/101-abc", transport.request?.path)
         }
 
     @Test
