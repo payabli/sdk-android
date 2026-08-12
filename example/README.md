@@ -22,11 +22,14 @@ Copy `secrets.properties.example` to `secrets.properties` and fill it in. It is 
 credential; the token is minted at runtime by `example-server/`. Any setting can be passed for a single
 run instead: `-Ppayabli.demo.entryPoint=entry3715`.
 
+The default is what the build falls back to when nothing is set. The template prefills two of them,
+and only `payabli.demo.appId` prefills something other than its build default.
+
 | Setting | Default | Notes |
 |---|---|---|
 | `payabli.demo.entryPoint` | | Partner identifier. Exists in one environment, so set it with the row below. |
 | `payabli.demo.environment` | `sandbox` | `qa`, `sandbox` or `production`. |
-| `payabli.demo.appId` | `com.payabli.example.app` | Compared against the running package by the readiness check. |
+| `payabli.demo.appId` | | `secrets.properties.example` prefills `com.payabli.example.app`; the build itself falls back to blank. Compared against the running package by the readiness check, so a `-P` run without the template fails that check. |
 | `payabli.demo.signingCertificate` | | SHA-256 as the Play Console shows it; case and punctuation ignored. Blank means the signing key is not verified. `keytool -printcert -jarfile <apk>` prints it for a file, and the Setup screen shows what is installed. |
 | `payabli.demo.tokenHost` | | Blank resolves per run; see below. |
 | `payabli.demo.emulatorTokenHost` | `10.0.2.2` | |
