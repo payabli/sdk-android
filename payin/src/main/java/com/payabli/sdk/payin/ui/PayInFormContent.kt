@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -95,7 +96,11 @@ internal fun PayInFormContent(
 
     // True from the tap until an outcome arrives, which is how a success from this form is told from one the
     // host was already holding.
-    var submissionPending by remember(configuration) { mutableStateOf(false) }
+    //
+    // Saveable, because the flow is the host's and outlives this composition. Held in `remember`, a rotation
+    // mid-submission reset it to false, the terminal state then failed the check below, and neither
+    // `onCompleted` nor `onFailed` ever fired for a payment the service had taken.
+    var submissionPending by rememberSaveable(configuration) { mutableStateOf(false) }
 
     // `enabled` only stops the second tap once the host has set isSubmitting and the button has
     // recomposed, which is a frame away. Two taps inside that frame are two payments. The latch
