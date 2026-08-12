@@ -109,8 +109,17 @@ class PaymentMethodViewModel(
         onCompleted(outcome.toPaymentResult())
     }
 
-    /** The SDK refused it. The form keeps what the payer typed; this records the reason beside the step. */
-    fun onFailed(outcome: PayInSubmissionState.Failed) = onError(outcome.toPaymentError())
+    /**
+     * The SDK refused it.
+     *
+     * What the panel records is the exception's own `toString`, which carries the error code and nothing from
+     * the wire. `reason` and `detail` are displayable and never loggable: the service echoes submitted values
+     * into some of them, and this panel is on screen and gets copied into bug reports.
+     */
+    fun onFailed(outcome: PayInSubmissionState.Failed) {
+        record("ERROR paymentMethod\n${outcome.cause}")
+        onError(outcome.toPaymentError())
+    }
 
     private fun onCompleted(result: PaymentResult) {
         val method = result.storedMethod
@@ -127,7 +136,7 @@ class PaymentMethodViewModel(
                     "Result: ${method.resultText}",
                 ).joinToString("\n")
             }
-        record("RESPONSE ${result.code} paymentMethod\nreason=${result.reason}")
+        record("RESPONSE paymentMethod\ncode=${result.code}")
         _uiState.update {
             it.copy(
                 resultText = text,
@@ -148,7 +157,6 @@ class PaymentMethodViewModel(
      * beneath it is a different instance with its own: dismissed, the payer has nothing left to correct.
      */
     private fun onError(error: PaymentError) {
-        record("ERROR paymentMethod\n${error.displayMessage}")
         _uiState.update {
             // The outcome signal and its payload are cleared, not left standing. A failure arriving
             // after a completion but before navigation consumed the signal would otherwise push the

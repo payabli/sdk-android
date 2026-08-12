@@ -114,4 +114,20 @@ class DiagnosticsGateTest {
             assertEquals("$it is in a recorded line:\n$recorded", false, recorded.contains(it))
         }
     }
+
+    @Test
+    fun `a refusal records its code and none of the service text`() {
+        // The failure path, which the success path above cannot speak for. `PayInFailure.reason` and
+        // `explanation` are displayable and never loggable, because the service echoes submitted values into
+        // some of them: a postal code, a name, an account number typed into the wrong field.
+        val store = DiagnosticsStore()
+        captureModel(store, enabled = true).onFailed(refusedOutcome())
+        methodModel(store, enabled = true).onFailed(refusedOutcome())
+
+        val recorded = store.messages.value.joinToString("\n")
+        listOf("Insufficient funds", "Try another card").forEach {
+            assertEquals("the service said \"$it\" and it was recorded:\n$recorded", false, recorded.contains(it))
+        }
+        assertEquals("the refusal recorded no code to identify it by", true, recorded.contains("D0001"))
+    }
 }
