@@ -17,6 +17,7 @@ import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
+import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -24,6 +25,7 @@ import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.form.TEST_EXPIRY
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
@@ -131,9 +133,10 @@ class PayInFormSubmissionInstrumentedTest {
 
     @Test
     fun aRefusalIsShownOnTheFieldItNamed() {
+        // Through the tap, because a refusal is only this form's to show if this form sent the submission.
         showCardForm()
-        // A number that passes every local rule, so the only message the field can show is the refusal.
-        type(R.string.payabli_payin_field_card_number, TEST_PAN)
+        fillCard()
+        submit()
 
         rule.runOnIdle { submission = refusing(PayInField.CardNumber) }
 
@@ -143,11 +146,25 @@ class PayInFormSubmissionInstrumentedTest {
     @Test
     fun editingTheRefusedFieldTakesTheMessageAway() {
         showCardForm()
-        type(R.string.payabli_payin_field_card_number, TEST_PAN)
+        fillCard()
+        submit()
         rule.runOnIdle { submission = refusing(PayInField.CardholderName) }
         rule.onNodeWithText(string(R.string.payabli_payin_error_not_accepted)).assertExists()
 
-        type(R.string.payabli_payin_field_cardholder_name, "Ada Lovelace")
+        type(R.string.payabli_payin_field_cardholder_name, " Byron")
+
+        rule.onNodeWithText(string(R.string.payabli_payin_error_not_accepted)).assertDoesNotExist()
+    }
+
+    @Test
+    fun aRefusalOfValuesThisFormNeverSentMarksNothing() {
+        // Two forms on one flow, which a host mounting a sheet over the inline form has. The field the service
+        // named is a field in the *other* form's values, and marking it here points the payer at a box whose
+        // value the service never saw.
+        showCardForm()
+        type(R.string.payabli_payin_field_card_number, TEST_PAN)
+
+        rule.runOnIdle { submission = refusing(PayInField.CardNumber) }
 
         rule.onNodeWithText(string(R.string.payabli_payin_error_not_accepted)).assertDoesNotExist()
     }
@@ -162,15 +179,7 @@ class PayInFormSubmissionInstrumentedTest {
     private fun showCardForm() =
         showForm(
             PayInMethodType.Card,
-            PayInFormSection(
-                fields =
-                    listOf(
-                        PayInField.CardholderName,
-                        PayInField.CardNumber,
-                        PayInField.CardSecurityCode,
-                        PayInField.CardPostalCode,
-                    ),
-            ),
+            PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
         )
 
     private fun showBankForm() =
@@ -185,6 +194,9 @@ class PayInFormSubmissionInstrumentedTest {
                     ),
             ),
         )
+
+    /** The expiry is picked from a dialog, so the form is completed by typing only with it seeded. */
+    private val seed = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardExpiration to TEST_EXPIRY))
 
     private fun showForm(
         method: PayInMethodType,
@@ -203,6 +215,7 @@ class PayInFormSubmissionInstrumentedTest {
                 PayInFormContent(
                     submission = submission,
                     configuration = configuration,
+                    initialValues = seed,
                     onSubmit = { true },
                     onValuesChanged = { reported = it },
                 )

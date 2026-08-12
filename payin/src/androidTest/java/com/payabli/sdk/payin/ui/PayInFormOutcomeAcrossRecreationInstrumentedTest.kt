@@ -17,11 +17,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
+import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
+import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.form.TEST_EXPIRY
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
@@ -51,6 +54,9 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
     val rule = createAndroidComposeRule<ComponentActivity>()
 
     private var submission by mutableStateOf<PayInSubmissionState>(PayInSubmissionState.Idle)
+
+    /** The expiry is picked from a dialog, so the form is completed by typing only with it seeded. */
+    private val seed = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardExpiration to TEST_EXPIRY))
 
     private val completed = mutableListOf<PayInSubmissionState.Succeeded>()
     private val failed = mutableListOf<PayInSubmissionState.Failed>()
@@ -99,6 +105,23 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
         assertEquals("an outcome this form did not send was delivered", 0, completed.size)
     }
 
+    @Test
+    fun aRestoredFlagDoesNotOutliveTheFlowThatCarriedTheSubmission() {
+        // Process death, not a rotation: the host's flow goes with the process and the one built afterwards
+        // starts idle. The flag is saved either way, so a form restoring it as true would take the next
+        // outcome on the new flow as its own, and the screen that really submitted would get nothing.
+        val restorer = showFormWithRestoration()
+        fillAndSubmit()
+        rule.runOnIdle { submission = PayInSubmissionState.Submitting }
+
+        restorer.emulateSavedInstanceStateRestore()
+        rule.runOnIdle { submission = PayInSubmissionState.Idle }
+        rule.runOnIdle { submission = PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", null)) }
+        rule.waitForIdle()
+
+        assertEquals("another screen's outcome was delivered here", 0, completed.size)
+    }
+
     private fun fillAndSubmit() {
         type(R.string.payabli_payin_field_cardholder_name, "Ada Lovelace")
         type(R.string.payabli_payin_field_card_number, TEST_PAN)
@@ -114,18 +137,7 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.Card),
                 defaultMethod = PayInMethodType.Card,
-                cardSections =
-                    listOf(
-                        PayInFormSection(
-                            fields =
-                                listOf(
-                                    PayInField.CardholderName,
-                                    PayInField.CardNumber,
-                                    PayInField.CardSecurityCode,
-                                    PayInField.CardPostalCode,
-                                ),
-                        ),
-                    ),
+                cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS)),
                 labelLayout = PayInLabelLayout.Placeholder,
             )
         restorer.setContent {
@@ -133,6 +145,7 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
                 PayInFormContent(
                     submission = submission,
                     configuration = configuration,
+                    initialValues = seed,
                     onSubmit = { true },
                     onCompleted = { completed += it },
                     onFailed = { failed += it },

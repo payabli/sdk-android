@@ -133,12 +133,12 @@ internal fun PayInFormContent(
     // `Failed` are not data classes, so two identical consecutive refusals are two instances and the
     // StateFlow publishes both; `PayInSubmissionStateIdentityTest` pins that.
     LaunchedEffect(submission) {
-        refused = (submission as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
-
         // `submissionPending` is what says this form sent the thing that just finished. A flow shared with
         // another screen, or one still holding the previous payment's outcome, would otherwise empty the
-        // boxes a payer is filling in and report a success they never asked for.
+        // boxes a payer is filling in, mark them against a refusal of values they never sent, and report a
+        // success they never asked for.
         val outcome = submission.takeIf { submissionPending } ?: return@LaunchedEffect
+        refused = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
         when (outcome) {
             is PayInSubmissionState.Succeeded -> {
                 submissionPending = false
@@ -157,9 +157,15 @@ internal fun PayInFormContent(
                 failed(outcome)
             }
 
-            // Idle and Submitting are not outcomes. Reported on the composition's dispatcher, which is where
-            // this effect runs; moving either call onto the flow's coroutine would need withContext(Main).
-            else -> Unit
+            // A flow reading Idle has nothing of this form's in it. Restored from saved state, the flag can
+            // outlive the flow that carried the submission — the host builds a new one after process death,
+            // and it starts idle — and a form holding a stale flag would take the next outcome on that flow
+            // as its own, whichever screen submitted it.
+            PayInSubmissionState.Idle -> submissionPending = false
+
+            // Submitting is not an outcome. Reported on the composition's dispatcher, which is where this
+            // effect runs; moving either call onto the flow's coroutine would need withContext(Main).
+            PayInSubmissionState.Submitting -> Unit
         }
     }
 
