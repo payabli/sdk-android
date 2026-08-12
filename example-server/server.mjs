@@ -1,16 +1,27 @@
 import { createServer } from "node:http";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
-loadEnv(join(serverDir, ".env"));
+// PAYABLI_ENV_FILE picks the file, so a second environment is a second file rather than an edit to
+// this one. A relative name resolves beside this server. An explicitly named file that is not there
+// is fatal: the alternative is falling back to the sandbox defaults below and reporting nothing.
+const envFileName = (process.env.PAYABLI_ENV_FILE || ".env").trim();
+const envFilePath = isAbsolute(envFileName) ? envFileName : join(serverDir, envFileName);
+if (process.env.PAYABLI_ENV_FILE && !existsSync(envFilePath)) {
+  console.error(`PAYABLI_ENV_FILE=${envFileName} does not exist at ${envFilePath}`);
+  process.exit(1);
+}
+loadEnv(envFilePath);
 
 const port = Number.parseInt(process.env.PORT || "8787", 10);
 const bindHost = stringValue(process.env.PAYABLI_LOCAL_TOKEN_SERVER_HOST) || "127.0.0.1";
 const defaultApiBaseUrl = process.env.PAYABLI_API_BASE_URL || "https://api-sandbox.payabli.com/api";
 const defaultTokenPath = process.env.PAYABLI_TOKEN_PATH || "/v2/token/serverside";
+// The entry point the card-present routes act on when a request names none.
+const defaultEntry = stringValue(process.env.PAYABLI_ENTRY);
 const responseTokenField = (process.env.PAYABLI_RESPONSE_TOKEN_FIELD || "").trim();
 const cacheTtlSeconds = integerSetting("PAYABLI_TOKEN_CACHE_TTL_SECONDS", 300);
 const maxRequestBodyBytes = integerSetting("PAYABLI_MAX_REQUEST_BODY_BYTES", 32768);
@@ -20,6 +31,11 @@ const allowedApiHosts = parseCsvSet(
 );
 const configuredCorsOrigins = parseCsvSet(process.env.PAYABLI_ALLOWED_CORS_ORIGINS || "");
 const tokenCache = new Map();
+
+// Observed values. Anything else is passed through as its raw number rather
+// than guessed at.
+const DEVICE_STATUS_ACTIVE = 1;
+const DEVICE_STATUS_PENDING = 2;
 
 class LocalTokenServerError extends Error {
   constructor(statusCode, message) {
@@ -67,6 +83,28 @@ async function handleRequest(req, res) {
     return;
   }
 
+  if (url.pathname === "/payabli/devices" && ["GET", "POST"].includes(req.method || "")) {
+    const body = req.method === "POST" ? await readJsonBody(req) : {};
+    const entry = stringValue(body.entry) || stringValue(url.searchParams.get("entry")) || defaultEntry;
+    // The entry only. Anything else on the body would reach payabliApi as upstream options, where
+    // apiBaseUrl, accessToken, clientId and clientSecret are all honoured, so a caller could spend
+    // the env file's credential against any allowed host, production included. Which upstream is in
+    // use is a property of the run, chosen by the env file.
+    const { devices, unavailable } = await listTapToPayDevices(entry, {});
+    sendJson(res, 200, { entry, devices, unavailable });
+    return;
+  }
+
+  if (url.pathname === "/payabli/activation-code" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    // The two fields this route documents, for the reason above.
+    sendJson(res, 200, await requestActivationCode({
+      entry: stringValue(body.entry),
+      deviceId: stringValue(body.deviceId)
+    }));
+    return;
+  }
+
   if (url.pathname === "/payabli/exchange-token" && req.method === "POST") {
     const body = await readJsonBody(req);
     const exchange = await exchangeCredentials(body, { forceRefresh: true });
@@ -83,6 +121,13 @@ async function handleRequest(req, res) {
 
 server.listen(port, bindHost, () => {
   console.log(`Payabli local token server listening on http://${bindHost}:${port}`);
+  // The upstream and the file it came from. Without these, two runs on two environments are
+  // indistinguishable in the log, and a refusal from the wrong one reads as a bad entry point.
+  console.log(`Upstream:              ${defaultApiBaseUrl}`);
+  console.log(`Env file:              ${envFilePath}`);
+  if (defaultEntry) {
+    console.log(`Entry point:           ${defaultEntry}`);
+  }
   console.log(`Access token endpoint: http://${bindHost}:${port}/payabli/access-token`);
 });
 
@@ -415,4 +460,193 @@ function redactSensitiveText(value) {
       /((?:access_token|accessToken|token|clientSecret|client_secret|secret)=)[^\s&]+/gi,
       "$1[REDACTED]"
     );
+}
+
+async function payabliApi(path, { method = "GET", body = null, options = {} } = {}) {
+  const apiBaseUrl = normalizeBaseUrl(stringValue(options.apiBaseUrl) || defaultApiBaseUrl);
+  const token = await resolveAccessToken(options);
+  const endpoint = new URL(path.replace(/^\/+/, ""), ensureTrailingSlash(apiBaseUrl));
+  assertAllowedEndpoint(endpoint, "The resolved API endpoint");
+
+  // redirect: "manual", as the credential exchange does and for the same reason: the endpoint check
+  // above runs before the request, so it cannot see a redirect target, and a 307 or 308 replays the
+  // method, body and Authorization header to whatever origin the Location names.
+  const upstream = await fetch(endpoint, {
+    method,
+    redirect: "manual",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: body === null ? undefined : JSON.stringify(body)
+  });
+
+  if (upstream.status >= 300 && upstream.status < 400) {
+    throw new LocalTokenServerError(
+      502,
+      `${endpoint.origin} answered HTTP ${upstream.status} redirecting to ` +
+        `${upstream.headers.get("location") || "an unnamed target"}. The redirect was not followed, ` +
+        "because the access token would be sent to the target."
+    );
+  }
+
+  const text = await upstream.text();
+  let payload;
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+
+  if (!upstream.ok) {
+    throw new LocalTokenServerError(
+      upstream.status >= 500 ? 502 : upstream.status,
+      `Payabli ${path} failed with HTTP ${upstream.status}: ${safeJson(payload)}`
+    );
+  }
+
+  return payload;
+}
+
+function envelopeDecline(payload) {
+  if (!payload || payload.isSuccess !== false) {
+    return null;
+  }
+
+  const data = payload.responseData || {};
+  return {
+    code: Number(data.resultCode) || 0,
+    text: stringValue(data.resultText) || stringValue(payload.responseText) || "Declined"
+  };
+}
+
+function deviceStatusLabel(status) {
+  if (status === DEVICE_STATUS_ACTIVE) return "active";
+  if (status === DEVICE_STATUS_PENDING) return "pending";
+  return `status-${status}`;
+}
+
+async function describeDevice(entry, deviceId, options = {}) {
+  const payload = await payabliApi(
+    `/Device/get/${encodeURIComponent(entry)}/${encodeURIComponent(deviceId)}`,
+    { options }
+  );
+  // Reported rather than dropped. Returning null removed the device from the list with nothing
+  // said, so a lookup declined for provisioning or authorisation looked the same as a device that
+  // is not there. Which decline codes mean a stale row is documented nowhere this server can read,
+  // so it names what it skipped instead of deciding.
+  const decline = envelopeDecline(payload);
+  return decline ? { deviceId, decline } : { deviceId, device: payload.responseData || null };
+}
+
+async function listTapToPayDevices(entry, options = {}) {
+  if (!entry) {
+    throw new LocalTokenServerError(
+      400,
+      `Set PAYABLI_ENTRY in ${envFilePath}, or pass entry in the request.`
+    );
+  }
+
+  const payload = await payabliApi(`/Cloud/list/${encodeURIComponent(entry)}`, { options });
+  const decline = envelopeDecline(payload);
+  if (decline) {
+    throw new LocalTokenServerError(400, `Device list declined (${decline.code}): ${decline.text}`);
+  }
+
+  const rows = Array.isArray(payload.responseList) ? payload.responseList : [];
+  const described = [];
+  for (let index = 0; index < rows.length; index += 6) {
+    const batch = await Promise.all(
+      rows.slice(index, index + 6).map((row) => describeDevice(entry, row.deviceId, options))
+    );
+    described.push(...batch);
+  }
+
+  const unavailable = described
+    .filter((row) => row.decline)
+    .map((row) => ({ deviceId: row.deviceId, code: row.decline.code, text: row.decline.text }));
+
+  const devices = described
+    .map((row) => row.device)
+    .filter((device) => device && stringValue(device.deviceType).toLowerCase() === "softpos")
+    .map((device) => ({
+      deviceId: device.deviceId,
+      status: deviceStatusLabel(device.deviceStatus),
+      deviceStatus: device.deviceStatus,
+      model: device.model,
+      serialNumber: device.serialNumber,
+      friendlyName: device.friendlyName,
+      createdAt: device.createdAt,
+      updatedAt: device.updatedAt
+    }))
+    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+  return { devices, unavailable };
+}
+
+async function requestActivationCode(options = {}) {
+  const entry = stringValue(options.entry) || defaultEntry;
+  if (!entry) {
+    throw new LocalTokenServerError(
+      400,
+      `Set PAYABLI_ENTRY in ${envFilePath}, or pass entry in the request.`
+    );
+  }
+
+  let deviceId = stringValue(options.deviceId);
+  let resolvedFrom = "request";
+
+  // A serial number is the app's identifierForVendor and is shared by every
+  // record a reinstall leaves behind, so it cannot pick one device out. Only a
+  // deviceId does. Falling back to the newest pending device is a convenience
+  // for a single-device QA setup, and reports itself as such.
+  if (!deviceId) {
+    const { devices } = await listTapToPayDevices(entry, options);
+    const pending = devices.filter((device) => device.deviceStatus === DEVICE_STATUS_PENDING);
+
+    if (pending.length === 0) {
+      throw new LocalTokenServerError(
+        404,
+        `No pending Tap to Pay devices on ${entry}. Pass deviceId to target a specific device.`
+      );
+    }
+
+    deviceId = stringValue(pending[0].deviceId);
+    resolvedFrom = pending.length === 1 ? "onlyPendingDevice" : `newestOf${pending.length}Pending`;
+  }
+
+  const payload = await payabliApi("/v2/device/taptopay/activate/challenge", {
+    method: "POST",
+    body: { entry, deviceId },
+    options
+  });
+
+  const decline = envelopeDecline(payload);
+  if (decline) {
+    throw new LocalTokenServerError(
+      decline.code === 404 ? 404 : 400,
+      `Activation challenge declined (${decline.code}): ${decline.text}`
+    );
+  }
+
+  const data = payload.responseData || {};
+  // An envelope that reports success and carries no code is an upstream fault, not an activation.
+  // Returned as 200 with an empty code it reads as issuance, and the device is never activated.
+  const code = stringValue(data.code);
+  if (!code) {
+    throw new LocalTokenServerError(
+      502,
+      `Activation challenge for ${deviceId} on ${entry} reported success and returned no code.`
+    );
+  }
+
+  return {
+    entry,
+    deviceId,
+    resolvedFrom,
+    code,
+    expiresAt: stringValue(data.expiresAt),
+    alreadyIssued: Boolean(data.alreadyIssued)
+  };
 }
