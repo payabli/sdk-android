@@ -4,8 +4,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
-import com.payabli.sdk.core.model.PayabliErrorCode
-import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +14,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The transport against Android's `HttpURLConnection`, which is a different implementation from the JVM's
@@ -116,52 +113,15 @@ class PayabliServiceInstrumentedTest {
     /**
      * The whole-call budget, on the implementation whose `disconnect()` behaviour it depends on.
      *
-     * The bound is derived from the budget and the stall rather than written as a number, so it states the
-     * claim instead of approximating it: the call ended nearer the budget it was given than the stall it was
-     * cut out of. Any machine fast enough to run the test can show that.
+     * The claim, the bound and the repetition live in [assertTheCallBudgetCutsTheCallOutOfTheStall], beside
+     * the JVM copy of the same claim, so the two tiers cannot drift into asserting different things about
+     * one mechanism. Only the transport differs, which is the point of running it here at all.
      */
     @Test
     fun theCallBudgetTearsTheSocketDownRatherThanWaitingOutTheStall() =
         runTest {
-            LoopbackServer().use { server ->
-                server.respondWith(200, "").stallBeforeResponding(STALL_MILLIS)
-
-                val startedAt = System.currentTimeMillis()
-                val thrown =
-                    runCatching {
-                        service(server, callTimeout = CALL_BUDGET_MILLIS.milliseconds)
-                            .execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
-                    }.exceptionOrNull()
-                val elapsed = System.currentTimeMillis() - startedAt
-
-                assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
-                assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
-                // The request arrived, so the budget ended a call in flight rather than one that never began.
-                assertEquals("/api/ping", server.onlyRequest.path)
-                assertTrue(
-                    "the call waited out the stall instead of being cut off: ${elapsed}ms of a " +
-                        "${STALL_MILLIS}ms stall, over a ${CUTOFF_MILLIS}ms bound on a " +
-                        "${CALL_BUDGET_MILLIS}ms budget",
-                    elapsed < CUTOFF_MILLIS,
-                )
+            assertTheCallBudgetCutsTheCallOutOfTheStall { server, budget ->
+                service(server, callTimeout = budget)
             }
         }
-
-    private companion object {
-        /** The budget under test, named so the bound below is derived from it rather than tracking it. */
-        const val CALL_BUDGET_MILLIS = 200L
-
-        /** Well above the budget and well below the socket read timeout, so the budget is provably
-         * what fired. */
-        const val STALL_MILLIS = 800L
-
-        /**
-         * The midpoint, which is what "nearer the budget than the stall" means.
-         *
-         * A tighter bound catches nothing extra, since the behaviour it guards against is waiting out the
-         * whole stall, and it spends slack that a loaded emulator needs. On a hosted runner that slack is
-         * the difference between a signal and a retry habit.
-         */
-        const val CUTOFF_MILLIS = (CALL_BUDGET_MILLIS + STALL_MILLIS) / 2
-    }
 }
