@@ -99,15 +99,3 @@ server.listen(port, bindHost, () => {
   }
   console.log(`Access token endpoint: http://${bindHost}:${port}/payabli/access-token`);
 });
-
-server.listen(port, bindHost, () => {
-  console.log(`Payabli local token server listening on http://${bindHost}:${port}`);
-  // The upstream and the file it came from. Without these, two runs on two environments are
-  // indistinguishable in the log, and a refusal from the wrong one reads as a bad entry point.
-  console.log(`Upstream:              ${defaultApiBaseUrl}`);
-  console.log(`Env file:              ${envFilePath}`);
-  if (defaultEntry) {
-    console.log(`Entry point:           ${defaultEntry}`);
-  }
-  console.log(`Access token endpoint: http://${bindHost}:${port}/payabli/access-token`);
-});
