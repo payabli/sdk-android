@@ -61,6 +61,7 @@ fun PaymentMethodScreen(
                 ),
             ),
         resultEmptyText = "Nothing stored yet",
+        startOverText = "Save another method",
         actions = actions,
         modifier = modifier,
     )

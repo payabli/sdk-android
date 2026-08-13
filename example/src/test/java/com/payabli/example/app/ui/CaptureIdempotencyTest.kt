@@ -111,6 +111,26 @@ class CaptureIdempotencyTest {
     }
 
     @Test
+    fun `starting over asks for another payment, so it carries another key`() {
+        // The payer is asking for a second payment, and the service refuses one that arrives under the first
+        // one's key. An interruption keeps the key for a retry; this is not a retry.
+        val model = captureModel()
+        model.onFailed(PayInSubmissionState.Failed(PayInException.Interrupted("interrupted-key")))
+        val kept =
+            model.uiState.value.operation
+                .keyOrNull()
+
+        model.startOver()
+
+        assertTrue(
+            "the next payment went out under the interrupted attempt's key",
+            kept !=
+                model.uiState.value.operation
+                    .keyOrNull(),
+        )
+    }
+
+    @Test
     fun `every outcome that leaves the attempt unanswered keeps its key`() {
         // A cancellation is not the only one. The request may have reached the service and been taken in each
         // of these: a read that timed out, a 5xx, a 2xx that would not decode. Retried under a fresh key, all

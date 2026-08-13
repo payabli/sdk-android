@@ -121,6 +121,7 @@ private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController)
                         onDismissSheet = model::dismissSheet,
                         onCompleted = model::onCompleted,
                         onFailed = model::onFailed,
+                        onStartOver = model::startOver,
                     ),
             )
         }
@@ -164,6 +165,7 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
                         onDismissSheet = model::dismissSheet,
                         onCompleted = model::onCompleted,
                         onFailed = model::onFailed,
+                        onStartOver = model::startOver,
                     ),
             )
         }

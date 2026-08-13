@@ -77,10 +77,12 @@ data class PaymentFlowActions(
     val onDismissSheet: () -> Unit,
     val onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
     val onFailed: (PayInSubmissionState.Failed) -> Unit,
+    /** Hands the screen back to the form step for another one. */
+    val onStartOver: () -> Unit,
 ) {
     companion object {
         /** For a preview, which renders the screen and drives nothing. */
-        fun none(): PaymentFlowActions = PaymentFlowActions({}, {}, {}, {}, {})
+        fun none(): PaymentFlowActions = PaymentFlowActions({}, {}, {}, {}, {}, {})
     }
 }
 
@@ -89,6 +91,7 @@ data class PaymentFlowActions(
  *
  * @param steps the three, already derived. The screen renders them and decides nothing.
  * @param resultEmptyText what the last step says before anything has come back.
+ * @param startOverText the control that hands the screen back to the form step.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +103,7 @@ fun PaymentFlowScreen(
     submission: PayInSubmissionState,
     steps: List<FlowStep>,
     resultEmptyText: String,
+    startOverText: String,
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
 ) {
@@ -176,6 +180,15 @@ fun PaymentFlowScreen(
 
         StepRow(index = 3, step = steps[2]) {
             ResultCard(text = state.resultText, emptyText = resultEmptyText)
+            // A finished step draws no controls, so a completed submit takes the form off the screen. This is
+            // the way back to it.
+            if (state.finished) {
+                BorderedButton(
+                    text = startOverText,
+                    icon = DemoIcons.StartOver,
+                    onClick = actions.onStartOver,
+                )
+            }
         }
 
         DiagnosticsPanel(messages = state.diagnostics, isEnabled = state.diagnosticsEnabled)

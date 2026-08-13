@@ -68,6 +68,7 @@ fun CaptureScreen(
                 ),
             ),
         resultEmptyText = "No payment yet",
+        startOverText = "Take another payment",
         actions = actions,
         modifier = modifier,
     )

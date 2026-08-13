@@ -193,6 +193,17 @@ class PaymentMethodViewModel(
     /** Cleared once navigation has happened, so returning to this screen does not push again. */
     fun outcomeShown() = _uiState.update { it.copy(outcomeReady = false) }
 
+    /**
+     * Back to the form step, for another method.
+     *
+     * A finished step draws no controls, so the form leaves the screen once a method is stored and this is the
+     * only way back to it.
+     */
+    fun startOver() =
+        _uiState.update {
+            it.copy(resultText = "", submitFailed = false, storedMethod = null, outcomeReady = false)
+        }
+
     companion object {
         fun from(container: AppContainer): PaymentMethodViewModel =
             PaymentMethodViewModel(

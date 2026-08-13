@@ -226,6 +226,24 @@ class CaptureViewModel(
     fun outcomeShown() = _uiState.update { it.copy(outcomeReady = false) }
 
     /**
+     * Back to the form step, for a second payment.
+     *
+     * A finished step draws no controls, so the form leaves the screen once a payment completes and this is the
+     * only way back to it. The key goes with the result: the payer is asking for another payment, and the
+     * service refuses a second one that arrives under the first one's key.
+     */
+    fun startOver() =
+        _uiState.update {
+            it.copy(
+                resultText = "",
+                submitFailed = false,
+                lastResult = null,
+                outcomeReady = false,
+                operation = captureOf(UUID.randomUUID().toString()),
+            )
+        }
+
+    /**
      * A new key for the next attempt, once the service has answered about the payment.
      *
      * An approval and a decline are answers: the service acted, so the next attempt is a second payment and

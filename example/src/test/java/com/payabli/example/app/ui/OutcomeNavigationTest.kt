@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -206,6 +207,32 @@ class OutcomeNavigationTest {
         model.onFailed(refusedOutcome())
 
         assertFalse(model.uiState.value.finished)
+    }
+
+    @Test
+    fun `starting over hands the capture screen back to the form step`() {
+        // A finished step draws no controls, so the form is off the screen until this runs.
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        model.outcomeShown()
+
+        model.startOver()
+
+        assertFalse("the form step is still finished", model.uiState.value.finished)
+        assertEquals("", model.uiState.value.resultText)
+        assertNull(model.uiState.value.lastResult)
+    }
+
+    @Test
+    fun `starting over hands the stored-method screen back too`() {
+        val model = methodModel()
+        model.onCompleted(storedMethodOutcome())
+        model.outcomeShown()
+
+        model.startOver()
+
+        assertFalse(model.uiState.value.finished)
+        assertNull(model.uiState.value.storedMethod)
     }
 
     @Test
