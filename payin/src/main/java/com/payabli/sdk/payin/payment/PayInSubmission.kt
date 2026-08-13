@@ -98,13 +98,7 @@ internal class PayInSubmission(
             }
         }
 
-    /**
-     * Captures a transaction authorized earlier, in full or in part.
-     *
-     * Not a [PayabliPayInOperation]: the method was settled when the transaction was authorized, so no form is
-     * read and no buffer is built. It shares the state and the single flight, so a screen that authorizes and
-     * then captures reports both through one place.
-     */
+    /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
     suspend fun captureAuthorized(request: PayInAuthorizedRequest): PayInSubmissionState? =
         perform { retry ->
             val key = retry.reserve(request.idempotencyKey)
@@ -144,11 +138,8 @@ internal class PayInSubmission(
             }
             return null
         }
-        // Read under the lock, and it is the second half of the single flight rather than a separate rule. The
-        // guard is released before the outcome is consumed, so an outcome nobody has acknowledged is still
-        // sitting in the state: starting here would overwrite it with `Submitting` and a taken payment would
-        // leave no record of itself. Refused instead, which a caller can see, and `acknowledge` is what makes
-        // the flow ready again.
+        // Starting here would overwrite an outcome nothing has read yet, and a taken payment would leave no
+        // record of itself. `reset` is what clears the way.
         if (sink.value != PayInSubmissionState.Idle) {
             inFlight.unlock()
             onReserved(false)

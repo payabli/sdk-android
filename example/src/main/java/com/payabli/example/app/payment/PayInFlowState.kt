@@ -11,7 +11,7 @@ import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
  * holds a terminal state the form has not consumed, the outcome reaches neither callback. Either way the form
  * observes a new idle flow and the screen offers Submit again.
  *
- * `Idle` is the handshake: the form delivers the outcome, the screen acknowledges it, and the flow reads idle
- * only once nothing is owed.
+ * `Idle` is the handshake: the form delivers the outcome and consumes it, and the flow reads idle only once
+ * nothing is owed.
  */
 internal fun PayabliPayInPaymentFlow?.isBusy(): Boolean = this != null && state.value != PayInSubmissionState.Idle

@@ -511,7 +511,7 @@ class PayInSubmissionTest {
     fun `the outcome a collector sees can be acknowledged from inside the emission`() =
         runTest(timeout = timeout) {
             // A collector on `Unconfined` runs in the emitting thread's stack, so its `reset` lands while the
-            // submission still holds its guard. A host is told to acknowledge once.
+            // submission still holds its guard. The form consumes from exactly there.
             val submission = submissionOver(FakePayInTransport.answering(approved))
             var acknowledged: Boolean? = null
 

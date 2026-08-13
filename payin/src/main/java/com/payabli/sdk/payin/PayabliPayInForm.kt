@@ -26,9 +26,10 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * `MaterialTheme`, so light, dark and dynamic color arrive with nothing passed. Use
  * `PayInFormStyleOverrides` to change one value, or `LocalPayInFormStyle` for every form in a tree.
  *
- * **A refusal marks the field it named and empties the instrument.** The card number, expiry, security code,
- * routing number and account number go on any outcome, because the instrument was submitted either way. What
- * identifies the payer stays, so correcting a refused field is not a second round of typing.
+ * **When the service rejects a field, that field is marked and the instrument is emptied.** The card number,
+ * expiry, security code, routing number and account number go on any outcome, because the instrument was
+ * submitted either way. What identifies the payer stays, so correcting one field is not a second round of
+ * typing.
  *
  * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can show it or navigate away
  * from it. `PayabliException.reason` and `detail` are displayable only: the service echoes submitted values
@@ -38,7 +39,7 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  *
  * **Retention is [flow]'s, not this composable's.** Hold the flow in something that survives a configuration
  * change and the outcome of a submission in flight is still delivered afterwards. This function keeps only
- * what the payer has typed and which fields a refusal named.
+ * what the payer has typed and which fields the service rejected.
  *
  * @param flow where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.
@@ -47,10 +48,8 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * @param style null takes `LocalPayInFormStyle`, then the host's theme.
  * @param initialValues what the boxes start with, for a payer whose details the caller already holds. Held
  *   exactly as typed input is, and replacing it starts the form again from the new values.
- * @param onCompleted the service accepted it. Call [PayabliPayInPaymentFlow.acknowledge] once handled.
- * @param onFailed it did not go through, with the typed cause and the fields the refusal named. Acknowledge
- *   this one too: a refusal is retained exactly as a success is, and a flow still holding one is a flow that
- *   has not finished.
+ * @param onCompleted the service accepted it.
+ * @param onFailed it did not go through, with the typed cause and the fields the service rejected.
  * @param onMethodChanged the payer switched instrument. The values themselves stay in the form: a card
  *   number and a security code have no reason to cross into a host that no longer submits them.
  */
@@ -85,12 +84,6 @@ public fun PayabliPayInForm(
         style = style,
         initialValues = initialValues,
         onSubmit = { values -> flow.start(operation, values) },
-        // Consumed here, after the caller's own function has run, so the flow is ready for the next submission
-        // without anyone being asked to say so. Before it, a caller reading `flow.state` inside its own callback
-        // would find `Idle` where the outcome it was just handed should be.
-        //
-        // In a `finally`, because the function is the caller's: one that throws would otherwise leave the
-        // outcome standing, and a standing outcome refuses every later submission.
         onCompleted = { outcome ->
             try {
                 onCompleted(outcome)

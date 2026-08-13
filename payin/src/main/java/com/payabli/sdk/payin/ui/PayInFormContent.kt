@@ -133,10 +133,8 @@ internal fun PayInFormContent(
     // `Failed` are not data classes, so two identical consecutive rejections are two instances and the
     // StateFlow publishes both; `PayInSubmissionStateIdentityTest` pins that.
     LaunchedEffect(submission) {
-        // `submissionPending` is what says this form sent the thing that just finished. A flow shared with
-        // another screen, or one still holding the previous payment's outcome, would otherwise empty the
-        // boxes a payer is filling in, mark them against a rejection of values they never sent, and report a
-        // success they never asked for.
+        // Only an outcome this form sent. A flow shared with another screen would otherwise empty the boxes a
+        // payer is filling in and report a success they never asked for.
         val outcome = submission.takeIf { submissionPending } ?: return@LaunchedEffect
         rejectedFields = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
         // Reported on the composition's dispatcher, which is where this effect runs; moving either call onto
@@ -191,12 +189,7 @@ internal fun PayInFormContent(
             isSubmitting = isSubmitting,
             style = context.style,
             onClick = {
-                // Everything again, against the state as it is now. `enabled` reflects the last
-                // composition, so a field cleared or a tab switched in the frame before this click
-                // would otherwise submit on a gate that no longer holds.
-                //
-                // The clock lands in state, so a rollover that refuses this submission also disables the
-                // button and shows the expired field its error.
+                // Checked again here: `enabled` reflects the last composition, not the state at the tap.
                 today = ExpiryValue.today()
                 val readyToSend =
                     !justSubmitted &&
