@@ -10,7 +10,7 @@ import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.payment.PayInStartup
 import com.payabli.example.app.payment.PaymentError
 import com.payabli.example.app.payment.PaymentResult
-import com.payabli.example.app.payment.isSubmitting
+import com.payabli.example.app.payment.isBusy
 import com.payabli.example.app.payment.toPaymentError
 import com.payabli.example.app.payment.toPaymentResult
 import com.payabli.example.app.ui.payment.PaymentFlowUiState
@@ -116,9 +116,9 @@ class CaptureViewModel(
     /** The first step of the sequence. [checkToken] says what it reports and why. */
     fun checkToken() {
         if (_uiState.value.isCheckingToken) return
-        // A recheck builds a session and replaces the flow this screen submits through. Mid-payment that
-        // orphans a request the service may still take, so the step waits instead.
-        if (_uiState.value.payments.isSubmitting()) return
+        // A recheck builds a session and replaces the flow this screen submits through. Replaced while that
+        // flow holds a request or an outcome, what it holds is lost, so the step waits instead.
+        if (_uiState.value.payments.isBusy()) return
         _uiState.update { it.copy(isCheckingToken = true, tokenCheckText = "Checking…") }
         viewModelScope.launch {
             val started = startup.start(viewModelScope)
@@ -127,9 +127,9 @@ class CaptureViewModel(
                     isCheckingToken = false,
                     tokenCheckText = started.text,
                     backendReachable = started.isReady,
-                    // A payment can start while the recheck above is suspended. Replacing the flow it went
-                    // out on orphans its outcome and lets the screen charge again.
-                    payments = it.payments?.takeIf { flow -> flow.isSubmitting() } ?: started.payments,
+                    // A payment can start, and finish, while the recheck above is suspended. A flow still
+                    // holding either is kept: replacing it loses the request or the outcome.
+                    payments = it.payments?.takeIf { flow -> flow.isBusy() } ?: started.payments,
                 )
             }
         }
