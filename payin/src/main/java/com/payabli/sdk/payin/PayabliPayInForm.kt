@@ -13,6 +13,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
+import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
 import com.payabli.sdk.payin.ui.PayInFormContent
 
@@ -73,8 +74,8 @@ public fun PayabliPayInForm(
     //
     // Keyed on what the narrowing reads rather than on the operation: a host building its operation inline hands
     // over a new instance on every recomposition, and this then copies the configuration on each one.
-    val instruments = operation.instruments
-    val offered = remember(instruments, configuration) { operation.offering(configuration) }
+    val narrowingKey = operation.narrowingKey
+    val offered = remember(narrowingKey, configuration) { operation.offering(configuration) }
 
     PayInFormContent(
         submission = submission,

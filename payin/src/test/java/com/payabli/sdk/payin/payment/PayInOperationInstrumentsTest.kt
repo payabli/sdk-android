@@ -5,6 +5,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -89,6 +90,25 @@ class PayInOperationInstrumentsTest {
             val refusal = runCatching { operation.offering(described) }.exceptionOrNull()
             assertTrue("$operation drew a box it would drop", refusal is IllegalArgumentException)
         }
+    }
+
+    @Test
+    fun `the narrowing key tells apart two operations offering the same instruments`() {
+        // The form keeps the narrowed configuration under this key. Storing a method and capturing offer both
+        // instruments, so keying on the instruments alone hands a capture the narrowing made for a store, and
+        // the box only a store can carry survives onto it.
+        assertEquals(
+            PayabliPayInOperation.StoreMethod().instruments,
+            capture().instruments,
+        )
+        assertNotEquals(PayabliPayInOperation.StoreMethod().narrowingKey, capture().narrowingKey)
+    }
+
+    @Test
+    fun `the narrowing key is equal for two instances of the same operation`() {
+        // A host writing the operation inline builds a new one on every recomposition. An unequal key there
+        // would re-narrow the configuration on each one.
+        assertEquals(capture().narrowingKey, capture().narrowingKey)
     }
 
     @Test

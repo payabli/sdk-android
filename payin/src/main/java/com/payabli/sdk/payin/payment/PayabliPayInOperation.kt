@@ -47,6 +47,17 @@ public sealed class PayabliPayInOperation {
 }
 
 /**
+ * Everything [offering] reads about an operation, as a `remember` key.
+ *
+ * A host writing its operation inline hands over a new instance on every recomposition, so the narrowed
+ * configuration cannot be keyed on the operation itself. Anything a new branch in [offering] reads belongs
+ * here in the same edit, or a form keeps a narrowing made for a different operation: storing a method and
+ * capturing offer the same instruments, so the instruments alone do not tell them apart.
+ */
+internal val PayabliPayInOperation.narrowingKey: List<Any>
+    get() = listOf(instruments, this is PayabliPayInOperation.StoreMethod)
+
+/**
  * [configuration] with any instrument this operation cannot carry left out.
  *
  * A pairing that leaves nothing is refused rather than drawn. An authorization with a bank-only form is a form
