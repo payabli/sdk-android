@@ -21,12 +21,15 @@ import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.TEST_EXPIRY
+import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -46,6 +49,8 @@ class PayInFormSeedInstrumentedTest {
     val rule = createAndroidComposeRule<ComponentActivity>()
 
     private var seed by mutableStateOf<PayInFormValues?>(null)
+
+    private var submission by mutableStateOf<PayInSubmissionState>(PayInSubmissionState.Idle)
 
     private val cardSeed =
         PayInFormValues(
@@ -143,6 +148,30 @@ class PayInFormSeedInstrumentedTest {
     }
 
     @Test
+    fun replacingTheSeedTakesTheLastRefusalWithIt() {
+        // A refusal that outlives the values it named marks a box the payer never sent, and the submit button
+        // waits on a mark nothing will clear except an edit to a freshly seeded field.
+        showCardForm(cardSeed, onSubmit = {})
+        rule.onNodeWithText(string(R.string.payabli_payin_submit)).performClick()
+        rule.waitForIdle()
+        rule.runOnIdle {
+            submission =
+                PayInSubmissionState.Failed(
+                    PayInException.Refused(PayInFailure("D1001", "Refused", null, null, 200)),
+                    fieldErrors = mapOf(PayInField.CardholderName to PayInFieldError.NotAccepted),
+                )
+        }
+        rule.onNodeWithText(string(R.string.payabli_payin_error_not_accepted)).assertExists()
+
+        rule.runOnIdle {
+            seed = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardholderName to "Grace Hopper"))
+        }
+        rule.waitForIdle()
+
+        rule.onNodeWithText(string(R.string.payabli_payin_error_not_accepted)).assertDoesNotExist()
+    }
+
+    @Test
     fun noSeedLeavesEveryFieldEmpty() {
         // The other half: a form that showed values with nothing seeded would pass every test above.
         showCardForm(seed = null)
@@ -169,7 +198,7 @@ class PayInFormSeedInstrumentedTest {
         rule.setContent {
             MaterialTheme {
                 PayInFormContent(
-                    submission = PayInSubmissionState.Idle,
+                    submission = submission,
                     configuration = configuration,
                     initialValues = this.seed,
                     onSubmit = {

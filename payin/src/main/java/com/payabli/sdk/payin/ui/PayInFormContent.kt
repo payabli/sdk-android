@@ -92,7 +92,11 @@ internal fun PayInFormContent(
 
     // What the last refusal named, dropped field by field as the payer edits: a marked box whose value has
     // changed no longer holds the value the service refused.
-    var refused by remember(configuration) { mutableStateOf<Map<PayInField, PayInFieldError>>(emptyMap()) }
+    //
+    // Keyed on the values as the boxes are. A refusal outliving them marks a value the payer never sent, and
+    // holds the button while it stands.
+    var refused by
+        remember(configuration, initialValues) { mutableStateOf<Map<PayInField, PayInFieldError>>(emptyMap()) }
 
     // True from the tap until an outcome arrives, which is how a success from this form is told from one the
     // host was already holding.
