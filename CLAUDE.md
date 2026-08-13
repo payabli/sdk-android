@@ -138,7 +138,7 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   files out of the compilation. This is not a stand-in for a fixtures module and cannot become one: `LogSink`
   and `DefaultSdkLogger` are `internal`, and only compilations of `:core` itself see those. Moving these
   fixtures to a sibling module or to AGP `testFixtures` would mean widening a published security SDK's API to
-  suit a test layout. Do not re-propose it. The separate cross-module fixtures module (PLA-2192) is a
+  suit a test layout. Do not re-propose it. A separate cross-module fixtures module is a
   different thing and still does not exist.
 - Two transport behaviours cannot be shown on the JVM, and both are now covered on-device in
   `PayabliServiceInstrumentedTest`: transparent gzip and `PATCH` acceptance. **"Cancellation unblocking a
@@ -209,7 +209,7 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   test fails as invalid configuration while every unit test still passes.
 - **CI runs no instrumented test.** All jobs are `ubuntu-latest` with no emulator, so `connectedAndroidTest`
   is a deliberate local step and a regression in the three device-only behaviours will not turn a pull
-  request red. PLA-2306 adds a manual and nightly emulator job, deliberately not a required per-PR check.
+  request red. A manual and nightly emulator job is planned, and it is not a required per-PR check.
 - Card-present paths need a physical device or mocks rather than an emulator.
 - **Attestation runs on an emulator and has no manual tier, both of which were measured.** Attestation lives
   in `:taptopay`, not `:core`: the platform verdict gates arming the card reader, and keeping it there is
