@@ -14,6 +14,8 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -96,8 +98,12 @@ fun PaymentFlowScreen(
     val isSubmitting = submission is PayInSubmissionState.Submitting
 
     // The screen's own, not the app's: it exists to save typing during a QA run, and no screen below reads it.
-    // Replacing it starts the form again from the new values, which is what the SDK's `initialValues` does.
     var prefilled by remember { mutableStateOf<PayInFormValues?>(null) }
+
+    // Bumped on every tap and used as the form's `key`. `initialValues` is compared by value, so seeding the
+    // same set twice is not a change and the form keeps what the payer has since edited: the button then does
+    // nothing on its second tap. A new key composes a new form, which starts from the seed again.
+    var prefills by remember { mutableIntStateOf(0) }
 
     // Which instrument the form is on, which the form reports whenever the payer switches tabs. The card and
     // the bank account take different fields, so the button has to fill the one on screen.
@@ -135,22 +141,27 @@ fun PaymentFlowScreen(
                     BorderedButton(
                         text = "Prefill test data (Debug)",
                         icon = DemoIcons.Prefill,
-                        onClick = { prefilled = DemoPrefill.valuesFor(method) },
+                        onClick = {
+                            prefilled = DemoPrefill.valuesFor(method)
+                            prefills++
+                        },
                         enabled = !isSubmitting,
                         contentColor = MaterialTheme.colorScheme.tertiary,
                     )
                 }
                 // Only once the session exists. Until then the step above is what the screen offers.
                 flow?.let { payments ->
-                    PaymentFormHost(
-                        setup = state.setup,
-                        flow = payments,
-                        operation = operation,
-                        initialValues = prefilled,
-                        onCompleted = actions.onCompleted,
-                        onFailed = actions.onFailed,
-                        onMethodChanged = { method = it },
-                    )
+                    key(prefills) {
+                        PaymentFormHost(
+                            setup = state.setup,
+                            flow = payments,
+                            operation = operation,
+                            initialValues = prefilled,
+                            onCompleted = actions.onCompleted,
+                            onFailed = actions.onFailed,
+                            onMethodChanged = { method = it },
+                        )
+                    }
                 }
             }
         }
@@ -195,15 +206,17 @@ fun PaymentFlowScreen(
             ) {
                 // Only once the session exists. Until then the step above is what the screen offers.
                 flow?.let { payments ->
-                    PaymentFormHost(
-                        setup = state.setup,
-                        flow = payments,
-                        operation = operation,
-                        initialValues = prefilled,
-                        onCompleted = actions.onCompleted,
-                        onFailed = actions.onFailed,
-                        onMethodChanged = { method = it },
-                    )
+                    key(prefills) {
+                        PaymentFormHost(
+                            setup = state.setup,
+                            flow = payments,
+                            operation = operation,
+                            initialValues = prefilled,
+                            onCompleted = actions.onCompleted,
+                            onFailed = actions.onFailed,
+                            onMethodChanged = { method = it },
+                        )
+                    }
                 }
             }
         }
