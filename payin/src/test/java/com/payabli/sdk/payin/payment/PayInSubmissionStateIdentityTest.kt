@@ -71,11 +71,15 @@ class PayInSubmissionStateIdentityTest {
             // replays only its latest value — so every assertion below would pass on one emission.
             val watcher = launch(Dispatchers.Unconfined) { sink.collect { seen += it } }
 
-            sink.value = declined()
-            sink.value = PayInSubmissionState.Submitting
-            sink.value = declined()
+            // Consecutive and sharing one cause, so `Failed` decides equality. A `Submitting` between them, or
+            // a fresh cause each time, makes the pair differ for another reason and the test passes either way.
+            val cause = PayInException.Refused(PayInFailure("D1001", "Insufficient funds", null, "retry", 200))
+            val fields = mapOf(PayInField.CardNumber to PayInFieldError.NotAccepted)
+
+            sink.value = PayInSubmissionState.Failed(cause, fields)
+            sink.value = PayInSubmissionState.Failed(cause, fields)
             watcher.cancel()
 
-            assertEquals("a refusal went missing between two identical ones", 4, seen.size)
+            assertEquals("a refusal went missing between two identical ones", 3, seen.size)
         }
 }
