@@ -147,7 +147,6 @@ class CaptureViewModel(
      */
     fun onCompleted(outcome: PayInSubmissionState.Succeeded) {
         _uiState.value.payments?.acknowledge()
-        rotateIdempotencyKey(outcome)
         onCompleted(outcome.toPaymentResult())
     }
 
@@ -171,9 +170,9 @@ class CaptureViewModel(
         val transaction = result.transaction
         val text =
             if (transaction == null) {
-                // The same response the payment-method screen calls a failure. A success glyph and a
-                // code here would report a captured payment on a response carrying no transaction.
-                "✗ The response carried no transaction."
+                // An `A` code is an approval, so this is a payment the service took and described
+                // incompletely. Reading it as a failure invites a payer to pay twice.
+                "✓ Code: ${result.code}\nThe response carried no transaction to identify it by."
             } else {
                 // Marked, and carrying the identifiers a reader would otherwise leave the screen for.
                 listOfNotNull(
@@ -190,9 +189,9 @@ class CaptureViewModel(
             it.copy(
                 resultText = text,
                 lastResult = result,
-                // A response can arrive carrying no transaction, which the text above calls a
-                // failure. The flag has to agree with it.
-                submitFailed = transaction == null,
+                // Not a failed submission: the payment was taken. The step below stays where it is because the
+                // screen it pushes describes a transaction, and this response named none.
+                submitFailed = false,
                 isSheetOpen = false,
                 outcomeReady = transaction != null,
             )
@@ -247,18 +246,21 @@ class CaptureViewModel(
         }
 
     /**
-     * A new key for the next attempt, once the service has answered about the payment.
+     * A new key for the next attempt, once the service has declined this one.
      *
-     * An approval and a decline are answers: the service acted, so the next attempt is a second payment and
-     * needs a key of its own. Every other outcome leaves the attempt's fate unknown — a read that timed out, a
-     * 5xx, a 2xx that would not decode, a cancellation — and the key is kept, because a retry carrying it is
+     * A decline is an answer about the payment: the form stays on screen, and a resubmission is a second payment
+     * that needs a key of its own. Every other failure leaves the attempt's fate unknown — a read that timed out,
+     * a 5xx, a 2xx that would not decode, a cancellation — and the key is kept, because a retry carrying it is
      * recognized as the repeat it is instead of charging the payer twice.
      *
-     * A refusal this module raised before sending also keeps the key, which costs nothing: the service never
-     * saw it. `AlreadySubmitting` has to keep it, because the submission still in flight is the one holding it.
+     * A refusal this module raised before sending also keeps the key, which costs nothing: the service never saw
+     * it. `AlreadySubmitting` has to keep it, because the submission still in flight is the one holding it.
+     *
+     * An approval does not come through here. The form leaves the screen when a payment completes, so the way to
+     * a second one is [startOver], which mints its own key.
      */
-    private fun rotateIdempotencyKey(outcome: PayInSubmissionState) {
-        if (outcome is PayInSubmissionState.Failed && !outcome.cause.isAnswerAboutThePayment()) return
+    private fun rotateIdempotencyKey(outcome: PayInSubmissionState.Failed) {
+        if (!outcome.cause.isAnswerAboutThePayment()) return
         _uiState.update { it.copy(operation = captureOf(UUID.randomUUID().toString())) }
     }
 

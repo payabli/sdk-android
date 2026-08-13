@@ -118,15 +118,20 @@ class OutcomeNavigationTest {
     }
 
     @Test
-    fun `capture reports a missing transaction as a failure, as the other screen does`() {
-        // Not navigating is only half of it: the card behind carries a success glyph and a code, so one
-        // response reads as a captured payment here and as an error on the other screen.
+    fun `an approval carrying no transaction reads as an approval, not a failure`() {
+        // An `A` code is a payment the service took. Reading it as a failure invites the payer to pay twice, and
+        // the step list would offer the form again for a capture that had already gone through.
         val model = captureModel()
-        model.onCompleted(storedMethodOutcome())
+
+        model.onCompleted(PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", transaction = null)))
+
         assertTrue(
+            model.uiState.value.resultText,
             model.uiState.value.resultText
-                .startsWith("✗"),
+                .startsWith("✓"),
         )
+        assertFalse("the screen offered the form again", model.uiState.value.submitFailed)
+        assertFalse("a screen describing a transaction was pushed", model.uiState.value.outcomeReady)
     }
 
     @Test

@@ -60,7 +60,10 @@ class CaptureIdempotencyTest {
     }
 
     @Test
-    fun `an answered attempt gives the next one a different key`() {
+    fun `an approved payment keeps its key until the payer asks for another`() {
+        // The form leaves the screen when a payment completes, so nothing can be submitted under this key until
+        // `startOver` mints a new one. Rotating here would hand a fresh key to a retry of a payment that was
+        // taken and described incompletely.
         val model = captureModel()
         val first =
             model.uiState.value.operation
@@ -68,11 +71,10 @@ class CaptureIdempotencyTest {
 
         model.onCompleted(capturedPaymentOutcome())
 
-        assertTrue(
-            "the key outlived the answer it belonged to",
-            first !=
-                model.uiState.value.operation
-                    .keyOrNull(),
+        assertEquals(
+            first,
+            model.uiState.value.operation
+                .keyOrNull(),
         )
     }
 
