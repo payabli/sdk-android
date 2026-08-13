@@ -112,6 +112,19 @@ class PayInInstrumentFieldsTest {
     }
 
     @Test
+    fun `clearing the answer does not change what the next caller is told`() {
+        // A Java caller receives a `java.util.Set` and can clear it. Handed the set behind this function, that
+        // caller empties the requirement every later configuration is checked against.
+        // Captured before the mutation, so this does not lean on a fixture that may initialise after it.
+        val answered = PayInFieldRules.instrumentFields(PayInMethodType.Card).toSet()
+
+        @Suppress("UNCHECKED_CAST")
+        (PayInFieldRules.instrumentFields(PayInMethodType.Card) as MutableSet<PayInField>).clear()
+
+        assertEquals(answered, PayInFieldRules.instrumentFields(PayInMethodType.Card))
+    }
+
+    @Test
     fun `the SDK's own defaults collect everything both instruments need`() {
         val configuration = PayInFormConfiguration()
 

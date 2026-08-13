@@ -57,12 +57,15 @@ public object PayInFieldRules {
      * [missing] answers requiredness for a field that is on the form. These are required of the *form*: the
      * request carries no absent value for any of them, so a method offered without one can never submit.
      * `PayInInstrumentFieldsTest` holds this to what the client refuses, one field at a time.
+     *
+     * A copy per call. Kotlin's read-only `Set` is a `LinkedHashSet` at runtime, so the set behind this is one
+     * a Java caller can clear, and the configuration check reads it on every construction.
      */
     public fun instrumentFields(method: PayInMethodType): Set<PayInField> =
         when (method) {
             PayInMethodType.Card -> CARD_INSTRUMENT
             PayInMethodType.BankAccount -> BANK_INSTRUMENT
-        }
+        }.toSet()
 
     /** How many characters a field will accept, after formatting is stripped. */
     public fun maxLength(field: PayInField): Int? =
