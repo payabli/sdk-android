@@ -15,6 +15,7 @@ import com.payabli.example.app.payment.isSubmitting
 import com.payabli.example.app.payment.toPaymentError
 import com.payabli.example.app.payment.toPaymentResult
 import com.payabli.example.app.ui.payment.PaymentFlowUiState
+import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
@@ -48,7 +49,12 @@ data class PaymentMethodUiState(
     /** What this screen submits through, once the session behind it exists. */
     val payments: PayabliPayInPaymentFlow? = null,
     /** Storing an instrument, which carries no amount. */
-    val operation: PayabliPayInOperation = PayabliPayInOperation.StoreMethod(),
+    val operation: PayabliPayInOperation =
+        PayabliPayInOperation.StoreMethod(
+            // As on the capture screen: a paypoint can refuse a request that names no customer it can
+            // identify, and this stores the method against a new one instead.
+            PayInStoreOptions(forceCustomerCreation = true),
+        ),
 ) : PaymentFlowUiState
 
 class PaymentMethodViewModel(

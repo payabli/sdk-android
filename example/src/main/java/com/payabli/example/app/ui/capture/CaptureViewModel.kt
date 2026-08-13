@@ -73,6 +73,10 @@ private fun captureOf(idempotencyKey: String): PayabliPayInOperation.Capture =
             paymentDetails = PayInPaymentDetails(totalAmount = BigDecimal("1.10"), serviceFee = BigDecimal("0.10")),
             orderId = "android-example",
             idempotencyKey = idempotencyKey,
+            // A paypoint can refuse a payment that names no customer it can identify. The sandbox one takes
+            // this card with a billing email or a customer number and answers 400 E7020 with neither, so the
+            // request does not depend on which of those the payer filled in.
+            forceCustomerCreation = true,
         ),
     )
 
