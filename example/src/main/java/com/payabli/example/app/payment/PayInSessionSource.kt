@@ -24,9 +24,9 @@ import kotlin.coroutines.cancellation.CancellationException
  * diagnostics, not into a log line.
  *
  * **One session for the process, and the SDK is what holds it.** It installs one and refuses a second
- * configuration with `INVALID_CONFIGURATION`, and the access token is part of the identity it compares, so a
- * freshly minted token is a different configuration. What this class keeps is that configuration, so the second
- * screen to ask gets the session the first one installed rather than a rejection.
+ * configuration with `INVALID_CONFIGURATION`. A token is a credential rather than an identity and is not
+ * compared, so a freshly minted one still names the session already installed for that entry point and
+ * environment. Nothing is kept here: asking again is what gets the right answer.
  *
  * Keeping the token current is the provider's job, and it is called for every request that needs one.
  */
