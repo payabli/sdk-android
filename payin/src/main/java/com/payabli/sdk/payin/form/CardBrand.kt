@@ -66,8 +66,8 @@ public enum class CardBrand {
 /**
  * The scheme's name, as the field shows it and as a screen reader announces the mark.
  *
- * Brand names, so they are not translated resources. Written out rather than taken from the enum, which spells
- * three of them as one word: a screen reader announced "AmericanExpress".
+ * Brand names, so they are not translated resources. The enum spells three of them as one word, and a screen
+ * reader reads this value aloud.
  */
 internal fun CardBrand.schemeName(): String =
     when (this) {
