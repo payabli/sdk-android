@@ -4,9 +4,17 @@ A checklist, walked on each attached device. **The expected answer is that the s
 confirms is that the loss is clean and that nothing was written to disk to make it otherwise.
 
 A submission survives a rotation and a trip to the background, and `PayInSubmissionRetentionInstrumentedTest`
-asserts both. It does not survive the process ending: recovering a payment whose outcome is unknown is what
-`PayInException.Interrupted.idempotencyKey` is for. Persisting the state through `SavedStateHandle` would mean
-writing a payment's progress where the system can put it on disk.
+asserts both. It does not survive the process ending, and neither does the key that would make a retry safe:
+`PayInSubmissionState.Failed.retryKey` is part of the state this path loses, so an app coming back from a kill
+holds no record of the attempt at all.
+
+**So a payment interrupted by process death is not recoverable from inside the app.** Whether the service took
+it is answered by reconciling outside it. A host that needs to survive this sets `idempotencyKey` on the
+transaction options itself and persists it before submitting, which is what that field is for; the key the
+flow mints when none is given lives only as long as the flow does.
+
+Persisting the state instead would mean writing a payment's progress where the system can put it on disk, so
+the loss is the design rather than a gap in it.
 
 ## Before starting
 
