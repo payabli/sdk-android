@@ -62,3 +62,18 @@ public enum class CardBrand {
         private fun String.prefix(length: Int): Int = if (this.length < length) -1 else take(length).toInt()
     }
 }
+
+/**
+ * The scheme's name, as the field shows it and as a screen reader announces the mark.
+ *
+ * Brand names, so they are not translated resources. Written out rather than taken from the enum, which spells
+ * three of them as one word: a screen reader announced "AmericanExpress".
+ */
+internal fun CardBrand.schemeName(): String =
+    when (this) {
+        CardBrand.AmericanExpress -> "American Express"
+        CardBrand.DinersClub -> "Diners Club"
+        CardBrand.Jcb -> "JCB"
+        CardBrand.UnionPay -> "UnionPay"
+        CardBrand.Visa, CardBrand.Mastercard, CardBrand.Discover, CardBrand.Unknown -> name
+    }

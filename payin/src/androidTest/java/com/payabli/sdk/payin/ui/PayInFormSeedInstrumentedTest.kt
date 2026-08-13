@@ -28,6 +28,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.TEST_EXPIRY
+import com.payabli.sdk.payin.form.schemeName
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -86,7 +87,7 @@ class PayInFormSeedInstrumentedTest {
     fun aSeededNumberDrawsItsSchemeMark() {
         showCardForm(cardSeed)
 
-        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.schemeName()).assertExists()
     }
 
     @Test
@@ -180,7 +181,7 @@ class PayInFormSeedInstrumentedTest {
         rule.onNodeWithText("4111 1111 1111 1111").assertDoesNotExist()
         CardBrand.entries
             .filter { it != CardBrand.Unknown }
-            .forEach { rule.onNodeWithContentDescription(it.name).assertDoesNotExist() }
+            .forEach { rule.onNodeWithContentDescription(it.schemeName()).assertDoesNotExist() }
     }
 
     private fun showCardForm(

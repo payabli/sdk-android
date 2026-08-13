@@ -21,6 +21,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.form.schemeName
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Rule
 import org.junit.Test
@@ -44,7 +45,7 @@ class PayInBrandBadgeInstrumentedTest {
 
         typeNumber("4111111111111111")
 
-        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.schemeName()).assertExists()
     }
 
     @Test
@@ -60,7 +61,7 @@ class PayInBrandBadgeInstrumentedTest {
             "3530111333300000" to CardBrand.Jcb,
         ).forEach { (number, brand) ->
             typeNumber(number)
-            rule.onNodeWithContentDescription(brand.name).assertExists()
+            rule.onNodeWithContentDescription(brand.schemeName()).assertExists()
         }
     }
 
@@ -68,12 +69,12 @@ class PayInBrandBadgeInstrumentedTest {
     fun theMarkSwapsWhenTheNumberChanges() {
         showCardForm()
         typeNumber("4111111111111111")
-        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.schemeName()).assertExists()
 
         typeNumber("5555555555554444")
 
-        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertDoesNotExist()
-        rule.onNodeWithContentDescription(CardBrand.Mastercard.name).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.schemeName()).assertDoesNotExist()
+        rule.onNodeWithContentDescription(CardBrand.Mastercard.schemeName()).assertExists()
     }
 
     @Test
@@ -84,7 +85,7 @@ class PayInBrandBadgeInstrumentedTest {
 
         CardBrand.entries
             .filter { it != CardBrand.Unknown }
-            .forEach { rule.onNodeWithContentDescription(it.name).assertDoesNotExist() }
+            .forEach { rule.onNodeWithContentDescription(it.schemeName()).assertDoesNotExist() }
     }
 
     @Test
@@ -92,10 +93,10 @@ class PayInBrandBadgeInstrumentedTest {
         showCardForm()
 
         typeNumber("4111111111111111")
-        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertExists()
+        rule.onNodeWithContentDescription(CardBrand.Visa.schemeName()).assertExists()
         numberField().performTextClearance()
 
-        rule.onNodeWithContentDescription(CardBrand.Visa.name).assertDoesNotExist()
+        rule.onNodeWithContentDescription(CardBrand.Visa.schemeName()).assertDoesNotExist()
     }
 
     @Test
@@ -114,7 +115,7 @@ class PayInBrandBadgeInstrumentedTest {
         ).forEach { (number, brand) ->
             typeNumber(number)
             rule
-                .onNodeWithContentDescription(brand.name, useUnmergedTree = true)
+                .onNodeWithContentDescription(brand.schemeName(), useUnmergedTree = true)
                 .assertWidthIsEqualTo(30.dp)
                 .assertHeightIsEqualTo(20.dp)
         }

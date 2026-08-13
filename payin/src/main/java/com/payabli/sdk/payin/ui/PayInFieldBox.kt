@@ -42,6 +42,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.schemeName
 
 /**
  * One field, whichever kind it is.
@@ -299,18 +300,6 @@ private fun CardBrand.markResource(): Int? =
         CardBrand.DinersClub -> R.drawable.payabli_payin_brand_dinersclub
         CardBrand.Jcb -> R.drawable.payabli_payin_brand_jcb
         CardBrand.UnionPay, CardBrand.Unknown -> null
-    }
-
-/**
- * What the field shows for a scheme with no artwork here.
- *
- * A brand name, so it is not a translated resource. Only UnionPay reaches this, and the web surfaces show a
- * generic card glyph for it.
- */
-private fun CardBrand.schemeName(): String =
-    when (this) {
-        CardBrand.UnionPay -> "UnionPay"
-        else -> name
     }
 
 /**
