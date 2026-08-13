@@ -64,4 +64,40 @@ class PayInSensitiveFieldsTest {
             secret.filterNot { it in PayInSensitiveFields.CLEARED_ON_OUTCOME },
         )
     }
+
+    @Test
+    fun `a rejected field the other instrument also draws stays rejected after the switch`() {
+        // Switching tab keeps that box and the value in it, so dropping the rejection would let the same value go
+        // out again without the edit the gate asks for.
+        val rejected =
+            mapOf(
+                PayInField.FirstName to PayInFieldError.NotAccepted,
+                PayInField.CardNumber to PayInFieldError.CardNumberNotValid,
+            )
+
+        val standing = twoMethods.rejectedFieldsOnScreen(rejected, PayInMethodType.BankAccount)
+
+        assertEquals(mapOf(PayInField.FirstName to PayInFieldError.NotAccepted), standing)
+    }
+
+    @Test
+    fun `a rejection naming a field the chosen instrument does not draw is dropped`() {
+        // It would gate a form with no box to correct: the card number is not on screen behind the bank tab.
+        val rejected = mapOf(PayInField.CardNumber to PayInFieldError.CardNumberNotValid)
+
+        assertEquals(
+            emptyMap<PayInField, PayInFieldError>(),
+            twoMethods.rejectedFieldsOnScreen(rejected, PayInMethodType.BankAccount),
+        )
+        assertEquals(rejected, twoMethods.rejectedFieldsOnScreen(rejected, PayInMethodType.Card))
+    }
+
+    /** Both instruments, each drawing its own field and the payer's name. */
+    private val twoMethods =
+        PayInFormConfiguration(
+            allowedMethods = listOf(PayInMethodType.Card, PayInMethodType.BankAccount),
+            defaultMethod = PayInMethodType.Card,
+            cardSections = listOf(PayInFormSection(fields = CARD_INSTRUMENT_FIELDS + PayInField.FirstName)),
+            bankSections = listOf(PayInFormSection(fields = BANK_INSTRUMENT_FIELDS + PayInField.FirstName)),
+        )
 }

@@ -38,6 +38,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.form.PayInSensitiveFields
+import com.payabli.sdk.payin.form.rejectedFieldsOnScreen
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /**
@@ -90,12 +91,12 @@ internal fun PayInFormContent(
             }
         }
 
-    // What the last refusal named, dropped field by field as the payer edits: a marked box whose value has
-    // changed no longer holds the value the service refused.
+    // The fields the service objected to on the last submission, dropped one at a time as the payer edits: a
+    // marked box whose value has changed no longer holds what was rejected.
     //
-    // Keyed on the values as the boxes are. A refusal outliving them marks a value the payer never sent, and
-    // holds the button while it stands.
-    var refused by
+    // Keyed on the values as the boxes are. One outliving them marks a value the payer never sent, and holds
+    // the button while it stands.
+    var rejectedFields by
         remember(configuration, initialValues) { mutableStateOf<Map<PayInField, PayInFieldError>>(emptyMap()) }
 
     // True from the tap until an outcome arrives, which is how a success from this form is told from one the
@@ -119,28 +120,28 @@ internal fun PayInFormContent(
 
     val sections = configuration.sectionsFor(method)
 
-    /** The instrument goes as soon as the submission has an outcome, whichever outcome it is. */
+    /** The instrument goes once the submission has an outcome, approved or refused. */
     fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { typed.remove(it) }
 
     /**
-     * Whether a box still holds a value the service refused.
+     * Whether a box still holds a value the service rejected.
      *
-     * Only fields this instrument draws: a refusal naming one that is not on screen would leave a form nobody
+     * Only fields this instrument draws: a rejection naming one that is not on screen would leave a form nobody
      * can complete.
      */
-    fun anyRefusalStands(chosen: PayInMethodType): Boolean =
-        refused.keys.any { it in configuration.inputFieldsFor(chosen) }
+    fun anyRejectedFieldStands(chosen: PayInMethodType): Boolean =
+        rejectedFields.keys.any { it in configuration.inputFieldsFor(chosen) }
 
-    // Keyed on the state itself, so a second refusal of the same field marks it again. `Succeeded` and
-    // `Failed` are not data classes, so two identical consecutive refusals are two instances and the
+    // Keyed on the state itself, so a second rejection of the same field marks it again. `Succeeded` and
+    // `Failed` are not data classes, so two identical consecutive rejections are two instances and the
     // StateFlow publishes both; `PayInSubmissionStateIdentityTest` pins that.
     LaunchedEffect(submission) {
         // `submissionPending` is what says this form sent the thing that just finished. A flow shared with
         // another screen, or one still holding the previous payment's outcome, would otherwise empty the
-        // boxes a payer is filling in, mark them against a refusal of values they never sent, and report a
+        // boxes a payer is filling in, mark them against a rejection of values they never sent, and report a
         // success they never asked for.
         val outcome = submission.takeIf { submissionPending } ?: return@LaunchedEffect
-        refused = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
+        rejectedFields = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
         // Reported on the composition's dispatcher, which is where this effect runs; moving either call onto
         // the flow's coroutine would need withContext(Main).
         submissionPending = outcome.deliver(::clearInstrument, completed, failed)
@@ -153,11 +154,11 @@ internal fun PayInFormContent(
             style = rememberResolvedStyle(style),
             today = today,
             enabled = !isSubmitting,
-            refused = refused,
+            rejectedFields = rejectedFields,
             refreshClock = { today = ExpiryValue.today() },
         )
 
-    val complete = !anyRefusalStands(method) && configuration.isComplete(typed, method, today)
+    val complete = !anyRejectedFieldStands(method) && configuration.isComplete(typed, method, today)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -168,11 +169,11 @@ internal fun PayInFormContent(
         if (configuration.methodsOffered.size > 1) {
             MethodSelector(configuration.methodsOffered, method, isSubmitting) { chosen ->
                 method = chosen
-                // Whatever the new instrument does not ask for goes, so a card number is neither
-                // reported with a bank submission nor held behind that form.
+                // The new tab draws its own boxes, and a value with no box left is dropped rather than kept
+                // out of sight: a card number typed under the card tab is not sent with a bank payment.
                 typed.keys.retainAll(configuration.inputFieldsFor(chosen).toSet())
-                // The refusal was about the instrument that is no longer on screen.
-                refused = emptyMap()
+                // The same rule for the errors the service sent back, so one whose box is gone goes with it.
+                rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, chosen)
                 onMethodChanged(chosen)
             }
         }
@@ -181,7 +182,7 @@ internal fun PayInFormContent(
             sections.forEach { section ->
                 FormSection(section, method, typed, context) { field, value ->
                     typed[field] = value
-                    refused = refused - field
+                    rejectedFields = rejectedFields - field
                 }
             }
         }
@@ -200,7 +201,11 @@ internal fun PayInFormContent(
                 // The clock lands in state, so a rollover that refuses this submission also disables the
                 // button and shows the expired field its error.
                 today = ExpiryValue.today()
-                if (!justSubmitted && !anyRefusalStands(method) && configuration.isComplete(typed, method, today)) {
+                val readyToSend =
+                    !justSubmitted &&
+                        !anyRejectedFieldStands(method) &&
+                        configuration.isComplete(typed, method, today)
+                if (readyToSend) {
                     justSubmitted = true
                     // Only once it was accepted. Refused, nothing was sent, so nothing is pending.
                     submissionPending = onSubmit(configuration.valuesFor(method, typed))

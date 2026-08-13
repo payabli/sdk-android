@@ -14,7 +14,7 @@ import com.payabli.sdk.payin.form.PayInFormStyle
  * [refreshClock] is the one way out: a field that is about to offer a choice of months asks for
  * [today] to be read again first, so an idle form does not offer one that has gone.
  *
- * [refused] is what the last submission's refusal named. The rules answer for the value in the box;
+ * [rejectedFields] is what the service objected to on the last submission. The rules answer for the value in the box;
  * this answers for the value that was sent.
  */
 @Immutable
@@ -24,6 +24,6 @@ internal data class PayInFormContext(
     val style: PayInFormStyle,
     val today: ExpiryValue,
     val enabled: Boolean,
-    val refused: Map<PayInField, PayInFieldError>,
+    val rejectedFields: Map<PayInField, PayInFieldError>,
     val refreshClock: () -> Unit,
 )

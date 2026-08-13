@@ -50,8 +50,8 @@ import com.payabli.sdk.payin.form.schemeName
  * The caller holds the text; this reports what was typed. It keeps only whether a secret is revealed
  * and whether the picker is open.
  *
- * Two error sources, one path. A rule reads the value in the box and a refusal is about the value that was sent,
- * and the rule wins where both speak: a payer editing a marked field is answering the rule.
+ * Two error sources, one path. A rule reads the value in the box and a rejection is about the value that was
+ * sent, and the rule wins where both speak: a payer editing a marked field is answering the rule.
  */
 @Composable
 internal fun PayInFieldBox(
@@ -61,7 +61,7 @@ internal fun PayInFieldBox(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val error = PayInFieldRules.error(field, value, context.today) ?: context.refused[field]
+    val error = PayInFieldRules.error(field, value, context.today) ?: context.rejectedFields[field]
     val label = PayInStrings.label(field, context.labels)
     val message = error?.let { PayInStrings.error(it) }
 

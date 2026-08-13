@@ -27,3 +27,20 @@ internal object PayInSensitiveFields {
             PayInField.AccountNumber,
         )
 }
+
+/**
+ * Of the errors the service sent back about individual fields, the ones whose box [method] still draws.
+ *
+ * When a submission is refused, the service can say which fields it objected to — a card number it would not
+ * accept, an email it could not use. The form keeps those, marks each box, and will not submit again until the
+ * payer changes one of them, so the same value cannot be sent twice under the message saying it was rejected.
+ *
+ * Switching instrument does not clear that. A payer's name, an email and a billing address are asked for by
+ * both instruments, so those boxes are still on screen holding the value the service objected to, and the
+ * objection still applies to them. An error about a field the new instrument does not draw is dropped, because
+ * it would block a form with no box left to change.
+ */
+internal fun PayInFormConfiguration.rejectedFieldsOnScreen(
+    errors: Map<PayInField, PayInFieldError>,
+    method: PayInMethodType,
+): Map<PayInField, PayInFieldError> = errors.filterKeys { it in inputFieldsFor(method) }
