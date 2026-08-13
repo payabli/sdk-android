@@ -20,7 +20,7 @@ adb shell am start -n com.payabli.example.app/.MainActivity
 
 Copy `secrets.properties.example` to `secrets.properties` and fill it in. It is gitignored and holds no
 credential; the token is minted at runtime by `example-server/`. Any setting can be passed for a single
-run instead: `-Ppayabli.demo.entryPoint=entry3715`.
+run instead: `-Ppayabli.demo.entryPoint=entry0000`.
 
 The default is what the build falls back to when nothing is set. The template prefills two of them,
 and only `payabli.demo.appId` prefills something other than its build default.
