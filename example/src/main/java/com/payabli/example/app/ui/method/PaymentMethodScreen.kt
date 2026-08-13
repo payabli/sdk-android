@@ -57,7 +57,7 @@ fun PaymentMethodScreen(
                     isCheckingBackend = state.isCheckingToken,
                     isSubmitting = submission is PayInSubmissionState.Submitting,
                     submitFailed = state.submitFailed,
-                    finished = state.outcomeReady,
+                    finished = state.finished,
                 ),
             ),
         resultEmptyText = "Nothing stored yet",

@@ -55,7 +55,9 @@ data class PaymentMethodUiState(
             // identify, and this stores the method against a new one instead.
             PayInStoreOptions(forceCustomerCreation = true),
         ),
-) : PaymentFlowUiState
+) : PaymentFlowUiState {
+    override val finished: Boolean get() = storedMethod != null
+}
 
 class PaymentMethodViewModel(
     setup: DemoFormSetup,

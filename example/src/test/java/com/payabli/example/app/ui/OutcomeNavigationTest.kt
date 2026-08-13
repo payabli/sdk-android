@@ -178,6 +178,37 @@ class OutcomeNavigationTest {
     }
 
     @Test
+    fun `the last step stays finished once the signal has been consumed`() {
+        // The signal is cleared as navigation consumes it. Read as progress, that left the step list saying
+        // "waiting" under a payment the screen was still showing the result of.
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        model.outcomeShown()
+
+        assertTrue(model.uiState.value.finished)
+    }
+
+    @Test
+    fun `a stored method leaves its step finished after the signal is consumed`() {
+        val model = methodModel()
+        model.onCompleted(storedMethodOutcome())
+        model.outcomeShown()
+
+        assertTrue(model.uiState.value.finished)
+    }
+
+    @Test
+    fun `a failure leaves the last step unfinished`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        model.outcomeShown()
+
+        model.onFailed(refusedOutcome())
+
+        assertFalse(model.uiState.value.finished)
+    }
+
+    @Test
     fun `consuming the signal clears it, so returning does not push again`() {
         val model = captureModel()
         model.onCompleted(capturedPaymentOutcome())

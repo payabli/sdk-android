@@ -58,7 +58,9 @@ data class CaptureUiState(
      * takes it from the order it is charging for.
      */
     val operation: PayabliPayInOperation = captureOf(UUID.randomUUID().toString()),
-) : PaymentFlowUiState
+) : PaymentFlowUiState {
+    override val finished: Boolean get() = lastResult != null
+}
 
 /**
  * A capture of the demo amount under [idempotencyKey].

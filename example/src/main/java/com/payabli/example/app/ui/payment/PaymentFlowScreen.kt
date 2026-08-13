@@ -50,6 +50,14 @@ import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 interface PaymentFlowUiState {
     val setup: DemoFormSetup
     val resultText: String
+
+    /**
+     * A result arrived and this screen still holds it.
+     *
+     * Read from the payload rather than from the signal that pushed the outcome screen: that signal is cleared
+     * as soon as navigation consumes it, which left the last step reading "waiting" over a completed payment.
+     */
+    val finished: Boolean
     val tokenCheckText: String
     val isCheckingToken: Boolean
     val entryPoint: String
