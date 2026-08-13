@@ -131,6 +131,9 @@ class PaymentMethodViewModel(
      * into some of them, and this panel is on screen and gets copied into bug reports.
      */
     fun onFailed(outcome: PayInSubmissionState.Failed) {
+        // Acknowledged as a success is. The form has delivered it, and a flow left holding a refusal reads as
+        // busy: the token step would refuse every later recheck, including the one a credential failure needs.
+        _uiState.value.payments?.acknowledge()
         record("ERROR paymentMethod\n${outcome.cause}")
         onError(outcome.toPaymentError())
     }

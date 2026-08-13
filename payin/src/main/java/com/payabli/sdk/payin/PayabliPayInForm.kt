@@ -48,7 +48,9 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * @param initialValues what the boxes start with, for a payer whose details the caller already holds. Held
  *   exactly as typed input is, and replacing it starts the form again from the new values.
  * @param onCompleted the service accepted it. Call [PayabliPayInPaymentFlow.acknowledge] once handled.
- * @param onFailed it did not go through, with the typed cause and the fields the refusal named.
+ * @param onFailed it did not go through, with the typed cause and the fields the refusal named. Acknowledge
+ *   this one too: a refusal is retained exactly as a success is, and a flow still holding one is a flow that
+ *   has not finished.
  * @param onMethodChanged the payer switched instrument. The values themselves stay in the form: a card
  *   number and a security code have no reason to cross into a host that no longer submits them.
  */
