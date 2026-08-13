@@ -105,8 +105,8 @@ class SetupViewModel(
                 tokenServer = container.tokenServer,
                 tokenClient = container.tokenClient,
                 readDeviceFacts = container.readDeviceFacts,
-                // The stored-method form, not a fresh copy. The two operations differ only in their summary
-                // section, so either describes the form.
+                // The stored-method form. The capture form differs in more than its summary section: the
+                // stored-method route needs a customer number and collects one, and capture does not.
                 formConfiguration = DemoForms.storePaymentMethod().configuration,
             )
     }

@@ -114,7 +114,9 @@ fun SetupScreen(
 
         Section(
             title = "Card not present",
-            note = "What the payment form on the Save and Capture screens was configured with.",
+            note =
+                "What the form on the Save screen was configured with. Capture collects the same, without the " +
+                    "customer number and with the amount read back.",
         ) {
             // Read from the configuration and the rules, never written out here. A transcribed list
             // would agree with the form today and stop agreeing the first time a field moved.
