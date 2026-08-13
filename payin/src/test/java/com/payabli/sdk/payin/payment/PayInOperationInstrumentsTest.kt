@@ -73,6 +73,18 @@ class PayInOperationInstrumentsTest {
         )
     }
 
+    @Test
+    fun `two authorizations narrow to configurations that compare equal`() {
+        // The form keys the values a payer has typed on the configuration, and `remember` compares its keys with
+        // equals. A host building its operation inline hands over a new instance on every recomposition, so the
+        // narrowed configurations have to be equal or the boxes empty as the payer types.
+        val first = authorize().offering(bothMethods)
+        val second = authorize().offering(bothMethods)
+
+        assertEquals(first, second)
+        assertEquals(first.hashCode(), second.hashCode())
+    }
+
     private fun authorize() = PayabliPayInOperation.Authorize(testOptions())
 
     private fun capture() = PayabliPayInOperation.Capture(testOptions())

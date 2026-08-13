@@ -8,6 +8,7 @@ import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -176,6 +177,33 @@ class PayabliPayInPaymentFlowTest {
             transport.arrived.await()
             transport.release()
             assertEquals("more than one request reached the wire", 1, transport.sent.size)
+        }
+
+    @Test
+    fun `a tap inside the terminal emission is refused, because the guard still holds`() =
+        runTest(timeout = timeout) {
+            // The outcome is published while the single flight is still held. A collector on `Unconfined` runs in
+            // the emitting thread's stack, so its tap lands in that window: the state no longer reads
+            // `Submitting`, and only the guard can say the submission was refused. Told it was accepted, the form
+            // waits for an outcome nothing will publish.
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow = flowOver(transport)
+            var secondTap: Boolean? = null
+
+            val collector =
+                launch(Dispatchers.Unconfined) {
+                    flow.state.collect { state ->
+                        if (state is PayInSubmissionState.Succeeded && secondTap == null) {
+                            secondTap = flow.start(captureOf(), cardForm())
+                        }
+                    }
+                }
+
+            flow.capture(testOptions(), cardForm())
+
+            assertEquals(false, secondTap)
+            assertEquals("a second request reached the wire", 1, transport.count)
+            collector.cancel()
         }
 
     private fun TestScope.flowOver(transport: PayabliTransport): PayabliPayInPaymentFlow =

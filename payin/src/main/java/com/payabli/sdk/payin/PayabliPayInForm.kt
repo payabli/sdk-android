@@ -69,7 +69,11 @@ public fun PayabliPayInForm(
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
     // made from.
-    val offered = remember(operation, configuration) { operation.offering(configuration) }
+    //
+    // Keyed on what the narrowing reads rather than on the operation: a host building its operation inline hands
+    // over a new instance on every recomposition, and this then copies the configuration on each one.
+    val instruments = operation.instruments
+    val offered = remember(instruments, configuration) { operation.offering(configuration) }
 
     PayInFormContent(
         submission = submission,

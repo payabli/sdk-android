@@ -102,12 +102,17 @@ public class PayabliPayInPaymentFlow private constructor(
         operation: PayabliPayInOperation,
         values: PayInFormValues,
     ): Boolean {
-        if (state.value is PayInSubmissionState.Submitting) return false
-        // Undispatched, so the guard is taken and `Submitting` is published before this returns. Dispatched,
-        // two forms on one flow both read a non-submitting state, both are told the submission was accepted,
-        // and both then wait for one outcome.
-        scope.launch(start = CoroutineStart.UNDISPATCHED) { submission.submit(entryPoint, operation, values) }
-        return true
+        // What the single flight answered, not what the state said. The state is published while the guard is
+        // still held, so a caller reading it can be told a submission was accepted that the guard then refused,
+        // and the form would wait for an outcome nothing will publish.
+        //
+        // Undispatched, so the guard is taken and `Submitting` is published before this returns. Dispatched, two
+        // forms on one flow both read a non-submitting state and both are told they were accepted.
+        var reserved = false
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            submission.submit(entryPoint, operation, values) { reserved = it }
+        }
+        return reserved
     }
 
     /**

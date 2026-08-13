@@ -31,6 +31,9 @@ internal class FakePayInTransport(
     private val failure: Throwable? = null,
 ) : PayabliTransport {
     var request: PayabliRequest? = null
+
+    /** How many requests reached this transport, for a test asserting a second one did not. */
+    var count: Int = 0
         private set
 
     var recordedBody: ByteArray? = null
@@ -41,6 +44,7 @@ internal class FakePayInTransport(
         private set
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        count++
         this.request = request
         bodyReference = request.body
         recordedBody = request.body?.copyOf()

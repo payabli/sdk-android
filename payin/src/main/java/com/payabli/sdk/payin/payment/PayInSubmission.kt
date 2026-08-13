@@ -65,8 +65,9 @@ internal class PayInSubmission(
         entryPoint: String,
         operation: PayabliPayInOperation,
         values: PayInFormValues,
+        onReserved: (Boolean) -> Unit = {},
     ): PayInSubmissionState? =
-        perform { retry ->
+        perform(onReserved) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
             // once here, so all three operations carry what the same form collected.
             val entered = PayInEnteredDetails.of(values)
@@ -129,13 +130,20 @@ internal class PayInSubmission(
      * On [dispatcher], because building the body encodes JSON and walks buffers before the transport is reached,
      * and the caller's scope on a payment screen is the main thread.
      */
-    private suspend fun perform(call: suspend (RetryKey) -> PayInSubmissionState): PayInSubmissionState? {
+    private suspend fun perform(
+        onReserved: (Boolean) -> Unit = {},
+        call: suspend (RetryKey) -> PayInSubmissionState,
+    ): PayInSubmissionState? {
+        // Answered before the first suspension, so a caller starting this undispatched learns whether the single
+        // flight was taken rather than inferring it from a state that is published before the guard is released.
         if (!inFlight.tryLock()) {
+            onReserved(false)
             logger.debug(LogField.safe("event", "payin_submission_already_in_flight")) {
                 "a submission is already in flight, so this one was refused"
             }
             return null
         }
+        onReserved(true)
         val retry = RetryKey()
         sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
