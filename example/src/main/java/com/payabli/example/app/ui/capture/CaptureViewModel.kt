@@ -121,7 +121,9 @@ class CaptureViewModel(
                     isCheckingToken = false,
                     tokenCheckText = started.text,
                     backendReachable = started.isReady,
-                    payments = started.payments,
+                    // A payment can start while the recheck above is suspended. Replacing the flow it went
+                    // out on orphans its outcome and lets the screen charge again.
+                    payments = it.payments?.takeIf { flow -> flow.isSubmitting() } ?: started.payments,
                 )
             }
         }
