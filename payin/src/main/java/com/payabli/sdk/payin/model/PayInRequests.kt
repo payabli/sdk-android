@@ -106,10 +106,10 @@ public class PayInValidationOptions(
 )
 
 /**
- * Everything a transaction carries except the instrument being charged.
+ * What to charge, who to charge it for, and how the service should treat the request.
  *
- * The parallel of [PayInStoreOptions]. A payment form supplies the instrument and this is the rest, so the
- * two halves meet in one place and a caller configuring a screen never holds a card number.
+ * The instrument is not here: a payment form collects that and hands it over at submission, so a caller
+ * configuring a screen ahead of time holds no card number.
  *
  * The flags and headers are the service's own parameters.
  */
@@ -124,16 +124,9 @@ public class PayInTransactionOptions(
     public val subdomain: String? = null,
     public val subscriptionId: Long? = null,
     /**
-     * Makes a repeated request return the first one's result instead of acting again.
+     * Makes a repeated request return the first one's result instead of charging again.
      *
-     * One key covers both operations it serves: a capture repeated without one charges twice, and an
-     * authorization repeated without one places a second hold on the payer's funds.
-     *
-     * Sent as the `idempotencyKey` header, which is the spelling the service reads. **Not** a client-side
-     * retry: nothing in this module retries either call, and this is what makes a caller's own retry safe.
-     *
-     * Optional because the payment flow mints one per attempt when it is absent, so an interrupted submission
-     * always names a key a retry can use. Set it to keep control of what a repeat means.
+     * Sent as the `idempotencyKey` header. Optional: the payment flow mints one per attempt when it is absent.
      */
     public val idempotencyKey: String? = null,
     public val achValidation: Boolean? = null,

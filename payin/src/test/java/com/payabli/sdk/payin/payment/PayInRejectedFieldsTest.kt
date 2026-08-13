@@ -16,7 +16,7 @@ import org.junit.Test
  * One case per field a refusal can name. A missing case is a payer reading that their card number is wrong
  * beside four unmarked boxes.
  */
-class PayInRefusedFieldsTest {
+class PayInRejectedFieldsTest {
     @Test
     fun `every name this module refuses under is a field the form draws`() {
         val expected =
@@ -48,7 +48,7 @@ class PayInRefusedFieldsTest {
             assertEquals(
                 name,
                 mapOf(field to PayInFieldError.NotAccepted),
-                PayInRefusedFields.of(PayInException.InvalidInput(name, "not valid")),
+                PayInRejectedFields.of(PayInException.InvalidInput(name, "not valid")),
             )
         }
     }
@@ -61,7 +61,7 @@ class PayInRefusedFieldsTest {
             assertEquals(
                 name,
                 mapOf(PayInField.CardNumber to PayInFieldError.NotAccepted),
-                PayInRefusedFields.of(validation(name)),
+                PayInRejectedFields.of(validation(name)),
             )
         }
     }
@@ -70,8 +70,8 @@ class PayInRefusedFieldsTest {
     fun `a refusal naming something the payer never typed marks nothing`() {
         // The entry point is configuration, a stored method identifier is a token, and `$` is the whole body.
         listOf("entryPoint", "paymentMethod.storedMethodId", "$", "somethingElse").forEach { name ->
-            assertTrue(name, PayInRefusedFields.of(validation(name)).isEmpty())
-            assertTrue(name, PayInRefusedFields.of(PayInException.InvalidInput(name, "not valid")).isEmpty())
+            assertTrue(name, PayInRejectedFields.of(validation(name)).isEmpty())
+            assertTrue(name, PayInRejectedFields.of(PayInException.InvalidInput(name, "not valid")).isEmpty())
         }
     }
 
@@ -93,7 +93,7 @@ class PayInRefusedFieldsTest {
                 PayInField.CardNumber to PayInFieldError.NotAccepted,
                 PayInField.CardPostalCode to PayInFieldError.NotAccepted,
             ),
-            PayInRefusedFields.of(failure),
+            PayInRejectedFields.of(failure),
         )
     }
 
@@ -101,10 +101,10 @@ class PayInRefusedFieldsTest {
     fun `a refusal that names no field at all marks nothing`() {
         // A decline is about the account rather than about a value on the form, and neither is a network failure.
         val decline = PayInException.Refused(PayInFailure("D1001", "Insufficient funds", null, "retry", 200))
-        assertTrue(PayInRefusedFields.of(decline).isEmpty())
-        assertTrue(PayInRefusedFields.of(PayInException.InvalidInput(null, "not valid")).isEmpty())
-        assertTrue(PayInRefusedFields.of(PayabliValidationException(httpStatus = 400)).isEmpty())
-        assertTrue(PayInRefusedFields.of(IllegalStateException("something else")).isEmpty())
+        assertTrue(PayInRejectedFields.of(decline).isEmpty())
+        assertTrue(PayInRejectedFields.of(PayInException.InvalidInput(null, "not valid")).isEmpty())
+        assertTrue(PayInRejectedFields.of(PayabliValidationException(httpStatus = 400)).isEmpty())
+        assertTrue(PayInRejectedFields.of(IllegalStateException("something else")).isEmpty())
     }
 
     private fun validation(field: String): PayabliValidationException =

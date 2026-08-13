@@ -7,15 +7,15 @@ import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.model.PayInException
 
 /**
- * Which form field a refusal was about.
+ * Which form field the service objected to.
  *
- * Two refusals name a field, in the same spelling: this module's own, which carries the service's name for the
- * value it would not send, and a validation 400, whose `errors` map is keyed by the parameter the service
- * refused. Both are translated here, so a refusal lands on the field that caused it.
+ * Two failures name a field, in the same spelling: this module's own refusal, which carries the service's name
+ * for the value it would not send, and a validation 400, whose `errors` map is keyed by the parameter the
+ * service objected to. Both are translated here, so the message lands on the box that caused it.
  *
  * A decline, a network failure and a service error name no field and produce nothing.
  */
-internal object PayInRefusedFields {
+internal object PayInRejectedFields {
     /** What the failure blamed, per field, or empty when it blamed nothing this form draws. */
     fun of(failure: Throwable): Map<PayInField, PayInFieldError> =
         when (failure) {
@@ -43,7 +43,7 @@ internal object PayInRefusedFields {
      * The wire spellings [PayInRoutes] already holds, lower cased.
      *
      * `entryPoint` and the names a stored method is charged by are absent: a payer types none of them, so a
-     * refusal naming one has no box to mark and reaches the caller on the exception alone.
+     * rejection naming one has no box to mark and reaches the caller on the exception alone.
      */
     private val FIELDS: Map<String, PayInField> =
         mapOf(
