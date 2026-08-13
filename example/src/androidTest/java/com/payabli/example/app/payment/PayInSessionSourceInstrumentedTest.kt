@@ -19,7 +19,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
-import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -119,13 +119,10 @@ class PayInSessionSourceInstrumentedTest {
     }
 
     @Test
-    fun cACancelledInstallLeavesTheConfigurationRemembered() {
-        // The window the other two do not reach: `initialize` installs the session before it returns, so a
-        // cancellation arriving after that leaves one installed process-wide. What decides whether the app
-        // recovers is whether this source still knows which configuration that was.
-        //
-        // Read off the configuration handed to the install rather than off the SDK's answer, so this needs no
-        // real session installed and leaves none behind for whatever runs next.
+    fun cAFreshTokenReachesTheSameInstalledSession() {
+        // A cancelled install leaves a session installed process-wide and this source holding no record of
+        // which configuration it was. The next attempt mints a fresh token, and a token is not part of the
+        // identity the SDK compares, so it reaches that same session rather than being refused as a second one.
         runBlocking {
             val attempted = CopyOnWriteArrayList<PayabliConfig>()
             val installing = CompletableDeferred<Unit>()
@@ -137,7 +134,7 @@ class PayInSessionSourceInstrumentedTest {
                         installing.complete(Unit)
                         awaitCancellation()
                     } else {
-                        Result.failure(IllegalStateException("not installed, and not needed here"))
+                        PayabliSession.initialize(config, HostBindings(context()))
                     }
                 }
 
@@ -147,17 +144,11 @@ class PayInSessionSourceInstrumentedTest {
             job.cancelAndJoin()
 
             holdOpen = false
-            source.session()
+            val second = source.session()
 
-            // At least two: the cancelled one, and the retry that follows it. A third is allowed and is what
-            // happened here — this substitute refuses the retry, so the source falls through and mints a fresh
-            // token, which is the recovery path for a configuration that genuinely cannot start.
-            assertTrue("the second call never reached the install: $attempted", attempted.size >= 2)
-            // The assertion that matters. A fresh token is a different configuration, which the SDK refuses
-            // while the session the cancelled attempt installed is still healthy, so the retry has to carry the
-            // token the cancelled attempt used.
-            assertEquals(
-                "a cancelled attempt made the next one mint a new token instead of retrying its own",
+            assertTrue("the second attempt was refused: $second", second.isSuccess)
+            assertNotEquals(
+                "the test server handed out the same token twice, so this proves nothing",
                 attempted[0].accessToken,
                 attempted[1].accessToken,
             )

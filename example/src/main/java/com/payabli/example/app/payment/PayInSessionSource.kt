@@ -52,33 +52,18 @@ class PayInSessionSource(
 ) {
     private val lock = Mutex()
 
-    /** The configuration a session was last started from, so the same one can be handed back. */
-    private var started: PayabliConfig? = null
-
     /**
      * An initialized session, or the reason there is none.
      *
-     * `initialize` is called every time rather than a session being held here. With the same configuration it
-     * answers with the session it already installed and does no work; once that session has become
-     * unrecoverable, the same call installs a fresh one, which is the recovery the SDK documents. A session
-     * kept in a field instead was handed out after it had died, so the app could not submit again until the
-     * process restarted, however healthy the backend had become.
+     * A token is minted and `initialize` is called every time, and no session is held here: the SDK owns which
+     * session a call means, so asking it is always current and caching it here never is.
      *
      * The failure is a `String` because it goes to a demo screen beside the step it belongs to. A real
      * integration reads `PayabliException.code` instead.
      */
-    suspend fun session(): Result<PayabliSession> =
-        lock.withLock {
-            started?.let { config ->
-                start(config).onSuccess { return@withLock Result.success(it) }
-            }
-            // No configuration yet, or the one held could not start a session: mint a token and build one.
-            // A token minted after a rejection is a different configuration, which the SDK accepts because
-            // the session it replaces is finished. `build` records the configuration itself.
-            build().map { it.second }
-        }
+    suspend fun session(): Result<PayabliSession> = lock.withLock { build() }
 
-    private suspend fun build(): Result<Pair<PayabliConfig, PayabliSession>> {
+    private suspend fun build(): Result<PayabliSession> {
         if (configuration.entryPoint.isBlank()) {
             return Result.failure(IllegalStateException("No entry point is configured, so nothing can be sent."))
         }
@@ -97,17 +82,10 @@ class PayInSessionSource(
                 },
             )
 
-        // Recorded before the attempt rather than after it. `initialize` installs the session process-wide
-        // before it returns, so anything that stops this coroutine in between — a screen closing, its
-        // ViewModel clearing — would leave a session installed with nothing here remembering which
-        // configuration it was. Every later attempt would then mint a fresh token, build a configuration that
-        // is a different one by definition, and be refused as a second session for the life of the process.
-        started = config
-
         // Not runCatching: that catches CancellationException as well, and turning cancellation into an
         // ordinary startup failure reports an error for a screen that simply went away.
         return try {
-            start(config).map { session -> config to session }
+            start(config)
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Exception) {

@@ -271,21 +271,22 @@ public class PayabliSession private constructor(
     /**
      * The parts of a configuration that decide whether two calls mean the same session.
      *
-     * A value comparison rather than `PayabliConfig.equals`, which that type deliberately lacks: making it a
-     * data class would generate a `toString` and undo the redaction keeping an access token out of a log.
+     * `PayabliConfig` is never compared and has no `equals`: a data class would generate a `toString` and undo
+     * the redaction that keeps an access token out of a log. This type holds the parts that decide, and
+     * compares those by value.
      *
-     * The token provider is compared by **presence, not identity**. A host writing the callback inline
-     * passes a different object every call, so comparing references would make [initialize] never idempotent
-     * for the most ordinary way of writing it.
+     * A token is a credential rather than an identity, so it is not one of them. Two rules for whoever changes
+     * this list: nothing secret joins it, and a callback is compared by whether one was supplied rather than by
+     * which object it is, since an inline one is new on every call and would stop [initialize] being idempotent
+     * for the ordinary way of writing it.
      *
-     * `internal` rather than private so its [toString] can be tested: it holds an access token and an
-     * entry point, and `PayabliConfig` withholds both for reasons that do not stop applying because the
-     * fields were copied into another type.
+     * `internal` rather than private so its [toString] can be tested: it holds an entry point, and
+     * `PayabliConfig` withholds that for reasons that do not stop applying because the field was copied into
+     * another type.
      */
     internal class ConfigIdentity(
         config: PayabliConfig,
     ) {
-        private val accessToken = config.accessToken
         private val entryPoint = config.entryPoint
         private val environment = config.environment
         private val telemetryEnabled = config.telemetryEnabled
@@ -293,15 +294,13 @@ public class PayabliSession private constructor(
 
         override fun equals(other: Any?): Boolean =
             other is ConfigIdentity &&
-                accessToken == other.accessToken &&
                 entryPoint == other.entryPoint &&
                 environment == other.environment &&
                 telemetryEnabled == other.telemetryEnabled &&
                 hasTokenProvider == other.hasTokenProvider
 
         override fun hashCode(): Int {
-            var result = accessToken.hashCode()
-            result = 31 * result + entryPoint.hashCode()
+            var result = entryPoint.hashCode()
             result = 31 * result + environment.hashCode()
             result = 31 * result + telemetryEnabled.hashCode()
             result = 31 * result + hasTokenProvider.hashCode()
@@ -311,9 +310,8 @@ public class PayabliSession private constructor(
         /**
          * Carries no credential and no identifier, matching `PayabliConfig.toString`.
          *
-         * The entry point is withheld as well as the token: it names a specific merchant, and this string
-         * reaches exception messages and crash reports. It is the same rule and the same reason, and it
-         * applies here because this type holds the same two fields.
+         * The entry point is withheld: it names a specific merchant, and this string reaches exception
+         * messages and crash reports. It is the same rule and the same reason as `PayabliConfig`'s.
          */
         override fun toString(): String =
             "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled, " +
