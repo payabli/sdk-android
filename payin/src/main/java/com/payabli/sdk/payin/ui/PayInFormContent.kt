@@ -100,12 +100,9 @@ internal fun PayInFormContent(
         remember(configuration, initialValues) { mutableStateOf<Map<PayInField, PayInFieldError>>(emptyMap()) }
 
     // True from the tap until an outcome arrives, which is how a success from this form is told from one the
-    // host was already holding.
-    //
-    // Saveable, because the flow is the host's and outlives this composition. Held in `remember`, a rotation
-    // mid-submission reset it to false, the terminal state then failed the check below, and neither
-    // `onCompleted` nor `onFailed` ever fired for a payment the service had taken.
-    var submissionPending by rememberSaveable(configuration) { mutableStateOf(false) }
+    // host was already holding. Saveable and unkeyed: neither a rotation nor a new configuration changes which
+    // form sent the request in flight, and a restored value is cleared by the `Idle` arm of `deliver`.
+    var submissionPending by rememberSaveable { mutableStateOf(false) }
 
     // `enabled` only stops the second tap once the state has reached Submitting and the button has recomposed,
     // which is a frame away. Two taps inside that frame are two payments. The latch clears itself on the next
