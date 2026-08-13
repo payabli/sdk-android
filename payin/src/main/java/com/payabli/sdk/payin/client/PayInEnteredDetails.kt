@@ -13,6 +13,11 @@ import com.payabli.sdk.payin.model.PayInCustomerData
  *
  * A configured customer and a typed one meet where the body is written, and the typed value wins for the field
  * it names, because a payer editing the box is the later of the two.
+ *
+ * **A blank box leaves a configured value standing rather than deleting it.** Of the six fields here, four are
+ * ones the form refuses to submit empty, so this can only arise for the customer number and the method
+ * description. A caller configuring a customer number has named who the payment belongs to, and an empty
+ * optional box is not an instruction to detach it from them.
  */
 internal class PayInEnteredDetails(
     val firstName: String? = null,

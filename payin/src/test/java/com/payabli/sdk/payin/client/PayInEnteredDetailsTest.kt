@@ -100,6 +100,27 @@ class PayInEnteredDetailsTest {
     }
 
     @Test
+    fun `an optional box cleared by the payer leaves the configured value standing`() {
+        // The chosen reading of a blank box, and the only two fields it can arise for: the form refuses to
+        // submit the other four empty. A caller configuring a customer number has named who the payment belongs
+        // to, and an empty box is not an instruction to detach it from them.
+        val configured = PayInCustomerData(customerNumber = "host-4471", firstName = "Ada", lastName = "Lovelace")
+        val cleared =
+            PayInEnteredDetails.of(
+                PayInFormValues(
+                    PayInMethodType.Card,
+                    mapOf(
+                        PayInField.FirstName to "Ada",
+                        PayInField.LastName to "Lovelace",
+                        PayInField.CustomerNumber to "   ",
+                    ),
+                ),
+            )
+
+        assertEquals("host-4471", configured.toBody(cleared)?.customerNumber)
+    }
+
+    @Test
     fun `a configured customer with nothing typed is carried as it stands`() {
         val configured = PayInCustomerData(firstName = "Configured", customerId = 77L)
 
