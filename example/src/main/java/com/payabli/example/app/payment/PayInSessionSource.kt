@@ -10,6 +10,7 @@ import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Where this app's SDK session comes from.
@@ -37,6 +38,17 @@ class PayInSessionSource(
      */
     private val tokenClient: () -> TokenServerClient,
     private val configuration: DemoConfiguration,
+    /**
+     * Installing the session, substitutable for the reason [tokenClient] is.
+     *
+     * A test holds a startup open here and cancels inside it. The rule below — that a cancellation unwinds
+     * rather than becoming a failed `Result` — cannot be observed any other way: `initialize` returns too
+     * quickly to interrupt from outside, so a test cancelling during the token request would pass whether the
+     * rule held or not.
+     */
+    private val startSession: suspend (PayabliConfig) -> Result<PayabliSession> = { config ->
+        PayabliSession.initialize(config, HostBindings(appContext))
+    },
 ) {
     private val lock = Mutex()
 
@@ -62,8 +74,8 @@ class PayInSessionSource(
             }
             // No configuration yet, or the one held could not start a session: mint a token and build one.
             // A token minted after a rejection is a different configuration, which the SDK accepts because
-            // the session it replaces is finished.
-            build().onSuccess { started = it.first }.map { it.second }
+            // the session it replaces is finished. `build` records the configuration itself.
+            build().map { it.second }
         }
 
     private suspend fun build(): Result<Pair<PayabliConfig, PayabliSession>> {
@@ -72,7 +84,7 @@ class PayInSessionSource(
         }
         val token = tokenClient().mintAccessToken() ?: return Result.failure(IllegalStateException(NO_TOKEN))
 
-        return runCatching {
+        val config =
             PayabliConfig(
                 accessToken = token,
                 entryPoint = configuration.entryPoint,
@@ -84,11 +96,26 @@ class PayInSessionSource(
                     tokenClient().mintAccessToken() ?: throw IllegalStateException(NO_TOKEN)
                 },
             )
-        }.mapCatching { config -> config to start(config).getOrThrow() }
+
+        // Recorded before the attempt rather than after it. `initialize` installs the session process-wide
+        // before it returns, so anything that stops this coroutine in between — a screen closing, its
+        // ViewModel clearing — would leave a session installed with nothing here remembering which
+        // configuration it was. Every later attempt would then mint a fresh token, build a configuration that
+        // is a different one by definition, and be refused as a second session for the life of the process.
+        started = config
+
+        // Not runCatching: that catches CancellationException as well, and turning cancellation into an
+        // ordinary startup failure reports an error for a screen that simply went away.
+        return try {
+            start(config).map { session -> config to session }
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            Result.failure(failure)
+        }
     }
 
-    private suspend fun start(config: PayabliConfig): Result<PayabliSession> =
-        PayabliSession.initialize(config, HostBindings(appContext))
+    private suspend fun start(config: PayabliConfig): Result<PayabliSession> = startSession(config)
 
     private companion object {
         const val NO_TOKEN = "The token server returned no access token."
