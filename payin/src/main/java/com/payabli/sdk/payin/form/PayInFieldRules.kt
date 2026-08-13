@@ -51,6 +51,31 @@ public object PayInFieldRules {
             PayInField.AccountHolder,
         )
 
+    /** Everything a card request carries and a bank one does not. */
+    private val CARD_ONLY = CARD_INSTRUMENT
+
+    /** The same for a bank request. Wider than [BANK_INSTRUMENT]: these four are carried but optional. */
+    private val BANK_ONLY =
+        BANK_INSTRUMENT +
+            setOf(
+                PayInField.AccountType,
+                PayInField.AccountHolderType,
+                PayInField.SecCode,
+                PayInField.DeviceId,
+            )
+
+    /**
+     * The fields the other instrument carries, which this method's request has nowhere to put.
+     *
+     * A box for one of these is collected from the payer and then dropped, and a routing number is not
+     * something to collect and drop.
+     */
+    internal fun fieldsNotCarriedBy(method: PayInMethodType): Set<PayInField> =
+        when (method) {
+            PayInMethodType.Card -> BANK_ONLY
+            PayInMethodType.BankAccount -> CARD_ONLY
+        }
+
     /**
      * The fields an instrument of this method cannot be built without, whichever fields a form renders.
      *

@@ -43,15 +43,15 @@ class PaymentFormSummaryTest {
                 cardSections =
                     storeMethod.cardSections.map { section ->
                         if (section.title == "Card Information") {
-                            section.copy(fields = section.fields + PayInField.RoutingNumber)
+                            section.copy(fields = section.fields + PayInField.BillingPostalCode)
                         } else {
                             section
                         }
                     },
             )
 
-        assertTrue(rowsOf(widened)["Card fields"]!!.contains(PayInField.RoutingNumber.fieldName))
-        assertTrue(!rowsOf(storeMethod)["Card fields"]!!.contains(PayInField.RoutingNumber.fieldName))
+        assertTrue(rowsOf(widened)["Card fields"]!!.contains(PayInField.BillingPostalCode.fieldName))
+        assertTrue(!rowsOf(storeMethod)["Card fields"]!!.contains(PayInField.BillingPostalCode.fieldName))
     }
 
     @Test

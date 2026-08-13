@@ -74,6 +74,24 @@ class PayInOperationInstrumentsTest {
     }
 
     @Test
+    fun `only a stored method can ask for a method description`() {
+        // Every other operation sends the typed text nowhere.
+        val described =
+            PayInFormConfiguration(
+                allowedMethods = listOf(PayInMethodType.Card),
+                cardSections =
+                    PayInFormConfiguration.defaultCardSections() +
+                        PayInFormSection(fields = listOf(PayInField.MethodDescription)),
+            )
+
+        assertSame(described, PayabliPayInOperation.StoreMethod().offering(described))
+        listOf(capture(), authorize()).forEach { operation ->
+            val refusal = runCatching { operation.offering(described) }.exceptionOrNull()
+            assertTrue("$operation drew a box it would drop", refusal is IllegalArgumentException)
+        }
+    }
+
+    @Test
     fun `two authorizations narrow to configurations that compare equal`() {
         // The form keys the values a payer has typed on the configuration, and `remember` compares its keys with
         // equals. A host building its operation inline hands over a new instance on every recomposition, so the

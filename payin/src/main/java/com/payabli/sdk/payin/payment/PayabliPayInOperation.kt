@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInStoreOptions
@@ -57,6 +58,14 @@ internal fun PayabliPayInOperation.offering(configuration: PayInFormConfiguratio
     val offered = configuration.methodsOffered.filter { it in instruments }
     require(offered.isNotEmpty()) {
         "$this cannot carry ${configuration.methodsOffered.joinToString()}: it takes ${instruments.joinToString()}"
+    }
+
+    // Only a stored method has a description. On any other operation the box is filled in and dropped.
+    if (this !is PayabliPayInOperation.StoreMethod) {
+        val described = offered.filter { PayInField.MethodDescription in configuration.inputFieldsFor(it) }
+        require(described.isEmpty()) {
+            "$this cannot carry ${PayInField.MethodDescription}: only storing a method does"
+        }
     }
     if (offered == configuration.methodsOffered) return configuration
     return configuration.copy(

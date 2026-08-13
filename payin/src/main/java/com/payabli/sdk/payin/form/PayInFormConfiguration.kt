@@ -131,6 +131,13 @@ public class PayInFormConfiguration(
                 "${typed.joinToString()} cannot be typed into: the amounts come from the operation"
             }
         }
+
+        // The other instrument's fields, for the same reason: a routing number in a card form is collected
+        // from the payer and then dropped.
+        methods.forEach { method ->
+            val foreign = inputFieldsFor(method).filter { it in PayInFieldRules.fieldsNotCarriedBy(method) }
+            require(foreign.isEmpty()) { "a $method request cannot carry ${foreign.joinToString()}" }
+        }
     }
 
     /** The allowed methods, with duplicates dropped and never empty. */
