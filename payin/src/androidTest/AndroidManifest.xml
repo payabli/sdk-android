@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Test APK only, as `:core`'s is. This manifest is never merged into a consumer, so the library manifest stays
+  empty and the host-declares-INTERNET position is unaffected: an app embedding `:payin` still declares its own
+  permission. The live tier mints a token and submits real payments over HTTPS, so the test process genuinely
+  needs INTERNET, and without it every one of those tests fails as `SecurityException` rather than as anything
+  about a payment.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

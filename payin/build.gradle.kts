@@ -22,6 +22,37 @@ android {
         minSdk = 23
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The live tier, which sends real requests to a real environment and needs credentials no repository
+        // holds. Configured, they reach the test as runner arguments; absent, the class is excluded by name so
+        // the run reports no skip, which is how `:taptopay` gates its real Play Integrity test and for the same
+        // reason: a standing skip cannot be told apart from a regression that started skipping.
+        //
+        // Set these in ~/.gradle/gradle.properties, never here, and one environment per invocation because the
+        // SDK installs one session per process:
+        //
+        //   ./gradlew :payin:connectedDebugAndroidTest \
+        //     -Ppayabli.liveTest.environment=sandbox -Ppayabli.liveTest.entryPoint=<entry> \
+        //     -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret>
+        val liveFlows = "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"
+        val liveTest =
+            listOf("environment", "entryPoint", "clientId", "clientSecret")
+                .associateWith { providers.gradleProperty("payabli.liveTest.$it").orNull }
+        if (liveTest.values.none { it == null }) {
+            liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
+
+            // One flow excluded on its own, by method, because whether a paypoint's connector takes an ACH debit
+            // is its configuration rather than anything this SDK sends: a paypoint that refuses them refuses
+            // every request shape, so the flow would be permanently red there against a working client. Set
+            // `payabli.liveTest.achDebits=true` for a paypoint that accepts them. Excluded rather than skipped,
+            // as the tiers are, so the counts stay honest.
+            if (providers.gradleProperty("payabli.liveTest.achDebits").orNull != "true") {
+                testInstrumentationRunnerArguments["notClass"] =
+                    "$liveFlows#capturingABankAccountThePayerEntered"
+            }
+        } else {
+            testInstrumentationRunnerArguments["notClass"] = liveFlows
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
