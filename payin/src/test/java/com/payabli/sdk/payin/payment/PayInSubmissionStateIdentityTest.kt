@@ -33,7 +33,16 @@ class PayInSubmissionStateIdentityTest {
 
     @Test
     fun `two refusals describing the same thing are not equal`() {
-        assertNotEquals("a data class here would swallow the second decline", declined(), declined())
+        // One cause and one field map, shared. Built twice, the assertion passes on the causes differing and
+        // says nothing about the state that holds them.
+        val cause = PayInException.Refused(PayInFailure("D1001", "Insufficient funds", null, "retry", 200))
+        val fields = mapOf(PayInField.CardNumber to PayInFieldError.NotAccepted)
+
+        assertNotEquals(
+            "a data class here would swallow the second decline",
+            PayInSubmissionState.Failed(cause, fields),
+            PayInSubmissionState.Failed(cause, fields),
+        )
     }
 
     @Test

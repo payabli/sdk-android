@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.junit.Assert.assertEquals
@@ -165,6 +166,7 @@ class PayInFormStyleTest {
                     spacing = spacing,
                     selectedContainer = Color(0xFF00FF00),
                     selectedContent = Color(0xFFFF00FF),
+                    brandMark = DpSize(7.dp, 3.dp),
                 ),
             )
 
@@ -174,6 +176,7 @@ class PayInFormStyleTest {
         assertEquals(spacing, style.spacing)
         assertEquals(Color(0xFF00FF00), style.selectedContainer)
         assertEquals(Color(0xFFFF00FF), style.selectedContent)
+        assertEquals(DpSize(7.dp, 3.dp), style.brandMark)
     }
 
     @Test
