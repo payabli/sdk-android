@@ -41,6 +41,7 @@ internal class PayInSubmission(
     private val moneyIn: MoneyInClient,
     private val storage: TokenStorageClient,
     private val dispatcher: CoroutineDispatcher,
+    private val newIdempotencyKey: () -> String,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
 ) {
     /**
@@ -81,17 +82,17 @@ internal class PayInSubmission(
 
                 is PayabliPayInOperation.Capture ->
                     PayInFormInstrument.usePaymentMethod(values) { method ->
-                        retry.key = operation.options.idempotencyKey
+                        val key = retry.reserve(operation.options.idempotencyKey)
                         PayInSubmissionState.Succeeded.Payment(
-                            moneyIn.capture(entryPoint, PayInRequest(method, operation.options), entered),
+                            moneyIn.capture(entryPoint, PayInRequest(method, operation.options), entered, key),
                         )
                     }
 
                 is PayabliPayInOperation.Authorize ->
                     PayInFormInstrument.usePaymentMethod(values) { method ->
-                        retry.key = operation.options.idempotencyKey
+                        val key = retry.reserve(operation.options.idempotencyKey)
                         PayInSubmissionState.Succeeded.Payment(
-                            moneyIn.authorize(entryPoint, PayInRequest(method, operation.options), entered),
+                            moneyIn.authorize(entryPoint, PayInRequest(method, operation.options), entered, key),
                         )
                     }
             }
@@ -106,8 +107,8 @@ internal class PayInSubmission(
      */
     suspend fun captureAuthorized(request: PayInAuthorizedRequest): PayInSubmissionState? =
         perform { retry ->
-            retry.key = request.idempotencyKey
-            PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request))
+            val key = retry.reserve(request.idempotencyKey)
+            PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
         }
 
     /**
@@ -189,8 +190,18 @@ internal class PayInSubmission(
      * Read only when a submission is canceled, which is the one outcome that cannot say whether the service
      * acted. The caller's own request carries the key, so it is known only once that has been built.
      */
-    private class RetryKey {
+    private inner class RetryKey {
         var key: String? = null
+            private set
+
+        /**
+         * The key this attempt sends: [supplied] when the caller set one, otherwise a new one.
+         *
+         * Minted here rather than left absent because a canceled or timed-out attempt may already have moved
+         * funds, and a caller with no key cannot retry without risking a second charge. One key per attempt, so
+         * a retry the caller decides to make is the same request and a second payment is a second key.
+         */
+        fun reserve(supplied: String?): String = (supplied ?: newIdempotencyKey()).also { key = it }
     }
 
     private companion object {

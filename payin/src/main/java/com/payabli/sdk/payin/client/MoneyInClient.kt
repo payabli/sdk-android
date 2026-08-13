@@ -57,6 +57,7 @@ internal class MoneyInClient(
         entryPoint: String,
         request: PayInRequest,
         entered: PayInEnteredDetails = PayInEnteredDetails.NONE,
+        idempotencyKey: String? = request.options.idempotencyKey,
     ): PayInResult {
         validate(entryPoint, request)
         return send(
@@ -66,6 +67,7 @@ internal class MoneyInClient(
             entryPoint = entryPoint,
             entered = entered,
             allowsAchValidation = true,
+            idempotencyKey = idempotencyKey,
         )
     }
 
@@ -79,6 +81,7 @@ internal class MoneyInClient(
         entryPoint: String,
         request: PayInRequest,
         entered: PayInEnteredDetails = PayInEnteredDetails.NONE,
+        idempotencyKey: String? = request.options.idempotencyKey,
     ): PayInResult {
         if (!request.paymentMethod.isAuthorizable) {
             throw PayInException.InvalidInput("paymentMethod", "Only card details can be authorized")
@@ -92,6 +95,7 @@ internal class MoneyInClient(
             entered = entered,
             // The service takes no achValidation on this route, so sending it would be noise.
             allowsAchValidation = false,
+            idempotencyKey = idempotencyKey,
         )
     }
 
@@ -101,7 +105,10 @@ internal class MoneyInClient(
      * The only call in this module whose path differs from its route: the identifier is in the path, so the
      * template is what a log may carry.
      */
-    suspend fun captureAuthorized(request: PayInAuthorizedRequest): PayInResult {
+    suspend fun captureAuthorized(
+        request: PayInAuthorizedRequest,
+        idempotencyKey: String? = request.idempotencyKey,
+    ): PayInResult {
         PayInValidation.transId(request.transId)
         PayInValidation.paymentDetails(request.paymentDetails)
 
@@ -114,7 +121,7 @@ internal class MoneyInClient(
                 body = AuthorizedCaptureBody(request.paymentDetails.toBody()),
                 bodySerializer = AuthorizedCaptureBody.serializer(),
                 route = PayInRoutes.CAPTURE_AUTHORIZED,
-                headers = payInHeaders { idempotencyKey(request.idempotencyKey) },
+                headers = payInHeaders { idempotencyKey(idempotencyKey) },
             )
         return read(PayInRoutes.CAPTURE_AUTHORIZED, transport.execute(payabliRequest))
     }
@@ -141,6 +148,7 @@ internal class MoneyInClient(
         entryPoint: String,
         entered: PayInEnteredDetails,
         allowsAchValidation: Boolean,
+        idempotencyKey: String?,
     ): PayInResult {
         val outer =
             PayabliJson.format.encodeToString(
@@ -156,7 +164,7 @@ internal class MoneyInClient(
                         path = path,
                         route = route,
                         query = request.options.query(allowsAchValidation),
-                        headers = request.options.headers(),
+                        headers = request.options.headers(idempotencyKey),
                         body = body,
                     ),
                 )
@@ -284,8 +292,14 @@ private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pa
         useCaching?.let { add(PayInRoutes.QUERY_USE_CACHING to it.wire()) }
     }
 
-private fun PayInTransactionOptions.headers(): Map<String, String> =
+/**
+ * [key] rather than this object's own, because a form submission mints one when the caller set none.
+ *
+ * Passed in rather than read here so there is one answer per attempt and one place that decides it. A caller
+ * that set a key still sends exactly that key: the flow only fills a gap.
+ */
+private fun PayInTransactionOptions.headers(key: String?): Map<String, String> =
     payInHeaders {
-        idempotencyKey(idempotencyKey)
+        idempotencyKey(key)
         validationCode(validationCode)
     }

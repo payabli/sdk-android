@@ -154,9 +154,9 @@ public sealed class PayInException(
     /**
      * The submission was canceled with the request in flight, so its outcome is unknown.
      *
-     * The service may have taken the payment. [idempotencyKey] is what a retry sends to have it recognize
-     * the repeat instead of acting twice, and it is null when the operation carried none, in which case a
-     * retry can charge a second time.
+     * The service may have taken the payment. [idempotencyKey] is what a retry sends to have it recognize the
+     * repeat instead of acting twice. A submission through the payment flow always carries one, because the
+     * flow mints a key when the caller set none; it is null only for a call made through a client directly.
      */
     public class Interrupted(
         public val idempotencyKey: String?,

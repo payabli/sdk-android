@@ -24,10 +24,12 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -200,6 +202,7 @@ class PayInSubmissionTest {
                     moneyIn = MoneyInClient(transport, logger),
                     storage = TokenStorageClient(transport, logger),
                     dispatcher = StandardTestDispatcher(testScheduler),
+                    newIdempotencyKey = { MINTED_KEY },
                     logger = logger,
                 )
 
@@ -315,6 +318,53 @@ class PayInSubmissionTest {
             assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
             assertEquals("key-9", (state.cause as PayInException.Interrupted).idempotencyKey)
             assertEquals(PayabliErrorCode.USER_CANCELLED, state.cause.code)
+        }
+
+    @Test
+    fun `a caller who set no key still gets one to retry with`() =
+        runTest(timeout = timeout) {
+            // Without this the attempt is unrecoverable: a canceled capture may already have moved funds, and a
+            // retry with no key can charge a second time.
+            val transport = GatedPayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val running = launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+            transport.arrived.await()
+            running.cancel()
+            running.join()
+
+            val cause = failed(submission.state.value).cause
+            assertEquals("$MINTED_KEY-1", (cause as PayInException.Interrupted).idempotencyKey)
+        }
+
+    @Test
+    fun `the minted key is sent, and a caller's own key is sent unchanged`() =
+        runTest(timeout = timeout) {
+            val minting = FakePayInTransport.answering(approved)
+            submissionOver(minting).submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            assertEquals("$MINTED_KEY-1", minting.request?.headers?.get("idempotencyKey"))
+
+            val supplied = FakePayInTransport.answering(approved)
+            submissionOver(supplied).submit(TEST_ENTRY_POINT, captureOf(idempotencyKey = "key-9"), cardForm())
+
+            assertEquals("key-9", supplied.request?.headers?.get("idempotencyKey"))
+        }
+
+    @Test
+    fun `a second payment from one screen mints a second key`() =
+        runTest(timeout = timeout) {
+            // One key per attempt, not per holder: a resubmission the payer meant as a second payment must not
+            // return the first one's result.
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+            val first = transport.request?.headers?.get("idempotencyKey")
+            submission.reset()
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            assertNotEquals(first, transport.request?.headers?.get("idempotencyKey"))
         }
 
     @Test
@@ -463,9 +513,13 @@ class PayInSubmissionTest {
             moneyIn = MoneyInClient(transport, logger),
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
+            // Counted, so a test can tell one minted key from the next without matching a UUID.
+            newIdempotencyKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
             logger = logger,
         )
     }
+
+    private val minted = AtomicInteger(0)
 
     private fun failed(state: PayInSubmissionState): PayInSubmissionState.Failed {
         assertTrue("expected a failure, and the state is $state", state is PayInSubmissionState.Failed)
@@ -476,5 +530,9 @@ class PayInSubmissionTest {
         val state = submission.state.value
         assertTrue("expected a payment, and the state is $state", state is PayInSubmissionState.Succeeded.Payment)
         return state as PayInSubmissionState.Succeeded.Payment
+    }
+
+    private companion object {
+        const val MINTED_KEY = "minted"
     }
 }

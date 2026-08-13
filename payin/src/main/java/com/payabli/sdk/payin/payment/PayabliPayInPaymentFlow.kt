@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * A payment form's submissions, for one entry point.
@@ -70,6 +71,8 @@ public class PayabliPayInPaymentFlow private constructor(
             moneyIn = if (logger == null) MoneyInClient(transport) else MoneyInClient(transport, logger),
             storage = if (logger == null) TokenStorageClient(transport) else TokenStorageClient(transport, logger),
             dispatcher = dispatcher,
+            // Random per attempt, so two payments from one screen are never one request to the service.
+            newIdempotencyKey = { UUID.randomUUID().toString() },
         ),
     )
 

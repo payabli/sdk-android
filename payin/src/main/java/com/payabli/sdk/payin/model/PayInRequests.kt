@@ -131,6 +131,9 @@ public class PayInTransactionOptions(
      *
      * Sent as the `idempotencyKey` header, which is the spelling the service reads. **Not** a client-side
      * retry: nothing in this module retries either call, and this is what makes a caller's own retry safe.
+     *
+     * Optional because the payment flow mints one per attempt when it is absent, so an interrupted submission
+     * always names a key a retry can use. Set it to keep control of what a repeat means.
      */
     public val idempotencyKey: String? = null,
     public val achValidation: Boolean? = null,
