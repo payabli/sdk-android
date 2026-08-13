@@ -166,11 +166,22 @@ class PayInSubmissionTest {
         }
 
     @Test
-    fun `a submission is accepted again once the first has finished`() =
+    fun `an outcome nobody acknowledged refuses the next submission, and acknowledging clears the way`() =
         runTest(timeout = timeout) {
-            val submission = submissionOver(FakePayInTransport.answering(approved))
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
 
             assertNotNull(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
+
+            // The approval is still the state. Starting again would overwrite it with `Submitting`, and a
+            // payment the service took would be left with nothing recording that it happened.
+            assertNull(
+                "a submission started over an outcome nobody had read",
+                submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()),
+            )
+            assertEquals("the refused submission reached the wire", 1, transport.count)
+
+            assertTrue(submission.reset())
             assertNotNull("the guard was not released", submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
         }
 
@@ -429,6 +440,9 @@ class PayInSubmissionTest {
             running.join()
 
             transport.release()
+            // The interruption is an outcome like any other, and it names the key a retry needs, so it is
+            // acknowledged before the next submission the same way an approval is.
+            assertTrue("the interrupted outcome could not be acknowledged", submission.reset())
             assertNotNull(
                 "the guard was held by a canceled submission",
                 submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()),

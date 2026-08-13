@@ -144,6 +144,19 @@ internal class PayInSubmission(
             }
             return null
         }
+        // Read under the lock, and it is the second half of the single flight rather than a separate rule. The
+        // guard is released before the outcome is consumed, so an outcome nobody has acknowledged is still
+        // sitting in the state: starting here would overwrite it with `Submitting` and a taken payment would
+        // leave no record of itself. Refused instead, which a caller can see, and `acknowledge` is what makes
+        // the flow ready again.
+        if (sink.value != PayInSubmissionState.Idle) {
+            inFlight.unlock()
+            onReserved(false)
+            logger.debug(LogField.safe("event", "payin_submission_outcome_unacknowledged")) {
+                "an outcome has not been acknowledged, so this submission was refused"
+            }
+            return null
+        }
         onReserved(true)
         val retry = RetryKey()
         sink.value = PayInSubmissionState.Submitting
