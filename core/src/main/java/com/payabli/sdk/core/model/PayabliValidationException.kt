@@ -27,7 +27,11 @@ public class PayabliValidationException(
      */
     fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
 ) : PayabliException(PayabliErrorCode.VALIDATION_ERROR, reason, detail) {
-    public val fieldErrors: Map<String, List<PayabliFieldError>> = Collections.unmodifiableMap(fieldErrors.toMap())
+    /** Copied and wrapped at both levels: the lists arrive from the decoder as `ArrayList`. */
+    public val fieldErrors: Map<String, List<PayabliFieldError>> =
+        Collections.unmodifiableMap(
+            fieldErrors.mapValues { (_, failures) -> Collections.unmodifiableList(failures.toList()) },
+        )
 
     public companion object {
         public const val DEFAULT_REASON: String = "Validation failed"
