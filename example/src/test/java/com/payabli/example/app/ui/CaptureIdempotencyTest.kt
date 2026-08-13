@@ -103,7 +103,7 @@ class CaptureIdempotencyTest {
             model.uiState.value.operation
                 .keyOrNull()
 
-        model.onFailed(PayInSubmissionState.Failed(PayInException.Interrupted(interrupted)))
+        model.onFailed(PayInSubmissionState.Failed(PayInException.Interrupted(), retryKey = interrupted))
 
         assertEquals(
             interrupted,
@@ -117,7 +117,7 @@ class CaptureIdempotencyTest {
         // The payer is asking for a second payment, and the service refuses one that arrives under the first
         // one's key. An interruption keeps the key for a retry; this is not a retry.
         val model = captureModel()
-        model.onFailed(PayInSubmissionState.Failed(PayInException.Interrupted("interrupted-key")))
+        model.onFailed(PayInSubmissionState.Failed(PayInException.Interrupted(), retryKey = "interrupted-key"))
         val kept =
             model.uiState.value.operation
                 .keyOrNull()

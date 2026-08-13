@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -316,7 +317,7 @@ class PayInSubmissionTest {
 
             val state = failed(submission.state.value)
             assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
-            assertEquals("key-9", (state.cause as PayInException.Interrupted).idempotencyKey)
+            assertEquals("key-9", state.retryKey)
             assertEquals(PayabliErrorCode.USER_CANCELLED, state.cause.code)
         }
 
@@ -333,8 +334,38 @@ class PayInSubmissionTest {
             running.cancel()
             running.join()
 
-            val cause = failed(submission.state.value).cause
-            assertEquals("$MINTED_KEY-1", (cause as PayInException.Interrupted).idempotencyKey)
+            assertEquals("$MINTED_KEY-1", failed(submission.state.value).retryKey)
+        }
+
+    @Test
+    fun `a network failure after the request was sent carries the key to retry with`() =
+        runTest(timeout = timeout) {
+            // Cancellation is not the only outcome that cannot say whether the service acted. A read that fails
+            // once the bytes are written leaves the same question, and a resubmission with a fresh key charges
+            // twice.
+            val transport =
+                FakePayInTransport.failingWith(
+                    PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the read timed out"),
+                )
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            assertEquals("the request never reached the wire", 1, transport.count)
+            assertEquals("$MINTED_KEY-1", failed(submission.state.value).retryKey)
+        }
+
+    @Test
+    fun `a decline carries no key, because the service answered`() =
+        runTest(timeout = timeout) {
+            // A retry after a decline is a new attempt, and sending the first one's key would ask the service to
+            // replay a refusal instead.
+            val transport = FakePayInTransport.answering(declined)
+
+            val submission = submissionOver(transport)
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            assertNull(failed(submission.state.value).retryKey)
         }
 
     @Test

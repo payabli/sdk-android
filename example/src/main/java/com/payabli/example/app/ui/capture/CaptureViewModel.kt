@@ -66,8 +66,8 @@ data class CaptureUiState(
  * A capture of the demo amount under [idempotencyKey].
  *
  * Without a key the service cannot recognize a repeat, so a submission whose outcome is unknown cannot be
- * retried: `PayInException.Interrupted` carries the key precisely so it can be. One key per attempt, kept while
- * that attempt's outcome is unknown and replaced once the service has answered.
+ * retried: `PayInSubmissionState.Failed.retryKey` names it precisely so it can be. One key per attempt, kept
+ * while that attempt's outcome is unknown and replaced once the service has answered.
  */
 private fun captureOf(idempotencyKey: String): PayabliPayInOperation.Capture =
     PayabliPayInOperation.Capture(

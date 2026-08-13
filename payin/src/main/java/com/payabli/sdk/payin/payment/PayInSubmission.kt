@@ -153,10 +153,10 @@ internal class PayInSubmission(
         } catch (cancellation: CancellationException) {
             // Rethrown: a coroutine that swallows its own cancellation stops being cancellable. The state still
             // records it, because the charge may have landed and the retry key is what a second attempt needs.
-            outcome = PayInSubmissionState.Failed(PayInException.Interrupted(retry.key))
+            outcome = PayInSubmissionState.Failed(PayInException.Interrupted(), retryKey = retry.key)
             throw cancellation
         } catch (failure: Exception) {
-            outcome = failure.asFailed()
+            outcome = failure.asFailed(retry.key)
         } finally {
             // Neither line suspends, so both run on the canceled path as they do on any other.
             outcome?.let { sink.value = it }
@@ -172,23 +172,26 @@ internal class PayInSubmission(
      * [PayabliErrorCode.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
      * body writer or a serializer can quote what it was given.
      */
-    private fun Exception.asFailed(): PayInSubmissionState.Failed =
-        PayInSubmissionState.Failed(
-            cause =
-                this as? PayabliException
-                    ?: PayabliGenericException(
-                        PayabliErrorCode.UNKNOWN,
-                        REASON_UNEXPECTED,
-                        cause = RedactedCause(this),
-                    ),
-            fieldErrors = PayInRefusedFields.of(this),
+    private fun Exception.asFailed(attemptKey: String?): PayInSubmissionState.Failed {
+        val cause =
+            this as? PayabliException
+                ?: PayabliGenericException(
+                    PayabliErrorCode.UNKNOWN,
+                    REASON_UNEXPECTED,
+                    cause = RedactedCause(this),
+                )
+        return PayInSubmissionState.Failed(
+            cause = cause,
+            fieldErrors = PayInRejectedFields.of(this),
+            retryKey = attemptKey.takeIf { cause.code.leavesOutcomeUnknown },
         )
+    }
 
     /**
      * The idempotency key of the request that went out, once there is one.
      *
-     * Read only when a submission is canceled, which is the one outcome that cannot say whether the service
-     * acted. The caller's own request carries the key, so it is known only once that has been built.
+     * Read by every failure that leaves the outcome unknown, which a cancellation is one of. The caller's own
+     * request carries the key, so it is known only once that has been built.
      */
     private inner class RetryKey {
         var key: String? = null
@@ -208,3 +211,30 @@ internal class PayInSubmission(
         const val REASON_UNEXPECTED = "The payment could not be submitted"
     }
 }
+
+/**
+ * Whether this failure leaves it unknown whether the service acted.
+ *
+ * The question is not how bad the failure was but whether the request may have been carried out, because that
+ * is what decides between resending the same attempt and making a new one.
+ *
+ * Unknown, so the key travels: a cancellation or a network failure can both happen after the bytes were
+ * written; a 5xx can follow work already done; a body that would not decode came from a service that answered;
+ * and an unexpected error is unexamined by definition.
+ *
+ * Known, so it does not: a decline and a validation refusal are answers, a rate limit is a refusal to act, and
+ * a rejected credential never reached the operation. Sending a key with any of those would suggest a repeat
+ * that a second attempt is not.
+ */
+private val PayabliErrorCode.leavesOutcomeUnknown: Boolean
+    get() =
+        when (this) {
+            PayabliErrorCode.USER_CANCELLED,
+            PayabliErrorCode.NETWORK_ERROR,
+            PayabliErrorCode.SERVER_ERROR,
+            PayabliErrorCode.DECODING_ERROR,
+            PayabliErrorCode.UNKNOWN,
+            -> true
+
+            else -> false
+        }

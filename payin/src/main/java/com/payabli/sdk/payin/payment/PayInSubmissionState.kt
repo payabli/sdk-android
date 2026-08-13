@@ -57,10 +57,22 @@ public sealed class PayInSubmissionState {
     public class Failed(
         public val cause: PayabliException,
         fieldErrors: Map<PayInField, PayInFieldError> = emptyMap(),
+        /**
+         * The key to resend, when this failure leaves the outcome unknown.
+         *
+         * Present for a cancellation, a network failure, a 5xx, a response that could not be decoded, and an
+         * unexpected error: in each of those the service may already have taken the payment, and a retry
+         * carrying this key has it recognize the repeat instead of acting twice.
+         *
+         * Null when the outcome is known, as a decline, a local refusal or a rejected credential is, where a
+         * retry is a new attempt rather than the same one.
+         */
+        public val retryKey: String? = null,
     ) : PayInSubmissionState() {
         public val fieldErrors: Map<PayInField, PayInFieldError> = fieldErrors.toMap()
 
         /** The cause renders as its own classification, which carries no server text. */
-        override fun toString(): String = "PayInSubmissionState.Failed(cause=$cause, fields=${fieldErrors.keys})"
+        override fun toString(): String =
+            "PayInSubmissionState.Failed(cause=$cause, fields=${fieldErrors.keys}, hasRetryKey=${retryKey != null})"
     }
 }

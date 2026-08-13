@@ -156,7 +156,7 @@ class PayInOutcomesTest {
             listOf(
                 PayInException.InvalidInput("paymentMethod.cardnumber", "The card number is not valid"),
                 PayInException.Undecodable(IllegalStateException("unexpected token")),
-                PayInException.Interrupted(idempotencyKey = "key-1"),
+                PayInException.Interrupted(),
                 PayInException.AlreadySubmitting(),
             )
 
@@ -170,9 +170,12 @@ class PayInOutcomesTest {
 
     @Test
     fun `no rendered outcome carries an idempotency key`() {
-        // It is a credential for repeating a payment. The exception holds one so a host can retry with it;
-        // the screens show text and a card, and neither is a place for it.
-        val error = PayInSubmissionState.Failed(PayInException.Interrupted("key-1")).toPaymentError()
+        // It is a credential for repeating a payment. The state holds one so a host can retry with it; the
+        // screens show text and a card, and neither is a place for it.
+        val error =
+            PayInSubmissionState
+                .Failed(PayInException.Interrupted(), retryKey = "key-1")
+                .toPaymentError()
 
         assertFalse(error.displayMessage.contains("key-1"))
     }
