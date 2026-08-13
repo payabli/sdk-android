@@ -101,9 +101,8 @@ class PayInEnteredDetailsTest {
 
     @Test
     fun `an optional box cleared by the payer leaves the configured value standing`() {
-        // The chosen reading of a blank box, and the only two fields it can arise for: the form refuses to
-        // submit the other four empty. A caller configuring a customer number has named who the payment belongs
-        // to, and an empty box is not an instruction to detach it from them.
+        // The customer number and the method description are the only two fields that can be collected and
+        // left empty. The form refuses to submit the other four.
         val configured = PayInCustomerData(customerNumber = "host-4471", firstName = "Ada", lastName = "Lovelace")
         val cleared =
             PayInEnteredDetails.of(

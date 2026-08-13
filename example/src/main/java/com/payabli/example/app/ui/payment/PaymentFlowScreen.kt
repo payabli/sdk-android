@@ -38,6 +38,7 @@ import com.payabli.example.app.ui.components.StepRow
 import com.payabli.example.app.ui.components.TokenCheckStep
 import com.payabli.example.app.ui.theme.Dimens
 import com.payabli.sdk.payin.form.PayInFormValues
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
@@ -195,49 +196,78 @@ fun PaymentFlowScreen(
     }
 
     if (state.isSheetOpen) {
-        // Both halves, because a swipe and a back press take different routes to the same place:
-        // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.
-        //
-        // The callback has to keep its identity. `rememberSheetState` passes it to `rememberSaveable`
-        // as a key, so a lambda capturing the state snapshot is a new key whenever the state changes,
-        // and the sheet is rebuilt from `Hidden` at the moment a submission starts. It reads the flag
-        // through `rememberUpdatedState` instead, which is a stable holder of a changing value.
-        val submitting = rememberUpdatedState(isSubmitting)
-        val holdWhileSubmitting =
-            remember { { value: SheetValue -> !submitting.value || value != SheetValue.Hidden } }
-        val sheetState =
-            rememberModalBottomSheetState(
-                // Opens half height and expands, which is where the payer's thumb is. The hold below refuses
-                // a dismiss mid-submission at either height.
-                skipPartiallyExpanded = false,
-                confirmValueChange = holdWhileSubmitting,
-            )
-        ModalBottomSheet(
-            onDismissRequest = { if (!isSubmitting) actions.onDismissSheet() },
-            sheetState = sheetState,
+        FormSheet(
+            state = state,
+            actions = actions,
+            flow = flow,
+            operation = operation,
+            initialValues = prefilled,
+            formKey = prefills,
+            isSubmitting = isSubmitting,
+            onMethodChanged = { method = it },
+        )
+    }
+}
+
+/**
+ * The same form, over the screen.
+ *
+ * A host mounts one of these beside the inline form, and both submit through the one flow the screen holds.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FormSheet(
+    state: PaymentFlowUiState,
+    actions: PaymentFlowActions,
+    flow: PayabliPayInPaymentFlow?,
+    operation: PayabliPayInOperation,
+    initialValues: PayInFormValues?,
+    formKey: Int,
+    isSubmitting: Boolean,
+    onMethodChanged: (PayInMethodType) -> Unit,
+) {
+    // Both halves, because a swipe and a back press take different routes to the same place:
+    // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.
+    //
+    // The callback has to keep its identity. `rememberSheetState` passes it to `rememberSaveable`
+    // as a key, so a lambda capturing the state snapshot is a new key whenever the state changes,
+    // and the sheet is rebuilt from `Hidden` at the moment a submission starts. It reads the flag
+    // through `rememberUpdatedState` instead, which is a stable holder of a changing value.
+    val submitting = rememberUpdatedState(isSubmitting)
+    val holdWhileSubmitting =
+        remember { { value: SheetValue -> !submitting.value || value != SheetValue.Hidden } }
+    val sheetState =
+        rememberModalBottomSheetState(
+            // Opens half height and expands, which is where the payer's thumb is. The hold below refuses
+            // a dismiss mid-submission at either height.
+            skipPartiallyExpanded = false,
+            confirmValueChange = holdWhileSubmitting,
+        )
+    ModalBottomSheet(
+        onDismissRequest = { if (!isSubmitting) actions.onDismissSheet() },
+        sheetState = sheetState,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    // The sheet's own insets cover the system bars and not the keyboard.
+                    .imePadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(Dimens.ScreenPadding),
         ) {
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        // The sheet's own insets cover the system bars and not the keyboard.
-                        .imePadding()
-                        .verticalScroll(rememberScrollState())
-                        .padding(Dimens.ScreenPadding),
-            ) {
-                // Only once the session exists. Until then the step above is what the screen offers.
-                flow?.let { payments ->
-                    key(prefills) {
-                        PaymentFormHost(
-                            setup = state.setup,
-                            flow = payments,
-                            operation = operation,
-                            initialValues = prefilled,
-                            onCompleted = actions.onCompleted,
-                            onFailed = actions.onFailed,
-                            onMethodChanged = { method = it },
-                        )
-                    }
+            // Only once the session exists. Until then the step above is what the screen offers.
+            flow?.let { payments ->
+                key(formKey) {
+                    PaymentFormHost(
+                        setup = state.setup,
+                        flow = payments,
+                        operation = operation,
+                        initialValues = initialValues,
+                        onCompleted = actions.onCompleted,
+                        onFailed = actions.onFailed,
+                        onMethodChanged = onMethodChanged,
+                    )
                 }
             }
         }

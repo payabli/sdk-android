@@ -11,13 +11,10 @@ import com.payabli.sdk.payin.model.PayInCustomerData
  * details. None of it belongs to `PayInInstrument`, so without this they are typed and then dropped: the QA
  * paypoint answers a capture carrying no customer with `400 Error in customer data`.
  *
- * A configured customer and a typed one meet where the body is written, and the typed value wins for the field
- * it names, because a payer editing the box is the later of the two.
- *
- * **A blank box leaves a configured value standing rather than deleting it.** Of the six fields here, four are
- * ones the form refuses to submit empty, so this can only arise for the customer number and the method
- * description. A caller configuring a customer number has named who the payment belongs to, and an empty
- * optional box is not an instruction to detach it from them.
+ * A configured customer and a typed one meet where the body is written. Where the box holds something, that is
+ * what is sent; where it is empty, the configured value is, so **a blank box does not delete one**. Only the
+ * customer number and the method description can be empty here, because the form refuses to submit the other
+ * four.
  */
 internal class PayInEnteredDetails(
     val firstName: String? = null,
