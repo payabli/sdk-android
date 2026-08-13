@@ -1,5 +1,7 @@
 package com.payabli.sdk.core.model
 
+import java.util.Collections
+
 /**
  * HTTP 400: an `application/problem+json` document (RFC 9457) plus Payabli's own `code` and `errors`.
  *
@@ -25,8 +27,10 @@ public class PayabliValidationException(
      * a null [PayabliFieldError.suggestion]. A key of `$` is the request body as a whole rather than a
      * field in it, which is how a missing required property reports itself.
      */
-    public val fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
+    fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
 ) : PayabliException(PayabliErrorCode.VALIDATION_ERROR, reason, detail) {
+    public val fieldErrors: Map<String, List<PayabliFieldError>> = Collections.unmodifiableMap(fieldErrors.toMap())
+
     public companion object {
         public const val DEFAULT_REASON: String = "Validation failed"
     }

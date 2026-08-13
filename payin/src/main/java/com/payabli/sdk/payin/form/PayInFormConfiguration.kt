@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.form
 
 import androidx.compose.runtime.Immutable
+import java.util.Collections
 
 /** Whether a section takes input or reads values back. */
 public enum class PayInSectionStyle {
@@ -37,7 +38,7 @@ public class PayInFormSection(
     public val title: String? = null,
     public val style: PayInSectionStyle = PayInSectionStyle.Inputs,
 ) {
-    public val fields: List<PayInField> = fields.toList()
+    public val fields: List<PayInField> = Collections.unmodifiableList(fields.toList())
 
     /** As a `data class` would, over the copy rather than over what was handed in. */
     public fun copy(
@@ -103,12 +104,12 @@ public class PayInFormConfiguration(
     /** Values for a [PayInSectionStyle.Summary] section, already formatted by the caller. */
     summaryValues: Map<PayInField, String> = emptyMap(),
 ) {
-    public val allowedMethods: List<PayInMethodType> = allowedMethods.toList()
-    public val cardSections: List<PayInFormSection> = cardSections.toList()
-    public val bankSections: List<PayInFormSection> = bankSections.toList()
-    public val requiredFields: Set<PayInField> = requiredFields.toSet()
-    public val hiddenFieldLabels: Set<PayInField> = hiddenFieldLabels.toSet()
-    public val summaryValues: Map<PayInField, String> = summaryValues.toMap()
+    public val allowedMethods: List<PayInMethodType> = Collections.unmodifiableList(allowedMethods.toList())
+    public val cardSections: List<PayInFormSection> = Collections.unmodifiableList(cardSections.toList())
+    public val bankSections: List<PayInFormSection> = Collections.unmodifiableList(bankSections.toList())
+    public val requiredFields: Set<PayInField> = Collections.unmodifiableSet(requiredFields.toSet())
+    public val hiddenFieldLabels: Set<PayInField> = Collections.unmodifiableSet(hiddenFieldLabels.toSet())
+    public val summaryValues: Map<PayInField, String> = Collections.unmodifiableMap(summaryValues.toMap())
 
     private val methods: List<PayInMethodType> =
         this.allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
@@ -133,7 +134,7 @@ public class PayInFormConfiguration(
     }
 
     /** The allowed methods, with duplicates dropped and never empty. */
-    public val methodsOffered: List<PayInMethodType> get() = methods
+    public val methodsOffered: List<PayInMethodType> get() = Collections.unmodifiableList(methods)
 
     /** The starting method, always one of [methodsOffered]. */
     public val startingMethod: PayInMethodType

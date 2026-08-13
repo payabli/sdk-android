@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.form
 
 import androidx.compose.runtime.Immutable
+import java.util.Collections
 
 /**
  * What the payer entered, and which instrument they entered it for.
@@ -13,7 +14,7 @@ public class PayInFormValues(
     public val method: PayInMethodType,
     values: Map<PayInField, String>,
 ) {
-    public val values: Map<PayInField, String> = values.toMap()
+    public val values: Map<PayInField, String> = Collections.unmodifiableMap(values.toMap())
 
     /** The value for a field, or empty when it was never typed into. */
     public operator fun get(field: PayInField): String = values[field].orEmpty()

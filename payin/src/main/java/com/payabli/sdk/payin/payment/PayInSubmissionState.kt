@@ -6,6 +6,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
+import java.util.Collections
 
 /**
  * Where a submission has got to.
@@ -69,7 +70,8 @@ public sealed class PayInSubmissionState {
          */
         public val retryKey: String? = null,
     ) : PayInSubmissionState() {
-        public val fieldErrors: Map<PayInField, PayInFieldError> = fieldErrors.toMap()
+        public val fieldErrors: Map<PayInField, PayInFieldError> =
+            Collections.unmodifiableMap(fieldErrors.toMap())
 
         /** The cause renders as its own classification, which carries no server text. */
         override fun toString(): String =
