@@ -189,8 +189,9 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
     -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.payin.ManualDeviceTest
   ```
 
-  One environment per invocation, because the SDK installs one session per process and the access token is part
-  of the identity it compares, so a second token reads as a second configuration and is refused. The tier covers
+  One environment per invocation, because the SDK installs one session per process and the environment is one of
+  the values it compares, so naming a second one is refused. A fresh token is not: a token is a credential rather
+  than an identity and is not compared at all. The tier covers
   what the public flow reaches; charging an already-stored method is not in it, because `PayInFormInstrument`
   builds only `Card` and `BankAccount` from a form.
 - **`KeyPermanentlyInvalidatedException` is handled defensively, not reachably, and there is no manual
