@@ -107,9 +107,9 @@ internal fun PayInFormContent(
     // `onCompleted` nor `onFailed` ever fired for a payment the service had taken.
     var submissionPending by rememberSaveable(configuration) { mutableStateOf(false) }
 
-    // `enabled` only stops the second tap once the host has set isSubmitting and the button has
-    // recomposed, which is a frame away. Two taps inside that frame are two payments. The latch
-    // clears itself on the next frame, so a host that never sets isSubmitting cannot wedge it.
+    // `enabled` only stops the second tap once the state has reached Submitting and the button has recomposed,
+    // which is a frame away. Two taps inside that frame are two payments. The latch clears itself on the next
+    // frame, so nothing here can be left stuck by an outcome that never arrives.
     var justSubmitted by remember { mutableStateOf(false) }
     LaunchedEffect(justSubmitted) {
         if (justSubmitted) {

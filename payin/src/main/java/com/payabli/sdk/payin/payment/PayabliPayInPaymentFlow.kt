@@ -79,19 +79,22 @@ public class PayabliPayInPaymentFlow private constructor(
     /**
      * Where the current submission has got to: what a form renders, and what a host reads for its own chrome.
      *
-     * A terminal state stands until [acknowledge] consumes it, which is what lets a rotation mid-flight still
-     * deliver an outcome.
+     * A terminal state stands until the form has delivered it, which is what lets a rotation mid-flight still
+     * deliver an outcome. The form consumes it immediately afterwards, so nothing here has to be cleared by
+     * whoever reads it.
      */
     public val state: StateFlow<PayInSubmissionState> get() = submission.state
 
     /**
      * Consumes a terminal state, returning to [PayInSubmissionState.Idle].
      *
-     * A host that navigates on a success calls this once it has, or the retained state re-delivers the same
-     * success after the next configuration change and navigation fires twice. Returns false while a
-     * submission is in flight, so a caller cannot clear the state out from under one.
+     * Called by `PayabliPayInForm` once an outcome has reached the functions the caller supplied. A retained
+     * outcome is delivered again after the next configuration change, and a navigation then fires twice for one
+     * payment.
+     *
+     * Returns false while a submission is in flight, so nothing can clear the state out from under one.
      */
-    public fun acknowledge(): Boolean = submission.reset()
+    internal fun consume(): Boolean = submission.reset()
 
     /**
      * Runs [operation] on [scope], for a caller with no coroutine at the call site.

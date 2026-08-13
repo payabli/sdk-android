@@ -112,14 +112,8 @@ class PaymentMethodViewModel(
 
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
-    /**
-     * The SDK accepted it.
-     *
-     * Acknowledged straight away, so the retained outcome does not arrive again after a rotation and push the
-     * stored-method screen twice for one instrument.
-     */
+    /** The SDK accepted it. */
     fun onCompleted(outcome: PayInSubmissionState.Succeeded) {
-        _uiState.value.payments?.acknowledge()
         onCompleted(outcome.toPaymentResult())
     }
 
@@ -131,9 +125,6 @@ class PaymentMethodViewModel(
      * into some of them, and this panel is on screen and gets copied into bug reports.
      */
     fun onFailed(outcome: PayInSubmissionState.Failed) {
-        // Acknowledged as a success is. The form has delivered it, and a flow left holding a refusal reads as
-        // busy: the token step would refuse every later recheck, including the one a credential failure needs.
-        _uiState.value.payments?.acknowledge()
         record("ERROR paymentMethod\n${outcome.cause}")
         onError(outcome.toPaymentError())
     }

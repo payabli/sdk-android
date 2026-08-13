@@ -63,9 +63,9 @@ public fun PayabliPayInForm(
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
     initialValues: PayInFormValues? = null,
-    onCompleted: (PayInSubmissionState.Succeeded) -> Unit = {},
-    onFailed: (PayInSubmissionState.Failed) -> Unit = {},
-    onMethodChanged: (PayInMethodType) -> Unit = {},
+    onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
+    onFailed: (PayInSubmissionState.Failed) -> Unit,
+    onMethodChanged: (PayInMethodType) -> Unit,
 ) {
     val submission by flow.state.collectAsState()
 
@@ -85,8 +85,26 @@ public fun PayabliPayInForm(
         style = style,
         initialValues = initialValues,
         onSubmit = { values -> flow.start(operation, values) },
-        onCompleted = onCompleted,
-        onFailed = onFailed,
+        // Consumed here, after the caller's own function has run, so the flow is ready for the next submission
+        // without anyone being asked to say so. Before it, a caller reading `flow.state` inside its own callback
+        // would find `Idle` where the outcome it was just handed should be.
+        //
+        // In a `finally`, because the function is the caller's: one that throws would otherwise leave the
+        // outcome standing, and a standing outcome refuses every later submission.
+        onCompleted = { outcome ->
+            try {
+                onCompleted(outcome)
+            } finally {
+                flow.consume()
+            }
+        },
+        onFailed = { outcome ->
+            try {
+                onFailed(outcome)
+            } finally {
+                flow.consume()
+            }
+        },
         onMethodChanged = onMethodChanged,
     )
 }

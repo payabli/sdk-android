@@ -125,11 +125,11 @@ class PayabliPayInPaymentFlowTest {
 
             val running = launch { flow.capture(testOptions(), cardForm()) }
             transport.arrived.await()
-            assertFalse("idle was reported over a submission in flight", flow.acknowledge())
+            assertFalse("idle was reported over a submission in flight", flow.consume())
 
             transport.release()
             running.join()
-            assertTrue(flow.acknowledge())
+            assertTrue(flow.consume())
             assertEquals(PayInSubmissionState.Idle, flow.state.value)
         }
 

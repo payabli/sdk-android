@@ -124,7 +124,7 @@ class PayInLiveFlowsInstrumentedTest {
             val transId = authorized.transaction?.paymentTransId
             assertNotNull("an approval with no transaction to capture: $authorized", transId)
 
-            assertTrue(flow.acknowledge())
+            assertTrue(flow.consume())
             val captured =
                 flow
                     .captureAuthorized(

@@ -139,14 +139,8 @@ class CaptureViewModel(
 
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
-    /**
-     * The SDK accepted it.
-     *
-     * Acknowledged straight away, so the retained outcome does not arrive again after a rotation and push the
-     * transaction screen twice for one payment.
-     */
+    /** The SDK accepted it. */
     fun onCompleted(outcome: PayInSubmissionState.Succeeded) {
-        _uiState.value.payments?.acknowledge()
         onCompleted(outcome.toPaymentResult())
     }
 
@@ -158,9 +152,6 @@ class CaptureViewModel(
      * into some of them, and this panel is on screen and gets copied into bug reports.
      */
     fun onFailed(outcome: PayInSubmissionState.Failed) {
-        // Acknowledged as a success is. The form has delivered it, and a flow left holding a refusal reads as
-        // busy: the token step would refuse every later recheck, including the one a credential failure needs.
-        _uiState.value.payments?.acknowledge()
         rotateIdempotencyKey(outcome)
         record("ERROR paymentTransaction\n${outcome.cause}")
         onError(outcome.toPaymentError())
