@@ -48,14 +48,17 @@ public sealed class PayabliPayInOperation {
 /**
  * [configuration] with any instrument this operation cannot carry left out.
  *
- * Unchanged when every offered instrument works, and unchanged when none does: a caller pairing an
- * authorization with a bank-only form has configured a form that cannot submit, and the refusal on the tap
- * names the reason. Dropping to a card form there would mean offering card sections this configuration was
- * never checked for, since only offered instruments are checked when one is built.
+ * A pairing that leaves nothing is refused rather than drawn. An authorization with a bank-only form is a form
+ * every tap refuses locally, and each refusal now empties the account the payer entered, so it is a form nobody
+ * can submit and everybody can fill in. `PayInFormConfiguration` refuses an unsubmittable form where its
+ * sections are written; this is the same refusal one layer later, where the operation joins them.
  */
 internal fun PayabliPayInOperation.offering(configuration: PayInFormConfiguration): PayInFormConfiguration {
     val offered = configuration.methodsOffered.filter { it in instruments }
-    if (offered.isEmpty() || offered == configuration.methodsOffered) return configuration
+    require(offered.isNotEmpty()) {
+        "$this cannot carry ${configuration.methodsOffered.joinToString()}: it takes ${instruments.joinToString()}"
+    }
+    if (offered == configuration.methodsOffered) return configuration
     return configuration.copy(
         allowedMethods = offered,
         defaultMethod = configuration.defaultMethod.takeIf { it in offered } ?: offered.first(),

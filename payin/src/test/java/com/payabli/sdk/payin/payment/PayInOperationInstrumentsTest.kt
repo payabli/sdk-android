@@ -6,6 +6,7 @@ import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -54,9 +55,8 @@ class PayInOperationInstrumentsTest {
     }
 
     @Test
-    fun `a bank-only form is left alone, because there is no card form to fall back to`() {
-        // Dropping the one offered instrument would leave card sections this configuration was never checked
-        // for: only offered instruments are checked when one is built. The tap refuses with the reason.
+    fun `a bank-only form paired with an authorization is refused`() {
+        // Drawn, it is a form every tap refuses locally and each refusal empties the account just entered.
         val bankOnly =
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.BankAccount),
@@ -64,7 +64,13 @@ class PayInOperationInstrumentsTest {
                 cardSections = listOf(PayInFormSection(fields = listOf(PayInField.CardNumber))),
             )
 
-        assertSame(bankOnly, authorize().offering(bankOnly))
+        val refusal = runCatching { authorize().offering(bankOnly) }.exceptionOrNull()
+
+        assertTrue("a form nothing could submit was drawn", refusal is IllegalArgumentException)
+        assertTrue(
+            "does not name the instrument: ${refusal?.message}",
+            refusal?.message?.contains("BankAccount") == true,
+        )
     }
 
     private fun authorize() = PayabliPayInOperation.Authorize(testOptions())
