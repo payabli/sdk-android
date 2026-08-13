@@ -5,10 +5,8 @@ import java.util.Collections
 /**
  * HTTP 400: an `application/problem+json` document (RFC 9457) plus Payabli's own `code` and `errors`.
  *
- * [httpStatus] comes from the response rather than from the body's own `status` field, because the
- * response is the authority. The body's `token` field is deliberately not surfaced: it is a temporary
- * page identifier, and not decoding it is what keeps it off a `Throwable` that may reach a crash
- * reporter.
+ * [httpStatus] comes from the response, not from the body's own `status` field. The body's `token` field
+ * is not decoded: it is a temporary page identifier, and this `Throwable` may reach a crash reporter.
  */
 public class PayabliValidationException(
     public val httpStatus: Int,
