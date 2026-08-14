@@ -126,7 +126,11 @@ internal class DeviceEnrollment(
 
             // Awaiting activation does not short-circuit: `/attest` accepts a device in that state and
             // writes the row `/activate` verifies against, so stopping here would leave nothing to verify.
-            val activationRequired = registration.isPending
+            //
+            // Keyed on `isActive`, not on the negation of `isPending`. An absent or unrecognized status
+            // makes both false, and recording that as active is the one direction with no recovery: the
+            // warm gate answers from the record and never prompts for a code again.
+            val activationRequired = !registration.isActive
 
             val token = attestor.attest(DeviceAttestationBinding.nonceChallenge(challenge.challenge))
 

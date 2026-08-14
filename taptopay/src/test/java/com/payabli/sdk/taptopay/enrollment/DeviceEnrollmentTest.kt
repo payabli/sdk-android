@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.taptopay.attestation.VerdictClass
+import com.payabli.sdk.taptopay.attestation.device.successEnvelope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -126,6 +127,42 @@ class DeviceEnrollmentTest {
 
             assertFalse(outcome.activationRequired)
             assertTrue(fixture.storedRecord()!!.activated)
+        }
+
+    @Test
+    fun `a registration with no status still owes activation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        // The field is nullable on the wire, so this is a shape the client must survive.
+                        RouteScript.REGISTER to listOf(successEnvelope("""{"deviceId":"$DEVICE_ID"}""")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                    ),
+                )
+
+            val outcome = fixture.enrollment.enroll()
+
+            // Recording it as active is the direction with no recovery: the warm gate would answer from
+            // the record and never prompt for a code again.
+            assertTrue(outcome.activationRequired)
+            assertEquals(false, fixture.storedRecord()!!.activated)
+        }
+
+    @Test
+    fun `a registration with an unrecognized status still owes activation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "superseded")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                    ),
+                )
+
+            assertTrue(fixture.enrollment.enroll().activationRequired)
         }
 
     @Test

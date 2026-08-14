@@ -18,6 +18,9 @@ internal const val DEVICE_PLATFORM: String = "Android"
 /** The `status` a freshly registered device reports, before activation. */
 internal const val STATUS_PENDING: String = "pending"
 
+/** The `status` an activated device reports. */
+internal const val STATUS_ACTIVE: String = "active"
+
 /**
  * The request and response shapes of the `/api/v2/device/taptopay` routes.
  *
@@ -124,6 +127,17 @@ internal class RegisterResponse(
      * serialized enum, so nothing on either side pins its case.
      */
     val isPending: Boolean get() = status?.equals(STATUS_PENDING, ignoreCase = true) == true
+
+    /**
+     * Whether the device is active and owes no activation code.
+     *
+     * The negation of [isPending] does not answer this. [status] is nullable and the service may add
+     * values, so an absent or unrecognized status makes both properties false. Reading only [isPending]
+     * would then record the device as active: the next run answers from that record, prompts for no code,
+     * and the device never activates. Owing a code that is not needed is answered by the service on the
+     * next call; not owing one that is needed is not.
+     */
+    val isActive: Boolean get() = status?.equals(STATUS_ACTIVE, ignoreCase = true) == true
 
     override fun toString(): String = "RegisterResponse(isPending=$isPending)"
 }
