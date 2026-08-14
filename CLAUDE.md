@@ -8,8 +8,9 @@
 - `./gradlew :MODULE:testDebugUnitTest` - Single module unit tests
 - `./gradlew connectedAndroidTest` - Instrumentation tests (requires device). **The per-PR CI runs none of
   these**; only the nightly workflow does, and it appends
-  `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest`. See
-  **Testing** for why, and for the command that runs the excluded tier
+  `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest`.
+  Both are named because there is one annotation per module; a command naming one leaves the other module's
+  manual tier running. See **Testing** for why, and for the command that runs the excluded tier
 - `./gradlew ktlintCheck` - Formatting
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
 - `./gradlew lint` - Android Lint
@@ -181,15 +182,18 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   line while the same commit measured 41% on its new lines, because `KeystoreValueCipher` was 121 of 261
   measured units and unreachable from any unit test. Read both numbers, not one.
 - **Three test tiers, and the third is excluded from CI rather than skipped.** JVM unit tests; instrumented
-  tests the nightly runs on an emulator; and `@ManualDeviceTest`, which needs real hardware. The exclusion is
+  tests the nightly runs on an emulator; and `@ManualDeviceTest`, which the nightly cannot run. Only `:core`'s
+  is about hardware, where an emulator's software-backed Keystore fails the assertion outright; `:payin`'s
+  marks a live-flow test gated on credentials no repository holds, and nothing in it needs a phone. The
+  exclusion is
   `notAnnotation`, verified to leave `skipped="0"` in the results XML with the manual tests absent from it
   entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
   skip cannot be told apart from a regression that started skipping.
 
   **There are two of that annotation and a command has to name both.** An `androidTest` source set is invisible
   to another module's, so `:core` has `com.payabli.sdk.core.ManualDeviceTest` and `:payin` has
-  `com.payabli.sdk.payin.ManualDeviceTest`. `notAnnotation` takes one value per run, so a job covering both
-  modules passes each module its own.
+  `com.payabli.sdk.payin.ManualDeviceTest`. `notAnnotation` takes a comma-separated list, so a job covering
+  both modules names both in one argument, and naming one of them runs the other module's manual tier.
 
   ```bash
   # Only the manual tier, against a wired phone. ANDROID_SERIAL matters when an emulator is also attached.
