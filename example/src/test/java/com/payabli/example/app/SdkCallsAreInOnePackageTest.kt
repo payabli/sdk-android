@@ -16,7 +16,9 @@ import java.io.File
  */
 class SdkCallsAreInOnePackageTest {
     private val appSources: List<File> =
-        File("src/main/java/com/payabli/example/app")
+        // The source-set root, not `java`: AGP compiles `src/main/kotlin` too, and a file there is a file
+        // this has to read.
+        File("src/main")
             .walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .toList()
