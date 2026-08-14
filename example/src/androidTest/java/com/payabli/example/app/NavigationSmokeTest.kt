@@ -199,7 +199,7 @@ class NavigationSmokeTest {
          */
         const val TEST_ENTRY_POINT = InstrumentedSession.ENTRY_POINT
 
-        /** Typed in, then looked for after the trip: the value is what shows the graph kept its state. */
+        /** One of the values the form needs before it will submit. Nothing asserts on it. */
         const val CARDHOLDER = "Test Cardholder"
     }
 }
