@@ -102,7 +102,7 @@ class ActivationFailurePolicyTest {
                     EnrollmentFixture(
                         RouteScript(RouteScript.ACTIVATE to listOf(decline(case.resultCode, case.reason))),
                     )
-                fixture.seedRecord(activated = false)
+                fixture.seedRecord()
 
                 val thrown =
                     runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }.exceptionOrNull()
@@ -127,7 +127,7 @@ class ActivationFailurePolicyTest {
                         RouteScript.ACTIVATE to listOf(decline(401, "Device not attested or attestation revoked.")),
                     ),
                 )
-            revoked.seedRecord(activated = false)
+            revoked.seedRecord()
             runCatching { revoked.enrollment.confirmActivation(ACTIVATION_CODE) }
             assertNull("a revoked attestation discards the record", revoked.storedRecord())
 
@@ -137,7 +137,7 @@ class ActivationFailurePolicyTest {
                         RouteScript.ACTIVATE to listOf(decline(401, "Not authorized for this entry point.")),
                     ),
                 )
-            unauthorized.seedRecord(activated = false)
+            unauthorized.seedRecord()
             runCatching { unauthorized.enrollment.confirmActivation(ACTIVATION_CODE) }
             // Discarding here would destroy a working enrolment over a token that is merely scoped wrong.
             assertNotNull("a permission problem discards nothing", unauthorized.storedRecord())
@@ -150,7 +150,7 @@ class ActivationFailurePolicyTest {
                 EnrollmentFixture(
                     RouteScript(RouteScript.ACTIVATE to listOf(decline(401, "some future wording"))),
                 )
-            fixture.seedRecord(activated = false)
+            fixture.seedRecord()
 
             runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }
 
@@ -171,19 +171,21 @@ class ActivationFailurePolicyTest {
                             listOf(decline(400, "Invalid activation code."), activateBody()),
                     ),
                 )
-            fixture.seedRecord(activated = false)
+            fixture.seedRecord()
 
             runCatching { fixture.enrollment.confirmActivation("000000") }
             fixture.enrollment.confirmActivation(ACTIVATION_CODE)
 
-            assertTrue(fixture.storedRecord()!!.activated)
+            // The binding is untouched by activation: it records what was attested, not what the service
+            // did afterwards.
+            assertNotNull(fixture.storedRecord())
         }
 
     @Test
     fun `a code that is not six digits is refused before anything is sent`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
-            fixture.seedRecord(activated = false)
+            fixture.seedRecord()
 
             for (bad in listOf("12345", "1234567", "12345a", "", " 12345")) {
                 val thrown = runCatching { fixture.enrollment.confirmActivation(bad) }.exceptionOrNull()
@@ -197,7 +199,7 @@ class ActivationFailurePolicyTest {
     fun `a record from another paypoint is not activated, and is not discarded`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
-            fixture.seedRecord(entry = "a-different-entry-point", activated = false)
+            fixture.seedRecord(entry = "a-different-entry-point")
 
             val thrown = runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }.exceptionOrNull()
 
@@ -223,20 +225,20 @@ class ActivationFailurePolicyTest {
     fun `a successful activation records it`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
-            fixture.seedRecord(activated = false)
+            fixture.seedRecord()
 
             fixture.enrollment.confirmActivation(ACTIVATION_CODE)
 
-            assertTrue(fixture.storedRecord()!!.activated)
-            // No challenge is requested first: the sibling SDK's is discarded and uncorrelated.
-            assertEquals(listOf(RouteScript.ACTIVATE), fixture.routes)
+            // Nothing is written on success, so there is no post-success write that can fail and leave a
+            // record disagreeing with the service.
+            assertEquals(listOf("get:$RECORD_ENTRY", RouteScript.ACTIVATE), fixture.trace)
         }
 
     @Test
     fun `the assertion headers are attached to the activation`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
-            fixture.seedRecord(activated = false)
+            fixture.seedRecord()
 
             fixture.enrollment.confirmActivation(ACTIVATION_CODE)
 

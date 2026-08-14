@@ -107,8 +107,8 @@ class DeviceEnrollmentTest {
 
             val outcome = fixture.enrollment.enroll()
 
-            assertTrue(outcome.activationRequired)
-            assertEquals(false, fixture.storedRecord()!!.activated)
+            assertTrue((outcome as EnrollmentOutcome.Attested).activationRequired)
+            assertNotNull(fixture.storedRecord())
         }
 
     @Test
@@ -125,8 +125,8 @@ class DeviceEnrollmentTest {
 
             val outcome = fixture.enrollment.enroll()
 
-            assertFalse(outcome.activationRequired)
-            assertTrue(fixture.storedRecord()!!.activated)
+            assertFalse((outcome as EnrollmentOutcome.Attested).activationRequired)
+            assertNotNull(fixture.storedRecord())
         }
 
     @Test
@@ -144,10 +144,9 @@ class DeviceEnrollmentTest {
 
             val outcome = fixture.enrollment.enroll()
 
-            // Recording it as active is the direction with no recovery: the warm gate would answer from
-            // the record and never prompt for a code again.
-            assertTrue(outcome.activationRequired)
-            assertEquals(false, fixture.storedRecord()!!.activated)
+            // Reporting it as active is the direction a caller cannot recover from: it stops asking for
+            // a code the device still owes.
+            assertTrue((outcome as EnrollmentOutcome.Attested).activationRequired)
         }
 
     @Test
@@ -162,28 +161,20 @@ class DeviceEnrollmentTest {
                     ),
                 )
 
-            assertTrue(fixture.enrollment.enroll().activationRequired)
+            assertTrue((fixture.enrollment.enroll() as EnrollmentOutcome.Attested).activationRequired)
         }
 
     @Test
-    fun `a device that is already enrolled makes no request at all`() =
+    fun `a device that is already attested makes no request, and claims nothing about activation`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
-            fixture.seedRecord(activated = true)
+            fixture.seedRecord()
 
             val outcome = fixture.enrollment.enroll()
 
-            assertFalse(outcome.activationRequired)
-            assertTrue(fixture.transport.requests.isEmpty())
-        }
-
-    @Test
-    fun `an enrolled device still owing activation is reported without a request`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            val fixture = EnrollmentFixture(RouteScript())
-            fixture.seedRecord(activated = false)
-
-            assertTrue(fixture.enrollment.enroll().activationRequired)
+            // Nothing was asked, so there is nothing to report. The sibling SDK answers this from a live
+            // call for the same reason: a remembered activation state is one nobody re-checks.
+            assertEquals(EnrollmentOutcome.AlreadyAttested, outcome)
             assertTrue(fixture.transport.requests.isEmpty())
         }
 

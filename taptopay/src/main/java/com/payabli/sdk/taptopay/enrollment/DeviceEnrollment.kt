@@ -82,10 +82,11 @@ internal class DeviceEnrollment(
     private val lock = Mutex()
 
     /**
-     * Brings the device to attested, and says whether it still owes an activation code.
+     * Brings the device to attested.
      *
      * Returns without touching the network when the device is already known and the key it was bound to is
-     * still the one at the handle.
+     * still the one at the handle. That answer carries no activation claim, because nothing was asked — see
+     * [EnrollmentOutcome].
      */
     suspend fun enroll(): EnrollmentOutcome =
         lock.withLock {
@@ -97,7 +98,7 @@ internal class DeviceEnrollment(
                     logger.debug(LogField.safe("event", "device_already_enrolled")) {
                         "device identity is current, skipping the cold sequence"
                     }
-                    return@withLock EnrollmentOutcome(activationRequired = !known.activated)
+                    return@withLock EnrollmentOutcome.AlreadyAttested
                 }
                 // The session is against a different paypoint, or the key at the handle was replaced.
                 // Either way the record no longer describes this device. Answered here, locally: the
@@ -128,8 +129,8 @@ internal class DeviceEnrollment(
             // writes the row `/activate` verifies against, so stopping here would leave nothing to verify.
             //
             // Keyed on `isActive`, not on the negation of `isPending`. An absent or unrecognized status
-            // makes both false, and recording that as active is the one direction with no recovery: the
-            // warm gate answers from the record and never prompts for a code again.
+            // makes both false, and reporting that as active is the direction a caller cannot recover from:
+            // it stops asking for a code the device still owes.
             val activationRequired = !registration.isActive
 
             val token = attestor.attest(DeviceAttestationBinding.nonceChallenge(challenge.challenge))
@@ -156,12 +157,11 @@ internal class DeviceEnrollment(
                         entry = entry,
                         deviceId = registration.deviceId,
                         keyId = identity.identity,
-                        activated = !activationRequired,
                     ),
                 )
             }
 
-            EnrollmentOutcome(activationRequired = activationRequired)
+            EnrollmentOutcome.Attested(activationRequired = activationRequired)
         }
 
     /**
@@ -216,7 +216,8 @@ internal class DeviceEnrollment(
                 throw declined
             }
 
-            withContext(NonCancellable) { store.write(known.activated()) }
+            // Nothing is written on success. The service holds whether this device is active, it can
+            // change without this SDK being involved, and a copy here would be a claim nobody re-checks.
         }
     }
 

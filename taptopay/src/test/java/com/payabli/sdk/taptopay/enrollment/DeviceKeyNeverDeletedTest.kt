@@ -109,7 +109,7 @@ class DeviceKeyNeverDeletedTest {
                         RouteScript(RouteScript.ACTIVATE to listOf(activateBody())),
                         deviceKey = FakeDeviceKey(signFailure = failure),
                     )
-                signing.seedRecord(activated = false)
+                signing.seedRecord()
                 runCatching { signing.enrollment.confirmActivation(ACTIVATION_CODE) }
                 assertEquals(failure.javaClass.simpleName, 0, signing.deviceKey.deletions)
             }
@@ -151,7 +151,7 @@ class DeviceKeyNeverDeletedTest {
                     RouteScript(),
                     deviceKey = FakeDeviceKey(signFailure = DeviceKeyException.KeyLost()),
                 )
-            fixture.seedRecord(activated = false)
+            fixture.seedRecord()
 
             runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }
 

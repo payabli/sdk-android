@@ -127,14 +127,13 @@ internal class EnrollmentFixture(
         entry: String = ENTRY,
         deviceId: String = DEVICE_ID,
         keyId: String = FakeDeviceKey.KEY_IDENTITY,
-        activated: Boolean = true,
     ) {
         storage.seed(
             RECORD_ENTRY,
             PayabliJson.format
                 .encodeToString(
                     AttestedDevice.serializer(),
-                    AttestedDevice(entry, deviceId, keyId, activated),
+                    AttestedDevice(entry, deviceId, keyId),
                 ).encodeToByteArray(),
         )
     }

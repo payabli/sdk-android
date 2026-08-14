@@ -14,6 +14,9 @@ import kotlinx.serialization.SerializationException
 /**
  * The one entry [AttestedDevice] lives in, and the rules for reading it back.
  *
+ * It holds the attestation binding and nothing else. Activation state is the service's, so it is asked for
+ * rather than kept — a copy here would be a claim nobody re-checks.
+ *
  * One entry holds the whole record, so there is no ordering between its parts and no window where half of
  * it is present. No rollback is needed.
  *

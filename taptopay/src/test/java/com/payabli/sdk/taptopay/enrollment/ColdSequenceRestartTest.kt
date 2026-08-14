@@ -35,7 +35,7 @@ class ColdSequenceRestartTest {
 
             val outcome = fixture.enrollment.enroll()
 
-            assertTrue(outcome.activationRequired)
+            assertTrue((outcome as EnrollmentOutcome.Attested).activationRequired)
             assertEquals(DEVICE_ID, fixture.storedRecord()!!.deviceId)
         }
 
@@ -105,10 +105,11 @@ class ColdSequenceRestartTest {
                 )
 
             fixture.enrollment.enroll()
-            fixture.enrollment.enroll()
+            val second = fixture.enrollment.enroll()
 
-            // The second call is answered from the record. Without that, `/register` would retire an active
-            // device and cost the merchant a fresh code.
+            // The second call is answered from the stored binding. Without that, `/register` would retire an
+            // active device and cost the merchant a fresh code.
+            assertEquals(EnrollmentOutcome.AlreadyAttested, second)
             assertEquals(3, fixture.routes.size)
         }
 }

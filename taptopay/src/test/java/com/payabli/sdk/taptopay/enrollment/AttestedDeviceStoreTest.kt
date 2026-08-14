@@ -29,13 +29,12 @@ class AttestedDeviceStoreTest {
             val storage = FakeSecureStore()
             val store = AttestedDeviceStore(storage)
 
-            store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY, activated = false))
+            store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY))
             val read = store.read()!!
 
             assertEquals(ENTRY, read.entry)
             assertEquals(DEVICE_ID, read.deviceId)
             assertEquals(FakeDeviceKey.KEY_IDENTITY, read.keyId)
-            assertFalse(read.activated)
         }
 
     @Test
@@ -173,7 +172,7 @@ class AttestedDeviceStoreTest {
                 FakeSecureStore(FakeSecureStore.failing("set", SecureStorageException.StorageUnavailable()))
             val store = AttestedDeviceStore(storage)
 
-            runCatching { store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY, activated = true)) }
+            runCatching { store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY)) }
 
             // One write, so there is no partial state to compensate for — this asserts that shape holds.
             assertTrue(storage.isEmpty)
@@ -185,7 +184,7 @@ class AttestedDeviceStoreTest {
             val storage = FakeSecureStore()
             storage.seed("com.payabli.sdk.core.some.other.entry", "another consumer's value".encodeToByteArray())
             val store = AttestedDeviceStore(storage)
-            store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY, activated = true))
+            store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY))
 
             store.clear()
 
@@ -195,13 +194,13 @@ class AttestedDeviceStoreTest {
 
     @Test
     fun `the record never prints its identity`() {
-        val record = AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY, activated = true)
+        val record = AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY)
 
         val printed = record.toString()
 
         assertFalse(printed.contains(ENTRY))
         assertFalse(printed.contains(DEVICE_ID))
         assertFalse(printed.contains(FakeDeviceKey.KEY_IDENTITY))
-        assertEquals("AttestedDevice(activated=true)", printed)
+        assertEquals("AttestedDevice()", printed)
     }
 }

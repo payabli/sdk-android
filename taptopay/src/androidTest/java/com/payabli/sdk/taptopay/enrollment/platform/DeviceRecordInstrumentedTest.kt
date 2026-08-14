@@ -56,20 +56,20 @@ class DeviceRecordInstrumentedTest {
     fun aRecordWrittenThroughTheAccessorSurvivesAFreshOpen() =
         runTest(timeout = TEST_TIMEOUT) {
             AttestedDeviceStore(DeviceTrust.open(context).store)
-                .write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID, activated = true))
+                .write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID))
 
             val read = AttestedDeviceStore(DeviceTrust.open(context).store).read()
 
             assertNotNull(read)
             assertEquals(DEVICE_ID, read!!.deviceId)
-            assertTrue(read.activated)
+            assertEquals(KEY_ID, read.keyId)
         }
 
     @Test
     fun theRecordIsNotReadableAsPlaintextInTheFile() =
         runTest(timeout = TEST_TIMEOUT) {
             AttestedDeviceStore(DeviceTrust.open(context).store)
-                .write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID, activated = true))
+                .write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID))
 
             val contents = storeFile.readText()
 
@@ -86,7 +86,7 @@ class DeviceRecordInstrumentedTest {
             val trust = DeviceTrust.open(context)
             trust.store.set(FOREIGN_ENTRY, FOREIGN_VALUE.encodeToByteArray())
             val store = AttestedDeviceStore(trust.store)
-            store.write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID, activated = true))
+            store.write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID))
 
             store.clear()
 

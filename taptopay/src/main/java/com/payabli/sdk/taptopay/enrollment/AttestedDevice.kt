@@ -3,7 +3,7 @@ package com.payabli.sdk.taptopay.enrollment
 import kotlinx.serialization.Serializable
 
 /**
- * What the service said about this device, last time it said anything.
+ * The attestation binding this device holds: which paypoint, which device handle, which key.
  *
  * **This records a fact, never a name.** The fact is that the service holds a binding between this device
  * and this key. There is exactly one device key, at one handle fixed in the SDK, and nothing here records
@@ -15,23 +15,26 @@ import kotlinx.serialization.Serializable
  * already sitting at the handle, the service revokes the prior binding and inserts a new one, and the device
  * is where it was.
  *
- * **A cache, not a credential.** Every field is identity or a status echo; none is secret. Forging one gets
- * a device nothing, because the authority is the service's own row plus a key that cannot leave the
- * platform's key store. Setting [activated] by hand activates nothing — the next call fails against the
- * service's state instead. A record copied from another device names a key this one does not hold, which
- * [DeviceEnrollment] rejects before it reaches the network.
+ * **Whether the device is activated is not here, and must not be added.** Activation is the service's state,
+ * it changes without this SDK being involved, and a copy of it here would be a claim nobody re-checks. The
+ * sibling SDK keeps the same three values and no more, and answers activation from a live call. Android has
+ * no status route yet, so until one exists the answer comes from the run that asked — see [EnrollmentOutcome]
+ * — and a warm start makes no claim at all.
  *
- * Not a data class: a generated `toString` would print [deviceId], [keyId] and [entry], and the last of
- * those names a merchant.
+ * **A cache, not a credential.** Every field is identity; none is secret. Forging one gets a device nothing,
+ * because the authority is the service's own row plus a key that cannot leave the platform's key store. A
+ * record copied from another device names a key this one does not hold, which [DeviceEnrollment] rejects
+ * before it reaches the network.
+ *
+ * Not a data class: a generated `toString` would print all three, and [entry] names a merchant.
  */
 @Serializable
 internal class AttestedDevice(
     /**
      * The paypoint this binding is against.
      *
-     * Stored because the service scopes a device by paypoint, so a record made under one entry says nothing
-     * about another. A session re-initialised against a different configuration must not read this as its
-     * own.
+     * The service scopes a device by paypoint, so a record made under one entry says nothing about another.
+     * A session re-initialized against a different configuration must not read this as its own.
      */
     val entry: String,
     /** The service's handle for this device, from `/register`. Not derivable; this is the reason to persist. */
@@ -45,18 +48,7 @@ internal class AttestedDevice(
      * by whoever is looking at it.
      */
     val keyId: String,
-    /**
-     * Whether the service last reported this device as active.
-     *
-     * A cache of the service's answer, and it can go stale: nothing in this module's routes reports device
-     * status, so a device retired out of band still reads as active here until a call says otherwise. Kept
-     * anyway, because the alternative is prompting an already-active merchant for a code on every launch.
-     */
-    val activated: Boolean,
 ) {
-    /** With activation recorded. */
-    fun activated(): AttestedDevice = AttestedDevice(entry, deviceId, keyId, activated = true)
-
-    /** Three of the four are identity, and [entry] names a merchant. */
-    override fun toString(): String = "AttestedDevice(activated=$activated)"
+    /** All three are identity, and [entry] names a merchant. */
+    override fun toString(): String = "AttestedDevice()"
 }
