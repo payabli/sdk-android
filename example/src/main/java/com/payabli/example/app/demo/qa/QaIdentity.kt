@@ -62,7 +62,13 @@ data class QaIdentity(
          */
         fun from(model: String): QaIdentity {
             val label = labelOf(model).ifBlank { UNKNOWN_LABEL }
-            return QaIdentity(label = label, slug = slugOf(label))
+            val slug = slugOf(label)
+            // A label carrying no letter or digit is not blank, so the check above passes it through, and
+            // sanitising is what empties it. The slug is what the customer number, the billing email and the
+            // order identifier are built from, so an empty one charges as `qa-android-` under
+            // `qa+@example.com` and orders under a name that starts with the timestamp.
+            if (slug.isEmpty()) return QaIdentity(label = UNKNOWN_LABEL, slug = slugOf(UNKNOWN_LABEL))
+            return QaIdentity(label = label, slug = slug)
         }
 
         /**

@@ -78,6 +78,19 @@ class QaIdentityTest {
     }
 
     @Test
+    fun `a model of punctuation says nothing either, and is named the same way`() {
+        // The blank check above sees a label that is not blank, so it passes this through. Sanitising is what
+        // empties it, and the slug is what the customer number, the billing email and the order identifier are
+        // built from: without a second check the device charges as `qa-android-` under `qa+@example.com`.
+        val identity = QaIdentity.from("---")
+
+        assertEquals("Unknown device", identity.label)
+        assertEquals("qa-android-unknown-device", identity.customerNumber)
+        assertEquals("qa+unknown-device@example.com", identity.billingEmail)
+        assertTrue("${identity.orderId(0)} has no device", identity.orderId(0).startsWith("unknown-device-"))
+    }
+
+    @Test
     fun `an order identifier carries the device and the second`() {
         // To the second, because a walk submits several a minute apart.
         val identity = QaIdentity.from("Google Pixel 7a")
