@@ -274,9 +274,13 @@ jobs:
           #
           # Two of :payin's classes are excluded by the module rather than from here, and this step cannot see
           # either: payin/build.gradle.kts names the live tier whenever its credentials are absent, which is
-          # always in CI, and it names one quarantined form class outright. A -P runner argument merges with
-          # what the build file set rather than replacing it, which is why that works and also why nothing
-          # here may pass notClass. So the tests this step runs are the annotation filter minus that list.
+          # always in CI, and it names one quarantined form class outright. Both travel under `notClass`.
+          #
+          # A -P runner argument replaces the DSL's value for the key it names, and merges only in the sense
+          # that a different key leaves the first alone. `notAnnotation` above is a different key, which is
+          # the whole reason the two coexist. A -P `notClass` here would overwrite that list and readmit both
+          # classes, sending real payments from CI, so nothing in this workflow passes one. What this step
+          # runs is the annotation filter minus whatever the module excluded.
           script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
