@@ -84,7 +84,7 @@ public data class PayInFormStyle(
 ) {
     init {
         // As PayInFormSpacing is, and for the same reason: this reaches Modifier.size, which refuses what
-        // this refuses. Caught here, where the value was written, rather than one composition later.
+        // this refuses. Caught here, where the value was written, not one composition later.
         require(
             listOf(brandMark.width, brandMark.height).all { it.value.isFinite() && it >= 0.dp },
         ) {

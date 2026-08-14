@@ -67,9 +67,9 @@ class CardBrandTest {
 
     @Test
     fun `no number is named one scheme and then another as it is typed`() {
-        // Stated once for every prefix rather than per range: a mark that appears and then swaps is wrong
-        // while the payer is looking at it. Settling from Unknown is the detector making up its mind, which
-        // is what should happen.
+        // One statement covering every prefix: a mark that appears and then swaps is wrong while the payer is
+        // looking at it. Settling from Unknown is the detector making up its mind, which is what should
+        // happen.
         //
         // Every six-digit prefix, because the widest range needs six digits to read.
         for (value in 0..999_999) {

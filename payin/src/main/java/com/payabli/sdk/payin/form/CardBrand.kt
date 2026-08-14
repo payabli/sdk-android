@@ -67,7 +67,7 @@ public enum class CardBrand {
          *
          * The check above needs six digits, and answering UnionPay before then puts the wrong mark beside a
          * Discover number for four keystrokes. Compared at the length typed so far, so a 62 number that has
-         * already left the range is marked at once rather than waiting for a sixth digit it does not need.
+         * already left the range is marked at once, without waiting for a sixth digit it does not need.
          */
         private fun String.mayReachDiscoversRange(): Boolean {
             if (length >= DISCOVER_RANGE_DIGITS) return false
