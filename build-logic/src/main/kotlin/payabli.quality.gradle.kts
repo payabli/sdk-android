@@ -32,10 +32,7 @@ plugins.withId("com.android.library") {
     }
 }
 
-// The same rule for application modules. The root build sets sonar.coverage.jacoco.xmlReportPaths on
-// every subproject that has a src/test directory, without asking which Android plugin it applies, so
-// without this branch :example's report path names a file nothing produces and every line in the
-// sample app is measured as uncovered.
+// The same rule for application modules.
 plugins.withId("com.android.application") {
     if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
         extensions.configure<ApplicationExtension> {

@@ -160,21 +160,22 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v5
 
-      # Analysis reads these reports, so they run first. Scoped to credential-free
-      # modules; see mobile-sdk brain, reference/tooling.md.
+      # Analysis reads these reports, so they run first. Scoped to the modules that build
+      # without a credential. :example is absent because the root build skips it in the
+      # analysis, so nothing here would read its reports. The build job still builds, tests,
+      # lints and formats it.
       - name: Produce reports
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
-          :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
+          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck
+          :core:lint :payin:lint :telemetry:lint :payabli-android:lint
 
       # Split from the step above so the serialising flag reaches the coverage tasks without also
-      # serialising eleven lint and format tasks. See the note in the build job.
+      # serialising nine lint and format tasks. See the note in the build job.
       - name: Produce coverage reports
         run: ./gradlew --max-workers=1
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
 
       # Card-present reports, only when the credential is available.
       - name: Produce card-present reports
@@ -185,5 +186,7 @@ jobs:
         if: env.GPR_TOKEN != ''
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
+      # The scanner indexes .github as well as the modules, so these workflow files are analysed.
+      # The Python beside them is not: the project's languages are Kotlin, XML and YAML.
       - name: Analyze
         run: ./gradlew sonar
