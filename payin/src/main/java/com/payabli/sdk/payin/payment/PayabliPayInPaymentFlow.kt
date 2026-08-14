@@ -5,6 +5,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
+import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
@@ -16,6 +17,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -46,6 +48,21 @@ public class PayabliPayInPaymentFlow private constructor(
     private val scope: CoroutineScope,
     private val submission: PayInSubmission,
 ) {
+    /**
+     * What the payer has entered, which lives here rather than in the form's composition.
+     *
+     * A rotation, a switch to another tab and a return from a pushed screen all end that composition. Held
+     * there, a card number entered before a rotation is a card number entered again afterwards.
+     */
+    internal val draft: PayInFormDraft = PayInFormDraft()
+
+    init {
+        // The screen going for good, which is the one point this type is told about. Strings are immutable, so
+        // this drops the references at a defined moment rather than wiping them; what keeps a value out of the
+        // request path is `SensitiveDigits`, not this.
+        scope.coroutineContext[Job]?.invokeOnCompletion { draft.clear() }
+    }
+
     public constructor(
         session: PayabliSession,
         entryPoint: String,

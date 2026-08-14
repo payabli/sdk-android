@@ -13,11 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -28,17 +26,15 @@ import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
-import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
-import com.payabli.sdk.payin.form.PayInSensitiveFields
-import com.payabli.sdk.payin.form.rejectedFieldsOnScreen
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /**
@@ -48,12 +44,16 @@ import com.payabli.sdk.payin.payment.PayInSubmissionState
  * drive this with a state they own, and neither can build a session. [onSubmit] answers whether the submission
  * was accepted, because a refused one leaves nothing pending.
  *
+ * [draft] has no default: where it is held decides whether the payer keeps what they typed across a rotation.
+ * One draft draws one form, so two forms sharing it fill each other's boxes.
+ *
  * Everything that draws is here rather than beside the public entry, which is what keeps it under
  * `NoHardCodedAppearanceTest`'s reading of this package.
  */
 @Composable
 internal fun PayInFormContent(
     submission: PayInSubmissionState,
+    draft: PayInFormDraft,
     configuration: PayInFormConfiguration,
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
@@ -76,33 +76,13 @@ internal fun PayInFormContent(
     // showed nothing, and only the click knew better, so tapping did nothing and said nothing.
     var today by remember { mutableStateOf(ExpiryValue.today()) }
 
-    // Keyed on the values as well as the configuration, so a caller replacing them starts the form again from
-    // what it handed over. The instrument follows them too: seeded bank details behind the card tab are fields
-    // nothing reads.
-    var method by
-        remember(configuration, initialValues) {
-            val seeded = initialValues?.method?.takeIf { it in configuration.methodsOffered }
-            mutableStateOf(seeded ?: configuration.startingMethod)
-        }
-    val typed =
-        remember(configuration, initialValues) {
-            mutableStateMapOf<PayInField, String>().apply {
-                initialValues?.values?.forEach { (field, value) -> if (value.isNotEmpty()) put(field, value) }
-            }
-        }
+    // Before anything below reads the draft, and on every composition: a caller replacing the configuration or
+    // the values starts the form again from what they handed over, and re-entering a composition with the same
+    // pair keeps what the payer typed.
+    draft.seed(configuration, initialValues)
 
-    // The fields the service objected to on the last submission, dropped one at a time as the payer edits: a
-    // marked box whose value has changed no longer holds what was rejected.
-    //
-    // Keyed on the values as the boxes are. One outliving them marks a value the payer never sent, and holds
-    // the button while it stands.
-    var rejectedFields by
-        remember(configuration, initialValues) { mutableStateOf<Map<PayInField, PayInFieldError>>(emptyMap()) }
-
-    // True from the tap until an outcome arrives, which is how a success from this form is told from one the
-    // host was already holding. Saveable and unkeyed: neither a rotation nor a new configuration changes which
-    // form sent the request in flight, and a restored value is cleared by the `Idle` arm of `deliver`.
-    var submissionPending by rememberSaveable { mutableStateOf(false) }
+    val method = draft.method
+    val typed = draft.typed
 
     // `enabled` only stops the second tap once the state has reached Submitting and the button has recomposed,
     // which is a frame away. Two taps inside that frame are two payments. The latch clears itself on the next
@@ -117,9 +97,6 @@ internal fun PayInFormContent(
 
     val sections = configuration.sectionsFor(method)
 
-    /** The instrument goes once the submission has an outcome, approved or refused. */
-    fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { typed.remove(it) }
-
     /**
      * Whether a box still holds a value the service rejected.
      *
@@ -127,7 +104,7 @@ internal fun PayInFormContent(
      * can complete.
      */
     fun anyRejectedFieldStands(chosen: PayInMethodType): Boolean =
-        rejectedFields.keys.any { it in configuration.inputFieldsFor(chosen) }
+        draft.rejectedFields.keys.any { it in configuration.inputFieldsFor(chosen) }
 
     // Keyed on the state itself, so a second rejection of the same field marks it again. `Succeeded` and
     // `Failed` are not data classes, so two identical consecutive rejections are two instances and the
@@ -135,11 +112,11 @@ internal fun PayInFormContent(
     LaunchedEffect(submission) {
         // Only an outcome this form sent. A flow shared with another screen would otherwise empty the boxes a
         // payer is filling in and report a success they never asked for.
-        val outcome = submission.takeIf { submissionPending } ?: return@LaunchedEffect
-        rejectedFields = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
+        val outcome = submission.takeIf { draft.submissionPending } ?: return@LaunchedEffect
+        draft.rejectedFields = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
         // Reported on the composition's dispatcher, which is where this effect runs; moving either call onto
         // the flow's coroutine would need withContext(Main).
-        submissionPending = outcome.deliver(::clearInstrument, completed, failed)
+        draft.submissionPending = outcome.deliver(draft::clearInstrument, completed, failed)
     }
 
     val context =
@@ -149,7 +126,7 @@ internal fun PayInFormContent(
             style = rememberResolvedStyle(style),
             today = today,
             enabled = !isSubmitting,
-            rejectedFields = rejectedFields,
+            rejectedFields = draft.rejectedFields,
             refreshClock = { today = ExpiryValue.today() },
         )
 
@@ -163,22 +140,14 @@ internal fun PayInFormContent(
 
         if (configuration.methodsOffered.size > 1) {
             MethodSelector(configuration.methodsOffered, method, isSubmitting) { chosen ->
-                method = chosen
-                // The new tab draws its own boxes, and a value with no box left is dropped rather than kept
-                // out of sight: a card number typed under the card tab is not sent with a bank payment.
-                typed.keys.retainAll(configuration.inputFieldsFor(chosen).toSet())
-                // The same rule for the errors the service sent back, so one whose box is gone goes with it.
-                rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, chosen)
+                draft.switchTo(chosen, configuration)
                 onMethodChanged(chosen)
             }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.section)) {
             sections.forEach { section ->
-                FormSection(section, method, typed, context) { field, value ->
-                    typed[field] = value
-                    rejectedFields = rejectedFields - field
-                }
+                FormSection(section, method, typed, context, draft::enter)
             }
         }
 
@@ -189,16 +158,18 @@ internal fun PayInFormContent(
             isSubmitting = isSubmitting,
             style = context.style,
             onClick = {
-                // Checked again here: `enabled` reflects the last composition, not the state at the tap.
+                // Checked again here, and read from the draft: `enabled` reflects the last composition, not
+                // the state at the tap.
                 today = ExpiryValue.today()
+                val chosen = draft.method
                 val readyToSend =
                     !justSubmitted &&
-                        !anyRejectedFieldStands(method) &&
-                        configuration.isComplete(typed, method, today)
+                        !anyRejectedFieldStands(chosen) &&
+                        configuration.isComplete(typed, chosen, today)
                 if (readyToSend) {
                     justSubmitted = true
                     // Only once it was accepted. Refused, nothing was sent, so nothing is pending.
-                    submissionPending = onSubmit(configuration.valuesFor(method, typed))
+                    draft.submissionPending = onSubmit(configuration.valuesFor(chosen, typed))
                 }
             },
         )
@@ -208,9 +179,8 @@ internal fun PayInFormContent(
 /**
  * Hands a terminal outcome to the caller, and answers whether a submission is still this form's to wait for.
  *
- * Idle says the flow holds nothing of this form's. Restored from saved state the pending flag can outlive the
- * flow that carried the submission — a host builds a new one after process death, and it starts idle — and a
- * form keeping the flag would take the next outcome on that flow as its own.
+ * Idle says the flow holds nothing of this form's, so the flag goes: a form keeping it would take the next
+ * outcome on that flow as its own.
  */
 private fun PayInSubmissionState.deliver(
     clearInstrument: () -> Unit,
@@ -417,5 +387,9 @@ private fun defaultSectionTitle(
 @PreviewLightDark
 @Composable
 private fun PayabliPayInFormPreview() {
-    PayInFormContent(submission = PayInSubmissionState.Idle, configuration = PayInFormConfiguration())
+    PayInFormContent(
+        submission = PayInSubmissionState.Idle,
+        draft = remember { PayInFormDraft() },
+        configuration = PayInFormConfiguration(),
+    )
 }
