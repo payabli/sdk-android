@@ -59,6 +59,34 @@ class PayInFormStyleTest {
         )
 
     @Test
+    fun `a brand mark box that cannot be drawn is refused where it was written`() {
+        // Modifier.size refuses each of these, one composition later and naming the modifier rather than the
+        // value. Unspecified is NaN, and NaN >= 0.dp is false, so it fails the same check as a negative.
+        listOf(
+            DpSize(Dp.Unspecified, Dp.Unspecified),
+            DpSize(Dp.Infinity, 20.dp),
+            DpSize((-1).dp, 20.dp),
+            DpSize(20.dp, (-1).dp),
+        ).forEach { size ->
+            val refusal = runCatching { resolvePayInFormStyle(light).copy(brandMark = size) }.exceptionOrNull()
+            assertTrue("$size was accepted", refusal is IllegalArgumentException)
+        }
+    }
+
+    @Test
+    fun `a brand mark box of zero is allowed, as a gap of zero is`() {
+        resolvePayInFormStyle(light).copy(brandMark = DpSize(0.dp, 0.dp))
+    }
+
+    @Test
+    fun `a gap that cannot be laid out is refused where it was written`() {
+        listOf(Dp.Unspecified, Dp.Infinity, (-1).dp).forEach { gap ->
+            val refusal = runCatching { PayInFormSpacing(content = gap) }.exceptionOrNull()
+            assertTrue("$gap was accepted", refusal is IllegalArgumentException)
+        }
+    }
+
+    @Test
     fun `every color in the style follows the theme it was resolved under`() {
         // Color by color. Comparing whole TextStyle objects passes as soon as any part of one
         // differs, which a hard-coded color survives on the strength of the font size beside it.

@@ -78,7 +78,17 @@ public data class PayInFormStyle(
     /** On top of [selectedContainer]. */
     public val selectedContent: Color,
     public val fieldColors: TextFieldColors? = null,
-)
+) {
+    init {
+        // As PayInFormSpacing is, and for the same reason: this reaches Modifier.size, which refuses what
+        // this refuses. Caught here, where the value was written, rather than one composition later.
+        require(
+            listOf(brandMark.width, brandMark.height).all { it.value.isFinite() && it >= 0.dp },
+        ) {
+            "the brand mark box has to be a finite measurement of zero or more"
+        }
+    }
+}
 
 /**
  * What the form reads out of the host's theme.
