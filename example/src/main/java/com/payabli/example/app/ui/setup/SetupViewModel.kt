@@ -8,6 +8,7 @@ import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.net.TokenServerClient
 import com.payabli.example.app.net.TokenServerProbe
 import com.payabli.example.app.net.displayText
+import com.payabli.example.app.payment.DemoForms
 import com.payabli.example.app.preflight.DeviceFacts
 import com.payabli.example.app.preflight.PreflightCheck
 import com.payabli.example.app.preflight.Readiness
@@ -104,9 +105,9 @@ class SetupViewModel(
                 tokenServer = container.tokenServer,
                 tokenClient = container.tokenClient,
                 readDeviceFacts = container.readDeviceFacts,
-                // The payment-method controller's own configuration, not a fresh copy. The two
-                // operations differ only in their summary section, so either describes the form.
-                formConfiguration = container.paymentMethodFlow.setup.configuration,
+                // The stored-method form. The capture form differs in more than its summary section: the
+                // stored-method route needs a customer number and collects one, and capture does not.
+                formConfiguration = DemoForms.storePaymentMethod().configuration,
             )
     }
 }

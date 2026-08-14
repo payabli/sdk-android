@@ -46,11 +46,18 @@ class ConfigIdentityTest {
     fun `every compared field is actually compared`() {
         // One assertion per field, so a field dropped from the comparison names itself rather than hiding
         // behind whichever other field a single combined case happened to also change.
-        assertNotEquals(config(), config(accessToken = "another-token"))
         assertNotEquals(config(), config(entryPoint = "another-entry"))
         assertNotEquals(config(), config(environment = PayabliEnvironment.QA))
         assertNotEquals(config(), config(telemetryEnabled = false))
         assertNotEquals(config(), config(tokenProvider = PayabliTokenProvider { "t" }))
+    }
+
+    @Test
+    fun `a freshly minted token is the same session`() {
+        // A token is a credential, not an identity: the same entry point in the same environment is the same
+        // session whichever token it carries.
+        assertEquals(config(), config(accessToken = "a-fresh-token"))
+        assertEquals(config().hashCode(), config(accessToken = "a-fresh-token").hashCode())
     }
 
     @Test

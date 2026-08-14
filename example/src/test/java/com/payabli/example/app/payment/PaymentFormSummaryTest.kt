@@ -13,12 +13,9 @@ import org.junit.Test
 /**
  * These tests exist for one property: the readout is derived, not transcribed.
  *
- * A hand-written list would pass a test that compares it against itself. Each test below instead
- * changes the configuration and asserts the readout followed, which is the only way to catch the
- * failure this section is meant to prevent — a screen that describes a form it no longer matches.
- *
- * The configuration is the SDK's own type now, so these also read as a check on it: a form nobody
- * can describe from its configuration is one an integrator cannot reason about either.
+ * A hand-written list would pass a test that compares it against itself. Each test below changes the
+ * configuration and asserts the readout followed, which is what catches a screen describing a form it
+ * does not match.
  */
 class PaymentFormSummaryTest {
     private fun rowsOf(configuration: PayInFormConfiguration) =
@@ -45,16 +42,16 @@ class PaymentFormSummaryTest {
             storeMethod.copy(
                 cardSections =
                     storeMethod.cardSections.map { section ->
-                        if (section.title == "Card") {
-                            section.copy(fields = section.fields + PayInField.RoutingNumber)
+                        if (section.title == "Card Information") {
+                            section.copy(fields = section.fields + PayInField.BillingPostalCode)
                         } else {
                             section
                         }
                     },
             )
 
-        assertTrue(rowsOf(widened)["Card fields"]!!.contains(PayInField.RoutingNumber.fieldName))
-        assertTrue(!rowsOf(storeMethod)["Card fields"]!!.contains(PayInField.RoutingNumber.fieldName))
+        assertTrue(rowsOf(widened)["Card fields"]!!.contains(PayInField.BillingPostalCode.fieldName))
+        assertTrue(!rowsOf(storeMethod)["Card fields"]!!.contains(PayInField.BillingPostalCode.fieldName))
     }
 
     @Test
@@ -82,11 +79,15 @@ class PaymentFormSummaryTest {
     }
 
     @Test
-    fun `capture and store list the same typed fields, because only the summary section differs`() {
-        assertEquals(
-            rowsOf(storeMethod)["Card fields"],
-            rowsOf(DemoForms.capture().configuration)["Card fields"],
-        )
+    fun `store asks for a customer number and capture does not, and nothing else differs`() {
+        // A stored method belongs to a customer and the service refuses one it cannot identify, so that field
+        // is on the store form only. Everything else the two collect is the same.
+        val store = storeMethod.inputFieldsFor(PayInMethodType.Card)
+        val capture = DemoForms.capture().configuration.inputFieldsFor(PayInMethodType.Card)
+
+        assertEquals(listOf(PayInField.CustomerNumber), store - capture.toSet())
+        assertEquals(emptyList<PayInField>(), capture - store.toSet())
+        assertTrue(rowsOf(storeMethod)["Card fields"]!!.contains(PayInField.CustomerNumber.fieldName))
     }
 
     @Test
@@ -180,6 +181,6 @@ class PaymentFormSummaryTest {
                 .capture()
                 .configuration.cardSections
                 .mapNotNull(PayInFormSection::title)
-        assertEquals(listOf("Card", "Customer", "Payment"), titles)
+        assertEquals(listOf("Card Information", "Customer Information", "Payment Information"), titles)
     }
 }

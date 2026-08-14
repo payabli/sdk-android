@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.form
 
 import androidx.compose.runtime.Immutable
+import java.util.Collections
 
 /** Whether a section takes input or reads values back. */
 public enum class PayInSectionStyle {
@@ -37,7 +38,7 @@ public class PayInFormSection(
     public val title: String? = null,
     public val style: PayInSectionStyle = PayInSectionStyle.Inputs,
 ) {
-    public val fields: List<PayInField> = fields.toList()
+    public val fields: List<PayInField> = Collections.unmodifiableList(fields.toList())
 
     /** As a `data class` would, over the copy rather than over what was handed in. */
     public fun copy(
@@ -79,7 +80,7 @@ public data class PayInFormatting(
 }
 
 /**
- * What the form collects and how it is arranged. Colours, type and spacing are [PayInFormStyle]'s.
+ * What the form collects and how it is arranged. Colors, type and spacing are [PayInFormStyle]'s.
  *
  * [allowedMethods] and [defaultMethod] are what a caller passed, unchanged. Two corrections apply to
  * what the form reads instead: [methodsOffered] drops duplicates and is never empty, and
@@ -103,18 +104,44 @@ public class PayInFormConfiguration(
     /** Values for a [PayInSectionStyle.Summary] section, already formatted by the caller. */
     summaryValues: Map<PayInField, String> = emptyMap(),
 ) {
-    public val allowedMethods: List<PayInMethodType> = allowedMethods.toList()
-    public val cardSections: List<PayInFormSection> = cardSections.toList()
-    public val bankSections: List<PayInFormSection> = bankSections.toList()
-    public val requiredFields: Set<PayInField> = requiredFields.toSet()
-    public val hiddenFieldLabels: Set<PayInField> = hiddenFieldLabels.toSet()
-    public val summaryValues: Map<PayInField, String> = summaryValues.toMap()
+    public val allowedMethods: List<PayInMethodType> = Collections.unmodifiableList(allowedMethods.toList())
+    public val cardSections: List<PayInFormSection> = Collections.unmodifiableList(cardSections.toList())
+    public val bankSections: List<PayInFormSection> = Collections.unmodifiableList(bankSections.toList())
+    public val requiredFields: Set<PayInField> = Collections.unmodifiableSet(requiredFields.toSet())
+    public val hiddenFieldLabels: Set<PayInField> = Collections.unmodifiableSet(hiddenFieldLabels.toSet())
+    public val summaryValues: Map<PayInField, String> = Collections.unmodifiableMap(summaryValues.toMap())
 
     private val methods: List<PayInMethodType> =
         this.allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
 
+    init {
+        // A method offered without one of these renders a form the payer can complete and the SDK cannot
+        // submit: the instrument is built from fields, and a missing one is refused naming the service's
+        // spelling for a box that is not on screen. Refused here instead, where the sections were written.
+        methods.forEach { method ->
+            val absent = PayInFieldRules.instrumentFields(method) - inputFieldsFor(method).toSet()
+            require(absent.isEmpty()) { "a $method form cannot submit without ${absent.joinToString()}" }
+        }
+
+        // The amounts are the operation's. A box a payer types into would take a figure the request does not
+        // carry, so the screen would show one amount and the service would take another.
+        methods.forEach { method ->
+            val typed = inputFieldsFor(method).filter { it in READ_BACK_ONLY }
+            require(typed.isEmpty()) {
+                "${typed.joinToString()} cannot be typed into: the amounts come from the operation"
+            }
+        }
+
+        // The other instrument's fields, for the same reason: a routing number in a card form is collected
+        // from the payer and then dropped.
+        methods.forEach { method ->
+            val foreign = inputFieldsFor(method).filter { it in PayInFieldRules.fieldsNotCarriedBy(method) }
+            require(foreign.isEmpty()) { "a $method request cannot carry ${foreign.joinToString()}" }
+        }
+    }
+
     /** The allowed methods, with duplicates dropped and never empty. */
-    public val methodsOffered: List<PayInMethodType> get() = methods
+    public val methodsOffered: List<PayInMethodType> get() = Collections.unmodifiableList(methods)
 
     /** The starting method, always one of [methodsOffered]. */
     public val startingMethod: PayInMethodType
@@ -225,6 +252,14 @@ public class PayInFormConfiguration(
             "summaryValues=${summaryValues.keys})"
 
     public companion object {
+        /**
+         * Fields a form shows and never collects.
+         *
+         * Both amounts are set on the operation, and nothing reads them back out of the form, so a box a
+         * payer could type into would take a figure no request carries.
+         */
+        private val READ_BACK_ONLY = setOf(PayInField.Amount, PayInField.ServiceFee)
+
         /** Card details, as a payer is asked for them. */
         public fun defaultCardSections(): List<PayInFormSection> =
             listOf(

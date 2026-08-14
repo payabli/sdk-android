@@ -196,12 +196,14 @@ class PayInApiBoundsTest {
     // --- card brands ---
 
     @Test
-    fun `Discover's six digit range is recognised`() {
+    fun `Discover's six digit range is recognized, and its neighbours are UnionPay`() {
         listOf("622126", "622500", "622925").forEach {
             assertEquals(it, CardBrand.Discover, CardBrand.of(it))
         }
+        // Either side of the range Discover acquired is UnionPay's own. Both read Unknown before UnionPay
+        // was a case, so a UnionPay card carried no badge at all.
         listOf("622125", "622926").forEach {
-            assertEquals(it, CardBrand.Unknown, CardBrand.of(it))
+            assertEquals(it, CardBrand.UnionPay, CardBrand.of(it))
         }
     }
 
@@ -315,12 +317,12 @@ class PayInApiBoundsTest {
 
     @Test
     fun `a section's field list is copied too`() {
-        val fields = mutableListOf(PayInField.CardNumber)
+        val fields = CARD_INSTRUMENT_FIELDS.toMutableList()
         val configuration = PayInFormConfiguration(cardSections = listOf(PayInFormSection(fields = fields)))
-        fields += PayInField.CardholderName
+        fields += PayInField.BillingEmail
 
         assertEquals(
-            listOf(PayInField.CardNumber),
+            CARD_INSTRUMENT_FIELDS,
             configuration.sectionsFor(PayInMethodType.Card).single().fields,
         )
     }

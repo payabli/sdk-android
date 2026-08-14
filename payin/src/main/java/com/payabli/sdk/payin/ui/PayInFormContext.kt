@@ -2,6 +2,8 @@ package com.payabli.sdk.payin.ui
 
 import androidx.compose.runtime.Immutable
 import com.payabli.sdk.payin.form.ExpiryValue
+import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
@@ -11,6 +13,9 @@ import com.payabli.sdk.payin.form.PayInFormStyle
  *
  * [refreshClock] is the one way out: a field that is about to offer a choice of months asks for
  * [today] to be read again first, so an idle form does not offer one that has gone.
+ *
+ * [rejectedFields] is what the service objected to on the last submission. The rules answer for the value in the box;
+ * this answers for the value that was sent.
  */
 @Immutable
 internal data class PayInFormContext(
@@ -19,5 +24,6 @@ internal data class PayInFormContext(
     val style: PayInFormStyle,
     val today: ExpiryValue,
     val enabled: Boolean,
+    val rejectedFields: Map<PayInField, PayInFieldError>,
     val refreshClock: () -> Unit,
 )

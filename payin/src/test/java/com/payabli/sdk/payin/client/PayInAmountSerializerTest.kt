@@ -81,7 +81,7 @@ class PayInAmountSerializerTest {
     }
 
     @Test
-    fun `scale beyond two places is normalised in both directions`() {
+    fun `scale beyond two places is normalized in both directions`() {
         assertEquals("""{"totalAmount":10.00}""", encode("10.0000"))
         assertEquals("""{"totalAmount":10.00}""", encode("9.9999999"))
     }

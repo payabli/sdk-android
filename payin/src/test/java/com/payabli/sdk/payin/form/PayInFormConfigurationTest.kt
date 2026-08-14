@@ -58,13 +58,13 @@ class PayInFormConfigurationTest {
             PayInFormConfiguration(
                 cardSections =
                     listOf(
-                        PayInFormSection(fields = listOf(PayInField.CardNumber, PayInField.CardholderName)),
-                        PayInFormSection(fields = listOf(PayInField.CardNumber, PayInField.CardPostalCode)),
+                        PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
+                        PayInFormSection(fields = listOf(PayInField.CardNumber, PayInField.BillingEmail)),
                     ),
             )
 
         assertEquals(
-            listOf(PayInField.CardNumber, PayInField.CardholderName, PayInField.CardPostalCode),
+            CARD_INSTRUMENT_FIELDS + PayInField.BillingEmail,
             configuration.inputFieldsFor(PayInMethodType.Card),
         )
     }
@@ -75,7 +75,7 @@ class PayInFormConfigurationTest {
             PayInFormConfiguration(
                 cardSections =
                     listOf(
-                        PayInFormSection(fields = listOf(PayInField.CardNumber)),
+                        PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
                         PayInFormSection(title = "Empty", fields = listOf(PayInField.CardNumber)),
                     ),
             )
@@ -109,6 +109,53 @@ class PayInFormConfigurationTest {
 
         assertFalse(configuration.inputFieldsFor(PayInMethodType.Card).contains(PayInField.Amount))
         assertEquals(2, configuration.sectionsFor(PayInMethodType.Card).size)
+    }
+
+    @Test
+    fun `a card form cannot ask for a field only a bank request carries`() {
+        // Typed and then dropped, and a routing number is not something to collect and drop.
+        val refusal =
+            runCatching {
+                PayInFormConfiguration(
+                    allowedMethods = listOf(PayInMethodType.Card),
+                    cardSections =
+                        PayInFormConfiguration.defaultCardSections() +
+                            PayInFormSection(fields = listOf(PayInField.RoutingNumber)),
+                )
+            }.exceptionOrNull()
+
+        assertTrue("a card form collected a routing number", refusal is IllegalArgumentException)
+        assertTrue(
+            "does not name the field: ${refusal?.message}",
+            refusal?.message?.contains("RoutingNumber") == true,
+        )
+    }
+
+    @Test
+    fun `a bank form cannot ask for a field only a card request carries`() {
+        val refusal =
+            runCatching {
+                PayInFormConfiguration(
+                    allowedMethods = listOf(PayInMethodType.BankAccount),
+                    defaultMethod = PayInMethodType.BankAccount,
+                    bankSections =
+                        PayInFormConfiguration.defaultBankSections() +
+                            PayInFormSection(fields = listOf(PayInField.CardSecurityCode)),
+                )
+            }.exceptionOrNull()
+
+        assertTrue("a bank form collected a security code", refusal is IllegalArgumentException)
+    }
+
+    @Test
+    fun `a field both requests carry is allowed on either form`() {
+        // The rule names the other instrument's fields, not everything outside this one's.
+        PayInFormConfiguration(
+            allowedMethods = listOf(PayInMethodType.Card),
+            cardSections =
+                PayInFormConfiguration.defaultCardSections() +
+                    PayInFormSection(fields = listOf(PayInField.BillingEmail, PayInField.CustomerNumber)),
+        )
     }
 
     // --- labels ---
@@ -244,7 +291,7 @@ class PayInFormConfigurationTest {
         val required = mutableSetOf(PayInField.CustomerNumber)
         val hidden = mutableSetOf(PayInField.CardNumber)
         val summary = mutableMapOf(PayInField.Amount to "$ 1.00")
-        val sectionFields = mutableListOf(PayInField.CardNumber)
+        val sectionFields = CARD_INSTRUMENT_FIELDS.toMutableList()
 
         val configuration =
             PayInFormConfiguration(
@@ -259,14 +306,14 @@ class PayInFormConfigurationTest {
         required += PayInField.MethodDescription
         hidden.clear()
         summary[PayInField.Amount] = "$ 999.00"
-        sectionFields += PayInField.CardholderName
+        sectionFields += PayInField.BillingEmail
 
         assertEquals(listOf(PayInMethodType.Card), configuration.methodsOffered)
         assertFalse(configuration.isRequired(PayInField.MethodDescription))
         assertFalse(configuration.showsLabelFor(PayInField.CardNumber))
         assertEquals("$ 1.00", configuration.summaryValueFor(PayInField.Amount))
         assertEquals(
-            listOf(PayInField.CardNumber),
+            CARD_INSTRUMENT_FIELDS,
             configuration.sectionsFor(PayInMethodType.Card).single().fields,
         )
     }

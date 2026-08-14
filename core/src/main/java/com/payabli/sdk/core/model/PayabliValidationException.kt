@@ -1,12 +1,12 @@
 package com.payabli.sdk.core.model
 
+import java.util.Collections
+
 /**
  * HTTP 400: an `application/problem+json` document (RFC 9457) plus Payabli's own `code` and `errors`.
  *
- * [httpStatus] comes from the response rather than from the body's own `status` field, because the
- * response is the authority. The body's `token` field is deliberately not surfaced: it is a temporary
- * page identifier, and not decoding it is what keeps it off a `Throwable` that may reach a crash
- * reporter.
+ * [httpStatus] comes from the response, not from the body's own `status` field. The body's `token` field
+ * is not decoded: it is a temporary page identifier, and this `Throwable` may reach a crash reporter.
  */
 public class PayabliValidationException(
     public val httpStatus: Int,
@@ -25,8 +25,14 @@ public class PayabliValidationException(
      * a null [PayabliFieldError.suggestion]. A key of `$` is the request body as a whole rather than a
      * field in it, which is how a missing required property reports itself.
      */
-    public val fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
+    fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
 ) : PayabliException(PayabliErrorCode.VALIDATION_ERROR, reason, detail) {
+    /** Copied and wrapped at both levels: the lists arrive from the decoder as `ArrayList`. */
+    public val fieldErrors: Map<String, List<PayabliFieldError>> =
+        Collections.unmodifiableMap(
+            fieldErrors.mapValues { (_, failures) -> Collections.unmodifiableList(failures.toList()) },
+        )
+
     public companion object {
         public const val DEFAULT_REASON: String = "Validation failed"
     }

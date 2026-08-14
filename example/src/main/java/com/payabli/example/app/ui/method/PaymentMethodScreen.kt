@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -25,6 +26,7 @@ import com.payabli.example.app.ui.payment.PaymentFlowActions
 import com.payabli.example.app.ui.payment.PaymentFlowScreen
 import com.payabli.example.app.ui.theme.Dimens
 import com.payabli.example.app.ui.theme.PayabliDemoTheme
+import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /** Store a card or bank account and get a reusable token back. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,21 +36,32 @@ fun PaymentMethodScreen(
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
 ) {
+    // One place reads the SDK's state: the flag below and the form both come from it.
+    val submission =
+        state.payments
+            ?.state
+            ?.collectAsState()
+            ?.value ?: PayInSubmissionState.Idle
+
     PaymentFlowScreen(
-        title = "Save",
+        title = "Save a method",
         state = state,
+        flow = state.payments,
+        operation = state.operation,
+        submission = submission,
         steps =
             PaymentSteps.forStoringMethod(
                 PaymentProgress(
                     backendReachable = state.backendReachable,
                     backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
                     isCheckingBackend = state.isCheckingToken,
-                    isSubmitting = state.isSubmitting,
+                    isSubmitting = submission is PayInSubmissionState.Submitting,
                     submitFailed = state.submitFailed,
-                    finished = state.outcomeReady,
+                    finished = state.finished,
                 ),
             ),
         resultEmptyText = "Nothing stored yet",
+        startOverText = "Save another method",
         actions = actions,
         modifier = modifier,
     )

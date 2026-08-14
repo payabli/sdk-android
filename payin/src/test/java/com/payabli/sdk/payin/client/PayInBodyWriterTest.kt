@@ -38,7 +38,7 @@ class PayInBodyWriterTest {
     }
 
     @Test
-    fun `a bank fragment defaults the authorisation and omits what was not given`() {
+    fun `a bank fragment defaults the authorization and omits what was not given`() {
         val fragment = PayInBodyWriter.instrumentFragment(PayInInstrument.BankAccount(testAccount()))
         val parsed = parsed(fragment)
 

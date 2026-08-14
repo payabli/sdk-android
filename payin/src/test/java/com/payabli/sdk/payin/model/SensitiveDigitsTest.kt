@@ -87,8 +87,8 @@ class SensitiveDigitsTest {
     @Test
     fun `useDigits wipes the copy it lent, including when the block throws`() {
         // Retaining the argument is the only way to observe what the block was given, and nothing in production
-        // retains it. Measured: with the wipe removed, all 274 tests in this module still passed, so until this
-        // test existed the guarantee rested on reading the code.
+        // retains it. It is also the only thing that fails when the wipe goes: every other test in the module
+        // passes without it.
         val value = SensitiveDigits.ofString(pan)
         var lent: CharArray? = null
 

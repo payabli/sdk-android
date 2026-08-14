@@ -153,7 +153,7 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   files out of the compilation. This is not a stand-in for a fixtures module and cannot become one: `LogSink`
   and `DefaultSdkLogger` are `internal`, and only compilations of `:core` itself see those. Moving these
   fixtures to a sibling module or to AGP `testFixtures` would mean widening a published security SDK's API to
-  suit a test layout. Do not re-propose it. The separate cross-module fixtures module (PLA-2192) is a
+  suit a test layout. Do not re-propose it. A separate cross-module fixtures module is a
   different thing and still does not exist.
 - Two transport behaviours cannot be shown on the JVM, and both are now covered on-device in
   `PayabliServiceInstrumentedTest`: transparent gzip and `PATCH` acceptance. **"Cancellation unblocking a
@@ -186,15 +186,40 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
   skip cannot be told apart from a regression that started skipping.
 
+  **There are two of that annotation and a command has to name both.** An `androidTest` source set is invisible
+  to another module's, so `:core` has `com.payabli.sdk.core.ManualDeviceTest` and `:payin` has
+  `com.payabli.sdk.payin.ManualDeviceTest`. `notAnnotation` takes one value per run, so a job covering both
+  modules passes each module its own.
+
   ```bash
   # Only the manual tier, against a wired phone. ANDROID_SERIAL matters when an emulator is also attached.
   ANDROID_SERIAL=<serial> ./gradlew :core:connectedAndroidTest \
     -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.core.ManualDeviceTest
   ```
 
-  Put a test there only when an emulator cannot answer the question. The current ones assert the storage key
-  is in secure hardware at the device's best level, which on an emulator fails with `SECURITY_LEVEL_SOFTWARE`:
+  Put a test there only when an emulator cannot answer the question. `:core`'s assert the storage key is in
+  secure hardware at the device's best level, which on an emulator fails with `SECURITY_LEVEL_SOFTWARE`:
   excluding them is load-bearing, not housekeeping.
+
+  **A test that needs credentials is gated twice, and the second gate is the one that keeps the counts honest.**
+  `PayInLiveFlowsInstrumentedTest` sends real requests, so `payin/build.gradle.kts` excludes it **by name**
+  unless four `payabli.liveTest.*` Gradle properties are set, and the annotation marks the tier. Credentials
+  belong in `~/.gradle/gradle.properties` and reach the test as instrumentation arguments; nothing about an
+  environment is committed. Follow that pattern for anything else needing a credential: a property, a named
+  exclusion when it is absent, and no skip.
+
+  ```bash
+  ANDROID_SERIAL=<serial> ./gradlew :payin:connectedDebugAndroidTest \
+    -Ppayabli.liveTest.environment=<name> -Ppayabli.liveTest.entryPoint=<entry> \
+    -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret> \
+    -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.payin.ManualDeviceTest
+  ```
+
+  One environment per invocation, because the SDK installs one session per process and the environment is one of
+  the values it compares, so naming a second one is refused. A fresh token is not: a token is a credential rather
+  than an identity and is not compared at all. The tier covers
+  what the public flow reaches; charging an already-stored method is not in it, because `PayInFormInstrument`
+  builds only `Card` and `BankAccount` from a form.
 - **`KeyPermanentlyInvalidatedException` is handled defensively, not reachably, and there is no manual
   procedure for it.** An earlier version of this file described one: write a value, change a credential, read
   it back. That cannot work. The storage key deliberately omits `setUserAuthenticationRequired`, because the
@@ -211,7 +236,7 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   test fails as invalid configuration while every unit test still passes.
 - **CI runs no instrumented test.** All jobs are `ubuntu-latest` with no emulator, so `connectedAndroidTest`
   is a deliberate local step and a regression in the three device-only behaviours will not turn a pull
-  request red. PLA-2306 adds a manual and nightly emulator job, deliberately not a required per-PR check.
+  request red. A manual and nightly emulator job is planned, and it is not a required per-PR check.
 - Card-present paths need a physical device or mocks rather than an emulator.
 - **Attestation runs on an emulator and has no manual tier, both of which were measured.** Attestation lives
   in `:taptopay`, not `:core`: the platform verdict gates arming the card reader, and keeping it there is

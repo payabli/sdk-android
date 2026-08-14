@@ -35,6 +35,63 @@ public object PayInFieldRules {
             PayInField.DeviceId,
         )
 
+    private val CARD_INSTRUMENT =
+        setOf(
+            PayInField.CardNumber,
+            PayInField.CardExpiration,
+            PayInField.CardSecurityCode,
+            PayInField.CardholderName,
+            PayInField.CardPostalCode,
+        )
+
+    private val BANK_INSTRUMENT =
+        setOf(
+            PayInField.AccountNumber,
+            PayInField.RoutingNumber,
+            PayInField.AccountHolder,
+        )
+
+    /** Everything a card request carries and a bank one does not. */
+    private val CARD_ONLY = CARD_INSTRUMENT
+
+    /** The same for a bank request. Wider than [BANK_INSTRUMENT]: these four are carried but optional. */
+    private val BANK_ONLY =
+        BANK_INSTRUMENT +
+            setOf(
+                PayInField.AccountType,
+                PayInField.AccountHolderType,
+                PayInField.SecCode,
+                PayInField.DeviceId,
+            )
+
+    /**
+     * The fields the other instrument carries, which this method's request has nowhere to put.
+     *
+     * A box for one of these is collected from the payer and then dropped, and a routing number is not
+     * something to collect and drop.
+     */
+    internal fun fieldsNotCarriedBy(method: PayInMethodType): Set<PayInField> =
+        when (method) {
+            PayInMethodType.Card -> BANK_ONLY
+            PayInMethodType.BankAccount -> CARD_ONLY
+        }
+
+    /**
+     * The fields an instrument of this method cannot be built without, whichever fields a form renders.
+     *
+     * [missing] answers requiredness for a field that is on the form. These are required of the *form*: the
+     * request carries no absent value for any of them, so a method offered without one can never submit.
+     * `PayInInstrumentFieldsTest` holds this to what the client refuses, one field at a time.
+     *
+     * A copy per call. Kotlin's read-only `Set` is a `LinkedHashSet` at runtime, so the set behind this is one
+     * a Java caller can clear, and the configuration check reads it on every construction.
+     */
+    public fun instrumentFields(method: PayInMethodType): Set<PayInField> =
+        when (method) {
+            PayInMethodType.Card -> CARD_INSTRUMENT
+            PayInMethodType.BankAccount -> BANK_INSTRUMENT
+        }.toSet()
+
     /** How many characters a field will accept, after formatting is stripped. */
     public fun maxLength(field: PayInField): Int? =
         when (field) {

@@ -30,48 +30,28 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
 /**
  * One session per app process: one token holder, one transport, one state.
  *
- * Per **process**, not per app, and the difference is real rather than pedantic. The installed session and
- * the lock guarding it are companion state, which Android gives every process its own copy of, so an app
- * that runs a service or an activity under `android:process` gets a session in each and a refresh in one is
- * invisible to the other. Nothing here coordinates across that boundary and nothing pretends to.
+ * Per **process**, not per app. The installed session and the lock guarding it are companion state, which
+ * Android gives every process its own copy of, so an app that runs a service or an activity under
+ * `android:process` gets a session in each, and a refresh in one is invisible to the other. Nothing here
+ * coordinates across that boundary.
  *
- * One initialize call and one session serving every capability, never two, and this type makes that
- * structural. Building the auth stack twice produced two token holders, so a refresh de-duplicated inside
- * one was invisible to the other; nothing enforced the sharing, a doc comment requested it.
+ * One session serves every capability, and this type is what makes that structural rather than requested:
+ * two auth stacks are two token holders, and a refresh de-duplicated inside one is invisible to the other.
  *
  * **The type is host-facing, its members mostly are not.** An integrator names this type, calls [initialize]
  * and [setLogLevel], and hands the result to a capability. The transport and [state] are
- * `@RestrictTo(LIBRARY_GROUP)`: reachable from the SDK's own artifacts, including a card-present capability
- * shipped as its own repository, and a Lint error in a host app's build. A detached capability cannot build
- * the auth stack itself, so it must be handed a ready transport; a host app has no business issuing
- * arbitrary authenticated requests.
- *
- * **There is no accessor for the token holder, at any visibility.** A capability needs a transport that is
- * already correct, never the credential inside it.
- *
- * The credential-rejection policy is the transport's default and is not settable here. A host cannot supply
- * one, since `AuthRecoveryPolicy` is `@RestrictTo` and naming it is a Lint error outside this Maven group,
- * and one policy for the whole session is the wrong granularity for the case that wants it: the card-present
- * device routes need refresh refused on those routes alone, which is a property of a transport rather than
- * of a session. Whatever gives them that is the shape that work chooses, not a parameter guessed ahead of it.
+ * `@RestrictTo(LIBRARY_GROUP)`, so a capability shipped as its own artifact can reach them and a host app
+ * cannot. Nothing reaches the token at any visibility.
  */
 public class PayabliSession private constructor(
     private val identity: ConfigIdentity,
     private val machine: SessionStateMachine,
-    /**
-     * The authenticated transport for this session: bearer injected, one 401 recovered, one replay.
-     *
-     * One instance, held. iOS rebuilds its decorator on every read of the equivalent property, which leaves
-     * nowhere to hang anything stateful.
-     */
+    /** The authenticated transport for this session: bearer injected, one 401 recovered, one replay. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val transport: PayabliTransport,
 ) {
     public companion object {
-        /**
-         * Serializes [initialize] so two callers racing at startup install one session rather than two.
-         * A `Mutex` rather than a synchronized block because `initialize` is `suspend`.
-         */
+        /** Serializes [initialize] so two callers racing at startup install one session rather than two. */
         private val lock = Mutex()
 
         @Volatile
@@ -82,44 +62,14 @@ public class PayabliSession private constructor(
 
         private val logger: SdkLogger get() = LoggerRegistry.of(LogCategory.CORE)
 
-        /**
-         * The one place the SDK picks a dispatcher.
-         *
-         * This is the layer an integrating app calls, so the choice is made here and handed down; nothing
-         * below takes a default. A default at a lower layer is invisible at the call site, and a composition
-         * that omitted one would run on the real `Dispatchers.IO` while every layer above it believed it had
-         * supplied the dispatcher, with nothing reporting the difference.
-         *
-         * `IO` because everything under it is blocking I/O: sockets, files and Keystore calls.
-         */
+        /** Chosen here and handed down, and `IO` because sockets, files and Keystore calls all block. */
         private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
 
-        /**
-         * What the SDK can do right now.
-         *
-         * On the companion for the reason [setLogLevel] is: it has to be readable before an instance exists.
-         * A state reachable only through a session could never be [SdkState.Uninitialized], because a session
-         * exists only once [initialize] has succeeded, and a consumer of a sealed state would then be writing
-         * a branch that can never run.
-         *
-         * **Process-wide, and there is exactly one of it.** After a finished session is replaced this reads
-         * the successor's state, so a caller never has to know that two sessions existed. So does a capability
-         * still holding the session that was replaced, and that old session is not usable: its transport is
-         * latched and every request through it fails without sending.
-         */
+        /** What the SDK can do right now. One per process, readable before a session exists. */
         @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
         public val state: StateFlow<SdkState> = sink.asStateFlow()
 
-        /**
-         * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK.
-         *
-         * On the companion because an explicit level must beat the automatic one **in either call order**,
-         * and the automatic one is derived inside [initialize]. An instance-owned setter could not be
-         * called before that.
-         *
-         * There is no way back to an unset level. This governs **whether** records are emitted, never what
-         * they may contain: every record is redacted before it is written.
-         */
+        /** Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK. */
         public fun setLogLevel(level: LogLevel) {
             LoggerRegistry.setLogLevel(level)
         }
@@ -127,17 +77,14 @@ public class PayabliSession private constructor(
         /**
          * Starts the SDK, or returns the session already started.
          *
-         * Idempotent: twice with the same configuration returns the same instance, so an app initializing
-         * in `Application.onCreate` and again in an Activity gets one session. Sameness
-         * is by value, not object identity, since rebuilding an equal configuration is the ordinary thing.
+         * Idempotent: twice with the same configuration returns the same instance, so an app initializing in
+         * `Application.onCreate` and again in an Activity gets one session. Two configurations built separately
+         * count as the same one, which is what makes that work.
          *
-         * With one exception, because "by value" would otherwise promise more than it delivers: the token
-         * provider counts only as **present or absent**, never by which callback it is. A provider written
-         * inline is a new object on every call, so comparing them would make this never idempotent for the
-         * most ordinary way of writing it. The consequence is that calling this again with a different
-         * provider does not replace the one in use, and the session keeps the callback it started with.
+         * The session keeps the token provider it was created with. Calling this again with a different one
+         * does not swap it.
          *
-         * Two cases are deliberately not idempotent:
+         * Two cases are not idempotent:
          *
          * - A **different** configuration while the session is usable fails, rather than returning one
          *   configured for something else or replacing one capabilities already hold.
@@ -146,18 +93,14 @@ public class PayabliSession private constructor(
          *
          * It does not rehydrate.
          *
-         * **It sets the diagnostic log level as a side effect**, once, from the host build. On a debuggable
-         * host the SDK starts emitting at its most verbose; on any other build it stays silent. An app that
-         * wants neither calls [setLogLevel] with [LogLevel.NONE], and an explicit level set before or after
-         * this call wins either way. Records go to the platform log and never to a callback, and every one
-         * is redacted before it is written, so this cannot surface a credential.
+         * **It sets the diagnostic log level as a side effect**, once, from the host build. [setLogLevel] wins
+         * whether it is called before or after this. Records go to the platform log, never to a callback, and
+         * every one is redacted before it is written.
          */
         public suspend fun initialize(
             config: PayabliConfig,
             host: HostBindings,
         ): Result<PayabliSession> {
-            // First, so everything below is subject to the level it derives. `applicationContext` rather
-            // than the reference as given, because the debuggable flag belongs to the application.
             host.appContext.applicationContext.applyHostLogLevel()
 
             return install(ConfigIdentity(config)) { onAuthFailure ->
@@ -190,14 +133,9 @@ public class PayabliSession private constructor(
          * Drops the installed session and puts [state] back, so one test cannot decide the outcome of the
          * next.
          *
-         * The state is put back before the lock as well as under it, because a caller bounds this call out
-         * when a test leaves the lock held. Restoring only under the lock would let one wedged test leave the
-         * state set for every class after it, none of which names the cause.
-         *
-         * Everything else happens under the lock, against the session actually being cleared. An `initialize`
-         * holding the lock with its transport builder suspended installs a session *after* the first line has
-         * run, and clearing that one without finishing it would leave a live machine behind and the state
-         * reading [SdkState.Ready].
+         * Test-only. The state is restored twice, once outside the lock and once under it, and the clearing
+         * itself happens under it. Both halves are load-bearing and the order is not arbitrary: `:core`'s own
+         * session tests fail if either moves, which is the place to read before changing this.
          */
         @VisibleForTesting
         internal suspend fun reset() {
@@ -215,7 +153,7 @@ public class PayabliSession private constructor(
          *
          * Without it the mutex cannot be shown to do anything: the section is a few microseconds of
          * object construction, so two racing callers almost never collide and a concurrency test passes
-         * just as happily with the lock removed. Measured, exactly that, which is why this exists.
+         * just as happily with the lock removed.
          */
         @VisibleForTesting
         internal suspend fun initializeWith(
@@ -271,21 +209,22 @@ public class PayabliSession private constructor(
     /**
      * The parts of a configuration that decide whether two calls mean the same session.
      *
-     * A value comparison rather than `PayabliConfig.equals`, which that type deliberately lacks: making it a
-     * data class would generate a `toString` and undo the redaction keeping an access token out of a log.
+     * `PayabliConfig` is never compared and has no `equals`: a data class would generate a `toString` and undo
+     * the redaction that keeps an access token out of a log. This type holds the parts that decide, and
+     * compares those by value.
      *
-     * The token provider is compared by **presence, not identity**. A host writing the callback inline
-     * passes a different object every call, so comparing references would make [initialize] never idempotent
-     * for the most ordinary way of writing it.
+     * A token is a credential rather than an identity, so it is not one of them. Two rules for whoever changes
+     * this list: nothing secret joins it, and a callback is compared by whether one was supplied rather than by
+     * which object it is, since an inline one is new on every call and would stop [initialize] being idempotent
+     * for the ordinary way of writing it.
      *
-     * `internal` rather than private so its [toString] can be tested: it holds an access token and an
-     * entry point, and `PayabliConfig` withholds both for reasons that do not stop applying because the
-     * fields were copied into another type.
+     * `internal` rather than private so its [toString] can be tested: it holds an entry point, and
+     * `PayabliConfig` withholds that for reasons that do not stop applying because the field was copied into
+     * another type.
      */
     internal class ConfigIdentity(
         config: PayabliConfig,
     ) {
-        private val accessToken = config.accessToken
         private val entryPoint = config.entryPoint
         private val environment = config.environment
         private val telemetryEnabled = config.telemetryEnabled
@@ -293,15 +232,13 @@ public class PayabliSession private constructor(
 
         override fun equals(other: Any?): Boolean =
             other is ConfigIdentity &&
-                accessToken == other.accessToken &&
                 entryPoint == other.entryPoint &&
                 environment == other.environment &&
                 telemetryEnabled == other.telemetryEnabled &&
                 hasTokenProvider == other.hasTokenProvider
 
         override fun hashCode(): Int {
-            var result = accessToken.hashCode()
-            result = 31 * result + entryPoint.hashCode()
+            var result = entryPoint.hashCode()
             result = 31 * result + environment.hashCode()
             result = 31 * result + telemetryEnabled.hashCode()
             result = 31 * result + hasTokenProvider.hashCode()
@@ -311,9 +248,8 @@ public class PayabliSession private constructor(
         /**
          * Carries no credential and no identifier, matching `PayabliConfig.toString`.
          *
-         * The entry point is withheld as well as the token: it names a specific merchant, and this string
-         * reaches exception messages and crash reports. It is the same rule and the same reason, and it
-         * applies here because this type holds the same two fields.
+         * The entry point is withheld: it names a specific merchant, and this string reaches exception
+         * messages and crash reports. It is the same rule and the same reason as `PayabliConfig`'s.
          */
         override fun toString(): String =
             "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled, " +

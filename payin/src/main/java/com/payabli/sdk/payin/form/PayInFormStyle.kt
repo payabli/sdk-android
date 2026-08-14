@@ -6,7 +6,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+
+/** The box the six pieces of scheme artwork are drawn for, and the ratio they are cut to. */
+private val DEFAULT_BRAND_MARK = DpSize(30.dp, 20.dp)
 
 /**
  * The gaps the form leaves between things.
@@ -67,7 +71,27 @@ public data class PayInFormStyle(
     /** On top of [selectedContainer]. */
     public val selectedContent: Color,
     public val fieldColors: TextFieldColors? = null,
-)
+    /**
+     * The box a card scheme's mark is drawn into, at the end of the card number field.
+     *
+     * One box for all six marks, so Visa and Amex carry the same visual weight whatever it is set to: the
+     * artwork is fitted inside it and keeps its own proportions.
+     *
+     * Last, because a parameter added anywhere else moves the ones after it and silently rebinds a positional
+     * argument. New ones go here.
+     */
+    public val brandMark: DpSize = DEFAULT_BRAND_MARK,
+) {
+    init {
+        // As PayInFormSpacing is, and for the same reason: this reaches Modifier.size, which refuses what
+        // this refuses. Caught here, where the value was written, not one composition later.
+        require(
+            listOf(brandMark.width, brandMark.height).all { it.value.isFinite() && it >= 0.dp },
+        ) {
+            "the brand mark box has to be a finite measurement of zero or more"
+        }
+    }
+}
 
 /**
  * What the form reads out of the host's theme.
@@ -105,6 +129,8 @@ public data class PayInFormStyleOverrides(
     public val selectedContainer: Color? = null,
     public val selectedContent: Color? = null,
     public val fieldColors: TextFieldColors? = null,
+    /** Last, for the reason [PayInFormStyle.brandMark] gives. */
+    public val brandMark: DpSize? = null,
 )
 
 /**
@@ -123,6 +149,7 @@ public fun resolvePayInFormStyle(
         error = overrides.error ?: roles.supportingType.copy(color = roles.error),
         fieldShape = overrides.fieldShape ?: roles.fieldShape,
         spacing = overrides.spacing ?: PayInFormSpacing(),
+        brandMark = overrides.brandMark ?: DEFAULT_BRAND_MARK,
         selectedContainer = overrides.selectedContainer ?: roles.secondaryContainer,
         selectedContent = overrides.selectedContent ?: roles.onSecondaryContainer,
         fieldColors = overrides.fieldColors,

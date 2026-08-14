@@ -23,7 +23,7 @@ import java.math.BigDecimal
  * `internal` `:core` fixtures. `:taptopay` has its own double.
  *
  * **The recorded body is a copy**, taken when the request is executed. The client overwrites the original once
- * the call returns, so a test reading `request.body` afterwards would see zeros — which is the behaviour under
+ * the call returns, so a test reading `request.body` afterwards would see zeros — which is the behavior under
  * test, not a detail to work around.
  */
 internal class FakePayInTransport(
@@ -31,6 +31,9 @@ internal class FakePayInTransport(
     private val failure: Throwable? = null,
 ) : PayabliTransport {
     var request: PayabliRequest? = null
+
+    /** How many requests reached this transport, for a test asserting a second one did not. */
+    var count: Int = 0
         private set
 
     var recordedBody: ByteArray? = null
@@ -41,6 +44,7 @@ internal class FakePayInTransport(
         private set
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        count++
         this.request = request
         bodyReference = request.body
         recordedBody = request.body?.copyOf()

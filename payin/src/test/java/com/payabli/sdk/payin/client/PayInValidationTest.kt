@@ -228,7 +228,7 @@ class PayInValidationTest {
     @Test
     fun `an exponent that would throw is refused instead`() {
         // setScale raises ArithmeticException at both extremes, so rounding before checking handed a caller
-        // that rather than a refusal. One case each way is the whole behaviour.
+        // that rather than a refusal. One case each way is the whole behavior.
         assertEquals(
             "paymentDetails.totalAmount",
             refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("1E+2147483647"))) }?.field,

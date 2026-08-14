@@ -5,8 +5,9 @@ import com.payabli.example.app.config.TokenHostSource
 import com.payabli.example.app.config.TokenServerTarget
 import com.payabli.example.app.diagnostics.DiagnosticsStore
 import com.payabli.example.app.net.TokenServerClient
-import com.payabli.example.app.payment.DemoPaymentFlowController
-import com.payabli.example.app.payment.PaymentOperation
+import com.payabli.example.app.payment.DemoForms
+import com.payabli.example.app.payment.PayInFlowGate
+import com.payabli.example.app.payment.payInStartup
 import com.payabli.example.app.ui.capture.CaptureViewModel
 import com.payabli.example.app.ui.method.PaymentMethodViewModel
 import com.sun.net.httpserver.HttpServer
@@ -53,7 +54,8 @@ class TokenGateTest {
                 awaitCheck { model.uiState.value.isCheckingToken }
 
                 val state = model.uiState.value
-                assertTrue("the form stayed locked", state.backendReachable)
+                // Readiness needs the SDK half too, which a JVM test cannot produce, so what is asserted here is
+                // that the probe answered and said so. "The form unlocks" is the on-device tier.
                 assertFalse("the step is still busy", state.isCheckingToken)
                 assertTrue("nothing was reported: ${state.tokenCheckText}", state.tokenCheckText.startsWith("✓"))
             }
@@ -92,7 +94,11 @@ class TokenGateTest {
 
                 model.checkToken()
                 awaitCheck { model.uiState.value.isCheckingToken }
-                assertTrue("the retry did not unlock the form", model.uiState.value.backendReachable)
+                assertTrue(
+                    "the retry was not reported",
+                    model.uiState.value.tokenCheckText
+                        .startsWith("✓"),
+                )
                 assertEquals("the retry never reached the endpoint", 2, server.requests)
             }
         }
@@ -108,7 +114,11 @@ class TokenGateTest {
                 model.checkToken()
                 awaitCheck { model.uiState.value.isCheckingToken }
 
-                assertTrue("the form stayed locked", model.uiState.value.backendReachable)
+                assertTrue(
+                    "the probe was not reported",
+                    model.uiState.value.tokenCheckText
+                        .startsWith("✓"),
+                )
                 assertFalse(model.uiState.value.isCheckingToken)
             }
         }
@@ -143,6 +153,29 @@ class TokenGateTest {
             }
         }
 
+    @Test
+    fun `a startup that throws is reported as the failed check it is`() =
+        runTest {
+            // Uncaught, the throw skips the state write, and the flag it would have cleared is the one the
+            // guard reads: the step that offers the retry never runs again and the screen keeps "Checking…"
+            // for the life of the process. It also leaves the exception for whatever runs next to find.
+            val model =
+                PaymentMethodViewModel(
+                    DemoForms.storePaymentMethod(),
+                    { error("the token server host is unparseable") },
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
+
+            model.checkToken()
+
+            val state = model.uiState.value
+            assertFalse("the screen was left checking", state.isCheckingToken)
+            assertFalse("the form unlocked over a check that never ran", state.backendReachable)
+            assertTrue("the failure was not reported: ${state.tokenCheckText}", state.tokenCheckText.startsWith("✗"))
+        }
+
     /**
      * Waits for the check to land.
      *
@@ -162,8 +195,8 @@ class TokenGateTest {
 
     private fun methodModel(target: TokenServerTarget) =
         PaymentMethodViewModel(
-            DemoPaymentFlowController(PaymentOperation.StoreMethod),
-            TokenServerClient(target),
+            DemoForms.storePaymentMethod(),
+            startupAgainst(target),
             DiagnosticsStore(),
             diagnosticsEnabled = false,
             configuration = DemoConfiguration.fromBuildConfig(),
@@ -171,11 +204,26 @@ class TokenGateTest {
 
     private fun captureModel(target: TokenServerTarget) =
         CaptureViewModel(
-            DemoPaymentFlowController(PaymentOperation.Capture),
-            TokenServerClient(target),
+            DemoForms.capture(),
+            startupAgainst(target),
             DiagnosticsStore(),
             diagnosticsEnabled = false,
             configuration = DemoConfiguration.fromBuildConfig(),
+        )
+
+    /**
+     * The real step one against [target], with the SDK half stubbed as unavailable.
+     *
+     * The token probe is what this file is about, and it still runs for real. The half after it cannot: a JVM
+     * test has no way to build a `PayabliPayInPaymentFlow`, whose test constructor is internal to `:payin`.
+     * So `isReady` is false in every case here, and the assertions below read the text and the busy flag.
+     * Readiness means "the token arrived **and** the SDK started", and only the on-device tier can produce the
+     * second half.
+     */
+    private fun startupAgainst(target: TokenServerTarget) =
+        payInStartup(
+            tokenClient = TokenServerClient(target),
+            gate = PayInFlowGate { Result.failure(IllegalStateException("no SDK in a JVM test")) },
         )
 
     /** Port 1, which refuses at once rather than waiting out a connect timeout. */

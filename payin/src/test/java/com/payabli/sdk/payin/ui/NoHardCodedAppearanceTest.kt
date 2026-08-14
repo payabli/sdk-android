@@ -6,7 +6,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Nothing in this module names a colour or a measurement.
+ * Nothing in this module names a color or a measurement.
  *
  * The style resolution is tested separately and proves the resolver reads the host's theme. It cannot
  * prove that the composables use the resolved value, because a composable that ignored the style and
@@ -15,26 +15,35 @@ import java.io.File
  * It reads the source, because every CI job here runs without a device.
  */
 class NoHardCodedAppearanceTest {
+    /**
+     * Everything that draws: the `ui` package, plus the composables that sit at the module root.
+     *
+     * Two rules rather than a file list. The public entry points live at the root, and naming one file here
+     * would let the next one moved out of `ui` escape this check silently. The root is read shallowly on
+     * purpose: `form` carries the style defaults, whose `dp` values are the thing being defaulted rather than
+     * a literal smuggled into a layout.
+     */
     private val uiSources: List<File> =
-        File("src/main/java/com/payabli/sdk/payin/ui")
-            .walkTopDown()
-            .filter { it.isFile && it.extension == "kt" }
+        (
+            File("src/main/java/com/payabli/sdk/payin/ui").walkTopDown() +
+                File("src/main/java/com/payabli/sdk/payin").listFiles().orEmpty().asSequence()
+        ).filter { it.isFile && it.extension == "kt" }
             .toList()
 
     /**
-     * Files allowed to carry a colour, each for a stated reason.
+     * Files allowed to carry a color, each for a stated reason.
      *
-     * One entry, and it names no colour anything sees: an `ImageVector` path has to declare a fill,
+     * One entry, and it names no color anything sees: an `ImageVector` path has to declare a fill,
      * and `Icon` paints its tint over it. Material's own icons are built the same way.
      *
-     * The exception is a single line, so a colour added anywhere else in that file is still caught.
+     * The exception is a single line, so a color added anywhere else in that file is still caught.
      */
-    private val colourExceptions =
+    private val colorExceptions =
         mapOf(
             "PayInIcons.kt" to "a vector path needs a fill, and Icon tints over it",
         )
 
-    /** The only colour a file in [colourExceptions] may carry. */
+    /** The only color a file in [colorExceptions] may carry. */
     private val vectorFill = Regex("""^fill = SolidColor\(Color\.Black\),$""")
 
     /**
@@ -73,10 +82,21 @@ class NoHardCodedAppearanceTest {
     }
 
     @Test
-    fun `no composable names a colour`() {
+    fun `the scan reaches the public entry point wherever it lives`() {
+        // The form is the file that most needs these assertions, and the scan is two rules rather than a
+        // path. Moved to the module root beside the other entry points it is still read; moved anywhere else
+        // it is not, and every assertion below would keep passing without it.
+        assertTrue(
+            "PayabliPayInForm.kt is not in the scanned set",
+            uiSources.any { it.name == "PayabliPayInForm.kt" },
+        )
+    }
+
+    @Test
+    fun `no composable names a color`() {
         val offenders =
             uiSources.flatMap { file ->
-                val exempt = file.name in colourExceptions
+                val exempt = file.name in colorExceptions
                 file
                     .readLines()
                     .withIndex()
@@ -86,7 +106,7 @@ class NoHardCodedAppearanceTest {
             }
 
         assertEquals(
-            "a colour written here does not follow the host's theme, whatever the resolver does",
+            "a color written here does not follow the host's theme, whatever the resolver does",
             emptyList<String>(),
             offenders,
         )
@@ -116,7 +136,7 @@ class NoHardCodedAppearanceTest {
     fun `only one file reads MaterialTheme`() {
         // A second read is a value a caller's PayInFormStyle cannot reach, and it looks right on
         // screen because the theme it reads is usually the same one the style came from. The
-        // colour rule below cannot see it: MaterialTheme.colorScheme.x is not a literal.
+        // color rule below cannot see it: MaterialTheme.colorScheme.x is not a literal.
         val offenders =
             uiSources
                 .filter { it.name != THEME_BOUNDARY }
@@ -142,7 +162,7 @@ class NoHardCodedAppearanceTest {
     }
 
     @Test
-    fun `the colour rule catches every way a colour can be written`() {
+    fun `the color rule catches every way a color can be written`() {
         // Each is a deliberate break. The rule read only Color(0x…) and the named constants, so the
         // two constructor forms below sat in a composable with it green.
         listOf(
@@ -159,7 +179,7 @@ class NoHardCodedAppearanceTest {
     }
 
     @Test
-    fun `the colour rule leaves a theme role and a transparent alone`() {
+    fun `the color rule leaves a theme role and a transparent alone`() {
         // Theme roles and a transparent, which the rule has to leave alone to stay usable.
         listOf(
             "MaterialTheme.colorScheme.onSurface",
@@ -222,20 +242,60 @@ class NoHardCodedAppearanceTest {
     fun `every exception is a file that still exists`() {
         // An exception left behind after its file is renamed silently widens the rule.
         val names = uiSources.map { it.name }.toSet()
-        val stale = (measurementExceptions.keys + colourExceptions.keys).filterNot { it in names }
+        val stale = (measurementExceptions.keys + colorExceptions.keys).filterNot { it in names }
         assertEquals(emptyList<String>(), stale)
     }
 
     @Test
-    fun `an icon is only ever drawn through Icon, which is what makes its fill safe`() {
-        // The colour exception holds while every vector goes through Icon, which replaces the fill.
-        // Painting one with Image would keep the black and stop following the theme.
+    fun `a vector goes through Icon, so the theme replaces its fill`() {
+        // The color exception for PayInIcons holds while every one of them is tinted by Icon. Drawn with
+        // Image, the declared black would show.
         uiSources.forEach { file ->
             assertTrue(
                 "${file.name} draws a vector without Icon, so its declared fill would show",
                 !file.readText().contains("Image(imageVector"),
             )
         }
+    }
+
+    @Test
+    fun `only the brand marks are drawn untinted, and only from a drawable`() {
+        // A scheme's mark carries its own colors and a tint would destroy it, so it is the one thing here
+        // painted with Image. The colors live in the drawable XML, which is why the scan above stays whole:
+        // no Kotlin file names them. Any other Image would be appearance this form decided for itself.
+        val offenders =
+            uiSources.flatMap { file ->
+                file
+                    .readLines()
+                    .withIndex()
+                    .filter { (_, line) -> line.contains("Image(") }
+                    .filterNot { (_, _) -> file.name == BRAND_BADGE }
+                    .map { (index, line) -> "${file.name}:${index + 1} ${line.trim()}" }
+            }
+
+        assertEquals("a tint is the only way appearance reaches an icon here", emptyList<String>(), offenders)
+    }
+
+    @Test
+    fun `the brand marks are the drawables the badge names, and each one exists`() {
+        // A renamed drawable is a resource error at build time, and a mark left in the map for a scheme the
+        // badge no longer draws is a file nothing renders.
+        val badge = uiSources.single { it.name == BRAND_BADGE }.readText()
+        val named =
+            Regex("""R\.drawable\.(payabli_payin_brand_\w+)""")
+                .findAll(badge)
+                .map { it.groupValues[1] }
+                .toSet()
+        val onDisk =
+            File("src/main/res/drawable")
+                .listFiles()
+                .orEmpty()
+                .filter { it.name.startsWith("payabli_payin_brand_") }
+                .map { it.nameWithoutExtension }
+                .toSet()
+
+        assertEquals("the badge names six marks", 6, named.size)
+        assertEquals(named, onDisk)
     }
 
     @Test
@@ -261,6 +321,9 @@ class NoHardCodedAppearanceTest {
     private companion object {
         /** The one file that turns `MaterialTheme` into [com.payabli.sdk.payin.form.PayInThemeRoles]. */
         const val THEME_BOUNDARY = "PayabliPayInFormDefaults.kt"
+
+        /** The one file that draws a card scheme's own artwork. */
+        const val BRAND_BADGE = "PayInFieldBox.kt"
 
         /**
          * Any `Color(...)` and any named `Color.Red`, but not `Color.Transparent`.

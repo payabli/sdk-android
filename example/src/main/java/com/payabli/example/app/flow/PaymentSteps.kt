@@ -30,7 +30,8 @@ object PaymentSteps {
         forPayment(
             progress = progress,
             resultTitle = "Stored method",
-            resultDetail = "A stored method comes back with an id you can charge later.",
+            resultDetail = "A successful submit returns a reusable stored-method id.",
+            formTitle = "Enter the card or ACH details",
         )
 
     /** Taking a payment now. */
@@ -38,13 +39,15 @@ object PaymentSteps {
         forPayment(
             progress = progress,
             resultTitle = "Transaction",
-            resultDetail = "A captured payment comes back with a transaction to show.",
+            resultDetail = "A successful submit returns an approved transaction id.",
+            formTitle = "Enter the payment details",
         )
 
     private fun forPayment(
         progress: PaymentProgress,
         resultTitle: String,
         resultDetail: String,
+        formTitle: String,
     ): List<FlowStep> {
         val backend =
             when {
@@ -74,14 +77,12 @@ object PaymentSteps {
         return listOf(
             FlowStep(
                 title = "Reach the token backend",
-                detail =
-                    "Your backend mints the token. This step only checks that it answers; " +
-                        "the SDK is not involved.",
+                detail = "The SDK asks your backend for a short-lived access token before it submits.",
                 status = backend,
             ),
             FlowStep(
-                title = "Enter the details",
-                detail = "The SDK owns these fields. A card number never reaches this app.",
+                title = formTitle,
+                detail = "The SDK owns these fields; clear PAN never reaches the host app.",
                 status = form,
             ),
             FlowStep(title = resultTitle, detail = resultDetail, status = result),

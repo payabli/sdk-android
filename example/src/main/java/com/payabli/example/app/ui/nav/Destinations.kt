@@ -51,8 +51,8 @@ enum class TopLevelDestination(
     // its text under a centred icon.
     PaymentMethod("Save", DemoIcons.PaymentMethod),
     Capture("Capture", DemoIcons.Capture),
-    TapToPay("Tap to pay", DemoIcons.TapToPay),
-    Setup("Setup", DemoIcons.Setup),
+    TapToPay("TapToPay", DemoIcons.TapToPay),
+    Setup("Config", DemoIcons.Setup),
     ;
 
     /**
