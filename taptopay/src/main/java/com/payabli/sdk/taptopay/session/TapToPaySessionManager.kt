@@ -50,11 +50,7 @@ internal class TapToPaySessionManager(
         to: TapToPaySessionState,
         work: suspend () -> T,
     ): T {
-        check(write(to)) {
-            // A defect in this SDK's own sequence, so it is outside the failure vocabulary a caller handles.
-            // Both names come from the fixed state vocabulary.
-            "a session cannot move to ${to.diagnosticName} from ${state.value.diagnosticName}"
-        }
+        writeOrThrow(to)
         return work()
     }
 
@@ -65,8 +61,23 @@ internal class TapToPaySessionManager(
      * does: a session reported ready while it stands somewhere else is the defect this type prevents.
      */
     fun advance(to: TapToPaySessionState) {
-        check(write(to)) {
-            "a session cannot move to ${to.diagnosticName} from ${state.value.diagnosticName}"
+        writeOrThrow(to)
+    }
+
+    /**
+     * Writes, or throws naming the state the refusal was decided against.
+     *
+     * That state comes back from [write] rather than being read again. A second read happens outside the
+     * monitor, so a concurrent write lands between the two and the message names a state that had nothing to
+     * do with the refusal.
+     *
+     * A defect in this SDK's own sequence, so it is outside the failure vocabulary a caller handles. Both
+     * names come from the fixed state vocabulary.
+     */
+    private fun writeOrThrow(to: TapToPaySessionState) {
+        val written = write(to)
+        check(written.permitted) {
+            "a session cannot move to ${to.diagnosticName} from ${written.from.diagnosticName}"
         }
     }
 
@@ -104,7 +115,7 @@ internal class TapToPaySessionManager(
      * collector on an immediate dispatcher resumes inside the write, so whatever is held here is held while
      * foreign code runs.
      */
-    private fun write(to: TapToPaySessionState): Boolean {
+    private fun write(to: TapToPaySessionState): Written {
         val from: TapToPaySessionState
         val permitted: Boolean
         val published: Boolean
@@ -132,6 +143,12 @@ internal class TapToPaySessionManager(
                 LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
             ) { "session state changed" }
         }
-        return permitted
+        return Written(from, permitted)
     }
+
+    /** What one write decided, so a caller naming the refusal does not read the state a second time. */
+    private class Written(
+        val from: TapToPaySessionState,
+        val permitted: Boolean,
+    )
 }
