@@ -24,10 +24,10 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -75,9 +75,10 @@ class DeviceActivationLiveTest {
 
     @Before
     fun requireHardware() {
-        // A denylist, so an unrecognized emulator fails visibly instead of dropping this tier's coverage.
-        // The software-level answers belong to the unit tier.
-        assumeFalse(
+        // Fails rather than skips. This class is only ever invoked by name, so reaching it on an emulator
+        // means the run was pointed at the wrong target, and a skip there reads as a run that went fine.
+        // A denylist, so an emulator nobody has named fails here too.
+        assertFalse(
             "the live tier is for wired handsets; an emulator's device key is software-backed",
             Build.HARDWARE in EMULATED,
         )
