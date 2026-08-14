@@ -10,10 +10,11 @@ name: Nightly
 # Instrumented coverage is :core and :payin, and what is left out is a scope statement rather than an
 # oversight. :telemetry holds only the generated ExampleInstrumentedTest and declares no androidx.test:runner,
 # so that task would die with ClassNotFoundException before running a thing. :example declares the runner and
-# does run, and is out for a different reason: its two navigation tests do not pass unattended. One asserts a
-# step is on screen without scrolling to it, which makes it a claim about the handset rather than the app, and
-# the other needs demo settings no checkout ships. Both are decisions about those tests rather than a line
-# here, and neither was measured to be flaky: they fail the same way every run.
+# does run, and is out for a different reason: one of its two navigation tests needs demo settings no checkout
+# ships, so it fails wherever it runs unattended. The other passes on the bench today but asserts a step is on
+# screen without scrolling to it, which is a claim about the handset and the current layout rather than about
+# the app: it failed here until the sample app's own restructure moved that step further up the screen.
+# Neither is flaky, and both are decisions about those tests rather than a line in this script.
 #
 # Both tiers grow with each capability that binds to a platform API. No count is kept here, because the last
 # one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest
