@@ -1,5 +1,7 @@
 package com.payabli.example.app
 
+import com.payabli.example.app.demo.config.DemoEnvironment
+
 /**
  * What every instrumented test that installs an SDK session has to agree on.
  *
@@ -14,4 +16,14 @@ package com.payabli.example.app
 internal object InstrumentedSession {
     /** Reaches no service. Every test that installs a session answers its own requests. */
     const val ENTRY_POINT = "instrumented-entry"
+
+    /**
+     * Pinned as well as the entry point, because the SDK compares both.
+     *
+     * `PayabliSession.ConfigIdentity` holds the entry point, the environment, the telemetry flag and
+     * whether a token provider was supplied. Agreeing on the entry point alone leaves a build configured
+     * with `payabli.demo.environment=qa` installing one environment here and another there, which fails
+     * the same way and only on that build.
+     */
+    val ENVIRONMENT: DemoEnvironment = DemoEnvironment.SANDBOX
 }

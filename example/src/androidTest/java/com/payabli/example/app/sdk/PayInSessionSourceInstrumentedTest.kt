@@ -4,7 +4,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.example.app.InstrumentedSession
 import com.payabli.example.app.demo.config.DemoConfiguration
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.TokenHostSource
 import com.payabli.example.app.demo.config.TokenServerTarget
 import com.payabli.example.app.demo.net.TokenServerClient
@@ -189,7 +188,7 @@ class PayInSessionSourceInstrumentedTest {
                     entryPoint = TEST_ENTRY_POINT,
                     appId = "",
                     signingCertificate = "",
-                    environment = DemoEnvironment.SANDBOX,
+                    environment = InstrumentedSession.ENVIRONMENT,
                     diagnosticsEnabled = false,
                 ),
             startSession = startSession,

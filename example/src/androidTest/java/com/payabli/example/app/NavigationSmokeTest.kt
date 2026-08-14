@@ -57,7 +57,7 @@ class NavigationSmokeTest {
         application.container.applyLaunchOverride("127.0.0.1:${tokenServer.port}")
         // The payment sequence gates its first step on a configured entry point, and a fresh checkout
         // configures none. The value reaches no service: the token endpoint above answers everything.
-        application.container.applyTestConfiguration(TEST_ENTRY_POINT)
+        application.container.applyTestConfiguration(TEST_ENTRY_POINT, InstrumentedSession.ENVIRONMENT)
     }
 
     @After

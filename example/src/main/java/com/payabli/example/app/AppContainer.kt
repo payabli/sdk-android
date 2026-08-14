@@ -3,6 +3,7 @@ package com.payabli.example.app
 import android.content.Context
 import androidx.annotation.VisibleForTesting
 import com.payabli.example.app.demo.config.DemoConfiguration
+import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.TokenHostDefaults
 import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.config.TokenServerTarget
@@ -111,11 +112,19 @@ class AppContainer(
      * that test hermetic: no credential, no properties file, and no build that behaves differently from the
      * one a developer runs.
      *
-     * The value never reaches a service. Every test that calls this answers its own requests.
+     * The environment is taken too, and not because the sequence needs it: `PayabliSession` refuses a
+     * second `initialize` naming a different one, so a test that pins only the entry point still installs
+     * whatever the build configured and collides with the next test on a build that set anything but the
+     * default.
+     *
+     * The values never reach a service. Every test that calls this answers its own requests.
      */
     @VisibleForTesting
-    fun applyTestConfiguration(entryPoint: String) {
-        configuration = configuration.copy(entryPoint = entryPoint)
+    fun applyTestConfiguration(
+        entryPoint: String,
+        environment: DemoEnvironment,
+    ) {
+        configuration = configuration.copy(entryPoint = entryPoint, environmentSetting = environment.label)
     }
 
     private fun resolveTokenServer(launchOverride: String?): TokenServerTarget =
