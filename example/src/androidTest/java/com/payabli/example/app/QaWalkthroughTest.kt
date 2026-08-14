@@ -97,6 +97,10 @@ class QaWalkthroughTest {
     fun capturingACardThePayerEntered() {
         openTheForm(TopLevelDestination.Capture, submit = CAPTURE)
 
+        // The figure the request carries, under a form whose own summary reads back an amount and a fee and
+        // never their sum. A payer sees what leaves the account or the screen is lying by omission.
+        compose.onNodeWithText("Total").performScrollTo().assertIsDisplayed()
+
         prefill()
         submit(CAPTURE)
 
