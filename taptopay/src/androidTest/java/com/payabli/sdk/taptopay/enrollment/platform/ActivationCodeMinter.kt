@@ -21,6 +21,7 @@ import java.net.URL
  */
 internal object ActivationCodeMinter {
     private val FORMAT = Json { ignoreUnknownKeys = true }
+    private const val TIMEOUT_MILLIS = 10_000
 
     fun mint(
         baseUrl: String,
@@ -33,6 +34,11 @@ internal object ActivationCodeMinter {
         return try {
             connection.requestMethod = "POST"
             connection.doOutput = true
+            // Both default to 0, which is no bound at all. A stalled read is not interrupted by the
+            // coroutine timeout around this call, because the read is blocking and not cancellable, so
+            // without these the manual tier waits forever.
+            connection.connectTimeout = TIMEOUT_MILLIS
+            connection.readTimeout = TIMEOUT_MILLIS
             connection.setRequestProperty("Content-Type", "application/json")
             connection.setRequestProperty("Authorization", "Bearer $accessToken")
             connection.outputStream.use {
