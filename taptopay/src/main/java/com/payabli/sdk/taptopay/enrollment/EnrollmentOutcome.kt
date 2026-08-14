@@ -22,9 +22,8 @@ internal sealed class EnrollmentOutcome {
     /**
      * The device was already attested with the key at the handle, so nothing was asked of the service.
      *
-     * **This says nothing about activation, deliberately.** The device may owe a code or may not; this run
-     * did not find out. Whoever consumes this learns it from the next live call, which is how the sibling
-     * SDK does it too.
+     * **This says nothing about activation.** The device may owe a code or may not; this run did not find
+     * out. Whoever consumes this learns it from the next live call, as the sibling SDK does.
      */
     object AlreadyAttested : EnrollmentOutcome() {
         override fun toString(): String = "AlreadyAttested"

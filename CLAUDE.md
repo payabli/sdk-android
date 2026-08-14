@@ -187,10 +187,15 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
   skip cannot be told apart from a regression that started skipping.
 
-  **There are two of that annotation and a command has to name both.** An `androidTest` source set is invisible
-  to another module's, so `:core` has `com.payabli.sdk.core.ManualDeviceTest` and `:payin` has
-  `com.payabli.sdk.payin.ManualDeviceTest`. `notAnnotation` takes one value per run, so a job covering both
-  modules passes each module its own.
+  **There is one of that annotation per module, and a command has to name the right one.** An `androidTest`
+  source set is invisible to another module's, so each declares its own: `com.payabli.sdk.core.ManualDeviceTest`,
+  `com.payabli.sdk.payin.ManualDeviceTest` and `com.payabli.sdk.taptopay.ManualDeviceTest`. `notAnnotation`
+  takes one value per run, so a job covering several modules passes each module its own.
+
+  **In `:taptopay` the annotation is not what enforces the exclusion.** A command-line `notAnnotation`
+  overwrites what the Gradle DSL sets, so that module excludes its live tier by `notClass`, by name, in
+  `taptopay/build.gradle.kts`. Renaming or moving one of those classes silently re-enables it. The live tier
+  additionally needs a paypoint and a reachable token server, and is filtered out entirely without them.
 
   ```bash
   # Only the manual tier, against a wired phone. ANDROID_SERIAL matters when an emulator is also attached.
