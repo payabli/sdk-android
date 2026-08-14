@@ -144,8 +144,8 @@ internal class AuthenticatedTransport(
     /**
      * Whether sending [request] a second time is defensible after [rejected].
      *
-     * Deliberately not on [AuthRecoveryPolicy]: an overridable hook here would let the same subclass that
-     * widened the rejection also widen the replay, which is the hazard rather than the guard.
+     * It lives here and not on [AuthRecoveryPolicy], which is `open`: a hook there would let the subclass
+     * that widened the rejection widen the replay with it.
      */
     private fun mayReplay(
         request: PayabliRequest,

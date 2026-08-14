@@ -25,10 +25,10 @@ import kotlinx.serialization.SerializationException
  * the sequencing rules — which call follows which, what is cached, what happens when one fails halfway —
  * reviewable in one place, and this is not that place.
  *
- * `/activate/challenge` is deliberately absent and should stay absent. It is the merchant-side call that
- * mints the six-digit code; the code reaches the device out of band, and an SDK that could mint its own would
- * be an SDK that could activate itself. `/config/{entry}` is absent for a duller reason: its credentials have
- * no consumer until the card-reader work.
+ * `/activate/challenge` is absent and stays absent. It is the merchant-side call that mints the six-digit
+ * code; the code reaches the device out of band, and an SDK that could mint its own would be an SDK that
+ * could activate itself. `/config/{entry}` is absent for a duller reason: its credentials have no consumer
+ * until the card-reader work.
  *
  * **Nothing here is wrapped in `Retry`, and that is per route rather than an oversight.** `/attest` consumes
  * the challenge with a delete-on-read, so a second attempt attests against a value the server has already
@@ -286,9 +286,9 @@ internal class DeviceServiceClient(
                     .decodeFromString(PayabliEnvelope.Success.serializer(payloadSerializer), body)
                     .responseData
             } catch (failure: SerializationException) {
-                // The supertype is deliberately not caught. SerializationException extends
-                // IllegalArgumentException, so catching that would swallow a genuine programming error raised
-                // from inside a serializer, which is the reason `:core` narrows the same catch.
+                // The supertype stays uncaught. SerializationException extends IllegalArgumentException, so
+                // catching that would swallow a genuine programming error raised from inside a serializer,
+                // which is why `:core` narrows the same catch.
                 throw undecodable(route, response.statusCode, failure)
             }
         val resolved = payload ?: emptyPayload ?: throw undecodable(route, response.statusCode, null)
