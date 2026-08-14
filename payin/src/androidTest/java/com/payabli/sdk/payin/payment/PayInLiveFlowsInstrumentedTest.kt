@@ -65,9 +65,9 @@ class PayInLiveFlowsInstrumentedTest {
     @Before
     fun setUp() {
         // One flow per test, as a screen holds one, and the scope is the test's rather than a ViewModel's. The
-        // session behind it is the process's: minting a token per test would build a configuration the SDK reads
-        // as a second session and refuses with INVALID_CONFIGURATION, which is what the access token being part
-        // of the identity means in practice.
+        // session behind it is the process's: the SDK hands back the one it installed for this entry point and
+        // environment whatever token is presented, so a mint per test would spend a live call on a token
+        // nothing reads.
         flow =
             PayabliPayInPaymentFlow(
                 installedSession(),
