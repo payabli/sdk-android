@@ -8,8 +8,8 @@ package com.payabli.example.app
  * design. Two classes here reach that far and they share one process, so the entry point is one value
  * rather than a constant per class.
  *
- * Measured, because the failure does not name its cause: with two values, the class that ran second failed
- * on a session it never installed, and the class that caused it passed.
+ * With two values, whichever class installs its session second fails, on a session it never installed,
+ * and the failure names neither the class that caused it nor the configuration it disagreed with.
  */
 internal object InstrumentedSession {
     /** Reaches no service. Every test that installs a session answers its own requests. */
