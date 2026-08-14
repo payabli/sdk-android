@@ -37,6 +37,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - A capability module depends on `:core` and **never** on a sibling capability. The umbrella deliberately omits `:taptopay` so the card reader dependency stays opt-in; do not add it.
 - `:payin` ships the Compose payment form and is the only library module with Compose, so the umbrella carries the Compose runtime. Its public composables need `api` dependencies: `implementation` would leave an integrator unable to call them. The form takes its colours, type and shapes from the host's `MaterialTheme` and names none of its own; a literal colour or size anywhere in `payin/ui` is a defect.
 - `minSdk` is **per module, not global**: `:taptopay` is **30**, required by the card reader dependency, and an app linking it must also be 30 or higher. Every published module is **23**. Do not raise the card-not-present modules to match card-present. `:example` is **24**, and publishes nothing: its debug build reaches the local token server over cleartext, and a network security config, which is the only way to permit that for two addresses instead of for everything, is ignored below 24.
+- **`:taptopay` is 64-bit only, and nothing declares it.** The card reader pulls `magiccube`, whose AAR carries exactly one native library — `jni/arm64-v8a/libmc3.so`, with no 32-bit build. So an APK linking `:taptopay` will not install on an `armeabi-v7a`-only handset: the install fails with `INSTALL_FAILED_NO_MATCHING_ABIS` before any code runs, which names the ABI but not the dependency that caused it. Measured on an SM-A136U1 (`ro.product.cpu.abilist=armeabi-v7a,armeabi`). This is a vendor constraint like the API 30 floor, it is not expressed in any manifest or Gradle setting, and it means such a device cannot run this module's instrumented tests at all — a stated skip on the bench, not a failure to chase.
 - Kotlin compiles through AGP's built-in Kotlin support (AGP 9.2.1, Kotlin 2.2.10, Gradle 9.4.1, daemon JVM 21). There is no `org.jetbrains.kotlin.android` plugin and none should be added.
 - Platform-native only: `HttpURLConnection`, Keystore and `javax.crypto`, `kotlinx.serialization`, `kotlinx.coroutines`, Compose. No third-party HTTP client, crypto engine, DI framework, reflection-based JSON mapper or logging framework.
 - Convention plugins in `build-logic` carry shared config: `payabli.publish` for publishing, `payabli.quality` for formatting and coverage. Prefer extending those over per-module blocks.
@@ -55,7 +56,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 `.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
 required check. Two jobs, and the split is a security boundary rather than organisation:
 
-- **nightly** - every unit test plus `:core`'s instrumented tests on an emulator. Runs the one third-party
+- **nightly** - every unit test plus `:core`'s and `:payin`'s instrumented tests on an emulator. Runs the one third-party
   action in the repository, so no Slack credential exists in it. Ends by deciding the verdict and gating on
   it, so the run result never depends on the reporting job.
 - **report** - `needs: nightly`, holds the bot token, runs nothing third-party. Posts a summary to
@@ -71,7 +72,7 @@ job because the build outputs and the git history the culprit lookup needs are b
 has to be decided there because that is where the gate reads it.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
-runs 402 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
+runs 405 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
 `git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
 behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
 files in the tree, so it is safe to interrupt. No third-party Python package is involved.
@@ -183,19 +184,33 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   measured units and unreachable from any unit test. Read both numbers, not one.
 - **Three test tiers, and the third is excluded from CI rather than skipped.** JVM unit tests; instrumented
   tests the nightly runs on an emulator; and `@ManualDeviceTest`, which that job cannot answer. The bar is what
-  the nightly provisions, not what an emulator can do in principle, so the tier holds three different reasons:
-  two of `:core`'s need a secure element, which an emulator's software-backed Keystore fails outright; one
-  needs a throttled link the job does not start, and passes on an emulator that has one; and `:payin`'s needs
-  client credentials no repository holds. Only the secure-element pair is permanent, and each test states its
-  own reason at its declaration. The exclusion is
+  the nightly provisions, not what an emulator can do in principle, so the tier holds several reasons rather
+  than one. Across the two modules that job runs: two of `:core`'s need a secure element, which an emulator's
+  software-backed Keystore fails outright; a third needs a throttled link the job does not start, and passes
+  on an emulator once it has one; and `:payin`'s needs client credentials no repository holds. Only the
+  secure-element pair is permanent, and each test states its own reason at its declaration. `:taptopay` is out
+  of the job's reach for a different reason again, and is covered below. The exclusion is
   `notAnnotation`, verified to leave `skipped="0"` in the results XML with the manual tests absent from it
   entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
   skip cannot be told apart from a regression that started skipping.
 
-  **There are two of that annotation and a command has to name both.** An `androidTest` source set is invisible
-  to another module's, so `:core` has `com.payabli.sdk.core.ManualDeviceTest` and `:payin` has
-  `com.payabli.sdk.payin.ManualDeviceTest`. `notAnnotation` takes a comma-separated list, so a job covering
-  both modules names both in one argument, and naming one of them runs the other module's manual tier.
+  **There is one of that annotation per module, and a command has to name every module it covers.** An
+  `androidTest` source set is invisible to another module's, so each declares its own:
+  `com.payabli.sdk.core.ManualDeviceTest`, `com.payabli.sdk.payin.ManualDeviceTest` and
+  `com.payabli.sdk.taptopay.ManualDeviceTest`. `notAnnotation` takes a **comma-separated list**, so one
+  argument covers several modules, and naming one of them leaves the others' manual tiers running. The
+  nightly names `:core`'s and `:payin`'s in a single argument for that reason. Measured twice: the runner
+  splits the value on commas, and a nightly command carrying both excluded both, where dropping to one would
+  have run `:core`'s hardware tier on the emulator and failed it.
+
+  **In `:taptopay` the annotation is not what enforces the exclusion.** A command-line `notAnnotation`
+  overwrites what the Gradle DSL sets, so that module excludes its live tier by `notClass`, by name, in
+  `taptopay/build.gradle.kts`. Renaming or moving one of those classes silently re-enables it. The live tier
+  additionally needs a paypoint and a reachable token server, and is filtered out entirely without them.
+
+  The two rules are not in tension: a command-line value replaces the DSL's for **the same key**, which is
+  why `:taptopay` cannot rely on the annotation, while different keys merge, which is why the nightly's
+  `notAnnotation` leaves `:payin`'s `notClass` exclusions standing.
 
   ```bash
   # Only the manual tier, against a wired phone. ANDROID_SERIAL matters when an emulator is also attached.

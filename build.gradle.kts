@@ -34,7 +34,7 @@ sonar {
         // same case for the same reason: a composable needs a composition, and therefore a device.
         // The sample app puts every composable under `ui` and every testable type outside it so this
         // stays a package rule too, and `:payin` follows the same layout for its form component.
-        property("sonar.coverage.exclusions", "**/platform/**,**/example/app/ui/**,**/sdk/payin/ui/**")
+        property("sonar.coverage.exclusions", "**/platform/**,**/example/app/demo/ui/**,**/sdk/payin/ui/**")
 
         // Every entry below is one rule over one path. `@Suppress("LongParameterList")` was tried first and
         // the analyser does not honour it: the issue was still reported on the commit carrying it, so the
@@ -72,12 +72,12 @@ sonar {
         property("sonar.issue.ignore.multicriteria.demoComposables.ruleKey", "kotlin:S107")
         property(
             "sonar.issue.ignore.multicriteria.demoComposables.resourceKey",
-            "**/example/app/ui/**",
+            "**/example/app/demo/ui/**",
         )
     }
 }
 
-// Report paths for analysis. See mobile-sdk brain, reference/tooling.md.
+// Where each analyser writes, so Sonar reads the reports the build already produced.
 subprojects {
     sonar {
         properties {

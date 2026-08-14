@@ -60,15 +60,36 @@ falls back to the development machine's Bonjour name, where a device here gets `
 
 ## How it is put together
 
-- `ui/payment/PaymentFormHost.kt` calls `PayabliPayInForm` from `:payin`, configured in
-  `payment/DemoForms.kt`, and passes nothing about appearance: the form reads this app's
-  `MaterialTheme`. The form submits: a tap runs the operation through the `PayabliPayInPaymentFlow` it
-  was handed, and the outcome arrives on the `onCompleted` or `onFailed` the host supplied. Both are
-  required, and neither has anything to acknowledge afterwards.
-- `payment/PayInSessionSource.kt` mints a token and initializes the session the flow needs, which is the
-  one piece an integration writes for itself.
-- Card-present has no SDK yet, so `terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
-  marks it with `⟵ swap point`.
+**Every call into the SDK is in `sdk/`.** That is the package to read, and the rest of the app is scaffolding
+around it: `demo/` holds the screens, the step list, the token server client and the card-present stand-in,
+and none of it names an SDK type. `AppContainer.kt`, `MainActivity.kt` and `PayabliDemoApplication.kt` stay
+at the root, where the manifest expects them. `SdkCallsAreInOnePackageTest` reads `src/main` and fails naming
+any file outside `sdk/` whose source contains `com.payabli.sdk.`, so a fully qualified call is caught as an
+import is. What it cannot see is a `demo/` file reaching an SDK type through one of `sdk/`'s `internal`
+properties, which names no package: Kotlin has no package-private, and `PaymentFormHost.kt` needs those values
+from the files that hold them.
+
+```
+com/payabli/example/app/
+  AppContainer.kt   MainActivity.kt   PayabliDemoApplication.kt
+  sdk/     the integration
+  demo/    ui/  flow/  payment/  net/  config/  terminal/  diagnostics/  preflight/
+```
+
+Inside `sdk/`:
+
+- `PayInSessionSource.kt` mints a token and initializes the session, which is the one piece an integration
+  writes for itself.
+- `PayInFlowGate.kt` and `PayInStartup.kt` turn that session into the flow a screen submits through.
+- `PaymentFormHost.kt` calls `PayabliPayInForm`, configured in `PayInForms.kt`, and passes nothing about
+  appearance: the form reads this app's `MaterialTheme`. The form submits, a tap runs the operation through
+  the flow it was handed, and the outcome arrives on the `onCompleted` or `onFailed` the host supplied. Both
+  are required, and neither has anything to acknowledge afterwards.
+- `PayInOutcomes.kt` maps what the SDK answers onto this app's own `PaymentResult` and `PaymentError`, so a
+  screen reads a demo type.
+
+Card-present has no SDK yet, so `demo/terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
+marks it with `⟵ swap point`.
 
 ## Things that will bite
 
@@ -78,7 +99,7 @@ falls back to the development machine's Bonjour name, where a device here gets `
 - Compose's own lint checks ship at error severity, also with no baseline. Run `:example:lint` per
   commit.
 - `payabli.quality` enables unit-test coverage for application modules too, so JaCoCo measures this
-  one. Sonar then drops `**/example/app/ui/**` through `sonar.coverage.exclusions` in the root
+  one. Sonar then drops `**/example/app/demo/ui/**` through `sonar.coverage.exclusions` in the root
   `build.gradle.kts`, which is a separate setting from `payabli.quality`. The view models under that
   package are unit tested and measured locally, and absent from the number Sonar reports, so read the
   JaCoCo report before concluding they are uncovered.

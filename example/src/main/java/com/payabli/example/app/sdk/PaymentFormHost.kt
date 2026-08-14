@@ -1,0 +1,43 @@
+package com.payabli.example.app.sdk
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import com.payabli.sdk.payin.PayabliPayInForm
+
+/**
+ * Where the SDK's payment form mounts.
+ *
+ * Both payment screens call it twice each, inline and inside a bottom sheet, and neither knows what
+ * it renders. The app owns the call site, the configuration describing what the form should collect,
+ * the result and error models, the sheet chrome and both outcome screens.
+ *
+ * **Nothing is passed about how it looks.** The form reads this app's `MaterialTheme`, so it arrives
+ * in the Payabli palette here and in an integrator's palette there.
+ *
+ * **The SDK submits.** The payer's tap runs [operation] through [flow], and the outcome arrives on one of the
+ * two callbacks. This app translates it into its own result and error types one layer up, so no screen below
+ * holds an SDK outcome.
+ */
+@Composable
+fun PaymentFormHost(
+    setup: PayInFormSetup,
+    flow: PayInFlowHandle,
+    operation: PayInOperation,
+    onCompleted: (PayInOutcome.Approved) -> Unit,
+    onFailed: (PayInOutcome.Refused) -> Unit,
+    modifier: Modifier = Modifier,
+    initialValues: PayInFormSeed? = null,
+    onMethodChanged: (PayInMethod) -> Unit = {},
+) {
+    PayabliPayInForm(
+        flow = flow.flow,
+        operation = operation.operation,
+        configuration = setup.configuration,
+        modifier = modifier,
+        labels = setup.labels,
+        initialValues = initialValues?.values,
+        onCompleted = { onCompleted(it.toOutcome()) },
+        onFailed = { onFailed(it.toOutcome()) },
+        onMethodChanged = { onMethodChanged(it.asMethod()) },
+    )
+}
