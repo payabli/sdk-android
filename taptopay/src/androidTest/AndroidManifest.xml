@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Merged into the instrumentation APK only, never into a consumer's. The library's own manifest stays
+    empty and the host app still declares its own permissions.
+
+    The live tier makes real HTTPS requests. Every endpoint is HTTPS, so no network-security config.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>
