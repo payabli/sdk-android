@@ -44,7 +44,7 @@ import org.junit.runner.RunWith
  *
  * **The device has to be unlocked.** A phone that locked while idle is awake and still shows the keyguard, so
  * no activity reaches the foreground and every flow here fails with "No compose hierarchies found in the app",
- * which names Compose and not the lock. `scripts/qa-fleet.sh` clears it before it starts.
+ * which names Compose and not the lock. Dismiss the keyguard on every target before starting a run.
  */
 @RunWith(AndroidJUnit4::class)
 class QaWalkthroughTest {
