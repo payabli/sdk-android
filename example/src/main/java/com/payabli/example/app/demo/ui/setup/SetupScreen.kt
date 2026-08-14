@@ -144,18 +144,18 @@ private fun CustomerSection(
 ) {
     Section(
         title = "Customer",
-        note = "Who a capture says it is for. The capture form collects no customer number, so this decides it.",
+        note = "The number a capture is filed under. The capture form collects none, so this decides it.",
     ) {
         SwitchRow(
-            label = "Send a demo customer",
+            label = "Send a customer number",
             checked = state.suppliesDemoCustomer,
             note =
                 if (state.suppliesDemoCustomer) {
                     "Charging sends ${state.demoCustomerSummary}, so every payment from this device lands on " +
                         "one customer."
                 } else {
-                    "Charging names no customer, so the paypoint writes a new one for every payment. That is " +
-                        "what a paypoint with no custom identifiers accepts."
+                    "Charging sends the name and email typed into the form and no customer number, so the " +
+                        "paypoint has nothing to match on and files a new customer for every payment."
                 },
             onCheckedChange = onSuppliesDemoCustomerChange,
         )

@@ -67,15 +67,15 @@ private fun SwitchRowPreview() {
     PreviewSurface {
         // Both positions, because the note is what each one is for and it changes with the switch.
         SwitchRow(
-            label = "Send a demo customer",
+            label = "Send a customer number",
             checked = true,
             note = "Charging sends QA Google Pixel 7a · qa-android-google-pixel-7a.",
             onCheckedChange = {},
         )
         SwitchRow(
-            label = "Send a demo customer",
+            label = "Send a customer number",
             checked = false,
-            note = "Charging names no customer, so the paypoint writes a new one for every payment.",
+            note = "Charging sends no number, so the paypoint files a new customer for every payment.",
             onCheckedChange = {},
         )
     }
