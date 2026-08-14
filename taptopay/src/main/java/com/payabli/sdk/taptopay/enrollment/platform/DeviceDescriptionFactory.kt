@@ -20,12 +20,19 @@ internal object DeviceDescriptionFactory {
      * **The identifier is a digest, not the platform value.** It has to survive an uninstall and reinstall,
      * which rules out anything the SDK stores for itself: the encrypted store lives in the no-backup
      * directory and goes with the app's data. The platform's per-app installation identifier is the only
-     * local value with that lifetime — scoped to the signing key, the user and the device, and reset only by
-     * a factory reset.
+     * local value with that lifetime. A factory reset resets it.
      *
      * The value is hashed before it is sent. The digest has the same lifetime, keeps the raw platform
      * identifier on the device, and cannot be joined against what any other library in the app reports from
-     * the same source. The salt is versioned. Changing it re-registers every installed device.
+     * the same source.
+     *
+     * **The host's package name is part of the input, and the identifier alone is not enough.** The platform
+     * scopes that identifier more widely than one app, so two applications on one device can read the same
+     * value; the service keys a device row on what this returns, so two such applications on one paypoint
+     * would register as one device. Including the package makes the result per application whatever the
+     * platform's scoping turns out to be, which is why it does not rest on that scoping.
+     *
+     * The salt is versioned. Changing either it or the package re-registers the device.
      *
      * Truncated to half the digest. 128 bits is far past collision concerns for a per-paypoint lookup, and
      * the field lands in a column sized for a serial number.
@@ -49,7 +56,12 @@ internal object DeviceDescriptionFactory {
                 ).orEmpty()
 
         return DeviceDescription(
-            hardwareId = if (installationId.isBlank()) "" else digest(installationId),
+            hardwareId =
+                if (installationId.isBlank()) {
+                    ""
+                } else {
+                    digest(installationId, context.applicationContext.packageName)
+                },
             // Not sent: see DeviceDescription.deviceName.
             deviceName = null,
             model = Build.MODEL,
@@ -57,11 +69,14 @@ internal object DeviceDescriptionFactory {
         )
     }
 
-    private fun digest(installationId: String): String {
+    private fun digest(
+        installationId: String,
+        packageName: String,
+    ): String {
         val bytes =
             MessageDigest
                 .getInstance("SHA-256")
-                .digest("$installationId|$SALT".toByteArray(Charsets.UTF_8))
+                .digest("$installationId|$packageName|$SALT".toByteArray(Charsets.UTF_8))
         val hex = StringBuilder(IDENTIFIER_BYTES * 2)
         for (index in 0 until IDENTIFIER_BYTES) {
             hex.append(HEX[(bytes[index].toInt() shr 4) and 0xF])
