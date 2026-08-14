@@ -32,10 +32,10 @@ private val COMPLETION_PROBE = 30.seconds
  * merely launched together almost never collide, and a test written that way passes with the serialization
  * removed.
  *
- * Exclusion and joining are separate mechanisms and have separate tests here. `region.withLock` in
+ * Exclusion and joining are separate mechanisms and mostly have separate tests here. `region.withLock` in
  * `TapToPaySessionCoordinator.own` is what the repair, the activation and the real-thread tests hold; the
- * `RunPlan.Join` branch in `runExclusively` is what the two join tests hold. Removing either leaves the
- * other's tests green.
+ * claim slot in `runExclusively` is what the two join tests hold. The queued-repair test holds both, since
+ * the case it covers is a build joining a build across a repair that sits between them.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionSerializationTest {
