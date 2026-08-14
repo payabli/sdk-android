@@ -93,9 +93,11 @@ internal class TapToPaySessionCoordinator(
     /**
      * Repairs a session whose reader is spent, and does nothing to one that is ready.
      *
-     * Cheaper than [initialize] because it does not attest, which is also why it cannot repair a session
-     * whose identity is gone: that fails with [TapToPaySessionException.NotRecoverable] and the remedy is
-     * [initialize].
+     * Cheaper than [initialize] because it does not attest. Two failures follow from that, and they are
+     * different questions. A state this cannot be entered from is refused with
+     * [TapToPaySessionException.NotRecoverable]. A device whose stored identity is gone gets as far as
+     * fetching the credentials and fails with [TapToPaySessionException.AttestationRequired], because
+     * attesting is what would restore it. [initialize] is the remedy for both.
      */
     suspend fun reinitializeIfNeeded() = runExclusively(SessionWorkKind.REINITIALIZE) { runReinitializeIfNeeded() }
 

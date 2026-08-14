@@ -123,6 +123,23 @@ class SessionWarmStartTest {
         }
 
     @Test
+    fun `a repair on a device with no stored identity asks for an attestation, not a state`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = SessionFixture(RouteScript(RouteScript.CONFIG to listOf(configBody())))
+
+            val failure = failureOf { fixture.coordinator.reinitializeIfNeeded() }
+
+            // The state it started from is repairable, so this is not the state refusal. The record is what
+            // is missing, and only attesting replaces that.
+            assertTrue("$failure", failure is TapToPaySessionException.AttestationRequired)
+            assertEquals(
+                TapToPaySessionState.Failed(TapToPayFailureReason.ATTESTATION_REQUIRED),
+                fixture.state,
+            )
+            assertEquals("nothing was sent", emptyList<String>(), fixture.routes)
+        }
+
+    @Test
     fun `a repair refuses a session it cannot repair, and names the state`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
