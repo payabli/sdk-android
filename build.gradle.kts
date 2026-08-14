@@ -30,18 +30,17 @@ sonar {
         // Android API with no JVM implementation, Keystore and `android.util.*`, so no unit test can reach a
         // line of it and the instrumented tier is what covers it. Kept as a package rule rather than a list
         // of files, so the boundary is something the code states rather than something this file remembers.
-        // See CLAUDE.md "Testing" for what belongs there. A `ui` package under the sample app is the
-        // same case for the same reason: a composable needs a composition, and therefore a device.
-        // The sample app puts every composable under `ui` and every testable type outside it so this
-        // stays a package rule too, and `:payin` follows the same layout for its form component.
-        property("sonar.coverage.exclusions", "**/platform/**,**/example/app/demo/ui/**,**/sdk/payin/ui/**")
+        // See CLAUDE.md "Testing" for what belongs there. A `ui` package is the same case for the same
+        // reason: a composable needs a composition, and therefore a device. `:payin` puts every composable
+        // under `ui` and every testable type outside it, so this stays a package rule too.
+        property("sonar.coverage.exclusions", "**/platform/**,**/sdk/payin/ui/**")
 
         // Every entry below is one rule over one path. `@Suppress("LongParameterList")` was tried first and
         // the analyser does not honour it: the issue was still reported on the commit carrying it, so the
         // annotation is gone rather than left looking like it did something.
         property(
             "sonar.issue.ignore.multicriteria",
-            "copyMirrorsItsProperties,formEntryComposable,formContentComposables,demoComposables",
+            "copyMirrorsItsProperties,formEntryComposable,formContentComposables",
         )
 
         // A hand-written `copy()` takes one parameter per property, which is what makes it a copy.
@@ -57,7 +56,7 @@ sonar {
         // A composable's parameters are how a caller configures it, and all but the required few carry
         // defaults: `PayabliPayInForm` takes a flow, an operation and a configuration, then seven optional
         // ones, and Material3's own `TextField` takes over twenty. A parameter object in their place costs a
-        // caller the defaults and the trailing-lambda syntax. The three paths hold the composables and
+        // caller the defaults and the trailing-lambda syntax. Both paths hold the composables and
         // nothing else, so a long parameter list outside a composable is still reported.
         property("sonar.issue.ignore.multicriteria.formEntryComposable.ruleKey", "kotlin:S107")
         property(
@@ -69,11 +68,17 @@ sonar {
             "sonar.issue.ignore.multicriteria.formContentComposables.resourceKey",
             "**/sdk/payin/ui/**",
         )
-        property("sonar.issue.ignore.multicriteria.demoComposables.ruleKey", "kotlin:S107")
-        property(
-            "sonar.issue.ignore.multicriteria.demoComposables.resourceKey",
-            "**/example/app/demo/ui/**",
-        )
+    }
+}
+
+// The sample app is not the SDK. It has no consumers, it is not published, and a rating that moves
+// because a demo screen changed says nothing about the artifact a partner links. Skipping the project
+// drops it from `sonar.modules`, so its issues, duplication and uncovered lines are all out of the
+// project's numbers, and no path glob has to keep track of where its packages live. CI still builds,
+// tests, lints and formats it; the results report nowhere.
+project(":example") {
+    sonar {
+        isSkipProject = true
     }
 }
 
