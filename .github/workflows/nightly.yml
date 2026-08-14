@@ -4,15 +4,24 @@ name: Nightly
 # deliberately not a required check.
 #
 # `ci.yml` is the per-PR gate and stays fast. This runs every unit test, the card-present module included,
-# and :core's instrumented tests. The unit tests overlap with ci.yml on purpose, so a nightly failure is
-# readable on its own without cross-referencing another run.
+# and the instrumented tests of :core and :payin. The unit tests overlap with ci.yml on purpose, so a nightly
+# failure is readable on its own without cross-referencing another run.
 #
-# Instrumented coverage is :core only, and that is a scope statement rather than an oversight. Every module
-# has a src/androidTest directory, but outside :core they hold the generated ExampleInstrumentedTest and none
-# of them declares androidx.test:runner, so those tasks would die with ClassNotFoundException before running
-# a thing. :core's own instrumented tier is not small any more, and it grows with each capability that binds
-# to a platform API. No count is kept here, because the last one went stale inside a single merge; what runs
-# on the emulator is every @Test under core/src/androidTest that is not @ManualDeviceTest.
+# Instrumented coverage is :core and :payin, and what is left out is a scope statement rather than an
+# oversight. :telemetry holds only the generated ExampleInstrumentedTest and declares no androidx.test:runner,
+# so that task would die with ClassNotFoundException before running a thing. :example declares the runner and
+# does run, and is out for a different reason: one of its two navigation tests needs demo settings no checkout
+# ships, so it fails wherever it runs unattended. The other passes on the bench today but asserts a step is on
+# screen without scrolling to it, which is a claim about the handset and the current layout rather than about
+# the app: it failed here until the sample app's own restructure moved that step further up the screen.
+# Neither is flaky, and both are decisions about those tests rather than a line in this script.
+#
+# Both tiers grow with each capability that binds to a platform API. No count is kept here, because the last
+# one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest
+# and payin/src/androidTest that is not @ManualDeviceTest, less whatever a module's own build file excludes.
+# That is not hypothetical: payin/build.gradle.kts quarantines one form class, four tests, which carry no
+# annotation and so are invisible to the filter this step passes. A module can quiet its own tests without
+# touching this file, so the count here is an upper bound rather than a promise.
 #
 # :taptopay is out of reach for a different reason than it used to be, and the old one was wrong. It is not
 # that its instrumented paths need real hardware: attestation was measured returning a token on a
@@ -231,19 +240,49 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Scoped to :core; see the header for why :taptopay is not here. Short version: not hardware, a
-          # credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator action.
+          # Scoped to :core and :payin; see the header for why :taptopay is not here. Short version: not
+          # hardware, a credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator
+          # action. :payin resolves nothing outside the project, so it adds no credential to this step.
           #
-          # notAnnotation excludes the manual tier, which needs real hardware. Excluded rather than skipped,
-          # and the difference is the point: measured, this leaves `skipped="0"` in the results XML and the
-          # manual tests absent from it entirely. An `@Ignore` would have reported a standing skip in Slack
-          # every night, and a permanent skip is indistinguishable from a regression that started skipping.
+          # --continue because the two tasks are independent and Gradle otherwise "aborts execution and fails
+          # the build when any task fails", which leaves whether the second module ran at all down to how the
+          # two happened to be scheduled. Measured with :core deliberately failing: :payin ran anyway, which
+          # is the sort of thing that stops holding on a busier machine.
           #
-          # Those tests genuinely fail here rather than being merely inapplicable: an emulator's Keystore is
-          # software-backed, so the hardware assertion fails with SECURITY_LEVEL_SOFTWARE. Excluding them is
-          # load-bearing, not tidiness. See ManualDeviceTest for the command that runs them.
-          script: ./gradlew :core:connectedAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest
+          # notAnnotation excludes both manual tiers and names both annotations, because an androidTest source
+          # set is not visible to another module's: :payin declares its own rather than referencing :core's,
+          # so naming one would leave the other module's manual tier running. The argument takes a
+          # comma-separated list.
+          #
+          # What the annotations mark is "this job cannot answer the question", which is three different
+          # reasons and not one. Two of :core's are hardware: an emulator's Keystore is software-backed, so a
+          # secure-element assertion fails with SECURITY_LEVEL_SOFTWARE however correct the code is. The third
+          # is a provisioning gap rather than a property of emulators: the slow-link check passes on an
+          # emulator and is parked only because this job starts no throttled broker beside it. :payin's marks
+          # one live-flow test needing client credentials no repository holds, and nothing in it requires a
+          # phone either.
+          #
+          # So two of the three move into this job the day it provisions what they need, and only the hardware
+          # pair is permanent. Reading the Keystore reasoning as covering the tier would make a queued
+          # workflow change look impossible. Each ManualDeviceTest states its own reason and the command that
+          # runs its tier.
+          #
+          # Excluded rather than skipped in both cases, and the difference is the point: measured, this leaves
+          # `skipped="0"` in the results XML and the manual tests absent from it entirely. An `@Ignore` would
+          # have reported a standing skip in Slack every night, and a permanent skip is indistinguishable from
+          # a regression that started skipping.
+          #
+          # Two of :payin's classes are excluded by the module rather than from here, and this step cannot see
+          # either: payin/build.gradle.kts names the live tier whenever its credentials are absent, which is
+          # always in CI, and it names one quarantined form class outright. Both travel under `notClass`.
+          #
+          # A -P runner argument replaces the DSL's value for the key it names, and merges only in the sense
+          # that a different key leaves the first alone. `notAnnotation` above is a different key, which is
+          # the whole reason the two coexist. A -P `notClass` here would overwrite that list and readmit both
+          # classes, sending real payments from CI, so nothing in this workflow passes one. What this step
+          # runs is the annotation filter minus whatever the module excluded.
+          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
       # failure count, only the tests that failed, and a probable culprit per failure from git history with
@@ -270,6 +309,10 @@ jobs:
           # happens before any JUnit XML is written, during dependency resolution or compilation, left the
           # other suites looking green while the run went red.
           CARD_PRESENT_OUTCOME: ${{ steps.unit_card_present.outcome }}
+          # The modules the instrumented step above ran. The collector checks each one wrote results,
+          # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
+          # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
+          INSTRUMENTED_MODULES: core,payin
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than

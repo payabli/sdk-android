@@ -8,8 +8,9 @@
 - `./gradlew :MODULE:testDebugUnitTest` - Single module unit tests
 - `./gradlew connectedAndroidTest` - Instrumentation tests (requires device). **The per-PR CI runs none of
   these**; only the nightly workflow does, and it appends
-  `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest`. See
-  **Testing** for why, and for the command that runs the excluded tier
+  `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest`.
+  Both are named because there is one annotation per module; a command naming one leaves the other module's
+  manual tier running. See **Testing** for why, and for the command that runs the excluded tier
 - `./gradlew ktlintCheck` - Formatting
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
 - `./gradlew lint` - Android Lint
@@ -55,7 +56,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 `.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
 required check. Two jobs, and the split is a security boundary rather than organisation:
 
-- **nightly** - every unit test plus `:core`'s instrumented tests on an emulator. Runs the one third-party
+- **nightly** - every unit test plus `:core`'s and `:payin`'s instrumented tests on an emulator. Runs the one third-party
   action in the repository, so no Slack credential exists in it. Ends by deciding the verdict and gating on
   it, so the run result never depends on the reporting job.
 - **report** - `needs: nightly`, holds the bot token, runs nothing third-party. Posts a summary to
@@ -71,7 +72,7 @@ job because the build outputs and the git history the culprit lookup needs are b
 has to be decided there because that is where the gate reads it.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
-runs 402 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
+runs 405 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
 `git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
 behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
 files in the tree, so it is safe to interrupt. No third-party Python package is involved.
@@ -182,20 +183,34 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   line while the same commit measured 41% on its new lines, because `KeystoreValueCipher` was 121 of 261
   measured units and unreachable from any unit test. Read both numbers, not one.
 - **Three test tiers, and the third is excluded from CI rather than skipped.** JVM unit tests; instrumented
-  tests the nightly runs on an emulator; and `@ManualDeviceTest`, which needs real hardware. The exclusion is
+  tests the nightly runs on an emulator; and `@ManualDeviceTest`, which that job cannot answer. The bar is what
+  the nightly provisions, not what an emulator can do in principle, so the tier holds several reasons rather
+  than one. Across the two modules that job runs: two of `:core`'s need a secure element, which an emulator's
+  software-backed Keystore fails outright; a third needs a throttled link the job does not start, and passes
+  on an emulator once it has one; and `:payin`'s needs client credentials no repository holds. Only the
+  secure-element pair is permanent, and each test states its own reason at its declaration. `:taptopay` is out
+  of the job's reach for a different reason again, and is covered below. The exclusion is
   `notAnnotation`, verified to leave `skipped="0"` in the results XML with the manual tests absent from it
   entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
   skip cannot be told apart from a regression that started skipping.
 
-  **There is one of that annotation per module, and a command has to name the right one.** An `androidTest`
-  source set is invisible to another module's, so each declares its own: `com.payabli.sdk.core.ManualDeviceTest`,
-  `com.payabli.sdk.payin.ManualDeviceTest` and `com.payabli.sdk.taptopay.ManualDeviceTest`. `notAnnotation`
-  takes one value per run, so a job covering several modules passes each module its own.
+  **There is one of that annotation per module, and a command has to name every module it covers.** An
+  `androidTest` source set is invisible to another module's, so each declares its own:
+  `com.payabli.sdk.core.ManualDeviceTest`, `com.payabli.sdk.payin.ManualDeviceTest` and
+  `com.payabli.sdk.taptopay.ManualDeviceTest`. `notAnnotation` takes a **comma-separated list**, so one
+  argument covers several modules, and naming one of them leaves the others' manual tiers running. The
+  nightly names `:core`'s and `:payin`'s in a single argument for that reason. Measured twice: the runner
+  splits the value on commas, and a nightly command carrying both excluded both, where dropping to one would
+  have run `:core`'s hardware tier on the emulator and failed it.
 
   **In `:taptopay` the annotation is not what enforces the exclusion.** A command-line `notAnnotation`
   overwrites what the Gradle DSL sets, so that module excludes its live tier by `notClass`, by name, in
   `taptopay/build.gradle.kts`. Renaming or moving one of those classes silently re-enables it. The live tier
   additionally needs a paypoint and a reachable token server, and is filtered out entirely without them.
+
+  The two rules are not in tension: a command-line value replaces the DSL's for **the same key**, which is
+  why `:taptopay` cannot rely on the annotation, while different keys merge, which is why the nightly's
+  `notAnnotation` leaves `:payin`'s `notClass` exclusions standing.
 
   ```bash
   # Only the manual tier, against a wired phone. ANDROID_SERIAL matters when an emulator is also attached.
@@ -203,9 +218,13 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
     -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.core.ManualDeviceTest
   ```
 
-  Put a test there only when an emulator cannot answer the question. `:core`'s assert the storage key is in
+  Put a test there only when the nightly cannot answer the question, which is a bar about what that job
+  provisions rather than what an emulator can do. Two of `:core`'s assert the storage and device keys are in
   secure hardware at the device's best level, which on an emulator fails with `SECURITY_LEVEL_SOFTWARE`:
-  excluding them is load-bearing, not housekeeping.
+  excluding those is load-bearing, not housekeeping. The third, the slow-link check, passes on an emulator and
+  is parked only because the job starts no throttled broker, so it says at its own declaration that it is on
+  borrowed time. A test parked for a provisioning gap has to, or the tier quietly becomes a place tests go to
+  stop running.
 
   **A test that needs credentials is gated twice, and the second gate is the one that keeps the counts honest.**
   `PayInLiveFlowsInstrumentedTest` sends real requests, so `payin/build.gradle.kts` excludes it **by name**

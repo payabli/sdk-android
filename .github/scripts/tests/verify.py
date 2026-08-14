@@ -131,6 +131,7 @@ def run_collector(root: Path, **env_extra):
 
 UNIT_XML = "core/build/test-results/testDebugUnitTest/TEST-com.payabli.sdk.core.RetryTest.xml"
 INST_XML = "core/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
+PAYIN_INST_XML = "payin/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 COV_XML = "core/build/reports/coverage/test/debug/report.xml"
 SRC = "core/src/test/java/com/payabli/sdk/core/RetryTest.kt"
 SUBJ = "core/src/main/java/com/payabli/sdk/core/Retry.kt"
@@ -191,6 +192,27 @@ def test_collector():
     check("C4 no results written is red", "verdict=red" in r["output"])
     check("C4 says no results written", r["facts"]["suites"][0]["label"] == "no results written",
           json.dumps(r["facts"]["suites"]))
+
+    # C4b one instrumented module wrote nothing while its sibling wrote plenty. The suite total is not zero,
+    # so the check above cannot see it: only the per-module list can, and without it the run stays green
+    # having silently lost a whole module's tier.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+        COV_XML: COVERAGE.format(bm=0, bc=1, lm=0, lc=1),
+    }), INSTRUMENTED_MODULES="core,payin")
+    check("C4b a silent instrumented module is red", "verdict=red" in r["output"], r["output"])
+    check("C4b names the silent module", r["facts"]["suites"][1]["label"] == "no results written by payin",
+          json.dumps(r["facts"]["suites"]))
+
+    # C4c both modules wrote results, so the same list must not redden a healthy run.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+        PAYIN_INST_XML: junit("P", [("b", None)]),
+        COV_XML: COVERAGE.format(bm=0, bc=1, lm=0, lc=1),
+    }), INSTRUMENTED_MODULES="core,payin")
+    check("C4c both modules present is green", "verdict=green" in r["output"], r["output"])
 
     # C5 step outcome not success
     r = run_collector(make_repo({UNIT_XML: junit("S", [("a", None)]), INST_XML: junit("I", [("a", None)])}),

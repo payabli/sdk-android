@@ -224,6 +224,10 @@ MUTATIONS = [
      "    unit_missing = unit_step == \"success\" and unit_total == 0",
      "    unit_missing = False"),
 
+    ("An instrumented module that wrote no results hidden by its sibling", COLLECTOR, "collector",
+     "    inst_missing = inst_step == \"success\" and (inst_total == 0 or bool(inst_silent))",
+     "    inst_missing = inst_step == \"success\" and inst_total == 0"),
+
     ("Verdict no longer published for the gate", COLLECTOR, "collector",
      'handle.write(f"verdict={\'red\' if red else \'green\'}\\n")',
      'handle.write("")'),

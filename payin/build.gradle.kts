@@ -38,6 +38,31 @@ android {
         val liveTest =
             listOf("environment", "entryPoint", "clientId", "clientSecret")
                 .associateWith { providers.gradleProperty("payabli.liveTest.$it").orNull }
+
+        // Every class or method kept out of an ordinary run, as one list, because `notClass` is a single
+        // runner argument: setting it twice keeps the last write and silently readmits whatever the earlier
+        // one excluded. A -P runner argument would do the same to all of it from outside, so nothing in CI
+        // passes `notClass`; the annotation tiers travel under `notAnnotation`, which is a different key.
+        val excluded = mutableListOf<String>()
+
+        // Quarantined, not skipped: intermittent on hardware and green everywhere else, so it fails a run
+        // that has nothing wrong with it. Measured before quarantining, one failure in four full-suite runs
+        // on one handset against none in eight emulator runs, at the first interaction of the first test in
+        // the class with "No compose hierarchies found in the app". No mechanism was established and the
+        // obvious reading is wrong: the sibling classes in this package interact immediately after
+        // setContent too, so a missing wait is not what separates them. It comes back when a reproduction
+        // does, and it runs meanwhile with the property below.
+        //
+        // Named by class as well, because the property alone readmits it to a whole-module run: a developer
+        // who has stored the four live credentials above would send real transactions while rechecking a
+        // form test. The class filter keeps the run to the four tests being rechecked.
+        //
+        //   ./gradlew :payin:connectedAndroidTest -Ppayabli.quarantine.run=true \
+        //     -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest
+        if (providers.gradleProperty("payabli.quarantine.run").orNull != "true") {
+            excluded += "com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest"
+        }
+
         if (liveTest.values.none { it == null }) {
             liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
 
@@ -47,11 +72,14 @@ android {
             // `payabli.liveTest.achDebits=true` for a paypoint that accepts them. Excluded rather than skipped,
             // as the tiers are, so the counts stay honest.
             if (providers.gradleProperty("payabli.liveTest.achDebits").orNull != "true") {
-                testInstrumentationRunnerArguments["notClass"] =
-                    "$liveFlows#capturingABankAccountThePayerEntered"
+                excluded += "$liveFlows#capturingABankAccountThePayerEntered"
             }
         } else {
-            testInstrumentationRunnerArguments["notClass"] = liveFlows
+            excluded += liveFlows
+        }
+
+        if (excluded.isNotEmpty()) {
+            testInstrumentationRunnerArguments["notClass"] = excluded.joinToString(",")
         }
     }
     compileOptions {
