@@ -261,7 +261,8 @@ class CaptureViewModel(
      * only way back to it. The key goes with the result: the payer is asking for another payment, and the
      * service refuses a second one that arrives under the first one's key.
      *
-     * A second payment is a second amount, which is what makes two rows from one device tell themselves apart.
+     * A second payment draws its own amount. The draw has no memory, so it can land on the previous figure
+     * again: what tells two rows from one device apart is the order identifier, which carries the second.
      */
     fun startOver() =
         _uiState.update {
