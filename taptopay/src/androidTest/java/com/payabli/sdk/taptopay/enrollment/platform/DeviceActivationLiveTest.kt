@@ -16,6 +16,7 @@ import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
 import com.payabli.sdk.taptopay.enrollment.AttestedDevice
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.enrollment.DeviceDescription
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -29,6 +30,7 @@ import org.junit.Assume.assumeFalse
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 120.seconds
@@ -143,10 +145,14 @@ class DeviceActivationLiveTest {
             withContext(Dispatchers.IO) {
                 val trust = DeviceTrust.open(context)
                 val client = DeviceServiceClient(session().transport)
+                // Its own device row. Sharing the cold sequence's would mean sharing the attestation that
+                // sequence writes, and `/register` keeps an attestation when the key is unchanged, so this
+                // case would stop being unattested the moment `/attest` starts succeeding.
+                val description = unattestedDescription()
                 val registration =
                     client.register(
                         entry = LiveRunSettings.entry,
-                        hardwareId = DeviceDescriptionFactory.create(context).hardwareId,
+                        hardwareId = description.hardwareId,
                         keyId = trust.key.publicKey().identity,
                         deviceName = null,
                         model = Build.MODEL,
@@ -176,7 +182,7 @@ class DeviceActivationLiveTest {
                     )
 
                 val thrown =
-                    runCatching { enrollment().confirmActivation(code) }.exceptionOrNull()
+                    runCatching { enrollment(description).confirmActivation(code) }.exceptionOrNull()
 
                 Log.i(LIVE_TAG, "activate refused with ${thrown?.javaClass?.simpleName}")
                 assertTrue(
@@ -253,7 +259,9 @@ class DeviceActivationLiveTest {
                 HostBindings(context),
             ).getOrThrow()
 
-    private suspend fun enrollment(): DeviceEnrollment {
+    private suspend fun enrollment(
+        description: DeviceDescription = DeviceDescriptionFactory.create(context),
+    ): DeviceEnrollment {
         val trust = DeviceTrust.open(context)
         return DeviceEnrollment(
             entry = LiveRunSettings.entry,
@@ -265,9 +273,31 @@ class DeviceActivationLiveTest {
             deviceKey = trust.key,
             signer = DeviceAssertionSigner(trust.key),
             store = AttestedDeviceStore(trust.store),
-            description = DeviceDescriptionFactory.create(context),
+            description = description,
             dispatcher = Dispatchers.IO,
         )
+    }
+
+    /**
+     * A second, stable device identity on the same paypoint, for the case that needs an unattested device.
+     *
+     * The service keys a device row on this value, and `/register` preserves an attestation already written
+     * against a row when the key is unchanged. So a test that needs "no attestation exists" cannot share the
+     * row the cold sequence attests, or it stops testing what it names as soon as `/attest` starts
+     * succeeding. Derived rather than random, so it is one extra row on the paypoint and not one per run.
+     */
+    private fun unattestedDescription(): DeviceDescription {
+        val base = DeviceDescriptionFactory.create(context)
+        val digest =
+            MessageDigest
+                .getInstance("SHA-256")
+                .digest("${base.hardwareId}|unattested".toByteArray(Charsets.UTF_8))
+        val hex = StringBuilder(32)
+        for (index in 0 until 16) {
+            hex.append(HEX[(digest[index].toInt() shr 4) and 0xF])
+            hex.append(HEX[digest[index].toInt() and 0xF])
+        }
+        return DeviceDescription(hex.toString(), base.deviceName, base.model, base.osVersion)
     }
 
     private fun cloudProjectNumber(): Long =
@@ -276,6 +306,7 @@ class DeviceActivationLiveTest {
 
     private companion object {
         val EMULATED = setOf("ranchu", "goldfish")
+        val HEX = "0123456789abcdef".toCharArray()
 
         /** One tag for this tier, so a live run's output is one logcat filter. */
         const val LIVE_TAG = "PayabliLiveRun"
