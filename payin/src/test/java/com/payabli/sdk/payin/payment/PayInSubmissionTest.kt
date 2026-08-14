@@ -367,6 +367,24 @@ class PayInSubmissionTest {
         }
 
     @Test
+    fun `storing a method carries no key, even where a payment would`() =
+        runTest(timeout = timeout) {
+            // The same failure that hands a capture its retry key hands a store nothing, because the service
+            // runs its idempotency middleware over the transaction routes only and would read no key sent
+            // here. The public contract says so, and a caller that dereferenced it would be holding a null.
+            val transport =
+                FakePayInTransport.failingWith(
+                    PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the read timed out"),
+                )
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), cardForm())
+
+            assertEquals("the request never reached the wire", 1, transport.count)
+            assertNull(failed(submission.state.value).retryKey)
+        }
+
+    @Test
     fun `a decline carries no key, because the service answered`() =
         runTest(timeout = timeout) {
             // A retry after a decline is a new attempt, and sending the first one's key would ask the service to
