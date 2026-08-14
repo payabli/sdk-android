@@ -187,6 +187,5 @@ jobs:
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
       # The scanner indexes .github as well as the modules, so these workflow files are analysed.
-      # The Python beside them is not: the project's languages are Kotlin, XML and YAML.
       - name: Analyze
         run: ./gradlew sonar
