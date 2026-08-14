@@ -1,6 +1,7 @@
 package com.payabli.example.app
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.config.TokenHostDefaults
 import com.payabli.example.app.demo.config.TokenHostResolver
@@ -25,6 +26,10 @@ import com.payabli.example.app.sdk.payInStartup
  * back and offers no way to change them: a session captures its configuration when it is created, so
  * a control here would appear to change something already decided.
  *
+ * Two values are written once at startup, before anything composes, and neither is a control: the token
+ * host from a launch Intent, and the entry point from an instrumented test. Both exist because the value
+ * they carry is not knowable at build time on the machine that needs it.
+ *
  * The `Demo*` line is the card-present seam. The card-not-present screens start the SDK through
  * [payInStartup] and it submits for them.
  */
@@ -33,7 +38,14 @@ class AppContainer(
 ) {
     private val appContext = context.applicationContext
 
-    val configuration: DemoConfiguration = DemoConfiguration.fromBuildConfig()
+    /**
+     * The build's settings, except in an instrumented test, which has no build settings to read.
+     *
+     * `private set` because [applyTestConfiguration] is the only thing that writes it, on the same terms
+     * as [applyLaunchOverride]: once, before anything composes.
+     */
+    var configuration: DemoConfiguration = DemoConfiguration.fromBuildConfig()
+        private set
 
     /**
      * Read on every call, never cached.
@@ -66,8 +78,12 @@ class AppContainer(
     /**
      * The SDK session, held here because there is one per process and the second screen to ask has to reach
      * the one the first installed. It reads [tokenClient] per call, so a launch override still applies.
+     *
+     * Built on first use rather than at construction, because it captures [configuration] and both writes
+     * above land before any screen asks for a session. Built eagerly it would hold what the process started
+     * with, and an override would reach the Setup screen but not the SDK.
      */
-    private val sessionSource = PayInSessionSource(appContext, { tokenClient }, configuration)
+    private val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
 
     /**
      * Step one for both payment screens: the token server, then the SDK.
@@ -85,6 +101,21 @@ class AppContainer(
     fun applyLaunchOverride(host: String?) {
         if (host.isNullOrBlank()) return
         tokenServer = resolveTokenServer(host)
+    }
+
+    /**
+     * Gives an instrumented test the one setting it cannot have.
+     *
+     * The payment sequence gates its first step on a configured entry point, and an instrumented test runs
+     * against whatever the build was given, which for a fresh checkout is nothing. Supplying it here keeps
+     * that test hermetic: no credential, no properties file, and no build that behaves differently from the
+     * one a developer runs.
+     *
+     * The value never reaches a service. Every test that calls this answers its own requests.
+     */
+    @VisibleForTesting
+    fun applyTestConfiguration(entryPoint: String) {
+        configuration = configuration.copy(entryPoint = entryPoint)
     }
 
     private fun resolveTokenServer(launchOverride: String?): TokenServerTarget =
