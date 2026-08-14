@@ -22,8 +22,9 @@ class QaAmountTest {
     }
 
     @Test
-    fun `two attempts differ`() {
-        // The reason the figure is randomized at all: two rows from one device have to tell themselves apart.
+    fun `the draw varies rather than repeating one figure`() {
+        // What is asserted is variety across a run, not that consecutive draws differ: the draw has no memory,
+        // so two attempts can repeat and the customer and the order identifier are what tell rows apart.
         val random = Random(seed = 2)
         val drawn = List(20) { QaAmount.random(random) }
 

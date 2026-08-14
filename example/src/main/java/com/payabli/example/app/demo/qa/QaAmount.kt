@@ -4,7 +4,11 @@ import java.math.BigDecimal
 import kotlin.random.Random
 
 /**
- * A different amount for every attempt, so two rows from two devices are told apart by the figure alone.
+ * A figure drawn per attempt, so a row carries a second signal beyond the customer and the order identifier.
+ *
+ * Drawn independently, so two attempts can land on the same amount: thirteen hundred values, and no memory of
+ * the last one. What makes a row attributable is [QaIdentity] and the order identifier; the figure narrows a
+ * list by eye and is not what a reader should key on.
  *
  * Whole cents, between two and fifteen dollars: above the range where a paypoint's own minimum could refuse
  * it, and small enough that a run of them costs nothing.
