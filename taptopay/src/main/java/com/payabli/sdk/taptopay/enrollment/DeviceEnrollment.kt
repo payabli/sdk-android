@@ -181,6 +181,12 @@ internal class DeviceEnrollment(
 
             val known = store.read() ?: throw DeviceActivationException.NotEnrolled()
 
+            // A record made under another paypoint names a device this entry does not have. Sending it
+            // would be answered as a device that does not exist, and the classification for that discards
+            // the record — destroying a valid enrolment for the paypoint it does belong to. For this
+            // entry the device is simply not enrolled, which is what the caller is told.
+            if (known.entry != entry) throw DeviceActivationException.NotEnrolled()
+
             val assertion =
                 try {
                     withContext(dispatcher) { signer.sign(known.deviceId) }

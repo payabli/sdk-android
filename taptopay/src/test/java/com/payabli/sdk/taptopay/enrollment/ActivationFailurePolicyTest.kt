@@ -194,6 +194,21 @@ class ActivationFailurePolicyTest {
         }
 
     @Test
+    fun `a record from another paypoint is not activated, and is not discarded`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript())
+            fixture.seedRecord(entry = "a-different-entry-point", activated = false)
+
+            val thrown = runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }.exceptionOrNull()
+
+            assertEquals(DeviceActivationException.NotEnrolled::class.java, thrown?.javaClass)
+            assertTrue(fixture.transport.requests.isEmpty())
+            // Sending it would be answered as an unknown device, and that classification discards the
+            // record — which belongs to a paypoint this session is not talking to.
+            assertNotNull(fixture.storedRecord())
+        }
+
+    @Test
     fun `activating with nothing enrolled sends nothing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
