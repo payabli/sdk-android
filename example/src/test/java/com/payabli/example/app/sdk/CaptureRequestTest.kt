@@ -53,10 +53,12 @@ class CaptureRequestTest {
     }
 
     @Test
-    fun `the switch off sends no customer at all`() {
-        // A paypoint with no custom identifiers accepts that and records nothing, which is the other thing a
-        // paypoint can want. Half a customer would be neither.
-        assertEquals(null, sent(BigDecimal("2.50"), suppliesDemoCustomer = false).customerData)
+    fun `the switch off sends no customer number`() {
+        // The number and not the customer: the capture form collects a first name, a last name and a billing
+        // email, and the SDK writes those into the body over whatever this configures, so a request with none
+        // configured still names a payer. What the switch decides is whether the paypoint has a number to
+        // match on, which is what stops it writing a fresh customer per payment.
+        assertEquals(null, sent(BigDecimal("2.50"), suppliesDemoCustomer = false).customerData?.customerNumber)
     }
 
     /** What the request would carry for [total], read back off the operation the screen submits. */
