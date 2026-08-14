@@ -1,6 +1,7 @@
 package com.payabli.example.app.flow
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -52,6 +53,23 @@ class PaymentStepsTest {
             steps(flags).filter { it.status.isActionable }.forEach { step ->
                 assertTrue("${step.status} asks for something it does not show", step.status.showsContent)
             }
+        }
+    }
+
+    @Test
+    fun `the token check is never offered beside a form that can submit`() {
+        // What keeps a recheck away from a payment in flight. A recheck builds a session and replaces the flow
+        // the screen submits through, and a flow replaced while it holds an outcome strands it: the form is
+        // gone, so nothing delivers it, and the view models refuse every later recheck while the flow is busy.
+        //
+        // The two are never on screen together, so a submission cannot be running when a recheck starts.
+        // Rendering either one outside its step's status is what would open it.
+        everyCombination.forEach { flags ->
+            val sequence = steps(flags)
+            assertFalse(
+                "$flags offers a recheck beside a form that can submit",
+                sequence[0].status.showsContent && sequence[1].status.showsContent,
+            )
         }
     }
 
