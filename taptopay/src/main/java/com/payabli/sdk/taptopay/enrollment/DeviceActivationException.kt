@@ -128,8 +128,8 @@ internal sealed class DeviceActivationException(
     /**
      * A required field or header was missing or malformed.
      *
-     * Our own defect, and unreachable if the request and assertion types are doing their jobs. Kept distinct
-     * so it stays loud instead of joining the merchant-facing outcomes.
+     * An SDK defect, and unreachable while the request and assertion types validate their own fields.
+     * Separate from the merchant-facing outcomes so it stays loud.
      */
     class RequestRejected(
         resultCode: Int?,
@@ -199,9 +199,8 @@ internal sealed class DeviceActivationException(
     /**
      * The service refused with something this mapper does not recognise.
      *
-     * Deliberately the destination for anything unmatched, and deliberately harmless: it discards nothing.
-     * The classification is built by matching the service's wording, so the day that wording changes the
-     * unrecognised outcome must be the safe one.
+     * The destination for anything unmatched, and it discards nothing. Classification matches the
+     * service's wording, so the unrecognised outcome is the safe one.
      */
     class Unclassified(
         resultCode: Int?,

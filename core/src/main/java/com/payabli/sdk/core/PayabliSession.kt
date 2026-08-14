@@ -90,7 +90,7 @@ public class PayabliSession private constructor(
          * that omitted one would run on the real `Dispatchers.IO` while every layer above it believed it had
          * supplied the dispatcher, with nothing reporting the difference.
          *
-         * `IO` because everything under it is blocking I/O: sockets, files and Keystore calls.
+         * `IO` covers what runs under it: blocking sockets, files and Keystore calls.
          *
          * `internal` rather than private because one other composition point in this module reads it, the
          * device-trust accessor, which is reached from a capability that has no business picking a
@@ -143,7 +143,7 @@ public class PayabliSession private constructor(
          * most ordinary way of writing it. The consequence is that calling this again with a different
          * provider does not replace the one in use, and the session keeps the callback it started with.
          *
-         * Two cases are deliberately not idempotent:
+         * Two cases are not idempotent:
          *
          * - A **different** configuration while the session is usable fails, rather than returning one
          *   configured for something else or replacing one capabilities already hold.
@@ -221,7 +221,7 @@ public class PayabliSession private constructor(
          *
          * Without it the mutex cannot be shown to do anything: the section is a few microseconds of
          * object construction, so two racing callers almost never collide and a concurrency test passes
-         * just as happily with the lock removed. Measured, exactly that, which is why this exists.
+         * just as happily with the lock removed.
          */
         @VisibleForTesting
         internal suspend fun initializeWith(
@@ -277,8 +277,8 @@ public class PayabliSession private constructor(
     /**
      * The parts of a configuration that decide whether two calls mean the same session.
      *
-     * A value comparison rather than `PayabliConfig.equals`, which that type deliberately lacks: making it a
-     * data class would generate a `toString` and undo the redaction keeping an access token out of a log.
+     * A value comparison. `PayabliConfig` has no `equals`: a data class would generate a `toString` and undo
+     * the redaction keeping an access token out of a log.
      *
      * The token provider is compared by **presence, not identity**. A host writing the callback inline
      * passes a different object every call, so comparing references would make [initialize] never idempotent

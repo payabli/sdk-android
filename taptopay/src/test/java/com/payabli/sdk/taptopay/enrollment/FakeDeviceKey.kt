@@ -7,8 +7,8 @@ import com.payabli.sdk.core.devicekey.DeviceSignature
 /**
  * A [DeviceKey] that records what was asked of it, and refuses to be deleted.
  *
- * [delete] does two things on purpose. It counts, so a test can assert zero however the call was made; and
- * it throws, so a deletion is loud at the moment it happens. `AssertionError` because
+ * [delete] both counts and throws. The count lets a test assert zero however the call was made; the throw
+ * makes a deletion loud where it happens. `AssertionError` because
  * this module narrows its catches to specific exception types precisely so an `Error` travels unimpeded — but
  * the counter is what the assertions read, because a future `runCatching` somewhere would swallow the throw
  * and the count would still be right.
@@ -45,7 +45,7 @@ internal class FakeDeviceKey(
         throw AssertionError("the enrollment sequence must never delete the device key")
     }
 
-    /** Stands in for the key store having replaced the key under us. */
+    /** Stands in for the key store having replaced the key at the handle. */
     fun replaceKey(newIdentity: String) {
         identity = newIdentity
     }

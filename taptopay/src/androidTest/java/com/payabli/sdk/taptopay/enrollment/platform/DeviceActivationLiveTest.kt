@@ -72,8 +72,8 @@ class DeviceActivationLiveTest {
 
     @Before
     fun requireHardware() {
-        // A denylist, on purpose: an unrecognized emulator fails visibly instead of quietly dropping the
-        // coverage this tier exists for. The software-level answers belong to the unit tier.
+        // A denylist, so an unrecognized emulator fails visibly instead of dropping this tier's coverage.
+        // The software-level answers belong to the unit tier.
         assumeFalse(
             "the live tier is for wired handsets; an emulator's device key is software-backed",
             Build.HARDWARE in EMULATED,
@@ -83,7 +83,7 @@ class DeviceActivationLiveTest {
     @After
     fun forgetTheDevice() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Leaves the service's row alone deliberately: it is what the next run recognises.
+            // The service's row stays: it is what the next run is recognised by.
             AttestedDeviceStore(DeviceTrust.open(context).store).clear()
         }
 

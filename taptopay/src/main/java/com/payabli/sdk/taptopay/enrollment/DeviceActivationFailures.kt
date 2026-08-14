@@ -22,8 +22,8 @@ import java.net.HttpURLConnection
  * problem would destroy a working enrolment over a token that was simply scoped wrong.
  *
  * So **the destructive classifications require a positive match and everything else falls to
- * [DeviceActivationException.Unclassified]**, which discards nothing. Chosen in that direction on purpose: a
- * service that rewords its messages then stops discarding. It never starts discarding the wrong ones.
+ * [DeviceActivationException.Unclassified]**, which discards nothing. A service that rewords its messages
+ * then stops discarding, and never starts discarding the wrong ones.
  *
  * Exact comparison against ASCII literals the service emits, and two prefix matches where it appends detail.
  * Never case-insensitive, never locale-sensitive, never a pattern — each of those would widen a match that
@@ -103,7 +103,7 @@ internal class DeviceActivationFailures(
         const val DEVICE_NOT_FOUND = "Device not found."
         const val PAYPOINT_NOT_FOUND_PREFIX = "Paypoint '"
 
-        /** The fixed body and header complaints. All ours to fix, none the merchant's. */
+        /** The fixed body and header complaints. Every one is an SDK defect, not a merchant action. */
         val MALFORMED_REQUEST =
             setOf(
                 "entry is required in the request body.",

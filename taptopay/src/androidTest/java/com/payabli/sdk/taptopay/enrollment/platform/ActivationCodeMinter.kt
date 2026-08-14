@@ -51,8 +51,8 @@ internal object ActivationCodeMinter {
 
             val envelope = FORMAT.parseToJsonElement(body).jsonObject
             if (envelope["isSuccess"]?.jsonPrimitive?.content != "true") {
-                // The reason is echoed here on purpose: this is the harness, not the shipped client, and a
-                // failure to mint is the thing a human running this needs spelled out.
+                // The harness echoes the service's reason. A person running this needs it spelled out, and
+                // nothing here ships.
                 error("could not mint an activation code: $body")
             }
             envelope["responseData"]

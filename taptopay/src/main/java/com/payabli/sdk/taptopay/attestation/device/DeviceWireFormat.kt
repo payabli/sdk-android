@@ -30,7 +30,7 @@ internal const val STATUS_PENDING: String = "pending"
  * **No request property carries a Kotlin default.** [com.payabli.sdk.core.network.PayabliJson] encodes with
  * `encodeDefaults = false`, so a defaulted property is silently dropped from the body. That is not a style
  * preference: `platform` is `[JsonRequired]` on `/attest`, meaning the key must be physically present or the
- * server's deserializer throws before any of our own validation is reached. A nullable property with no
+ * server's deserializer throws before the request reaches validation. A nullable property with no
  * default still disappears when it is null, which is the wanted behaviour and comes from
  * `explicitNulls = false`.
  *
@@ -112,7 +112,7 @@ internal class RegisterResponse(
      * `"pending"` with a handle — and telling them apart is the only way a device can notice that the row it
      * was using is gone.
      *
-     * A `String` rather than an enum on purpose: a value added later must not fail a decode.
+     * A `String`, not an enum: a value added later must not fail a decode.
      */
     val outcome: String? = null,
 ) {
@@ -145,12 +145,9 @@ internal class AttestRequest(
     /**
      * The application id. On this platform, the package name.
      *
-     * **`/attest` refuses every value this field can correctly hold, today.** The service validates it against
-     * the iOS `TEAM_ID.BUNDLE_ID` shape before the request reaches its own Android branch, and a package name
-     * cannot match that, so the call comes back a validation error naming `appId`. It is sent correctly here
-     * rather than worked around, because the Android branch ignores the field entirely and the fix belongs on
-     * the service. Expect that failure until the service changes, and do not read it as a defect in this
-     * client.
+     * The Android branch does not read it: caller identity comes from the Google-signed `packageName` in the
+     * integrity verdict, checked against the paypoint's authorized apps. The field is consumed only by the
+     * allowlist-empty bypass lane. Sent anyway, because the service validates its shape when present.
      */
     val appId: String,
     /** The integrity token, base64-encoded. See [DeviceAttestationBinding.attestationField]. */

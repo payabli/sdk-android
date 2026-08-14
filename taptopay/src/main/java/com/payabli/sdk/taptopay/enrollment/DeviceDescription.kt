@@ -17,9 +17,9 @@ internal class DeviceDescription(
     /**
      * A human-readable name for the handset, or null.
      *
-     * Null on this platform, deliberately. The field is optional on the wire and purely descriptive, and the
-     * only value the platform offers is one the owner typed, which is routinely a person's name. Sending it
-     * would put that in a payment service's device record and its trace log for no functional gain.
+     * Null on this platform. The field is optional on the wire and purely descriptive, and the only value
+     * the platform offers is one the owner typed, which is routinely a person's name. Sending it would put
+     * that in a payment service's device record and its trace log for no functional gain.
      */
     val deviceName: String?,
     val model: String?,

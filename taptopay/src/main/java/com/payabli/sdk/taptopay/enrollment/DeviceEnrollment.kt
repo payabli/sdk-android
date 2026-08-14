@@ -67,9 +67,8 @@ internal class DeviceEnrollment(
      * Where the blocking key-store work runs.
      *
      * Required, no default. `DeviceAssertionSigner.sign` and `DeviceKey.publicKey` both block, and this is
-     * the layer that owns moving them off the caller's thread. Note that the attestor and the store already
-     * suspend and hold their own dispatchers — **do not** wrap those as well; a second hop onto the same
-     * pool is a hop for the symmetry of it.
+     * the layer that moves them off the caller's thread. The attestor and the store already suspend and
+     * hold their own dispatchers — **do not** wrap those; it is a second hop onto the same pool.
      */
     private val dispatcher: CoroutineDispatcher,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
@@ -100,10 +99,9 @@ internal class DeviceEnrollment(
                     }
                     return@withLock EnrollmentOutcome(activationRequired = !known.activated)
                 }
-                // Either this session is against a different paypoint, or the key was replaced under us.
-                // Both mean the record describes something that is no longer true. Deciding it here keeps it
-                // a local answer; left to the service it comes back as a revoked attestation, which means
-                // something else and would be read that way by whoever is looking at it later.
+                // The session is against a different paypoint, or the key at the handle was replaced.
+                // Either way the record no longer describes this device. Answered here, locally: the
+                // service answers the same state as a revoked attestation, which means something else.
                 logger.warn(LogField.safe("event", "device_identity_stale")) {
                     "stored device identity does not describe this device, re-enrolling"
                 }
