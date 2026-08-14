@@ -69,29 +69,32 @@ class PayInSessionSource(
         }
         val token = tokenClient().mintAccessToken() ?: return Result.failure(IllegalStateException(NO_TOKEN))
 
-        val config =
-            PayabliConfig(
-                accessToken = token,
-                entryPoint = configuration.entryPoint,
-                environment = configuration.environment.sdkEnvironment,
-                // Called again whenever a token is rejected, which is the whole point of minting per call.
-                // Throwing is the honest answer when the server has nothing: the SDK treats a provider
-                // failure as a terminal credential rejection, which is what a dead token server is.
-                tokenProvider = {
-                    tokenClient().mintAccessToken() ?: throw IllegalStateException(NO_TOKEN)
-                },
-            )
-
+        // Building the configuration is inside this too: it validates what the token server returned, and a
+        // token carrying a newline is refused there rather than at the call below.
+        //
         // Not runCatching: that catches CancellationException as well, and turning cancellation into an
         // ordinary startup failure reports an error for a screen that simply went away.
         return try {
-            start(config)
+            start(configFor(token))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Exception) {
             Result.failure(failure)
         }
     }
+
+    private fun configFor(token: String): PayabliConfig =
+        PayabliConfig(
+            accessToken = token,
+            entryPoint = configuration.entryPoint,
+            environment = configuration.environment.sdkEnvironment,
+            // Called again whenever a token is rejected, which is the whole point of minting per call.
+            // Throwing is the honest answer when the server has nothing: the SDK treats a provider
+            // failure as a terminal credential rejection, which is what a dead token server is.
+            tokenProvider = {
+                tokenClient().mintAccessToken() ?: throw IllegalStateException(NO_TOKEN)
+            },
+        )
 
     private suspend fun start(config: PayabliConfig): Result<PayabliSession> = startSession(config)
 

@@ -155,6 +155,24 @@ class PayInSessionSourceInstrumentedTest {
         }
     }
 
+    @Test
+    fun dATokenTheSdkRefusesIsAnsweredRatherThanThrown() {
+        // PayabliConfig validates what the token server returned, and a token carrying a newline cannot go in
+        // an HTTP header. Built outside the try, that threw out of session(), past the startup's fold, and out
+        // of the screen's own coroutine, leaving the step reading "Checking..." with its retry unreachable.
+        //
+        // Two characters on the wire, backslash and n, which is what JSON decodes into a newline.
+        server.token = "abc\\nvalue"
+        runBlocking {
+            val source = sourceAgainst(server) { error("the install must not be reached") }
+
+            val answered = runCatching { source.session() }
+
+            assertTrue("session() threw instead of answering: $answered", answered.isSuccess)
+            assertTrue("a token the SDK refuses was reported as a success", answered.getOrThrow().isFailure)
+        }
+    }
+
     private fun context() = InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
 
     private fun sourceAgainst(
@@ -190,6 +208,10 @@ class PayInSessionSourceInstrumentedTest {
         @Volatile
         var answerImmediately: Boolean = false
 
+        /** The token to answer with, for a body the SDK refuses. Null mints a fresh usable one per request. */
+        @Volatile
+        var token: String? = null
+
         /** A distinct token per request, so a second mint shows up in what reaches the install. */
         private val minted = AtomicInteger(0)
 
@@ -209,7 +231,8 @@ class PayInSessionSourceInstrumentedTest {
             runCatching {
                 client.getInputStream().read(ByteArray(1024))
                 if (!answerImmediately) Thread.sleep(ANSWER_AFTER_MILLIS)
-                val body = """{"accessToken":"$TEST_TOKEN-${minted.incrementAndGet()}"}"""
+                val minting = token ?: "$TEST_TOKEN-${minted.incrementAndGet()}"
+                val body = """{"accessToken":"$minting"}"""
                 // `Connection: close`, and the socket closed after it. Kept alive, the connection abandoned by
                 // the cancelled request goes back to `HttpURLConnection`'s pool, and the next call reads the
                 // late answer to the request nobody is waiting for any more.
