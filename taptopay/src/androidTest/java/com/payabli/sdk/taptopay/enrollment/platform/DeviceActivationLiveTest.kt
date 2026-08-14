@@ -284,12 +284,13 @@ class DeviceActivationLiveTest {
     }
 
     /**
-     * A second, stable device identity on the same paypoint, for the case that needs an unattested device.
+     * A device identity nothing has used before, for the case that needs a device awaiting activation.
      *
-     * The service keys a device row on this value, and `/register` preserves an attestation already written
-     * against a row when the key is unchanged. So a test that needs "no attestation exists" cannot share the
-     * row the cold sequence attests, or it stops testing what it names as soon as `/attest` starts
-     * succeeding. Derived rather than random, so it is one extra row on the paypoint and not one per run.
+     * The service keys a device row on this value, so a new value is a new row, and a new row is pending.
+     * Sharing the cold sequence's row would make the outcome depend on whether an earlier run activated it.
+     *
+     * **Each run leaves a row on the paypoint**, registered and never activated. They accumulate, and
+     * nothing here removes them: no route deletes a softpos device. Somebody has to clear them by hand.
      */
     private fun freshDescription(): DeviceDescription =
         derivedDescription(
@@ -300,6 +301,10 @@ class DeviceActivationLiveTest {
 
     /**
      * A second, stable device identity on the same paypoint, for the case that needs an unattested device.
+     *
+     * `/register` preserves an attestation already written against a row when the key is unchanged, so a
+     * test that needs "no attestation exists" cannot share the row the cold sequence attests. Derived from
+     * the device's own identifier, so every run reuses one extra row instead of adding one.
      */
     private fun unattestedDescription(): DeviceDescription = derivedDescription("unattested")
 
