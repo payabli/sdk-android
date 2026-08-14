@@ -36,6 +36,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - A capability module depends on `:core` and **never** on a sibling capability. The umbrella deliberately omits `:taptopay` so the card reader dependency stays opt-in; do not add it.
 - `:payin` ships the Compose payment form and is the only library module with Compose, so the umbrella carries the Compose runtime. Its public composables need `api` dependencies: `implementation` would leave an integrator unable to call them. The form takes its colours, type and shapes from the host's `MaterialTheme` and names none of its own; a literal colour or size anywhere in `payin/ui` is a defect.
 - `minSdk` is **per module, not global**: `:taptopay` is **30**, required by the card reader dependency, and an app linking it must also be 30 or higher. Every published module is **23**. Do not raise the card-not-present modules to match card-present. `:example` is **24**, and publishes nothing: its debug build reaches the local token server over cleartext, and a network security config, which is the only way to permit that for two addresses instead of for everything, is ignored below 24.
+- **`:taptopay` is 64-bit only, and nothing declares it.** The card reader pulls `magiccube`, whose AAR carries exactly one native library — `jni/arm64-v8a/libmc3.so`, with no 32-bit build. So an APK linking `:taptopay` will not install on an `armeabi-v7a`-only handset: the install fails with `INSTALL_FAILED_NO_MATCHING_ABIS` before any code runs, which names the ABI but not the dependency that caused it. Measured on an SM-A136U1 (`ro.product.cpu.abilist=armeabi-v7a,armeabi`). This is a vendor constraint like the API 30 floor, it is not expressed in any manifest or Gradle setting, and it means such a device cannot run this module's instrumented tests at all — a stated skip on the bench, not a failure to chase.
 - Kotlin compiles through AGP's built-in Kotlin support (AGP 9.2.1, Kotlin 2.2.10, Gradle 9.4.1, daemon JVM 21). There is no `org.jetbrains.kotlin.android` plugin and none should be added.
 - Platform-native only: `HttpURLConnection`, Keystore and `javax.crypto`, `kotlinx.serialization`, `kotlinx.coroutines`, Compose. No third-party HTTP client, crypto engine, DI framework, reflection-based JSON mapper or logging framework.
 - Convention plugins in `build-logic` carry shared config: `payabli.publish` for publishing, `payabli.quality` for formatting and coverage. Prefer extending those over per-module blocks.
@@ -186,10 +187,15 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
   skip cannot be told apart from a regression that started skipping.
 
-  **There are two of that annotation and a command has to name both.** An `androidTest` source set is invisible
-  to another module's, so `:core` has `com.payabli.sdk.core.ManualDeviceTest` and `:payin` has
-  `com.payabli.sdk.payin.ManualDeviceTest`. `notAnnotation` takes one value per run, so a job covering both
-  modules passes each module its own.
+  **There is one of that annotation per module, and a command has to name the right one.** An `androidTest`
+  source set is invisible to another module's, so each declares its own: `com.payabli.sdk.core.ManualDeviceTest`,
+  `com.payabli.sdk.payin.ManualDeviceTest` and `com.payabli.sdk.taptopay.ManualDeviceTest`. `notAnnotation`
+  takes one value per run, so a job covering several modules passes each module its own.
+
+  **In `:taptopay` the annotation is not what enforces the exclusion.** A command-line `notAnnotation`
+  overwrites what the Gradle DSL sets, so that module excludes its live tier by `notClass`, by name, in
+  `taptopay/build.gradle.kts`. Renaming or moving one of those classes silently re-enables it. The live tier
+  additionally needs a paypoint and a reachable token server, and is filtered out entirely without them.
 
   ```bash
   # Only the manual tier, against a wired phone. ANDROID_SERIAL matters when an emulator is also attached.

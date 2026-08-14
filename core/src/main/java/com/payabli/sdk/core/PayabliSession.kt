@@ -62,8 +62,12 @@ public class PayabliSession private constructor(
 
         private val logger: SdkLogger get() = LoggerRegistry.of(LogCategory.CORE)
 
-        /** Chosen here and handed down, and `IO` because sockets, files and Keystore calls all block. */
-        private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
+        /**
+         * Chosen here and handed down, and `IO` because sockets, files and Keystore calls all block.
+         *
+         * `internal` because the device-trust accessor reads it. Still the only place one is picked.
+         */
+        internal val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
 
         /** What the SDK can do right now. One per process, readable before a session exists. */
         @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
