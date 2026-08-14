@@ -18,11 +18,12 @@ import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.DeviceDescription
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
+import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -167,7 +168,6 @@ class DeviceActivationLiveTest {
                         entry = LiveRunSettings.entry,
                         deviceId = registration.deviceId,
                         keyId = trust.key.publicKey().identity,
-                        activated = false,
                     ),
                 )
 
@@ -199,14 +199,18 @@ class DeviceActivationLiveTest {
     fun aPendingDeviceActivatesWithACodeMintedOutOfBand() =
         runTest(timeout = TEST_TIMEOUT) {
             withContext(Dispatchers.IO) {
-                val enrollment = enrollment()
+                // A device identity minted for this run, so the service row is new and therefore pending.
+                // Sharing the cold sequence's row makes the outcome depend on whether an earlier run
+                // already activated it, which is a skip masquerading as a pass.
+                val description = freshDescription()
+                val enrollment = enrollment(description)
                 val outcome = enrollment.enroll()
                 val store = AttestedDeviceStore(DeviceTrust.open(context).store)
                 val record = store.read() ?: error("the cold sequence recorded nothing to activate")
 
-                assumeFalse(
-                    "this device is already active at the service; nothing to activate",
-                    !outcome.activationRequired,
+                assertTrue(
+                    "a device registered for this run must be pending, got $outcome",
+                    (outcome as EnrollmentOutcome.Attested).activationRequired,
                 )
 
                 // Minted here, playing the merchant's part, because the route needs a device handle that
@@ -221,10 +225,10 @@ class DeviceActivationLiveTest {
 
                 enrollment.confirmActivation(code)
 
-                val activated = store.read()
-                assertNotNull(activated)
-                assertTrue(activated!!.activated)
-                assertFalse(enrollment.enroll().activationRequired)
+                // Success is reaching here. Nothing is written on activation, so what is asserted is that
+                // the binding survives and a second run is answered from it without re-attesting.
+                assertNotNull(store.read())
+                assertEquals(EnrollmentOutcome.AlreadyAttested, enrollment.enroll())
             }
         }
 
@@ -286,12 +290,24 @@ class DeviceActivationLiveTest {
      * row the cold sequence attests, or it stops testing what it names as soon as `/attest` starts
      * succeeding. Derived rather than random, so it is one extra row on the paypoint and not one per run.
      */
-    private fun unattestedDescription(): DeviceDescription {
+    private fun freshDescription(): DeviceDescription =
+        derivedDescription(
+            java.util.UUID
+                .randomUUID()
+                .toString(),
+        )
+
+    /**
+     * A second, stable device identity on the same paypoint, for the case that needs an unattested device.
+     */
+    private fun unattestedDescription(): DeviceDescription = derivedDescription("unattested")
+
+    private fun derivedDescription(suffix: String): DeviceDescription {
         val base = DeviceDescriptionFactory.create(context)
         val digest =
             MessageDigest
                 .getInstance("SHA-256")
-                .digest("${base.hardwareId}|unattested".toByteArray(Charsets.UTF_8))
+                .digest("${base.hardwareId}|$suffix".toByteArray(Charsets.UTF_8))
         val hex = StringBuilder(32)
         for (index in 0 until 16) {
             hex.append(HEX[(digest[index].toInt() shr 4) and 0xF])
