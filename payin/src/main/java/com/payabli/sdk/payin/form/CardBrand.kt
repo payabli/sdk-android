@@ -49,7 +49,7 @@ public enum class CardBrand {
                 number.prefix(6) in 622126..622925 -> Discover
                 three in 644..649 -> Discover
                 two == 65 -> Discover
-                two == 62 -> UnionPay
+                two == 62 -> if (number.mayReachDiscoversRange()) Unknown else UnionPay
                 four == 3095 -> DinersClub
                 three in 300..305 -> DinersClub
                 two == 36 || two == 38 || two == 39 -> DinersClub
@@ -60,6 +60,23 @@ public enum class CardBrand {
 
         /** The first [length] digits as a number, or -1 when there are not that many yet. */
         private fun String.prefix(length: Int): Int = if (this.length < length) -1 else take(length).toInt()
+
+        /**
+         * Whether these digits could still turn out to be Discover's `622126-622925`.
+         *
+         * The check above needs six digits, and answering UnionPay before then puts the wrong mark beside a
+         * Discover number for four keystrokes. Compared at the length typed so far, so a 62 number that has
+         * already left the range is marked at once rather than waiting for a sixth digit it does not need.
+         */
+        private fun String.mayReachDiscoversRange(): Boolean {
+            if (length >= DISCOVER_RANGE_DIGITS) return false
+            return take(length).toInt() in
+                DISCOVER_RANGE_LOW.take(length).toInt()..DISCOVER_RANGE_HIGH.take(length).toInt()
+        }
+
+        private const val DISCOVER_RANGE_DIGITS = 6
+        private const val DISCOVER_RANGE_LOW = "622126"
+        private const val DISCOVER_RANGE_HIGH = "622925"
     }
 }
 

@@ -46,6 +46,26 @@ class CardBrandTest {
     }
 
     @Test
+    fun `a 62 prefix names no scheme while it could still be either`() {
+        // The Discover range needs six digits to read. Answering UnionPay before then puts that mark beside a
+        // Discover number for four keystrokes and swaps it at the sixth, which the payer sees happen.
+        listOf("6", "62", "622", "6221", "62212").forEach {
+            assertEquals("$it named a scheme it cannot know yet", CardBrand.Unknown, CardBrand.of(it))
+        }
+        assertEquals(CardBrand.Discover, CardBrand.of("622126"))
+        assertEquals(CardBrand.UnionPay, CardBrand.of("622125"))
+    }
+
+    @Test
+    fun `a 62 prefix that has left the Discover range is named at once`() {
+        // Waiting for a sixth digit these do not need would hide the mark on most UnionPay cards.
+        assertEquals(CardBrand.UnionPay, CardBrand.of("623"))
+        assertEquals(CardBrand.UnionPay, CardBrand.of("6230"))
+        assertEquals(CardBrand.UnionPay, CardBrand.of("6220"))
+        assertEquals(CardBrand.UnionPay, CardBrand.of("62293"))
+    }
+
+    @Test
     fun `the edges of each range belong to the range`() {
         // Off by one at either end shows the wrong scheme for a real card, and the middle of a range would
         // never catch it.
