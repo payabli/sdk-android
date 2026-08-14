@@ -8,8 +8,9 @@ import java.util.Locale
  * What this device calls itself, for a QA run where several submit at once.
  *
  * Three phones and a simulator sending the sample's own test values produce rows nothing can tell apart: the
- * same customer, the same instrument, the same amount, minutes apart. Every value here comes from the device
- * model, so one build installs on all of them and each install still names itself.
+ * same customer, the same instrument, the same amount, minutes apart. Every value that distinguishes one
+ * device from another comes from the model, so one build installs on all of them and each still names itself.
+ * [firstName] is the one constant, because it is the half of a payer's name that says which run this was.
  *
  * The model is a parameter rather than a `Build` read, so the derivation runs on a host JVM against models no
  * machine here has.
