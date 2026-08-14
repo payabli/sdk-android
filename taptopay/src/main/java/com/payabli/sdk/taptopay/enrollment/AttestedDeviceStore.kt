@@ -46,18 +46,10 @@ internal class AttestedDeviceStore(
             try {
                 storage.get(ENTRY)
             } catch (lost: SecureStorageException.KeyInvalidated) {
-                logger.warn(lost, LogField.safe("event", EVENT_LOST), LogField.safe("state", "key_invalidated")) {
-                    "stored device identity is gone"
-                }
+                reportLost(lost, "key_invalidated")
                 return null
             } catch (unreadable: SecureStorageException.ValueUnreadable) {
-                logger.warn(
-                    unreadable,
-                    LogField.safe("event", EVENT_LOST),
-                    LogField.safe("state", "value_unreadable"),
-                ) {
-                    "stored device identity is gone"
-                }
+                reportLost(unreadable, "value_unreadable")
                 return null
             }
                 ?: return null
@@ -67,9 +59,7 @@ internal class AttestedDeviceStore(
         } catch (malformed: SerializationException) {
             // Narrowed to the serializer's own failure. A storage failure raised by the read above must
             // not be swallowed here on its way past.
-            logger.warn(malformed, LogField.safe("event", EVENT_LOST), LogField.safe("state", "undecodable")) {
-                "stored device identity is gone"
-            }
+            reportLost(malformed, "undecodable")
             storage.remove(ENTRY)
             null
         } finally {
@@ -90,6 +80,14 @@ internal class AttestedDeviceStore(
 
     /** Forgets the device. Never touches the key, and never another consumer's entries. */
     suspend fun clear(): Unit = storage.remove(ENTRY)
+
+    /** One record for every way the stored identity can turn out to be unreadable, naming which. */
+    private fun reportLost(
+        cause: Throwable,
+        state: String,
+    ) = logger.warn(cause, LogField.safe("event", EVENT_LOST), LogField.safe("state", state)) {
+        "stored device identity is gone"
+    }
 
     private companion object {
         /**

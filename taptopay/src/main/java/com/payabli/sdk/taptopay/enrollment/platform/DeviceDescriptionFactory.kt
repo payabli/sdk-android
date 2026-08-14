@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.enrollment.platform
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
@@ -33,7 +34,12 @@ internal object DeviceDescriptionFactory {
      * `/register` refuses by name. Substituting a random value here is what the sibling SDK does and is the
      * reason it registers a new device on every call down that path: an identifier invented per call is not
      * an identifier.
+     *
+     * `HardwareIds` is suppressed because reading the identifier is the requirement, and the mitigation the
+     * check asks for is the digest above: the raw value is never held, sent or logged, which
+     * `theHardwareIdentifierIsNotTheRawPlatformValue` asserts.
      */
+    @SuppressLint("HardwareIds")
     fun create(context: Context): DeviceDescription {
         val installationId =
             Settings.Secure
