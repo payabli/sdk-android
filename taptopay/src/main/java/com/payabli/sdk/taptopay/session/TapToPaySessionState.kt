@@ -16,7 +16,13 @@ internal sealed interface TapToPaySessionState {
     /** Nothing has been attempted, or the last attempt was withdrawn. Reachable from every state. */
     data object Idle : TapToPaySessionState
 
-    /** Proving the device and the app to the service. Skipped by a warm start and by a re-initialization. */
+    /**
+     * Where the device's identity is established with the service.
+     *
+     * A repair never enters it. A warm start does, and leaves without a round trip: enrollment reads the
+     * stored record and decides for itself whether the cold sequence is needed, so the state covers asking
+     * the question as well as answering it.
+     */
     data object AttestingDevice : TapToPaySessionState
 
     /** Fetching the reader credentials, which is also where a warm start learns activation is still owed. */
