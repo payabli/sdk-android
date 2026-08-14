@@ -1,20 +1,20 @@
 package com.payabli.example.app
 
 import android.content.Context
-import com.payabli.example.app.config.DemoConfiguration
-import com.payabli.example.app.config.TokenHostDefaults
-import com.payabli.example.app.config.TokenHostResolver
-import com.payabli.example.app.config.TokenServerTarget
-import com.payabli.example.app.diagnostics.DiagnosticsRegistry
-import com.payabli.example.app.net.TokenServerClient
-import com.payabli.example.app.payment.PayInSessionSource
-import com.payabli.example.app.payment.PayInStartup
-import com.payabli.example.app.payment.payInFlowGate
-import com.payabli.example.app.payment.payInStartup
-import com.payabli.example.app.preflight.DeviceFacts
-import com.payabli.example.app.preflight.platform.DeviceFactsReader
-import com.payabli.example.app.terminal.DemoTerminalController
-import com.payabli.example.app.terminal.TerminalController
+import com.payabli.example.app.demo.config.DemoConfiguration
+import com.payabli.example.app.demo.config.TokenHostDefaults
+import com.payabli.example.app.demo.config.TokenHostResolver
+import com.payabli.example.app.demo.config.TokenServerTarget
+import com.payabli.example.app.demo.diagnostics.DiagnosticsRegistry
+import com.payabli.example.app.demo.net.TokenServerClient
+import com.payabli.example.app.demo.preflight.DeviceFacts
+import com.payabli.example.app.demo.preflight.platform.DeviceFactsReader
+import com.payabli.example.app.demo.terminal.DemoTerminalController
+import com.payabli.example.app.demo.terminal.TerminalController
+import com.payabli.example.app.sdk.PayInSessionSource
+import com.payabli.example.app.sdk.PayInStartup
+import com.payabli.example.app.sdk.payInFlowGate
+import com.payabli.example.app.sdk.payInStartup
 
 /**
  * Everything the app is built from, assembled once per process.

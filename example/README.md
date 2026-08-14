@@ -60,15 +60,32 @@ falls back to the development machine's Bonjour name, where a device here gets `
 
 ## How it is put together
 
-- `ui/payment/PaymentFormHost.kt` calls `PayabliPayInForm` from `:payin`, configured in
-  `payment/DemoForms.kt`, and passes nothing about appearance: the form reads this app's
-  `MaterialTheme`. The form submits: a tap runs the operation through the `PayabliPayInPaymentFlow` it
-  was handed, and the outcome arrives on the `onCompleted` or `onFailed` the host supplied. Both are
-  required, and neither has anything to acknowledge afterwards.
-- `payment/PayInSessionSource.kt` mints a token and initializes the session the flow needs, which is the
-  one piece an integration writes for itself.
-- Card-present has no SDK yet, so `terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
-  marks it with `⟵ swap point`.
+**Every call into the SDK is in `sdk/`.** That is the package to read, and the rest of the app is scaffolding
+around it: `demo/` holds the screens, the step list, the token server client and the card-present stand-in,
+and none of it names an SDK type. `AppContainer.kt`, `MainActivity.kt` and `PayabliDemoApplication.kt` stay
+at the root, where the manifest expects them.
+
+```
+com/payabli/example/app/
+  AppContainer.kt   MainActivity.kt   PayabliDemoApplication.kt
+  sdk/     the integration
+  demo/    ui/  flow/  payment/  net/  config/  terminal/  diagnostics/  preflight/
+```
+
+Inside `sdk/`:
+
+- `PayInSessionSource.kt` mints a token and initializes the session, which is the one piece an integration
+  writes for itself.
+- `PayInFlowGate.kt` and `PayInStartup.kt` turn that session into the flow a screen submits through.
+- `PaymentFormHost.kt` calls `PayabliPayInForm`, configured in `DemoForms.kt`, and passes nothing about
+  appearance: the form reads this app's `MaterialTheme`. The form submits, a tap runs the operation through
+  the flow it was handed, and the outcome arrives on the `onCompleted` or `onFailed` the host supplied. Both
+  are required, and neither has anything to acknowledge afterwards.
+- `PayInOutcomes.kt` maps what the SDK answers onto this app's own `PaymentResult` and `PaymentError`, so a
+  screen reads a demo type.
+
+Card-present has no SDK yet, so `demo/terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
+marks it with `⟵ swap point`.
 
 ## Things that will bite
 

@@ -4,9 +4,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import com.payabli.example.app.config.TokenHostResolver
-import com.payabli.example.app.ui.nav.PayabliDemoNavHost
-import com.payabli.example.app.ui.theme.PayabliDemoTheme
+import com.payabli.example.app.demo.config.TokenHostResolver
+import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
+import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

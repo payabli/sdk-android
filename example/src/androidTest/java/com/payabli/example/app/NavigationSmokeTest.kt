@@ -11,9 +11,9 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.payabli.example.app.ui.nav.PayabliDemoNavHost
-import com.payabli.example.app.ui.nav.TopLevelDestination
-import com.payabli.example.app.ui.theme.PayabliDemoTheme
+import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
+import com.payabli.example.app.demo.ui.nav.TopLevelDestination
+import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
