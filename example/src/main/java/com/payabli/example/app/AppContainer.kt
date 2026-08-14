@@ -27,9 +27,9 @@ import com.payabli.example.app.sdk.payInStartup
  * back and offers no way to change them: a session captures its configuration when it is created, so
  * a control here would appear to change something already decided.
  *
- * Two values are written once at startup, before anything composes, and neither is a control: the token
- * host from a launch Intent, and the entry point from an instrumented test. Both exist because the value
- * they carry is not knowable at build time on the machine that needs it.
+ * What can be written is written at startup, before anything composes, and none of it is a control: the
+ * token host from a launch Intent, and the entry point and environment from an instrumented test. Both
+ * overrides exist because what they carry is not knowable at build time on the machine that needs it.
  *
  * The `Demo*` line is the card-present seam. The card-not-present screens start the SDK through
  * [payInStartup] and it submits for them.
@@ -117,7 +117,8 @@ class AppContainer(
      * whatever the build configured and collides with the next test on a build that set anything but the
      * default.
      *
-     * The values never reach a service. Every test that calls this answers its own requests.
+     * Neither value names anything real: they stand in for build settings so the sequence can be driven,
+     * and the entry point is one no paypoint carries.
      */
     @VisibleForTesting
     fun applyTestConfiguration(

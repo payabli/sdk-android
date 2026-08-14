@@ -14,7 +14,7 @@ import com.payabli.example.app.demo.config.DemoEnvironment
  * and the failure names neither the class that caused it nor the configuration it disagreed with.
  */
 internal object InstrumentedSession {
-    /** Reaches no service. Every test that installs a session answers its own requests. */
+    /** Names no paypoint. It stands in for the build setting a checkout does not carry. */
     const val ENTRY_POINT = "instrumented-entry"
 
     /**
