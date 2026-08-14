@@ -208,6 +208,58 @@ class DeviceEnrollmentTest {
         }
 
     @Test
+    fun `a record made against another paypoint survives an enrollment that fails`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(decline(500, "Internal server error.")),
+                    ),
+                )
+            fixture.seedRecord(entry = "a-different-entry-point")
+
+            runCatching { fixture.enrollment.enroll() }
+
+            // The other paypoint's binding is still live at the service. Discarding it here would send that
+            // paypoint's next enrollment through the cold sequence, and registering retires an active
+            // device and costs the merchant a fresh code.
+            assertEquals("a-different-entry-point", fixture.storedRecord()!!.entry)
+            assertEquals(listOf("get:$RECORD_ENTRY"), fixture.storage.operations)
+        }
+
+    @Test
+    fun `a record made against another paypoint is replaced only once this one is attested`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(coldScript())
+            fixture.seedRecord(entry = "a-different-entry-point")
+
+            fixture.enrollment.enroll()
+
+            // One read and one write. No remove, so nothing is unstored between the two.
+            assertEquals(listOf("get:$RECORD_ENTRY", "set:$RECORD_ENTRY"), fixture.storage.operations)
+        }
+
+    @Test
+    fun `being told the row was created reports nothing when the record was another paypoint's`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(outcome = "created")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                    ),
+                )
+            fixture.seedRecord(entry = "a-different-entry-point")
+
+            fixture.enrollment.enroll()
+
+            // A paypoint that has never seen this device answers `created`. That is the expected answer.
+            assertTrue(fixture.logger.records.none { it.message.contains("did not recognize") })
+        }
+
+    @Test
     fun `a response carrying no outcome decodes and reports nothing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(coldScript())

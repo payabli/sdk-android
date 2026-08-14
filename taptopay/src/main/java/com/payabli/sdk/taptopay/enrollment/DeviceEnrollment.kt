@@ -93,20 +93,31 @@ internal class DeviceEnrollment(
             val identity = withContext(dispatcher) { deviceKey.publicKey() }
 
             val known = store.read()
-            if (known != null) {
-                if (known.entry == entry && known.keyId == identity.identity) {
-                    logger.debug(LogField.safe("event", "device_already_enrolled")) {
-                        "device identity is current, skipping the cold sequence"
-                    }
-                    return@withLock EnrollmentOutcome.AlreadyAttested
+            val knownHere = known?.takeIf { it.entry == entry }
+
+            if (knownHere != null && knownHere.keyId == identity.identity) {
+                logger.debug(LogField.safe("event", "device_already_enrolled")) {
+                    "device identity is current, skipping the cold sequence"
                 }
-                // The session is against a different paypoint, or the key at the handle was replaced.
-                // Either way the record no longer describes this device. Answered here, locally: the
-                // service answers the same state as a revoked attestation, which means something else.
+                return@withLock EnrollmentOutcome.AlreadyAttested
+            }
+
+            if (knownHere != null) {
+                // The key at the handle was replaced, so the record names a binding this device can no
+                // longer sign for. Discarded here, locally: the service answers this state as a revoked
+                // attestation, which means something else.
                 logger.warn(LogField.safe("event", "device_identity_stale")) {
-                    "stored device identity does not describe this device, re-enrolling"
+                    "stored device identity names a key this device no longer holds, re-enrolling"
                 }
                 store.clear()
+            } else if (known != null) {
+                // A record for another paypoint, and its binding is still live: an attestation is revoked
+                // per device row, and each paypoint has its own row. So it is kept until the write below
+                // replaces it. Discarding it here and then failing anywhere in the sequence would leave the
+                // other paypoint with no record, and its next enrollment would retire an active device.
+                logger.debug(LogField.safe("event", "device_identity_other_paypoint")) {
+                    "stored device identity is for another paypoint, keeping it until this one is attested"
+                }
             }
 
             val challenge = client.challenge(entry)
@@ -121,7 +132,7 @@ internal class DeviceEnrollment(
                     osVersion = description.osVersion,
                 )
 
-            if (known != null) {
+            if (knownHere != null) {
                 reportRowChange(registration.outcome)
             }
 
@@ -244,9 +255,12 @@ internal class DeviceEnrollment(
      *
      * Diagnostic only, and nothing branches on it — by this point the returned handle has been taken and the
      * record is about to be rewritten, which is correct in every case. What it catches is the combination
-     * that should not happen: this device held a record, so it expected the service to recognise it, and the
-     * service says it created something new instead. That is the signature of a hardware identifier that is
-     * not staying still, or of a row the service can no longer find.
+     * that should not happen: this device held a record **for this paypoint**, so it expected the service to
+     * recognise it, and the service says it created something new instead. That is the signature of a
+     * hardware identifier that is not staying still, or of a row the service can no longer find.
+     *
+     * A record for another paypoint carries no such expectation, and a new row is the right answer there, so
+     * the caller does not reach this.
      *
      * Absent from the response until the service starts sending it, which reads as nothing to report.
      */
