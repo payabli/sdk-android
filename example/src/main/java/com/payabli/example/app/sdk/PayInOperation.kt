@@ -1,5 +1,8 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.example.app.demo.qa.DemoCustomerSetting
+import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInTransactionOptions
@@ -21,21 +24,46 @@ class PayInOperation internal constructor(
 }
 
 /**
- * A capture of the demo amount under [idempotencyKey].
+ * The fee this app puts on a payment, and the reason the form's amount row is not the charge.
+ *
+ * `totalAmount` includes it, so the row reads the part before it. Read by both the request and the form, which
+ * is what keeps the figure a payer is shown equal to the one being charged.
+ */
+internal val DEMO_SERVICE_FEE: BigDecimal = BigDecimal("0.10")
+
+/**
+ * A capture of [amount] under [idempotencyKey], ordered and described as [identity]'s at [atMillis].
  *
  * Without a key the service cannot recognise a repeat, so a submission whose outcome is unknown cannot be
  * retried. One key per attempt, kept while that attempt's outcome is unknown and replaced once the service
  * has answered, which is the screen's rule and lives with the screen.
  *
- * The amount is fixed because the form this configures collects none: a real integration takes it from the
- * order it is charging for.
+ * The amount is the caller's because the form this configures collects none: a real integration takes it from
+ * the order it is charging for. The order identifier and the description name the device and the moment, which
+ * is what keeps a run over several devices at once attributable in a transaction list.
+ *
+ * @param suppliesDemoCustomer whether the request names the customer, which [DemoCustomerSetting] decides.
  */
-fun capturePayment(idempotencyKey: String): PayInOperation =
+fun capturePayment(
+    idempotencyKey: String,
+    amount: BigDecimal,
+    identity: QaIdentity,
+    atMillis: Long,
+    suppliesDemoCustomer: Boolean,
+): PayInOperation =
     PayInOperation(
         PayabliPayInOperation.Capture(
             PayInTransactionOptions(
-                paymentDetails = PayInPaymentDetails(totalAmount = BigDecimal("1.10"), serviceFee = BigDecimal("0.10")),
-                orderId = "android-example",
+                paymentDetails = PayInPaymentDetails(totalAmount = amount, serviceFee = DEMO_SERVICE_FEE),
+                // The number the form does not collect, which is what attaches every payment from this device to
+                // one customer record. A form value would win over this one, and the capture form has no such
+                // box: a real integration identifies the customer from its own records instead of asking the
+                // payer. [DemoCustomerSetting] says what the other position of the switch does.
+                customerData =
+                    PayInCustomerData(customerNumber = identity.customerNumber)
+                        .takeIf { suppliesDemoCustomer },
+                orderId = identity.orderId(atMillis),
+                orderDescription = identity.note("capture"),
                 idempotencyKey = idempotencyKey,
                 // A paypoint can refuse a payment that names no customer it can identify, and answers before
                 // the payer's own fields are read, so the request does not depend on which of them they filled.

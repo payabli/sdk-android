@@ -26,14 +26,16 @@ import com.payabli.example.app.demo.ui.components.PreviewSurface
 import com.payabli.example.app.demo.ui.components.ReadinessCard
 import com.payabli.example.app.demo.ui.components.RecheckWhenFocused
 import com.payabli.example.app.demo.ui.components.SectionHeader
+import com.payabli.example.app.demo.ui.components.SwitchRow
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.sdk.PayInForms
 
 /**
  * Everything the SDK was configured with, read back.
  *
- * Read-only. A session captures its configuration when it is created, so a control here would
- * appear to change something already decided. Each value says where it came from.
+ * Read-only, with one switch. A session captures its configuration when it is created, so a control over any of
+ * that would appear to change something already decided; each value says where it came from instead. The
+ * customer switch is not part of it and is read when a request is built, so it can be flipped between payments.
  */
 @Composable
 fun SetupScreen(
@@ -41,6 +43,7 @@ fun SetupScreen(
     onProbeToken: () -> Unit,
     onProbeHealth: () -> Unit,
     onRecheck: () -> Unit,
+    onSuppliesDemoCustomerChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     DemoScreen(title = "Configuration", modifier = modifier) {
@@ -124,11 +127,38 @@ fun SetupScreen(
             }
         }
 
+        CustomerSection(state, onSuppliesDemoCustomerChange)
+
         DiagnosticsSection(state)
 
         PrefillSection(state)
 
         BuildSection(state)
+    }
+}
+
+@Composable
+private fun CustomerSection(
+    state: SetupUiState,
+    onSuppliesDemoCustomerChange: (Boolean) -> Unit,
+) {
+    Section(
+        title = "Customer",
+        note = "Who a capture says it is for. The capture form collects no customer number, so this decides it.",
+    ) {
+        SwitchRow(
+            label = "Send a demo customer",
+            checked = state.suppliesDemoCustomer,
+            note =
+                if (state.suppliesDemoCustomer) {
+                    "Charging sends ${state.demoCustomerSummary}, so every payment from this device lands on " +
+                        "one customer."
+                } else {
+                    "Charging names no customer, so the paypoint writes a new one for every payment. That is " +
+                        "what a paypoint with no custom identifiers accepts."
+                },
+            onCheckedChange = onSuppliesDemoCustomerChange,
+        )
     }
 }
 
@@ -247,6 +277,7 @@ private fun SetupScreenPreview() {
             onProbeToken = {},
             onProbeHealth = {},
             onRecheck = {},
+            onSuppliesDemoCustomerChange = {},
         )
     }
 }

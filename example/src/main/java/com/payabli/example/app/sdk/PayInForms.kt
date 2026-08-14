@@ -1,6 +1,7 @@
 package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.payment.SummaryRow
+import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
@@ -8,6 +9,7 @@ import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
+import java.math.BigDecimal
 
 /**
  * What this app hands the SDK's form, for one operation.
@@ -57,8 +59,12 @@ object PayInForms {
                 ),
         )
 
-    /** Take a payment now. The same instrument fields, plus what is being charged. */
-    fun capture(): PayInFormSetup =
+    /**
+     * Take a payment now. The same instrument fields, plus what is being charged.
+     *
+     * @param total what the request charges, fee included, so the rows below and the charge cannot disagree.
+     */
+    fun capture(total: BigDecimal): PayInFormSetup =
         PayInFormSetup(
             configuration =
                 PayInFormConfiguration(
@@ -67,8 +73,8 @@ object PayInForms {
                     labelLayout = PayInLabelLayout.Placeholder,
                     summaryValues =
                         mapOf(
-                            PayInField.Amount to "$ 1.00",
-                            PayInField.ServiceFee to "$ 0.10",
+                            PayInField.Amount to money(total - DEMO_SERVICE_FEE),
+                            PayInField.ServiceFee to money(DEMO_SERVICE_FEE),
                         ),
                 ),
             labels =
@@ -78,6 +84,9 @@ object PayInForms {
                     submitButton = "Submit payment",
                 ),
         )
+
+    /** The same rendering the result screen gives an amount, so the two readouts match. */
+    private fun money(amount: BigDecimal): String = TransactionSummary.formatAmount(amount.toPlainString())
 
     /** The instrument sections, which are the SDK's own defaults for both methods. */
     private fun cardDetails() = PayInFormConfiguration.defaultCardSections().single().copy(title = "Card Information")

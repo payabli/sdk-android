@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.demo.flow.FlowStep
 import com.payabli.example.app.demo.flow.StepStatus
+import com.payabli.example.app.demo.qa.QaIdentity
 import com.payabli.example.app.demo.ui.components.BorderedButton
 import com.payabli.example.app.demo.ui.components.ContextLine
 import com.payabli.example.app.demo.ui.components.DemoIcons
@@ -70,6 +71,9 @@ interface PaymentFlowUiState {
 
     /** Offers the button that fills the form with [PayInPrefill]'s values. */
     val prefillEnabled: Boolean
+
+    /** Whose values those are, which is this device's rather than every device's. */
+    val qaIdentity: QaIdentity
 }
 
 /** What a payment screen can be asked to do. */
@@ -154,7 +158,7 @@ fun PaymentFlowScreen(
                         text = "Prefill test data (Debug)",
                         icon = DemoIcons.Prefill,
                         onClick = {
-                            prefilled = PayInPrefill.valuesFor(method)
+                            prefilled = PayInPrefill.valuesFor(method, state.qaIdentity)
                             prefills++
                         },
                         enabled = !isSubmitting,

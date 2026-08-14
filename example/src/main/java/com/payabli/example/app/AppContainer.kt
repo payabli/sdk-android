@@ -11,6 +11,8 @@ import com.payabli.example.app.demo.diagnostics.DiagnosticsRegistry
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.preflight.platform.DeviceFactsReader
+import com.payabli.example.app.demo.qa.DemoCustomerSetting
+import com.payabli.example.app.demo.qa.QaIdentity
 import com.payabli.example.app.demo.terminal.DemoTerminalController
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.sdk.PayInSessionSource
@@ -23,9 +25,10 @@ import com.payabli.example.app.sdk.payInStartup
  *
  * The SDK admits no dependency-injection framework, so this is the whole of the wiring.
  *
- * Built once and never rebuilt, which is what makes the Setup screen honest. It reads these values
- * back and offers no way to change them: a session captures its configuration when it is created, so
- * a control here would appear to change something already decided.
+ * Built once and never rebuilt, which is what makes the Setup screen honest. Everything a session captured when
+ * it was created is read back there and cannot be changed, because a control over it would appear to change
+ * something already decided. [demoCustomer] is the exception, and it is one because no session holds it: it is
+ * read when a request is built.
  *
  * What can be written is written at startup, before anything composes, and none of it is a control: the
  * token host from a launch Intent, and the entry point and environment from an instrumented test. Both
@@ -56,8 +59,27 @@ class AppContainer(
      */
     val readDeviceFacts: () -> DeviceFacts = { DeviceFactsReader.read(appContext) }
 
-    /** Cannot change while the process runs, and the token host is resolved once. */
-    private val isEmulator: Boolean = readDeviceFacts().isEmulator
+    /** The one reading taken at launch, for the two answers in it that cannot change while the process runs. */
+    private val factsAtLaunch: DeviceFacts = readDeviceFacts()
+
+    /** The token host is resolved once, so this is read once. */
+    private val isEmulator: Boolean = factsAtLaunch.isEmulator
+
+    /**
+     * Who this device says it is, so a QA run over several at once produces rows a dashboard can attribute.
+     *
+     * Derived from the model rather than configured, which is what lets one build install on every device in
+     * the run and each one still name itself.
+     */
+    val qaIdentity: QaIdentity = QaIdentity.from(factsAtLaunch.model)
+
+    /**
+     * Whether a capture names its customer, which the Configuration screen switches and the request reads.
+     *
+     * Here rather than in a ViewModel because the screen that switches it and the screen that reads it are two,
+     * and a per-screen copy would leave the switch describing a payment it did not affect.
+     */
+    val demoCustomer: DemoCustomerSetting = DemoCustomerSetting(qaIdentity)
 
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
 

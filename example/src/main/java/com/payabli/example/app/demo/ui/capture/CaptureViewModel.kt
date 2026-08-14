@@ -8,6 +8,9 @@ import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.net.checkToken
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
+import com.payabli.example.app.demo.qa.DemoCustomerSetting
+import com.payabli.example.app.demo.qa.QaAmount
+import com.payabli.example.app.demo.qa.QaIdentity
 import com.payabli.example.app.demo.ui.payment.PaymentFlowUiState
 import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInFormSetup
@@ -23,11 +26,20 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
 data class CaptureUiState(
     override val setup: PayInFormSetup,
+    /**
+     * What this attempt charges, fee included.
+     *
+     * Kept beside [setup] and [operation] because all three describe one figure: the request sends it, the
+     * form reads it back, and a retry has to charge the same thing under a different key.
+     */
+    val amount: BigDecimal,
+    override val qaIdentity: QaIdentity,
     override val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
@@ -48,13 +60,8 @@ data class CaptureUiState(
     override val isCheckingToken: Boolean = false,
     /** What this screen submits through, once the session behind it exists. */
     val payments: PayInFlowHandle? = null,
-    /**
-     * A capture of the demo amount, carrying the key that makes a repeat safe.
-     *
-     * The amount is fixed here because the form this screen configures collects no amount: a real integration
-     * takes it from the order it is charging for.
-     */
-    val operation: PayInOperation = capturePayment(UUID.randomUUID().toString()),
+    /** A capture of [amount], carrying the key that makes a repeat safe. */
+    val operation: PayInOperation,
 ) : PaymentFlowUiState {
     override val finished: Boolean get() = lastResult != null
 }
@@ -64,7 +71,8 @@ data class CaptureUiState(
  * to. A route carries no arbitrary API response.
  */
 class CaptureViewModel(
-    setup: PayInFormSetup,
+    private val identity: QaIdentity,
+    private val demoCustomer: DemoCustomerSetting,
     private val startup: PayInStartup,
     private val diagnostics: DiagnosticsStore,
     private val diagnosticsEnabled: Boolean,
@@ -72,20 +80,61 @@ class CaptureViewModel(
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
-            CaptureUiState(
-                setup = setup,
-                diagnosticsEnabled = diagnosticsEnabled,
-                prefillEnabled = configuration.prefillEnabled,
-                entryPoint = configuration.entryPoint,
-                host = configuration.environment.host,
-            ),
+            attempt(QaAmount.random()).let { attempt ->
+                CaptureUiState(
+                    setup = attempt.setup,
+                    amount = attempt.amount,
+                    operation = attempt.operation,
+                    qaIdentity = identity,
+                    diagnosticsEnabled = diagnosticsEnabled,
+                    prefillEnabled = configuration.prefillEnabled,
+                    entryPoint = configuration.entryPoint,
+                    host = configuration.environment.host,
+                )
+            },
         )
     val uiState: StateFlow<CaptureUiState> = _uiState.asStateFlow()
+
+    /** The three values that have to agree about one figure, built in one place so they cannot disagree. */
+    private class Attempt(
+        val amount: BigDecimal,
+        val setup: PayInFormSetup,
+        val operation: PayInOperation,
+    )
+
+    /**
+     * @param amount fee included. Fresh for a new payment, the previous one's for a retry, because a payer
+     *   correcting a rejected field is being charged the figure they were shown.
+     */
+    private fun attempt(amount: BigDecimal): Attempt =
+        Attempt(
+            amount = amount,
+            setup = PayInForms.capture(amount),
+            operation =
+                capturePayment(
+                    idempotencyKey = UUID.randomUUID().toString(),
+                    amount = amount,
+                    identity = identity,
+                    atMillis = System.currentTimeMillis(),
+                    suppliesDemoCustomer = demoCustomer.suppliesDemoCustomer.value,
+                ),
+        )
 
     init {
         viewModelScope.launch {
             diagnostics.messages.collect { messages ->
                 _uiState.update { it.copy(diagnostics = messages) }
+            }
+        }
+        viewModelScope.launch {
+            // The request is built when the screen opens and the switch is on another screen, so a flip after
+            // that would otherwise apply to the payment after this one. Rebuilt at the same amount, since the
+            // figure on screen is the one the payer was shown. Not while a submission is in flight: replacing
+            // the operation then loses the key that makes its retry safe.
+            demoCustomer.suppliesDemoCustomer.collect {
+                _uiState.update { state ->
+                    if (state.payments.isBusy()) state else state.copy(operation = attempt(state.amount).operation)
+                }
             }
         }
     }
@@ -211,15 +260,20 @@ class CaptureViewModel(
      * A finished step draws no controls, so the form leaves the screen once a payment completes and this is the
      * only way back to it. The key goes with the result: the payer is asking for another payment, and the
      * service refuses a second one that arrives under the first one's key.
+     *
+     * A second payment is a second amount, which is what makes two rows from one device tell themselves apart.
      */
     fun startOver() =
         _uiState.update {
+            val attempt = attempt(QaAmount.random())
             it.copy(
                 resultText = "",
                 submitFailed = false,
                 lastResult = null,
                 outcomeReady = false,
-                operation = capturePayment(UUID.randomUUID().toString()),
+                setup = attempt.setup,
+                amount = attempt.amount,
+                operation = attempt.operation,
             )
         }
 
@@ -242,13 +296,14 @@ class CaptureViewModel(
      */
     private fun rotateIdempotencyKey(outcome: PayInOutcome.Refused) {
         if (outcome.keepsItsIdempotencyKey) return
-        _uiState.update { it.copy(operation = capturePayment(UUID.randomUUID().toString())) }
+        _uiState.update { it.copy(operation = attempt(it.amount).operation) }
     }
 
     companion object {
         fun from(container: AppContainer): CaptureViewModel =
             CaptureViewModel(
-                setup = PayInForms.capture(),
+                identity = container.qaIdentity,
+                demoCustomer = container.demoCustomer,
                 startup = container.payInStartup,
                 diagnostics = container.diagnostics.capture,
                 diagnosticsEnabled = container.configuration.diagnosticsEnabled,

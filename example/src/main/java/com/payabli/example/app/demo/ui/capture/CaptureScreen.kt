@@ -20,6 +20,7 @@ import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.ResponseJson
 import com.payabli.example.app.demo.payment.Transaction
 import com.payabli.example.app.demo.payment.TransactionSummary
+import com.payabli.example.app.demo.qa.QaIdentity
 import com.payabli.example.app.demo.ui.components.DemoIcons
 import com.payabli.example.app.demo.ui.components.DemoScreen
 import com.payabli.example.app.demo.ui.components.DetailRow
@@ -32,6 +33,8 @@ import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.payment.PaymentFlowScreen
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.sdk.PayInForms
+import com.payabli.example.app.sdk.capturePayment
+import java.math.BigDecimal
 
 /** Charge a card or bank account now. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -125,11 +128,25 @@ fun CaptureResultScreen(
 @PreviewLightDark
 @Composable
 private fun CaptureScreenPreview() {
+    // Fixed, where a run randomizes: a preview that renders a different figure each time is a preview that
+    // cannot be compared to the last one.
+    val amount = BigDecimal("1.10")
+    val identity = QaIdentity.from("Google Pixel 7a")
     PreviewSurface {
         CaptureScreen(
             state =
                 CaptureUiState(
-                    setup = PayInForms.capture(),
+                    setup = PayInForms.capture(amount),
+                    amount = amount,
+                    qaIdentity = identity,
+                    operation =
+                        capturePayment(
+                            idempotencyKey = "preview",
+                            amount = amount,
+                            identity = identity,
+                            atMillis = 0,
+                            suppliesDemoCustomer = true,
+                        ),
                     resultText = "Code: 1\nReason: Approved\nTransaction: demo-txn-0001",
                 ),
             actions = PaymentFlowActions.none(),
