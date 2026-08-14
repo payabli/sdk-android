@@ -131,8 +131,9 @@ class PayabliRequestDecorationTest {
             assertEquals("/api/v2/MoneyIn/capture/9", decorated.path)
             assertEquals("/api/v2/MoneyIn/capture/{id}", decorated.route)
             assertEquals(listOf("a" to "1"), decorated.query)
-            // The one property here that nothing downstream would notice the loss of: the chain runs below
-            // the layer that reads it, so a dropped pin costs no test its pass and a device its binding.
+            // Nothing below `applyTo` reads the pin: the transport checks it on the request it was handed,
+            // one layer above the chain. Asserted so `copyWith` stays complete, since a property dropped
+            // there stays invisible until something below the chain starts reading it.
             assertTrue("the pin was dropped by the copy", decorated.isCredentialPinned)
         }
 
