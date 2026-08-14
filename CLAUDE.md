@@ -182,10 +182,12 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
   line while the same commit measured 41% on its new lines, because `KeystoreValueCipher` was 121 of 261
   measured units and unreachable from any unit test. Read both numbers, not one.
 - **Three test tiers, and the third is excluded from CI rather than skipped.** JVM unit tests; instrumented
-  tests the nightly runs on an emulator; and `@ManualDeviceTest`, which the nightly cannot run. Only `:core`'s
-  is about hardware, where an emulator's software-backed Keystore fails the assertion outright; `:payin`'s
-  marks a live-flow test gated on credentials no repository holds, and nothing in it needs a phone. The
-  exclusion is
+  tests the nightly runs on an emulator; and `@ManualDeviceTest`, which that job cannot answer. The bar is what
+  the nightly provisions, not what an emulator can do in principle, so the tier holds three different reasons:
+  two of `:core`'s need a secure element, which an emulator's software-backed Keystore fails outright; one
+  needs a throttled link the job does not start, and passes on an emulator that has one; and `:payin`'s needs
+  client credentials no repository holds. Only the secure-element pair is permanent, and each test states its
+  own reason at its declaration. The exclusion is
   `notAnnotation`, verified to leave `skipped="0"` in the results XML with the manual tests absent from it
   entirely. An `@Ignore` or an `Assume` would report a standing skip in Slack every night, and a permanent
   skip cannot be told apart from a regression that started skipping.
@@ -201,9 +203,13 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
     -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.core.ManualDeviceTest
   ```
 
-  Put a test there only when an emulator cannot answer the question. `:core`'s assert the storage key is in
+  Put a test there only when the nightly cannot answer the question, which is a bar about what that job
+  provisions rather than what an emulator can do. Two of `:core`'s assert the storage and device keys are in
   secure hardware at the device's best level, which on an emulator fails with `SECURITY_LEVEL_SOFTWARE`:
-  excluding them is load-bearing, not housekeeping.
+  excluding those is load-bearing, not housekeeping. The third, the slow-link check, passes on an emulator and
+  is parked only because the job starts no throttled broker, so it says at its own declaration that it is on
+  borrowed time. A test parked for a provisioning gap has to, or the tier quietly becomes a place tests go to
+  stop running.
 
   **A test that needs credentials is gated twice, and the second gate is the one that keeps the counts honest.**
   `PayInLiveFlowsInstrumentedTest` sends real requests, so `payin/build.gradle.kts` excludes it **by name**

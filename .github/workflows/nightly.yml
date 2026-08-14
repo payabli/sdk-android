@@ -253,13 +253,18 @@ jobs:
           # so naming one would leave the other module's manual tier running. The argument takes a
           # comma-separated list.
           #
-          # The two tiers are excluded for different reasons, and only one of them is about hardware.
-          # :core's tests genuinely fail here rather than being merely inapplicable: an emulator's Keystore is
-          # software-backed, so the hardware assertion fails with SECURITY_LEVEL_SOFTWARE. :payin's marks one
-          # live-flow test that needs client credentials no repository holds; its own annotation records that
-          # nothing in it requires a phone, so it moves into an unattended job the day this one can hold those
-          # credentials as secrets. Do not read the Keystore reasoning as covering it. See each module's
-          # ManualDeviceTest for the command that runs its tier.
+          # What the annotations mark is "this job cannot answer the question", which is three different
+          # reasons and not one. Two of :core's are hardware: an emulator's Keystore is software-backed, so a
+          # secure-element assertion fails with SECURITY_LEVEL_SOFTWARE however correct the code is. The third
+          # is a provisioning gap rather than a property of emulators: the slow-link check passes on an
+          # emulator and is parked only because this job starts no throttled broker beside it. :payin's marks
+          # one live-flow test needing client credentials no repository holds, and nothing in it requires a
+          # phone either.
+          #
+          # So two of the three move into this job the day it provisions what they need, and only the hardware
+          # pair is permanent. Reading the Keystore reasoning as covering the tier would make a queued
+          # workflow change look impossible. Each ManualDeviceTest states its own reason and the command that
+          # runs its tier.
           #
           # Excluded rather than skipped in both cases, and the difference is the point: measured, this leaves
           # `skipped="0"` in the results XML and the manual tests absent from it entirely. An `@Ignore` would
