@@ -96,36 +96,29 @@ class NavigationSmokeTest {
     }
 
     @Test
-    fun aTabKeepsItsProgressWhileAnotherIsVisited() {
-        // The whole reason the navigation uses nested graphs with saveState and restoreState. No unit
-        // test can reach it, and getting it wrong looks like nothing until someone switches tabs.
+    fun theFormIsReachedThroughTheStepsThatGateIt() {
+        // What the sequence promises: the form does not exist until the token step passes, and once it
+        // does the SDK's own form is what the tab shows.
         //
-        // Driven on Capture, not on the tab the NavHost starts at. `switchTo` pops up to the start
-        // destination without including it, so the first tab's entry is never popped and its state
-        // survives whether the flags are set or not: the same test written there passes with the
-        // behaviour deleted, which is a test that cannot fail.
-        //
-        // Asserted on the token step rather than on what was typed or on a pushed result screen. The step
-        // titles render at every status, so they cannot show how far the flow got; the control disappears
-        // once the step is done, which can. A pushed result screen would need the service to accept a
-        // payment, which this tier has no way to arrange.
+        // Not a claim about the tab keeping its state across a switch. Nothing available to an instrumented
+        // run separates a restored tab from a rebuilt one: the token step reads as done either way, and the
+        // form's typed values are held in `remember` rather than `rememberSaveable`, so they are lost
+        // whenever the destination leaves composition and are not a property to assert. A test on either
+        // signal passes with `saveState` and `restoreState` deleted, which is a test that cannot fail.
         launch()
         open(TopLevelDestination.Capture)
 
+        compose.onNodeWithText(SUBMIT).assertDoesNotExist()
+
         compose.onNodeWithText("Check token endpoint").performScrollTo().performClick()
-        awaitGone("Check token endpoint")
+        // Waited on the form's own button, which exists only once the step is done. The check's button is
+        // not that signal: it reads "Checking…" while the request is in flight, so waiting for the old
+        // label to go returns while the session is still starting and the form is not there to fill.
+        awaitExists(SUBMIT)
 
-        // Filled on the way through, which is what puts the SDK's own form in the journey. Nothing is
-        // submitted: the service would have to accept it, and this tier has no service.
+        // Filled to the point of submitting, which is what puts the SDK's own form in the journey. Nothing
+        // is submitted: the service would have to accept it, and this tier has no service.
         fillTheForm()
-
-        open(TopLevelDestination.Setup)
-        open(TopLevelDestination.Capture)
-
-        // Restored, not rebuilt. Rebuilt from its start destination the tab offers the check again, which
-        // is what removing either flag produces.
-        compose.onNodeWithText("Check token endpoint").assertDoesNotExist()
-        compose.onNodeWithText("Submit payment").assertExists()
     }
 
     /**
@@ -156,13 +149,6 @@ class NavigationSmokeTest {
         value: String,
     ) {
         compose.onNode(hasSetTextAction() and hasText(field)).performScrollTo().performTextInput(value)
-    }
-
-    /** Waits for a node carrying [text] to leave the tree, which is how a finished step reads. */
-    private fun awaitGone(text: String) {
-        compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {
-            compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()
-        }
     }
 
     /** Brings the node into the viewport, then asserts it is there. */
@@ -201,6 +187,9 @@ class NavigationSmokeTest {
 
         /** One of the values the form needs before it will submit. Nothing asserts on it. */
         const val CARDHOLDER = "Test Cardholder"
+
+        /** The capture form's submit button, which exists only once the token step is done. */
+        const val SUBMIT = "Submit payment"
     }
 }
 
