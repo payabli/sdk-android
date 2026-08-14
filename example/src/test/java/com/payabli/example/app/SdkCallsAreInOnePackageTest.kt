@@ -27,9 +27,9 @@ class SdkCallsAreInOnePackageTest {
 
         val offenders =
             appSources
-                .filterNot { it.path.contains("/app/sdk/") }
+                .filterNot { it.inSdkPackage() }
                 .filter { it.namesTheSdk() }
-                .map { it.path.substringAfter("/app/") }
+                .map { it.invariantSeparatorsPath.substringAfter("/app/") }
                 .sorted()
 
         assertEquals(
@@ -45,7 +45,7 @@ class SdkCallsAreInOnePackageTest {
         // drained out of it.
         val callers =
             appSources
-                .filter { it.path.contains("/app/sdk/") }
+                .filter { it.inSdkPackage() }
                 .count { it.namesTheSdk() }
 
         assertEquals("sdk/ stopped calling the SDK", true, callers >= 5)
@@ -53,4 +53,7 @@ class SdkCallsAreInOnePackageTest {
 
     // An import is not the only way to reach a type: a fully qualified name needs none.
     private fun File.namesTheSdk(): Boolean = readText().contains("com.payabli.sdk.")
+
+    // `File.path` carries the platform's separator, so a Windows checkout matches no forward slash.
+    private fun File.inSdkPackage(): Boolean = invariantSeparatorsPath.contains("/app/sdk/")
 }
