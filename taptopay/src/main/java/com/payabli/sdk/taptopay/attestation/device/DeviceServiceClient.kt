@@ -37,20 +37,20 @@ import kotlinx.serialization.SerializationException
  * per-call-site primitive precisely so a call site like this one can decline it. The duplicate-safe unit here
  * is the whole cold sequence, not any single call in it, so retrying belongs to whoever owns the sequence.
  *
- * **Two things about the credential, both inherited and neither fixable here.** The attestation row the server
- * writes at `/attest` pins the exact bearer token that made that call, and `/activate` and `/config` require
- * the same one, so a token refresh in between fails activation as [DeviceServiceException.NotAttested].
+ * **The server pins the credential, so every request here refuses credential recovery.** The attestation row
+ * written at `/attest` records the exact bearer token that made the call, and `/activate` and `/config` require
+ * that same one, so a refresh between them fails activation as [DeviceServiceException.NotAttested]. Requests
+ * are sent with `isCredentialPinned`, which costs a 401 on these routes its refresh and its replay both: the
+ * refresh would rotate the pinned token out of the match, and the replay would spend a single-use challenge or
+ * one of the five activation attempts a second time.
  *
- * And **the transport can send one of these a second time on its own.** Credential recovery replays either an
- * idempotent method or *any* method whose rejection was an exact 401 — `mayReplay` is
- * `statusCode == 401 || method.isIdempotent` — so a real HTTP 401 on these POSTs is refreshed and replayed
- * without this client being consulted. A 2xx envelope decline is not a credential rejection and never triggers
- * it, which is why the ordinary device failures are unaffected. The replay is survivable today only because a
- * 401 is answered by the authorization layer before a controller runs, so nothing has been consumed or counted
- * yet; it is not survivable by design, and it is not a property to build on. The credential-rejection policy
- * is to be narrowed so a refresh cannot touch these routes at all. Until then, whoever owns the sequence
- * should assume a `/attest` or `/activate` may reach the service twice, and must not read "nothing is wrapped
- * in `Retry`" as a promise that it cannot.
+ * A 2xx envelope decline is not a credential rejection, so the ordinary device failures never reached recovery
+ * and are unaffected. Nor does the refusal describe what these routes answer with today: they report their
+ * status inside the envelope, and it holds for the day they stop.
+ *
+ * **A rotation started by some other capability still breaks the binding**, because one session serves them
+ * all. Nothing this client does can prevent that, and it resolves with the facade, which binds a device by its
+ * own key rather than by the token that attested it.
  */
 internal class DeviceServiceClient(
     private val transport: PayabliTransport,
@@ -236,6 +236,8 @@ internal class DeviceServiceClient(
                 bodySerializer = bodySerializer,
                 route = route,
                 headers = headers,
+                // One place for all four, so a fifth route added to this class inherits it.
+                isCredentialPinned = true,
             )
         val response = transport.execute(request)
         PayabliHttpErrors.from(response)?.let { transportFailure ->

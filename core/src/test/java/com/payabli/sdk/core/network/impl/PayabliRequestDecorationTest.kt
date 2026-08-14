@@ -122,6 +122,7 @@ class PayabliRequestDecorationTest {
                     path = "/api/v2/MoneyIn/capture/9",
                     route = "/api/v2/MoneyIn/capture/{id}",
                     query = listOf("a" to "1"),
+                    isCredentialPinned = true,
                 )
 
             val decorated = listOf(stamping("X-Added", "1")).applyTo(original)
@@ -130,6 +131,9 @@ class PayabliRequestDecorationTest {
             assertEquals("/api/v2/MoneyIn/capture/9", decorated.path)
             assertEquals("/api/v2/MoneyIn/capture/{id}", decorated.route)
             assertEquals(listOf("a" to "1"), decorated.query)
+            // The one property here that nothing downstream would notice the loss of: the chain runs below
+            // the layer that reads it, so a dropped pin costs no test its pass and a device its binding.
+            assertTrue("the pin was dropped by the copy", decorated.isCredentialPinned)
         }
 
     @Test

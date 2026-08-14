@@ -108,6 +108,36 @@ class AuthenticatedTransportTest {
             route = ROUTE,
         )
 
+    /** [guardedReplayRequest]'s counterpart for a route whose credential the service pins. */
+    private fun pinnedRequest(method: HttpMethod): PayabliRequest =
+        PayabliRequest(
+            method = method,
+            path = "/api/pay/$ID_SENTINEL",
+            route = ROUTE,
+            isCredentialPinned = true,
+        )
+
+    /**
+     * 401 the first time it sees a request, 200 when the same instance comes back.
+     *
+     * Identity rather than a count, because a replay is the same object. That is what lets one instance answer
+     * two different requests in one test without a script that encodes the order they are expected in.
+     */
+    private class UnauthorizedUntilReplayed : PayabliTransport {
+        val sends: MutableList<PayabliRequest> = mutableListOf()
+
+        override suspend fun execute(request: PayabliRequest): PayabliResponse {
+            val replay = sends.any { it === request }
+            sends += request
+            return PayabliResponse(if (replay) OK else UNAUTHORIZED)
+        }
+
+        override suspend fun <T> execute(
+            request: PayabliRequest,
+            payloadSerializer: KSerializer<T>,
+        ): PayabliV2Envelope<T> = execute(request).asV2Envelope(payloadSerializer)
+    }
+
     private fun authWithCountingRefresh(calls: AtomicInteger): PayabliAuth =
         PayabliAuth(
             PayabliConfig(
@@ -906,5 +936,109 @@ class AuthenticatedTransportTest {
             assertEquals(WIDENED, response.statusCode)
             assertEquals("the token was still refreshed for the next request", 1, calls.get())
             assertEquals("PATCH is not replayable for widened non-401 statuses", 1, base.sends)
+        }
+
+    // ---- a route whose credential the service pins --------------------------------------------------
+    //
+    // The card-present device routes are the case: the service records the exact token that attested a
+    // device and requires that same one afterwards, so a refresh between two calls breaks the device until
+    // it re-attests. The refusal rides on the request rather than on the policy, which is what makes it
+    // survive a widened policy and a method that would otherwise be replayable.
+
+    @Test
+    fun `a 401 on a pinned route neither refreshes nor replays`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase(firstStatus = UNAUTHORIZED)
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            val response = subject.execute(pinnedRequest(HttpMethod.POST))
+
+            assertEquals("the rejection reaches the caller as it arrived", UNAUTHORIZED, response.statusCode)
+            assertEquals("the token provider was never invoked", 0, calls.get())
+            assertEquals("nothing was sent twice", 1, base.sends)
+        }
+
+    @Test
+    fun `a pinned route refuses recovery on a method that would otherwise be replayed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val base = CountingBase()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = widenedTo419(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            // The same widened status on the same method refreshes and replays without the pin, which is
+            // `a widened rejection on GET refreshes and replays` above.
+            val response = subject.execute(pinnedRequest(HttpMethod.GET))
+
+            assertEquals(WIDENED, response.statusCode)
+            assertEquals("a widened policy cannot widen past the pin", 0, calls.get())
+            assertEquals("nothing was sent twice", 1, base.sends)
+        }
+
+    @Test
+    fun `pinning one request leaves the next one recovering normally`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // One transport serves every capability, so the refusal has to be the request's property and not
+            // the transport's. Both requests go through this one instance.
+            val base = UnauthorizedUntilReplayed()
+            val calls = AtomicInteger()
+            val subject =
+                AuthenticatedTransport(
+                    base = base,
+                    auth = authWithCountingRefresh(calls),
+                    recovery = AuthRecoveryPolicy(),
+                    logger = DefaultSdkLogger(LogCategory.NETWORK, sink),
+                )
+
+            val pinned = subject.execute(pinnedRequest(HttpMethod.POST))
+            val ordinary = subject.execute(guardedReplayRequest(HttpMethod.POST))
+
+            assertEquals("the pinned route keeps its rejection", UNAUTHORIZED, pinned.statusCode)
+            assertEquals("the ordinary route recovers", OK, ordinary.statusCode)
+            assertEquals("only the ordinary route refreshed", 1, calls.get())
+            assertEquals("the pinned send, the ordinary send, and its replay", 3, base.sends.size)
+        }
+
+    @Test
+    fun `a refused recovery says why, without the token, the body or the resolved path`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondInOrder(UNAUTHORIZED to "")
+                val auth = testAuth(tokenProvider = { REFRESHED })
+
+                completing("the refused recovery") {
+                    stack(server, auth).execute(
+                        PayabliRequest(
+                            HttpMethod.POST,
+                            "/api/pay/$ID_SENTINEL",
+                            route = ROUTE,
+                            body = BODY_SENTINEL.toByteArray(Charsets.UTF_8),
+                            isCredentialPinned = true,
+                        ),
+                    )
+                }
+
+                val logged = sink.records.joinToString("\n") { it.message }
+                assertTrue("no record explains the refused recovery", logged.contains("recovery declined"))
+                assertTrue("the method is what makes it explicable", logged.contains("method=POST"))
+                assertTrue("so is the status", logged.contains("statusCode=$UNAUTHORIZED"))
+                assertTrue("the route template is loggable", logged.contains("route=$ROUTE"))
+
+                assertFalse("the resolved path was logged", logged.contains(ID_SENTINEL))
+                assertFalse("the body was logged", logged.contains("SENTINEL-NEVER-LOG"))
+                assertFalse("the token was logged", logged.contains(TEST_TOKEN))
+            }
         }
 }

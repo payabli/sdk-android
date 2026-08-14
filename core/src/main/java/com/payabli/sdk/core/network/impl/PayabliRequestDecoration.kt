@@ -55,4 +55,5 @@ private fun PayabliRequest.copyWith(
         query = query,
         headers = headers,
         body = body,
+        isCredentialPinned = isCredentialPinned,
     )

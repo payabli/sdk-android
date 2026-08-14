@@ -23,6 +23,15 @@ public class PayabliRequest(
     public val query: List<Pair<String, String>> = emptyList(),
     public val headers: Map<String, String> = emptyMap(),
     public val body: ByteArray? = null,
+    /**
+     * The service binds this request to the exact credential it carries, so replacing that credential
+     * breaks the binding. Credential recovery is skipped: no refresh, no replay, and the rejection reaches
+     * the caller as it arrived.
+     *
+     * It comes from the route's contract with the service. A route that answers something other than a 401
+     * today is still pinned, and its rejection becomes one the day the service starts sending it.
+     */
+    public val isCredentialPinned: Boolean = false,
 ) {
     /**
      * Never includes headers, body, or the resolved [path] — a path may embed an identifier, which is why
@@ -48,6 +57,7 @@ public class PayabliRequest(
             route: String? = null,
             query: List<Pair<String, String>> = emptyList(),
             headers: Map<String, String> = emptyMap(),
+            isCredentialPinned: Boolean = false,
         ): PayabliRequest =
             PayabliRequest(
                 method = method,
@@ -56,6 +66,7 @@ public class PayabliRequest(
                 query = query,
                 headers = headers + (CONTENT_TYPE_HEADER to APPLICATION_JSON),
                 body = PayabliJson.format.encodeToString(bodySerializer, body).toByteArray(Charsets.UTF_8),
+                isCredentialPinned = isCredentialPinned,
             )
     }
 }

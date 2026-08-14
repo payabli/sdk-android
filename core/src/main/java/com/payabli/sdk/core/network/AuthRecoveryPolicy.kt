@@ -9,16 +9,18 @@ private const val REASON_REFRESH_REJECTED = "the refreshed token was rejected as
 
 /**
  * Credential rejection, as opposed to [RetryPolicy]'s transient failures. Layered
- * `Service -> Retry -> AuthRecovery -> Transport`, and `AuthenticatedTransport` runs it.
- *
- * Inside retry rather than around it, which is where a 401 is still a [PayabliResponse]: outside, the
- * operation has already turned it into a thrown error and [isCredentialRejection] would have nothing to read.
+ * `Service -> Retry -> AuthRecovery -> Transport`, and `AuthenticatedTransport` runs it. Outside the retry
+ * the operation has already thrown, and [isCredentialRejection] would have no [PayabliResponse] to read.
  *
  * **Classification is extensible, the terminal mapping is not.** A subclass may widen what counts as a
  * rejection; it cannot change what a surviving one becomes. [exhausted] is deliberately not `open`, because a
  * subclass returning a retryable code would make the outer `Retry` treat a terminal credential failure as
  * transient and run further rejection, refresh and replay cycles instead of stopping. A token minted seconds
  * ago and refused again is an authorization fact, not a transient one.
+ *
+ * **Narrowing is not done here.** A route that cannot survive a refresh says so on its own requests, through
+ * `PayabliRequest.isCredentialPinned`, which `AuthenticatedTransport` reads above this. A subclass narrowing
+ * [isCredentialRejection] instead would be overridden by the next subclass that widens it.
  *
  * Widening changes what gets refreshed, never what gets replayed. `AuthenticatedTransport` decides that
  * separately, and only replays when the status was 401 or the method is idempotent, so a widened status on a
