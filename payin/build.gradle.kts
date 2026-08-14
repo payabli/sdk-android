@@ -51,9 +51,14 @@ android {
         // the class with "No compose hierarchies found in the app". No mechanism was established and the
         // obvious reading is wrong: the sibling classes in this package interact immediately after
         // setContent too, so a missing wait is not what separates them. It comes back when a reproduction
-        // does, and it is one property away from running meanwhile:
+        // does, and it runs meanwhile with the property below.
         //
-        //   ./gradlew :payin:connectedAndroidTest -Ppayabli.quarantine.run=true
+        // Named by class as well, because the property alone readmits it to a whole-module run: a developer
+        // who has stored the four live credentials above would send real transactions while rechecking a
+        // form test. The class filter keeps the run to the four tests being rechecked.
+        //
+        //   ./gradlew :payin:connectedAndroidTest -Ppayabli.quarantine.run=true \
+        //     -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest
         if (providers.gradleProperty("payabli.quarantine.run").orNull != "true") {
             excluded += "com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest"
         }
