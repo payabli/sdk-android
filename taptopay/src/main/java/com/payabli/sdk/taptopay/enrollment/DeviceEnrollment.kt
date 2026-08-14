@@ -232,9 +232,24 @@ internal class DeviceEnrollment(
         }
     }
 
-    /** Forgets the device without touching its key, so the next [enroll] runs the cold sequence. */
+    /**
+     * Forgets the device without touching its key, so the next [enroll] runs the cold sequence.
+     *
+     * Scoped to this paypoint. A record belonging to another one is left alone: it names a binding this
+     * coordinator did not make and cannot check, and removing it would send that paypoint's next enrollment
+     * through a registration that retires an active device.
+     */
     suspend fun reset() {
-        lock.withLock { forget("reset") }
+        lock.withLock {
+            val known = store.read()
+            if (known != null && known.entry != entry) {
+                logger.debug(LogField.safe("event", "device_identity_other_paypoint")) {
+                    "stored device identity is for another paypoint, leaving it in place"
+                }
+                return@withLock
+            }
+            forget("reset")
+        }
     }
 
     /**

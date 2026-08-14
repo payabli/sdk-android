@@ -82,10 +82,10 @@ class EnrollmentSerializationTest {
             enrolling.join()
             resetting.join()
 
-            // The reset ran after the write, so the record is gone. Interleaved, it would have run before
-            // the write and left one behind.
+            // The reset ran after the write, so the record is gone. Interleaved, its own read would have
+            // landed before the write and found nothing to remove.
             assertEquals(
-                listOf("get:$RECORD_ENTRY", "set:$RECORD_ENTRY", "remove:$RECORD_ENTRY"),
+                listOf("get:$RECORD_ENTRY", "set:$RECORD_ENTRY", "get:$RECORD_ENTRY", "remove:$RECORD_ENTRY"),
                 fixture.storage.operations,
             )
         }

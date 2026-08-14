@@ -241,6 +241,20 @@ class DeviceEnrollmentTest {
         }
 
     @Test
+    fun `resetting leaves another paypoint's record alone`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript())
+            fixture.seedRecord(entry = "a-different-entry-point")
+
+            fixture.enrollment.reset()
+
+            // Reset forgets this paypoint. The other one's binding is live, and removing it would send its
+            // next enrollment through a registration that retires an active device.
+            assertEquals("a-different-entry-point", fixture.storedRecord()!!.entry)
+            assertEquals(listOf("get:$RECORD_ENTRY"), fixture.storage.operations)
+        }
+
+    @Test
     fun `being told the row was created reports nothing when the record was another paypoint's`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
