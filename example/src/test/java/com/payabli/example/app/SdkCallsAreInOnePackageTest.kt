@@ -22,13 +22,13 @@ class SdkCallsAreInOnePackageTest {
             .toList()
 
     @Test
-    fun `nothing outside the sdk package imports the SDK`() {
+    fun `nothing outside the sdk package names the SDK`() {
         assertEquals("no source was read, so this proves nothing", true, appSources.size > 50)
 
         val offenders =
             appSources
                 .filterNot { it.path.contains("/app/sdk/") }
-                .filter { file -> file.readLines().any { it.startsWith("import com.payabli.sdk.") } }
+                .filter { it.namesTheSdk() }
                 .map { it.path.substringAfter("/app/") }
                 .sorted()
 
@@ -46,8 +46,11 @@ class SdkCallsAreInOnePackageTest {
         val callers =
             appSources
                 .filter { it.path.contains("/app/sdk/") }
-                .count { file -> file.readLines().any { it.startsWith("import com.payabli.sdk.") } }
+                .count { it.namesTheSdk() }
 
         assertEquals("sdk/ stopped calling the SDK", true, callers >= 5)
     }
+
+    // An import is not the only way to reach a type: a fully qualified name needs none.
+    private fun File.namesTheSdk(): Boolean = readText().contains("com.payabli.sdk.")
 }
