@@ -17,7 +17,10 @@ name: Nightly
 #
 # Both tiers grow with each capability that binds to a platform API. No count is kept here, because the last
 # one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest
-# and payin/src/androidTest that is not @ManualDeviceTest.
+# and payin/src/androidTest that is not @ManualDeviceTest, less whatever a module's own build file excludes.
+# That is not hypothetical: payin/build.gradle.kts quarantines one form class, four tests, which carry no
+# annotation and so are invisible to the filter this step passes. A module can quiet its own tests without
+# touching this file, so the count here is an upper bound rather than a promise.
 #
 # :taptopay is out of reach for a different reason than it used to be, and the old one was wrong. It is not
 # that its instrumented paths need real hardware: attestation was measured returning a token on a
@@ -257,9 +260,11 @@ jobs:
           # software-backed, so the hardware assertion fails with SECURITY_LEVEL_SOFTWARE. Excluding them is
           # load-bearing, not tidiness. See ManualDeviceTest for the command that runs them.
           #
-          # :payin's live tier needs nothing here: payin/build.gradle.kts excludes that class by name whenever
-          # its credentials are absent, which is always in CI, and a -P runner argument merges with what the
-          # build file set rather than replacing it.
+          # Two of :payin's classes are excluded by the module rather than from here, and this step cannot see
+          # either: payin/build.gradle.kts names the live tier whenever its credentials are absent, which is
+          # always in CI, and it names one quarantined form class outright. A -P runner argument merges with
+          # what the build file set rather than replacing it, which is why that works and also why nothing
+          # here may pass notClass. So the tests this step runs are the annotation filter minus that list.
           script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
