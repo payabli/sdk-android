@@ -1,7 +1,6 @@
 package com.payabli.sdk.taptopay.attestation.device
 
 import com.payabli.sdk.core.devicekey.DeviceKey
-import java.security.MessageDigest
 import java.time.Clock
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
@@ -35,6 +34,10 @@ internal class DeviceAssertionSigner(
     /**
      * An assertion for one call, over a timestamp minted now.
      *
+     * **The timestamp bytes go to the signer unhashed.** `SHA256withECDSA` applies the one hash the server
+     * verifies against; pre-hashing here would sign the hash of a hash, which verifies against nothing the
+     * server computes and is refused as an assertion failure.
+     *
      * Never cached: the server's window is two minutes, and a reused assertion is a replay of a proof that was
      * only ever good for the request it was made for.
      */
@@ -43,7 +46,7 @@ internal class DeviceAssertionSigner(
         // One call, so the signature and the identity that labels it describe the same key. Taken separately
         // a replacement between them would send a signature the service cannot verify against the row that
         // identity selects.
-        val signed = deviceKey.sign(clientDataHash(timestamp))
+        val signed = deviceKey.sign(timestamp.toByteArray(Charsets.UTF_8))
         return DeviceAssertion(
             assertion = Base64.getEncoder().encodeToString(signed.signature),
             keyId = signed.identity,
@@ -52,21 +55,7 @@ internal class DeviceAssertionSigner(
         )
     }
 
-    /**
-     * What the signature is taken over: `SHA256(UTF8(timestamp))`.
-     *
-     * The digest is the input to the signing algorithm, which hashes it again, so the value the server checks
-     * is a signature over the hash of this digest. That is what the sibling platform does, where the same
-     * digest is handed to a platform attestation API that hashes it in turn, and this platform matches it for
-     * Phase 1 rather than reading the wording the other way. The target design signs a server-issued value
-     * instead and is a separate change.
-     */
-    private fun clientDataHash(timestamp: String): ByteArray =
-        MessageDigest.getInstance(DIGEST).digest(timestamp.toByteArray(Charsets.UTF_8))
-
     private companion object {
-        const val DIGEST = "SHA-256"
-
         /**
          * ISO-8601 in UTC with exactly three fractional digits.
          *

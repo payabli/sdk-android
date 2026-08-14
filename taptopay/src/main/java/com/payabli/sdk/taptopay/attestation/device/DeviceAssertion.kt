@@ -32,8 +32,8 @@ internal class DeviceIdentity(
 /**
  * The proof-of-possession headers `/activate` requires, and `/config` after it.
  *
- * The server re-derives what was signed from [timestamp] alone: `clientDataHash = SHA256(UTF8(timestamp))`,
- * and the signature is checked over that against the public key stored at attestation. **So [timestamp] must
+ * The server re-derives what was signed from [timestamp] alone, as `SHA256(UTF8(timestamp))`, and checks the
+ * signature over that digest against the public key stored at attestation. **So [timestamp] must
  * be the exact string the signer signed, byte for byte.** That is why it is carried as a string rather than
  * an instant formatted here: a second formatting of the same moment can differ in fractional digits or offset
  * spelling, and the failure would surface as a signature mismatch with nothing pointing at the cause. The
@@ -49,7 +49,7 @@ internal class DeviceIdentity(
  * helper is `internal` to that module, so this is the same rule stated again rather than a second rule.
  */
 internal class DeviceAssertion(
-    /** Base64 of the DER ECDSA signature over `SHA256(UTF8(timestamp))`. */
+    /** Base64 of the DER ECDSA signature over `UTF8(timestamp)`, which the algorithm hashes once. */
     val assertion: String,
     /**
      * The signing key's identifier, matched against the attestation row. Derived from the key, not its alias.
