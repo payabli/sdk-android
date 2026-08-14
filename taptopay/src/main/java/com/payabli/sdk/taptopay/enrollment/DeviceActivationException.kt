@@ -117,14 +117,18 @@ internal sealed class DeviceActivationException(
     /**
      * The proof of possession did not verify.
      *
-     * Clock skew past the service's window, or a key that no longer matches the one attested. Either way the
-     * remedy is to attest again, not to retry the code.
+     * Clock skew past the service's window, or a key the service does not have bound to this device. The
+     * first clears once the clock is right, and the code is still good.
+     *
+     * The record is kept, so [DeviceEnrollment.enroll] is answered from it and re-attesting takes a
+     * [DeviceEnrollment.reset] first. That is the second case, and there is nothing yet that tells the two
+     * apart from here.
      */
     class AssertionRejected(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "the device assertion did not verify; check the device clock, then enroll again",
+            "the device assertion did not verify; check the device clock and send the code again",
             resultCode,
             reason,
         )
@@ -187,12 +191,17 @@ internal sealed class DeviceActivationException(
         reason: String,
     ) : DeviceActivationException("the service has no record of this device; enroll again", resultCode, reason)
 
-    /** The service failed internally. Worth another whole sequence, never a repeat of this call. */
+    /**
+     * The service failed internally.
+     *
+     * Whether the attempt was counted is not knowable from here: the failure can land either side of the
+     * comparison. Sending the code again is what there is to do, and it can be one of the five.
+     */
     class ServiceFailed(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "the device service failed; retry the whole enrollment, not this call",
+            "the device service failed; send the code again, which may cost one of the five attempts",
             resultCode,
             reason,
         )
