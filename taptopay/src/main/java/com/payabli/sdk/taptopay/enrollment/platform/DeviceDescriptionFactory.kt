@@ -22,9 +22,15 @@ internal object DeviceDescriptionFactory {
      * directory and goes with the app's data. The platform's per-app installation identifier is the only
      * local value with that lifetime. A factory reset resets it.
      *
-     * The value is hashed before it is sent. The digest has the same lifetime, keeps the raw platform
-     * identifier on the device, and cannot be joined against what any other library in the app reports from
-     * the same source.
+     * The value is hashed before it is sent. The digest has the same lifetime and keeps the raw platform
+     * identifier on the device, so a party holding only the digest cannot recover it.
+     *
+     * **It is a pseudonym, and it is not unlinkable.** The package name and the salt are both in the APK, so
+     * any library that reads the same platform identifier inside this app can compute this value and match
+     * it. What the digest buys is that the raw identifier is never sent, stored or logged. Making it
+     * unlinkable would need a key or a server-issued value, and both break the lifetime above: a key in the
+     * key store goes with the app's data, and there is no device handle to ask the service for one until
+     * this identifier has already registered the device.
      *
      * **The host's package name is part of the input, and the identifier alone is not enough.** The platform
      * scopes that identifier more widely than one app, so two applications on one device can read the same
