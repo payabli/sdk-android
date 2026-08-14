@@ -91,8 +91,14 @@ public class PayabliSession private constructor(
          * supplied the dispatcher, with nothing reporting the difference.
          *
          * `IO` because everything under it is blocking I/O: sockets, files and Keystore calls.
+         *
+         * `internal` rather than private because one other composition point in this module reads it, the
+         * device-trust accessor, which is reached from a capability that has no business picking a
+         * dispatcher of its own. Still the one place the SDK *picks* one, which is the property that
+         * matters, and a grep for an assignment from `Dispatchers` across the main source sets finding a
+         * single line is how that is checked.
          */
-        private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
+        internal val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
 
         /**
          * What the SDK can do right now.
