@@ -100,12 +100,16 @@ internal sealed class DeviceActivationException(
      *
      * Already active, or retired and replaced. Not reported as success: the service's wording covers both
      * and calling the second one activated would be a lie.
+     *
+     * The message offers no remedy because there is none to offer yet. The record is kept, so a further
+     * [DeviceEnrollment.enroll] is answered from it without asking the service. Telling the two apart needs
+     * a route that reports device status, which this module does not have.
      */
     class DeviceNotPending(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "this device is not awaiting activation; enroll again to find its current state",
+            "this device is not awaiting activation; it may already be active, or it may have been replaced",
             resultCode,
             reason,
         )
