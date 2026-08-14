@@ -8,8 +8,8 @@ import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.net.checkToken
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.demo.ui.method.PaymentMethodViewModel
-import com.payabli.example.app.sdk.DemoForms
 import com.payabli.example.app.sdk.PayInFlowGate
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.example.app.sdk.isBusy
 import com.payabli.example.app.sdk.payInStartup
 import com.sun.net.httpserver.HttpServer
@@ -163,7 +163,7 @@ class TokenGateTest {
             // for the life of the process. It also leaves the exception for whatever runs next to find.
             val model =
                 PaymentMethodViewModel(
-                    DemoForms.storePaymentMethod(),
+                    PayInForms.storePaymentMethod(),
                     { error("the token server host is unparseable") },
                     DiagnosticsStore(),
                     diagnosticsEnabled = false,
@@ -197,7 +197,7 @@ class TokenGateTest {
 
     private fun methodModel(target: TokenServerTarget) =
         PaymentMethodViewModel(
-            DemoForms.storePaymentMethod(),
+            PayInForms.storePaymentMethod(),
             startupAgainst(target),
             DiagnosticsStore(),
             diagnosticsEnabled = false,
@@ -206,7 +206,7 @@ class TokenGateTest {
 
     private fun captureModel(target: TokenServerTarget) =
         CaptureViewModel(
-            DemoForms.capture(),
+            PayInForms.capture(),
             startupAgainst(target),
             DiagnosticsStore(),
             diagnosticsEnabled = false,

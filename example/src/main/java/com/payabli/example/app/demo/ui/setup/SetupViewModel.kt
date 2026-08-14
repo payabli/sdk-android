@@ -14,7 +14,7 @@ import com.payabli.example.app.demo.preflight.Readiness
 import com.payabli.example.app.demo.preflight.TapToPayPreflight
 import com.payabli.example.app.demo.preflight.problemsIn
 import com.payabli.example.app.demo.preflight.readinessFrom
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -107,7 +107,7 @@ class SetupViewModel(
                 readDeviceFacts = container.readDeviceFacts,
                 // The stored-method form. The capture form differs in more than its summary section: the
                 // stored-method route needs a customer number and collects one, and capture does not.
-                formConfiguration = DemoForms.storePaymentMethod().configuration,
+                formConfiguration = PayInForms.storePaymentMethod().configuration,
             )
     }
 }

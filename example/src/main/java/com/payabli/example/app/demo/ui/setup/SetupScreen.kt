@@ -27,7 +27,7 @@ import com.payabli.example.app.demo.ui.components.ReadinessCard
 import com.payabli.example.app.demo.ui.components.RecheckWhenFocused
 import com.payabli.example.app.demo.ui.components.SectionHeader
 import com.payabli.example.app.demo.ui.theme.Dimens
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.example.app.sdk.PaymentFormSummary
 
 /**
@@ -220,7 +220,7 @@ private fun SetupScreenPreview() {
                             isEmulator = true,
                             defaults = TokenHostDefaults.fromBuildConfig(),
                         ),
-                    formConfiguration = DemoForms.storePaymentMethod().configuration,
+                    formConfiguration = PayInForms.storePaymentMethod().configuration,
                     deviceFacts =
                         DeviceFacts(
                             isEmulator = true,

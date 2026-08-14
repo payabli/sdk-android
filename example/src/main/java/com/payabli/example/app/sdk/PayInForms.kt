@@ -14,7 +14,7 @@ import com.payabli.sdk.payin.form.PayInSectionStyle
  * Two values because the SDK separates them: [PayInFormConfiguration] is what to collect,
  * [PayInFormLabels] is what to call it. A caller usually wants one and not the other.
  */
-data class DemoFormSetup(
+data class PayInFormSetup(
     val configuration: PayInFormConfiguration,
     val labels: PayInFormLabels,
 )
@@ -26,7 +26,7 @@ data class DemoFormSetup(
  * they want, and nothing about appearance. The form takes its colours and type from this app's
  * theme with nothing passed, which is the property the Setup screen's readout is checking.
  */
-object DemoForms {
+object PayInForms {
     /**
      * Store an instrument and get a reusable token back. No amount: nothing is being charged.
      *
@@ -34,8 +34,8 @@ object DemoForms {
      * to a customer, and the store route refuses one it cannot identify with a `400` that names no field. An
      * integrator sends their own customer's number.
      */
-    fun storePaymentMethod(): DemoFormSetup =
-        DemoFormSetup(
+    fun storePaymentMethod(): PayInFormSetup =
+        PayInFormSetup(
             configuration =
                 PayInFormConfiguration(
                     cardSections = listOf(cardDetails(), customerSection(identified = true)),
@@ -51,8 +51,8 @@ object DemoForms {
         )
 
     /** Take a payment now. The same instrument fields, plus what is being charged. */
-    fun capture(): DemoFormSetup =
-        DemoFormSetup(
+    fun capture(): PayInFormSetup =
+        PayInFormSetup(
             configuration =
                 PayInFormConfiguration(
                     cardSections = listOf(cardDetails(), customerSection(), amountSection()),

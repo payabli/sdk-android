@@ -17,7 +17,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
  * month and a choice fill like a text box. The expiry is a fixed month, and the form refuses one that has
  * passed, so it is the one value here with a shelf life.
  */
-object DemoPrefill {
+object PayInPrefill {
     fun valuesFor(method: PayInMethodType): PayInFormValues =
         when (method) {
             PayInMethodType.Card -> card

@@ -9,8 +9,8 @@ import com.payabli.example.app.demo.net.checkToken
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.ui.payment.PaymentFlowUiState
-import com.payabli.example.app.sdk.DemoFormSetup
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInFormSetup
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.isBusy
 import com.payabli.example.app.sdk.payInStartup
@@ -32,7 +32,7 @@ import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
 data class CaptureUiState(
-    override val setup: DemoFormSetup,
+    override val setup: PayInFormSetup,
     override val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
@@ -89,7 +89,7 @@ private fun captureOf(idempotencyKey: String): PayabliPayInOperation.Capture =
  * to. A route carries no arbitrary API response.
  */
 class CaptureViewModel(
-    setup: DemoFormSetup,
+    setup: PayInFormSetup,
     private val startup: PayInStartup,
     private val diagnostics: DiagnosticsStore,
     private val diagnosticsEnabled: Boolean,
@@ -273,7 +273,7 @@ class CaptureViewModel(
     companion object {
         fun from(container: AppContainer): CaptureViewModel =
             CaptureViewModel(
-                setup = DemoForms.capture(),
+                setup = PayInForms.capture(),
                 startup = container.payInStartup,
                 diagnostics = container.diagnostics.capture,
                 diagnosticsEnabled = container.configuration.diagnosticsEnabled,

@@ -10,8 +10,8 @@ import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.StoredMethod
 import com.payabli.example.app.demo.ui.payment.PaymentFlowUiState
-import com.payabli.example.app.sdk.DemoFormSetup
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInFormSetup
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.isBusy
 import com.payabli.example.app.sdk.payInStartup
@@ -29,7 +29,7 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
 data class PaymentMethodUiState(
-    override val setup: DemoFormSetup,
+    override val setup: PayInFormSetup,
     override val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
@@ -63,7 +63,7 @@ data class PaymentMethodUiState(
 }
 
 class PaymentMethodViewModel(
-    setup: DemoFormSetup,
+    setup: PayInFormSetup,
     private val startup: PayInStartup,
     private val diagnostics: DiagnosticsStore,
     private val diagnosticsEnabled: Boolean,
@@ -214,7 +214,7 @@ class PaymentMethodViewModel(
     companion object {
         fun from(container: AppContainer): PaymentMethodViewModel =
             PaymentMethodViewModel(
-                setup = DemoForms.storePaymentMethod(),
+                setup = PayInForms.storePaymentMethod(),
                 startup = container.payInStartup,
                 diagnostics = container.diagnostics.paymentMethod,
                 diagnosticsEnabled = container.configuration.diagnosticsEnabled,

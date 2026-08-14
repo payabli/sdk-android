@@ -2,7 +2,7 @@ package com.payabli.example.app.sdk
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.payabli.example.app.sdk.DemoFormSetup
+import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -26,7 +26,7 @@ import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
  */
 @Composable
 fun PaymentFormHost(
-    setup: DemoFormSetup,
+    setup: PayInFormSetup,
     flow: PayabliPayInPaymentFlow,
     operation: PayabliPayInOperation,
     onCompleted: (PayInSubmissionState.Succeeded) -> Unit,

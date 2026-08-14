@@ -32,7 +32,7 @@ import com.payabli.example.app.demo.ui.components.SuccessMark
 import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.payment.PaymentFlowScreen
 import com.payabli.example.app.demo.ui.theme.Dimens
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /** Charge a card or bank account now. */
@@ -135,7 +135,7 @@ private fun CaptureScreenPreview() {
         CaptureScreen(
             state =
                 CaptureUiState(
-                    setup = DemoForms.capture(),
+                    setup = PayInForms.capture(),
                     resultText = "Code: 1\nReason: Approved\nTransaction: demo-txn-0001",
                 ),
             actions = PaymentFlowActions.none(),

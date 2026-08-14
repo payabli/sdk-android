@@ -25,7 +25,7 @@ import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.payment.PaymentFlowScreen
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /** Store a card or bank account and get a reusable token back. */
@@ -116,7 +116,7 @@ private fun PaymentMethodScreenPreview() {
         PaymentMethodScreen(
             state =
                 PaymentMethodUiState(
-                    setup = DemoForms.storePaymentMethod(),
+                    setup = PayInForms.storePaymentMethod(),
                     resultText = "Stored method: demo-method-0001\nResponse: Payment method saved",
                     diagnostics = listOf("RESPONSE 1 paymentMethod\nreason=Success"),
                 ),

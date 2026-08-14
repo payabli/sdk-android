@@ -35,8 +35,8 @@ import com.payabli.example.app.demo.ui.components.SectionHeader
 import com.payabli.example.app.demo.ui.components.StepRow
 import com.payabli.example.app.demo.ui.components.TokenCheckStep
 import com.payabli.example.app.demo.ui.theme.Dimens
-import com.payabli.example.app.sdk.DemoFormSetup
-import com.payabli.example.app.sdk.DemoPrefill
+import com.payabli.example.app.sdk.PayInFormSetup
+import com.payabli.example.app.sdk.PayInPrefill
 import com.payabli.example.app.sdk.PaymentFormHost
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -50,7 +50,7 @@ import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
  * Written twice, the two were free to drift on what a step said or when it unlocked.
  */
 interface PaymentFlowUiState {
-    val setup: DemoFormSetup
+    val setup: PayInFormSetup
     val resultText: String
 
     /**
@@ -68,7 +68,7 @@ interface PaymentFlowUiState {
     val diagnosticsEnabled: Boolean
     val isSheetOpen: Boolean
 
-    /** Offers the button that fills the form with [DemoPrefill]'s values. */
+    /** Offers the button that fills the form with [PayInPrefill]'s values. */
     val prefillEnabled: Boolean
 }
 
@@ -156,7 +156,7 @@ fun PaymentFlowScreen(
                         text = "Prefill test data (Debug)",
                         icon = DemoIcons.Prefill,
                         onClick = {
-                            prefilled = DemoPrefill.valuesFor(method)
+                            prefilled = PayInPrefill.valuesFor(method)
                             prefills++
                         },
                         enabled = !isSubmitting,

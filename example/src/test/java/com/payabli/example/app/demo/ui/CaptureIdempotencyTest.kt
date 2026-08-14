@@ -3,7 +3,7 @@ package com.payabli.example.app.demo.ui
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
@@ -42,7 +42,7 @@ class CaptureIdempotencyTest {
 
     private fun captureModel() =
         CaptureViewModel(
-            setup = DemoForms.capture(),
+            setup = PayInForms.capture(),
             startup = readyStartup(),
             diagnostics = DiagnosticsStore(),
             diagnosticsEnabled = true,

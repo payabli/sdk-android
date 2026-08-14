@@ -4,7 +4,7 @@ import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.demo.ui.method.PaymentMethodViewModel
-import com.payabli.example.app.sdk.DemoForms
+import com.payabli.example.app.sdk.PayInForms
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
@@ -37,7 +37,7 @@ class DiagnosticsGateTest {
         store: DiagnosticsStore,
         enabled: Boolean,
     ) = PaymentMethodViewModel(
-        setup = DemoForms.storePaymentMethod(),
+        setup = PayInForms.storePaymentMethod(),
         startup = readyStartup(),
         diagnostics = store,
         diagnosticsEnabled = enabled,
@@ -48,7 +48,7 @@ class DiagnosticsGateTest {
         store: DiagnosticsStore,
         enabled: Boolean,
     ) = CaptureViewModel(
-        setup = DemoForms.capture(),
+        setup = PayInForms.capture(),
         startup = readyStartup(),
         diagnostics = store,
         diagnosticsEnabled = enabled,
