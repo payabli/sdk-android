@@ -85,6 +85,46 @@ android {
         buildConfigField("boolean", "DEMO_DIAGNOSTICS", demoSetting("payabli.demo.diagnostics", "true"))
         // Off unless asked for, and the button it enables is drawn in a debug build only.
         buildConfigField("boolean", "DEMO_PREFILL", demoSetting("payabli.demo.prefill", "false"))
+
+        // The walkthrough submits real payments through the form, so it is kept out of an ordinary run and
+        // excluded by name rather than skipped: a standing skip cannot be told apart from a regression that
+        // started skipping. It also needs a reachable token server and a configured paypoint, which is why
+        // asking for it is a deliberate flag and not a default.
+        //
+        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.qaWalkthrough=true \
+        //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
+        val walkthrough = "com.payabli.example.app.QaWalkthroughTest"
+        val excluded = mutableListOf<String>()
+
+        if (providers.gradleProperty("payabli.qaWalkthrough").orNull != "true") {
+            excluded += walkthrough
+        } else {
+            // Asking for the walkthrough narrows the run to it, rather than adding it to the others.
+            //
+            // `NavigationSmokeTest` and `PayInSessionSourceInstrumentedTest` point the app at a fake token
+            // server on a random port and pin `InstrumentedSession.ENTRY_POINT`, and both writes are
+            // process-wide with no way back. A walkthrough sharing that process talks to a closed port and a
+            // paypoint that does not exist, so its first step never passes and every flow times out waiting
+            // for a form that stayed locked. Measured: 3 of 3 flows failed that way in a whole-suite run and
+            // all 3 passed in an invocation of their own.
+            testInstrumentationRunnerArguments["class"] = walkthrough
+        }
+
+        if (providers.gradleProperty("payabli.qaWalkthrough").orNull == "true" &&
+            providers.gradleProperty("payabli.qaWalkthrough.achDebits").orNull != "true"
+        ) {
+            // One flow excluded on its own, by method, as `:payin` excludes its live counterpart and for the
+            // same reason: whether a paypoint's connector takes an ACH debit is its configuration rather than
+            // anything this app sends, so a paypoint that refuses them refuses every request shape and the flow
+            // would be permanently red against a working app. Set this for a paypoint that accepts them.
+            excluded += "$walkthrough#capturingABankAccountThePayerEntered"
+        }
+
+        // One list, because `notClass` is a single runner argument: setting it twice keeps the last write and
+        // silently readmits whatever the earlier one excluded.
+        if (excluded.isNotEmpty()) {
+            testInstrumentationRunnerArguments["notClass"] = excluded.joinToString(",")
+        }
     }
 
     buildTypes {
