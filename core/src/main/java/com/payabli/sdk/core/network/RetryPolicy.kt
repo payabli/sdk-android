@@ -3,6 +3,7 @@ package com.payabli.sdk.core.network
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import java.util.Collections
 import kotlin.random.Random
 
 /**
@@ -110,10 +111,12 @@ public class RetryPolicy(
          * default. That last one is also why a reused idempotency key needs no code of its own.
          */
         public val RETRYABLE_CODES: Set<PayabliErrorCode> =
-            setOf(
-                PayabliErrorCode.NETWORK_ERROR,
-                PayabliErrorCode.SERVER_ERROR,
-                PayabliErrorCode.RATE_LIMITED,
+            Collections.unmodifiableSet(
+                setOf(
+                    PayabliErrorCode.NETWORK_ERROR,
+                    PayabliErrorCode.SERVER_ERROR,
+                    PayabliErrorCode.RATE_LIMITED,
+                ),
             )
 
         public val RETRYABLE_BY_CODE: (PayabliException) -> Boolean = { it.code in RETRYABLE_CODES }

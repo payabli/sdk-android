@@ -20,7 +20,7 @@ adb shell am start -n com.payabli.example.app/.MainActivity
 
 Copy `secrets.properties.example` to `secrets.properties` and fill it in. It is gitignored and holds no
 credential; the token is minted at runtime by `example-server/`. Any setting can be passed for a single
-run instead: `-Ppayabli.demo.entryPoint=entry3715`.
+run instead: `-Ppayabli.demo.entryPoint=entry0000`.
 
 The default is what the build falls back to when nothing is set. The template prefills two of them,
 and only `payabli.demo.appId` prefills something other than its build default.
@@ -62,10 +62,13 @@ falls back to the development machine's Bonjour name, where a device here gets `
 
 - `ui/payment/PaymentFormHost.kt` calls `PayabliPayInForm` from `:payin`, configured in
   `payment/DemoForms.kt`, and passes nothing about appearance: the form reads this app's
-  `MaterialTheme`. It collects and validates, and never submits.
-- `:core` exposes `initialize` and `setLogLevel` and nothing else a sample would use, so two seams stand
-  in for the SDK: `payment/PaymentFlowController.kt` and `terminal/TerminalController.kt`.
-  `AppContainer.kt` marks each with `⟵ swap point`.
+  `MaterialTheme`. The form submits: a tap runs the operation through the `PayabliPayInPaymentFlow` it
+  was handed, and the outcome arrives on the `onCompleted` or `onFailed` the host supplied. Both are
+  required, and neither has anything to acknowledge afterwards.
+- `payment/PayInSessionSource.kt` mints a token and initializes the session the flow needs, which is the
+  one piece an integration writes for itself.
+- Card-present has no SDK yet, so `terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
+  marks it with `⟵ swap point`.
 
 ## Things that will bite
 

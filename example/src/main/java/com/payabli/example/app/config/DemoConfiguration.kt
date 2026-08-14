@@ -51,6 +51,13 @@ data class DemoConfiguration(
      */
     val environmentSetting: String,
     val diagnosticsEnabled: Boolean,
+    /**
+     * Offers the button that fills the payment form with test values.
+     *
+     * `payabli.demo.prefill`, off by default, and the button is drawn in a debug build only. A release build
+     * ignores the setting.
+     */
+    val prefillEnabled: Boolean = false,
 ) {
     /** Takes the environment directly, for a preview or a test that holds one. */
     constructor(
@@ -59,7 +66,8 @@ data class DemoConfiguration(
         signingCertificate: String,
         environment: DemoEnvironment,
         diagnosticsEnabled: Boolean,
-    ) : this(entryPoint, appId, signingCertificate, environment.label, diagnosticsEnabled)
+        prefillEnabled: Boolean = false,
+    ) : this(entryPoint, appId, signingCertificate, environment.label, diagnosticsEnabled, prefillEnabled)
 
     /** [DemoEnvironment.DEFAULT] when the setting named none, which [environmentProblem] reports. */
     val environment: DemoEnvironment
@@ -88,6 +96,7 @@ data class DemoConfiguration(
                 signingCertificate = BuildConfig.DEMO_SIGNING_CERTIFICATE,
                 environmentSetting = BuildConfig.DEMO_ENVIRONMENT,
                 diagnosticsEnabled = BuildConfig.DEMO_DIAGNOSTICS,
+                prefillEnabled = BuildConfig.DEMO_PREFILL,
             )
     }
 }

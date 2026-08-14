@@ -22,6 +22,37 @@ android {
         minSdk = 23
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The live tier, which sends real requests to a real environment and needs credentials no repository
+        // holds. Configured, they reach the test as runner arguments; absent, the class is excluded by name so
+        // the run reports no skip, which is how `:taptopay` gates its real Play Integrity test and for the same
+        // reason: a standing skip cannot be told apart from a regression that started skipping.
+        //
+        // Set these in ~/.gradle/gradle.properties, never here, and one environment per invocation because the
+        // SDK installs one session per process:
+        //
+        //   ./gradlew :payin:connectedDebugAndroidTest \
+        //     -Ppayabli.liveTest.environment=sandbox -Ppayabli.liveTest.entryPoint=<entry> \
+        //     -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret>
+        val liveFlows = "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"
+        val liveTest =
+            listOf("environment", "entryPoint", "clientId", "clientSecret")
+                .associateWith { providers.gradleProperty("payabli.liveTest.$it").orNull }
+        if (liveTest.values.none { it == null }) {
+            liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
+
+            // One flow excluded on its own, by method, because whether a paypoint's connector takes an ACH debit
+            // is its configuration rather than anything this SDK sends: a paypoint that refuses them refuses
+            // every request shape, so the flow would be permanently red there against a working client. Set
+            // `payabli.liveTest.achDebits=true` for a paypoint that accepts them. Excluded rather than skipped,
+            // as the tiers are, so the counts stay honest.
+            if (providers.gradleProperty("payabli.liveTest.achDebits").orNull != "true") {
+                testInstrumentationRunnerArguments["notClass"] =
+                    "$liveFlows#capturingABankAccountThePayerEntered"
+            }
+        } else {
+            testInstrumentationRunnerArguments["notClass"] = liveFlows
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -29,6 +60,16 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    // Fixtures both test source sets need, as `:core` wires its loopback harness. An androidTest source set
+    // cannot see `test` classes, and the retention questions are only answerable on a device, so the transport
+    // doubles and the form fixtures are reachable from both. Compiled twice, once into each, so nothing here may
+    // be JVM-only. `kotlin`, not `java`: AGP's built-in Kotlin support keeps its own source directories, and
+    // adding to `java` alone leaves .kt files out of the Kotlin compilation.
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/java")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
     }
 }
 
@@ -56,7 +97,23 @@ dependencies {
     testImplementation(libs.junit)
     // The clients are suspending, so their tests need a test dispatcher, as :core's and :taptopay's do.
     testImplementation(libs.kotlinx.coroutines.test)
+
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // ComponentActivity, which the retention tests launch and recreate. ui-test-manifest declares it
+    // in the test APK's manifest; this is what puts the class on the compile classpath.
+    androidTestImplementation(libs.androidx.activity.compose)
+    // The retention tests hold the flow in a ViewModel, which is how the KDoc tells a host to hold it.
+    // Nothing in main needs it: the flow takes the host's scope, so no lifecycle type reaches the AAR.
+    androidTestImplementation(libs.androidx.lifecycle.viewmodel)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    // Compose's idle waiting calls Espresso.onIdle, and the version ui-test-junit4 asks for throws on a
+    // current device. The catalog entry says what breaks.
+    androidTestImplementation(libs.androidx.espresso.core)
+    // runTest, as the unit tests use it: the holder's submit suspends.
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

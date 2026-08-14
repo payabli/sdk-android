@@ -74,6 +74,7 @@ internal object PayInStrings {
             PayInFieldError.EmailNotValid -> stringResource(R.string.payabli_payin_error_email)
             PayInFieldError.ExpiryIncomplete -> stringResource(R.string.payabli_payin_error_expiry_incomplete)
             PayInFieldError.ExpiryPast -> stringResource(R.string.payabli_payin_error_expiry_past)
+            PayInFieldError.NotAccepted -> stringResource(R.string.payabli_payin_error_not_accepted)
         }
 
     /** The options a choice field offers, as the API's values paired with what a payer reads. */

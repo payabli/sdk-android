@@ -19,31 +19,32 @@ import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInTransaction
+import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.serialization.SerializationException
 
 /**
- * The three MoneyIn transaction calls: capture, authorise, and capture an authorisation.
+ * The three MoneyIn transaction calls: capture, authorize, and capture an authorization.
  *
- * Takes a transport rather than fetching a credential, so the bearer, the one 401 recovery and the replay
- * rule all belong to the session's authenticated transport. There is no access-token callback here and there
- * should not be: a second token path is a second place for a credential to be wrong.
+ * Takes a transport, so the bearer, the one 401 recovery and the replay rule all belong to the session's
+ * authenticated transport. No access-token callback: one token path, and one place for a credential to be
+ * wrong.
  *
  * **Stateless.** It holds no entry point, caches nothing and sequences nothing. Whoever owns the flow owns
  * the order of calls.
  *
  * **Nothing here is wrapped in `Retry`, and that is per route.** A capture is not repeatable: sending it twice
- * charges twice unless the service can recognise the repeat, which is what [PayInRequest.idempotencyKey] is
+ * charges twice unless the service can recognize the repeat, which is what [PayInTransactionOptions.idempotencyKey] is
  * for. The service runs its idempotency middleware over these paths, so a caller that sets a key can retry
  * safely and a caller that does not cannot.
  *
  * And the transport can send one of these a second time on its own. Credential recovery replays a request
  * whose rejection was an exact 401, which for these routes is refused before the payment is processed, so it
- * costs a wasted refresh rather than a double charge. Do not read "not wrapped in `Retry`" as a promise that a
- * request reaches the service once.
+ * costs a wasted refresh and never a double charge. "Not wrapped in `Retry`" is not a promise that a request
+ * reaches the service once.
  *
  * **An input problem the service reports as 401 reaches a caller as an expired token.** These routes take a v2
- * error's status from a lookup table rather than from the call site, so a missing entry point can arrive as
- * 401. The authenticated transport treats any 401 as a credential rejection: it refreshes, replays, and on the
+ * error's status from a lookup table, which the call site has no say in, so a missing entry point can arrive
+ * as 401. The authenticated transport treats any 401 as a credential rejection: it refreshes, replays, and on the
  * second 401 throws rather than returning the response, so this class never sees the body and cannot
  * reclassify it. Telling the two apart has to happen in the layer that decides what a credential rejection is.
  */
@@ -55,6 +56,8 @@ internal class MoneyInClient(
     suspend fun capture(
         entryPoint: String,
         request: PayInRequest,
+        entered: PayInEnteredDetails = PayInEnteredDetails.NONE,
+        idempotencyKey: String? = request.options.idempotencyKey,
     ): PayInResult {
         validate(entryPoint, request)
         return send(
@@ -62,22 +65,26 @@ internal class MoneyInClient(
             path = PayInRoutes.CAPTURE,
             request = request,
             entryPoint = entryPoint,
+            entered = entered,
             allowsAchValidation = true,
+            idempotencyKey = idempotencyKey,
         )
     }
 
     /**
-     * Authorises a payment without taking it.
+     * Authorizes a payment without taking it.
      *
-     * Refused here rather than by the service for anything but entered card data: the service authorises a
+     * Refused here rather than by the service for anything but entered card data: the service authorizes a
      * card and nothing else, and a caller learns that without a round trip.
      */
     suspend fun authorize(
         entryPoint: String,
         request: PayInRequest,
+        entered: PayInEnteredDetails = PayInEnteredDetails.NONE,
+        idempotencyKey: String? = request.options.idempotencyKey,
     ): PayInResult {
         if (!request.paymentMethod.isAuthorizable) {
-            throw PayInException.InvalidInput("paymentMethod", "Only card details can be authorised")
+            throw PayInException.InvalidInput("paymentMethod", "Only card details can be authorized")
         }
         validate(entryPoint, request)
         return send(
@@ -85,23 +92,28 @@ internal class MoneyInClient(
             path = PayInRoutes.AUTHORIZE,
             request = request,
             entryPoint = entryPoint,
+            entered = entered,
             // The service takes no achValidation on this route, so sending it would be noise.
             allowsAchValidation = false,
+            idempotencyKey = idempotencyKey,
         )
     }
 
     /**
-     * Captures a transaction that was authorised earlier, in full or in part.
+     * Captures a transaction that was authorized earlier, in full or in part.
      *
      * The only call in this module whose path differs from its route: the identifier is in the path, so the
      * template is what a log may carry.
      */
-    suspend fun captureAuthorized(request: PayInAuthorizedRequest): PayInResult {
+    suspend fun captureAuthorized(
+        request: PayInAuthorizedRequest,
+        idempotencyKey: String? = request.idempotencyKey,
+    ): PayInResult {
         PayInValidation.transId(request.transId)
         PayInValidation.paymentDetails(request.paymentDetails)
 
         // No buffered field in this body, so it goes through the ordinary JSON request builder: the method was
-        // settled when the transaction was authorised, and only the amount is being sent now.
+        // settled when the transaction was authorized, and only the amount is being sent now.
         val payabliRequest =
             PayabliRequest.json(
                 method = HttpMethod.POST,
@@ -109,7 +121,7 @@ internal class MoneyInClient(
                 body = AuthorizedCaptureBody(request.paymentDetails.toBody()),
                 bodySerializer = AuthorizedCaptureBody.serializer(),
                 route = PayInRoutes.CAPTURE_AUTHORIZED,
-                headers = payInHeaders { idempotencyKey(request.idempotencyKey) },
+                headers = payInHeaders { idempotencyKey(idempotencyKey) },
             )
         return read(PayInRoutes.CAPTURE_AUTHORIZED, transport.execute(payabliRequest))
     }
@@ -120,7 +132,7 @@ internal class MoneyInClient(
     ) {
         PayInValidation.entryPoint(entryPoint)
         PayInValidation.paymentDetails(request.paymentDetails)
-        PayInValidation.paymentMethod(request.paymentMethod, request.validation)
+        PayInValidation.paymentMethod(request.paymentMethod, request.options.validation)
     }
 
     /**
@@ -134,12 +146,14 @@ internal class MoneyInClient(
         path: String,
         request: PayInRequest,
         entryPoint: String,
+        entered: PayInEnteredDetails,
         allowsAchValidation: Boolean,
+        idempotencyKey: String?,
     ): PayInResult {
         val outer =
             PayabliJson.format.encodeToString(
                 MoneyInBody.serializer(),
-                request.toBody(entryPoint),
+                request.options.toBody(entryPoint, entered),
             )
         val body = PayInBodyWriter.withPaymentMethod(outer, PayInBodyWriter.methodFragment(request.paymentMethod))
         val response =
@@ -149,8 +163,8 @@ internal class MoneyInClient(
                         method = HttpMethod.POST,
                         path = path,
                         route = route,
-                        query = request.query(allowsAchValidation),
-                        headers = request.headers(),
+                        query = request.options.query(allowsAchValidation),
+                        headers = request.options.headers(idempotencyKey),
                         body = body,
                     ),
                 )
@@ -237,11 +251,14 @@ internal class MoneyInClient(
 }
 
 /** The wire body for a transaction, without `paymentMethod`, which the writer adds. */
-private fun PayInRequest.toBody(entryPoint: String): MoneyInBody =
+private fun PayInTransactionOptions.toBody(
+    entryPoint: String,
+    entered: PayInEnteredDetails,
+): MoneyInBody =
     MoneyInBody(
         entryPoint = entryPoint.trim(),
         paymentDetails = paymentDetails.toBody(),
-        customerData = customerData?.toBody(),
+        customerData = customerData.toBody(entered),
         accountId = accountId?.trimOrNull(),
         ipaddress = ipAddress?.trimOrNull(),
         orderId = orderId?.trimOrNull(),
@@ -266,7 +283,7 @@ private fun TransactionPayload.toTransaction(): PayInTransaction =
     )
 
 /** Only the flags that were set: an absent flag and a false one are different statements to the service. */
-private fun PayInRequest.query(allowsAchValidation: Boolean): List<Pair<String, String>> =
+private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pair<String, String>> =
     buildList {
         if (allowsAchValidation) achValidation?.let { add(PayInRoutes.QUERY_ACH_VALIDATION to it.wire()) }
         forceCustomerCreation?.let { add(PayInRoutes.QUERY_FORCE_CUSTOMER_CREATION to it.wire()) }
@@ -275,8 +292,14 @@ private fun PayInRequest.query(allowsAchValidation: Boolean): List<Pair<String, 
         useCaching?.let { add(PayInRoutes.QUERY_USE_CACHING to it.wire()) }
     }
 
-private fun PayInRequest.headers(): Map<String, String> =
+/**
+ * [key] rather than this object's own, because a form submission mints one when the caller set none.
+ *
+ * Passed in rather than read here so there is one answer per attempt and one place that decides it. A caller
+ * that set a key still sends exactly that key: the flow only fills a gap.
+ */
+private fun PayInTransactionOptions.headers(key: String?): Map<String, String> =
     payInHeaders {
-        idempotencyKey(idempotencyKey)
+        idempotencyKey(key)
         validationCode(validationCode)
     }

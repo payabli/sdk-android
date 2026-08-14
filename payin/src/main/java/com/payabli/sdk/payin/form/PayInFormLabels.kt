@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.form
 
 import androidx.compose.runtime.Immutable
+import java.util.Collections
 
 /**
  * Wording decided at runtime, for what is not known when resources are written.
@@ -21,8 +22,9 @@ public class PayInFormLabels(
     fieldLabels: Map<PayInField, String> = emptyMap(),
     fieldPlaceholders: Map<PayInField, String> = emptyMap(),
 ) {
-    public val fieldLabels: Map<PayInField, String> = fieldLabels.toMap()
-    public val fieldPlaceholders: Map<PayInField, String> = fieldPlaceholders.toMap()
+    public val fieldLabels: Map<PayInField, String> = Collections.unmodifiableMap(fieldLabels.toMap())
+    public val fieldPlaceholders: Map<PayInField, String> =
+        Collections.unmodifiableMap(fieldPlaceholders.toMap())
 
     /** The caller's label for a field, or null to use the resource. */
     public fun labelFor(field: PayInField): String? = fieldLabels[field]?.takeIf { it.isNotBlank() }

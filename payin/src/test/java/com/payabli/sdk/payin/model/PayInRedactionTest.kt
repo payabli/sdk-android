@@ -89,7 +89,7 @@ class PayInRedactionTest {
     @Test
     fun `a stored method carries neither its identifier nor its text`() {
         // The identifier charges a card, so it is a credential rather than a label.
-        val rendered = PayInStoredMethod("tok-77", 501L, 88L, 1, "Approved on file").toString()
+        val rendered = PayInStoredMethod("tok-77", "tok-77-225810", 88L, 1, "Approved on file").toString()
 
         assertFalse(rendered.contains("Approved on file"))
         assertFalse(rendered.contains("tok-77"))
@@ -180,24 +180,26 @@ class PayInRedactionTest {
     }
 
     @Test
-    fun `a request carries no key, address or nested instrument`() {
-        val rendered =
-            PayInRequest(
+    fun `a request and its options carry no key, address or nested instrument`() {
+        val options =
+            PayInTransactionOptions(
                 paymentDetails = PayInPaymentDetails(BigDecimal("10.00")),
-                paymentMethod = PayInPaymentMethod.Card(card()),
                 customerData = PayInCustomerData(firstName = "Ada", billingEmail = "ada@example.test"),
                 accountId = "acct-77",
                 ipAddress = "203.0.113.9",
                 idempotencyKey = "key-1",
                 validationCode = "code-9",
-            ).toString()
+            )
+        // Both halves, because either can reach a log line on its own: a host holds the options while it
+        // configures a screen, and only the SDK ever holds the request.
+        val rendered = PayInRequest(PayInPaymentMethod.Card(card()), options).toString() + " " + options
 
         listOf(pan, securityCode, "Ada", "ada@example.test", "acct-77", "203.0.113.9", "key-1", "code-9")
             .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
     }
 
     @Test
-    fun `an authorised capture carries neither its transaction nor its key`() {
+    fun `an authorized capture carries neither its transaction nor its key`() {
         val rendered =
             PayInAuthorizedRequest(
                 transId = "101-abc",

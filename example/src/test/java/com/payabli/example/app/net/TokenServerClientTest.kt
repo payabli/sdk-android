@@ -154,6 +154,37 @@ class TokenServerClientTest {
         }
 
     @Test
+    fun `minting hands back the token the server answered`() =
+        runTest {
+            // The one call in this app that returns a token, and what the SDK's configuration is built from.
+            val target = serve { it.reply(200, """{"accessToken":"super-secret-value"}""") }
+
+            assertEquals("super-secret-value", client(target).mintAccessToken())
+        }
+
+    @Test
+    fun `minting answers null when there is no token to hand back`() =
+        runTest {
+            // Null is what the caller reports as the SDK not being initialized. An empty string would be
+            // carried into `PayabliConfig` as though a token had arrived, and the first call would fail as
+            // a payment error instead.
+            listOf("""{"somethingElse":true}""", """{"accessToken":""}""", """{"accessToken":"   "}""", "not json")
+                .forEach { body ->
+                    val target = serve { it.reply(200, body) }
+                    assertEquals("minted a token from $body", null, client(target).mintAccessToken())
+                    stopServer()
+                }
+        }
+
+    @Test
+    fun `minting answers null when the route is unreachable`() =
+        runTest {
+            val target = TokenServerTarget("http://127.0.0.1:1", TokenHostSource.Emulator)
+
+            assertEquals(null, client(target).mintAccessToken())
+        }
+
+    @Test
     fun `a scheme that is not http is unreachable, and does not take the probe down`() =
         runTest {
             // A mistyped launch override reaches here. `openConnection` returns something that is

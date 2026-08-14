@@ -1,6 +1,7 @@
 package com.payabli.example.app.flow
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -55,6 +56,23 @@ class PaymentStepsTest {
         }
     }
 
+    @Test
+    fun `the token check is never offered beside a form that can submit`() {
+        // What keeps a recheck away from a payment in flight. A recheck builds a session and replaces the flow
+        // the screen submits through, and a flow replaced while it holds an outcome strands it: the form is
+        // gone, so nothing delivers it, and the view models refuse every later recheck while the flow is busy.
+        //
+        // The two are never on screen together, so a submission cannot be running when a recheck starts.
+        // Rendering either one outside its step's status is what would open it.
+        everyCombination.forEach { flags ->
+            val sequence = steps(flags)
+            assertFalse(
+                "$flags offers a recheck beside a form that can submit",
+                sequence[0].status.showsContent && sequence[1].status.showsContent,
+            )
+        }
+    }
+
     // --- the order itself ---
 
     @Test
@@ -104,13 +122,16 @@ class PaymentStepsTest {
     }
 
     @Test
-    fun `storing and capturing differ only in what the last step is called`() {
+    fun `storing and capturing walk one sequence, named for what each is doing`() {
+        // The statuses are the sequence and they are shared; the wording is per operation, because a payer
+        // storing a method is not entering a payment and the result is not a transaction.
         val done = PaymentProgress(backendReachable = true, backendChecked = true, finished = true)
         val stored = PaymentSteps.forStoringMethod(done)
         val captured = PaymentSteps.forCapture(done)
 
         assertEquals(stored.map { it.status }, captured.map { it.status })
-        assertEquals(stored.take(2).map { it.title }, captured.take(2).map { it.title })
+        assertEquals(stored.first().title, captured.first().title)
+        assertTrue("the two forms read the same", stored[1].title != captured[1].title)
         assertTrue("the two results read the same", stored.last().title != captured.last().title)
     }
 

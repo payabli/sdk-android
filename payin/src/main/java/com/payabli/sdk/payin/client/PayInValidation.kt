@@ -46,7 +46,7 @@ internal object PayInValidation {
     private val HOLDER_NAME = Regex("^[A-Za-z0-9 .'-]+$")
 
     fun entryPoint(value: String) {
-        if (value.isBlank()) throw PayInException.InvalidInput("entryPoint", "An entry point is required")
+        if (value.isBlank()) throw PayInException.InvalidInput(FIELD_ENTRY_POINT, "An entry point is required")
     }
 
     fun instrument(
@@ -73,7 +73,7 @@ internal object PayInValidation {
                 required(method.deviceId, "paymentMethod.device", "A cloud device is required")
 
             is PayInPaymentMethod.Check ->
-                required(method.holderName, "paymentMethod.checkHolder", "A cheque holder name is required")
+                required(method.holderName, "paymentMethod.checkHolder", "A check holder name is required")
 
             PayInPaymentMethod.Cash -> Unit
         }
@@ -93,17 +93,17 @@ internal object PayInValidation {
         // large exponent would expand into a request body megabytes long.
         val total =
             details.totalAmount.sendableOrNull()
-                ?: throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount is out of range")
+                ?: throw PayInException.InvalidInput(FIELD_TOTAL_AMOUNT, "The total amount is out of range")
         if (total <= BigDecimal.ZERO) {
-            throw PayInException.InvalidInput("paymentDetails.totalAmount", "The total amount must be more than zero")
+            throw PayInException.InvalidInput(FIELD_TOTAL_AMOUNT, "The total amount must be more than zero")
         }
         val fee =
             details.serviceFee?.let {
                 it.sendableOrNull()
-                    ?: throw PayInException.InvalidInput("paymentDetails.serviceFee", "The service fee is out of range")
+                    ?: throw PayInException.InvalidInput(FIELD_SERVICE_FEE, "The service fee is out of range")
             }
         if (fee != null && fee < BigDecimal.ZERO) {
-            throw PayInException.InvalidInput("paymentDetails.serviceFee", "A service fee cannot be negative")
+            throw PayInException.InvalidInput(FIELD_SERVICE_FEE, "A service fee cannot be negative")
         }
     }
 
@@ -254,12 +254,21 @@ internal object PayInValidation {
      */
     private fun inPaymentMethod(field: String): String = "${PayInRoutes.FIELD_PAYMENT_METHOD}.$field"
 
+    private fun inPaymentDetails(field: String): String = "${PayInRoutes.FIELD_PAYMENT_DETAILS}.$field"
+
+    internal val FIELD_ENTRY_POINT: String = PayInRoutes.FIELD_ENTRY_POINT
+    internal val FIELD_TOTAL_AMOUNT: String = inPaymentDetails(PayInRoutes.FIELD_TOTAL_AMOUNT)
+    internal val FIELD_SERVICE_FEE: String = inPaymentDetails(PayInRoutes.FIELD_SERVICE_FEE)
     internal val FIELD_CARD_NUMBER: String = inPaymentMethod(PayInRoutes.FIELD_CARD_NUMBER)
     internal val FIELD_CARD_CVV: String = inPaymentMethod(PayInRoutes.FIELD_CARD_SECURITY_CODE)
     internal val FIELD_CARD_EXPIRY: String = inPaymentMethod(PayInRoutes.FIELD_CARD_EXPIRY)
     internal val FIELD_CARD_HOLDER: String = inPaymentMethod(PayInRoutes.FIELD_CARD_HOLDER)
     internal val FIELD_CARD_ZIP: String = inPaymentMethod(PayInRoutes.FIELD_CARD_POSTAL_CODE)
     internal val FIELD_ACH_ACCOUNT: String = inPaymentMethod(PayInRoutes.FIELD_ACH_ACCOUNT)
+    internal val FIELD_ACH_ACCOUNT_TYPE: String = inPaymentMethod(PayInRoutes.FIELD_ACH_ACCOUNT_TYPE)
     internal val FIELD_ACH_ROUTING: String = inPaymentMethod(PayInRoutes.FIELD_ACH_ROUTING)
     internal val FIELD_ACH_HOLDER: String = inPaymentMethod(PayInRoutes.FIELD_ACH_HOLDER)
+    internal val FIELD_ACH_HOLDER_TYPE: String = inPaymentMethod(PayInRoutes.FIELD_ACH_HOLDER_TYPE)
+    internal val FIELD_ACH_SEC_CODE: String = inPaymentMethod(PayInRoutes.FIELD_ACH_SEC_CODE)
+    internal val FIELD_DEVICE: String = inPaymentMethod(PayInRoutes.FIELD_DEVICE)
 }

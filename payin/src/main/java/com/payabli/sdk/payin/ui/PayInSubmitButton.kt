@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.isSpecified
 import com.payabli.sdk.payin.form.PayInFormStyle
 
 /**
- * Submits the form. Material's own button, so it carries the host's colour and shape.
+ * Submits the form. Material's own button, so it carries the host's color and shape.
  *
  * `heightIn` sets a minimum, so the label keeps its room at a large font scale.
  */

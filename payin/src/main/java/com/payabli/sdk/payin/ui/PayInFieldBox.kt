@@ -1,8 +1,11 @@
 package com.payabli.sdk.payin.ui
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,6 +26,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
@@ -31,17 +36,22 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.payabli.sdk.payin.R
+import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.schemeName
 
 /**
  * One field, whichever kind it is.
  *
  * The caller holds the text; this reports what was typed. It keeps only whether a secret is revealed
  * and whether the picker is open.
+ *
+ * Two error sources, one path. A rule reads the value in the box and a rejection is about the value that was
+ * sent, and the rule wins where both speak: a payer editing a marked field is answering the rule.
  */
 @Composable
 internal fun PayInFieldBox(
@@ -51,7 +61,7 @@ internal fun PayInFieldBox(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val error = PayInFieldRules.error(field, value, context.today)
+    val error = PayInFieldRules.error(field, value, context.today) ?: context.rejectedFields[field]
     val label = PayInStrings.label(field, context.labels)
     val message = error?.let { PayInStrings.error(it) }
 
@@ -63,11 +73,12 @@ internal fun PayInFieldBox(
         // The message is a sibling Text, which is its own semantics node, so isError alone tells a
         // screen reader that something is wrong and never what. It goes on the control as well.
         val naming = Modifier.fieldName(context, field, label).invalid(message)
+        val invalid = error != null
 
         when (field.input) {
-            PayInFieldInput.MonthYear -> ExpiryField(field, value, context, onValueChange, naming)
-            PayInFieldInput.Choice -> ChoiceField(field, value, label, context, onValueChange, naming)
-            else -> TypedField(field, value, label, context, onValueChange, naming)
+            PayInFieldInput.MonthYear -> ExpiryField(field, value, invalid, context, onValueChange, naming)
+            PayInFieldInput.Choice -> ChoiceField(field, value, label, invalid, context, onValueChange, naming)
+            else -> TypedField(field, value, label, invalid, context, onValueChange, naming)
         }
 
         if (message != null) {
@@ -81,6 +92,7 @@ private fun TypedField(
     field: PayInField,
     value: String,
     label: String,
+    invalid: Boolean,
     context: PayInFormContext,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -92,14 +104,13 @@ private fun TypedField(
     // Keyed on the field. A configuration that puts a different secret field in this slot would
     // otherwise inherit the reveal state and show what the payer types next in clear text.
     var revealed by remember(field) { mutableStateOf(false) }
-    val hasError = PayInFieldRules.error(field, value) != null
 
     OutlinedTextField(
         value = value,
         onValueChange = { onValueChange(PayInFieldRules.filter(field, it)) },
         modifier = modifier.fillMaxWidth(),
         enabled = context.enabled,
-        isError = hasError,
+        isError = invalid,
         singleLine = true,
         shape = context.style.fieldShape,
         colors = context.fieldColors(),
@@ -109,7 +120,9 @@ private fun TypedField(
         keyboardOptions = field.keyboardOptions(),
         trailingIcon =
             if (!isMasked) {
-                null
+                // The scheme the digits name, once they name one. The slot is the reveal control's wherever a
+                // field is masked, and a card number under a mask is the payer's own to reveal first.
+                brandBadge(field, value, context)
             } else {
                 {
                     IconButton(onClick = { revealed = !revealed }, enabled = context.enabled) {
@@ -131,6 +144,7 @@ private fun TypedField(
 private fun ExpiryField(
     field: PayInField,
     value: String,
+    invalid: Boolean,
     context: PayInFormContext,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -155,7 +169,7 @@ private fun ExpiryField(
         placeholder = {
             Text(PayInStrings.placeholder(field, context.labels) ?: expiryHint(context.configuration))
         },
-        isError = PayInFieldRules.error(field, value, context.today) != null,
+        isError = invalid,
         trailingIcon = {
             IconButton(
                 onClick = {
@@ -194,6 +208,7 @@ private fun ChoiceField(
     field: PayInField,
     value: String,
     label: String,
+    invalid: Boolean,
     context: PayInFormContext,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -218,6 +233,7 @@ private fun ChoiceField(
                     .fillMaxWidth()
                     .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, context.enabled),
             enabled = context.enabled,
+            isError = invalid,
             readOnly = true,
             singleLine = true,
             shape = context.style.fieldShape,
@@ -240,6 +256,51 @@ private fun ChoiceField(
         }
     }
 }
+
+/**
+ * The scheme a card number names, drawn in the field.
+ *
+ * The scheme's mark where there is one, and its name where there is not: UnionPay has no artwork in this SDK,
+ * and the web surfaces show a generic card glyph for it.
+ *
+ * Null for every other field, and for a number that names no scheme yet.
+ */
+private fun brandBadge(
+    field: PayInField,
+    value: String,
+    context: PayInFormContext,
+): (@Composable () -> Unit)? {
+    if (field != PayInField.CardNumber) return null
+    val brand = CardBrand.of(value).takeIf { it != CardBrand.Unknown } ?: return null
+    val mark = brand.markResource()
+    return {
+        if (mark == null) {
+            Text(text = brand.schemeName(), style = context.style.supporting)
+        } else {
+            // Every mark is a tile of the same shape, so one box holds any of them and a field's slot is
+            // the same width whichever card a payer types.
+            Image(
+                painter = painterResource(mark),
+                contentDescription = brand.schemeName(),
+                modifier = Modifier.size(context.style.brandMark),
+                contentScale = ContentScale.Fit,
+            )
+        }
+    }
+}
+
+/** The scheme's own artwork, or null where this SDK carries none. */
+@DrawableRes
+private fun CardBrand.markResource(): Int? =
+    when (this) {
+        CardBrand.Visa -> R.drawable.payabli_payin_brand_visa
+        CardBrand.Mastercard -> R.drawable.payabli_payin_brand_mastercard
+        CardBrand.AmericanExpress -> R.drawable.payabli_payin_brand_amex
+        CardBrand.Discover -> R.drawable.payabli_payin_brand_discover
+        CardBrand.DinersClub -> R.drawable.payabli_payin_brand_dinersclub
+        CardBrand.Jcb -> R.drawable.payabli_payin_brand_jcb
+        CardBrand.UnionPay, CardBrand.Unknown -> null
+    }
 
 /**
  * Material's floating label, or none.
@@ -268,7 +329,7 @@ private fun Modifier.fieldName(
 /** Carries the message a sighted payer reads under the field into the control's own semantics. */
 private fun Modifier.invalid(message: String?): Modifier = if (message == null) this else semantics { error(message) }
 
-/** Material's own colours unless the caller supplied a set. */
+/** Material's own colors unless the caller supplied a set. */
 @Composable
 private fun PayInFormContext.fieldColors() = style.fieldColors ?: OutlinedTextFieldDefaults.colors()
 
@@ -299,6 +360,8 @@ private fun PayInField.transformation(
 @ReadOnlyComposable
 private fun expiryHint(configuration: PayInFormConfiguration): String =
     stringResource(R.string.payabli_payin_expiry_hint, configuration.formatting.expirySeparator)
+
+/** The box a scheme's mark is drawn into. Card-shaped, which is the shape each mark's tile is drawn to. */
 
 private val RevealIcon: ImageVector get() = PayInIcons.Reveal
 private val RevealOffIcon: ImageVector get() = PayInIcons.RevealOff

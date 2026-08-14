@@ -72,7 +72,7 @@ fun TapToPayScreen(
         )
 
     DemoScreen(
-        title = "Tap to pay",
+        title = "Tap to Pay",
         modifier = modifier,
         actions = {
             StateChip(

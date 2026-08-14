@@ -19,9 +19,8 @@ import java.net.URL
  * `HttpURLConnection` and `kotlinx.serialization`, matching the SDK, which admits no third-party
  * HTTP client and no reflection-based JSON mapper.
  *
- * This is the app fetching its own token, not an SDK call. When the SDK arrives, this is roughly what
- * goes behind its token provider. The provider must mint on every call, which is why the route here is
- * `exchange-token`.
+ * This is the app fetching its own token, not an SDK call, and it is what sits behind the SDK's token
+ * provider. The provider mints on every call, which is why the route here is `exchange-token`.
  */
 class TokenServerClient(
     private val target: TokenServerTarget,
@@ -33,24 +32,50 @@ class TokenServerClient(
     /** Asks for a token and reports whether one came back. The token itself is never returned. */
     suspend fun probeAccessToken(): TokenServerProbe =
         request(target.accessTokenUrl, method = "POST") { body ->
-            val token =
-                runCatching {
-                    json
-                        .parseToJsonElement(body)
-                        .jsonObject["accessToken"]
-                        ?.jsonPrimitive
-                        // `content` renders a number or a boolean as text, so `{"accessToken":true}`
-                        // would read back as the token "true" and this route would report healthy.
-                        ?.takeIf { it.isString }
-                        ?.content
-                }.getOrNull()
             when {
-                token.isNullOrBlank() -> TokenServerProbe.Malformed("the body carried no token")
+                tokenIn(body).isNullOrBlank() -> TokenServerProbe.Malformed("the body carried no token")
                 // That a token arrived is the whole result. The token, a prefix of it and its
                 // length are all secret, and a sample app is the last place to teach otherwise.
                 else -> TokenServerProbe.Ok("returned a token")
             }
         }
+
+    /**
+     * The token itself, for the SDK's configuration and its token provider and for nothing else.
+     *
+     * The only path in this app that returns one. It goes straight into `PayabliConfig`, is never held in a
+     * screen's state, never rendered and never recorded in diagnostics, which is what keeps the rule
+     * [probeAccessToken] states: a token, its length and a prefix of it are all secret.
+     *
+     * Null when the route was unreachable or answered without one. The caller reports that as the SDK not
+     * being initialized rather than as a payment failure.
+     */
+    suspend fun mintAccessToken(): String? {
+        // The probe API answers with a verdict by design, so the token leaves through this local rather than
+        // through a return value that would then exist on the shared path.
+        var minted: String? = null
+        request(target.accessTokenUrl, method = "POST") { body ->
+            minted = tokenIn(body)
+            TokenServerProbe.Ok("returned a token")
+        }
+        return minted?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * The token in a response body, or null when there is none.
+     *
+     * `content` renders a number or a boolean as text, so `{"accessToken":true}` would read back as the token
+     * "true" and the probe would report healthy.
+     */
+    private fun tokenIn(body: String): String? =
+        runCatching {
+            json
+                .parseToJsonElement(body)
+                .jsonObject["accessToken"]
+                ?.jsonPrimitive
+                ?.takeIf { it.isString }
+                ?.content
+        }.getOrNull()
 
     suspend fun probeHealth(): TokenServerProbe =
         request(target.healthUrl, method = "GET") { TokenServerProbe.Ok("healthy") }

@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
+import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.config.DemoConfiguration
 import com.payabli.example.app.config.DemoEnvironment
 import com.payabli.example.app.config.TokenHostDefaults
@@ -43,7 +44,7 @@ fun SetupScreen(
     onRecheck: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    DemoScreen(title = "Setup", modifier = modifier) {
+    DemoScreen(title = "Configuration", modifier = modifier) {
         Section(
             title = "Integration",
             note = "Set in example/secrets.properties and captured when the app started.",
@@ -113,7 +114,9 @@ fun SetupScreen(
 
         Section(
             title = "Card not present",
-            note = "What the payment form on the Save and Capture screens was configured with.",
+            note =
+                "What the form on the Save screen was configured with. Capture collects the same, without the " +
+                    "customer number and with the amount read back.",
         ) {
             // Read from the configuration and the rules, never written out here. A transcribed list
             // would agree with the form today and stop agreeing the first time a field moved.
@@ -122,42 +125,62 @@ fun SetupScreen(
             }
         }
 
-        Section(
-            title = "Diagnostics",
-            note = "Redacted request and response logging on the payment screens. Never a card number or a token.",
-        ) {
-            val value = if (state.configuration.diagnosticsEnabled) "On" else "Off"
-            // Two rows for two logs, both driven by one build setting. Listing them separately says
-            // which screens are affected; collapsing them to one row would not.
-            DetailRow(label = "Save", value = value)
-            DetailRow(label = "Capture", value = value)
-            DetailRow(label = "Set by", value = "payabli.demo.diagnostics")
-        }
+        DiagnosticsSection(state)
 
-        Section(title = "This build") {
-            DetailRow(label = "Model", value = state.deviceFacts.model)
-            DetailRow(label = "Android", value = "API ${state.deviceFacts.apiLevel}")
-            // Stated either way. It is otherwise only visible as a readiness failure, so on a real
-            // phone a reader is never told which kind of host they are on.
-            DetailRow(
-                label = "Host",
-                value = if (state.deviceFacts.isEmulator) "Emulator" else "Physical device",
-            )
-            DetailRow(label = "Package", value = state.deviceFacts.packageName)
-            // The value that says which build is installed, and what attestation binds a verdict to.
-            // It is read for the readiness check already; showing it costs nothing and is what a
-            // reader compares against the Play Console.
-            DetailRow(
-                label = "Signing certificate",
-                value = state.deviceFacts.signingCertificateDigest ?: "",
-                problem =
-                    if (state.deviceFacts.signingCertificateDigest == null) {
-                        "Reading it needs API 28 or newer."
-                    } else {
-                        null
-                    },
-            )
-        }
+        PrefillSection(state)
+
+        BuildSection(state)
+    }
+}
+
+@Composable
+private fun DiagnosticsSection(state: SetupUiState) {
+    Section(
+        title = "Diagnostics",
+        note = "Redacted request and response logging on the payment screens. Never a card number or a token.",
+    ) {
+        val value = if (state.configuration.diagnosticsEnabled) "On" else "Off"
+        // Two rows for two logs, both driven by one build setting. Listing them separately says
+        // which screens are affected; collapsing them to one row would not.
+        DetailRow(label = "Save", value = value)
+        DetailRow(label = "Capture", value = value)
+        DetailRow(label = "Set by", value = "payabli.demo.diagnostics")
+    }
+}
+
+@Composable
+private fun PrefillSection(state: SetupUiState) {
+    Section(
+        title = "Prefill",
+        note = "Offers a button on the payment screens that fills the form with test values.",
+    ) {
+        // Both halves, because either one off means no button: a release build ignores the setting.
+        DetailRow(label = "Setting", value = if (state.configuration.prefillEnabled) "On" else "Off")
+        DetailRow(label = "Build", value = if (BuildConfig.DEBUG) "Debug" else "Release, so no button")
+        DetailRow(label = "Set by", value = "payabli.demo.prefill")
+    }
+}
+
+@Composable
+private fun BuildSection(state: SetupUiState) {
+    Section(title = "This build") {
+        DetailRow(label = "Model", value = state.deviceFacts.model)
+        DetailRow(label = "Android", value = "API ${state.deviceFacts.apiLevel}")
+        // Stated either way. It is otherwise only visible as a readiness failure, so on a real
+        // phone a reader is never told which kind of host they are on.
+        DetailRow(
+            label = "Host",
+            value = if (state.deviceFacts.isEmulator) "Emulator" else "Physical device",
+        )
+        DetailRow(label = "Package", value = state.deviceFacts.packageName)
+        // The value that says which build is installed, and what attestation binds a verdict to.
+        // It is read for the readiness check already; showing it costs nothing and is what a
+        // reader compares against the Play Console.
+        DetailRow(
+            label = "Signing certificate",
+            value = state.deviceFacts.signingCertificateDigest ?: "",
+            problem = "Reading it needs API 28 or newer.".takeIf { state.deviceFacts.signingCertificateDigest == null },
+        )
     }
 }
 
