@@ -61,12 +61,15 @@ private val TEST_TIMEOUT = 120.seconds
  * done
  * ```
  *
- * **Three tests, not one**, so a failure names the call it happened at instead of collapsing the whole run
- * into a single red line, and so the two that need no attestation still report when the third cannot run.
+ * **Four tests, not one**, so a failure names the call it happened at instead of collapsing the whole run
+ * into a single red line. Two of them reach no attestation and still report when the other two cannot run:
+ * the challenge and register pair, and the unattested refusal.
  *
- * **Every run costs something real.** Each spends a challenge, and the third spends one of five activation
- * attempts. Play Integrity also throttles well below its daily budget when a handful of devices are driven
- * in a row. Wait it out; do not re-run.
+ * **Every run costs something real.** Each spends a challenge. The activation test spends one of five
+ * attempts and leaves a registered device row on the paypoint, one per run, which nothing here removes. The
+ * unattested refusal spends no attempt: it returns at the attestation lookup, before the code is compared.
+ * Play Integrity also throttles well below its daily budget when a handful of devices are driven in a row.
+ * Wait it out; do not re-run.
  */
 @RunWith(AndroidJUnit4::class)
 @ManualDeviceTest
