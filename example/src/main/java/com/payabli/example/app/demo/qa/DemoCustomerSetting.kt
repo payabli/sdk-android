@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Whether a capture names the customer it is for, or leaves the paypoint to invent one.
+ * Whether a capture carries the number it should be filed under, or leaves the paypoint to file a new one.
  *
  * A paypoint matches a customer on its number within that paypoint, so sending one attaches every payment from
  * this device to a single record. Sending none, with `forceCustomerCreation` set, writes a new customer per

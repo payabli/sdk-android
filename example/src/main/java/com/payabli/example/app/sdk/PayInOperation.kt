@@ -42,7 +42,9 @@ internal val DEMO_SERVICE_FEE: BigDecimal = BigDecimal("0.10")
  * the order it is charging for. The order identifier and the description name the device and the moment, which
  * is what keeps a run over several devices at once attributable in a transaction list.
  *
- * @param suppliesDemoCustomer whether the request names the customer, which [DemoCustomerSetting] decides.
+ * @param suppliesDemoCustomer whether the request carries the customer number, which
+ *   [DemoCustomerSetting] decides. The payer is named either way: the form's first name, last name and
+ *   billing email are written over whatever this configures.
  */
 fun capturePayment(
     idempotencyKey: String,
