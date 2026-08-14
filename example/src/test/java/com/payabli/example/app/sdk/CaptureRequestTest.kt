@@ -61,6 +61,21 @@ class CaptureRequestTest {
         assertEquals(null, sent(BigDecimal("2.50"), suppliesDemoCustomer = false).customerData?.customerNumber)
     }
 
+    /**
+     * The device is on the request, not only in the values the identity can produce.
+     *
+     * `QaIdentityTest` covers what an order identifier and a note look like. What it cannot cover is whether
+     * either reaches `PayInTransactionOptions`, and those two fields are the whole of what a dashboard reads to
+     * say which device sent a payment: dropping either assignment loses attribution and changes no test.
+     */
+    @Test
+    fun `a capture carries the device in the fields a transaction list shows`() {
+        val options = sent(BigDecimal("2.50"))
+
+        assertEquals(identity.orderId(AT_MILLIS), options.orderId)
+        assertEquals(identity.note("capture"), options.orderDescription)
+    }
+
     /** What the request would carry for [total], read back off the operation the screen submits. */
     private fun sent(
         total: BigDecimal,
@@ -71,11 +86,16 @@ class CaptureRequestTest {
                 idempotencyKey = "key",
                 amount = total,
                 identity = identity,
-                atMillis = 0,
+                atMillis = AT_MILLIS,
                 suppliesDemoCustomer = suppliesDemoCustomer,
             ).operation as PayabliPayInOperation.Capture
         ).options
 
     /** The rows are rendered for a reader, so the assertion has to read them back the same way. */
     private fun dollars(row: String): BigDecimal = BigDecimal(row.removePrefix("$").trim())
+
+    private companion object {
+        /** Any fixed moment. The order identifier is built from it, so the assertion needs the same one. */
+        const val AT_MILLIS = 1_776_000_000_000L
+    }
 }
