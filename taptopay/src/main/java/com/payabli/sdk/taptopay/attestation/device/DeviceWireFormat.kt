@@ -94,7 +94,7 @@ internal class RegisterRequest(
 }
 
 /**
- * `{ deviceId, status }`.
+ * `{ deviceId, status, outcome }`.
  *
  * [deviceId] is required: it is the handle every later call is made against, so a response without one is
  * unusable rather than partially usable. [status] is optional because iOS declares it so, and because
@@ -104,6 +104,17 @@ internal class RegisterRequest(
 internal class RegisterResponse(
     val deviceId: String,
     val status: String?,
+    /**
+     * What the service did with the row: created it, reused it, re-keyed it, or replaced it.
+     *
+     * **Absent today**, and defaulted rather than required so it stays absent without failing a decode. It
+     * is here because the four outcomes are otherwise indistinguishable — every one of them answers
+     * `"pending"` with a handle — and telling them apart is the only way a device can notice that the row it
+     * was using is gone.
+     *
+     * A `String` rather than an enum on purpose: a value added later must not fail a decode.
+     */
+    val outcome: String? = null,
 ) {
     /**
      * Whether the device is awaiting activation.
