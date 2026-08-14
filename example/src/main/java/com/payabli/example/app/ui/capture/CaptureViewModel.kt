@@ -14,8 +14,7 @@ import com.payabli.example.app.payment.isBusy
 import com.payabli.example.app.payment.toPaymentError
 import com.payabli.example.app.payment.toPaymentResult
 import com.payabli.example.app.ui.payment.PaymentFlowUiState
-import com.payabli.sdk.core.model.PayabliErrorCode
-import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -237,21 +236,24 @@ class CaptureViewModel(
         }
 
     /**
-     * A new key for the next attempt, once the service has declined this one.
+     * A new key for the next attempt, once this one has an answer.
      *
-     * A decline is an answer about the payment: the form stays on screen, and a resubmission is a second payment
-     * that needs a key of its own. Every other failure leaves the attempt's fate unknown — a read that timed out,
-     * a 5xx, a 2xx that would not decode, a cancellation — and the key is kept, because a retry carrying it is
-     * recognized as the repeat it is instead of charging the payer twice.
+     * `retryKey` is the SDK's own statement of which failures left the attempt's fate unknown — a read that
+     * timed out, a 5xx, a 2xx that would not decode, a cancellation. Those keep the key, because a retry
+     * carrying it is recognized as the repeat it is instead of charging the payer twice.
      *
-     * A refusal this module raised before sending also keeps the key, which costs nothing: the service never saw
-     * it. `AlreadySubmitting` has to keep it, because the submission still in flight is the one holding it.
+     * Everything else was answered: no payment is outstanding, the form stays on screen, and what the payer
+     * sends next is a different request. A decline and a rejected field are both in that group, and a rejected
+     * field is the one that matters, because correcting it is the whole point of the form staying up.
      *
-     * An approval does not come through here. The form leaves the screen when a payment completes, so the way to
-     * a second one is [startOver], which mints its own key.
+     * `AlreadySubmitting` is the exception: nothing was sent, and the submission still in flight is holding
+     * the key.
+     *
+     * An approval does not come through here. The form leaves the screen when a payment completes, so the way
+     * to a second one is [startOver], which mints its own key.
      */
     private fun rotateIdempotencyKey(outcome: PayInSubmissionState.Failed) {
-        if (!outcome.cause.isAnswerAboutThePayment()) return
+        if (outcome.retryKey != null || outcome.cause is PayInException.AlreadySubmitting) return
         _uiState.update { it.copy(operation = captureOf(UUID.randomUUID().toString())) }
     }
 
@@ -266,11 +268,3 @@ class CaptureViewModel(
             )
     }
 }
-
-/**
- * Whether the service answered about the payment itself.
- *
- * Read from the code rather than the exception type, so a transport failure and a refusal the module raised are
- * covered by the same rule.
- */
-private fun PayabliException.isAnswerAboutThePayment(): Boolean = code == PayabliErrorCode.PAYMENT_DECLINED

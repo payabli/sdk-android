@@ -9,6 +9,7 @@ import com.payabli.example.app.payment.refusedOutcome
 import com.payabli.example.app.ui.capture.CaptureViewModel
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -138,15 +139,12 @@ class CaptureIdempotencyTest {
         // of these: a read that timed out, a 5xx, a 2xx that would not decode. Retried under a fresh key, all
         // of them charge the payer a second time.
         //
-        // `AlreadySubmitting` is here for a different reason: the submission still in flight is the one
-        // carrying this key, and rotating would leave its own retry unable to name it.
+        // Each carries the attempt's key, because that is what the SDK puts on `retryKey` for exactly these.
         val unanswered =
             mapOf(
                 "a read that timed out" to PayabliNetworkException("timeout"),
                 "a service error" to PayInException.ServiceError(serviceFailure()),
                 "a 2xx that would not decode" to PayInException.Undecodable(),
-                "a submission already in flight" to PayInException.AlreadySubmitting(),
-                "a value refused before sending" to PayInException.InvalidInput(null, "Enter a card number"),
             )
 
         unanswered.forEach { (outcome, cause) ->
@@ -155,13 +153,63 @@ class CaptureIdempotencyTest {
                 model.uiState.value.operation
                     .keyOrNull()
 
-            model.onFailed(PayInSubmissionState.Failed(cause))
+            model.onFailed(PayInSubmissionState.Failed(cause, retryKey = key))
 
             assertEquals(
                 "$outcome rotated the key, so a retry charges again",
                 key,
                 model.uiState.value.operation
                     .keyOrNull(),
+            )
+        }
+    }
+
+    @Test
+    fun `a submission refused while another is in flight keeps the key that one holds`() {
+        // Nothing was sent, so no key is owed a retry, but the attempt still running is carrying this one and
+        // rotating would leave its own retry unable to name it.
+        val model = captureModel()
+        val key =
+            model.uiState.value.operation
+                .keyOrNull()
+
+        model.onFailed(PayInSubmissionState.Failed(PayInException.AlreadySubmitting()))
+
+        assertEquals(
+            "the key the in-flight attempt is holding was rotated out from under it",
+            key,
+            model.uiState.value.operation
+                .keyOrNull(),
+        )
+    }
+
+    @Test
+    fun `a rejected field is an answer, so the correction goes out as its own request`() {
+        // The service saw this one and rejected it, and nothing was charged. Correcting the field is the whole
+        // point of the form staying up, and what the payer sends next is a different request: under the old key
+        // it asks the service to treat a changed body as a repeat of the rejected one.
+        //
+        // A value this module refuses before sending rotates too. Nothing reached the service, so a fresh key
+        // costs nothing, and the two arrive here as the same code.
+        val answered =
+            mapOf(
+                "a field the service rejected" to PayabliValidationException(httpStatus = 400),
+                "a value refused before sending" to PayInException.InvalidInput(null, "Enter a card number"),
+            )
+
+        answered.forEach { (outcome, cause) ->
+            val model = captureModel()
+            val key =
+                model.uiState.value.operation
+                    .keyOrNull()
+
+            model.onFailed(PayInSubmissionState.Failed(cause))
+
+            assertTrue(
+                "$outcome kept its key, so the next attempt repeats a request the service already answered",
+                key !=
+                    model.uiState.value.operation
+                        .keyOrNull(),
             )
         }
     }
