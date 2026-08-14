@@ -1,8 +1,9 @@
 package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,6 +17,7 @@ import org.junit.Test
  * boolean from its transition and discards it at every call site, and the cost was a repair that ran every
  * phase and moved the state nowhere.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TapToPaySessionManagerTest {
     private val logger = RecordingSdkLogger()
     private val manager = TapToPaySessionManager(logger)
@@ -106,14 +108,14 @@ class TapToPaySessionManagerTest {
     fun `a refused move is never briefly published`() =
         runTest(timeout = TEST_TIMEOUT) {
             val seen = mutableListOf<TapToPaySessionState>()
-            // An immediate dispatcher, so a collector would resume inside the write if one were made.
-            val collector = launch(Dispatchers.Unconfined) { manager.state.collect { seen += it } }
+            // Unconfined, so a collector resumes inside the write if one is made.
+            val collector = launch(UnconfinedTestDispatcher(testScheduler)) { manager.state.collect { seen += it } }
 
             manager.advance(TapToPaySessionState.FetchingConfig)
             runCatching { manager.advance(TapToPaySessionState.Ready) }
             manager.invalidate()
 
-            collector.cancel()
+            collector.cancelAndJoin()
             assertEquals(
                 listOf(TapToPaySessionState.Idle, TapToPaySessionState.FetchingConfig),
                 seen,
@@ -124,12 +126,12 @@ class TapToPaySessionManagerTest {
     fun `re-entering a state publishes nothing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val seen = mutableListOf<TapToPaySessionState>()
-            val collector = launch(Dispatchers.Unconfined) { manager.state.collect { seen += it } }
+            val collector = launch(UnconfinedTestDispatcher(testScheduler)) { manager.state.collect { seen += it } }
 
             manager.advance(TapToPaySessionState.FetchingConfig)
             manager.advance(TapToPaySessionState.FetchingConfig)
 
-            collector.cancel()
+            collector.cancelAndJoin()
             assertEquals(listOf(TapToPaySessionState.Idle, TapToPaySessionState.FetchingConfig), seen)
         }
 
@@ -137,12 +139,12 @@ class TapToPaySessionManagerTest {
     fun `a failure publishes again when only its reason changed`() =
         runTest(timeout = TEST_TIMEOUT) {
             val seen = mutableListOf<TapToPaySessionState>()
-            val collector = launch(Dispatchers.Unconfined) { manager.state.collect { seen += it } }
+            val collector = launch(UnconfinedTestDispatcher(testScheduler)) { manager.state.collect { seen += it } }
 
             manager.settle(TapToPaySessionState.Failed(TapToPayFailureReason.SERVICE_UNAVAILABLE))
             manager.settle(TapToPaySessionState.Failed(TapToPayFailureReason.ATTESTATION_REQUIRED))
 
-            collector.cancel()
+            collector.cancelAndJoin()
             assertEquals(
                 listOf(
                     TapToPaySessionState.Idle,

@@ -4,6 +4,7 @@ import com.payabli.sdk.taptopay.enrollment.RouteScript
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -131,7 +132,7 @@ class SessionSerializationTest {
                     }
                 }
 
-            owner.cancel()
+            owner.cancelAndJoin()
             completing("the joining build") { joiner.join() }
 
             assertTrue(
