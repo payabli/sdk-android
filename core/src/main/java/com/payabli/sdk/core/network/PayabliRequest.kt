@@ -48,6 +48,9 @@ public class PayabliRequest(
          *
          * [bodySerializer] is explicit for the same reason [PayabliTransport.execute] takes one: a
          * reified variant would resolve the serializer reflectively at runtime.
+         *
+         * There is no [query] here. A route needing one alongside a JSON body uses the constructor, which
+         * is also what a route whose body must be zeroized has to do, since this encodes to a `String`.
          */
         public fun <T> json(
             method: HttpMethod,
@@ -55,7 +58,6 @@ public class PayabliRequest(
             body: T,
             bodySerializer: KSerializer<T>,
             route: String? = null,
-            query: List<Pair<String, String>> = emptyList(),
             headers: Map<String, String> = emptyMap(),
             isCredentialPinned: Boolean = false,
         ): PayabliRequest =
@@ -63,7 +65,6 @@ public class PayabliRequest(
                 method = method,
                 path = path,
                 route = route,
-                query = query,
                 headers = headers + (CONTENT_TYPE_HEADER to APPLICATION_JSON),
                 body = PayabliJson.format.encodeToString(bodySerializer, body).toByteArray(Charsets.UTF_8),
                 isCredentialPinned = isCredentialPinned,
