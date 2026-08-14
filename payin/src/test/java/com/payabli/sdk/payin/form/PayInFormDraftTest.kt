@@ -4,7 +4,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
+import java.lang.ref.WeakReference
 
 /**
  * When the draft refills itself, which is the whole of whether a payer keeps what they typed.
@@ -21,6 +23,11 @@ class PayInFormDraftTest {
         )
 
     private val draft = PayInFormDraft()
+
+    private companion object {
+        const val GC_ATTEMPTS = 50
+        const val GC_PAUSE_MILLIS = 10L
+    }
 
     @Test
     fun seedingTwiceFromTheSameValuesKeepsWhatWasTypedInBetween() {
@@ -145,6 +152,22 @@ class PayInFormDraftTest {
     }
 
     @Test
+    fun theCallersValuesAreNotHeldOnceTheyHaveBeenRead() {
+        // A PayInFormValues can carry a card number, and the draft outlives the composition, so holding one to
+        // compare against would keep the caller's copy for the life of the screen.
+        val watched = seedAndRelease()
+
+        // System.gc is a request rather than a command, so this asks until it is answered.
+        repeat(GC_ATTEMPTS) {
+            if (watched.get() == null) return
+            System.gc()
+            Thread.sleep(GC_PAUSE_MILLIS)
+        }
+
+        fail("the draft still holds the values it was seeded from")
+    }
+
+    @Test
     fun readingTheInstrumentBeforeSeedingFails() {
         // A form drawn without seeding first would pick a tab of its own, and nothing would report it.
         val unseeded = PayInFormDraft()
@@ -152,6 +175,18 @@ class PayInFormDraftTest {
         val thrown = runCatching { unseeded.method }.exceptionOrNull()
 
         assertTrue("an unseeded draft answered $thrown", thrown is IllegalStateException)
+    }
+
+    /** Seeds from values nothing else refers to, and returns the only remaining way to see whether they live. */
+    private fun seedAndRelease(): WeakReference<PayInFormValues> {
+        val values =
+            PayInFormValues(
+                PayInMethodType.Card,
+                // Built rather than written as a literal, so the map holds a string the constant pool does not.
+                mapOf(PayInField.CardNumber to StringBuilder("4111111111111111").toString()),
+            )
+        draft.seed(configuration, values)
+        return WeakReference(values)
     }
 
     private fun withBillingEmail(): List<PayInFormSection> =

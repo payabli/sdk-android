@@ -17,8 +17,17 @@ import androidx.compose.runtime.setValue
  * the card. A form reopened after process death is an empty form.
  */
 internal class PayInFormDraft {
-    /** The configuration and seed this was last filled from, so re-entering a composition does not refill it. */
-    private var seededFrom: Pair<PayInFormConfiguration, PayInFormValues?>? = null
+    /**
+     * What this was last filled from, so re-entering a composition does not refill it.
+     *
+     * The seed is held as its hash and not as the object. A caller's [PayInFormValues] can carry a card number,
+     * and keeping one here would hold the caller's copy for the life of the screen, past the point where an
+     * outcome empties the boxes drawn from it. The configuration is held as itself, carrying no payer input.
+     *
+     * The cost is that two different seeds sharing a hash are read as one, and the form keeps the values it
+     * already has.
+     */
+    private var seededFrom: Pair<PayInFormConfiguration, Int?>? = null
 
     private val entered = mutableStateMapOf<PayInField, String>()
 
@@ -67,7 +76,7 @@ internal class PayInFormDraft {
         configuration: PayInFormConfiguration,
         initialValues: PayInFormValues?,
     ) {
-        val key = configuration to initialValues
+        val key = configuration to initialValues?.hashCode()
         if (seededFrom == key) return
         seededFrom = key
 
