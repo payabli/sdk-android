@@ -1,0 +1,276 @@
+package com.payabli.sdk.taptopay.session
+
+import com.payabli.sdk.core.logging.LogCategory
+import com.payabli.sdk.core.logging.LogField
+import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.logging.debug
+import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
+import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
+import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
+import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
+import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+
+/**
+ * Drives a card-present session: builds one, repairs one, and spends an activation code against one.
+ *
+ * **All three of those mutate the same state and reach the same reader, so they never overlap.** What a
+ * second caller gets is part of the contract rather than an accident of timing:
+ *
+ * - A caller of the **same** kind joins the one already running and is given its outcome, success or
+ *   failure. It does no work of its own.
+ * - A caller of a **different** kind waits for it and then runs. Their meanings differ — repairing a session
+ *   skips attestation and building one does not — so they cannot share an answer.
+ * - A caller whose owner withdrew is told so with [TapToPaySessionException.SetupAbandoned], and may ask
+ *   again. It is never handed the owner's cancellation, which would make its own scope look like it was
+ *   unwinding when nothing had cancelled it.
+ *
+ * Exclusion and joining are two mechanisms rather than one. A single queue would give the same behaviour and
+ * would make the two properties impossible to test apart, and each of them is worth its own failing test.
+ *
+ * **Locks are taken in one order and only one:** this region, then the enrollment coordinator's, then the
+ * attestor's. Nothing takes them the other way round, so there is no cycle to find. The state monitor is
+ * never held across any of them.
+ */
+internal class TapToPaySessionCoordinator(
+    private val entry: String,
+    private val enrollment: DeviceEnrollment,
+    private val client: DeviceServiceClient,
+    private val reader: ReaderProvider,
+    private val manager: TapToPaySessionManager,
+    private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
+) {
+    /** Where the session has got to. Safe to collect at any time; reading it takes no lock. */
+    val state: StateFlow<TapToPaySessionState> get() = manager.state
+
+    /** Serialises the work. Held for a whole run, so no two runs are ever inside the reader together. */
+    private val region = Mutex()
+
+    /** Guards [inFlight] alone. Nothing suspends while it is held. */
+    private val claims = Mutex()
+
+    private var inFlight: Claim? = null
+
+    private class Claim(
+        val kind: SessionWorkKind,
+        val done: CompletableDeferred<Unit>,
+    )
+
+    private sealed interface RunPlan {
+        class Join(
+            val done: CompletableDeferred<Unit>,
+        ) : RunPlan
+
+        class Own(
+            val claim: Claim,
+        ) : RunPlan
+    }
+
+    /**
+     * Builds the session from wherever it stands: attest if needed, fetch the credentials, bring the reader
+     * up.
+     *
+     * Safe to call again at any time, including while one is already running. It starts from a known state
+     * rather than the caller's, so it does not depend on what the last attempt left behind.
+     *
+     * Fails with [TapToPaySessionException.PendingActivation] when the device still owes a code.
+     */
+    suspend fun initialize() = runExclusively(SessionWorkKind.INITIALIZE) { runInitialize() }
+
+    /**
+     * Repairs a session whose reader is spent, and does nothing to one that is ready.
+     *
+     * Cheaper than [initialize] because it does not attest, which is also why it cannot repair a session
+     * whose identity is gone: that fails with [TapToPaySessionException.NotRecoverable] and the remedy is
+     * [initialize].
+     */
+    suspend fun reinitializeIfNeeded() = runExclusively(SessionWorkKind.REINITIALIZE) { runReinitializeIfNeeded() }
+
+    /**
+     * Spends the code the merchant issued out of band.
+     *
+     * Inside the same region as the two above, because it moves the same state and a code spent against a
+     * handle a concurrent registration has just replaced is a code wasted. A refused code leaves the session
+     * exactly where it was, since the device still owes one.
+     */
+    suspend fun confirmActivation(activationCode: String) =
+        runExclusively(SessionWorkKind.ACTIVATE) { runConfirmActivation(activationCode) }
+
+    /**
+     * Decides whether to join or to run, under [claims], and does neither while holding it.
+     *
+     * Holding the lock across the work would look equivalent and is not: every waiter would then find the
+     * slot empty in turn and start its own run.
+     */
+    private suspend fun runExclusively(
+        kind: SessionWorkKind,
+        work: suspend () -> Unit,
+    ) {
+        val plan =
+            claims.withLock {
+                val existing = inFlight
+                if (existing != null && existing.kind == kind) {
+                    RunPlan.Join(existing.done)
+                } else {
+                    Claim(kind, CompletableDeferred<Unit>()).also { inFlight = it }.let(RunPlan::Own)
+                }
+            }
+        when (plan) {
+            is RunPlan.Join -> {
+                logger.debug(
+                    LogField.safe("event", "ttp_session_joined"),
+                    LogField.safe("phase", kind.diagnosticName),
+                ) { "joined the session work already running" }
+                plan.done.await()
+            }
+
+            is RunPlan.Own -> own(plan.claim, work)
+        }
+    }
+
+    private suspend fun own(
+        claim: Claim,
+        work: suspend () -> Unit,
+    ) {
+        try {
+            region.withLock { work() }
+        } catch (withdrawn: CancellationException) {
+            // Nothing failed and nothing is in progress, so the honest landing is the start. It is also the
+            // one target that can never itself be refused.
+            withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
+            release(claim, TapToPaySessionException.SetupAbandoned())
+            throw withdrawn
+        } catch (failure: Exception) {
+            TapToPaySessionFailures.landingFor(failure)?.let(manager::settle)
+            release(claim, failure)
+            throw failure
+        } catch (fatal: Throwable) {
+            // Reaches the caller unchanged: an OutOfMemoryError is not a session failure and classifying it
+            // as one would blame the service for a process-fatal condition. The claim still cannot outlive
+            // it, or every later caller of this kind waits for something that will never complete.
+            release(claim, TapToPaySessionException.SetupAbandoned())
+            throw fatal
+        }
+        release(claim, null)
+    }
+
+    /**
+     * Clears the slot and then answers everyone waiting on it, in that order, so a caller woken here never
+     * finds a claim that has already finished.
+     *
+     * Uncancellable because liveness depends on it. A claim left set with nobody to complete it wedges every
+     * later caller of its kind, and whether [Mutex.withLock] observes an already-cancelled job depends on
+     * whether it has to suspend, which is not a thing correctness may rest on.
+     *
+     * The slot is cleared only when it is still this claim. A run that finishes after another kind has taken
+     * the slot would otherwise delete a claim that is still being waited on.
+     */
+    private suspend fun release(
+        claim: Claim,
+        outcome: Throwable?,
+    ) = withContext(NonCancellable) {
+        claims.withLock { if (inFlight === claim) inFlight = null }
+        if (outcome == null) claim.done.complete(Unit) else claim.done.completeExceptionally(outcome)
+    }
+
+    /**
+     * The cold path, and the warm one, which differ only in what enrollment finds.
+     *
+     * It starts with a reset, whatever the caller left behind. The table of legal moves is narrow by design,
+     * so without this a session that failed halfway would refuse the first phase of its own repair.
+     */
+    private suspend fun runInitialize() {
+        manager.reset()
+        val outcome = manager.advance(TapToPaySessionState.AttestingDevice) { enrollment.enroll() }
+        if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
+            // Registration already said so, so there is nothing to learn from asking for the credentials.
+            throw TapToPaySessionException.PendingActivation()
+        }
+        bringReaderUp()
+    }
+
+    /**
+     * The repair, which does not attest.
+     *
+     * A ready session is left alone. That is the whole reason a charge can call this without a round trip.
+     */
+    private suspend fun runReinitializeIfNeeded() {
+        when (val current = state.value) {
+            TapToPaySessionState.Ready -> return
+            TapToPaySessionState.SessionExpired ->
+                // Only from here, because this is the state that says a repair is under way and it is the
+                // only one the table lets it be entered from.
+                manager.advance(TapToPaySessionState.Reinitializing)
+
+            TapToPaySessionState.Idle, is TapToPaySessionState.Failed -> Unit
+            else -> throw TapToPaySessionException.NotRecoverable(current)
+        }
+        bringReaderUp()
+    }
+
+    /** The half both entry points share: credentials, then a reader configured with them. */
+    private suspend fun bringReaderUp() {
+        val credentials = manager.advance(TapToPaySessionState.FetchingConfig) { fetchConfig() }
+        manager.advance(TapToPaySessionState.InitializingReader) {
+            reader.configure(credentials)
+            reader.prepareReader()
+        }
+        manager.advance(TapToPaySessionState.Ready)
+    }
+
+    /**
+     * The credentials, and the one place a warm start can learn the device still owes a code.
+     *
+     * Fetched every time. They are never stored and never held past the reader that takes them, so a repair
+     * asks again rather than reusing anything.
+     */
+    private suspend fun fetchConfig(): ReaderCredentials {
+        val assertion = enrollment.assertion() ?: throw TapToPaySessionException.AttestationRequired()
+        return try {
+            client.config(entry, assertion).credentials
+        } catch (inactive: DeviceServiceException.Forbidden) {
+            // Both shapes of the refusal arrive as this one type, and this is where a warm start learns it:
+            // registration is the only other place the device is told it owes a code, and a warm start does
+            // not register. Translated rather than passed on, so a caller has one failure to handle for one
+            // condition however it was discovered.
+            throw TapToPaySessionException.PendingActivation(inactive)
+        } catch (stale: DeviceServiceException.NotAttested) {
+            // The service is holding the binding to the exact credential that made it, and it no longer
+            // matches. The stored record names something that cannot be used, so it goes; the key it was
+            // made with is left alone, and the next build attests against it again.
+            //
+            // Never attested again from in here. Doing that would spend a fresh challenge inside a call that
+            // is already failing, and hide the rotation that caused it.
+            enrollment.reset()
+            throw TapToPaySessionException.AttestationRequired(stale)
+        }
+    }
+
+    /**
+     * Spends the code, then puts the session back to the start so it can be built.
+     *
+     * The service holds whether the device is active, so nothing is recorded here. A code the service
+     * refuses leaves the state alone, because the device still owes one.
+     */
+    private suspend fun runConfirmActivation(activationCode: String) {
+        enrollment.confirmActivation(activationCode)
+        manager.settle(TapToPaySessionState.Idle)
+    }
+}
+
+/** Which of the three entry points is running, so two of the same kind can share one run. */
+internal enum class SessionWorkKind {
+    INITIALIZE,
+    REINITIALIZE,
+    ACTIVATE,
+    ;
+
+    val diagnosticName: String get() = name.lowercase()
+}

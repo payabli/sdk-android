@@ -38,10 +38,14 @@ internal object LoggableFieldNames {
             // Non-secret claim vocabulary.
             "aal",
             "scope",
-            // Lifecycle and state.
+            // Lifecycle and state. `fromstate` and `tostate` are the same fixed vocabulary as `state`, and
+            // both are needed together: a record of a refused transition that names only one end of it says
+            // nothing about why the move was refused.
             "event",
             "phase",
             "state",
+            "fromstate",
+            "tostate",
             "category",
             // Transport metadata. `route` is the route template, never a resolved path.
             "route",
@@ -54,9 +58,9 @@ internal object LoggableFieldNames {
             "retryable",
             "durationms",
             "elapsedms",
-            // Three distinct durations, deliberately not collapsed into one name: `timeoutms` is the
-            // backoff wait before the next attempt, `totaltimeoutms` the retry budget, `calltimeoutms`
-            // the ceiling on one whole call. An incident reads differently depending on which ran out.
+            // Three distinct durations. `timeoutms` is the backoff wait before the next attempt,
+            // `totaltimeoutms` the retry budget, `calltimeoutms` the ceiling on one whole call. An
+            // incident reads differently depending on which ran out.
             "timeoutms",
             "totaltimeoutms",
             "calltimeoutms",

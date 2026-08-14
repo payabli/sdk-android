@@ -9,6 +9,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.taptopay.attestation.AppAttestor
+import com.payabli.sdk.taptopay.attestation.device.DeviceAssertion
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceAttestationBinding
 import com.payabli.sdk.taptopay.attestation.device.DeviceIdentity
@@ -231,6 +232,33 @@ internal class DeviceEnrollment(
             // change without this SDK being involved, and a copy here would be a claim nobody re-checks.
         }
     }
+
+    /**
+     * Proves possession of the key this paypoint's device was attested with, or null when there is no such
+     * device.
+     *
+     * Here rather than at the caller because the store, the signer, the paypoint check and the dispatcher
+     * the blocking signature needs are all held here already, and every one of them would otherwise be
+     * repeated somewhere else.
+     *
+     * Null rather than a [DeviceActivationException]: that vocabulary answers why an activation did not
+     * complete, and this is not an activation.
+     *
+     * Takes the same lock as the rest, so a record cannot be read while a re-registration is replacing the
+     * handle it names.
+     */
+    suspend fun assertion(): DeviceAssertion? =
+        lock.withLock {
+            val known = store.read()?.takeIf { it.entry == entry } ?: return@withLock null
+            try {
+                withContext(dispatcher) { signer.sign(known.deviceId) }
+            } catch (lost: DeviceKeyException.KeyLost) {
+                // The key store has already discarded the key, so the record names a binding this device
+                // can no longer sign for. Same disposal as the activation path makes for the same finding.
+                forget("key_lost")
+                throw lost
+            }
+        }
 
     /**
      * Forgets the device without touching its key, so the next [enroll] runs the cold sequence.
