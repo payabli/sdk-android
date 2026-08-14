@@ -45,6 +45,17 @@ internal fun attestBody(): String = successEnvelope("""{"registered":true,"isSan
 
 internal fun activateBody(): String = successEnvelope("""{"deviceId":"$DEVICE_ID","status":"active"}""")
 
+/** Every credential the reader is given, each value naming its own field so a transposed pair fails. */
+internal fun configBody(): String =
+    successEnvelope(
+        """
+        {"credentials":{"platform":"android","secretKey":"secret-key-value","apiKey":"api-key-value",
+        "merchantId":"merchant-id-value","environment":"sandbox","currencyCode":"USD",
+        "merchantName":"merchant-name-value","merchantCategoryCode":"5999","terminalId":"terminal-id-value",
+        "ppId":"pp-id-value","hostPort":"host-port-value"}}
+        """.trimIndent().replace("\n", ""),
+    )
+
 /**
  * Answers each route from a script, and fails loudly on anything unscripted.
  *
@@ -54,6 +65,8 @@ internal fun activateBody(): String = successEnvelope("""{"deviceId":"$DEVICE_ID
  */
 internal class RouteScript(
     private vararg val answers: Pair<String, List<String>>,
+    /** These routes answer a refusal inside a 200, so a real status is only for a route that skips them. */
+    private val statusFor: (String) -> Int = { 200 },
 ) {
     private val taken = mutableMapOf<String, Int>()
 
@@ -65,7 +78,7 @@ internal class RouteScript(
         val index = taken.getOrDefault(route, 0)
         if (index >= queued.size) error("$route was called ${index + 1} times, ${queued.size} answers scripted")
         taken[route] = index + 1
-        return PayabliResponse(200, body = queued[index].toByteArray(Charsets.UTF_8))
+        return PayabliResponse(statusFor(route), body = queued[index].toByteArray(Charsets.UTF_8))
     }
 
     companion object {
@@ -73,6 +86,8 @@ internal class RouteScript(
         const val REGISTER = "/api/v2/device/taptopay/register"
         const val ATTEST = "/api/v2/device/taptopay/attest"
         const val ACTIVATE = "/api/v2/device/taptopay/activate"
+
+        const val CONFIG = "/api/v2/device/taptopay/config/$ENTRY"
     }
 }
 
@@ -103,11 +118,13 @@ internal class EnrollmentFixture(
     val storage = FakeSecureStore(failWith = storeFailure, trace = trace, firstReadGate = firstReadGate)
     val store = AttestedDeviceStore(storage, logger)
 
+    val client = DeviceServiceClient(transport, logger)
+
     val enrollment =
         DeviceEnrollment(
             entry = ENTRY,
             appId = APP_ID,
-            client = DeviceServiceClient(transport, logger),
+            client = client,
             attestor = attestor,
             deviceKey = deviceKey,
             signer = DeviceAssertionSigner(deviceKey, FIXED_CLOCK),

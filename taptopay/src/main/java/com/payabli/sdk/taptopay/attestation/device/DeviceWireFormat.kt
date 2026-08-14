@@ -232,3 +232,57 @@ internal class ActivateResponse(
 ) {
     override fun toString(): String = "ActivateResponse()"
 }
+
+/**
+ * `{ credentials }`.
+ *
+ * Required, unlike the payloads above: a config carrying no credentials is unusable rather than partially
+ * usable, so an absent one is a decode failure and not an empty success.
+ */
+@Serializable
+internal class ConfigResponse(
+    val credentials: ReaderCredentials,
+) {
+    override fun toString(): String = "ConfigResponse()"
+}
+
+/**
+ * What the card reader is configured with, for one paypoint.
+ *
+ * **Typed rather than a string map, and that is a redaction decision.** The shipping sibling client keeps
+ * this as an untyped dictionary and hands it on. A `Map`'s `toString` prints every value it holds, and two
+ * of these are the reader vendor's API credentials, so the same shape here would put them into any message
+ * built from a map that reached an exception. Naming the fields also states which two the reader cannot
+ * start without on this platform.
+ *
+ * Every field is required. The service sends all of them, possibly empty, and a missing one means the
+ * response is not this route's. That is what makes [platform] self-enforcing rather than something to
+ * branch on: the sibling platform's variant omits [ppId] and [hostPort], so it fails to decode here.
+ *
+ * `pageIdentifier` sits beside these on the wire and is not modelled. It is a fresh token the service mints
+ * per call, so it is a different credential from the one the attestation row pins, and sending it as the
+ * bearer fails every request on this route.
+ */
+@Serializable
+internal class ReaderCredentials(
+    val platform: String,
+    /** The reader vendor's application key. A live secret: never logged, never in `toString`. */
+    val secretKey: String,
+    /** The reader vendor's application id. A live secret, on the same terms as [secretKey]. */
+    val apiKey: String,
+    val merchantId: String,
+    /** `"sandbox"` or `"production"`, as the paypoint's gateway is configured. */
+    val environment: String,
+    /** ISO 4217, three letters. */
+    val currencyCode: String,
+    val merchantName: String,
+    /** ISO 18245. */
+    val merchantCategoryCode: String,
+    val terminalId: String,
+    /** Required by the reader on this platform, and absent from the sibling platform's variant. */
+    val ppId: String,
+    /** `host:port`, on the same terms as [ppId]. */
+    val hostPort: String,
+) {
+    override fun toString(): String = "ReaderCredentials(platform=$platform)"
+}
