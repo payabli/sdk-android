@@ -2,6 +2,7 @@ package com.payabli.example.app.sdk
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.example.app.InstrumentedSession
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.TokenHostSource
@@ -254,7 +255,8 @@ class PayInSessionSourceInstrumentedTest {
     }
 
     private companion object {
-        const val TEST_ENTRY_POINT = "instrumented-entry"
+        /** Shared, because a second value here fails whichever class installs its session second. */
+        const val TEST_ENTRY_POINT = InstrumentedSession.ENTRY_POINT
         const val TEST_TOKEN = "instrumented-token"
         const val CANCEL_AFTER_MILLIS = 150L
         const val ANSWER_AFTER_MILLIS = 700L
