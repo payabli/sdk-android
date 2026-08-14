@@ -27,8 +27,9 @@ public enum class CardBrand {
          * Discover 6011, 622126-622925, 644-649 and 65; UnionPay 62; Diners Club 300-305, 3095, 36, 38
          * and 39; JCB 3528-3589.
          *
-         * Order matters where one range sits inside another: Discover's 622126-622925 is inside UnionPay's
-         * 62, and Diners Club's 3095 is inside JCB's leading 3.
+         * One pair of these can match the same number, so its order decides the answer: Discover's
+         * 622126-622925 is inside UnionPay's 62. Every other pair is disjoint, checked over every six-digit
+         * prefix, so nothing else here depends on where it sits.
          */
         public fun of(digits: String): CardBrand {
             // ASCII, as PayInFieldRules filters to. Char.isDigit keeps Arabic-Indic digits, which

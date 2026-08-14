@@ -6,9 +6,9 @@ import org.junit.Test
 /**
  * Which scheme a number names, per scheme and at the edges of every range.
  *
- * The ranges overlap where one sits inside another, and the order that resolves them is the whole of the
- * correctness here: Discover's `622126-622925` is inside UnionPay's `62`, and Diners Club's `3095` is inside
- * JCB's leading `3`. A wrong answer is shown to the payer beside their own card number.
+ * One pair of ranges overlaps, and the order that resolves it is the whole of the correctness here:
+ * Discover's `622126-622925` is inside UnionPay's `62`. A wrong answer is shown to the payer beside their own
+ * card number.
  *
  * `PayInApiBoundsTest` covers the four schemes this detector shipped with; these cover the three added for the
  * badge and the boundaries between all seven.
@@ -63,6 +63,28 @@ class CardBrandTest {
         assertEquals(CardBrand.UnionPay, CardBrand.of("6230"))
         assertEquals(CardBrand.UnionPay, CardBrand.of("6220"))
         assertEquals(CardBrand.UnionPay, CardBrand.of("62293"))
+    }
+
+    @Test
+    fun `no number is named one scheme and then another as it is typed`() {
+        // Stated once for every prefix rather than per range: a mark that appears and then swaps is wrong
+        // while the payer is looking at it. Settling from Unknown is the detector making up its mind, which
+        // is what should happen.
+        //
+        // Every six-digit prefix, because the widest range needs six digits to read.
+        for (value in 0..999_999) {
+            val digits = value.toString().padStart(6, '0')
+            var named: CardBrand? = null
+            for (length in 1..6) {
+                val answer = CardBrand.of(digits.take(length))
+                if (answer == CardBrand.Unknown) continue
+                if (named == null) {
+                    named = answer
+                } else {
+                    assertEquals("$digits was $named and became $answer at digit $length", named, answer)
+                }
+            }
+        }
     }
 
     @Test
