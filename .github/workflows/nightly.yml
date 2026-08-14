@@ -4,15 +4,20 @@ name: Nightly
 # deliberately not a required check.
 #
 # `ci.yml` is the per-PR gate and stays fast. This runs every unit test, the card-present module included,
-# and :core's instrumented tests. The unit tests overlap with ci.yml on purpose, so a nightly failure is
-# readable on its own without cross-referencing another run.
+# and the instrumented tests of :core and :payin. The unit tests overlap with ci.yml on purpose, so a nightly
+# failure is readable on its own without cross-referencing another run.
 #
-# Instrumented coverage is :core only, and that is a scope statement rather than an oversight. Every module
-# has a src/androidTest directory, but outside :core they hold the generated ExampleInstrumentedTest and none
-# of them declares androidx.test:runner, so those tasks would die with ClassNotFoundException before running
-# a thing. :core's own instrumented tier is not small any more, and it grows with each capability that binds
-# to a platform API. No count is kept here, because the last one went stale inside a single merge; what runs
-# on the emulator is every @Test under core/src/androidTest that is not @ManualDeviceTest.
+# Instrumented coverage is :core and :payin, and what is left out is a scope statement rather than an
+# oversight. :telemetry holds only the generated ExampleInstrumentedTest and declares no androidx.test:runner,
+# so that task would die with ClassNotFoundException before running a thing. :example declares the runner and
+# does run, and is out for a different reason: its two navigation tests do not pass unattended. One asserts a
+# step is on screen without scrolling to it, which makes it a claim about the handset rather than the app, and
+# the other needs demo settings no checkout ships. Both are decisions about those tests rather than a line
+# here, and neither was measured to be flaky: they fail the same way every run.
+#
+# Both tiers grow with each capability that binds to a platform API. No count is kept here, because the last
+# one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest
+# and payin/src/androidTest that is not @ManualDeviceTest.
 #
 # :taptopay is out of reach for a different reason than it used to be, and the old one was wrong. It is not
 # that its instrumented paths need real hardware: attestation was measured returning a token on a
@@ -231,19 +236,32 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Scoped to :core; see the header for why :taptopay is not here. Short version: not hardware, a
-          # credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator action.
+          # Scoped to :core and :payin; see the header for why :taptopay is not here. Short version: not
+          # hardware, a credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator
+          # action. :payin resolves nothing outside the project, so it adds no credential to this step.
           #
-          # notAnnotation excludes the manual tier, which needs real hardware. Excluded rather than skipped,
-          # and the difference is the point: measured, this leaves `skipped="0"` in the results XML and the
-          # manual tests absent from it entirely. An `@Ignore` would have reported a standing skip in Slack
-          # every night, and a permanent skip is indistinguishable from a regression that started skipping.
+          # --continue because the two tasks are independent and Gradle otherwise "aborts execution and fails
+          # the build when any task fails", which leaves whether the second module ran at all down to how the
+          # two happened to be scheduled. Measured with :core deliberately failing: :payin ran anyway, which
+          # is the sort of thing that stops holding on a busier machine.
+          #
+          # notAnnotation excludes the manual tier, which needs real hardware, and names both annotations
+          # because an androidTest source set is not visible to another module's: :payin declares its own
+          # rather than referencing :core's, so naming one would leave the other module's manual tier running.
+          # The argument takes a comma-separated list. Excluded rather than skipped, and the difference is the
+          # point: measured, this leaves `skipped="0"` in the results XML and the manual tests absent from it
+          # entirely. An `@Ignore` would have reported a standing skip in Slack every night, and a permanent
+          # skip is indistinguishable from a regression that started skipping.
           #
           # Those tests genuinely fail here rather than being merely inapplicable: an emulator's Keystore is
           # software-backed, so the hardware assertion fails with SECURITY_LEVEL_SOFTWARE. Excluding them is
           # load-bearing, not tidiness. See ManualDeviceTest for the command that runs them.
-          script: ./gradlew :core:connectedAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest
+          #
+          # :payin's live tier needs nothing here: payin/build.gradle.kts excludes that class by name whenever
+          # its credentials are absent, which is always in CI, and a -P runner argument merges with what the
+          # build file set rather than replacing it.
+          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
       # failure count, only the tests that failed, and a probable culprit per failure from git history with
