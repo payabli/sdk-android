@@ -89,6 +89,7 @@ internal class EnrollmentFixture(
     val attestor: FakeAppAttestor = FakeAppAttestor(),
     storeFailure: (operation: String, key: String) -> SecureStorageException? = { _, _ -> null },
     hardwareId: String = HARDWARE_ID,
+    firstReadGate: (suspend () -> Unit)? = null,
 ) {
     val trace: MutableList<String> = mutableListOf()
     val logger = RecordingSdkLogger()
@@ -99,7 +100,7 @@ internal class EnrollmentFixture(
             script.respond(request)
         }
 
-    val storage = FakeSecureStore(failWith = storeFailure, trace = trace)
+    val storage = FakeSecureStore(failWith = storeFailure, trace = trace, firstReadGate = firstReadGate)
     val store = AttestedDeviceStore(storage, logger)
 
     val enrollment =

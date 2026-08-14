@@ -16,6 +16,13 @@ import com.payabli.sdk.core.storage.SecureStorageException
 internal class FakeSecureStore(
     /** Returns the failure to raise for an operation, or null to let it through. */
     private val failWith: (operation: String, key: String) -> SecureStorageException? = { _, _ -> null },
+    /**
+     * Awaited once, on the first read, so a test can hold one caller inside the coordinator.
+     *
+     * A rendezvous, not a delay: the second caller genuinely lands while the first is in flight, instead of
+     * the test hoping it does.
+     */
+    private val firstReadGate: (suspend () -> Unit)? = null,
     /** Appended to on every call, so a test can assert order across this and the transport at once. */
     private val trace: MutableList<String> = mutableListOf(),
 ) : PayabliSecureStorage {
@@ -28,10 +35,16 @@ internal class FakeSecureStore(
                 it.startsWith("remove:")
         }
 
+    private var firstReadSeen = false
+
     override suspend fun get(key: String): ByteArray? {
         require(
             key.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8) == key,
         ) { "key must survive a UTF-8 round trip" }
+        if (!firstReadSeen) {
+            firstReadSeen = true
+            firstReadGate?.invoke()
+        }
         trace += "get:$key"
         failWith("get", key)?.let { throw it }
         return entries[key]?.copyOf()
