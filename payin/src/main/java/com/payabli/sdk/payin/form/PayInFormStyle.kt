@@ -66,18 +66,21 @@ public data class PayInFormStyle(
     public val error: TextStyle,
     public val fieldShape: Shape,
     public val spacing: PayInFormSpacing,
-    /**
-     * The box a card scheme's mark is drawn into, at the end of the card number field.
-     *
-     * One box for all six marks, so Visa and Amex carry the same visual weight whatever it is set to: the
-     * artwork is fitted inside it and keeps its own proportions.
-     */
-    public val brandMark: DpSize = DEFAULT_BRAND_MARK,
     /** Behind the chosen month and year in the expiry picker. */
     public val selectedContainer: Color,
     /** On top of [selectedContainer]. */
     public val selectedContent: Color,
     public val fieldColors: TextFieldColors? = null,
+    /**
+     * The box a card scheme's mark is drawn into, at the end of the card number field.
+     *
+     * One box for all six marks, so Visa and Amex carry the same visual weight whatever it is set to: the
+     * artwork is fitted inside it and keeps its own proportions.
+     *
+     * Last, because a parameter added anywhere else moves the ones after it and silently rebinds a positional
+     * argument. New ones go here.
+     */
+    public val brandMark: DpSize = DEFAULT_BRAND_MARK,
 ) {
     init {
         // As PayInFormSpacing is, and for the same reason: this reaches Modifier.size, which refuses what
@@ -123,10 +126,11 @@ public data class PayInFormStyleOverrides(
     public val error: TextStyle? = null,
     public val fieldShape: Shape? = null,
     public val spacing: PayInFormSpacing? = null,
-    public val brandMark: DpSize? = null,
     public val selectedContainer: Color? = null,
     public val selectedContent: Color? = null,
     public val fieldColors: TextFieldColors? = null,
+    /** Last, for the reason [PayInFormStyle.brandMark] gives. */
+    public val brandMark: DpSize? = null,
 )
 
 /**
