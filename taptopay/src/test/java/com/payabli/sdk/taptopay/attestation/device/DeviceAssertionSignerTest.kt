@@ -84,19 +84,19 @@ class DeviceAssertionSignerTest {
         // an assertion failure with nothing naming the timestamp.
         assertTrue(
             "the signature does not verify over the timestamp that was sent",
-            verifies(assertion, sha256(assertion.timestamp)),
+            verifies(assertion, assertion.timestamp.toByteArray()),
         )
     }
 
     @Test
-    fun `the signed bytes are the digest of the timestamp, not the timestamp`() {
+    fun `the signed bytes are the timestamp, not its digest`() {
         val assertion = signerAt(1785931200).sign(DEVICE_ID)
 
-        // The digest goes to the signer, which hashes it again. Matching the sibling platform, which hands the
-        // same digest to an attestation API that hashes it in turn. Signing the timestamp directly verifies
-        // just as cleanly on this side and is refused by the server.
-        assertEquals(sha256(assertion.timestamp).toList(), key.signed.single().toList())
-        assertNotEquals(assertion.timestamp.toByteArray().toList(), key.signed.single().toList())
+        // `SHA256withECDSA` applies the hash the server verifies against. Handing it a digest instead would
+        // sign the hash of a hash, which verifies on this side against the same double hash and is refused by
+        // the server as an assertion failure.
+        assertEquals(assertion.timestamp.toByteArray().toList(), key.signed.single().toList())
+        assertNotEquals(sha256(assertion.timestamp).toList(), key.signed.single().toList())
     }
 
     @Test
@@ -129,8 +129,8 @@ class DeviceAssertionSignerTest {
         // returns two different signatures over identical input is the provider's nonce strategy, and a
         // deterministic ECDSA provider would fail this while the signer stayed correct.
         assertEquals(2, key.signed.size)
-        assertTrue(verifies(first, sha256(first.timestamp)))
-        assertTrue(verifies(second, sha256(second.timestamp)))
+        assertTrue(verifies(first, first.timestamp.toByteArray()))
+        assertTrue(verifies(second, second.timestamp.toByteArray()))
     }
 
     @Test
