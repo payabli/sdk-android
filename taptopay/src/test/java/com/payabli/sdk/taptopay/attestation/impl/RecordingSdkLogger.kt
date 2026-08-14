@@ -22,6 +22,13 @@ internal class RecordingSdkLogger : SdkLogger {
         val level: LogLevel,
         val fieldNames: List<String>,
         val message: String,
+        /**
+         * The throwable as it was handed over, so a test can assert what a caller attaches.
+         *
+         * The renderer prints a throwable's message, and an exception raised over decrypted data can carry
+         * that data in it. Whether a caller redacted its cause is therefore assertable only here.
+         */
+        val throwable: Throwable? = null,
     )
 
     val records: MutableList<Record> = mutableListOf()
@@ -36,6 +43,6 @@ internal class RecordingSdkLogger : SdkLogger {
     ) {
         // A list, not a set: a set erases a repeated name, so an assertion reading "exactly these
         // three" would still pass if a fourth field reused one of them.
-        records += Record(level, fields.map { it.name }, message())
+        records += Record(level, fields.map { it.name }, message(), throwable)
     }
 }

@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import kotlinx.serialization.SerializationException
 
 /**
@@ -81,11 +82,19 @@ internal class AttestedDeviceStore(
     /** Forgets the device. Never touches the key, and never another consumer's entries. */
     suspend fun clear(): Unit = storage.remove(ENTRY)
 
-    /** One record for every way the stored identity can turn out to be unreadable, naming which. */
+    /**
+     * One record for every way the stored identity can turn out to be unreadable, naming which.
+     *
+     * The cause is redacted to its type and stack trace. By the time a decode fails the record has been
+     * decrypted, and `kotlinx.serialization` quotes the input it could not parse into the exception
+     * message — so an unredacted cause puts the paypoint, the device handle and the key thumbprint into
+     * the platform log. [state] already says which case this was, which is the whole diagnostic value the
+     * message carried.
+     */
     private fun reportLost(
         cause: Throwable,
         state: String,
-    ) = logger.warn(cause, LogField.safe("event", EVENT_LOST), LogField.safe("state", state)) {
+    ) = logger.warn(RedactedCause(cause), LogField.safe("event", EVENT_LOST), LogField.safe("state", state)) {
         "stored device identity is gone"
     }
 

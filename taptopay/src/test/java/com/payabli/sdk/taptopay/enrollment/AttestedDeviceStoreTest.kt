@@ -1,6 +1,8 @@
 package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
+import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -133,6 +135,24 @@ class AttestedDeviceStoreTest {
 
             assertNull(store.read())
             assertTrue(storage.isEmpty)
+        }
+
+    @Test
+    fun `an undecodable record is reported without its contents reaching the log`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val logger = RecordingSdkLogger()
+            val storage = FakeSecureStore()
+            // Truncated mid-value, which is what the serializer quotes back in its message.
+            storage.seed(RECORD_ENTRY, """{"entry":"$ENTRY","deviceId":"$DEVICE_ID","key""".encodeToByteArray())
+
+            AttestedDeviceStore(storage, logger).read()
+
+            val record = logger.records.single { it.message.contains("stored device identity is gone") }
+            val rendered = "${record.throwable}${record.throwable?.message}"
+            // By this point the record is decrypted, so the serializer's own message carries it.
+            assertFalse(rendered.contains(ENTRY))
+            assertFalse(rendered.contains(DEVICE_ID))
+            assertEquals(RedactedCause::class.java, record.throwable?.javaClass)
         }
 
     @Test
