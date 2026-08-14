@@ -37,10 +37,11 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
  * response is returned unreplayed. That keeps [AuthRecoveryPolicy] useful for a capability's own routes
  * without letting it authorize a replay the status does not justify.
  *
- * **It only sees what arrives as an HTTP 401.** Card-present device routes answer 200 with the status in the
- * envelope, so this never fires there, which is correct: those routes pin the token captured at attestation
- * and a refresh would rotate it out of the match. Widen or narrow the policy deliberately, never rely on the
- * status happening not to be 401.
+ * **A request may also refuse recovery outright**, through [PayabliRequest.isCredentialPinned], and that is
+ * read here rather than in the policy: a subclass widening [AuthRecoveryPolicy.isCredentialRejection] must not
+ * be able to widen its way past a route's refusal, which is the same reason [mayReplay] is not the policy's
+ * either. A refusal costs the request its recovery and nothing else; the rejection reaches the caller as it
+ * arrived.
  */
 internal class AuthenticatedTransport(
     private val base: PayabliTransport,
@@ -60,6 +61,17 @@ internal class AuthenticatedTransport(
         val stamped = SentToken()
         val first = withContext(stamped) { base.execute(request) }
         if (!recovery.isCredentialRejection(first)) return first
+
+        // Above the refresh, which is the half that breaks a pinned credential. Declining only the replay
+        // would still rotate the token the service is holding the request to.
+        if (request.isCredentialPinned) {
+            logger.warn(
+                LogField.safe("method", request.method.wireName),
+                LogField.safe("statusCode", first.statusCode),
+                routeField(request),
+            ) { "recovery declined: the route pins the credential it was sent" }
+            return first
+        }
 
         // The token the chain stamped, not one this class read earlier: a rotation between the two reads would
         // make them disagree, and reporting the earlier one replays the credential just refused.
@@ -132,8 +144,8 @@ internal class AuthenticatedTransport(
     /**
      * Whether sending [request] a second time is defensible after [rejected].
      *
-     * Deliberately not on [AuthRecoveryPolicy]: an overridable hook here would let the same subclass that
-     * widened the rejection also widen the replay, which is the hazard rather than the guard.
+     * It lives here and not on [AuthRecoveryPolicy], which is `open`: a hook there would let the subclass
+     * that widened the rejection widen the replay with it.
      */
     private fun mayReplay(
         request: PayabliRequest,

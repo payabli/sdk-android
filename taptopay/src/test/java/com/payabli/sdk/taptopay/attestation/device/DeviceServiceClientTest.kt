@@ -39,6 +39,15 @@ private const val TOKEN = "header.payload.signature"
 private const val ENCODED_TOKEN = "aGVhZGVyLnBheWxvYWQuc2lnbmF0dXJl"
 private const val PUBLIC_KEY = "public-key-value"
 
+/** One plausible `responseData` per route, in the order the routes are called. */
+private val ROUTE_PAYLOADS =
+    linkedMapOf(
+        DeviceServiceClient.ROUTE_CHALLENGE to """{"challengeId":"c","challenge":"Y2g="}""",
+        DeviceServiceClient.ROUTE_REGISTER to """{"deviceId":"d","status":"pending"}""",
+        DeviceServiceClient.ROUTE_ATTEST to """{"registered":true,"isSandbox":false}""",
+        DeviceServiceClient.ROUTE_ACTIVATE to """{"deviceId":"d","status":"active"}""",
+    )
+
 private fun identity() = DeviceIdentity(deviceId = DEVICE_ID, keyId = KEY_ID, publicKey = PUBLIC_KEY)
 
 private fun assertion() =
@@ -94,32 +103,47 @@ class DeviceServiceClientTest {
     @Test
     fun `every route sends its own template so a log can name the endpoint`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val bodies =
-                mapOf(
-                    DeviceServiceClient.ROUTE_CHALLENGE to """{"challengeId":"c","challenge":"Y2g="}""",
-                    DeviceServiceClient.ROUTE_REGISTER to """{"deviceId":"d","status":"pending"}""",
-                    DeviceServiceClient.ROUTE_ATTEST to """{"registered":true,"isSandbox":false}""",
-                    DeviceServiceClient.ROUTE_ACTIVATE to """{"deviceId":"d","status":"active"}""",
-                ).mapValues { (_, payload) -> successEnvelope(payload) }
-            val transport =
-                FakeDeviceTransport {
-                    // getValue rather than a default, so a route this client sends that the test did not
-                    // script fails here by name instead of decoding an empty body somewhere later.
-                    PayabliResponse(200, body = bodies.getValue(it.route.orEmpty()).toByteArray(Charsets.UTF_8))
-                }
-            val client = clientFor(transport)
-
-            client.challenge(ENTRY)
-            client.register(ENTRY, HARDWARE_ID, KEY_ID, null, null, null)
-            client.attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, AttestationToken(TOKEN))
-            client.activate(ENTRY, DEVICE_ID, "123456", assertion())
+            val transport = everyRouteCalled()
 
             // None of the four embeds an identifier, so template and path are the same string. Asserted rather
             // than assumed, because a null route costs every record in this family the endpoint's name, and
             // `path` is the one form the transport may never log.
-            assertEquals(bodies.keys.toList(), transport.requests.map { it.route })
+            assertEquals(ROUTE_PAYLOADS.keys.toList(), transport.requests.map { it.route })
             assertEquals(transport.requests.map { it.path }, transport.requests.map { it.route })
         }
+
+    @Test
+    fun `every route pins the credential it was sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = everyRouteCalled()
+
+            // The service records the token that attested a device and requires that same one afterwards, so a
+            // refresh started by one of these calls breaks the device until it re-attests. Compared per route
+            // rather than with `all`, so a route that lost the flag is named by the failure.
+            assertEquals(
+                ROUTE_PAYLOADS.keys.associateWith { true },
+                transport.requests.associate { it.route.orEmpty() to it.isCredentialPinned },
+            )
+        }
+
+    /** Calls all four routes once, in order, against a transport that answers each one plausibly. */
+    private suspend fun everyRouteCalled(): FakeDeviceTransport {
+        val transport =
+            FakeDeviceTransport {
+                // getValue rather than a default, so a route this client sends that the test did not script
+                // fails here by name instead of decoding an empty body somewhere later.
+                val body = successEnvelope(ROUTE_PAYLOADS.getValue(it.route.orEmpty()))
+                PayabliResponse(200, body = body.toByteArray(Charsets.UTF_8))
+            }
+        val client = clientFor(transport)
+
+        client.challenge(ENTRY)
+        client.register(ENTRY, HARDWARE_ID, KEY_ID, null, null, null)
+        client.attest(ENTRY, CHALLENGE_ID, identity(), APP_ID, AttestationToken(TOKEN))
+        client.activate(ENTRY, DEVICE_ID, "123456", assertion())
+
+        return transport
+    }
 
     @Test
     fun `register sends every field it was given, each under its own key`() =
