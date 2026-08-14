@@ -7,6 +7,8 @@ import com.payabli.example.app.demo.config.TokenServerTarget
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.preflight.CheckStatus
 import com.payabli.example.app.demo.preflight.DeviceFacts
+import com.payabli.example.app.demo.qa.DemoCustomerSetting
+import com.payabli.example.app.demo.qa.QaIdentity
 import com.payabli.example.app.demo.ui.setup.SetupViewModel
 import com.payabli.example.app.sdk.PayInForms
 import org.junit.Assert.assertEquals
@@ -46,6 +48,7 @@ class RecheckReadsTheDeviceAgainTest {
             tokenServer = target,
             tokenClient = TokenServerClient(target),
             readDeviceFacts = read,
+            demoCustomer = DemoCustomerSetting(QaIdentity.from("Test Device")),
             formSetup = PayInForms.storePaymentMethod(),
         )
 

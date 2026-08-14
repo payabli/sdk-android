@@ -1,5 +1,6 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.example.app.demo.qa.QaIdentity
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -16,45 +17,51 @@ import com.payabli.sdk.payin.form.PayInMethodType
  * **Every field, the expiry and the account type included.** The values go through the form's own state, so a
  * month and a choice fill like a text box. The expiry is a fixed month, and the form refuses one that has
  * passed, so it is the one value here with a shelf life.
+ *
+ * The customer is [QaIdentity]'s, so several devices submitting at once produce rows a dashboard can
+ * attribute to the device that sent them.
  */
 object PayInPrefill {
-    fun valuesFor(method: PayInMethod): PayInFormSeed =
+    fun valuesFor(
+        method: PayInMethod,
+        identity: QaIdentity,
+    ): PayInFormSeed =
         PayInFormSeed(
             when (method) {
-                PayInMethod.Card -> card
-                PayInMethod.BankAccount -> bankAccount
+                PayInMethod.Card -> card(identity)
+                PayInMethod.BankAccount -> bankAccount(identity)
             },
         )
 
-    private val card =
+    private fun card(identity: QaIdentity) =
         PayInFormValues(
             PayInMethodType.Card,
             mapOf(
-                PayInField.CardholderName to "QA Tester",
+                PayInField.CardholderName to identity.holderName,
                 PayInField.CardNumber to "4111111111111111",
                 PayInField.CardExpiration to "09/30",
                 PayInField.CardSecurityCode to "999",
                 PayInField.CardPostalCode to "22039",
-                PayInField.FirstName to "QA",
-                PayInField.LastName to "Tester",
-                PayInField.CustomerNumber to "qa-tester-android",
-                PayInField.BillingEmail to "qa@example.com",
+                PayInField.FirstName to identity.firstName,
+                PayInField.LastName to identity.lastName,
+                PayInField.CustomerNumber to identity.customerNumber,
+                PayInField.BillingEmail to identity.billingEmail,
             ),
         )
 
-    private val bankAccount =
+    private fun bankAccount(identity: QaIdentity) =
         PayInFormValues(
             PayInMethodType.BankAccount,
             mapOf(
-                PayInField.AccountHolder to "QA Tester",
+                PayInField.AccountHolder to identity.holderName,
                 PayInField.RoutingNumber to "021000021",
                 PayInField.AccountNumber to "1111111111",
                 // The wire value the choice carries, which is what the field holds and what the request sends.
                 PayInField.AccountType to "Checking",
-                PayInField.FirstName to "QA",
-                PayInField.LastName to "Tester",
-                PayInField.CustomerNumber to "qa-tester-android",
-                PayInField.BillingEmail to "qa@example.com",
+                PayInField.FirstName to identity.firstName,
+                PayInField.LastName to identity.lastName,
+                PayInField.CustomerNumber to identity.customerNumber,
+                PayInField.BillingEmail to identity.billingEmail,
             ),
         )
 }

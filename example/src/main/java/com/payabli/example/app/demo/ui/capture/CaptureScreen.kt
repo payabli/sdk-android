@@ -20,6 +20,7 @@ import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.ResponseJson
 import com.payabli.example.app.demo.payment.Transaction
 import com.payabli.example.app.demo.payment.TransactionSummary
+import com.payabli.example.app.demo.qa.QaIdentity
 import com.payabli.example.app.demo.ui.components.DemoIcons
 import com.payabli.example.app.demo.ui.components.DemoScreen
 import com.payabli.example.app.demo.ui.components.DetailRow
@@ -32,6 +33,8 @@ import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.payment.PaymentFlowScreen
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.sdk.PayInForms
+import com.payabli.example.app.sdk.capturePayment
+import java.math.BigDecimal
 
 /** Charge a card or bank account now. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,6 +68,12 @@ fun CaptureScreen(
         startOverText = "Take another payment",
         actions = actions,
         modifier = modifier,
+        formHeader = {
+            // The form's own rows read back the amount and the fee and never their sum, so the figure that
+            // leaves the payer's account appears nowhere else before the button. Rendered the way the result
+            // screen renders it, so the readout before and the readout after are the same string.
+            DetailRow(label = "Total", value = TransactionSummary.formatAmount(state.amount.toPlainString()))
+        },
     )
 }
 
@@ -125,11 +134,25 @@ fun CaptureResultScreen(
 @PreviewLightDark
 @Composable
 private fun CaptureScreenPreview() {
+    // Fixed, where a run randomizes: a preview that renders a different figure each time is a preview that
+    // cannot be compared to the last one.
+    val amount = BigDecimal("1.10")
+    val identity = QaIdentity.from("Google Pixel 7a")
     PreviewSurface {
         CaptureScreen(
             state =
                 CaptureUiState(
-                    setup = PayInForms.capture(),
+                    setup = PayInForms.capture(amount),
+                    amount = amount,
+                    qaIdentity = identity,
+                    operation =
+                        capturePayment(
+                            idempotencyKey = "preview",
+                            amount = amount,
+                            identity = identity,
+                            atMillis = 0,
+                            suppliesDemoCustomer = true,
+                        ),
                     resultText = "Code: 1\nReason: Approved\nTransaction: demo-txn-0001",
                 ),
             actions = PaymentFlowActions.none(),

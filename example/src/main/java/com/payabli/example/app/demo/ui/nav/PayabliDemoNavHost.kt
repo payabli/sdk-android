@@ -216,6 +216,7 @@ private fun NavGraphBuilder.setupGraph() {
                 onProbeToken = model::probeToken,
                 onProbeHealth = model::probeHealth,
                 onRecheck = model::recheck,
+                onSuppliesDemoCustomerChange = model::setSuppliesDemoCustomer,
             )
         }
     }

@@ -9,6 +9,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.math.BigDecimal
 
 /**
  * These tests exist for one property: the readout is derived, not transcribed.
@@ -22,6 +23,9 @@ class PayInFormSummaryTest {
         PayInFormSummary.rows(configuration).associate { it.label to it.value }
 
     private val storeMethod get() = PayInForms.storePaymentMethod().configuration
+
+    /** The amount is fixed here: every assertion below is about which fields a form has, not what it charges. */
+    private val capture get() = PayInForms.capture(BigDecimal("1.10"))
 
     @Test
     fun `the readout names every card field the form actually renders, in order`() {
@@ -73,7 +77,7 @@ class PayInFormSummaryTest {
 
     @Test
     fun `capture's amount fields are not listed as form fields, because nobody types them`() {
-        val capture = rowsOf(PayInForms.capture().configuration)
+        val capture = rowsOf(capture.configuration)
         assertTrue(!capture["Card fields"]!!.contains(PayInField.Amount.fieldName))
         assertTrue(!capture["Card fields"]!!.contains(PayInField.ServiceFee.fieldName))
     }
@@ -83,7 +87,7 @@ class PayInFormSummaryTest {
         // A stored method belongs to a customer and the service refuses one it cannot identify, so that field
         // is on the store form only. Everything else the two collect is the same.
         val store = storeMethod.inputFieldsFor(PayInMethodType.Card)
-        val capture = PayInForms.capture().configuration.inputFieldsFor(PayInMethodType.Card)
+        val capture = capture.configuration.inputFieldsFor(PayInMethodType.Card)
 
         assertEquals(listOf(PayInField.CustomerNumber), store - capture.toSet())
         assertEquals(emptyList<PayInField>(), capture - store.toSet())
@@ -92,7 +96,7 @@ class PayInFormSummaryTest {
 
     @Test
     fun `the masked row names exactly the fields the form hides`() {
-        val configuration = PayInForms.capture().configuration
+        val configuration = capture.configuration
         val masked = rowsOf(configuration)["Masked"]!!
         configuration.methodsOffered
             .flatMap { configuration.inputFieldsFor(it) }
@@ -111,7 +115,7 @@ class PayInFormSummaryTest {
         // The readout is what a reader checks the form against, so naming a field as masked while
         // the form shows it in clear text is the one thing it must not do.
         val open =
-            PayInForms.capture().configuration.copy(
+            capture.configuration.copy(
                 formatting = PayInFormatting(masksAccountNumber = false),
             )
         val masked = rowsOf(open)["Masked"]!!
@@ -155,7 +159,7 @@ class PayInFormSummaryTest {
 
     @Test
     fun `every row has a label and a value`() {
-        PayInFormSummary.rows(PayInForms.capture().configuration).forEach { row ->
+        PayInFormSummary.rows(capture.configuration).forEach { row ->
             assertTrue("a row has no label", row.label.isNotBlank())
             assertTrue("${row.label} has no value", row.value.isNotBlank())
         }
@@ -165,7 +169,7 @@ class PayInFormSummaryTest {
     fun `the sections this app configures survive the SDK's own normalising`() {
         // The app writes sections and the SDK de-duplicates and drops empties. A field this app asks
         // for and the SDK removes would leave the readout describing a form it does not render.
-        listOf(PayInForms.storePaymentMethod(), PayInForms.capture()).forEach { setup ->
+        listOf(PayInForms.storePaymentMethod(), capture).forEach { setup ->
             val configured =
                 setup.configuration.cardSections
                     .filter { it.style == com.payabli.sdk.payin.form.PayInSectionStyle.Inputs }
@@ -176,11 +180,7 @@ class PayInFormSummaryTest {
 
     @Test
     fun `a section this app titles keeps that title`() {
-        val titles =
-            PayInForms
-                .capture()
-                .configuration.cardSections
-                .mapNotNull(PayInFormSection::title)
+        val titles = capture.configuration.cardSections.mapNotNull(PayInFormSection::title)
         assertEquals(listOf("Card Information", "Customer Information", "Payment Information"), titles)
     }
 }

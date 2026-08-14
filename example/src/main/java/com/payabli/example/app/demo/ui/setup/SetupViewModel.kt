@@ -14,6 +14,7 @@ import com.payabli.example.app.demo.preflight.Readiness
 import com.payabli.example.app.demo.preflight.TapToPayPreflight
 import com.payabli.example.app.demo.preflight.problemsIn
 import com.payabli.example.app.demo.preflight.readinessFrom
+import com.payabli.example.app.demo.qa.DemoCustomerSetting
 import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.example.app.sdk.PayInForms
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,10 @@ data class SetupUiState(
     val tokenProbeText: String = "",
     val healthProbeText: String = "",
     val isProbing: Boolean = false,
+    /** Whether a capture names its customer. Read per request, which is why this screen may change it. */
+    val suppliesDemoCustomer: Boolean = true,
+    /** What it would send, for the note under the switch. */
+    val demoCustomerSummary: String = "",
 )
 
 class SetupViewModel(
@@ -40,6 +45,7 @@ class SetupViewModel(
     private val tokenServer: TokenServerTarget,
     private val tokenClient: TokenServerClient,
     private val readDeviceFacts: () -> DeviceFacts,
+    private val demoCustomer: DemoCustomerSetting,
     formSetup: PayInFormSetup,
 ) : ViewModel() {
     private val _uiState =
@@ -49,13 +55,22 @@ class SetupViewModel(
                 tokenServer = tokenServer,
                 deviceFacts = readDeviceFacts(),
                 formSetup = formSetup,
+                suppliesDemoCustomer = demoCustomer.suppliesDemoCustomer.value,
+                demoCustomerSummary = demoCustomer.summary,
             ),
         )
     val uiState: StateFlow<SetupUiState> = _uiState.asStateFlow()
 
     init {
         recheck()
+        viewModelScope.launch {
+            demoCustomer.suppliesDemoCustomer.collect { supplies ->
+                _uiState.update { it.copy(suppliesDemoCustomer = supplies) }
+            }
+        }
     }
+
+    fun setSuppliesDemoCustomer(supplies: Boolean) = demoCustomer.setSuppliesDemoCustomer(supplies)
 
     fun recheck() {
         val facts = readDeviceFacts()
@@ -105,6 +120,7 @@ class SetupViewModel(
                 tokenServer = container.tokenServer,
                 tokenClient = container.tokenClient,
                 readDeviceFacts = container.readDeviceFacts,
+                demoCustomer = container.demoCustomer,
                 // The stored-method form. The capture form differs in more than its summary section: the
                 // stored-method route needs a customer number and collects one, and capture does not.
                 formSetup = PayInForms.storePaymentMethod(),
