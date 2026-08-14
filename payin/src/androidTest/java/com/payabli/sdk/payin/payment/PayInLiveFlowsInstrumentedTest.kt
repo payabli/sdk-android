@@ -13,6 +13,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInTransactionOptions
@@ -149,12 +150,17 @@ class PayInLiveFlowsInstrumentedTest {
     private fun <T> Result<T>.orFail(what: String): T =
         getOrElse { failure ->
             val server = failure as? PayabliServerException
+            val refused = (failure as? PayInException.Refused)?.failure
             val answered =
                 listOfNotNull(
                     "code=${(failure as? PayabliException)?.code ?: failure.javaClass.simpleName}",
                     server?.let { "httpStatus=${it.httpStatus}" },
                     server?.rawCode?.let { "serviceCode=$it" },
                     server?.type?.let { "type=$it" },
+                    // Which decline, which is the whole content of a refusal and the one thing worth reading
+                    // off a live run. A unified code, and published API surface.
+                    refused?.code?.let { "declineCode=$it" },
+                    refused?.httpStatus?.let { "httpStatus=$it" },
                 ).joinToString(" ")
             error("$what: $answered")
         }
