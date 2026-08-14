@@ -91,6 +91,32 @@ class SessionSerializationTest {
         }
 
     @Test
+    fun `a build joins the build in flight even while a repair is queued behind it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(SessionFixture.coldScript(), firstReadGate = { held.await() })
+
+            val first = launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.initialize() }
+            // A caller of another kind arrives between the two builds and waits for the region.
+            val repair =
+                launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.reinitializeIfNeeded() }
+            val second = launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.initialize() }
+
+            held.complete(Unit)
+            completing("the first build") { first.join() }
+            completing("the queued repair") { repair.join() }
+            completing("the second build") { second.join() }
+
+            assertEquals(
+                "one sequence, not two",
+                listOf(RouteScript.CHALLENGE, RouteScript.REGISTER, RouteScript.ATTEST, RouteScript.CONFIG),
+                fixture.routes,
+            )
+            assertEquals(1, fixture.reader.prepareCount)
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
     fun `a joiner is told the owner withdrew, and the next caller can start`() =
         runTest(timeout = TEST_TIMEOUT) {
             val held = CompletableDeferred<Unit>()

@@ -24,8 +24,8 @@ import kotlinx.coroutines.withContext
  * **All three of those mutate the same state and reach the same reader, so they never overlap.** What a
  * second caller gets is part of the contract rather than an accident of timing:
  *
- * - A caller of the **same** kind joins the one already running and is given its outcome, success or
- *   failure. It does no work of its own.
+ * - A caller of the **same** kind joins the one already in flight, running or waiting its turn, and is
+ *   given its outcome, success or failure. It does no work of its own.
  * - A caller of a **different** kind waits for it and then runs. Their meanings differ — repairing a session
  *   skips attestation and building one does not — so they cannot share an answer.
  * - A caller whose owner withdrew is told so with [TapToPaySessionException.SetupAbandoned], and may ask
@@ -56,7 +56,13 @@ internal class TapToPaySessionCoordinator(
     /** Guards [inFlight] alone. Nothing suspends while it is held. */
     private val claims = Mutex()
 
-    private var inFlight: Claim? = null
+    /**
+     * One claim per kind, so a caller joins work of its own kind whatever else is queued.
+     *
+     * A single slot cannot do this. Three callers arriving as build, repair, build leave the repair in the
+     * slot when the second build looks, so that build starts a second run of work already in flight.
+     */
+    private val inFlight = mutableMapOf<SessionWorkKind, Claim>()
 
     private class Claim(
         val kind: SessionWorkKind,
@@ -115,11 +121,11 @@ internal class TapToPaySessionCoordinator(
     ) {
         val plan =
             claims.withLock {
-                val existing = inFlight
-                if (existing != null && existing.kind == kind) {
+                val existing = inFlight[kind]
+                if (existing != null) {
                     RunPlan.Join(existing.done)
                 } else {
-                    Claim(kind, CompletableDeferred<Unit>()).also { inFlight = it }.let(RunPlan::Own)
+                    Claim(kind, CompletableDeferred<Unit>()).also { inFlight[kind] = it }.let(RunPlan::Own)
                 }
             }
         when (plan) {
@@ -176,7 +182,7 @@ internal class TapToPaySessionCoordinator(
         claim: Claim,
         outcome: Throwable?,
     ) = withContext(NonCancellable) {
-        claims.withLock { if (inFlight === claim) inFlight = null }
+        claims.withLock { if (inFlight[claim.kind] === claim) inFlight.remove(claim.kind) }
         if (outcome == null) claim.done.complete(Unit) else claim.done.completeExceptionally(outcome)
     }
 
