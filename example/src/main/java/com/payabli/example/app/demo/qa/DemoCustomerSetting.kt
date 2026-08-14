@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.asStateFlow
  * Both are things a paypoint can want and the SDK cannot see which, so the sample offers both and defaults to
  * the one that keeps a run readable.
  *
- * Not persisted. It describes the paypoint being tested rather than a preference, so it resets with the app
- * instead of outliving a switch between environments.
+ * Not persisted: it describes the paypoint under test, so it resets with the app and never outlives a switch
+ * between environments.
  */
 class DemoCustomerSetting(
     identity: QaIdentity,

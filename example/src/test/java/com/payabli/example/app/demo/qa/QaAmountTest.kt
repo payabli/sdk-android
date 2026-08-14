@@ -9,7 +9,7 @@ import kotlin.random.Random
 class QaAmountTest {
     @Test
     fun `every amount is inside the range and is whole cents`() {
-        // Swept rather than sampled: a bound off by a cent shows up in one draw out of thirteen hundred.
+        // Swept, because a bound off by a cent shows up in one draw out of thirteen hundred.
         val random = Random(seed = 1)
 
         repeat(10_000) {

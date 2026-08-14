@@ -28,9 +28,9 @@ import org.junit.runner.RunWith
  * is excluded by name in `example/build.gradle.kts` unless `payabli.qaWalkthrough=true`, so an ordinary run
  * neither sends a payment nor reports a skip for one it did not send.
  *
- * The point of driving the UI rather than the SDK directly is that several devices run it at once and each
- * screen shows what it is doing, which a headless call cannot. What makes the resulting rows attributable is
- * the prefill: it fills the form from the device's own model, so no two devices submit the same customer.
+ * Driving the form is what puts the flow on the screen, so several devices run it together and each shows
+ * what it is doing. What makes the resulting rows attributable is the prefill: it fills the form from the
+ * device's own model, so no two devices submit the same customer.
  *
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
@@ -182,7 +182,7 @@ class QaWalkthroughTest {
      * declined payment, an unreachable service and a button that moved. The screen already renders the reason.
      *
      * The mark is the same whether the form refused the values or the service refused the request, so the
-     * message says what was refused and quotes the screen rather than naming who did it.
+     * message quotes the screen and names neither.
      */
     private fun awaitOutcome(success: String) {
         compose.waitUntil(ANSWERS_WITHIN_MILLIS) {

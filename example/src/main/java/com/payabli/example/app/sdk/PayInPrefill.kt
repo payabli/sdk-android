@@ -18,8 +18,8 @@ import com.payabli.sdk.payin.form.PayInMethodType
  * month and a choice fill like a text box. The expiry is a fixed month, and the form refuses one that has
  * passed, so it is the one value here with a shelf life.
  *
- * The customer is [QaIdentity]'s rather than a constant, because several devices submit these at once and a
- * shared name leaves a dashboard unable to say which one sent what.
+ * The customer is [QaIdentity]'s, so several devices submitting at once produce rows a dashboard can
+ * attribute to the device that sent them.
  */
 object PayInPrefill {
     fun valuesFor(

@@ -59,8 +59,7 @@ fun capturePayment(
                 paymentDetails = PayInPaymentDetails(totalAmount = amount, serviceFee = DEMO_SERVICE_FEE),
                 // The number the form does not collect, which is what attaches every payment from this device to
                 // one customer record. A form value would win over this one, and the capture form has no such
-                // box: a real integration identifies the customer from its own records instead of asking the
-                // payer. [DemoCustomerSetting] says what the other position of the switch does.
+                // box. [DemoCustomerSetting] says what the other position of the switch does.
                 customerData =
                     PayInCustomerData(customerNumber = identity.customerNumber)
                         .takeIf { suppliesDemoCustomer },

@@ -72,7 +72,7 @@ interface PaymentFlowUiState {
     /** Offers the button that fills the form with [PayInPrefill]'s values. */
     val prefillEnabled: Boolean
 
-    /** Whose values those are, which is this device's rather than every device's. */
+    /** The device the prefill fills the form as. */
     val qaIdentity: QaIdentity
 }
 

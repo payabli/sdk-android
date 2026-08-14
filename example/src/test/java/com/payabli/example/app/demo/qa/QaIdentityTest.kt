@@ -35,8 +35,8 @@ class QaIdentityTest {
     @Test
     fun `an account holder name carries nothing the store route refuses`() {
         // Measured on qa: `QA Samsung SM-S908U1` comes back "Bad Request: Account holder name cannot contain
-        // special characters", and the same name without the hyphen is stored. Every model code has punctuation
-        // in it, so this is every device rather than an unlucky one.
+        // special characters", and the same name without the hyphen is stored. Every model code has
+        // punctuation in it, so this is every device.
         RUN_MODELS.map(QaIdentity::from).forEach { identity ->
             assertTrue(
                 "${identity.holderName} carries something other than a letter, a digit or a space",

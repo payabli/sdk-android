@@ -27,8 +27,8 @@ class DemoCustomerSettingTest {
 
     @Test
     fun `the summary says who would be sent`() {
-        // Read back on the Configuration screen under the switch, so it has to name the customer the request
-        // carries rather than a description of one.
+        // Read back on the Configuration screen under the switch, so it names the customer the request
+        // carries.
         val summary = DemoCustomerSetting(identity).summary
 
         assertTrue(summary, summary.contains(identity.holderName))
