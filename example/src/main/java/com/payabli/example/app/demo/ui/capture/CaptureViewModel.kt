@@ -9,25 +9,20 @@ import com.payabli.example.app.demo.net.checkToken
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.ui.payment.PaymentFlowUiState
+import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.example.app.sdk.PayInForms
+import com.payabli.example.app.sdk.PayInOperation
+import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.PayInStartup
+import com.payabli.example.app.sdk.capturePayment
 import com.payabli.example.app.sdk.isBusy
 import com.payabli.example.app.sdk.payInStartup
-import com.payabli.example.app.sdk.toPaymentError
-import com.payabli.example.app.sdk.toPaymentResult
-import com.payabli.sdk.payin.model.PayInException
-import com.payabli.sdk.payin.model.PayInPaymentDetails
-import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.payment.PayInSubmissionState
-import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.math.BigDecimal
 import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -52,37 +47,17 @@ data class CaptureUiState(
     val backendReachable: Boolean = false,
     override val isCheckingToken: Boolean = false,
     /** What this screen submits through, once the session behind it exists. */
-    val payments: PayabliPayInPaymentFlow? = null,
+    val payments: PayInFlowHandle? = null,
     /**
      * A capture of the demo amount, carrying the key that makes a repeat safe.
      *
      * The amount is fixed here because the form this screen configures collects no amount: a real integration
      * takes it from the order it is charging for.
      */
-    val operation: PayabliPayInOperation = captureOf(UUID.randomUUID().toString()),
+    val operation: PayInOperation = capturePayment(UUID.randomUUID().toString()),
 ) : PaymentFlowUiState {
     override val finished: Boolean get() = lastResult != null
 }
-
-/**
- * A capture of the demo amount under [idempotencyKey].
- *
- * Without a key the service cannot recognize a repeat, so a submission whose outcome is unknown cannot be
- * retried: `PayInSubmissionState.Failed.retryKey` names it precisely so it can be. One key per attempt, kept
- * while that attempt's outcome is unknown and replaced once the service has answered.
- */
-private fun captureOf(idempotencyKey: String): PayabliPayInOperation.Capture =
-    PayabliPayInOperation.Capture(
-        PayInTransactionOptions(
-            paymentDetails = PayInPaymentDetails(totalAmount = BigDecimal("1.10"), serviceFee = BigDecimal("0.10")),
-            orderId = "android-example",
-            idempotencyKey = idempotencyKey,
-            // A paypoint can refuse a payment that names no customer it can identify. The sandbox one takes
-            // this card with a billing email or a customer number and answers 400 E7020 with neither, so the
-            // request does not depend on which of those the payer filled in.
-            forceCustomerCreation = true,
-        ),
-    )
 
 /**
  * Scoped to the capture graph, so the result screen reads the same instance the form screen wrote
@@ -152,21 +127,21 @@ class CaptureViewModel(
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
     /** The SDK accepted it. */
-    fun onCompleted(outcome: PayInSubmissionState.Succeeded) {
-        onCompleted(outcome.toPaymentResult())
+    fun onCompleted(outcome: PayInOutcome.Approved) {
+        onCompleted(outcome.result)
     }
 
     /**
      * The SDK refused it.
      *
-     * What the panel records is the exception's own `toString`, which carries the error code and nothing from
-     * the wire. `reason` and `detail` are displayable and never loggable: the service echoes submitted values
-     * into some of them, and this panel is on screen and gets copied into bug reports.
+     * The panel records the failure's classification and nothing from the wire. What a screen shows is
+     * displayable and never loggable: the service echoes submitted values into some of it, and this panel is
+     * on screen and gets copied into bug reports.
      */
-    fun onFailed(outcome: PayInSubmissionState.Failed) {
+    fun onFailed(outcome: PayInOutcome.Refused) {
         rotateIdempotencyKey(outcome)
-        record("ERROR paymentTransaction\n${outcome.cause}")
-        onError(outcome.toPaymentError())
+        record("ERROR paymentTransaction\n${outcome.diagnostic}")
+        onError(outcome.error)
     }
 
     private fun onCompleted(result: PaymentResult) {
@@ -244,7 +219,7 @@ class CaptureViewModel(
                 submitFailed = false,
                 lastResult = null,
                 outcomeReady = false,
-                operation = captureOf(UUID.randomUUID().toString()),
+                operation = capturePayment(UUID.randomUUID().toString()),
             )
         }
 
@@ -265,9 +240,9 @@ class CaptureViewModel(
      * An approval does not come through here. The form leaves the screen when a payment completes, so the way
      * to a second one is [startOver], which mints its own key.
      */
-    private fun rotateIdempotencyKey(outcome: PayInSubmissionState.Failed) {
-        if (outcome.retryKey != null || outcome.cause is PayInException.AlreadySubmitting) return
-        _uiState.update { it.copy(operation = captureOf(UUID.randomUUID().toString())) }
+    private fun rotateIdempotencyKey(outcome: PayInOutcome.Refused) {
+        if (outcome.keepsItsIdempotencyKey) return
+        _uiState.update { it.copy(operation = capturePayment(UUID.randomUUID().toString())) }
     }
 
     companion object {

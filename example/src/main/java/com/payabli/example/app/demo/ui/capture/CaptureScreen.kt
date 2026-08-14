@@ -10,7 +10,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -33,7 +32,6 @@ import com.payabli.example.app.demo.ui.payment.PaymentFlowActions
 import com.payabli.example.app.demo.ui.payment.PaymentFlowScreen
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.sdk.PayInForms
-import com.payabli.sdk.payin.payment.PayInSubmissionState
 
 /** Charge a card or bank account now. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,26 +41,22 @@ fun CaptureScreen(
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
 ) {
-    // One place reads the SDK's state: the flag below and the form both come from it.
-    val submission =
-        state.payments
-            ?.state
-            ?.collectAsState()
-            ?.value ?: PayInSubmissionState.Idle
+    // One place asks whether a submission is in flight: the step list and the form's own gate both read it.
+    val isSubmitting = state.payments?.isSubmitting() ?: false
 
     PaymentFlowScreen(
         title = "Capture a payment",
         state = state,
         flow = state.payments,
         operation = state.operation,
-        submission = submission,
+        isSubmitting = isSubmitting,
         steps =
             PaymentSteps.forCapture(
                 PaymentProgress(
                     backendReachable = state.backendReachable,
                     backendChecked = state.tokenCheckText.isNotEmpty() && !state.isCheckingToken,
                     isCheckingBackend = state.isCheckingToken,
-                    isSubmitting = submission is PayInSubmissionState.Submitting,
+                    isSubmitting = isSubmitting,
                     submitFailed = state.submitFailed,
                     finished = state.finished,
                 ),

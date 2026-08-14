@@ -1,5 +1,6 @@
 package com.payabli.example.app.sdk
 
+import com.payabli.example.app.demo.payment.SummaryRow
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
@@ -15,9 +16,15 @@ import com.payabli.sdk.payin.form.PayInSectionStyle
  * [PayInFormLabels] is what to call it. A caller usually wants one and not the other.
  */
 data class PayInFormSetup(
-    val configuration: PayInFormConfiguration,
-    val labels: PayInFormLabels,
-)
+    internal val configuration: PayInFormConfiguration,
+    internal val labels: PayInFormLabels,
+) {
+    /** The tab the form opens on, which a screen holds so its prefill fills what is on screen. */
+    val startingMethod: PayInMethod get() = configuration.startingMethod.asMethod()
+
+    /** What this form collects, as rows a screen renders. Derived, never transcribed. */
+    val summaryRows: List<SummaryRow> get() = PayInFormSummary.rows(configuration)
+}
 
 /**
  * The two forms this app shows.

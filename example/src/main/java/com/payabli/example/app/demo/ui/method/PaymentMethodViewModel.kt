@@ -10,17 +10,15 @@ import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.StoredMethod
 import com.payabli.example.app.demo.ui.payment.PaymentFlowUiState
+import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.example.app.sdk.PayInForms
+import com.payabli.example.app.sdk.PayInOperation
+import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.isBusy
 import com.payabli.example.app.sdk.payInStartup
-import com.payabli.example.app.sdk.toPaymentError
-import com.payabli.example.app.sdk.toPaymentResult
-import com.payabli.sdk.payin.model.PayInStoreOptions
-import com.payabli.sdk.payin.payment.PayInSubmissionState
-import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
+import com.payabli.example.app.sdk.storePaymentMethod
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,14 +48,10 @@ data class PaymentMethodUiState(
     val backendReachable: Boolean = false,
     override val isCheckingToken: Boolean = false,
     /** What this screen submits through, once the session behind it exists. */
-    val payments: PayabliPayInPaymentFlow? = null,
+    val payments: PayInFlowHandle? = null,
     /** Storing an instrument, which carries no amount. */
-    val operation: PayabliPayInOperation =
-        PayabliPayInOperation.StoreMethod(
-            // As on the capture screen: a paypoint can refuse a request that names no customer it can
-            // identify, and this stores the method against a new one instead.
-            PayInStoreOptions(forceCustomerCreation = true),
-        ),
+    val operation: PayInOperation =
+        storePaymentMethod(),
 ) : PaymentFlowUiState {
     override val finished: Boolean get() = storedMethod != null
 }
@@ -126,8 +120,8 @@ class PaymentMethodViewModel(
     fun dismissSheet() = _uiState.update { it.copy(isSheetOpen = false) }
 
     /** The SDK accepted it. */
-    fun onCompleted(outcome: PayInSubmissionState.Succeeded) {
-        onCompleted(outcome.toPaymentResult())
+    fun onCompleted(outcome: PayInOutcome.Approved) {
+        onCompleted(outcome.result)
     }
 
     /**
@@ -137,9 +131,9 @@ class PaymentMethodViewModel(
      * the wire. `reason` and `detail` are displayable and never loggable: the service echoes submitted values
      * into some of them, and this panel is on screen and gets copied into bug reports.
      */
-    fun onFailed(outcome: PayInSubmissionState.Failed) {
-        record("ERROR paymentMethod\n${outcome.cause}")
-        onError(outcome.toPaymentError())
+    fun onFailed(outcome: PayInOutcome.Refused) {
+        record("ERROR paymentMethod\n${outcome.diagnostic}")
+        onError(outcome.error)
     }
 
     private fun onCompleted(result: PaymentResult) {

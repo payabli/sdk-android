@@ -2,13 +2,7 @@ package com.payabli.example.app.sdk
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.sdk.payin.PayabliPayInForm
-import com.payabli.sdk.payin.form.PayInFormValues
-import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.payment.PayInSubmissionState
-import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 
 /**
  * Where the SDK's payment form mounts.
@@ -27,23 +21,23 @@ import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 @Composable
 fun PaymentFormHost(
     setup: PayInFormSetup,
-    flow: PayabliPayInPaymentFlow,
-    operation: PayabliPayInOperation,
-    onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
-    onFailed: (PayInSubmissionState.Failed) -> Unit,
+    flow: PayInFlowHandle,
+    operation: PayInOperation,
+    onCompleted: (PayInOutcome.Approved) -> Unit,
+    onFailed: (PayInOutcome.Refused) -> Unit,
     modifier: Modifier = Modifier,
-    initialValues: PayInFormValues? = null,
-    onMethodChanged: (PayInMethodType) -> Unit = {},
+    initialValues: PayInFormSeed? = null,
+    onMethodChanged: (PayInMethod) -> Unit = {},
 ) {
     PayabliPayInForm(
-        flow = flow,
-        operation = operation,
+        flow = flow.flow,
+        operation = operation.operation,
         configuration = setup.configuration,
         modifier = modifier,
         labels = setup.labels,
-        initialValues = initialValues,
-        onCompleted = onCompleted,
-        onFailed = onFailed,
-        onMethodChanged = onMethodChanged,
+        initialValues = initialValues?.values,
+        onCompleted = { onCompleted(it.toOutcome()) },
+        onFailed = { onFailed(it.toOutcome()) },
+        onMethodChanged = { onMethodChanged(it.asMethod()) },
     )
 }

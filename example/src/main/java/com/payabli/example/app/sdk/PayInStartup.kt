@@ -2,7 +2,6 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.net.checkToken
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -27,7 +26,7 @@ fun interface PayInStartup {
     data class Started(
         val text: String,
         val isReady: Boolean,
-        val payments: PayabliPayInPaymentFlow?,
+        val payments: PayInFlowHandle?,
     )
 }
 
@@ -42,7 +41,9 @@ fun payInStartup(
             PayInStartup.Started(text = probe.text, isReady = false, payments = null)
         } else {
             gate.open(scope).fold(
-                onSuccess = { flow -> PayInStartup.Started(probe.text, isReady = true, payments = flow) },
+                onSuccess = { flow ->
+                    PayInStartup.Started(probe.text, isReady = true, payments = PayInFlowHandle(flow))
+                },
                 // The token server answered and the SDK still did not start, so the line says which half
                 // failed. A screen showing only the probe's verdict would offer a form that cannot submit.
                 onFailure = { cause ->

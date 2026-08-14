@@ -14,15 +14,16 @@ import java.math.BigDecimal
 
 /** A stored method as the SDK reports one: an identifier a later transaction can charge. */
 internal fun storedMethodOutcome() =
-    PayInSubmissionState.Succeeded.Method(
-        PayInStoredMethod(
-            storedMethodId = "tok-77",
-            methodReferenceId = "tok-77-225810",
-            customerId = 88L,
-            resultCode = 1,
-            resultText = "Approved",
-        ),
-    )
+    PayInSubmissionState.Succeeded
+        .Method(
+            PayInStoredMethod(
+                storedMethodId = "tok-77",
+                methodReferenceId = "tok-77-225810",
+                customerId = 88L,
+                resultCode = 1,
+                resultText = "Approved",
+            ),
+        ).toOutcome()
 
 /**
  * A capture the service approved, carrying the transaction a capture screen exists to show.
@@ -30,38 +31,40 @@ internal fun storedMethodOutcome() =
  * An approval with no transaction is a different case, which the capture screen calls a failure.
  */
 internal fun capturedPaymentOutcome() =
-    PayInSubmissionState.Succeeded.Payment(
-        PayInResult(
-            code = "A0000",
-            transaction =
-                PayInTransaction(
-                    paymentTransId = "101-abc",
-                    gatewayTransId = "gtw-9",
-                    orderId = "order-1",
-                    method = "card",
-                    transStatus = 1,
-                    paypointId = 42,
-                    totalAmount = BigDecimal("1.10"),
-                    netAmount = BigDecimal("1.00"),
-                    connectorName = "fiserv",
-                    customerId = 7,
-                ),
-        ),
-    )
+    PayInSubmissionState.Succeeded
+        .Payment(
+            PayInResult(
+                code = "A0000",
+                transaction =
+                    PayInTransaction(
+                        paymentTransId = "101-abc",
+                        gatewayTransId = "gtw-9",
+                        orderId = "order-1",
+                        method = "card",
+                        transStatus = 1,
+                        paypointId = 42,
+                        totalAmount = BigDecimal("1.10"),
+                        netAmount = BigDecimal("1.00"),
+                        connectorName = "fiserv",
+                        customerId = 7,
+                    ),
+            ),
+        ).toOutcome()
 
 /** A decline, which is the failure a payer meets most and the one whose wording reaches the screen. */
 internal fun refusedOutcome() =
-    PayInSubmissionState.Failed(
-        PayInException.Refused(
-            PayInFailure(
-                code = "D0001",
-                reason = "Insufficient funds",
-                explanation = "Try another card",
-                action = "r",
-                httpStatus = 200,
+    PayInSubmissionState
+        .Failed(
+            PayInException.Refused(
+                PayInFailure(
+                    code = "D0001",
+                    reason = "Insufficient funds",
+                    explanation = "Try another card",
+                    action = "r",
+                    httpStatus = 200,
+                ),
             ),
-        ),
-    )
+        ).toOutcome()
 
 /**
  * A step one that already succeeded, for tests about what a screen does afterwards.

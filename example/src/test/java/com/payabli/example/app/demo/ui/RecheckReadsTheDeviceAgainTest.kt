@@ -46,7 +46,7 @@ class RecheckReadsTheDeviceAgainTest {
             tokenServer = target,
             tokenClient = TokenServerClient(target),
             readDeviceFacts = read,
-            formConfiguration = PayInForms.storePaymentMethod().configuration,
+            formSetup = PayInForms.storePaymentMethod(),
         )
 
     @Test

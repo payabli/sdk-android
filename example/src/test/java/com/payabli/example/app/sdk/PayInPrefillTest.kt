@@ -1,7 +1,6 @@
 package com.payabli.example.app.sdk
 
 import com.payabli.sdk.payin.form.PayInField
-import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -21,8 +20,8 @@ class PayInPrefillTest {
     @Test
     fun `every field the demo asks a payer to type has a value`() {
         setups.forEach { (screen, setup) ->
-            PayInMethodType.entries.forEach { method ->
-                val values = PayInPrefill.valuesFor(method)
+            PayInMethod.entries.forEach { method ->
+                val values = PayInPrefill.valuesFor(method).values
                 typedFields(setup, method).forEach { field ->
                     assertTrue(
                         "$screen asks for $field as $method and the prefill leaves it empty",
@@ -35,8 +34,14 @@ class PayInPrefillTest {
 
     @Test
     fun `the prefill carries the method it was asked for`() {
-        PayInMethodType.entries.forEach { method ->
-            assertEquals(method, PayInPrefill.valuesFor(method).method)
+        PayInMethod.entries.forEach { method ->
+            assertEquals(
+                method,
+                PayInPrefill
+                    .valuesFor(method)
+                    .values.method
+                    .asMethod(),
+            )
         }
     }
 
@@ -44,7 +49,7 @@ class PayInPrefillTest {
     fun `the card expiry is still ahead`() {
         // The one value with a shelf life. The form refuses a month that has passed, so the prefill starts
         // failing validation on its own at some point and the button looks broken.
-        val expiry = PayInPrefill.valuesFor(PayInMethodType.Card)[PayInField.CardExpiration]
+        val expiry = PayInPrefill.valuesFor(PayInMethod.Card).values[PayInField.CardExpiration]
         val month = YearMonth.parse(expiry, DateTimeFormatter.ofPattern("MM/uu"))
 
         assertTrue(
@@ -56,11 +61,11 @@ class PayInPrefillTest {
     /** The fields a payer types into, which is every section that is not read back to them. */
     private fun typedFields(
         setup: PayInFormSetup,
-        method: PayInMethodType,
+        method: PayInMethod,
     ): List<PayInField> =
         when (method) {
-            PayInMethodType.Card -> setup.configuration.cardSections
-            PayInMethodType.BankAccount -> setup.configuration.bankSections
+            PayInMethod.Card -> setup.configuration.cardSections
+            PayInMethod.BankAccount -> setup.configuration.bankSections
         }.filter { it.style == PayInSectionStyle.Inputs }
             .flatMap { it.fields }
 }

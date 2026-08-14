@@ -9,6 +9,7 @@ import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
 import com.payabli.example.app.sdk.storedMethodOutcome
+import com.payabli.example.app.sdk.toOutcome
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.Dispatchers
@@ -95,7 +96,7 @@ class OutcomeNavigationTest {
     fun `an approval carrying no transaction does not raise it on capture`() {
         // The service approved and returned no transaction record, which the SDK reports as it came.
         val model = captureModel()
-        model.onCompleted(PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", transaction = null)))
+        model.onCompleted(approvalWithoutTransaction())
         assertFalse(model.uiState.value.outcomeReady)
     }
 
@@ -123,7 +124,7 @@ class OutcomeNavigationTest {
         // the step list would offer the form again for a capture that had already gone through.
         val model = captureModel()
 
-        model.onCompleted(PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", transaction = null)))
+        model.onCompleted(approvalWithoutTransaction())
 
         assertTrue(
             model.uiState.value.resultText,
@@ -280,4 +281,7 @@ class OutcomeNavigationTest {
 
         assertFalse("the sheet stayed open over a completed payment", model.uiState.value.isSheetOpen)
     }
+
+    private fun approvalWithoutTransaction() =
+        PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", transaction = null)).toOutcome()
 }

@@ -24,7 +24,7 @@ import java.math.BigDecimal
 class PayInOutcomesTest {
     @Test
     fun `a capture keeps every identifier the transaction screen shows`() {
-        val result = capturedPaymentOutcome().toPaymentResult()
+        val result = capturedPaymentOutcome().result
         val transaction = requireNotNull(result.transaction)
 
         assertEquals("A0000", result.code)
@@ -40,7 +40,7 @@ class PayInOutcomesTest {
     fun `amounts cross as the API sent them`() {
         // A payment amount reformatted on its way to a screen is how a display comes to disagree with the
         // response beside it, so these are the plain strings of what arrived.
-        val transaction = requireNotNull(capturedPaymentOutcome().toPaymentResult().transaction)
+        val transaction = requireNotNull(capturedPaymentOutcome().result.transaction)
 
         assertEquals("1.10", transaction.totalAmount)
         assertEquals("0.10", transaction.feeAmount)
@@ -59,7 +59,7 @@ class PayInOutcomesTest {
 
     @Test
     fun `a capture names the operation it was, because the SDK reports the transaction and not the call`() {
-        assertEquals("capture", capturedPaymentOutcome().toPaymentResult().transaction?.operation)
+        assertEquals("capture", capturedPaymentOutcome().result.transaction?.operation)
     }
 
     @Test
@@ -74,7 +74,7 @@ class PayInOutcomesTest {
 
     @Test
     fun `a stored method keeps the identifier a later transaction charges`() {
-        val result = storedMethodOutcome().toPaymentResult()
+        val result = storedMethodOutcome().result
 
         assertEquals("tok-77", result.storedMethod?.storedMethodId)
         assertEquals("Approved", result.storedMethod?.resultText)
@@ -107,7 +107,7 @@ class PayInOutcomesTest {
     fun `the response card is built from the fields the SDK exposes`() {
         // The SDK decodes the body and does not keep it, so this is a rendering of what came back. A field
         // the outcome carries and this omits is a field the card cannot show at all.
-        val rendered = requireNotNull(capturedPaymentOutcome().toPaymentResult().apiResponse)
+        val rendered = requireNotNull(capturedPaymentOutcome().result.apiResponse)
 
         assertEquals("A0000", rendered["code"]?.jsonPrimitive?.content)
         assertEquals("101-abc", rendered["paymentTransId"]?.jsonPrimitive?.content)
@@ -132,7 +132,7 @@ class PayInOutcomesTest {
 
     @Test
     fun `a stored method's card names what was stored and never the token`() {
-        val rendered = requireNotNull(storedMethodOutcome().toPaymentResult().apiResponse)
+        val rendered = requireNotNull(storedMethodOutcome().result.apiResponse)
 
         assertEquals("true", rendered["isSuccess"]?.jsonPrimitive?.content)
         assertEquals("1", rendered["resultCode"]?.jsonPrimitive?.content)
@@ -143,7 +143,7 @@ class PayInOutcomesTest {
     fun `a refusal keeps the reason and the detail apart`() {
         // `PaymentError.Payabli` stacks them into one message only when the detail adds something, which it
         // can only do if the two arrive separately.
-        val error = refusedOutcome().toPaymentError()
+        val error = refusedOutcome().error
 
         assertEquals(PaymentError.Payabli("Insufficient funds", "Try another card"), error)
         assertEquals("Insufficient funds\nTry another card", error.displayMessage)

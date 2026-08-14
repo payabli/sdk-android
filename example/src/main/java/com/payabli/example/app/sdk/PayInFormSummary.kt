@@ -16,7 +16,7 @@ import com.payabli.sdk.payin.form.PayInMethodType
  * It reads the SDK's own type, so it is also a check on that type: a configuration a reader cannot
  * make sense of here is one an integrator cannot make sense of either.
  */
-object PaymentFormSummary {
+internal object PayInFormSummary {
     fun rows(configuration: PayInFormConfiguration): List<SummaryRow> =
         buildList {
             add(SummaryRow("Allowed methods", configuration.methodsOffered.joinToString(", ") { it.label() }))

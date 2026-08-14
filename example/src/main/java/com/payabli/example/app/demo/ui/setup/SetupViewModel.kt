@@ -14,8 +14,8 @@ import com.payabli.example.app.demo.preflight.Readiness
 import com.payabli.example.app.demo.preflight.TapToPayPreflight
 import com.payabli.example.app.demo.preflight.problemsIn
 import com.payabli.example.app.demo.preflight.readinessFrom
+import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.example.app.sdk.PayInForms
-import com.payabli.sdk.payin.form.PayInFormConfiguration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +27,7 @@ data class SetupUiState(
     val tokenServer: TokenServerTarget,
     val deviceFacts: DeviceFacts,
     /** The very object the payment screen hands its form, so this screen cannot describe another one. */
-    val formConfiguration: PayInFormConfiguration,
+    val formSetup: PayInFormSetup,
     val readiness: Readiness = Readiness.Ready,
     val problems: List<PreflightCheck> = emptyList(),
     val tokenProbeText: String = "",
@@ -40,7 +40,7 @@ class SetupViewModel(
     private val tokenServer: TokenServerTarget,
     private val tokenClient: TokenServerClient,
     private val readDeviceFacts: () -> DeviceFacts,
-    formConfiguration: PayInFormConfiguration,
+    formSetup: PayInFormSetup,
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
@@ -48,7 +48,7 @@ class SetupViewModel(
                 configuration = configuration,
                 tokenServer = tokenServer,
                 deviceFacts = readDeviceFacts(),
-                formConfiguration = formConfiguration,
+                formSetup = formSetup,
             ),
         )
     val uiState: StateFlow<SetupUiState> = _uiState.asStateFlow()
@@ -107,7 +107,7 @@ class SetupViewModel(
                 readDeviceFacts = container.readDeviceFacts,
                 // The stored-method form. The capture form differs in more than its summary section: the
                 // stored-method route needs a customer number and collects one, and capture does not.
-                formConfiguration = PayInForms.storePaymentMethod().configuration,
+                formSetup = PayInForms.storePaymentMethod(),
             )
     }
 }

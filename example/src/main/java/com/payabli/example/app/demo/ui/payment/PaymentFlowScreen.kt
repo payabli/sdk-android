@@ -35,14 +35,14 @@ import com.payabli.example.app.demo.ui.components.SectionHeader
 import com.payabli.example.app.demo.ui.components.StepRow
 import com.payabli.example.app.demo.ui.components.TokenCheckStep
 import com.payabli.example.app.demo.ui.theme.Dimens
+import com.payabli.example.app.sdk.PayInFlowHandle
+import com.payabli.example.app.sdk.PayInFormSeed
 import com.payabli.example.app.sdk.PayInFormSetup
+import com.payabli.example.app.sdk.PayInMethod
+import com.payabli.example.app.sdk.PayInOperation
+import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.PayInPrefill
 import com.payabli.example.app.sdk.PaymentFormHost
-import com.payabli.sdk.payin.form.PayInFormValues
-import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.payment.PayInSubmissionState
-import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 
 /**
  * What the two card-not-present screens have in common, which is everything but their wording.
@@ -77,8 +77,8 @@ data class PaymentFlowActions(
     val onCheckToken: () -> Unit,
     val onOpenSheet: () -> Unit,
     val onDismissSheet: () -> Unit,
-    val onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
-    val onFailed: (PayInSubmissionState.Failed) -> Unit,
+    val onCompleted: (PayInOutcome.Approved) -> Unit,
+    val onFailed: (PayInOutcome.Refused) -> Unit,
     /** Hands the screen back to the form step for another one. */
     val onStartOver: () -> Unit,
 ) {
@@ -100,19 +100,17 @@ data class PaymentFlowActions(
 fun PaymentFlowScreen(
     title: String,
     state: PaymentFlowUiState,
-    flow: PayabliPayInPaymentFlow?,
-    operation: PayabliPayInOperation,
-    submission: PayInSubmissionState,
+    flow: PayInFlowHandle?,
+    operation: PayInOperation,
+    isSubmitting: Boolean,
     steps: List<FlowStep>,
     resultEmptyText: String,
     startOverText: String,
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
 ) {
-    val isSubmitting = submission is PayInSubmissionState.Submitting
-
     // The screen's own, not the app's: it exists to save typing during a QA run, and no screen below reads it.
-    var prefilled by remember { mutableStateOf<PayInFormValues?>(null) }
+    var prefilled by remember { mutableStateOf<PayInFormSeed?>(null) }
 
     // Bumped on every tap and used as the form's `key`. `initialValues` is compared by value, so seeding the
     // same set twice is not a change and the form keeps what the payer has since edited: the button then does
@@ -121,7 +119,7 @@ fun PaymentFlowScreen(
 
     // Which instrument the form is on, which the form reports whenever the payer switches tabs. The card and
     // the bank account take different fields, so the button has to fill the one on screen.
-    var method by remember { mutableStateOf(state.setup.configuration.startingMethod) }
+    var method by remember { mutableStateOf(state.setup.startingMethod) }
     val offersPrefill = BuildConfig.DEBUG && state.prefillEnabled
 
     DemoScreen(title = title, modifier = modifier) {
@@ -220,12 +218,12 @@ fun PaymentFlowScreen(
 private fun FormSheet(
     state: PaymentFlowUiState,
     actions: PaymentFlowActions,
-    flow: PayabliPayInPaymentFlow?,
-    operation: PayabliPayInOperation,
-    initialValues: PayInFormValues?,
+    flow: PayInFlowHandle?,
+    operation: PayInOperation,
+    initialValues: PayInFormSeed?,
     formKey: Int,
     isSubmitting: Boolean,
-    onMethodChanged: (PayInMethodType) -> Unit,
+    onMethodChanged: (PayInMethod) -> Unit,
 ) {
     // Both halves, because a swipe and a back press take different routes to the same place:
     // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.

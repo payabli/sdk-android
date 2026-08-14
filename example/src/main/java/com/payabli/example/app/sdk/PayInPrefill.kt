@@ -18,11 +18,13 @@ import com.payabli.sdk.payin.form.PayInMethodType
  * passed, so it is the one value here with a shelf life.
  */
 object PayInPrefill {
-    fun valuesFor(method: PayInMethodType): PayInFormValues =
-        when (method) {
-            PayInMethodType.Card -> card
-            PayInMethodType.BankAccount -> bankAccount
-        }
+    fun valuesFor(method: PayInMethod): PayInFormSeed =
+        PayInFormSeed(
+            when (method) {
+                PayInMethod.Card -> card
+                PayInMethod.BankAccount -> bankAccount
+            },
+        )
 
     private val card =
         PayInFormValues(

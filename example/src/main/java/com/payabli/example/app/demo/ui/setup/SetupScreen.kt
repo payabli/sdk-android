@@ -28,7 +28,6 @@ import com.payabli.example.app.demo.ui.components.RecheckWhenFocused
 import com.payabli.example.app.demo.ui.components.SectionHeader
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.sdk.PayInForms
-import com.payabli.example.app.sdk.PaymentFormSummary
 
 /**
  * Everything the SDK was configured with, read back.
@@ -120,7 +119,7 @@ fun SetupScreen(
         ) {
             // Read from the configuration and the rules, never written out here. A transcribed list
             // would agree with the form today and stop agreeing the first time a field moved.
-            PaymentFormSummary.rows(state.formConfiguration).forEach { row ->
+            state.formSetup.summaryRows.forEach { row ->
                 DetailRow(label = row.label, value = row.value)
             }
         }
@@ -220,7 +219,7 @@ private fun SetupScreenPreview() {
                             isEmulator = true,
                             defaults = TokenHostDefaults.fromBuildConfig(),
                         ),
-                    formConfiguration = PayInForms.storePaymentMethod().configuration,
+                    formSetup = PayInForms.storePaymentMethod(),
                     deviceFacts =
                         DeviceFacts(
                             isEmulator = true,

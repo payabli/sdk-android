@@ -17,9 +17,9 @@ import org.junit.Test
  * configuration and asserts the readout followed, which is what catches a screen describing a form it
  * does not match.
  */
-class PaymentFormSummaryTest {
+class PayInFormSummaryTest {
     private fun rowsOf(configuration: PayInFormConfiguration) =
-        PaymentFormSummary.rows(configuration).associate { it.label to it.value }
+        PayInFormSummary.rows(configuration).associate { it.label to it.value }
 
     private val storeMethod get() = PayInForms.storePaymentMethod().configuration
 
@@ -155,7 +155,7 @@ class PaymentFormSummaryTest {
 
     @Test
     fun `every row has a label and a value`() {
-        PaymentFormSummary.rows(PayInForms.capture().configuration).forEach { row ->
+        PayInFormSummary.rows(PayInForms.capture().configuration).forEach { row ->
             assertTrue("a row has no label", row.label.isNotBlank())
             assertTrue("${row.label} has no value", row.value.isNotBlank())
         }
