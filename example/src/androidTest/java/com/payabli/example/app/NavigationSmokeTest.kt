@@ -96,40 +96,36 @@ class NavigationSmokeTest {
     }
 
     @Test
-    fun aTabKeepsItsStateWhileAnotherIsVisited() {
+    fun aTabKeepsItsProgressWhileAnotherIsVisited() {
         // The whole reason the navigation uses nested graphs with saveState and restoreState. No unit
         // test can reach it, and getting it wrong looks like nothing until someone switches tabs.
         //
-        // Asserted on what the payer typed rather than on a pushed result screen. Both tabs push their
-        // result only after the service accepts the payment: the saved-method destination pops itself
-        // when nothing was stored, and the capture one when no transaction came back. So a test that
-        // waits for a pushed screen is waiting for a live backend, which this tier does not have and
-        // should not need. The graph's state either survives the trip or it does not, and typed values
-        // show that with nothing mocked.
+        // Driven on Capture, not on the tab the NavHost starts at. `switchTo` pops up to the start
+        // destination without including it, so the first tab's entry is never popped and its state
+        // survives whether the flags are set or not: the same test written there passes with the
+        // behaviour deleted, which is a test that cannot fail.
+        //
+        // Asserted on the token step rather than on what was typed or on a pushed result screen. The step
+        // titles render at every status, so they cannot show how far the flow got; the control disappears
+        // once the step is done, which can. A pushed result screen would need the service to accept a
+        // payment, which this tier has no way to arrange.
         launch()
+        open(TopLevelDestination.Capture)
 
-        // The form is the second step and stays blocked until the first one passes, so the check
-        // comes before anything can be filled in.
         compose.onNodeWithText("Check token endpoint").performScrollTo().performClick()
-        awaitExists("Save payment method")
+        awaitGone("Check token endpoint")
 
+        // Filled on the way through, which is what puts the SDK's own form in the journey. Nothing is
+        // submitted: the service would have to accept it, and this tier has no service.
         fillTheForm()
-        // Exists rather than displayed: filling the rest of the form scrolls this field away, and whether
-        // it is in the viewport is not what is being claimed.
-        compose.onNode(hasSetTextAction() and hasText(CARDHOLDER)).assertExists()
 
         open(TopLevelDestination.Setup)
-        open(TopLevelDestination.PaymentMethod)
+        open(TopLevelDestination.Capture)
 
-        // Restored, not rebuilt: a graph that lost its state would send the tab back to its first step,
-        // where the form does not exist at all and the token check has to be run again.
-        //
-        // Asserted on the destination rather than on what was typed into it. Whether the form's fields
-        // still hold their values is the form's business, and it is not uniform: they survive on two
-        // handsets and not on a third, where the destination is restored all the same. Asserting the
-        // field here would fail this test for something it does not cover.
-        compose.onNodeWithText("Save payment method").assertExists()
+        // Restored, not rebuilt. Rebuilt from its start destination the tab offers the check again, which
+        // is what removing either flag produces.
         compose.onNodeWithText("Check token endpoint").assertDoesNotExist()
+        compose.onNodeWithText("Submit payment").assertExists()
     }
 
     /**
@@ -160,6 +156,13 @@ class NavigationSmokeTest {
         value: String,
     ) {
         compose.onNode(hasSetTextAction() and hasText(field)).performScrollTo().performTextInput(value)
+    }
+
+    /** Waits for a node carrying [text] to leave the tree, which is how a finished step reads. */
+    private fun awaitGone(text: String) {
+        compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {
+            compose.onAllNodesWithText(text).fetchSemanticsNodes().isEmpty()
+        }
     }
 
     /** Brings the node into the viewport, then asserts it is there. */
