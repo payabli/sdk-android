@@ -96,15 +96,13 @@ class NavigationSmokeTest {
     }
 
     @Test
-    fun theFormIsReachedThroughTheStepsThatGateIt() {
-        // What the sequence promises: the form does not exist until the token step passes, and once it
-        // does the SDK's own form is what the tab shows.
+    fun aTabKeepsItsProgressWhileAnotherIsVisited() {
+        // The whole reason the navigation uses nested graphs with saveState and restoreState. No unit
+        // test can reach it, and getting it wrong looks like nothing until someone switches tabs.
         //
-        // Not a claim about the tab keeping its state across a switch. Nothing available to an instrumented
-        // run separates a restored tab from a rebuilt one: the token step reads as done either way, and the
-        // form's typed values are held in `remember` rather than `rememberSaveable`, so they are lost
-        // whenever the destination leaves composition and are not a property to assert. A test on either
-        // signal passes with `saveState` and `restoreState` deleted, which is a test that cannot fail.
+        // Driven on Capture, not on the tab the NavHost starts at. `switchTo` pops up to the start
+        // destination without including it, so the first tab's entry is never popped and its state
+        // survives whether the flags are set or not: the same test written there cannot fail.
         launch()
         open(TopLevelDestination.Capture)
 
@@ -116,8 +114,17 @@ class NavigationSmokeTest {
         // label to go returns while the session is still starting and the form is not there to fill.
         awaitExists(SUBMIT)
 
-        // Filled to the point of submitting, which is what puts the SDK's own form in the journey. Nothing
-        // is submitted: the service would have to accept it, and this tier has no service.
+        open(TopLevelDestination.Setup)
+        open(TopLevelDestination.Capture)
+
+        // Restored, not rebuilt. A rebuilt tab starts its sequence again: it offers the check and has no
+        // form yet, and both halves are asserted because a tab caught mid-recheck shows neither.
+        compose.onNodeWithText("Check token endpoint").assertDoesNotExist()
+        compose.onNodeWithText(SUBMIT).assertExists()
+
+        // Filled last, after the assertions above, so the trip is measured on a tab that has only had its
+        // step completed. Filling first leaves the returning tab re-running its check, and a tab that is
+        // checking shows no control either, which reads as restored when it is not.
         fillTheForm()
     }
 
