@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 
 data class CaptureUiState(
     override val setup: DemoFormSetup,
@@ -120,7 +121,17 @@ class CaptureViewModel(
         if (_uiState.value.payments.isBusy()) return
         _uiState.update { it.copy(isCheckingToken = true, tokenCheckText = "Checking…") }
         viewModelScope.launch {
-            val started = startup.start(viewModelScope)
+            // A throw out of the start would otherwise skip the write below, and the flag it would have
+            // cleared is the one the guard above reads: the step that offers the retry never runs again and
+            // the screen keeps "Checking…". Reported as the failed check it is, which leaves the retry.
+            val started =
+                try {
+                    startup.start(viewModelScope)
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (failure: Exception) {
+                    PayInStartup.Started("✗ The token check could not run: ${failure.message}", false, null)
+                }
             _uiState.update {
                 it.copy(
                     isCheckingToken = false,

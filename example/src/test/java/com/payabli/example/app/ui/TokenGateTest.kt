@@ -153,6 +153,29 @@ class TokenGateTest {
             }
         }
 
+    @Test
+    fun `a startup that throws is reported as the failed check it is`() =
+        runTest {
+            // Uncaught, the throw skips the state write, and the flag it would have cleared is the one the
+            // guard reads: the step that offers the retry never runs again and the screen keeps "Checking…"
+            // for the life of the process. It also leaves the exception for whatever runs next to find.
+            val model =
+                PaymentMethodViewModel(
+                    DemoForms.storePaymentMethod(),
+                    { error("the token server host is unparseable") },
+                    DiagnosticsStore(),
+                    diagnosticsEnabled = false,
+                    configuration = DemoConfiguration.fromBuildConfig(),
+                )
+
+            model.checkToken()
+
+            val state = model.uiState.value
+            assertFalse("the screen was left checking", state.isCheckingToken)
+            assertFalse("the form unlocked over a check that never ran", state.backendReachable)
+            assertTrue("the failure was not reported: ${state.tokenCheckText}", state.tokenCheckText.startsWith("✗"))
+        }
+
     /**
      * Waits for the check to land.
      *
