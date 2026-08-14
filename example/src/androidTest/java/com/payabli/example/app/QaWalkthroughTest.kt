@@ -97,8 +97,13 @@ class QaWalkthroughTest {
     fun capturingACardThePayerEntered() {
         openTheForm(TopLevelDestination.Capture, submit = CAPTURE)
 
-        // The figure the request carries, under a form whose own summary reads back an amount and a fee and
-        // never their sum. A payer sees what leaves the account or the screen is lying by omission.
+        // The figure the request carries, beside a form whose own summary reads back an amount and a fee and
+        // never their sum. A payer sees what leaves the account or the screen is lying by omission, and seeing
+        // it after the button that spends it is the same omission: the form's last child is its submit button,
+        // so a total under the form is a total a payer reaches only by scrolling past the control it qualifies.
+        val total = topOf("Total")
+        val submit = topOf(CAPTURE)
+        assertTrue("Total sits at $total, below the submit button at $submit", total < submit)
         compose.onNodeWithText("Total").performScrollTo().assertIsDisplayed()
 
         prefill()
@@ -174,6 +179,14 @@ class QaWalkthroughTest {
     private fun submit(button: String) {
         compose.onNodeWithText(button).performScrollTo().performClick()
     }
+
+    /** Where a node sits down the scrolling column, which is how two of them are put in order. */
+    private fun topOf(text: String): Float =
+        compose
+            .onNodeWithText(text)
+            .fetchSemanticsNode()
+            .positionInRoot
+            .y
 
     /**
      * Waits for the outcome and, if it is a refusal, fails naming what the screen said.

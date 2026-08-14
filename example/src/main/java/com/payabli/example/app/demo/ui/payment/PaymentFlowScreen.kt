@@ -112,9 +112,11 @@ fun PaymentFlowScreen(
     startOverText: String,
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
-    // Under the form, in the sheet as well as inline. The form's own summary reads back the fields the SDK
+    // Above the form, in the sheet as well as inline. The form's own summary reads back the fields the SDK
     // knows, and what a payer is charged is not one of them, so a screen with a figure to add supplies it.
-    formFooter: @Composable () -> Unit = {},
+    // Above rather than below because the form's last child is its submit button: under it, the figure sits
+    // past the control it qualifies and a payer can submit without having scrolled to it.
+    formHeader: @Composable () -> Unit = {},
 ) {
     // The screen's own, not the app's: it exists to save typing during a QA run, and no screen below reads it.
     var prefilled by remember { mutableStateOf<PayInFormSeed?>(null) }
@@ -170,6 +172,7 @@ fun PaymentFlowScreen(
                 }
                 // Only once the session exists. Until then the step above is what the screen offers.
                 flow?.let { payments ->
+                    formHeader()
                     key(prefills) {
                         PaymentFormHost(
                             setup = state.setup,
@@ -181,7 +184,6 @@ fun PaymentFlowScreen(
                             onMethodChanged = { method = it },
                         )
                     }
-                    formFooter()
                 }
             }
         }
@@ -212,7 +214,7 @@ fun PaymentFlowScreen(
             formKey = prefills,
             isSubmitting = isSubmitting,
             onMethodChanged = { method = it },
-            formFooter = formFooter,
+            formHeader = formHeader,
         )
     }
 }
@@ -233,7 +235,7 @@ private fun FormSheet(
     formKey: Int,
     isSubmitting: Boolean,
     onMethodChanged: (PayInMethod) -> Unit,
-    formFooter: @Composable () -> Unit,
+    formHeader: @Composable () -> Unit,
 ) {
     // Both halves, because a swipe and a back press take different routes to the same place:
     // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.
@@ -267,6 +269,7 @@ private fun FormSheet(
         ) {
             // Only once the session exists. Until then the step above is what the screen offers.
             flow?.let { payments ->
+                formHeader()
                 key(formKey) {
                     PaymentFormHost(
                         setup = state.setup,
@@ -278,7 +281,6 @@ private fun FormSheet(
                         onMethodChanged = onMethodChanged,
                     )
                 }
-                formFooter()
             }
         }
     }
