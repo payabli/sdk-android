@@ -323,7 +323,7 @@ def attribute(failure: Failure) -> None:
                 failure.culprits.append({**commit, "what": subject})
 
 
-def suite_label(failed: int, skipped: int, total: int, outcome: str, missing: bool) -> str:
+def suite_label(failed: int, skipped: int, total: int, outcome: str, missing: bool, silent: str = "") -> str:
     """A suite line that never overstates what passed.
 
     JUnit's `tests` attribute counts skipped cases: measured, an ignored test and a failing one produce
@@ -335,7 +335,9 @@ def suite_label(failed: int, skipped: int, total: int, outcome: str, missing: bo
         # describes whatever it managed before dying.
         return f"step {outcome}" + (f", {failed} failed so far" if failed else "")
     if missing:
-        return "no results written"
+        # Naming the module matters more than it looks: the suite total is not zero in that case, so a
+        # reader told only "no results written" would go looking at a suite that plainly ran.
+        return "no results written" + (f" by {silent}" if silent else "")
     passed = max(total - failed - skipped, 0)
     parts = []
     if failed:
@@ -473,8 +475,20 @@ def main() -> int:
     # A green claim also requires results to exist, per suite rather than in total. Checking the sum let a
     # suite that wrote nothing hide behind another that did, and report "all 0 passed" as a pass, which is
     # the exact regression this nightly exists to catch.
+    #
+    # The instrumented suite spans more than one module, so the same hiding happens one level down: a module
+    # that writes nothing is covered by a sibling that wrote plenty, and the suite total is never zero. The
+    # workflow names the modules its step ran in INSTRUMENTED_MODULES, because that is where the gradle
+    # command lives and the two have to agree; absent, this degrades to the suite-level check above rather
+    # than inventing a list, so a copy of this script run by hand keeps working.
+    inst_expected = [m for m in os.environ.get("INSTRUMENTED_MODULES", "").split(",") if m.strip()]
+    inst_silent = [
+        module for module in inst_expected
+        if parse_results([f"{module}/build/outputs/androidTest-results/connected/**/TEST-*.xml"])[0] == 0
+    ]
+
     unit_missing = unit_step == "success" and unit_total == 0
-    inst_missing = inst_step == "success" and inst_total == 0
+    inst_missing = inst_step == "success" and (inst_total == 0 or bool(inst_silent))
     # A card-present step that ran and wrote nothing is as suspect as either of the required suites.
     card_missing = card_step == "success" and card_total == 0
 
@@ -492,7 +506,7 @@ def main() -> int:
     platform = os.environ.get("PLATFORM", "").strip() or repo.rsplit("/", 1)[-1]
 
     unit_label = suite_label(unit_failed, unit_skipped, unit_total, unit_step, unit_missing)
-    inst_label = suite_label(inst_failed, inst_skipped, inst_total, inst_step, inst_missing)
+    inst_label = suite_label(inst_failed, inst_skipped, inst_total, inst_step, inst_missing, ", ".join(inst_silent))
     suites = [("Unit", unit_label), ("Instrumented", inst_label)]
     # Only worth a line when it is not the ordinary intentional skip.
     if card_step != "skipped":

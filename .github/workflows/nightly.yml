@@ -299,6 +299,10 @@ jobs:
           # happens before any JUnit XML is written, during dependency resolution or compilation, left the
           # other suites looking green while the run went red.
           CARD_PRESENT_OUTCOME: ${{ steps.unit_card_present.outcome }}
+          # The modules the instrumented step above ran. The collector checks each one wrote results,
+          # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
+          # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
+          INSTRUMENTED_MODULES: core,payin
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than
