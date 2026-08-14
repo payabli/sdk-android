@@ -77,7 +77,7 @@ sonar {
     }
 }
 
-// Report paths for analysis. See mobile-sdk brain, reference/tooling.md.
+// Where each analyser writes, so Sonar reads the reports the build already produced.
 subprojects {
     sonar {
         properties {
