@@ -11,7 +11,7 @@ import com.payabli.sdk.taptopay.enrollment.registerBody
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 
-/** Bounds every test in this package, so a wedge is a failure rather than a suite that never returns. */
+/** Bounds every test in this package, so a wedge fails the test that caused it. */
 internal val TEST_TIMEOUT = 5.seconds
 
 /**
@@ -33,14 +33,14 @@ internal val EVERY_SESSION_STATE: List<TapToPaySessionState> =
         TapToPaySessionState.Failed(TapToPayFailureReason.INTERNAL),
     )
 
-/** Bounds one await, so a stranded claim reports what was stranded instead of expiring the whole test. */
+/** Bounds one await, so a stranded claim reports what was stranded. */
 private val COMPLETION_TIMEOUT = 3.seconds
 
 /**
  * Awaits [block] under a deadline of its own.
  *
  * Without it a caller left waiting on a claim nobody completes fails as "the test timed out", which names
- * the suite rather than the thing that wedged.
+ * no claim.
  */
 internal suspend fun <T> completing(
     what: String,

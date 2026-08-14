@@ -212,7 +212,7 @@ internal class DeviceServiceClient(
      * **A device that still owes activation is refused, and the refusal arrives two ways.** A device the
      * service does not hold as active is declined with a 403 inside a 200. A caller whose token is not
      * scoped for this route is refused with a real 403, by the gateway, before any controller runs. Both
-     * become [DeviceServiceException.Forbidden], so a caller branches once rather than twice.
+     * become [DeviceServiceException.Forbidden], so a caller branches once.
      *
      * They are not the same condition and the shared classification is imprecise: a scope problem presents
      * as a device that owes a code. It is what the sibling client does, and separating them is a change both
@@ -247,9 +247,8 @@ internal class DeviceServiceClient(
     /**
      * [entry] as one path segment, or a refusal.
      *
-     * Refused rather than encoded. A value that is not a single segment is a caller defect, and encoding it
-     * would send a request for a paypoint nobody named: `URLEncoder` is the wrong tool besides, since it
-     * writes a space as `+`, which is a query-string rule and not a path one.
+     * A value that is not a single segment is a caller defect, and encoding it sends a request for a
+     * paypoint nobody named. `URLEncoder` writes a space as `+`, which is a query-string rule.
      *
      * The message names the field and the shape, never the value, because an entry point identifies a
      * merchant.
@@ -262,8 +261,8 @@ internal class DeviceServiceClient(
     /**
      * The four POSTs. Every one of them carries a body and resolves to its own template.
      *
-     * The pin is set here and in [get] rather than in one shared place, because the two assemblers build
-     * different request shapes. A sixth route inherits it from whichever of them it uses.
+     * The pin is set here and in [get], since the two assemblers build different request shapes. A sixth
+     * route inherits it from whichever of them it uses.
      */
     private suspend fun <B, T> post(
         route: String,

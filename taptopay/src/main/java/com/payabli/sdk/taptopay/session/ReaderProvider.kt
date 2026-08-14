@@ -5,9 +5,7 @@ import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 /**
  * The card reader, as a session sees it.
  *
- * Two calls and no implementation in this module yet. It exists now because without it the states between
- * fetching the credentials and being ready cannot be entered, and a state nothing can reach is a branch a
- * host writes and never runs.
+ * No implementation in this module. The reader arrives with the charge work.
  */
 internal interface ReaderProvider {
     /**

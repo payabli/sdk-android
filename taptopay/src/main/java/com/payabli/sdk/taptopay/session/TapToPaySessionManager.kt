@@ -13,19 +13,14 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * The one writer of a card-present session's state.
  *
- * The sink is owned here rather than handed in, unlike the core session's: this state begins when a session
- * is built and has nothing to say before that, so there is no reader to serve earlier.
+ * The sink is owned here. This state begins when a session is built and has nothing to say before that.
  *
- * **No mutator returns a value a caller can drop.** The sibling SDK's transition returns a boolean that
- * every one of its call sites discards, and the cost was a shipped defect: after an expiry its narrow table
- * refused every move, so a full re-initialization ran every phase, reported success, and left the state
- * where it started. [advance] closes that by owning both halves. Entering a phase without moving the state
- * is not something a caller can express.
+ * **No mutator returns a value a caller can drop.** [advance] owns both halves, so entering a phase without
+ * moving the state cannot be expressed.
  *
- * The rule for a refused move is stated once: [advance] throws, because it runs inside a serialized region
- * that starts from a known state, so a refusal there is a defect in this SDK's own sequence. [invalidate]
- * logs and returns, because it is the one mutator a reader callback can reach from outside that region and
- * it can legitimately lose a race.
+ * A refused move throws from [advance], which runs inside a serialized region that starts from a known
+ * state, so a refusal there is a defect in this SDK's own sequence. [invalidate] logs and returns: it is
+ * the one mutator a reader callback reaches from outside that region, and it can lose a race legitimately.
  */
 internal class TapToPaySessionManager(
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
@@ -33,8 +28,7 @@ internal class TapToPaySessionManager(
     /**
      * Holds the decision and the write it depends on together.
      *
-     * Writing first and reverting afterwards would be simpler and wrong: a `StateFlow` collector is woken by
-     * the write, so the reverted value can still be observed.
+     * A `StateFlow` collector is woken by the write, so a value written and then reverted is still observed.
      */
     private val guard = Any()
 
@@ -46,20 +40,19 @@ internal class TapToPaySessionManager(
     /**
      * Moves to [to] and then runs [work] under it.
      *
-     * The order is the point. The state moves first, so a phase that runs has always been announced, and a
-     * phase that cannot be announced does not run: a refused move throws before [work] is reached, when
-     * nothing has happened yet.
+     * The state moves first, so a phase that runs has always been announced. A refused move throws before
+     * [work] is reached, when nothing has happened yet.
      *
-     * This does not serialize anything. Two callers advancing at once would interleave their phases, which
-     * is what the region in [TapToPaySessionCoordinator] exists to prevent.
+     * This serializes nothing. The region in [TapToPaySessionCoordinator] is what keeps two callers from
+     * interleaving their phases.
      */
     suspend fun <T> advance(
         to: TapToPaySessionState,
         work: suspend () -> T,
     ): T {
         check(write(to)) {
-            // A defect in this SDK's own sequence rather than anything a host did, so it is not part of the
-            // failure vocabulary a caller handles. Both names are from the fixed state vocabulary.
+            // A defect in this SDK's own sequence, so it is outside the failure vocabulary a caller handles.
+            // Both names come from the fixed state vocabulary.
             "a session cannot move to ${to.diagnosticName} from ${state.value.diagnosticName}"
         }
         return work()
@@ -68,9 +61,8 @@ internal class TapToPaySessionManager(
     /**
      * Moves to [to] with nothing to run under it.
      *
-     * For the states a run passes through or ends on rather than works in. It throws on refusal for the same
-     * reason the other overload does: reporting a session ready while it stands somewhere else is the defect
-     * this type exists to prevent.
+     * For the states a run passes through or ends on. It throws on refusal for the reason the other overload
+     * does: a session reported ready while it stands somewhere else is the defect this type prevents.
      */
     fun advance(to: TapToPaySessionState) {
         check(write(to)) {
@@ -81,8 +73,7 @@ internal class TapToPaySessionManager(
     /**
      * Puts the session back to the start.
      *
-     * The first act of building a session, whatever the caller left behind, because the table is narrow and
-     * every phase after this one would otherwise be refused.
+     * The first act of building a session, whatever the caller left behind, since the table is narrow.
      */
     fun reset() {
         write(TapToPaySessionState.Idle)
@@ -91,9 +82,8 @@ internal class TapToPaySessionManager(
     /**
      * Records that the reader session behind a ready state is spent.
      *
-     * Refusal is expected rather than exceptional: the caller is a reader whose failure may arrive after the
-     * session it belonged to was already replaced or torn down, so a move that is no longer legal is a stale
-     * report and not a defect. It is logged and dropped.
+     * Refusal is expected here. The caller is a reader whose failure can arrive after the session it belonged
+     * to was replaced or torn down, so an illegal move is a stale report. It is logged and dropped.
      */
     fun invalidate() {
         write(TapToPaySessionState.SessionExpired)
@@ -102,8 +92,8 @@ internal class TapToPaySessionManager(
     /**
      * The last write of a run, when the run did not get where it was going.
      *
-     * Logs a refusal instead of throwing, because this is reached from a failure path: throwing here would
-     * replace the failure a caller is about to be given with one about bookkeeping.
+     * Logs a refusal, since this is reached from a failure path and a throw here would replace the failure a
+     * caller is about to be given.
      */
     fun settle(to: TapToPaySessionState) {
         write(to)

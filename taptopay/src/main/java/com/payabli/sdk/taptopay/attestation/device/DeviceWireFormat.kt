@@ -236,8 +236,8 @@ internal class ActivateResponse(
 /**
  * `{ credentials }`.
  *
- * Required, unlike the payloads above: a config carrying no credentials is unusable rather than partially
- * usable, so an absent one is a decode failure and not an empty success.
+ * Required, unlike the payloads above: a config carrying no credentials is unusable, so an absent one is
+ * a decode failure.
  */
 @Serializable
 internal class ConfigResponse(
@@ -249,15 +249,13 @@ internal class ConfigResponse(
 /**
  * What the card reader is configured with, for one paypoint.
  *
- * **Typed rather than a string map, and that is a redaction decision.** The shipping sibling client keeps
- * this as an untyped dictionary and hands it on. A `Map`'s `toString` prints every value it holds, and two
- * of these are the reader vendor's API credentials, so the same shape here would put them into any message
- * built from a map that reached an exception. Naming the fields also states which two the reader cannot
- * start without on this platform.
+ * **Typed, and that is a redaction decision.** A `Map`'s `toString` prints every value it holds, and two
+ * of these are the reader vendor's API credentials, so a map puts them into any message built from one that
+ * reached an exception. Naming the fields also states which two the reader cannot start without here.
  *
  * Every field is required. The service sends all of them, possibly empty, and a missing one means the
- * response is not this route's. That is what makes [platform] self-enforcing rather than something to
- * branch on: the sibling platform's variant omits [ppId] and [hostPort], so it fails to decode here.
+ * response is not this route's. That is what makes [platform] self-enforcing: the sibling platform's
+ * variant omits [ppId] and [hostPort], so it fails to decode here.
  *
  * `pageIdentifier` sits beside these on the wire and is not modelled. It is a fresh token the service mints
  * per call, so it is a different credential from the one the attestation row pins, and sending it as the

@@ -15,11 +15,9 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState.SessionExpired
  *
  * Separate from the machine that applies it so the table can be read, and tested, without a session.
  *
- * Three rules hold from every state and are stated here rather than repeated in nine rows: re-entering the
- * current state is legal and publishes nothing, starting over is always reachable, and failing is always
- * reachable. The sibling SDK declares the first two and reaches its failure state from three states its own
- * table forbids, by writing that one directly instead of going through the table. Declaring the edge is the
- * same behaviour with one writer instead of two.
+ * Three rules hold from every state and are stated once here: re-entering the current state is legal and
+ * publishes nothing, starting over is always reachable, and failing is always reachable. Declaring the
+ * failure edge keeps one writer for the state.
  */
 internal object TapToPaySessionTransitions {
     fun permits(
@@ -36,8 +34,8 @@ internal object TapToPaySessionTransitions {
     /**
      * The states reachable from [from] by a move the rules above do not already allow.
      *
-     * An exhaustive `when` rather than a map, so a tenth state fails to compile here. A map would answer a
-     * state it has no row for with an empty set, which reads as a legitimate dead end.
+     * An exhaustive `when`, so a tenth state fails to compile here. A map answers a state it has no row for
+     * with an empty set, which reads as a legitimate dead end.
      */
     private fun reachableFrom(from: TapToPaySessionState): Set<TapToPaySessionState> =
         when (from) {
@@ -50,8 +48,8 @@ internal object TapToPaySessionTransitions {
             // says a repair is under way, and that state is what a host shows.
             SessionExpired -> setOf(Reinitializing)
             Reinitializing -> setOf(FetchingConfig)
-            // The device owes a code. Confirming it puts the session back through attestation rather than
-            // straight to config, because the service issues the credentials only to an active device.
+            // The device owes a code. Confirming it puts the session back through attestation, since the
+            // service issues the credentials only to an active device.
             PendingActivation -> setOf(AttestingDevice)
             is Failed -> setOf(AttestingDevice, FetchingConfig)
         }

@@ -13,8 +13,7 @@ internal sealed class TapToPaySessionException(
     /**
      * The device is registered but not active, so the merchant still owes it a code out of band.
      *
-     * Not a defect and not retryable. A host collects the code and confirms it, and the session can then be
-     * built.
+     * Not a defect and not retryable. A host collects the code and confirms it, and the session can be built.
      */
     class PendingActivation(
         cause: Throwable? = null,
@@ -24,7 +23,7 @@ internal sealed class TapToPaySessionException(
      * The device's proof of identity is gone, so nothing short of attesting again will do.
      *
      * Raised where the stored record is absent, and where the service refuses the one it was given. Both
-     * mean the same thing to a caller, and neither is repaired by re-initializing, which does not attest.
+     * mean the same thing to a caller, and a repair does not attest, so it fixes neither.
      */
     class AttestationRequired(
         cause: Throwable? = null,
@@ -42,9 +41,8 @@ internal sealed class TapToPaySessionException(
     /**
      * The caller that owned this work withdrew, so it did not finish.
      *
-     * What another caller waiting on the same work is given. Not the owner's cancellation, which would make
-     * the waiter's own scope look like it is unwinding while nothing has cancelled it. Nothing is left
-     * half-applied, and asking again is safe.
+     * What another caller waiting on the same work is given. The owner's cancellation would make the
+     * waiter's own scope look like it is unwinding. Nothing is left half-applied, and asking again is safe.
      */
     class SetupAbandoned : TapToPaySessionException("the caller that owned this session setup withdrew")
 }

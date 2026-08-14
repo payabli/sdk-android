@@ -14,8 +14,8 @@ private suspend fun failureOf(block: suspend () -> Unit): Throwable? = runCatchi
  * A device that was attested on an earlier run, coming back.
  *
  * The property worth proving is an absence: the cold sequence does not run again. It is asserted on the
- * route trace rather than on a flag, and the script answers only `/config`, so an attestation re-run fails
- * by naming the route that was not scripted rather than by an assertion nobody wrote.
+ * route trace, and the script answers only `/config`, so an attestation re-run fails by naming the route
+ * that was not scripted.
  */
 class SessionWarmStartTest {
     @Test
@@ -96,7 +96,7 @@ class SessionWarmStartTest {
             fixture.seedRecord()
             fixture.coordinator.initialize()
 
-            // One answer is scripted, so a second fetch fails by name rather than by an assertion.
+            // One answer is scripted, so a second fetch fails by name.
             fixture.coordinator.reinitializeIfNeeded()
 
             assertEquals(TapToPaySessionState.Ready, fixture.state)

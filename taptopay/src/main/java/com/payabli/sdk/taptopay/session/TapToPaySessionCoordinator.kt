@@ -22,22 +22,19 @@ import kotlinx.coroutines.withContext
  * Drives a card-present session: builds one, repairs one, and spends an activation code against one.
  *
  * **All three of those mutate the same state and reach the same reader, so they never overlap.** What a
- * second caller gets is part of the contract rather than an accident of timing:
+ * second caller gets:
  *
  * - A caller of the **same** kind joins the one already in flight, running or waiting its turn, and is
  *   given its outcome, success or failure. It does no work of its own.
- * - A caller of a **different** kind waits for it and then runs. Their meanings differ — repairing a session
- *   skips attestation and building one does not — so they cannot share an answer.
- * - A caller whose owner withdrew is told so with [TapToPaySessionException.SetupAbandoned], and may ask
- *   again. It is never handed the owner's cancellation, which would make its own scope look like it was
- *   unwinding when nothing had cancelled it.
+ * - A caller of a **different** kind waits for it and then runs. Repairing a session skips attestation and
+ *   building one does not, so they cannot share an answer.
+ * - A caller whose owner withdrew is given [TapToPaySessionException.SetupAbandoned] and may ask again.
+ *   Handing on the owner's cancellation would make the waiter's own scope look like it is unwinding.
  *
- * Exclusion and joining are two mechanisms rather than one. A single queue would give the same behaviour and
- * would make the two properties impossible to test apart, and each of them is worth its own failing test.
+ * Exclusion is [region]; joining is [inFlight]. Each is held by its own tests.
  *
  * **Locks are taken in one order and only one:** this region, then the enrollment coordinator's, then the
- * attestor's. Nothing takes them the other way round, so there is no cycle to find. The state monitor is
- * never held across any of them.
+ * attestor's. The state monitor is never held across any of them.
  */
 internal class TapToPaySessionCoordinator(
     private val entry: String,
@@ -56,12 +53,7 @@ internal class TapToPaySessionCoordinator(
     /** Guards [inFlight] alone. Nothing suspends while it is held. */
     private val claims = Mutex()
 
-    /**
-     * One claim per kind, so a caller joins work of its own kind whatever else is queued.
-     *
-     * A single slot cannot do this. Three callers arriving as build, repair, build leave the repair in the
-     * slot when the second build looks, so that build starts a second run of work already in flight.
-     */
+    /** One claim per kind, so a caller joins work of its own kind whatever else is queued. */
     private val inFlight = mutableMapOf<SessionWorkKind, Claim>()
 
     private class Claim(
@@ -83,8 +75,8 @@ internal class TapToPaySessionCoordinator(
      * Builds the session from wherever it stands: attest if needed, fetch the credentials, bring the reader
      * up.
      *
-     * Safe to call again at any time, including while one is already running. It starts from a known state
-     * rather than the caller's, so it does not depend on what the last attempt left behind.
+     * Safe to call again at any time, including while one is already running. It starts from a known state,
+     * so it does not depend on what the last attempt left behind.
      *
      * Fails with [TapToPaySessionException.PendingActivation] when the device still owes a code.
      */
@@ -111,12 +103,7 @@ internal class TapToPaySessionCoordinator(
     suspend fun confirmActivation(activationCode: String) =
         runExclusively(SessionWorkKind.ACTIVATE) { runConfirmActivation(activationCode) }
 
-    /**
-     * Decides whether to join or to run, under [claims], and does neither while holding it.
-     *
-     * Holding the lock across the work would look equivalent and is not: every waiter would then find the
-     * slot empty in turn and start its own run.
-     */
+    /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
         kind: SessionWorkKind,
         work: suspend () -> Unit,
@@ -150,8 +137,7 @@ internal class TapToPaySessionCoordinator(
         try {
             region.withLock { work() }
         } catch (withdrawn: CancellationException) {
-            // Nothing failed and nothing is in progress, so the honest landing is the start. It is also the
-            // one target that can never itself be refused.
+            // Nothing failed and nothing is in progress. Idle is also the one target that is never refused.
             withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
             release(claim, TapToPaySessionException.SetupAbandoned())
             throw withdrawn
@@ -160,9 +146,8 @@ internal class TapToPaySessionCoordinator(
             release(claim, failure)
             throw failure
         } catch (fatal: Throwable) {
-            // Reaches the caller unchanged: an OutOfMemoryError is not a session failure and classifying it
-            // as one would blame the service for a process-fatal condition. The claim still cannot outlive
-            // it, or every later caller of this kind waits for something that will never complete.
+            // An OutOfMemoryError reaches the caller unchanged. The claim is still released, or every later
+            // caller of this kind waits for something that will never complete.
             release(claim, TapToPaySessionException.SetupAbandoned())
             throw fatal
         }
@@ -175,10 +160,10 @@ internal class TapToPaySessionCoordinator(
      *
      * Uncancellable because liveness depends on it. A claim left set with nobody to complete it wedges every
      * later caller of its kind, and whether [Mutex.withLock] observes an already-cancelled job depends on
-     * whether it has to suspend, which is not a thing correctness may rest on.
+     * whether it has to suspend.
      *
-     * The slot is cleared only when it is still this claim. A run that finishes after another kind has taken
-     * the slot would otherwise delete a claim that is still being waited on.
+     * The slot is cleared only when it still holds this claim, so a run finishing late leaves a successor's
+     * claim in place.
      */
     private suspend fun release(
         claim: Claim,
@@ -191,8 +176,7 @@ internal class TapToPaySessionCoordinator(
     /**
      * The cold path, and the warm one, which differ only in what enrollment finds.
      *
-     * It starts with a reset, whatever the caller left behind. The table of legal moves is narrow by design,
-     * so without this a session that failed halfway would refuse the first phase of its own repair.
+     * It starts with a reset, whatever the caller left behind, since the table of legal moves is narrow.
      */
     private suspend fun runInitialize() {
         manager.reset()
@@ -213,8 +197,7 @@ internal class TapToPaySessionCoordinator(
         when (val current = state.value) {
             TapToPaySessionState.Ready -> return
             TapToPaySessionState.SessionExpired ->
-                // Only from here, because this is the state that says a repair is under way and it is the
-                // only one the table lets it be entered from.
+                // The only state the table lets a re-initialization be entered from.
                 manager.advance(TapToPaySessionState.Reinitializing)
 
             TapToPaySessionState.Idle, is TapToPaySessionState.Failed -> Unit
@@ -236,8 +219,7 @@ internal class TapToPaySessionCoordinator(
     /**
      * The credentials, and the one place a warm start can learn the device still owes a code.
      *
-     * Fetched every time. They are never stored and never held past the reader that takes them, so a repair
-     * asks again rather than reusing anything.
+     * Fetched every time. They are never stored and never held past the reader that takes them.
      */
     private suspend fun fetchConfig(): ReaderCredentials {
         val assertion = enrollment.assertion() ?: throw TapToPaySessionException.AttestationRequired()
@@ -246,8 +228,7 @@ internal class TapToPaySessionCoordinator(
         } catch (inactive: DeviceServiceException.Forbidden) {
             // Both shapes of the refusal arrive as this one type, and this is where a warm start learns it:
             // registration is the only other place the device is told it owes a code, and a warm start does
-            // not register. Translated rather than passed on, so a caller has one failure to handle for one
-            // condition however it was discovered.
+            // not register. Translated here, so one condition reaches a caller as one failure.
             throw TapToPaySessionException.PendingActivation(inactive)
         } catch (stale: DeviceServiceException.NotAttested) {
             // The service is holding the binding to the exact credential that made it, and it no longer

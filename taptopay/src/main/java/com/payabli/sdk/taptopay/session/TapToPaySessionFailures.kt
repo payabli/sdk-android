@@ -13,24 +13,21 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABL
 /**
  * Where a session lands when the work under it fails.
  *
- * One place, so every phase of every entry point ends the same way. Spreading this across the phases is how
- * a failure ends up leaving the state wherever it happened to be.
+ * One place, so every phase of every entry point ends the same way.
  *
- * **A landing is a remedy, not a description.** Two failures a host repairs identically share a member of
- * [TapToPayFailureReason]; a failure whose remedy is unknown is [INTERNAL] rather than the nearest guess,
- * because a wrong guess sends a host down a repair that cannot work.
+ * **A landing is a remedy.** Two failures a host repairs identically share a member of
+ * [TapToPayFailureReason], and a failure whose remedy is unknown is [INTERNAL]: a guess sends a host down a
+ * repair that cannot work.
  *
  * **Discarding the device's identity requires a positive match.** Only a refusal that names the attestation
- * lands on [ATTESTATION_REQUIRED], which is the reason a host is told to attest again. Everything
- * unrecognised lands somewhere that costs nothing to be wrong about.
+ * lands on [ATTESTATION_REQUIRED]. Everything unrecognised lands where being wrong costs nothing.
  */
 internal object TapToPaySessionFailures {
     /**
      * The state to publish for [failure], or null to leave the session where it is.
      *
-     * Null is not an oversight. A wrong activation code fails the call and changes nothing about the
-     * session: the device still owes a code, which is what the state already says, and moving it would
-     * take away the very state a host is collecting the code under.
+     * A wrong activation code fails the call and changes nothing about the session: the device still owes a
+     * code, which is what the state already says, and moving it takes away the state a host collects under.
      */
     fun landingFor(failure: Throwable): TapToPaySessionState? =
         when (failure) {
@@ -49,16 +46,15 @@ internal object TapToPaySessionFailures {
      * A device the service does not hold as active is refused, and so is a caller whose token is not scoped
      * for the route. Both arrive as one case, so both land here; the reader is unavailable either way.
      *
-     * A 404 does not discard anything. It covers a paypoint, a device and a gateway that the service could
-     * not find, and only one of those three means the identity is stale. Telling them apart needs the
-     * service's own text, so the non-destructive landing is the one taken.
+     * A 404 discards nothing. It covers a paypoint, a device and a gateway the service could not find, and
+     * only one of those three means the identity is stale. Telling them apart needs the service's own text.
      */
     private fun landingForService(failure: DeviceServiceException): TapToPaySessionState? =
         when (failure) {
             is DeviceServiceException.Forbidden -> TapToPaySessionState.PendingActivation
             is DeviceServiceException.NotAttested -> failed(ATTESTATION_REQUIRED)
             is DeviceServiceException.NotFound -> failed(CONFIGURATION_REJECTED)
-            // The request this SDK built was refused, which is this SDK's defect and not the account's.
+            // The request this SDK built was refused, which makes it this SDK's defect.
             is DeviceServiceException.BadRequest -> failed(INTERNAL)
             is DeviceServiceException.ServerFailure -> failed(SERVICE_UNAVAILABLE)
             is DeviceServiceException.Undecodable -> failed(INTERNAL)
@@ -85,8 +81,8 @@ internal object TapToPaySessionFailures {
     /**
      * A platform verdict, which the service would refuse anyway.
      *
-     * The two the platform says to ask again about are service failures rather than identity ones: nothing
-     * about the device changed, so a host is told to retry rather than to attest.
+     * The two the platform says to ask again about are service failures. Nothing about the device changed,
+     * so a host is told to retry.
      */
     private fun landingForAttestation(failure: AttestationException): TapToPaySessionState? =
         when (failure) {

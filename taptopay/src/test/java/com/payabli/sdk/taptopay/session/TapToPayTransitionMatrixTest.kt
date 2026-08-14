@@ -19,7 +19,7 @@ import org.junit.Test
  * rules the implementation states once — re-entering the current state, starting over, and failing — so
  * deleting one of those rules from the implementation fails a row here.
  *
- * An exhaustive `when`, so a tenth state fails to compile here rather than going untested.
+ * An exhaustive `when`, so a tenth state fails to compile here.
  */
 private fun legalTargetsFrom(from: TapToPaySessionState): Set<TapToPaySessionState> =
     when (from) {

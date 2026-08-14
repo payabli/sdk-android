@@ -28,14 +28,12 @@ private val COMPLETION_PROBE = 30.seconds
  * That the three entry points never overlap, and that two of the same kind share one run.
  *
  * **A gate, not a race.** The store fake parks the first run inside the region and holds it there until the
- * test releases it, so the second caller genuinely arrives while the first is still in flight. Two callers
- * merely launched together almost never collide, and a test written that way passes with the serialization
- * removed.
+ * test releases it, so the second caller arrives while the first is still in flight. Two callers merely
+ * launched together almost never collide, and a test written that way passes with the serialization removed.
  *
- * Exclusion and joining are separate mechanisms and mostly have separate tests here. `region.withLock` in
- * `TapToPaySessionCoordinator.own` is what the repair, the activation and the real-thread tests hold; the
- * claim slot in `runExclusively` is what the two join tests hold. The queued-repair test holds both, since
- * the case it covers is a build joining a build across a repair that sits between them.
+ * `region.withLock` in `TapToPaySessionCoordinator.own` is held by the repair, the activation and the
+ * real-thread tests; the claim slot in `runExclusively` is held by the two join tests. The queued-repair
+ * test covers a build joining a build across a repair between them, so it holds both.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionSerializationTest {
@@ -146,7 +144,7 @@ class SessionSerializationTest {
                 fixture.state,
             )
 
-            // The slot was cleared, so the next caller owns rather than waiting on a claim nobody holds.
+            // The slot was cleared, so the next caller owns the run.
             held.complete(Unit)
             completing("the build after the withdrawal") { fixture.coordinator.initialize() }
             assertEquals(TapToPaySessionState.Ready, fixture.state)
@@ -157,8 +155,7 @@ class SessionSerializationTest {
      *
      * `runBlocking` and a wall-clock probe, where every other test in this file uses virtual time. Virtual
      * time cannot see a scheduler that is starved: a caller that spins holds the thread the deadline needs,
-     * so the deadline never fires and the suite hangs instead of failing. Only real threads tell waiting
-     * and spinning apart.
+     * so the deadline never fires and the suite hangs. Only real threads tell waiting and spinning apart.
      */
     @Test
     fun `a repair genuinely waits on real threads rather than spinning`() {
@@ -175,7 +172,7 @@ class SessionSerializationTest {
                 )
                 assertEquals("and it sent nothing while it waited", emptyList<String>(), fixture.routes)
             } finally {
-                // Released here rather than after the assertions, so a failing one cannot wedge the class.
+                // Released before the assertions run, so a failing one cannot wedge the class.
                 held.complete(Unit)
             }
             withTimeout(COMPLETION_PROBE) {
@@ -211,8 +208,8 @@ class SessionSerializationTest {
             completing("the build") { build.join() }
             completing("the activation") { activation.join() }
 
-            // It ran after the build rather than beside it. What it answered is the enrollment layer's
-            // business; that it waited is this one's.
+            // It ran after the build. What it answered is the enrollment layer's business; that it waited
+            // is this one's.
             assertFalse("two runs were inside the reader together", fixture.reader.sawOverlap)
         }
 }

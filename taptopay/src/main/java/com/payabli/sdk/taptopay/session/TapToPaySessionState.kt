@@ -4,16 +4,13 @@ package com.payabli.sdk.taptopay.session
  * Where a card-present session has got to.
  *
  * The same nine states the sibling SDK publishes, so an integrator moving between the platforms meets one
- * model. Only [Failed] carries anything, which is why this is a sealed interface rather than an enum.
+ * model. [Failed] carries a payload, which is why this is a sealed interface.
  *
- * **A failure names its reason, and that is not decoration.** Without one, every consumer of a failed
- * session has to assume the most expensive repair, because it cannot tell an identity that was discarded
- * from a paypoint that was misconfigured. The sibling SDK publishes a reasonless failure and its host layer
- * ended up running a full re-initialization for all of them, having twice guessed wrong about which was
- * cheaper.
+ * **A failure names its reason.** Without one a consumer cannot tell an identity that was discarded from a
+ * paypoint that was misconfigured, and has to assume the most expensive repair.
  *
  * [Failed], not `Error`: `kotlin.Error` is default-imported and is a `Throwable`, so a member of that name
- * would need qualifying anywhere a session and a throwable are handled together.
+ * needs qualifying anywhere a session and a throwable are handled together.
  */
 internal sealed interface TapToPaySessionState {
     /** Nothing has been attempted, or the last attempt was withdrawn. Reachable from every state. */
@@ -33,7 +30,7 @@ internal sealed interface TapToPaySessionState {
     /**
      * The reader session died and the credentials behind it are spent.
      *
-     * Repairable without attesting again, which is the whole reason it is separate from [Failed].
+     * Repairable without attesting again, which is what separates it from [Failed].
      */
     data object SessionExpired : TapToPaySessionState
 
@@ -54,11 +51,11 @@ internal sealed interface TapToPaySessionState {
 }
 
 /**
- * The name for a log record. An exhaustive `when` rather than `simpleName`, so adding a state fails to
- * compile here instead of emitting a name R8 is free to rewrite.
+ * The name for a log record. An exhaustive `when`, so adding a state fails to compile here and no name is
+ * left for R8 to rewrite.
  *
- * [TapToPaySessionState.Failed]'s reason is not folded in. It is recorded beside this as its own field, so
- * a reader can group by state without splitting one failure into four.
+ * [TapToPaySessionState.Failed]'s reason is recorded beside this as its own field, so a reader can group by
+ * state without splitting one failure into four.
  */
 internal val TapToPaySessionState.diagnosticName: String
     get() =
