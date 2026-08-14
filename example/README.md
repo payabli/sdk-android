@@ -64,7 +64,10 @@ falls back to the development machine's Bonjour name, where a device here gets `
 around it: `demo/` holds the screens, the step list, the token server client and the card-present stand-in,
 and none of it names an SDK type. `AppContainer.kt`, `MainActivity.kt` and `PayabliDemoApplication.kt` stay
 at the root, where the manifest expects them. `SdkCallsAreInOnePackageTest` reads `src/main` and fails naming
-any file outside `sdk/` that imports `com.payabli.sdk.`.
+any file outside `sdk/` whose source contains `com.payabli.sdk.`, so a fully qualified call is caught as an
+import is. What it cannot see is a `demo/` file reaching an SDK type through one of `sdk/`'s `internal`
+properties, which names no package: Kotlin has no package-private, and `PaymentFormHost.kt` needs those values
+from the files that hold them.
 
 ```
 com/payabli/example/app/
