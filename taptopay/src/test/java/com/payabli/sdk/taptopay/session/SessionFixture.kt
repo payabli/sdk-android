@@ -14,6 +14,25 @@ import kotlin.time.Duration.Companion.seconds
 /** Bounds every test in this package, so a wedge is a failure rather than a suite that never returns. */
 internal val TEST_TIMEOUT = 5.seconds
 
+/**
+ * One state per member, for the tests that walk all of them.
+ *
+ * One list for the package. A second copy drifts, and a copy that loses a member narrows whatever it feeds
+ * without failing anything.
+ */
+internal val EVERY_SESSION_STATE: List<TapToPaySessionState> =
+    listOf(
+        TapToPaySessionState.Idle,
+        TapToPaySessionState.AttestingDevice,
+        TapToPaySessionState.FetchingConfig,
+        TapToPaySessionState.InitializingReader,
+        TapToPaySessionState.Ready,
+        TapToPaySessionState.SessionExpired,
+        TapToPaySessionState.Reinitializing,
+        TapToPaySessionState.PendingActivation,
+        TapToPaySessionState.Failed(TapToPayFailureReason.INTERNAL),
+    )
+
 /** Bounds one await, so a stranded claim reports what was stranded instead of expiring the whole test. */
 private val COMPLETION_TIMEOUT = 3.seconds
 

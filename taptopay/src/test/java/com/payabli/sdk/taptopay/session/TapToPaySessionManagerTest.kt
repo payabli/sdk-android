@@ -65,7 +65,7 @@ class TapToPaySessionManagerTest {
     @Test
     fun `every state can start over`() =
         runTest(timeout = TEST_TIMEOUT) {
-            for (state in everyState()) {
+            for (state in EVERY_SESSION_STATE) {
                 val fresh = TapToPaySessionManager(logger)
                 driveTo(fresh, state)
                 assertEquals(state.diagnosticName, state, fresh.state.value)
@@ -195,17 +195,4 @@ class TapToPaySessionManagerTest {
             is TapToPaySessionState.Failed -> manager.settle(target)
         }
     }
-
-    private fun everyState(): List<TapToPaySessionState> =
-        listOf(
-            TapToPaySessionState.Idle,
-            TapToPaySessionState.AttestingDevice,
-            TapToPaySessionState.FetchingConfig,
-            TapToPaySessionState.InitializingReader,
-            TapToPaySessionState.Ready,
-            TapToPaySessionState.SessionExpired,
-            TapToPaySessionState.Reinitializing,
-            TapToPaySessionState.PendingActivation,
-            TapToPaySessionState.Failed(TapToPayFailureReason.INTERNAL),
-        )
 }
