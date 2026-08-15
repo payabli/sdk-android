@@ -254,7 +254,9 @@ internal class DeviceServiceClient(
      * merchant.
      */
     private fun pathSegment(entry: String): String {
-        require(PATH_SEGMENT.matches(entry)) { "entry must be usable as a single path segment" }
+        require(PATH_SEGMENT.matches(entry)) {
+            "entry must be one path segment of unreserved characters: A-Z a-z 0-9 and . _ ~ -"
+        }
         return entry
     }
 
