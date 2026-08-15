@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.logging
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -21,18 +22,22 @@ class RecordingLogSinkConcurrencyTest {
         val start = CountDownLatch(1)
         val finished = CountDownLatch(WRITERS)
 
-        repeat(WRITERS) {
-            pool.submit {
-                start.await()
-                repeat(WRITES_EACH) { sink.write(LogLevel.DEBUG, "tag", "message") }
-                finished.countDown()
+        try {
+            repeat(WRITERS) {
+                pool.submit {
+                    start.await()
+                    repeat(WRITES_EACH) { sink.write(LogLevel.DEBUG, "tag", "message") }
+                    finished.countDown()
+                }
             }
-        }
-        start.countDown()
+            start.countDown()
 
-        assertEquals("a writer never finished", true, finished.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
-        pool.shutdown()
-        assertEquals(WRITERS * WRITES_EACH, sink.records.size)
+            assertTrue("a writer never finished", finished.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            assertEquals(WRITERS * WRITES_EACH, sink.records.size)
+        } finally {
+            // In a finally, so a failed assertion leaves no writers behind for whatever test runs next.
+            pool.shutdownNow()
+        }
     }
 
     private companion object {
