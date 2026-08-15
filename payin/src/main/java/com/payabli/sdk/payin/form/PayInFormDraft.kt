@@ -27,6 +27,7 @@ internal class PayInFormDraft {
      * The cost is that two different seeds sharing a hash are read as one, and the form keeps the values it
      * already has.
      */
+    @Volatile
     private var seededFrom: Pair<PayInFormConfiguration, Int?>? = null
 
     private val entered = mutableStateMapOf<PayInField, String>()
@@ -111,15 +112,15 @@ internal class PayInFormDraft {
     fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { entered.remove(it) }
 
     /**
-     * Everything goes, and the next composition fills from the caller's values again.
+     * Everything the payer entered goes, and the next composition fills from the caller's values again.
      *
-     * Called when the host's scope is cancelled, which is the screen going for good. A host that cancels while
-     * the form is still on screen can recompose part-way through this, so [seededFrom] goes first: [seed] runs
-     * before any read and refills from the caller's values, which leaves nothing half-cleared on screen.
+     * Called when the host's scope is cancelled, which runs on whatever thread completed it while a composition
+     * may be reading. [chosen] is left alone for that reason: a reader that has already passed [seed]'s check
+     * goes on to read [method], and clearing the instrument under it fails that read. Which tab was on screen
+     * is not the payer's data, and the next [seed] sets it before anything reads it.
      */
     fun clear() {
         seededFrom = null
-        chosen = null
         entered.clear()
         rejectedFields = emptyMap()
         submissionPending = false

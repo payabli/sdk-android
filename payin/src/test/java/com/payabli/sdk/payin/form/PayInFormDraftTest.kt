@@ -149,6 +149,17 @@ class PayInFormDraftTest {
     }
 
     @Test
+    fun aClearedDraftStillAnswersWhichInstrumentIsOnScreen() {
+        // The clear runs on whichever thread completed the host's scope, and a reader that has already passed
+        // seed's check goes straight on to read the instrument. Clearing that under it fails the read.
+        draft.seed(configuration, null)
+
+        draft.clear()
+
+        assertEquals(PayInMethodType.Card, draft.method)
+    }
+
+    @Test
     fun theCallersValuesAreNotHeldOnceTheyHaveBeenRead() {
         // A PayInFormValues can carry a card number, and the draft outlives the composition, so holding one to
         // compare against would keep the caller's copy for the life of the screen.
