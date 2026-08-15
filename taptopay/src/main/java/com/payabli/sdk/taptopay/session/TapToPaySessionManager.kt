@@ -85,9 +85,13 @@ internal class TapToPaySessionManager(
      * Puts the session back to the start.
      *
      * The first act of building a session, whatever the caller left behind, since the table is narrow.
+     *
+     * Throws on a refusal, like the two [advance] overloads and for the same reason: starting over is
+     * reachable from every state, so a refusal here is a broken table and the build that follows would run
+     * every phase from a state nobody expects.
      */
     fun reset() {
-        write(TapToPaySessionState.Idle)
+        writeOrThrow(TapToPaySessionState.Idle)
     }
 
     /**
