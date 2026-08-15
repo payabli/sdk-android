@@ -113,7 +113,9 @@ internal class PayInFormDraft {
     /**
      * Everything goes, and the next composition fills from the caller's values again.
      *
-     * Called when the host's scope is cancelled, which is the screen going for good.
+     * Called when the host's scope is cancelled, which is the screen going for good. A host that cancels while
+     * the form is still on screen can recompose part-way through this, so [seededFrom] goes first: [seed] runs
+     * before any read and refills from the caller's values, which leaves nothing half-cleared on screen.
      */
     fun clear() {
         seededFrom = null
