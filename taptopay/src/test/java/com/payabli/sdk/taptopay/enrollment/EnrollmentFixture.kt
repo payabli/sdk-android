@@ -57,11 +57,16 @@ internal fun configBody(): String =
     )
 
 /**
- * Answers each route from a script, and fails loudly on anything unscripted.
+ * Answers each request from a script, keyed on the path it was sent to, and fails loudly on anything
+ * unscripted.
  *
- * `error` on a miss, the discipline the client's own tests state: an
- * unscripted route, or one call more than the script answers, has to fail by name here instead of replaying
- * the previous answer somewhere no assertion can see it.
+ * **Paths, not route templates.** A script answers what the client sent, and `/config` resolves its
+ * `{entry}` before sending. The templates are the transport's recordable form and are asserted separately,
+ * in `DeviceServiceConfigTest`, which pins that a resolved path names a paypoint and a template does not.
+ *
+ * `error` on a miss, the discipline the client's own tests state: an unscripted path, or one call more than
+ * the script answers, has to fail by name here instead of replaying the previous answer somewhere no
+ * assertion can see it.
  */
 internal class RouteScript(
     private vararg val answers: Pair<String, List<String>>,
@@ -71,14 +76,14 @@ internal class RouteScript(
     private val taken = mutableMapOf<String, Int>()
 
     fun respond(request: PayabliRequest): PayabliResponse {
-        val route = request.path
+        val path = request.path
         val queued =
-            answers.firstOrNull { it.first == route }?.second
-                ?: error("no answer scripted for $route")
-        val index = taken.getOrDefault(route, 0)
-        if (index >= queued.size) error("$route was called ${index + 1} times, ${queued.size} answers scripted")
-        taken[route] = index + 1
-        return PayabliResponse(statusFor(route), body = queued[index].toByteArray(Charsets.UTF_8))
+            answers.firstOrNull { it.first == path }?.second
+                ?: error("no answer scripted for $path")
+        val index = taken.getOrDefault(path, 0)
+        if (index >= queued.size) error("$path was called ${index + 1} times, ${queued.size} answers scripted")
+        taken[path] = index + 1
+        return PayabliResponse(statusFor(path), body = queued[index].toByteArray(Charsets.UTF_8))
     }
 
     companion object {
@@ -87,6 +92,7 @@ internal class RouteScript(
         const val ATTEST = "/api/v2/device/taptopay/attest"
         const val ACTIVATE = "/api/v2/device/taptopay/activate"
 
+        /** Resolved, since that is what the client sends. The four above resolve to themselves. */
         const val CONFIG = "/api/v2/device/taptopay/config/$ENTRY"
     }
 }
@@ -162,7 +168,11 @@ internal class EnrollmentFixture(
             PayabliJson.format.decodeFromString(AttestedDevice.serializer(), it.decodeToString())
         }
 
-    /** Only the transport's half of the trace, for asserting call order alone. */
+    /**
+     * Only the transport's half of the trace, for asserting call order alone.
+     *
+     * Paths, as sent. `/config` appears with its `{entry}` resolved.
+     */
     val routes: List<String> get() = trace.filter { it.startsWith("/api/") }
 
     companion object {
