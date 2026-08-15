@@ -4,9 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Test
-import java.lang.ref.WeakReference
 
 /**
  * When the draft refills itself, which is the whole of whether a payer keeps what they typed.
@@ -24,13 +22,7 @@ class PayInFormDraftTest {
 
     private val draft = PayInFormDraft()
 
-    /** Held in a field so each round's array stays reachable until the next one replaces it. */
-    private var ballast: ByteArray? = null
-
     private companion object {
-        const val GC_ATTEMPTS = 50
-        const val GC_PAUSE_MILLIS = 10L
-        const val BALLAST_BYTES = 1 shl 20
         const val SEEDED_PAN = "4111111111111111"
     }
 
@@ -160,28 +152,27 @@ class PayInFormDraftTest {
     fun theCallersValuesAreNotHeldOnceTheyHaveBeenRead() {
         // A PayInFormValues can carry a card number, and the draft outlives the composition, so holding one to
         // compare against would keep the caller's copy for the life of the screen.
-        var values: PayInFormValues? =
-            PayInFormValues(
-                PayInMethodType.Card,
-                // Built rather than written as a literal, so the map holds a string the constant pool does not.
-                mapOf(PayInField.CardNumber to StringBuilder(SEEDED_PAN).toString()),
-            )
-        val watched = WeakReference(values)
+        val values =
+            PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardNumber to SEEDED_PAN))
+
         draft.seed(configuration, values)
 
-        // Nulled before the loop rather than left to the end of a frame, so nothing but the draft can reach it.
-        values = null
+        // Every field rather than one by name, so any field holding a seed is caught.
+        val holding =
+            PayInFormDraft::class
+                .java
+                .declaredFields
+                .filterNot { it.isSynthetic }
+                .flatMap { field ->
+                    field.isAccessible = true
+                    when (val held = field.get(draft)) {
+                        is Pair<*, *> -> listOf(field.name to held.first, field.name to held.second)
+                        else -> listOf(field.name to held)
+                    }
+                }.filter { (_, held) -> held is PayInFormValues }
+                .map { (name, _) -> name }
 
-        repeat(GC_ATTEMPTS) {
-            if (watched.get() == null) return
-            System.gc()
-            // Real garbage each round, so a collection the runtime is free to skip has a reason to happen. The
-            // previous array becomes unreachable as this one replaces it.
-            ballast = ByteArray(BALLAST_BYTES)
-            Thread.sleep(GC_PAUSE_MILLIS)
-        }
-
-        fail("the draft still holds the values it was seeded from")
+        assertEquals("the draft holds the caller's values in $holding", emptyList<String>(), holding)
     }
 
     @Test
