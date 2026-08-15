@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.taptopay.attestation.AttestationException
@@ -49,6 +50,10 @@ class TapToPaySessionFailuresTest {
             DeviceActivationException.ServiceFailed(500, REASON) to failed(SERVICE_UNAVAILABLE),
             // A wrong code leaves the session alone: the device still owes one.
             DeviceActivationException.CodeIncorrect(400, REASON) to null,
+            // The key is gone, so the identity is: enrollment discards the record before raising it.
+            DeviceKeyException.KeyLost() to failed(ATTESTATION_REQUIRED),
+            DeviceKeyException.SigningFailed() to failed(SDK_INTERNAL_ERROR),
+            DeviceKeyException.CryptoUnavailable() to failed(SDK_INTERNAL_ERROR),
             AttestationException.Retryable(-1) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Throttled(-8) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),
@@ -91,6 +96,7 @@ class TapToPaySessionFailuresTest {
                 "DeviceUnknown",
                 "NotEnrolled",
                 "IntegrityFailed",
+                "KeyLost",
             ),
             discarding,
         )

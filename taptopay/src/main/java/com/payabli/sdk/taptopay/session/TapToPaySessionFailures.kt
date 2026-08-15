@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.attestation.AttestationException
@@ -38,6 +39,7 @@ internal object TapToPaySessionFailures {
             is DeviceServiceException -> landingForService(failure)
             is DeviceActivationException -> landingForActivation(failure)
             is AttestationException -> landingForAttestation(failure)
+            is DeviceKeyException -> landingForDeviceKey(failure)
             is PayabliException -> landingForTransport(failure)
             else -> failed(SDK_INTERNAL_ERROR)
         }
@@ -90,6 +92,20 @@ internal object TapToPaySessionFailures {
             is AttestationException.Throttled -> failed(SERVICE_UNAVAILABLE)
             is AttestationException.Misconfigured -> failed(CONFIGURATION_REJECTED)
             else -> failed(ATTESTATION_REQUIRED)
+        }
+
+    /**
+     * A key that is gone is the identity being gone, which is a positive match: enrollment discards the
+     * record before raising it, so the remedy is to attest again.
+     *
+     * The other two are not. A signature that failed and a platform that cannot do crypto both leave the
+     * key where it was, so neither says the identity is stale.
+     */
+    private fun landingForDeviceKey(failure: DeviceKeyException): TapToPaySessionState =
+        when (failure) {
+            is DeviceKeyException.KeyLost -> failed(ATTESTATION_REQUIRED)
+            is DeviceKeyException.SigningFailed -> failed(SDK_INTERNAL_ERROR)
+            is DeviceKeyException.CryptoUnavailable -> failed(SDK_INTERNAL_ERROR)
         }
 
     private fun landingForTransport(failure: PayabliException): TapToPaySessionState =
