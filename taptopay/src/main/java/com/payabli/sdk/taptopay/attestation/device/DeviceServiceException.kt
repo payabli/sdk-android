@@ -14,7 +14,7 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
  * like an HTTP status and is not one. So a caller that checks the status and stops sees every one of these as
  * a success. `PayabliHttpErrors` still runs first at the call site, for the genuine transport failures — a
  * rejected credential, a rate limit, a proxy — and those arrive as `PayabliException`, not as this type. The
- * two are disjoint on purpose: which one a caller catches says which layer failed.
+ * two are disjoint: which one a caller catches says which layer failed.
  *
  * **The family has two failure shapes, and this type covers only the second.** A request the service's DTO
  * validation refuses never reaches a controller: it answers with a real HTTP 400 carrying RFC 9457
@@ -60,7 +60,7 @@ internal sealed class DeviceServiceException(
     /**
      * The request or the device's state was refused.
      *
-     * The widest case, and deliberately so. Everything the activation window can go wrong with lands here —
+     * The widest case. Everything the activation window can go wrong with lands here —
      * wrong code, five attempts spent, expired code, rejected assertion, a device that was not pending —
      * along with plain malformed input. Splitting them needs `reason`, which is why it is a
      * [DeviceFailureMapper]'s job rather than this class's.
@@ -85,9 +85,16 @@ internal sealed class DeviceServiceException(
     /**
      * The device or the application is not permitted this call.
      *
-     * Two distinct conditions the service reports identically: a device that is not yet active, which is the
-     * ordinary pending-activation signal, and an application absent from the paypoint's allowlist, which is
-     * configuration. Neither is retryable.
+     * Three distinct conditions reported identically. Two come from a controller as an envelope decline: a
+     * device that is not yet active, which is the ordinary pending-activation signal, and an application
+     * absent from the paypoint's allowlist, which is configuration. The third is a real HTTP 403 from the
+     * gateway on `/config`, raised when the caller's token is not scoped for the route, and it carries no
+     * [reason] because the gateway sends no service text.
+     *
+     * The third is the imprecise one: a scope problem presents to a caller as a device owing activation.
+     * That matches the sibling client, and separating them is a change both platforms make together.
+     *
+     * None of the three is retryable.
      */
     class Forbidden(
         resultCode: Int?,
@@ -132,9 +139,9 @@ internal sealed class DeviceServiceException(
      * The response said success and its body could not be read as one.
      *
      * A missing required field, a payload that is not the shape this route documents, or no payload where one
-     * is needed. Not a refusal by the service, which is why it carries no [resultCode]: something between the
-     * two of us is wrong about the contract, and treating it as a decline would file it under the service's
-     * fault and lose the cause.
+     * is needed. Not a refusal by the service, which is why it carries no [resultCode]: the SDK and the
+     * service disagree about the contract, and a decline would file that under the service's fault and lose
+     * the cause.
      */
     class Undecodable(
         // No default. Nullable because a response can be unusable without anything having thrown — an envelope
