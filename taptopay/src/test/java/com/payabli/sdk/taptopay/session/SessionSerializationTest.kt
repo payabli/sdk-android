@@ -25,6 +25,9 @@ private val BLOCKED_PROBE = 300.milliseconds
 /** The wall-clock ceiling once the gate is open. Generous, because this runs on shared CI hardware. */
 private val COMPLETION_PROBE = 30.seconds
 
+/** An `Error`, so the coordinator's fatal path is reached without an `OutOfMemoryError` in a test. */
+private class FatalTestError : Error()
+
 /**
  * That the three entry points never overlap, and that two of the same kind share one run.
  *
@@ -149,6 +152,50 @@ class SessionSerializationTest {
             held.complete(Unit)
             completing("the build after the withdrawal") { fixture.coordinator.initialize() }
             assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `a joiner is told the owner failed when the owner died on something unclassified`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val held = CompletableDeferred<Unit>()
+            val fixture =
+                SessionFixture(
+                    SessionFixture.coldScript(),
+                    firstReadGate = {
+                        held.await()
+                        throw FatalTestError()
+                    },
+                )
+
+            var ownerFailure: Throwable? = null
+            val owner =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    try {
+                        fixture.coordinator.initialize()
+                    } catch (fatal: Throwable) {
+                        ownerFailure = fatal
+                    }
+                }
+            var joinerFailure: Throwable? = null
+            val joiner =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    try {
+                        fixture.coordinator.initialize()
+                    } catch (failure: TapToPaySessionException) {
+                        joinerFailure = failure
+                    }
+                }
+
+            held.complete(Unit)
+            completing("the owner") { owner.join() }
+            completing("the joining build") { joiner.join() }
+
+            assertTrue("the owner keeps what killed it", ownerFailure is FatalTestError)
+            assertTrue(
+                "a joiner is told the run failed, not that it withdrew",
+                joinerFailure is TapToPaySessionException.SetupFailed,
+            )
+            assertNull("the cause stays with the owner", joinerFailure?.cause)
         }
 
     /**

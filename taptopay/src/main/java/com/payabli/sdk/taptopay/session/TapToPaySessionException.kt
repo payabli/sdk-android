@@ -45,4 +45,15 @@ internal sealed class TapToPaySessionException(
      * waiter's own scope look like it is unwinding. Nothing is left half-applied, and asking again is safe.
      */
     class SetupAbandoned : TapToPaySessionException("the caller that owned this session setup withdrew")
+
+    /**
+     * The caller that owned this work died on something this SDK does not classify.
+     *
+     * Separate from [SetupAbandoned] because that one says nothing happened and asking again is safe, and
+     * after an `OutOfMemoryError` neither is true.
+     *
+     * It carries no cause. The owner keeps the original and it reaches that caller unchanged; attaching it
+     * here would hand every waiter a reference to whatever died.
+     */
+    class SetupFailed : TapToPaySessionException("the caller that owned this session setup failed")
 }

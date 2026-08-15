@@ -36,6 +36,7 @@ internal object TapToPaySessionFailures {
             is TapToPaySessionException.AttestationRequired -> failed(ATTESTATION_REQUIRED)
             is TapToPaySessionException.NotRecoverable -> null
             is TapToPaySessionException.SetupAbandoned -> TapToPaySessionState.Idle
+            is TapToPaySessionException.SetupFailed -> failed(SDK_INTERNAL_ERROR)
             is DeviceServiceException -> landingForService(failure)
             is DeviceActivationException -> landingForActivation(failure)
             is AttestationException -> landingForAttestation(failure)

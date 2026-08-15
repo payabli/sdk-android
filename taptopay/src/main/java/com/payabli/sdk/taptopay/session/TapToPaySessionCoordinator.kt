@@ -147,8 +147,10 @@ internal class TapToPaySessionCoordinator(
             throw failure
         } catch (fatal: Throwable) {
             // An OutOfMemoryError reaches the caller unchanged. The claim is still released, or every later
-            // caller of this kind waits for something that will never complete.
-            release(claim, TapToPaySessionException.SetupAbandoned())
+            // caller of this kind waits for something that will never complete. Waiters are told the run
+            // failed rather than that it withdrew, and the cause stays with the owner: handing it on would
+            // give every waiter a reference to whatever died.
+            release(claim, TapToPaySessionException.SetupFailed())
             throw fatal
         }
         release(claim, null)

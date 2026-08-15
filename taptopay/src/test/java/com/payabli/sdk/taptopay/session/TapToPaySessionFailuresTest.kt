@@ -35,6 +35,7 @@ class TapToPaySessionFailuresTest {
             TapToPaySessionException.AttestationRequired() to failed(ATTESTATION_REQUIRED),
             TapToPaySessionException.NotRecoverable(TapToPaySessionState.Ready) to null,
             TapToPaySessionException.SetupAbandoned() to TapToPaySessionState.Idle,
+            TapToPaySessionException.SetupFailed() to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation,
             DeviceServiceException.NotAttested(401, REASON) to failed(ATTESTATION_REQUIRED),
             DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
