@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.logging
 
 import com.payabli.sdk.core.logging.impl.LogSink
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Captures finished lines instead of writing them to logcat.
@@ -22,7 +23,14 @@ internal class RecordingLogSink(
         val message: String,
     )
 
-    val records: MutableList<Record> = mutableListOf()
+    /**
+     * Thread-safe, because a transport under test writes from every request in flight at once.
+     *
+     * An `ArrayList` here loses records rather than reporting anything: eight writers appending 2000 lines each
+     * left 4579 of 16000, and the same race throws out of `ArrayList.add` often enough to redden a run that has
+     * nothing wrong with it. `LoopbackServer.requests` is a `CopyOnWriteArrayList` for the same reason.
+     */
+    val records: MutableList<Record> = CopyOnWriteArrayList()
 
     override fun isLoggable(
         level: LogLevel,
