@@ -7,7 +7,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.ATTESTATION_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
-import com.payabli.sdk.taptopay.session.TapToPayFailureReason.INTERNAL
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 
 /**
@@ -16,7 +16,7 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABL
  * One place, so every phase of every entry point ends the same way.
  *
  * **A landing is a remedy.** Two failures a host repairs identically share a member of
- * [TapToPayFailureReason], and a failure whose remedy is unknown is [INTERNAL]: a guess sends a host down a
+ * [TapToPayFailureReason], and a failure whose remedy is unknown is [SDK_INTERNAL_ERROR]: a guess sends a host down a
  * repair that cannot work.
  *
  * **Discarding the device's identity requires a positive match.** Only a refusal that names the attestation
@@ -39,7 +39,7 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException -> landingForActivation(failure)
             is AttestationException -> landingForAttestation(failure)
             is PayabliException -> landingForTransport(failure)
-            else -> failed(INTERNAL)
+            else -> failed(SDK_INTERNAL_ERROR)
         }
 
     /**
@@ -55,9 +55,9 @@ internal object TapToPaySessionFailures {
             is DeviceServiceException.NotAttested -> failed(ATTESTATION_REQUIRED)
             is DeviceServiceException.NotFound -> failed(CONFIGURATION_REJECTED)
             // The request this SDK built was refused, which makes it this SDK's defect.
-            is DeviceServiceException.BadRequest -> failed(INTERNAL)
+            is DeviceServiceException.BadRequest -> failed(SDK_INTERNAL_ERROR)
             is DeviceServiceException.ServerFailure -> failed(SERVICE_UNAVAILABLE)
-            is DeviceServiceException.Undecodable -> failed(INTERNAL)
+            is DeviceServiceException.Undecodable -> failed(SDK_INTERNAL_ERROR)
             is DeviceServiceException.Unclassified -> failed(SERVICE_UNAVAILABLE)
         }
 
@@ -96,7 +96,7 @@ internal object TapToPaySessionFailures {
         when (failure.code) {
             PayabliErrorCode.PERMISSION_DENIED -> TapToPaySessionState.PendingActivation
             PayabliErrorCode.INVALID_CONFIGURATION -> failed(CONFIGURATION_REJECTED)
-            PayabliErrorCode.DECODING_ERROR -> failed(INTERNAL)
+            PayabliErrorCode.DECODING_ERROR -> failed(SDK_INTERNAL_ERROR)
             else -> failed(SERVICE_UNAVAILABLE)
         }
 

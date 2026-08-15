@@ -30,7 +30,7 @@ internal val EVERY_SESSION_STATE: List<TapToPaySessionState> =
         TapToPaySessionState.SessionExpired,
         TapToPaySessionState.Reinitializing,
         TapToPaySessionState.PendingActivation,
-        TapToPaySessionState.Failed(TapToPayFailureReason.INTERNAL),
+        TapToPaySessionState.Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR),
     )
 
 /** Bounds one await, so a stranded claim reports what was stranded. */

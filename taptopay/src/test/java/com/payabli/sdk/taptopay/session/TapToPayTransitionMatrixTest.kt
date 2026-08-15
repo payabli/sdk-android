@@ -34,7 +34,7 @@ private fun legalTargetsFrom(from: TapToPaySessionState): Set<TapToPaySessionSta
         is Failed -> setOf(Idle, AttestingDevice, FetchingConfig, FAILED_INTERNAL)
     }
 
-private val FAILED_INTERNAL = Failed(TapToPayFailureReason.INTERNAL)
+private val FAILED_INTERNAL = Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR)
 
 class TapToPayTransitionMatrixTest {
     @Test

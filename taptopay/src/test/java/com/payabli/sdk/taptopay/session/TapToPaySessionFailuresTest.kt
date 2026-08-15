@@ -7,7 +7,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.ATTESTATION_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
-import com.payabli.sdk.taptopay.session.TapToPayFailureReason.INTERNAL
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -37,9 +37,9 @@ class TapToPaySessionFailuresTest {
             DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation,
             DeviceServiceException.NotAttested(401, REASON) to failed(ATTESTATION_REQUIRED),
             DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
-            DeviceServiceException.BadRequest(400, REASON) to failed(INTERNAL),
+            DeviceServiceException.BadRequest(400, REASON) to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.ServerFailure(500, REASON) to failed(SERVICE_UNAVAILABLE),
-            DeviceServiceException.Undecodable(null) to failed(INTERNAL),
+            DeviceServiceException.Undecodable(null) to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.Unclassified(418, REASON) to failed(SERVICE_UNAVAILABLE),
             DeviceActivationException.AttestationRevoked(403, REASON) to failed(ATTESTATION_REQUIRED),
             DeviceActivationException.DeviceUnknown(404, REASON) to failed(ATTESTATION_REQUIRED),
@@ -57,9 +57,9 @@ class TapToPaySessionFailuresTest {
                 TapToPaySessionState.PendingActivation,
             PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON) to
                 failed(CONFIGURATION_REJECTED),
-            PayabliGenericException(PayabliErrorCode.DECODING_ERROR, REASON) to failed(INTERNAL),
+            PayabliGenericException(PayabliErrorCode.DECODING_ERROR, REASON) to failed(SDK_INTERNAL_ERROR),
             PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON) to failed(SERVICE_UNAVAILABLE),
-            IllegalStateException("a defect in this SDK") to failed(INTERNAL),
+            IllegalStateException("a defect in this SDK") to failed(SDK_INTERNAL_ERROR),
         )
 
     @Test

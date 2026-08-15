@@ -32,8 +32,11 @@ internal enum class TapToPayFailureReason {
     /**
      * The SDK and the service disagree about the contract, or the SDK has a defect.
      *
+     * This side of the wire. A failure inside the service is [SERVICE_UNAVAILABLE], which is why the name
+     * says which side: an HTTP 500 is called an internal server error and lands there, not here.
+     *
      * A response that could not be decoded is the common one. A host cannot act on it; it is here so that it
      * is not silently filed under one of the others.
      */
-    INTERNAL,
+    SDK_INTERNAL_ERROR,
 }
