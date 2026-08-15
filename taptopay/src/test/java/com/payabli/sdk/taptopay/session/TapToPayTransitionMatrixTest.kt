@@ -23,18 +23,18 @@ import org.junit.Test
  */
 private fun legalTargetsFrom(from: TapToPaySessionState): Set<TapToPaySessionState> =
     when (from) {
-        Idle -> setOf(Idle, AttestingDevice, FetchingConfig, FAILED)
-        AttestingDevice -> setOf(Idle, AttestingDevice, FetchingConfig, PendingActivation, FAILED)
-        FetchingConfig -> setOf(Idle, FetchingConfig, InitializingReader, PendingActivation, FAILED)
-        InitializingReader -> setOf(Idle, InitializingReader, Ready, FAILED)
-        Ready -> setOf(Idle, Ready, SessionExpired, FAILED)
-        SessionExpired -> setOf(Idle, SessionExpired, Reinitializing, FAILED)
-        Reinitializing -> setOf(Idle, Reinitializing, FetchingConfig, FAILED)
-        PendingActivation -> setOf(Idle, PendingActivation, AttestingDevice, FAILED)
-        is Failed -> setOf(Idle, AttestingDevice, FetchingConfig, FAILED)
+        Idle -> setOf(Idle, AttestingDevice, FetchingConfig, FAILED_INTERNAL)
+        AttestingDevice -> setOf(Idle, AttestingDevice, FetchingConfig, PendingActivation, FAILED_INTERNAL)
+        FetchingConfig -> setOf(Idle, FetchingConfig, InitializingReader, PendingActivation, FAILED_INTERNAL)
+        InitializingReader -> setOf(Idle, InitializingReader, Ready, FAILED_INTERNAL)
+        Ready -> setOf(Idle, Ready, SessionExpired, FAILED_INTERNAL)
+        SessionExpired -> setOf(Idle, SessionExpired, Reinitializing, FAILED_INTERNAL)
+        Reinitializing -> setOf(Idle, Reinitializing, FetchingConfig, FAILED_INTERNAL)
+        PendingActivation -> setOf(Idle, PendingActivation, AttestingDevice, FAILED_INTERNAL)
+        is Failed -> setOf(Idle, AttestingDevice, FetchingConfig, FAILED_INTERNAL)
     }
 
-private val FAILED = Failed(TapToPayFailureReason.INTERNAL)
+private val FAILED_INTERNAL = Failed(TapToPayFailureReason.INTERNAL)
 
 class TapToPayTransitionMatrixTest {
     @Test
@@ -67,7 +67,7 @@ class TapToPayTransitionMatrixTest {
     @Test
     fun `failing is reachable from every state`() {
         for (from in EVERY_SESSION_STATE) {
-            assertEquals(from.diagnosticName, true, TapToPaySessionTransitions.permits(from, FAILED))
+            assertEquals(from.diagnosticName, true, TapToPaySessionTransitions.permits(from, FAILED_INTERNAL))
         }
     }
 
