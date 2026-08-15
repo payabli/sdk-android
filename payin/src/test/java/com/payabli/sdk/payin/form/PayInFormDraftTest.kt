@@ -24,9 +24,14 @@ class PayInFormDraftTest {
 
     private val draft = PayInFormDraft()
 
+    /** Held in a field so each round's array stays reachable until the next one replaces it. */
+    private var ballast: ByteArray? = null
+
     private companion object {
         const val GC_ATTEMPTS = 50
         const val GC_PAUSE_MILLIS = 10L
+        const val BALLAST_BYTES = 1 shl 20
+        const val SEEDED_PAN = "4111111111111111"
     }
 
     @Test
@@ -155,12 +160,24 @@ class PayInFormDraftTest {
     fun theCallersValuesAreNotHeldOnceTheyHaveBeenRead() {
         // A PayInFormValues can carry a card number, and the draft outlives the composition, so holding one to
         // compare against would keep the caller's copy for the life of the screen.
-        val watched = seedAndRelease()
+        var values: PayInFormValues? =
+            PayInFormValues(
+                PayInMethodType.Card,
+                // Built rather than written as a literal, so the map holds a string the constant pool does not.
+                mapOf(PayInField.CardNumber to StringBuilder(SEEDED_PAN).toString()),
+            )
+        val watched = WeakReference(values)
+        draft.seed(configuration, values)
 
-        // System.gc is a request rather than a command, so this asks until it is answered.
+        // Nulled before the loop rather than left to the end of a frame, so nothing but the draft can reach it.
+        values = null
+
         repeat(GC_ATTEMPTS) {
             if (watched.get() == null) return
             System.gc()
+            // Real garbage each round, so a collection the runtime is free to skip has a reason to happen. The
+            // previous array becomes unreachable as this one replaces it.
+            ballast = ByteArray(BALLAST_BYTES)
             Thread.sleep(GC_PAUSE_MILLIS)
         }
 
@@ -175,18 +192,6 @@ class PayInFormDraftTest {
         val thrown = runCatching { unseeded.method }.exceptionOrNull()
 
         assertTrue("an unseeded draft answered $thrown", thrown is IllegalStateException)
-    }
-
-    /** Seeds from values nothing else refers to, and returns the only remaining way to see whether they live. */
-    private fun seedAndRelease(): WeakReference<PayInFormValues> {
-        val values =
-            PayInFormValues(
-                PayInMethodType.Card,
-                // Built rather than written as a literal, so the map holds a string the constant pool does not.
-                mapOf(PayInField.CardNumber to StringBuilder("4111111111111111").toString()),
-            )
-        draft.seed(configuration, values)
-        return WeakReference(values)
     }
 
     private fun withBillingEmail(): List<PayInFormSection> =
