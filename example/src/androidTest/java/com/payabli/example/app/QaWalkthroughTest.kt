@@ -110,7 +110,12 @@ class QaWalkthroughTest {
 
     @After
     fun stopTheTokenServer() {
-        tokenServer?.close()
+        val server = tokenServer ?: return
+        val failure = server.servingFailure
+        server.close()
+        // Raised here because the app cannot: a token step that got no token leaves a form that never
+        // unlocked, and every unreachable server looks like that. This says which one it was.
+        if (failure != null) throw AssertionError("the token endpoint failed: ${failure.message}", failure)
     }
 
     @Test

@@ -31,7 +31,18 @@ internal class LiveTokenServer(
     @Volatile
     private var minted: String? = null
 
+    @Volatile
+    private var failure: Throwable? = null
+
     val port: Int get() = socket.localPort
+
+    /**
+     * What went wrong serving a token, or null.
+     *
+     * The app reports a failed token step as a form that never unlocked, which names this endpoint nowhere.
+     * A caller reads this to say what actually happened instead.
+     */
+    val servingFailure: Throwable? get() = failure
 
     init {
         thread(isDaemon = true) {
@@ -39,12 +50,24 @@ internal class LiveTokenServer(
                 runCatching {
                     socket.accept().use { client ->
                         client.getInputStream().bufferedReader().readLine()
-                        val body = """{"accessToken":"${token()}"}"""
+                        // A refused mint answers 500 rather than closing the socket. Closing it reaches the app
+                        // as a transport error, which it reports the same way as every other unreachable
+                        // server, so the one run that knows why would be the one saying nothing.
+                        val response =
+                            try {
+                                ok(json("accessToken" to token()))
+                            } catch (error: Throwable) {
+                                failure = error
+                                serverError(json("error" to (error.message ?: error.javaClass.simpleName)))
+                            }
                         client.getOutputStream().apply {
-                            write(response(body).toByteArray())
+                            write(response.toByteArray())
                             flush()
                         }
                     }
+                }.onFailure { error ->
+                    // A socket closed by `close()` ends the loop and is not a failure to report.
+                    if (!socket.isClosed) failure = error
                 }
             }
         }
@@ -87,21 +110,26 @@ internal class LiveTokenServer(
         }
     }
 
-    // Built by the serializer rather than by interpolation. A credential is opaque, so a quote or a backslash
-    // in one is not a strange input: it would end the string early and the exchange would refuse a request
-    // that says nothing about why.
-    private fun credentialJson(): String =
-        Json.encodeToString(
-            MapSerializer(String.serializer(), String.serializer()),
-            mapOf("clientId" to clientId, "clientSecret" to clientSecret),
-        )
+    // Built by the serializer rather than by interpolation, in both directions. A credential and a token are
+    // both opaque, so a quote or a backslash in either is not a strange input: it would end the string early
+    // and what the other side reports is a malformed message rather than the value that broke it.
+    private fun credentialJson(): String = json("clientId" to clientId, "clientSecret" to clientSecret)
 
-    private fun response(body: String) =
-        "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: application/json\r\n" +
-            "Content-Length: ${body.toByteArray().size}\r\n" +
-            "Connection: close\r\n\r\n" +
-            body
+    private fun json(vararg fields: Pair<String, String>): String =
+        Json.encodeToString(MapSerializer(String.serializer(), String.serializer()), fields.toMap())
+
+    private fun ok(body: String) = response("200 OK", body)
+
+    private fun serverError(body: String) = response("500 Internal Server Error", body)
+
+    private fun response(
+        status: String,
+        body: String,
+    ) = "HTTP/1.1 $status\r\n" +
+        "Content-Type: application/json\r\n" +
+        "Content-Length: ${body.toByteArray().size}\r\n" +
+        "Connection: close\r\n\r\n" +
+        body
 
     private companion object {
         const val TOKEN_PATH = "/api/v2/token/serverside"
