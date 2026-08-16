@@ -140,13 +140,16 @@ internal class PayInFormDraft {
     /**
      * What the caller handed over, as one salted 64-bit value.
      *
-     * Per field, so two seeds differing anywhere differ here, and summed so the order a caller built the map in
-     * does not matter. Equal values compare equal, which is what a host rebuilding its seed on every
-     * composition needs.
+     * Walked in [PayInField]'s own declaration order rather than the map's, so the order a caller assembled its
+     * values in is not a change and every field still folds into the one before it. Summing them instead would
+     * let two fields changing at once cancel, which a fold cannot do.
+     *
+     * Equal values digest equally, which is what a host rebuilding its seed on every composition needs.
      */
     private fun PayInFormValues.digest(): Long =
-        values.entries.fold(mix(salt, method.ordinal.toLong())) { total, (field, value) ->
-            total + value.fold(mix(salt, field.ordinal.toLong())) { running, char -> mix(running, char.code.toLong()) }
+        PayInField.entries.fold(mix(salt, method.ordinal.toLong())) { running, field ->
+            val value = values[field] ?: return@fold running
+            value.fold(mix(running, field.ordinal.toLong())) { carried, char -> mix(carried, char.code.toLong()) }
         }
 
     private fun mix(
