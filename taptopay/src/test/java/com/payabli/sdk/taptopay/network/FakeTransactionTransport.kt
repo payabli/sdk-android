@@ -18,7 +18,7 @@ import kotlinx.serialization.KSerializer
  * `:core` has a double of its own and it cannot be borrowed — it lives in `:core`'s test source set and is
  * `internal` to that module. [PayabliTransport] is public, so the cost of doing without is this file.
  *
- * Deliberately no decoration chain and no auth: what this exercises is a client's own request assembly and
+ * No decoration chain and no auth: what this exercises is a client's own request assembly and
  * response handling. A fake that stamped an `Authorization` header would let a test come to depend on a
  * layer it is not testing.
  */
