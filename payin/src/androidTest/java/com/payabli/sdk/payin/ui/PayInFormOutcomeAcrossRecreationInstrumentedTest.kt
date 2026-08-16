@@ -20,6 +20,7 @@ import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
@@ -42,8 +43,7 @@ import org.junit.runner.RunWith
  * an outcome the host was already holding. `PayabliPayInForm`'s KDoc promises exactly that.
  *
  * `PayInSubmissionRetentionInstrumentedTest` covers the flow across a recreation and drives `start` directly,
- * so it never exercises this. Held in `remember` rather than `rememberSaveable`, the flag reset on recreation
- * and neither callback fired for a payment the service had taken.
+ * so it never exercises this. `PayInFormRetentionInstrumentedTest` covers the values beside the flag.
  *
  * [StateRestorationTester] restores saved state the way a configuration change does, without needing the
  * Activity to hold the composition under test.
@@ -52,6 +52,9 @@ import org.junit.runner.RunWith
 class PayInFormOutcomeAcrossRecreationInstrumentedTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
+
+    /** Held here rather than inside the composition, which is where a host holds it. */
+    private val draft = PayInFormDraft()
 
     private var submission by mutableStateOf<PayInSubmissionState>(PayInSubmissionState.Idle)
 
@@ -144,6 +147,7 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
             MaterialTheme {
                 PayInFormContent(
                     submission = submission,
+                    draft = draft,
                     configuration = configuration,
                     initialValues = seed,
                     onSubmit = { true },
