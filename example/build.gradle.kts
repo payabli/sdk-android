@@ -112,10 +112,20 @@ android {
             // The same four `:payin`'s live tier takes, and the same names, because one set of secrets feeds
             // both. Given them, the walkthrough serves its own token and needs no server beside it; without
             // them it runs against whatever the build configured and a token server on the bench.
-            listOf("environment", "entryPoint", "clientId", "clientSecret")
-                .mapNotNull { name ->
-                    providers.gradleProperty("payabli.liveTest.$name").orNull?.let { name to it }
-                }.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value }
+            //
+            // All four or none, refused here as well as in the test. Forwarding a subset is what makes the
+            // difference invisible: the run looks configured, takes the bench path anyway, and fails several
+            // steps later on a form that never unlocked.
+            val liveTest =
+                listOf("environment", "entryPoint", "clientId", "clientSecret")
+                    .associateWith { providers.gradleProperty("payabli.liveTest.$it").orNull }
+            val missing = liveTest.filterValues { it == null }.keys
+            if (missing.isNotEmpty() && missing.size < liveTest.size) {
+                error("payabli.liveTest.* is partly set. Missing: ${missing.sorted().joinToString()}")
+            }
+            liveTest.forEach { (name, value) ->
+                value?.let { testInstrumentationRunnerArguments["liveTest.$name"] = it }
+            }
         }
 
         // One list, because `notClass` is a single runner argument: setting it twice keeps the last write and
