@@ -51,7 +51,7 @@ internal class LiveTokenServer(
             while (!socket.isClosed) {
                 runCatching {
                     socket.accept().use { client ->
-                        client.getInputStream().bufferedReader().readLine()
+                        drainHttpRequest(client.getInputStream().bufferedReader())
                         // A refused mint answers 500 rather than closing the socket. Closing it reaches the app
                         // as a transport error, which it reports the same way as every other unreachable
                         // server, so the one run that knows why would be the one saying nothing.
