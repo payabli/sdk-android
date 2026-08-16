@@ -23,21 +23,21 @@ public class PayInStoredMethod(
 }
 
 /**
- * A transaction the service accepted.
+ * A transaction that was accepted.
  *
  * **An authorization code, an AVS result and a security-code result are not here.** The record a v2 approval
- * carries is the service's detailed transaction record, and it holds none of the three: they exist only in the
- * older response shape this SDK does not use. Declaring them would give a caller three fields that are null on
- * every approval and imply the SDK went looking.
+ * carries holds none of the three: they exist only in the older response shape this SDK does not use.
+ * Declaring them would give a caller three fields that are null on every approval and imply the SDK went
+ * looking.
  */
 public class PayInTransaction(
     public val paymentTransId: String?,
     public val gatewayTransId: String?,
     public val orderId: String?,
     public val method: String?,
-    /** The service's own status number for the transaction. */
+    /** The transaction's status number, as it is reported on the wire. */
     public val transStatus: Int?,
-    /** The paypoint that took it, which is the service's key rather than the entry point a caller configured. */
+    /** The paypoint that took it, by its own key rather than by the entry point a caller configured. */
     public val paypointId: Long?,
     public val totalAmount: BigDecimal?,
     /** What is left after fees, where the paypoint splits them out. */
@@ -73,7 +73,7 @@ public class PayInResult(
 public class PayInFailure(
     /** The unified response code, `D`-prefixed for a decline and `E`-prefixed for an error. */
     public val code: String?,
-    /** Displayable, and never loggable: the service echoes submitted values into some of these. */
+    /** Displayable, and never loggable: some of these can quote what was submitted. */
     public val reason: String?,
     public val explanation: String?,
     public val action: String?,
@@ -97,8 +97,8 @@ public sealed class PayInException(
     /**
      * A value this module refused before sending it.
      *
-     * [field] carries the service's own spelling for the field at fault, where there is one, so a form can
-     * mark it without a second mapping. [reason] is displayable and carries no submitted value.
+     * [field] carries the wire spelling for the field at fault, where there is one, so a form can mark it
+     * without a second mapping. [reason] is displayable and carries no submitted value.
      */
     public class InvalidInput(
         public val field: String?,
@@ -119,11 +119,11 @@ public sealed class PayInException(
     }
 
     /**
-     * The service could not process the transaction, which is not the same as refusing it.
+     * The transaction could not be processed, which is not the same as being refused.
      *
-     * The unified codes separate the two: a `D` is a decline, and an `E` is an error the service raised
-     * about the request or about itself. Reporting one as the other puts decline wording in front of a
-     * payer whose card was never asked, and hides a condition a caller might retry.
+     * The unified codes separate the two: a `D` is a decline, and an `E` is an error about the request or on
+     * the far side. Reporting one as the other puts decline wording in front of a payer whose card was never
+     * asked, and hides a condition a caller might retry.
      */
     public class ServiceError(
         public val failure: PayInFailure,
@@ -154,7 +154,7 @@ public sealed class PayInException(
     /**
      * The submission was canceled with the request in flight, so its outcome is unknown.
      *
-     * The service may have taken the payment. The key to retry with is on the state rather than here:
+     * The payment may already have been taken. The key to retry with is on the state rather than here:
      * `PayInSubmissionState.Failed.retryKey` answers it for every failure that leaves the outcome unknown, and
      * a cancellation is one of several rather than the only one.
      */
@@ -165,7 +165,7 @@ public sealed class PayInException(
     /**
      * A submission was already in flight, so this one was refused and nothing was sent.
      *
-     * A sequencing mistake by the caller rather than anything the service said, which is why it carries
+     * A sequencing mistake by the caller rather than anything that came back, which is why it carries
      * [PayabliErrorCode.INVALID_CONFIGURATION] and no failure from the wire.
      */
     public class AlreadySubmitting :

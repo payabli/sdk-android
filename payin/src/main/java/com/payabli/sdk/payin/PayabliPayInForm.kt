@@ -33,8 +33,8 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * typing.
  *
  * **Nothing in a failure is loggable.** [onFailed] carries the failure so a host can show it or navigate away
- * from it. `PayabliException.reason` and `detail` are displayable only: the service echoes submitted values
- * into some of them, so a record of a failure takes the exception's code, not its text.
+ * from it. `PayabliException.reason` and `detail` are displayable only: some of them can quote what was
+ * submitted, so a record of a failure takes the exception's code, not its text.
  *
  * **Consumes no window insets.** Give it a scrolling viewport that accounts for the keyboard.
  *

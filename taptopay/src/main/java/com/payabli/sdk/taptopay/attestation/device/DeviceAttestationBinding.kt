@@ -11,30 +11,28 @@ import java.util.Base64
  * Both are pure and neither touches an Android type, so they are unit-testable and stay out of `platform/`.
  * `java.util.Base64` needs API 26 and this module's floor is 30.
  *
- * This is the highest-risk pair of functions in the package and the cheapest to pin, because every way of
- * getting either wrong produces the same symptom: the service reports that Play Integrity verification
- * failed, which reads as a device or configuration problem and is actually an encoding one.
+ * This is the highest-risk pair of functions in the package and the cheapest to pin, because an error in
+ * either surfaces far from its cause: integrity verification fails, which reads as a device or configuration
+ * problem and is actually an encoding one.
  */
 internal object DeviceAttestationBinding {
     /**
-     * The challenge to attest against, derived from the service's `challenge`.
+     * The challenge to attest against, derived from the one the device service issued.
      *
-     * **The value the platform signs is not the string the service sent.** The server decodes its stored
-     * challenge from standard base64, hashes it with SHA-256, and expects the nonce inside the token to be
-     * that digest written as URL-safe base64 **without padding**. So the derivation is
-     * `base64url_nopad(SHA256(base64decode(challenge)))`, and each of the three steps has to match: standard
-     * alphabet inbound, URL-safe outbound, no padding on the way out.
+     * **The value the platform signs is not the string that arrived.** It is the digest of the decoded
+     * challenge, and all three steps are load-bearing: standard alphabet inbound, SHA-256, URL-safe base64
+     * **without padding** outbound. A mismatch in any of them fails verification.
      *
-     * Classic, never standard. The current service verifies only this nonce shape, whatever a later one may
-     * add, and a standard request would bind its freshness to a `requestHash` the server never looks at. The
-     * returned challenge therefore carries [com.payabli.sdk.taptopay.attestation.VerdictClass.CLASSIC], and
-     * the classic attestor is the only one that will accept it.
+     * Classic, never standard. Only this nonce shape is verified, whatever a later one may add, and a standard
+     * request would bind its freshness to a `requestHash` that is not what gets checked. The returned challenge
+     * therefore carries [com.payabli.sdk.taptopay.attestation.VerdictClass.CLASSIC], and the classic attestor
+     * is the only one that will accept it.
      *
      * The result is 43 characters decoding to 32 bytes, so [AttestationChallenge.classic]'s shape rules are
      * satisfied by construction rather than by luck.
      *
-     * A [challenge] that is not standard base64 is [DeviceServiceException.Undecodable]: the service handed
-     * back something this SDK cannot use, which is a response defect and not a caller error. Only the
+     * A [challenge] that is not standard base64 is [DeviceServiceException.Undecodable]: what came back cannot
+     * be used, which is a response defect and not a caller error. Only the
      * exception the decoder documents is caught, so an `OutOfMemoryError` raised mid-decode is not re-reported
      * as a malformed challenge — the same boundary [AttestationChallenge.classic] draws.
      */
@@ -52,11 +50,10 @@ internal object DeviceAttestationBinding {
     /**
      * The `attestation` field's value for a token.
      *
-     * The token is already a compact JWS, and the field carries it base64-encoded **on top of that**: the
-     * server reads the field with a standard-alphabet decode and treats the bytes as UTF-8 text. So this is
-     * standard base64 with padding, over the token's UTF-8 bytes — not URL-safe, and not the raw token.
-     * Sending the token unwrapped is accepted by the field's own validation and fails verification later,
-     * which is why the double encoding is stated here rather than left to look redundant.
+     * The token is already a compact JWS, and the field carries it base64-encoded **on top of that**: standard
+     * alphabet with padding, over the token's UTF-8 bytes — not URL-safe, and not the raw token. Sending the
+     * token unwrapped passes the field's own validation and fails verification later, which is why the double
+     * encoding is stated here rather than left to look redundant.
      */
     fun attestationField(token: AttestationToken): String =
         Base64.getEncoder().encodeToString(token.value.toByteArray(Charsets.UTF_8))

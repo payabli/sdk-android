@@ -102,7 +102,7 @@ internal object PayInFormInstrument {
 
     /**
      * Checking where the form does not ask, which is the kind a payer entering a routing and account number
-     * has. The service reads this field on every bank request, so there is no absent value to send.
+     * has. The field is required on every bank request, so there is no absent value to send.
      */
     private fun accountType(value: String): PayInAccountType =
         chosen(
@@ -123,7 +123,7 @@ internal object PayInFormInstrument {
             subject = "A holder type",
         )
 
-    /** Absent leaves the body writer to send `WEB`, which is what the service assumes. */
+    /** Absent leaves the body writer to send `WEB`, which is the default for a form-entered debit. */
     private fun secCode(value: String): PayInSecCode? =
         chosen(
             value = value,

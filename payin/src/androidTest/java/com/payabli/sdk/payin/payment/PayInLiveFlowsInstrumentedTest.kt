@@ -162,8 +162,8 @@ class PayInLiveFlowsInstrumentedTest {
      *
      * `PayabliException.toString` carries the classification and nothing else, which is right for a log line and
      * useless in a test report: a live run that says only `SERVER_ERROR` names neither the status nor the route.
-     * The status, the type and the service's own code are safe to print. `reason` and `detail` are not, because
-     * the service echoes submitted values into some of them.
+     * The status, the type and the wire code are safe to print. `reason` and `detail` are not, because either
+     * can quote what was submitted.
      */
     private fun <T> Result<T>.orFail(what: String): T =
         getOrElse { failure ->

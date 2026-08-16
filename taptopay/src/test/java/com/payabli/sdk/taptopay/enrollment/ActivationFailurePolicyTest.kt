@@ -191,7 +191,7 @@ class ActivationFailurePolicyTest {
                 val thrown = runCatching { fixture.enrollment.confirmActivation(bad) }.exceptionOrNull()
                 assertEquals(bad, DeviceActivationException.CodeMalformed::class.java, thrown?.javaClass)
             }
-            // The service counts a wrong code against a five-attempt lockout; a typo must not spend one.
+            // A code that is sent counts against the attempt limit; a typo must not spend one.
             assertTrue(fixture.transport.requests.isEmpty())
         }
 

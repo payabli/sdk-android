@@ -6,13 +6,13 @@ package com.payabli.sdk.taptopay.enrollment
  * Named `DeviceActivationException`: `ActivationException` would sit one word from `AttestationException`
  * in files that import both.
  *
- * The service reports almost all of these under one result code, telling them apart only by message text, so
- * this taxonomy is built by [DeviceActivationFailures] and that is the only place in the module permitted to
- * read the text. The subtype is the classification; [resultCode] is a diagnostic and is 400 for most of the
- * table, which is exactly why the taxonomy cannot be built on it.
+ * Most of these share one result code, so the taxonomy is built by [DeviceActivationFailures] and that is the
+ * only place in the module permitted to read a refusal's text. The subtype is the classification;
+ * [resultCode] is a diagnostic and is the same value across most of the table, which is exactly why the
+ * taxonomy cannot be built on it.
  *
- * [reason] is the service's own wording. Displayable, and **never logged** — some of these messages echo
- * what was sent, which is the same rule `DeviceServiceException` states for the same field.
+ * [reason] is the refusal's own wording. Displayable, and **never logged** — it can quote what was sent,
+ * which is the same rule `DeviceServiceException` states for the same field.
  */
 internal sealed class DeviceActivationException(
     message: String,
@@ -27,8 +27,8 @@ internal sealed class DeviceActivationException(
     /**
      * The code is not six digits, and nothing was sent.
      *
-     * Worth its own case because it is the one refusal that costs nothing: the service counts an attempt
-     * against a five-attempt lockout, and a typo caught here has not spent one.
+     * Worth its own case because it is the one refusal that costs nothing: a code that is sent counts against
+     * the attempt limit, and a typo caught here has not spent one.
      */
     class CodeMalformed :
         DeviceActivationException(
@@ -37,17 +37,17 @@ internal sealed class DeviceActivationException(
             "",
         )
 
-    /** Wrong code. One of the five attempts is now spent. */
+    /** Wrong code. An attempt is now spent. */
     class CodeIncorrect(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "the activation code is wrong; ask for it again, one of five attempts is now spent",
+            "the activation code is wrong; ask for it again, and an attempt is now spent",
             resultCode,
             reason,
         )
 
-    /** The window closed. The service has cleared the code; the merchant issues another. */
+    /** The code is no longer valid, and the merchant issues another. */
     class CodeExpired(
         resultCode: Int?,
         reason: String,
@@ -57,20 +57,17 @@ internal sealed class DeviceActivationException(
             reason,
         )
 
-    /**
-     * Five wrong codes. The service has cleared the code and reset its own counter on the way out, so a
-     * fresh code restores the full five.
-     */
+    /** Too many wrong codes. Nothing else can be tried until the merchant issues a new one. */
     class AttemptsExhausted(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "five activation attempts failed; the merchant must issue a new code, which restores all five",
+            "too many activation attempts failed; the merchant must issue a new code",
             resultCode,
             reason,
         )
 
-    /** No code was ever issued for this device. Nobody has minted one yet. */
+    /** No code has been issued for this device. */
     class CodeNotIssued(
         resultCode: Int?,
         reason: String,
@@ -81,16 +78,16 @@ internal sealed class DeviceActivationException(
         )
 
     /**
-     * The service could not read back the code it stored.
+     * The stored code could not be read back.
      *
-     * Kept apart from [CodeExpired] even though the remedy is the same, so a fault on the service's side is
-     * never filed as an ordinary expiry.
+     * Kept apart from [CodeExpired] even though the remedy is the same, so a fault is never filed as an
+     * ordinary expiry.
      */
     class CodeUnreadable(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "the service could not read the activation code it stored; the merchant must issue a new one",
+            "the stored activation code could not be read; the merchant must issue a new one",
             resultCode,
             reason,
         )
@@ -98,12 +95,12 @@ internal sealed class DeviceActivationException(
     /**
      * The device is not awaiting activation.
      *
-     * Already active, or retired and replaced. Not reported as success: the service's wording covers both
-     * and calling the second one activated would be a lie.
+     * Already active, or retired and replaced, and this case does not separate the two. Not reported as
+     * success: calling the second one activated would be a lie.
      *
      * The message offers no remedy because there is none to offer yet. The record is kept, so a further
-     * [DeviceEnrollment.enroll] is answered from it without asking the service. Telling the two apart needs
-     * a route that reports device status, which this module does not have.
+     * [DeviceEnrollment.enroll] is answered from it without a call. Separating the two needs a route that
+     * reports device status, which this module does not have.
      */
     class DeviceNotPending(
         resultCode: Int?,
@@ -117,8 +114,8 @@ internal sealed class DeviceActivationException(
     /**
      * The proof of possession did not verify.
      *
-     * Clock skew past the service's window, or a key the service does not have bound to this device. The
-     * first clears once the clock is right, and the code is still good.
+     * Clock skew past what is accepted, or a key that is not the one bound to this device. The first clears
+     * once the clock is right, and the code is still good.
      *
      * The record is kept, so [DeviceEnrollment.enroll] is answered from it and re-attesting takes a
      * [DeviceEnrollment.reset] first. That is the second case, and there is nothing yet that tells the two
@@ -149,11 +146,11 @@ internal sealed class DeviceActivationException(
         )
 
     /**
-     * The service holds no live attestation for this device and key.
+     * There is no live attestation for this device and key.
      *
-     * **The one outcome that discards the stored identity.** Also fires when the credential rotated between
-     * attesting and activating, because the service's row is keyed on the bearer as well; the remedy is the
-     * same either way.
+     * **The one outcome that discards the stored identity.** Also fires when the credential changed between
+     * attesting and activating, since an attestation is valid only for the credential that obtained it; the
+     * remedy is the same either way.
      */
     class AttestationRevoked(
         resultCode: Int?,
@@ -163,8 +160,7 @@ internal sealed class DeviceActivationException(
     /**
      * The credential is not authorised for this paypoint.
      *
-     * Arrives under the same result code as [AttestationRevoked] and means something entirely different: the
-     * enrolment is fine and the token is not. **Discards nothing.**
+     * The enrollment is fine and the credential is not. **Discards nothing.**
      */
     class EntryNotAuthorized(
         resultCode: Int?,
@@ -175,7 +171,7 @@ internal sealed class DeviceActivationException(
             reason,
         )
 
-    /** No such paypoint. The host's configuration names one the service does not have. */
+    /** No such paypoint. The host's configuration names one that does not exist. */
     class PaypointUnknown(
         resultCode: Int?,
         reason: String,
@@ -194,14 +190,14 @@ internal sealed class DeviceActivationException(
     /**
      * The service failed internally.
      *
-     * Whether the attempt was counted is not knowable from here: the failure can land either side of the
-     * comparison. Sending the code again is what there is to do, and it can be one of the five.
+     * Whether the attempt counted is not knowable from here. Sending the code again is what there is to do,
+     * and it may cost an attempt.
      */
     class ServiceFailed(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "the device service failed; send the code again, which may cost one of the five attempts",
+            "the device service failed; send the code again, which may cost an attempt",
             resultCode,
             reason,
         )
@@ -210,10 +206,10 @@ internal sealed class DeviceActivationException(
     class NotEnrolled : DeviceActivationException("this device is not enrolled; enroll before activating", null, "")
 
     /**
-     * The service refused with something this mapper does not recognise.
+     * The refusal carried something this mapper does not recognize.
      *
-     * The destination for anything unmatched, and it discards nothing. Classification matches the
-     * service's wording, so the unrecognised outcome is the safe one.
+     * The destination for anything unmatched, and it discards nothing. Classification is built on wording, so
+     * the unrecognized outcome has to be the safe one.
      */
     class Unclassified(
         resultCode: Int?,

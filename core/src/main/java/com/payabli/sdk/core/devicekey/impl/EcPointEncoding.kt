@@ -10,10 +10,10 @@ import java.security.spec.ECPoint
 /**
  * The device key's public point in X9.62 uncompressed form: `0x04 || X || Y`, 65 bytes for P-256.
  *
- * The service stores this and verifies every later assertion against it, so the length and the leading tag
- * are contractual rather than incidental. It rejects anything it cannot encode exactly rather than emitting
- * a shorter buffer: a truncated point is accepted at registration and then fails every signature check
- * afterwards, which surfaces as a broken device rather than as a bad key.
+ * This is what every later assertion is verified against, so the length and the leading tag are contractual
+ * rather than incidental. Anything that cannot be encoded exactly is rejected rather than emitted as a
+ * shorter buffer: a truncated point survives registration and then fails every signature check afterwards,
+ * which surfaces as a broken device rather than as a bad key.
  *
  * `getEncoded()` is not this. That returns a `SubjectPublicKeyInfo` DER structure with the algorithm
  * identifier wrapped around the point, so it is longer and does not start with `0x04`.
@@ -41,14 +41,14 @@ internal object EcPointEncoding {
      * @throws IllegalArgumentException if [key] is not a P-256 key, or a coordinate does not fit.
      */
     fun uncompressed(key: ECPublicKey): ByteArray {
-        // This encoding carries no curve identifier, so the service reads whatever it is sent as P-256. A
+        // This encoding carries no curve identifier, so it is unambiguous only if the curve is fixed. A
         // 256-bit curve with different coefficients has the same coordinate width and encodes to the same 65
-        // bytes, and the point stored for it can never verify a signature from the key it came from.
+        // bytes, and a point read back as P-256 can never verify a signature from the key it came from.
         require(isP256(key.params)) { "the device key must be a $CURVE key" }
 
         val point = key.w
-        // The identity element has no affine coordinates and would encode as 65 zero bytes, which the
-        // service would accept and never be able to verify against.
+        // The identity element has no affine coordinates and would encode as 65 zero bytes, which is a
+        // well-formed point that no signature can ever verify against.
         require(point != ECPoint.POINT_INFINITY) { "the device key's point is the identity" }
 
         return ByteArray(POINT_BYTES).also { out ->

@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * The derivation the service records a key by, checked against an answer computed outside this code.
+ * The derivation a key is identified by, checked against an answer computed outside this code.
  *
  * A test that rebuilds the canonical JSON to predict the digest would agree with any member order and any
  * padding this file happened to use, so the expected value below was produced by a separate implementation

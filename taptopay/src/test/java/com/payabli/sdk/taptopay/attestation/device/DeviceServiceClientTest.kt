@@ -117,8 +117,8 @@ class DeviceServiceClientTest {
         runTest(timeout = TEST_TIMEOUT) {
             val transport = everyRouteCalled()
 
-            // The service records the token that attested a device and requires that same one afterwards, so a
-            // refresh started by one of these calls breaks the device until it re-attests. Compared per route
+            // An attestation is valid only for the credential that obtained it, so a refresh started by one of
+            // these calls breaks the device until it re-attests. Compared per route
             // rather than with `all`, so a route that lost the flag is named by the failure.
             assertEquals(
                 ROUTE_PAYLOADS.keys.associateWith { true },
@@ -227,9 +227,9 @@ class DeviceServiceClientTest {
             )
 
             val body = transport.bodyJson()
-            // `platform` is JsonRequired on this route: absent, the server's deserializer throws before any of
-            // its own validation runs. It has no Kotlin default for that reason, since `encodeDefaults = false`
-            // would drop a defaulted property from the body.
+            // `platform` must be physically present on this route: a body that omits the key is refused before
+            // any of its other fields are read. It has no Kotlin default for that reason, since
+            // `encodeDefaults = false` would drop a defaulted property from the body.
             assertEquals(
                 setOf("entry", "challengeId", "deviceId", "keyId", "appId", "attestation", "publicKey", "platform"),
                 body.keys,
@@ -319,8 +319,7 @@ class DeviceServiceClientTest {
 
             val record = logger.records.single()
             // An exact set: only names already on `:core`'s allowlist, so this package needs no widening of
-            // that file. `reason` is absent from every record here because the service echoes request data
-            // into some of its messages.
+            // that file. `reason` is absent from every record here because it can quote what was sent.
             assertEquals(listOf("event", "route", "statusCode"), record.fieldNames)
             assertFalse(record.message.contains("c2VjcmV0LW1hdGVyaWFs"))
         }

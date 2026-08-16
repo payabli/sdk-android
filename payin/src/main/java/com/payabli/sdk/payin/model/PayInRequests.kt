@@ -8,8 +8,7 @@ import java.math.BigDecimal
  * [totalAmount] is a [BigDecimal] because a payment amount in binary floating point cannot hold `0.10`. It
  * reaches the wire as an unquoted number with two decimal places.
  *
- * [serviceFee] absent and [serviceFee] zero are different statements, and both are sendable: the service's own
- * payloads send `0.00` explicitly.
+ * [serviceFee] absent and [serviceFee] zero are different statements, and both are sendable.
  */
 public class PayInPaymentDetails(
     public val totalAmount: BigDecimal,
@@ -23,10 +22,10 @@ public class PayInPaymentDetails(
 }
 
 /**
- * Who is paying, as far as the service should record it.
+ * Who is paying, as far as the transaction should record it.
  *
- * Every field is optional because the service decides what it requires per paypoint, and a client refusing a
- * combination the service accepts is a client that has to be updated when a paypoint is reconfigured.
+ * Every field is optional because what is required varies by paypoint, and a client refusing a combination
+ * that would have been accepted is a client that has to be updated when a paypoint is reconfigured.
  */
 public class PayInCustomerData(
     public val customerId: Long? = null,
@@ -71,8 +70,8 @@ public class PayInVendorData(
 /**
  * Everything about storing a method other than the instrument itself.
  *
- * No `idempotencyKey`: the service's idempotency middleware covers the MoneyIn paths only, so a key sent to
- * the store endpoint is read by nobody.
+ * No `idempotencyKey`: a repeat is not recognizable on the store route, so a key sent there is read by
+ * nobody.
  */
 public class PayInStoreOptions(
     public val customerData: PayInCustomerData? = null,
@@ -80,7 +79,7 @@ public class PayInStoreOptions(
     public val methodDescription: String? = null,
     public val source: String? = null,
     public val subdomain: String? = null,
-    /** Validates a bank account with the service's own check before storing it. */
+    /** Validates a bank account before storing it. */
     public val achValidation: Boolean? = null,
     /** Stores the method against a new anonymous customer when no customer is identified. */
     public val createAnonymous: Boolean? = null,
@@ -106,12 +105,12 @@ public class PayInValidationOptions(
 )
 
 /**
- * What to charge, who to charge it for, and how the service should treat the request.
+ * What to charge, who to charge it for, and how the request should be treated.
  *
  * The instrument is not here: a payment form collects that and hands it over at submission, so a caller
  * configuring a screen ahead of time holds no card number.
  *
- * The flags and headers are the service's own parameters.
+ * The flags and headers below are wire parameters, and this type only carries them.
  */
 public class PayInTransactionOptions(
     public val paymentDetails: PayInPaymentDetails,
@@ -157,8 +156,8 @@ public class PayInRequest(
 /**
  * An authorization to capture, in full or in part.
  *
- * [transId] is the service's identifier for the authorization and goes in the path, which is what makes this
- * the one call in the module whose resolved path differs from its route template.
+ * [transId] identifies the authorization and goes in the path, which is what makes this the one call in the
+ * module whose resolved path differs from its route template.
  */
 public class PayInAuthorizedRequest(
     public val transId: String,
@@ -166,8 +165,8 @@ public class PayInAuthorizedRequest(
     /**
      * Makes a repeated capture return the first one's result instead of capturing again.
      *
-     * This route is under the same idempotency middleware as a capture, and it moves money: a response lost
-     * on the way back leaves a caller unable to retry without risking a second partial capture.
+     * This call moves money, so a response lost on the way back leaves a caller unable to retry without
+     * risking a second partial capture.
      */
     public val idempotencyKey: String? = null,
 )

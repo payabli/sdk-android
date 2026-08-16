@@ -43,7 +43,7 @@ internal sealed interface TapToPaySessionState {
     data object Reinitializing : TapToPaySessionState
 
     /**
-     * The service holds this device as registered but not yet active.
+     * This device is registered and not yet active.
      *
      * The device owes a code the merchant issues out of band. Nothing the SDK can do advances this; a host
      * collects the code and confirms it.

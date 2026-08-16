@@ -30,30 +30,30 @@ import java.util.Base64
  * **Retry the whole of [enroll], never one call inside it.** Nothing here is wrapped in a retry, and the
  * sequence is safe to repeat from the top:
  *
- * - `/challenge` mints a fresh value per call, and `/attest` consumes it on read.
- * - `/register` keys on the hardware identifier. A device still awaiting activation gets the same handle
- *   back, and the key's thumbprint is unchanged, so the service keeps any attestation already written.
- * - The fixed key handle returns the key the previous attempt used. No attempt strands one.
- * - `/attest` revokes prior bindings before inserting, so the same key is a replacement, not a conflict.
+ * - a challenge is fresh per call and single-use, so a repeat starts from a new one.
+ * - registering keys on the hardware identifier, so a repeat returns the same device rather than a second,
+ *   and an attestation already written for the same key survives it.
+ * - the fixed key handle returns the key the previous attempt used. No attempt strands one.
+ * - attesting replaces a prior binding for the same key rather than colliding with it.
  *
- * The transport can also send `/attest` or `/activate` twice on its own: credential recovery replays a
- * rejection that was an exact 401. That is answered before any controller runs, so nothing is consumed.
+ * The transport can also send one of these calls twice on its own, when credential recovery replays a
+ * rejected request. That is refused with nothing consumed.
  *
- * **Repeating the sequence after activation completes is destructive.** `/register` retires an active
- * device and issues a new handle, costing the merchant a fresh out-of-band code. [enroll] therefore checks
- * what it already knows before calling anything, and a storage failure that may be momentary is raised
- * instead of being read as "nothing stored".
+ * **Repeating the sequence after activation completes is destructive**: registering again replaces the
+ * device's handle, costing the merchant a fresh out-of-band code. [enroll] therefore checks what it already
+ * knows before calling anything, and a storage failure that may be momentary is raised instead of being read
+ * as "nothing stored".
  *
- * **No path here deletes the device key.** No `/attest` refusal reports the key as rejected: each one is
- * about the application, the paypoint, the device state, or the challenge.
+ * **No path here deletes the device key.** No refusal in this sequence is about the key itself, so none of
+ * them is a reason to discard it.
  */
 internal class DeviceEnrollment(
     /**
      * The paypoint every call is scoped to.
      *
-     * Held, not passed per call. The service scopes a device by paypoint: activating against one entry a
-     * device attested under another is answered as a device that does not exist. Holding it makes that
-     * mismatch unwritable at the call site.
+     * Held, not passed per call. **A device belongs to one paypoint**, and using one under another paypoint
+     * is refused rather than being a near miss. Holding the entry makes that mismatch unwritable at the call
+     * site.
      */
     private val entry: String,
     private val appId: String,
@@ -105,17 +105,17 @@ internal class DeviceEnrollment(
 
             if (knownHere != null) {
                 // The key at the handle was replaced, so the record names a binding this device can no
-                // longer sign for. Discarded here, locally: the service answers this state as a revoked
-                // attestation, which means something else.
+                // longer sign for. Discarded here, locally, rather than left for a later refusal to
+                // classify.
                 logger.warn(LogField.safe("event", "device_identity_stale")) {
                     "stored device identity names a key this device no longer holds, re-enrolling"
                 }
                 store.clear()
             } else if (known != null) {
-                // A record for another paypoint, and its binding is still live: an attestation is revoked
-                // per device row, and each paypoint has its own row. So it is kept until the write below
-                // replaces it. Discarding it here and then failing anywhere in the sequence would leave the
-                // other paypoint with no record, and its next enrollment would retire an active device.
+                // A record for another paypoint, whose binding this sequence does not touch: each paypoint
+                // has its own device. So it is kept until the write below replaces it. Discarding it here
+                // and then failing anywhere in the sequence would leave the other paypoint with no record,
+                // and its next enrollment would replace a device that was active.
                 logger.debug(LogField.safe("event", "device_identity_other_paypoint")) {
                     "stored device identity is for another paypoint, keeping it until this one is attested"
                 }
@@ -137,8 +137,8 @@ internal class DeviceEnrollment(
                 reportRowChange(registration.outcome)
             }
 
-            // Awaiting activation does not short-circuit: `/attest` accepts a device in that state and
-            // writes the row `/activate` verifies against, so stopping here would leave nothing to verify.
+            // Awaiting activation does not short-circuit: attesting is what activation later verifies
+            // against, so stopping here would leave nothing to verify.
             //
             // Keyed on `isActive`, not on the negation of `isPending`. An absent or unrecognized status
             // makes both false, and reporting that as active is the direction a caller cannot recover from:
@@ -180,12 +180,12 @@ internal class DeviceEnrollment(
      * Spends the six-digit code the merchant issued out of band.
      *
      * **No challenge is requested first.** The sibling SDK does, and the call is dead: its result is
-     * discarded, the activation body carries nothing to correlate it with, and what the service verifies is
-     * the assertion, signed over its timestamp. It costs a round trip that can fail on its own and surface
-     * as an attestation error while someone is typing a perfectly good code.
+     * discarded, the activation body carries nothing to correlate it with, and what is verified is the
+     * assertion, signed over its timestamp. It costs a round trip that can fail on its own and surface as an
+     * attestation error while someone is typing a perfectly good code.
      *
-     * The code's shape is checked here. The service counts a wrong code against a five-attempt lockout, and
-     * a typo should not spend one.
+     * The code's shape is checked here, because a code that is sent counts against the attempt limit and a
+     * typo should not spend one.
      */
     suspend fun confirmActivation(activationCode: String) {
         lock.withLock {
@@ -194,9 +194,9 @@ internal class DeviceEnrollment(
             val known = store.read() ?: throw DeviceActivationException.NotEnrolled()
 
             // A record made under another paypoint names a device this entry does not have. Sending it
-            // would be answered as a device that does not exist, and the classification for that discards
-            // the record — destroying a valid enrolment for the paypoint it does belong to. For this
-            // entry the device is simply not enrolled, which is what the caller is told.
+            // would be refused in a way that discards the record, destroying a valid enrollment for the
+            // paypoint it does belong to. For this entry the device is simply not enrolled, which is what
+            // the caller is told.
             if (known.entry != entry) throw DeviceActivationException.NotEnrolled()
 
             val assertion =
@@ -219,7 +219,7 @@ internal class DeviceEnrollment(
                 )
             } catch (declined: DeviceActivationException) {
                 // Exactly two outcomes say the thing this record names is gone. Everything else leaves it
-                // alone, including the other refusal that arrives under the same result code.
+                // alone, and reaching either of these takes a positive classification.
                 if (declined is DeviceActivationException.AttestationRevoked ||
                     declined is DeviceActivationException.DeviceUnknown
                 ) {
@@ -228,7 +228,7 @@ internal class DeviceEnrollment(
                 throw declined
             }
 
-            // Nothing is written on success. The service holds whether this device is active, it can
+            // Nothing is written on success. Whether this device is active is not this SDK's to hold: it can
             // change without this SDK being involved, and a copy here would be a claim nobody re-checks.
         }
     }
@@ -265,7 +265,7 @@ internal class DeviceEnrollment(
      *
      * Scoped to this paypoint. A record belonging to another one is left alone: it names a binding this
      * coordinator did not make and cannot check, and removing it would send that paypoint's next enrollment
-     * through a registration that retires an active device.
+     * through a registration that replaces a device that was active.
      */
     suspend fun reset() {
         lock.withLock {
@@ -294,18 +294,18 @@ internal class DeviceEnrollment(
     }
 
     /**
-     * Says so when the service replaced the row this device was using.
+     * Says so when a registration did not recognize the device this record named.
      *
      * Diagnostic only, and nothing branches on it — by this point the returned handle has been taken and the
      * record is about to be rewritten, which is correct in every case. What it catches is the combination
-     * that should not happen: this device held a record **for this paypoint**, so it expected the service to
-     * recognise it, and the service says it created something new instead. That is the signature of a
-     * hardware identifier that is not staying still, or of a row the service can no longer find.
+     * that should not happen: this device held a record **for this paypoint**, so it expected to be
+     * recognized, and something new came back instead. That is the signature of a hardware identifier that is
+     * not staying still, or of a device that can no longer be found.
      *
-     * A record for another paypoint carries no such expectation, and a new row is the right answer there, so
-     * the caller does not reach this.
+     * A record for another paypoint carries no such expectation, and a new device is the right answer there,
+     * so the caller does not reach this.
      *
-     * Absent from the response until the service starts sending it, which reads as nothing to report.
+     * Absent from the response until it starts being sent, which reads as nothing to report.
      */
     private fun reportRowChange(outcome: String?) {
         if (outcome == null || outcome == OUTCOME_REUSED || outcome == OUTCOME_UNCHANGED) return

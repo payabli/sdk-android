@@ -24,12 +24,12 @@ public class PayabliRequest(
     public val headers: Map<String, String> = emptyMap(),
     public val body: ByteArray? = null,
     /**
-     * The service binds this request to the exact credential it carries, so replacing that credential
-     * breaks the binding. Credential recovery is skipped: no refresh, no replay, and the rejection reaches
-     * the caller as it arrived.
+     * This request is bound to the exact credential it carries, so replacing that credential breaks the
+     * binding. Credential recovery is skipped: no refresh, no replay, and the rejection reaches the caller
+     * as it arrived.
      *
-     * It comes from the route's contract with the service. A route that answers something other than a 401
-     * today is still pinned, and its rejection becomes one the day the service starts sending it.
+     * It is a property of the route rather than of a response. A route that answers something other than a
+     * 401 today is still pinned, and its rejection becomes one the day that changes.
      */
     public val isCredentialPinned: Boolean = false,
 ) {

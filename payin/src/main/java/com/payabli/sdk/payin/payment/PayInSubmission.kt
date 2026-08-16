@@ -31,7 +31,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * with the screen. Canceling does not un-charge a card.
  *
  * **One holder per form, and no singleton.** A holder keeps its terminal state — a result, or an exception
- * carrying the service's own wording — for as long as it lives, so its lifetime is a screen's. A host holds
+ * carrying wording from the wire — for as long as it lives, so its lifetime is a screen's. A host holds
  * it wherever its own screen state lives.
  *
  * [state] is a `StateFlow`, which replays its latest value, so a collector arriving after a configuration
@@ -217,7 +217,7 @@ internal class PayInSubmission(
 }
 
 /**
- * Whether this failure leaves it unknown whether the service acted.
+ * Whether this failure leaves it unknown whether the request was carried out.
  *
  * The question is not how bad the failure was but whether the request may have been carried out, because that
  * is what decides between resending the same attempt and making a new one.

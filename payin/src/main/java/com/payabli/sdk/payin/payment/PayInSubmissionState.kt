@@ -63,16 +63,15 @@ public sealed class PayInSubmissionState {
          *
          * Present on the operations that move money — a capture, an authorization, the capture of an earlier
          * authorization — for a cancellation, a network failure, a 5xx, a response that could not be decoded,
-         * and an unexpected error. In each of those the service may already have taken the payment, and a
-         * retry carrying this key has it recognize the repeat instead of acting twice.
+         * and an unexpected error. In each of those the payment may already have been taken, and a retry
+         * carrying this key is recognized as the repeat it is instead of acting twice.
          *
          * Null when the outcome is known, as a decline, a local refusal or a rejected credential is, where a
          * retry is a new attempt.
          *
-         * **Also null for storing a payment method, whatever the failure.** The service runs its idempotency
-         * middleware over the transaction routes only, so no key sent with a store is read by anything. A
-         * store whose outcome is unknown is settled by reading the entry point's stored methods back before
-         * sending it again.
+         * **Also null for storing a payment method, whatever the failure**, because a repeat is not
+         * recognizable there and no key sent with a store is read by anything. A store whose outcome is
+         * unknown is settled by reading the entry point's stored methods back before sending it again.
          */
         public val retryKey: String? = null,
     ) : PayInSubmissionState() {

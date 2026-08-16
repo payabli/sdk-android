@@ -4,7 +4,7 @@ import java.security.MessageDigest
 import kotlin.io.encoding.Base64
 
 /**
- * The identifier the service records for a device key: the JWK thumbprint of its public half, RFC 7638.
+ * The identifier a device key is known by on the wire: the JWK thumbprint of its public half, RFC 7638.
  *
  * Derived from the key instead of stored beside it, so there is no record that can be lost while the key it
  * names survives. It changes when the key changes, which is what the alias cannot do once the alias is fixed.

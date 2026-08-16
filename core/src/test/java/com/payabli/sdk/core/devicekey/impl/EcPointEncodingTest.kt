@@ -11,7 +11,7 @@ import java.security.spec.ECPoint
 import java.security.spec.EllipticCurve
 
 /**
- * The 65-byte point the service stores and verifies every later assertion against.
+ * The 65-byte point every later assertion is verified against.
  *
  * A real generated key covers the ordinary case; the crafted ones cover the coordinate widths a generated
  * key produces only by chance. `BigInteger.toByteArray` is two's-complement and variable length, so a
@@ -139,7 +139,7 @@ class EcPointEncodingTest {
  * An `ECPublicKey` with coordinates chosen by the test.
  *
  * Hand-written because there is no mocking framework here, and because a `KeyFactory` validates that a point
- * is on the curve, which is exactly what these cases deliberately are not.
+ * is on the curve, which is exactly what these cases are not.
  */
 private class CraftedEcPublicKey(
     private val point: ECPoint,

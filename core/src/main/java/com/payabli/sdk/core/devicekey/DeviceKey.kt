@@ -23,13 +23,13 @@ import androidx.annotation.RestrictTo
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface DeviceKey {
     /**
-     * The public half of the key, and the identifier the service records for it, from one observation.
+     * The public half of the key, and the identifier that goes with it, from one observation.
      *
-     * **Both, because registration sends both and they must describe one key.** `/attest` stores the point
-     * against the identifier, and a replacement landing between two separate reads would store one key's
-     * point under another key's identifier: every later assertion then verifies against a point its signing
-     * key never had, and the device is left enrolled in a state no retry recovers. The same reason [sign]
-     * returns its identity rather than leaving it to a second call.
+     * **Both, because registration sends both and they must describe one key.** A replacement landing
+     * between two separate reads would send one key's point under another key's identifier: every later
+     * assertion then verifies against a point its signing key never had, and the device is left enrolled in
+     * a state no retry recovers. The same reason [sign] returns its identity rather than leaving it to a
+     * second call.
      *
      * The identifier is per key, so a replacement gets a different one. The alias the key is stored under is
      * fixed and identical on every install, which is why it cannot serve as this: the service would be unable
@@ -53,8 +53,8 @@ public interface DeviceKey {
      * **The two are returned together because they must describe one key, and asking for them separately
      * cannot guarantee that.** The signature and the identity come from two reads of the key store, and a
      * replacement landing between them yields a signature by the old key labelled with the new key's
-     * identity: the service selects an attestation row by that identity and verifies against a public key
-     * the signature was never made with, so the assertion is refused with nothing pointing at the cause.
+     * identity: verification then picks a public key by that identity and checks a signature that was never
+     * made with it, so the assertion is refused with nothing pointing at the cause.
      * One call, so a caller cannot write the interleaved version. [publicKey] pairs its two values for the
      * same reason.
      *
@@ -94,15 +94,15 @@ public interface DeviceKey {
 /**
  * The public half of a key and the identifier derived from it, from one observation of that key.
  *
- * Registration sends both. Read separately they can describe two different keys, and the service would then
- * hold a point that no assertion under that identifier can ever verify against.
+ * Registration sends both. Read separately they can describe two different keys, leaving a point that no
+ * assertion under that identifier can ever verify against.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class DevicePublicKey(
     /** The public point in X9.62 uncompressed form, `0x04 || X || Y`, 65 bytes. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val point: ByteArray,
-    /** The identifier the service records for this key: the JWK thumbprint of [point]. */
+    /** The identifier this key is known by on the wire: the JWK thumbprint of [point]. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val identity: String,
 ) {

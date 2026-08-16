@@ -123,8 +123,8 @@ internal object PayInBodyWriter {
             field(PayInRoutes.FIELD_ACH_ACCOUNT_TYPE, data.accountType.wireName)
             field(PayInRoutes.FIELD_ACH_ROUTING, data.routingNumber.trim())
             field(PayInRoutes.FIELD_ACH_HOLDER, data.holderName.trim())
-            // The service assumes an internet authorization when none is sent, so sending it is what makes
-            // the value the caller chose visible in the request rather than implied by its absence.
+            // An internet authorization is the default when none is sent, so sending it is what makes the
+            // value the caller chose visible in the request rather than implied by its absence.
             field(PayInRoutes.FIELD_ACH_SEC_CODE, (data.secCode ?: PayInSecCode.Web).wireName)
             data.holderType?.let { field(PayInRoutes.FIELD_ACH_HOLDER_TYPE, it.wireName) }
             data.deviceId

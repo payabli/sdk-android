@@ -120,8 +120,8 @@ class DeviceKeyFactoryInstrumentedTest {
             val survivor = deviceKey()
 
             assertEquals(listOf(DeviceKeyHandle.ALIAS), entriesInNamespace())
-            // Each replacement is a different key, so the identifier the service records changes with it even
-            // though the alias does not. Equal identities here would mean nothing was actually replaced.
+            // Each replacement is a different key, so its identifier changes with it even though the alias
+            // does not. Equal identities here would mean nothing was actually replaced.
             assertEquals(identities.size, identities.toSet().size)
             assertNotEquals(identities.last(), survivor.publicKey().identity)
         }

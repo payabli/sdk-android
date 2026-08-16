@@ -12,8 +12,8 @@ import com.payabli.sdk.payin.model.PayInVendorData
  * same amounts, and a second copy of either mapping is a second place for a field to be forgotten.
  *
  * Blank strings become absent throughout. A field the payer left empty and a field the caller never set are
- * the same statement to the service, and sending `""` makes some of its validators refuse a value it would
- * otherwise have defaulted.
+ * the same statement, and sending `""` states something else: an empty value can be refused where an absent
+ * one would have been defaulted.
  */
 internal fun PayInPaymentDetails.toBody(): PaymentDetailsBody =
     PaymentDetailsBody(

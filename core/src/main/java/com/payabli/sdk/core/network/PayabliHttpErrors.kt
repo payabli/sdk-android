@@ -77,7 +77,7 @@ private typealias FieldFailures =
  *
  * A 2xx returns null unconditionally, which is **not** the same as success:
  *
- * - the legacy device routes report business failures as HTTP 200 with `isSuccess: false`, which
+ * - the legacy device routes report a refusal inside a 200, as `isSuccess: false`, which
  *   [PayabliEnvelope.declineOutcome] surfaces and this mapper cannot see;
  * - a v2 envelope can arrive on a 2xx with a `D`-prefixed code, which [PayabliV2Envelope.isDeclined]
  *   surfaces.
@@ -155,7 +155,7 @@ public object PayabliHttpErrors {
     }
 
     /**
-     * The `application/problem+json` body (RFC 9457) plus Payabli's `code`, deliberately without `errors`.
+     * The `application/problem+json` body (RFC 9457) plus Payabli's `code`, and no `errors`.
      *
      * Split from [ErrorsMap] because `errors` is the field most likely to arrive in an
      * unexpected shape, and a single DTO would lose `title` and `detail` along with it. The body's own
@@ -183,9 +183,8 @@ public object PayabliHttpErrors {
      * [PayabliFieldError.message] with no suggestion, or the `{message, suggestion}` object that
      * [PayabliFieldError] declares.
      *
-     * The string form is what ASP.NET model validation sends, and it is the only form observed from the
-     * platform so far: `{"errors":{"Entry":["The Entry field is required."]}}`. Reading only that one
-     * would lose the object form the public type documents, so both decode.
+     * The string form is the only one observed so far: an `errors` map whose values are arrays of plain
+     * strings. Reading only that one would lose the object form the public type documents, so both decode.
      *
      * Anything else in the array — a number, a null, a nested array — fails the [ErrorsMap] decode, so
      * [PayabliValidationException.fieldErrors] is empty and the classification is untouched. Only a JSON

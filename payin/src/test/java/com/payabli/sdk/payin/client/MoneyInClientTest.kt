@@ -497,8 +497,8 @@ class MoneyInClientTest {
     @Test
     fun `a refusal's reason is not logged either`() =
         runTest(timeout = timeout) {
-            // The service echoes submitted values into some of these messages, so the reason is displayable
-            // and never loggable.
+            // A refusal message can quote what was submitted, so the reason is displayable and never
+            // loggable.
             val echoing = "Card 4111111111111111 was refused"
             val declined = """{"code":"D0001","reason":"$echoing"}"""
             val logger = RecordingLogger()
