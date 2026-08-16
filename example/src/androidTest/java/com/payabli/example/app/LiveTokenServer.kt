@@ -67,12 +67,18 @@ internal class LiveTokenServer(
             connection.outputStream.use { out ->
                 out.write("""{"clientId":"$clientId","clientSecret":"$clientSecret"}""".toByteArray())
             }
-            val payload = connection.inputStream.bufferedReader().use(BufferedReader::readText)
+            // getInputStream throws for 4xx and 5xx; the body, when the server sent one, is on errorStream,
+            // which is null when it sent none. Reading it first is what makes a refused exchange report its
+            // status instead of an IOException naming the URL.
+            val status = connection.responseCode
+            val stream =
+                if (status < HttpURLConnection.HTTP_BAD_REQUEST) connection.inputStream else connection.errorStream
+            val payload = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             TOKEN_FIELD
                 .find(payload)
                 ?.groupValues
                 ?.get(1)
-                ?: error("the token exchange answered HTTP ${connection.responseCode} without a token")
+                ?: error("the token exchange answered HTTP $status without a token")
         } finally {
             connection.disconnect()
         }

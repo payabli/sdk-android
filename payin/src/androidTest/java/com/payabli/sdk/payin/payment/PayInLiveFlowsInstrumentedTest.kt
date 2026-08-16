@@ -254,18 +254,22 @@ class PayInLiveFlowsInstrumentedTest {
             connection.outputStream.use { out ->
                 out.write("""{"clientId":"$clientId","clientSecret":"$clientSecret"}""".toByteArray())
             }
-            val body =
-                connection.inputStream
-                    .bufferedReader()
-                    .use(BufferedReader::readText)
-            val payload = Json.parseToJsonElement(body).jsonObject
+            // getInputStream throws for 4xx and 5xx; the body, when the server sent one, is on errorStream,
+            // which is null when it sent none. Reading it first is what makes a refused exchange report its
+            // status instead of an IOException naming the URL.
+            val status = connection.responseCode
+            val stream =
+                if (status < HttpURLConnection.HTTP_BAD_REQUEST) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             val token: String? =
-                TOKEN_FIELDS.firstNotNullOfOrNull { field ->
-                    payload[field]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-                }
-            requireNotNull(token) {
-                "the token exchange answered HTTP ${connection.responseCode} without a token"
-            }
+                runCatching { Json.parseToJsonElement(body).jsonObject }
+                    .getOrNull()
+                    ?.let { payload ->
+                        TOKEN_FIELDS.firstNotNullOfOrNull { field ->
+                            payload[field]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                        }
+                    }
+            requireNotNull(token) { "the token exchange answered HTTP $status without a token" }
         } finally {
             connection.disconnect()
         }
