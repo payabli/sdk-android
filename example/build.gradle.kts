@@ -7,10 +7,6 @@ plugins {
     id("payabli.quality")
 }
 
-// `entryPoint` becomes PAYABLI_LIVETEST_ENTRY_POINT.
-fun liveTestVariable(name: String): String =
-    "PAYABLI_LIVETEST_" + name.replace(Regex("([a-z])([A-Z])"), "$1_$2").uppercase()
-
 // Per-developer demo settings, read from a gitignored secrets.properties with committed defaults in
 // secrets.properties.example. Nothing here is a credential: the entry point and the app id are
 // identifiers, and the access token is minted at runtime by example-server.
@@ -121,14 +117,18 @@ android {
             // difference invisible: the run looks configured, takes the bench path anyway, and fails several
             // steps later on a form that never unlocked.
             //
-            // Each also reads PAYABLI_LIVETEST_<NAME>. A -P value is an argument, so it lands in the process
+            // Each also reads the variable beside it. A -P value is an argument, so it lands in the process
             // command line; an environment variable does not.
             val liveTest =
-                listOf("environment", "entryPoint", "clientId", "clientSecret")
-                    .associateWith { name ->
-                        providers.gradleProperty("payabli.liveTest.$name").orNull
-                            ?: providers.environmentVariable(liveTestVariable(name)).orNull
-                    }
+                mapOf(
+                    "environment" to "PAYABLI_LIVETEST_ENVIRONMENT",
+                    "entryPoint" to "PAYABLI_LIVETEST_ENTRY_POINT",
+                    "clientId" to "PAYABLI_LIVETEST_CLIENT_ID",
+                    "clientSecret" to "PAYABLI_LIVETEST_CLIENT_SECRET",
+                ).mapValues { (property, variable) ->
+                    providers.gradleProperty("payabli.liveTest.$property").orNull
+                        ?: providers.environmentVariable(variable).orNull
+                }
             val missing = liveTest.filterValues { it == null }.keys
             if (missing.isNotEmpty() && missing.size < liveTest.size) {
                 error("payabli.liveTest.* is partly set. Missing: ${missing.sorted().joinToString()}")
