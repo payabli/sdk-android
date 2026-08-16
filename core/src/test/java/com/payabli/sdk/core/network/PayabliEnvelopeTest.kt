@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,13 +71,6 @@ class PayabliEnvelopeTest {
         assertNotNull(outcome)
         assertNull(outcome?.code)
         assertEquals("outer reason", outcome?.reason)
-    }
-
-    @Test
-    fun `an error raised inside a serializer propagates instead of reading as malformed input`() {
-        assertThrows(SimulatedFatalError::class.java) {
-            PayabliEnvelope.decodeOrNull(FatalSerializer, "\"any well-formed body\"")
-        }
     }
 
     @Test

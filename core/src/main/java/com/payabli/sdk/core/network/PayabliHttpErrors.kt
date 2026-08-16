@@ -5,7 +5,6 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
-import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
@@ -15,10 +14,8 @@ import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.core.model.PayabliValidationException
 import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonTransformingSerializer
@@ -219,7 +216,7 @@ public object PayabliHttpErrors {
         status: Int,
         body: String,
     ): PayabliValidationException {
-        val errorDetails = decodeOrNull(ErrorDetails.serializer(), body)
+        val errorDetails = PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)
         return PayabliValidationException(
             httpStatus = status,
             reason = errorDetails?.title ?: PayabliValidationException.DEFAULT_REASON,
@@ -227,7 +224,7 @@ public object PayabliHttpErrors {
             type = errorDetails?.type,
             instance = errorDetails?.instance,
             rawCode = errorDetails?.rawCode,
-            fieldErrors = decodeOrNull(ErrorsMap.serializer(), body)?.errors ?: emptyMap(),
+            fieldErrors = PayabliJson.decodeOrNull(ErrorsMap.serializer(), body)?.errors ?: emptyMap(),
         )
     }
 
@@ -236,7 +233,7 @@ public object PayabliHttpErrors {
         body: String,
         retryAfterMillis: Long?,
     ): PayabliServerException {
-        val errorDetails = decodeOrNull(ErrorDetails.serializer(), body)
+        val errorDetails = PayabliJson.decodeOrNull(ErrorDetails.serializer(), body)
         return PayabliServerException(
             httpStatus = status,
             reason = errorDetails?.title ?: PayabliServerException.DEFAULT_REASON,
@@ -276,7 +273,7 @@ public object PayabliHttpErrors {
     }
 
     private fun decline(body: String): PayabliDeclineException {
-        val declined = decodeOrNull(DeclineBody.serializer(), body)
+        val declined = PayabliJson.decodeOrNull(DeclineBody.serializer(), body)
         return PayabliDeclineException(
             rawCode = declined?.rawCode,
             reason = declined?.reason ?: PayabliDeclineException.DEFAULT_REASON,
@@ -284,23 +281,6 @@ public object PayabliHttpErrors {
             action = declined?.action,
         )
     }
-
-    /**
-     * A body that will not decode costs fields, never the classification.
-     *
-     * Not `runCatching`: it catches `Throwable`, so an OutOfMemoryError would read as a decline.
-     * Not private so a test can pass a serializer that throws.
-     */
-    @VisibleForTesting
-    internal fun <T> decodeOrNull(
-        serializer: KSerializer<T>,
-        body: String,
-    ): T? =
-        try {
-            PayabliJson.format.decodeFromString(serializer, body)
-        } catch (malformed: SerializationException) {
-            null
-        }
 
     /** A singleton so the default argument costs no allocation per call. */
     private val NO_OVERRIDE: (Int) -> PayabliException? = { null }

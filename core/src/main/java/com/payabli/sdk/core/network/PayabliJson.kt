@@ -1,6 +1,9 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
+import androidx.annotation.VisibleForTesting
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
 /**
@@ -19,5 +22,25 @@ public object PayabliJson {
             explicitNulls = false
             // Never pretty-print: request bodies are compact, and pretty output widens log surface.
             prettyPrint = false
+        }
+
+    /**
+     * Decodes [body], or returns null if it will not decode.
+     *
+     * For the envelopes whose callers treat an undecodable body as absent fields rather than as a
+     * failure. One copy so the two cannot draw the boundary differently.
+     *
+     * Not `runCatching`: it catches `Throwable`, so an OutOfMemoryError would read as a decline.
+     * Not private so a test can pass a serializer that throws.
+     */
+    @VisibleForTesting
+    internal fun <T> decodeOrNull(
+        serializer: KSerializer<T>,
+        body: String,
+    ): T? =
+        try {
+            format.decodeFromString(serializer, body)
+        } catch (malformed: SerializationException) {
+            null
         }
 }
