@@ -105,7 +105,7 @@ internal class RegisterResponse(
     val deviceId: String,
     val status: String?,
     /**
-     * What a registration did with a device that already existed.
+     * What a registration did with this device: created it, reused it, or replaced it.
      *
      * **Absent today**, and defaulted rather than required so it stays absent without failing a decode. It is
      * here because [status] alone cannot say, and a device otherwise has no way to notice that the
