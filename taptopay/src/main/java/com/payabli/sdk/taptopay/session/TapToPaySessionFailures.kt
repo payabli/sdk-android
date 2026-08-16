@@ -6,8 +6,10 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.ATTESTATION_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 
@@ -41,6 +43,7 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException -> landingForActivation(failure)
             is AttestationException -> landingForAttestation(failure)
             is DeviceKeyException -> landingForDeviceKey(failure)
+            is DeviceIneligibleException -> failed(DEVICE_INELIGIBLE)
             is PayabliException -> landingForTransport(failure)
             else -> failed(SDK_INTERNAL_ERROR)
         }

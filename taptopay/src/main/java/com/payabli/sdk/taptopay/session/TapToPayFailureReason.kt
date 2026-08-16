@@ -30,6 +30,15 @@ internal enum class TapToPayFailureReason {
     SERVICE_UNAVAILABLE,
 
     /**
+     * This handset cannot take contactless payments, and no repair reaches that.
+     *
+     * The only member where the remedy is a different device. It is separate from
+     * [CONFIGURATION_REJECTED], which is an account someone can change, and from [SDK_INTERNAL_ERROR], which
+     * asks a host to report a defect: the wrong hardware is neither a defect nor a setting.
+     */
+    DEVICE_INELIGIBLE,
+
+    /**
      * The SDK and the service disagree about the contract, or the SDK has a defect.
      *
      * This side of the wire. A failure inside the service is [SERVICE_UNAVAILABLE], which is why the name

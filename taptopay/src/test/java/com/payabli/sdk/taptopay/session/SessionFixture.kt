@@ -1,6 +1,5 @@
 package com.payabli.sdk.taptopay.session
 
-import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.EnrollmentFixture
 import com.payabli.sdk.taptopay.enrollment.RouteScript
@@ -8,6 +7,7 @@ import com.payabli.sdk.taptopay.enrollment.attestBody
 import com.payabli.sdk.taptopay.enrollment.challengeBody
 import com.payabli.sdk.taptopay.enrollment.configBody
 import com.payabli.sdk.taptopay.enrollment.registerBody
+import com.payabli.sdk.taptopay.provider.FakeTapToPayProvider
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 
@@ -50,47 +50,6 @@ internal suspend fun <T> completing(
         ?: throw AssertionError("$what never completed: the session claim was stranded")
 
 /**
- * A reader that records what it was asked to do, and can be held open.
- *
- * [sawOverlap] is the assertion worth making about serialization. Checking the state afterwards can be
- * satisfied by luck; a flag raised from inside the shared resource cannot, because it says two runs were in
- * there together.
- */
-internal class FakeReaderProvider(
-    private val trace: MutableList<String>,
-    private val gate: (suspend () -> Unit)? = null,
-) : ReaderProvider {
-    var configureCount: Int = 0
-        private set
-    var prepareCount: Int = 0
-        private set
-    var lastCredentials: ReaderCredentials? = null
-        private set
-    var sawOverlap: Boolean = false
-        private set
-
-    private var inside = false
-
-    override suspend fun configure(credentials: ReaderCredentials) {
-        trace += "reader:configure"
-        configureCount++
-        lastCredentials = credentials
-    }
-
-    override suspend fun prepareReader() {
-        trace += "reader:prepare"
-        if (inside) sawOverlap = true
-        inside = true
-        try {
-            prepareCount++
-            gate?.invoke()
-        } finally {
-            inside = false
-        }
-    }
-}
-
-/**
  * A session wired to fakes, sharing one trace with the enrollment underneath it.
  *
  * The trace spans the transport, the store and the reader, because the properties worth asserting here —
@@ -101,10 +60,11 @@ internal class SessionFixture(
     script: RouteScript,
     firstReadGate: (suspend () -> Unit)? = null,
     readerGate: (suspend () -> Unit)? = null,
+    eligibilityFailure: Throwable? = null,
 ) {
     val enrollment = EnrollmentFixture(script, firstReadGate = firstReadGate)
 
-    val reader = FakeReaderProvider(enrollment.trace, readerGate)
+    val reader = FakeTapToPayProvider(enrollment.trace, readerGate, eligibilityFailure)
 
     val manager = TapToPaySessionManager(enrollment.logger)
 
