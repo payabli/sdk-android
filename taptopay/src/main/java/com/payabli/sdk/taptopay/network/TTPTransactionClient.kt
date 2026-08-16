@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -231,6 +232,9 @@ internal class TTPTransactionClient(
             LogField.safe("event", "ttp_transaction_call_failed"),
             LogField.safe("route", route),
             LogField.safe("statusCode", response.statusCode),
+            // The status alone does not say which failure a retry saw. Both forms are fixed vocabulary: a
+            // code from the shared table, or the name of the one failure this route classifies itself.
+            LogField.safe("errorCode", (failure as? PayabliException)?.code?.name ?: failure.javaClass.simpleName),
         ) { "the transaction call failed at the transport" }
         return failure
     }

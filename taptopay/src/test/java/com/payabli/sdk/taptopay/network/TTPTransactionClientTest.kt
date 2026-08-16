@@ -272,6 +272,24 @@ class TTPTransactionClientTest {
     // Logging
 
     @Test
+    fun `a call that failed at the transport is recorded with something to tell the failures apart`() =
+        runTest(timeout = timeout) {
+            // The status is not enough on its own: a retried close and a paypoint that is not enabled both
+            // reach this record, and an incident is read by what distinguishes them.
+            val (_, server) = client(answer("", 500))
+            runCatching { server.open() }
+
+            val (_, switch) = client(answer("", 404))
+            runCatching { switch.open() }
+
+            val failures = logger.records.filter { it.message == "the transaction call failed at the transport" }
+            assertEquals("both calls were recorded", 2, failures.size)
+            failures.forEach { record ->
+                assertTrue("a failed call named no error code: ${record.fieldNames}", "errorCode" in record.fieldNames)
+            }
+        }
+
+    @Test
     fun `nothing sensitive reaches a log record`() =
         runTest(timeout = timeout) {
             // Every path that writes a record, because each writes a different set of fields and a test
