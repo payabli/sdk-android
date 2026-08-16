@@ -1,5 +1,8 @@
 package com.payabli.example.app
 
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.Closeable
 import java.net.HttpURLConnection
@@ -65,7 +68,7 @@ internal class LiveTokenServer(
             }
         return try {
             connection.outputStream.use { out ->
-                out.write("""{"clientId":"$clientId","clientSecret":"$clientSecret"}""".toByteArray())
+                out.write(credentialJson().toByteArray())
             }
             // getInputStream throws for 4xx and 5xx; the body, when the server sent one, is on errorStream,
             // which is null when it sent none. Reading it first is what makes a refused exchange report its
@@ -83,6 +86,15 @@ internal class LiveTokenServer(
             connection.disconnect()
         }
     }
+
+    // Built by the serializer rather than by interpolation. A credential is opaque, so a quote or a backslash
+    // in one is not a strange input: it would end the string early and the exchange would refuse a request
+    // that says nothing about why.
+    private fun credentialJson(): String =
+        Json.encodeToString(
+            MapSerializer(String.serializer(), String.serializer()),
+            mapOf("clientId" to clientId, "clientSecret" to clientSecret),
+        )
 
     private fun response(body: String) =
         "HTTP/1.1 200 OK\r\n" +
