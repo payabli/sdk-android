@@ -113,20 +113,18 @@ jobs:
       # rather than a filter to write. `class` narrows `:payin` to the live tier so this workflow does not
       # re-run the ordinary instrumented suite the nightly already covers.
       #
-      # The credentials arrive as environment variables and are quoted where they are used, rather than
-      # interpolated into the script by the expression syntax. Two reasons, and both are real here: a secret
-      # holding a single quote would end the quoting and change what the shell runs, and an interpolated value
-      # is a literal in the command line, which every process listing on the runner can read. As variables
-      # they are still visible to this step, which is what pinning the action above is about; they are no
-      # longer visible to everything else running beside it.
+      # The credentials never reach a command line. The build reads PAYABLI_LIVETEST_* itself, so nothing here
+      # passes them with -P: an argument is in the process's command line and readable by anything that can
+      # list processes on the runner, which an environment variable is not. They are still visible to this
+      # step, which is what pinning the action above is about.
       - name: Live flows
         timeout-minutes: 30
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
-          PAYABLI_ENVIRONMENT: ${{ inputs.environment }}
-          PAYABLI_ENTRY_POINT: ${{ secrets.entry-point }}
-          PAYABLI_CLIENT_ID: ${{ secrets.client-id }}
-          PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
+          PAYABLI_LIVETEST_ENVIRONMENT: ${{ inputs.environment }}
+          PAYABLI_LIVETEST_ENTRY_POINT: ${{ secrets.entry-point }}
+          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets.client-id }}
+          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets.client-secret }}
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -136,18 +134,10 @@ jobs:
           disable-animations: true
           script: |
             ./gradlew :payin:connectedAndroidTest \
-              -Ppayabli.liveTest.environment="$PAYABLI_ENVIRONMENT" \
-              -Ppayabli.liveTest.entryPoint="$PAYABLI_ENTRY_POINT" \
-              -Ppayabli.liveTest.clientId="$PAYABLI_CLIENT_ID" \
-              -Ppayabli.liveTest.clientSecret="$PAYABLI_CLIENT_SECRET" \
               -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest
             ./gradlew :example:connectedAndroidTest \
               -Ppayabli.qaWalkthrough=true \
-              -Ppayabli.demo.prefill=true \
-              -Ppayabli.liveTest.environment="$PAYABLI_ENVIRONMENT" \
-              -Ppayabli.liveTest.entryPoint="$PAYABLI_ENTRY_POINT" \
-              -Ppayabli.liveTest.clientId="$PAYABLI_CLIENT_ID" \
-              -Ppayabli.liveTest.clientSecret="$PAYABLI_CLIENT_SECRET"
+              -Ppayabli.demo.prefill=true
 
       # On failure too: a live failure is read from the XML, and the runner is gone by the time anyone looks.
       - name: Upload results

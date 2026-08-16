@@ -7,6 +7,10 @@ plugins {
     id("payabli.quality")
 }
 
+// `entryPoint` becomes PAYABLI_LIVETEST_ENTRY_POINT.
+fun liveTestVariable(name: String): String =
+    "PAYABLI_LIVETEST_" + name.replace(Regex("([a-z])([A-Z])"), "$1_$2").uppercase()
+
 // Per-developer demo settings, read from a gitignored secrets.properties with committed defaults in
 // secrets.properties.example. Nothing here is a credential: the entry point and the app id are
 // identifiers, and the access token is minted at runtime by example-server.
@@ -116,9 +120,15 @@ android {
             // All four or none, refused here as well as in the test. Forwarding a subset is what makes the
             // difference invisible: the run looks configured, takes the bench path anyway, and fails several
             // steps later on a form that never unlocked.
+            //
+            // Each also reads PAYABLI_LIVETEST_<NAME>. A -P value is an argument, so it lands in the process
+            // command line; an environment variable does not.
             val liveTest =
                 listOf("environment", "entryPoint", "clientId", "clientSecret")
-                    .associateWith { providers.gradleProperty("payabli.liveTest.$it").orNull }
+                    .associateWith { name ->
+                        providers.gradleProperty("payabli.liveTest.$name").orNull
+                            ?: providers.environmentVariable(liveTestVariable(name)).orNull
+                    }
             val missing = liveTest.filterValues { it == null }.keys
             if (missing.isNotEmpty() && missing.size < liveTest.size) {
                 error("payabli.liveTest.* is partly set. Missing: ${missing.sorted().joinToString()}")

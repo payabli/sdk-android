@@ -8,6 +8,10 @@ plugins {
     id("payabli.quality")
 }
 
+// `entryPoint` becomes PAYABLI_LIVETEST_ENTRY_POINT.
+fun liveTestVariable(name: String): String =
+    "PAYABLI_LIVETEST_" + name.replace(Regex("([a-z])([A-Z])"), "$1_$2").uppercase()
+
 android {
     namespace = "com.payabli.sdk.payin"
     compileSdk {
@@ -34,10 +38,16 @@ android {
         //   ./gradlew :payin:connectedDebugAndroidTest \
         //     -Ppayabli.liveTest.environment=sandbox -Ppayabli.liveTest.entryPoint=<entry> \
         //     -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret>
+        //
+        // Each also reads PAYABLI_LIVETEST_<NAME>. A -P value is an argument, so it lands in the process
+        // command line; an environment variable does not.
         val liveFlows = "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"
         val liveTest =
             listOf("environment", "entryPoint", "clientId", "clientSecret")
-                .associateWith { providers.gradleProperty("payabli.liveTest.$it").orNull }
+                .associateWith { name ->
+                    providers.gradleProperty("payabli.liveTest.$name").orNull
+                        ?: providers.environmentVariable(liveTestVariable(name)).orNull
+                }
 
         // Every class or method kept out of an ordinary run, as one list, because `notClass` is a single
         // runner argument: setting it twice keeps the last write and silently readmits whatever the earlier
