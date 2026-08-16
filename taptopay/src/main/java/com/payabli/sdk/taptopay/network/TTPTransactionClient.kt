@@ -101,7 +101,10 @@ internal class TTPTransactionClient(
     suspend fun update(
         paymentTransId: String,
         result: CardReadResult,
-    ) = send(paymentTransId, updateSuccessBody(result))
+    ) = send(
+        paymentTransId,
+        PayabliJson.format.encodeToString(JsonObject.serializer(), updateSuccessBody(result)),
+    )
 
     /**
      * Closes the transaction after a tap that never completed.
@@ -114,7 +117,7 @@ internal class TTPTransactionClient(
         description: String,
     ) = send(
         paymentTransId,
-        PayabliJson.format.encodeToJsonElement(
+        PayabliJson.format.encodeToString(
             UpdateFailureBody.serializer(),
             UpdateFailureBody(
                 UpdateErrorDetail(
@@ -123,7 +126,7 @@ internal class TTPTransactionClient(
                     failureReason = NFC_FAILURE_REASON,
                 ),
             ),
-        ) as JsonObject,
+        ),
     )
 
     /**
@@ -135,10 +138,10 @@ internal class TTPTransactionClient(
      */
     private suspend fun send(
         paymentTransId: String,
-        body: JsonObject,
+        body: String,
     ) {
         require(paymentTransId.isNotBlank()) { "paymentTransId is required" }
-        val encoded = PayabliJson.format.encodeToString(JsonObject.serializer(), body).toByteArray(Charsets.UTF_8)
+        val encoded = body.toByteArray(Charsets.UTF_8)
         Retry.run(route = TTPRoutes.UPDATE, policy = retryPolicy, logger = logger) {
             val response =
                 transport.execute(
