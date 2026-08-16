@@ -148,7 +148,7 @@ internal object PayInValidation {
                 ?.let { throw PayInException.InvalidInput(FIELD_CARD_CVV, "The security code is not valid") }
         }
 
-        // The form refuses a past expiry, and so would the capture, one round trip later.
+        // The form refuses a past expiry, and so would sending it, one round trip later.
         val today = ExpiryValue.today()
         if (data.expiry.isExpired(today.year, today.month)) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The card has expired")
