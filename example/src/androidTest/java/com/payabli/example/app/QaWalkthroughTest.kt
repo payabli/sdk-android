@@ -86,9 +86,9 @@ class QaWalkthroughTest {
         val values = CREDENTIAL_ARGUMENTS.associateWith { arguments.getString("liveTest.$it") }
         val missing = values.filterValues { it == null }.keys
 
-        // All four or none. A partial set used to fall through to the bench path, so a run that meant to serve
-        // its own token would instead ask for one at whatever address the build was compiled with, fail at the
-        // first step, and report a form that never unlocked rather than the argument nobody passed.
+        // All four or none. A partial set is refused rather than left to the bench path, which asks for a
+        // token at whatever address the build was compiled with: that fails at the first step and names a
+        // form that never unlocked, not the argument nobody passed.
         if (missing.size == CREDENTIAL_ARGUMENTS.size) return
         if (missing.isNotEmpty()) {
             error("liveTest arguments are partly set. Missing: ${missing.sorted().joinToString()}")
