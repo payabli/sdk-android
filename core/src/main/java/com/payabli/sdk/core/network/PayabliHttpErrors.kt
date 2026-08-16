@@ -5,6 +5,7 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
+import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
@@ -17,6 +18,7 @@ import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonTransformingSerializer
@@ -286,13 +288,19 @@ public object PayabliHttpErrors {
     /**
      * A body that will not decode costs fields, never the classification.
      *
-     * `runCatching` is safe here in a way it would not be around a suspending call: this is a pure
-     * in-memory decode with no suspension point, so there is no `CancellationException` to swallow.
+     * Not `runCatching`: it catches `Throwable`, so an OutOfMemoryError would read as a decline.
+     * Not private so a test can pass a serializer that throws.
      */
-    private fun <T> decodeOrNull(
+    @VisibleForTesting
+    internal fun <T> decodeOrNull(
         serializer: KSerializer<T>,
         body: String,
-    ): T? = runCatching { PayabliJson.format.decodeFromString(serializer, body) }.getOrNull()
+    ): T? =
+        try {
+            PayabliJson.format.decodeFromString(serializer, body)
+        } catch (malformed: SerializationException) {
+            null
+        }
 
     /** A singleton so the default argument costs no allocation per call. */
     private val NO_OVERRIDE: (Int) -> PayabliException? = { null }

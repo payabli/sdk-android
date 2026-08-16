@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -304,5 +305,12 @@ class PayabliHttpErrorsTest {
         val mapped = map(400, body)
         assertEquals(PayabliErrorCode.VALIDATION_ERROR.wireName, mapped?.message)
         assertFalse(mapped.toString().contains("9999999999999999"))
+    }
+
+    @Test
+    fun `an error raised inside a serializer propagates instead of costing the decline its fields`() {
+        assertThrows(SimulatedFatalError::class.java) {
+            PayabliHttpErrors.decodeOrNull(FatalSerializer, "\"any well-formed body\"")
+        }
     }
 }
