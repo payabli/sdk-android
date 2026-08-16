@@ -3,6 +3,8 @@ package com.payabli.example.app
 import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.BufferedReader
 import java.io.Closeable
 import java.net.HttpURLConnection
@@ -99,11 +101,18 @@ internal class LiveTokenServer(
             val status = connection.responseCode
             val stream =
                 if (status < HttpURLConnection.HTTP_BAD_REQUEST) connection.inputStream else connection.errorStream
-            val payload = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            TOKEN_FIELD
-                .find(payload)
-                ?.groupValues
-                ?.get(1)
+            val body = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
+            // Parsed rather than matched. A token is opaque, so an escape sequence in one is not a strange
+            // input, and a pattern reading up to the next quote would stop inside the value or run past it.
+            // Guarded because an error body is not always the JSON the success path expects, and a parse
+            // failure would lose the status this message carries.
+            runCatching { Json.parseToJsonElement(body).jsonObject }
+                .getOrNull()
+                ?.let { payload ->
+                    TOKEN_FIELDS.firstNotNullOfOrNull { field ->
+                        payload[field]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                    }
+                }
                 ?: error("the token exchange answered HTTP $status without a token")
         } finally {
             connection.disconnect()
@@ -134,6 +143,6 @@ internal class LiveTokenServer(
     private companion object {
         const val TOKEN_PATH = "/api/v2/token/serverside"
         const val TIMEOUT_MILLIS = 20_000
-        val TOKEN_FIELD = """"(?:accessToken|access_token|token)"\s*:\s*"([^"]+)"""".toRegex()
+        val TOKEN_FIELDS = listOf("accessToken", "access_token", "token")
     }
 }
