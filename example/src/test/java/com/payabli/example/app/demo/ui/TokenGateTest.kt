@@ -30,6 +30,7 @@ import org.junit.Test
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The first step of both card-not-present screens, at the view model rather than the derivation.
@@ -245,14 +246,17 @@ class TokenGateTest {
     private class AnsweringServer(
         private val refuseFirst: Boolean = false,
     ) : AutoCloseable {
-        var requests = 0
-            private set
+        // Counted atomically because the increment happens on the server's thread and the assertion reads it
+        // from the test's. A plain field orders neither, so the read is free to see a stale value.
+        private val counted = AtomicInteger()
+
+        val requests: Int get() = counted.get()
 
         private val server =
             HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0).apply {
                 createContext("/") { exchange ->
-                    requests += 1
-                    if (refuseFirst && requests == 1) {
+                    val seen = counted.incrementAndGet()
+                    if (refuseFirst && seen == 1) {
                         exchange.sendResponseHeaders(503, -1)
                         exchange.close()
                         return@createContext
