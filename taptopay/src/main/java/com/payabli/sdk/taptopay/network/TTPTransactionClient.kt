@@ -89,8 +89,7 @@ internal class TTPTransactionClient(
                 bodySerializer = InitiateBody.serializer(),
                 route = TTPRoutes.INITIATE,
             )
-        val envelope = read(TTPRoutes.INITIATE, transport.execute(request))
-        return envelope.payload?.paymentTransId ?: throw undecodable(TTPRoutes.INITIATE, null)
+        return read(TTPRoutes.INITIATE, transport.execute(request)).paymentTransId
     }
 
     /**
@@ -171,12 +170,16 @@ internal class TTPTransactionClient(
      * 2. Then the envelope, because a refusal arrives as a `D`-prefixed code behind a 2xx and skipping this
      *    is how a decline reads as an approval. A success is a 201 as often as a 200, so neither is
      *    asserted.
-     * 3. Only then the payload.
+     * 3. Only then the payload, and an approval carrying none is a failure like any other.
+     *
+     * **That last check belongs here rather than above.** The success record is written in this function, so
+     * a caller rejecting an empty payload afterwards would throw with a call-succeeded record already in the
+     * log and no failure beside it, and an incident would read as a success the caller never received.
      */
     private fun read(
         route: String,
         response: PayabliResponse,
-    ): PayabliV2Envelope<InitiatePayload> {
+    ): InitiatePayload {
         failureFor(route, response)?.let { throw it }
         val envelope =
             try {
@@ -187,7 +190,7 @@ internal class TTPTransactionClient(
             } catch (failure: SerializationException) {
                 // The supertype is not caught: SerializationException extends IllegalArgumentException, so
                 // catching that would swallow a programming error raised from inside a serializer.
-                throw undecodable(route, failure)
+                throw undecodable(route, response.statusCode, failure)
             }
         if (!envelope.isApproved) {
             logger.warn(
@@ -204,12 +207,13 @@ internal class TTPTransactionClient(
                 TTPTransactionException.ServiceRejected(envelope.code, envelope.reason)
             }
         }
+        val payload = envelope.payload ?: throw undecodable(route, response.statusCode, null)
         logger.debug(
             LogField.safe("event", "ttp_transaction_opened"),
             LogField.safe("route", route),
             LogField.safe("statusCode", response.statusCode),
         ) { "the transaction was opened" }
-        return envelope
+        return payload
     }
 
     /**
@@ -241,11 +245,13 @@ internal class TTPTransactionClient(
 
     private fun undecodable(
         route: String,
+        statusCode: Int,
         cause: Throwable?,
     ): TTPTransactionException {
         logger.warn(
             LogField.safe("event", "ttp_transaction_undecodable"),
             LogField.safe("route", route),
+            LogField.safe("statusCode", statusCode),
         ) { "the transaction response could not be read" }
         return TTPTransactionException.Undecodable(cause)
     }

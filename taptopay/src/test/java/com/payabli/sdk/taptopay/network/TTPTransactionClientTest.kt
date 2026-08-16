@@ -111,13 +111,19 @@ class TTPTransactionClientTest {
         }
 
     @Test
-    fun `an approval carrying no identifier cannot be read`() =
+    fun `an approval carrying no identifier cannot be read, and is not recorded as a success first`() =
         runTest(timeout = timeout) {
             val (_, client) = client(answer("""{"code":"A01"}"""))
 
             val failure = runCatching { client.open() }.exceptionOrNull()
 
             assertTrue("$failure", failure is TTPTransactionException.Undecodable)
+            // The order is the point. A success record written before the throw leaves an incident reading
+            // as a call that worked and a caller that never got an answer.
+            assertFalse(
+                "${logger.records.map { it.message }}",
+                logger.records.any { it.message == "the transaction was opened" },
+            )
         }
 
     @Test
