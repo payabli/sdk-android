@@ -33,20 +33,19 @@ import kotlinx.serialization.SerializationException
  * the order of calls.
  *
  * **Nothing here is wrapped in `Retry`, and that is per route.** A capture is not repeatable: sending it twice
- * charges twice unless the service can recognize the repeat, which is what [PayInTransactionOptions.idempotencyKey] is
- * for. The service runs its idempotency middleware over these paths, so a caller that sets a key can retry
- * safely and a caller that does not cannot.
+ * charges twice unless the repeat can be recognized as one, which is what
+ * [PayInTransactionOptions.idempotencyKey] is for. So a caller that sets a key can retry safely and a caller
+ * that does not cannot.
  *
  * And the transport can send one of these a second time on its own. Credential recovery replays a request
- * whose rejection was an exact 401, which for these routes is refused before the payment is processed, so it
- * costs a wasted refresh and never a double charge. "Not wrapped in `Retry`" is not a promise that a request
- * reaches the service once.
+ * whose rejection was an exact 401, which on these routes cannot take a second payment, so it costs a wasted
+ * refresh and nothing else. "Not wrapped in `Retry`" is not a promise that a request reaches the service once.
  *
- * **An input problem the service reports as 401 reaches a caller as an expired token.** These routes take a v2
- * error's status from a lookup table, which the call site has no say in, so a missing entry point can arrive
- * as 401. The authenticated transport treats any 401 as a credential rejection: it refreshes, replays, and on the
- * second 401 throws rather than returning the response, so this class never sees the body and cannot
- * reclassify it. Telling the two apart has to happen in the layer that decides what a credential rejection is.
+ * **An input problem can reach a caller as an expired token.** The status on a v2 error is not always the one
+ * the input deserves, and the call site has no say in it, so a bad request can arrive as a 401. The
+ * authenticated transport treats any 401 as a credential rejection: it refreshes, replays, and on the second
+ * 401 throws rather than returning the response, so this class never sees the body and cannot reclassify it.
+ * Telling the two apart has to happen in the layer that decides what a credential rejection is.
  */
 internal class MoneyInClient(
     private val transport: PayabliTransport,
@@ -74,8 +73,8 @@ internal class MoneyInClient(
     /**
      * Authorizes a payment without taking it.
      *
-     * Refused here rather than by the service for anything but entered card data: the service authorizes a
-     * card and nothing else, and a caller learns that without a round trip.
+     * Refused here for anything but entered card data: only a card can be authorized, and a caller learns
+     * that without a round trip.
      */
     suspend fun authorize(
         entryPoint: String,
@@ -93,7 +92,7 @@ internal class MoneyInClient(
             request = request,
             entryPoint = entryPoint,
             entered = entered,
-            // The service takes no achValidation on this route, so sending it would be noise.
+            // This route has no achValidation, so sending it would be noise.
             allowsAchValidation = false,
             idempotencyKey = idempotencyKey,
         )

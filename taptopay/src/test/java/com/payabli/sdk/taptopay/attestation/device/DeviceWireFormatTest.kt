@@ -116,8 +116,8 @@ class DeviceWireFormatTest {
         val fromExplicit = PayabliJson.format.decodeFromString(AttestResponse.serializer(), explicit)
 
         // `explicitNulls = false` covers the absent case for a nullable property with no default, which is why
-        // none of these types declares `= null`. Both spellings reach the same value, so a service that starts
-        // emitting nulls where it used to omit them changes nothing here.
+        // none of these types declares `= null`. Both spellings reach the same value, so a response that
+        // sends an explicit null and one that omits the key are the same answer here.
         assertNull(fromAbsent.isSandbox)
         assertNull(fromExplicit.isSandbox)
         assertEquals(true, fromAbsent.registered)
@@ -125,7 +125,7 @@ class DeviceWireFormatTest {
 
     @Test
     fun `an activation code that cannot be right is refused before it costs an attempt`() {
-        // Every one of these fails the server's comparison and spends one of five attempts to do it.
+        // Every one of these would be refused, and would spend an attempt to be refused.
         for (wrong in listOf("", "   ", "12345", "1234567", "12a456", "12 456", "abcdef", "12.456")) {
             val failure =
                 runCatching {
@@ -142,8 +142,9 @@ class DeviceWireFormatTest {
 
     @Test
     fun `a leading-zero code is accepted, because it is a string and not a number`() {
-        // The service issues six CSPRNG digits, so `000000` and `012345` are legitimate codes. Parsing to an
-        // Int to validate would turn both into something shorter and reject a code the user typed correctly.
+        // A code is six digits and a leading zero is one of them, so `000000` and `012345` are legitimate.
+        // Parsing to an Int to validate would turn both into something shorter and reject a code the user
+        // typed correctly.
         for (right in listOf("000000", "012345", "999999")) {
             val request = ActivateRequest(entry = "an-entrypoint", deviceId = "a-device-id", activationCode = right)
             assertEquals(right, request.activationCode)

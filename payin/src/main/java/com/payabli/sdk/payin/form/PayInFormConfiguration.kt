@@ -116,15 +116,15 @@ public class PayInFormConfiguration(
 
     init {
         // A method offered without one of these renders a form the payer can complete and the SDK cannot
-        // submit: the instrument is built from fields, and a missing one is refused naming the service's
-        // spelling for a box that is not on screen. Refused here instead, where the sections were written.
+        // submit: the instrument is built from fields, and a missing one is refused naming the wire spelling
+        // of a box that is not on screen. Refused here instead, where the sections were written.
         methods.forEach { method ->
             val absent = PayInFieldRules.instrumentFields(method) - inputFieldsFor(method).toSet()
             require(absent.isEmpty()) { "a $method form cannot submit without ${absent.joinToString()}" }
         }
 
         // The amounts are the operation's. A box a payer types into would take a figure the request does not
-        // carry, so the screen would show one amount and the service would take another.
+        // carry, so the screen would show one amount and the request would send another.
         methods.forEach { method ->
             val typed = inputFieldsFor(method).filter { it in READ_BACK_ONLY }
             require(typed.isEmpty()) {

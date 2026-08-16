@@ -16,12 +16,12 @@ import java.math.BigDecimal
  * A path and a field name are the two things a reviewer cannot check by reading the client, so they are not
  * spread across the code that uses them. `:taptopay` keeps its device wire format the same way.
  *
- * **The casing is the service's.** `cardnumber`, `cardexp`, `cardcvv` and `cardzip` are lower case while
- * `cardHolder` and `achHolder` are camel; `achAccountType` values are capitalised while `achHolderType` values
- * are not. The Kotlin properties stay consistent, so none of that reaches a caller.
+ * **The casing is the wire's, and it is not uniform.** `cardnumber`, `cardexp`, `cardcvv` and `cardzip` are
+ * lower case while `cardHolder` and `achHolder` are camel; `achAccountType` values are capitalised while
+ * `achHolderType` values are not. The Kotlin properties stay consistent, so none of that reaches a caller.
  *
- * Requests send exactly what the service reads. Responses additionally accept the other casings through
- * [JsonNames], so a field the service re-spells costs nothing instead of silently reading null.
+ * Requests send exactly the spellings above. Responses additionally accept the other casings through
+ * [JsonNames], so a re-spelled field costs nothing instead of silently reading null.
  */
 internal object PayInRoutes {
     /** Templates, and for three of the four also the paths. Only [CAPTURE_AUTHORIZED] embeds an identifier. */
@@ -60,7 +60,7 @@ internal object PayInRoutes {
 
     private const val HEX = "0123456789ABCDEF"
 
-    /** The service reads this spelling, not `Idempotency-Key`. Its middleware covers the MoneyIn paths only. */
+    /** This spelling, not `Idempotency-Key`, and it is read on the transaction routes only. */
     const val HEADER_IDEMPOTENCY_KEY: String = "idempotencyKey"
 
     /** A header rather than a query flag, for a paypoint that requires one. */
@@ -212,8 +212,8 @@ internal class AuthorizedCaptureBody(
 /**
  * The transaction record a v2 approval carries in `data`.
  *
- * The v2 payload is the service's detailed transaction record, which carries no authorization code, AVS result
- * or security-code result. Those three are in the older response shape only.
+ * The v2 payload carries no authorization code, AVS result or security-code result. Those three are in the
+ * older response shape only.
  */
 @Serializable
 internal class TransactionPayload(

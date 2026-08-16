@@ -40,7 +40,7 @@ data class QaIdentity(
 
     val billingEmail: String get() = "qa+$slug@example.com"
 
-    /** What the service records as the order's description, which is the note a transaction list shows. */
+    /** The order's description, which is the note a transaction list shows. */
     fun note(flow: String): String = "QA $label - $flow"
 
     /**

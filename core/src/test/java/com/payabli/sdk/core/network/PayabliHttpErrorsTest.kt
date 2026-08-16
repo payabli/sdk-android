@@ -127,9 +127,8 @@ class PayabliHttpErrorsTest {
 
     @Test
     fun `the string form the platform sends keeps the field name and the message`() {
-        // Captured verbatim from api-qa: POST /api/v2/device/taptopay/challenge with a blank `entry`. ASP.NET
-        // model validation emits Map<String, List<String>>, which is the shape of every 400 the platform
-        // returns, and the map key is the one thing a form needs to mark the offending field.
+        // Captured verbatim from a live 400: an `errors` map of field name to a list of plain strings, which
+        // is the shape observed, and the map key is the one thing a form needs to mark the offending field.
         val body =
             """
             {"errors":{"Entry":["The Entry field is required."]},"status":400,

@@ -26,8 +26,8 @@ public enum class PayInAccountHolderType(
 /**
  * The NACHA authorization the payer gave, upper case on the wire.
  *
- * [Web] is what the service assumes when none is sent, so it is the default a caller gets: a payer typing
- * their details into a screen authorized it over the internet.
+ * [Web] is the default when none is sent, and it is the right one here: a payer typing their details into a
+ * screen authorized it over the internet.
  */
 public enum class PayInSecCode(
     public val wireName: String,
@@ -134,8 +134,8 @@ public sealed class PayInPaymentMethod {
     /**
      * True when this method can be authorized as well as captured.
      *
-     * Only entered card data can. The service takes an authorization against a card and nothing else, and
-     * this is checked before a request is built so a caller learns it without a round trip.
+     * Only entered card data can: an authorization is against a card and nothing else. Checked before a
+     * request is built, so a caller learns it without a round trip.
      */
     internal val isAuthorizable: Boolean get() = this is Card
 }

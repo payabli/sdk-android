@@ -54,8 +54,8 @@ class PayInRejectedFieldsTest {
     }
 
     @Test
-    fun `the same field is found whether the service sends it bare or under its parent`() {
-        // ASP.NET model validation reports the property on its own, and this module reports it under the object
+    fun `the same field is found whether it arrives bare or under its parent`() {
+        // A refusal from the wire can name the property on its own, and this module names it under the object
         // that carries it.
         listOf("cardnumber", "paymentMethod.cardnumber", "CARDNUMBER", "PaymentMethod.CardNumber").forEach { name ->
             assertEquals(

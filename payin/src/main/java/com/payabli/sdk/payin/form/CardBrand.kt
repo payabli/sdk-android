@@ -3,8 +3,8 @@ package com.payabli.sdk.payin.form
 /**
  * The scheme a card number belongs to, from its leading digits.
  *
- * Read as the payer types, and drawn in the number field as the scheme's mark. It is not sent: the service
- * reads the number and decides for itself.
+ * Read as the payer types, and drawn in the number field as the scheme's mark. It is not sent: the brand
+ * follows from the number.
  */
 public enum class CardBrand {
     Visa,

@@ -143,7 +143,7 @@ class DeviceFailureMappingTest {
     fun `a transport failure arrives as a core exception rather than a device one`() =
         runTest(timeout = TEST_TIMEOUT) {
             // 429 with no envelope at all: a proxy or the gateway, not this service speaking. The two
-            // taxonomies are disjoint on purpose, so which one a caller catches says which layer failed.
+            // taxonomies are disjoint, so which one a caller catches says which layer failed.
             val failure = challengeAgainst(body = "", statusCode = 429)
 
             assertTrue(failure is PayabliRateLimitException)
@@ -166,8 +166,8 @@ class DeviceFailureMappingTest {
         runTest(timeout = TEST_TIMEOUT) {
             val failure = challengeAgainst(successEnvelope("""{"challenge":"Y2g="}"""))
 
-            // Not a decline: the service said success. Something between the two of us is wrong about the
-            // contract, and filing it under the service's fault would lose the cause.
+            // Not a decline: the response claimed success. The two sides disagree about the contract, and
+            // filing that as a refusal would lose the cause.
             assertTrue(failure is DeviceServiceException.Undecodable)
             assertNull((failure as DeviceServiceException).resultCode)
         }
@@ -198,8 +198,8 @@ class DeviceFailureMappingTest {
             val record = logger.records.single()
             assertEquals(LogLevel.WARN, record.level)
             assertEquals(listOf("event", "route", "errorCode"), record.fieldNames)
-            // The reason can echo request data, so it is displayable and never loggable. `statusCode` is
-            // absent from this record on purpose: the status was 200 and printing it beside a failure would
+            // The reason can quote what was sent, so it is displayable and never loggable. `statusCode` is
+            // absent from this record because the status was 200, and printing it beside a failure would
             // read as a contradiction.
             assertFalse(record.message.contains(ECHOING_REASON))
         }
@@ -332,10 +332,10 @@ class DeviceFailureMappingTest {
     @Test
     fun `a call that fails never records a success first`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // `/challenge` cannot proceed without its fields, so this body is a failure for it. The success
-            // record used to be written before the caller discovered that, leaving a log that said the call
-            // succeeded and no failure record anywhere beside it — an incident reading as a success the caller
-            // never received. Whether an absent payload is usable is now settled before anything is recorded.
+            // `/challenge` cannot proceed without its fields, so this body is a failure for it. Whether an
+            // absent payload is usable is settled before anything is recorded: a success record written
+            // first would leave a log saying the call succeeded with no failure record beside it, which
+            // reads as a success the caller never received.
             val failure = challengeAgainst("""{"responseText":"Success","isSuccess":true}""")
 
             assertTrue(failure is DeviceServiceException.Undecodable)
@@ -362,8 +362,8 @@ class DeviceFailureMappingTest {
     // `PayabliJson.format` are both fixed, and deeply nested JSON decoded into a flat target fails fast with a
     // SerializationException rather than recursing into a StackOverflowError. It rests on the catch clauses
     // naming `SerializationException` instead of `Throwable`, which is where a reviewer has to see it. That is
-    // how `:core` and `AttestationChallenge.classic` hold the same rule. A sabotage run flags this: reverting
-    // either catch to `Throwable` turns nothing red.
+    // how `:core` and `AttestationChallenge.classic` hold the same rule. No test here fails if either catch
+    // widens to `Throwable`, which is why the rule is stated where a reviewer reads it.
 
     @Test
     fun `nothing is retried, on any outcome`() =
@@ -374,9 +374,9 @@ class DeviceFailureMappingTest {
             runCatching { DeviceServiceClient(declining, logger).challenge(ENTRY) }
             runCatching { DeviceServiceClient(failing, logger).challenge(ENTRY) }
 
-            // Retryable-looking failures both. `/attest` consumes the challenge on read and `/activate` spends
-            // one of five attempts, so retrying any single call in this family is unsafe even where it looks
-            // free; the duplicate-safe unit is the whole cold sequence, which this client does not own.
+            // Retryable-looking failures both. Each of the POSTs in this family leaves something spent behind
+            // it, so retrying any single one is unsafe even where it looks free; the duplicate-safe unit is
+            // the whole cold sequence, which this client does not own.
             assertEquals(1, declining.requests.size)
             assertEquals(1, failing.requests.size)
         }

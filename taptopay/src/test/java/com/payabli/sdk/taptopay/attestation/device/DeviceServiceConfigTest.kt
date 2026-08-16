@@ -74,7 +74,7 @@ class DeviceServiceConfigTest {
                 ),
                 request.headers,
             )
-            assertTrue("the service pins the credential on this route", request.isCredentialPinned)
+            assertTrue("this route pins the credential it was sent", request.isCredentialPinned)
         }
 
     @Test

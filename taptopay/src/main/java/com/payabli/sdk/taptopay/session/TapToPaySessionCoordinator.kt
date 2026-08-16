@@ -247,8 +247,8 @@ internal class TapToPaySessionCoordinator(
     /**
      * Spends the code, then puts the session back to the start so it can be built.
      *
-     * The service holds whether the device is active, so nothing is recorded here. A code the service
-     * refuses leaves the state alone, because the device still owes one.
+     * Whether the device is active is not this SDK's to hold, so nothing is recorded here. A code that is
+     * refused leaves the state alone, because the device still owes one.
      */
     private suspend fun runConfirmActivation(activationCode: String) {
         enrollment.confirmActivation(activationCode)

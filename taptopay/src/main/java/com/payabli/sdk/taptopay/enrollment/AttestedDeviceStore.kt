@@ -14,8 +14,8 @@ import kotlinx.serialization.SerializationException
 /**
  * The one entry [AttestedDevice] lives in, and the rules for reading it back.
  *
- * It holds the attestation binding and nothing else. Activation state is the service's, so it is asked for
- * rather than kept — a copy here would be a claim nobody re-checks.
+ * It holds the attestation binding and nothing else. Activation state is not this SDK's to hold, so it is
+ * asked for rather than kept — a copy here would be a claim nobody re-checks.
  *
  * One entry holds the whole record, so there is no ordering between its parts and no window where half of
  * it is present. No rollback is needed.
@@ -36,8 +36,8 @@ internal class AttestedDeviceStore(
      *
      * **Null and a failure are different answers and must stay that way.** Null means the record is gone,
      * and the correct response is a cold start. A failure means the store could not be read *this time*, and
-     * treating that as null would run the cold sequence against a device the service may still hold as
-     * active, which retires it and costs the merchant a fresh activation code. The store's own contract
+     * treating that as null would run the cold sequence against a device that may still be active, which
+     * replaces it and costs the merchant a fresh activation code. The store's own contract
      * separates the two, and this is the caller that has to honour it:
      *
      * - the key was lost, or this entry alone could not be authenticated: the data is gone, so null;

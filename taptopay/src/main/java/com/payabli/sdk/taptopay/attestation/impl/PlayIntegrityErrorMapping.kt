@@ -17,16 +17,14 @@ import com.payabli.sdk.taptopay.attestation.VerdictClass
  * an Android class. That is what keeps this file, and its test, on the JVM.
  *
  * TODO: emit telemetry for `TOO_MANY_REQUESTS`, in both tables below. It is the one code whose cause is
- *  not the device in front of you: the request budget is shared across every app embedding this SDK, so
- *  one integrator's traffic exhausts it for all of them, and today that is visible only as an individual
- *  device failing to attest. The signal has to distinguish one device retrying from the budget being gone
- *  fleet-wide, which means it is a counter on the backend rather than a log line here.
+ *  not the device in front of you, and today it is visible only as an individual device failing to attest.
+ *  The signal has to distinguish one device retrying from the budget being gone fleet-wide, which means it
+ *  is a counter on the backend rather than a log line here.
  *
  *  Count only what reaches this mapping. `ThrottleGate` refuses locally with the same disposition and the
  *  same code, without calling the platform, so counting those too turns one throttle plus twenty local
- *  refusals into twenty-one and makes the fleet look far worse than it is. The two are deliberately
- *  indistinguishable to a caller, whose action is identical either way; they are not interchangeable to a
- *  counter.
+ *  refusals into twenty-one and makes the fleet look far worse than it is. The two look alike to a caller,
+ *  whose action is identical either way; they are not interchangeable to a counter.
  */
 internal object PlayIntegrityErrorMapping {
     /**
@@ -115,8 +113,8 @@ internal object PlayIntegrityErrorMapping {
 
             // The three nonce complaints are here rather than under remediation because the nonce is
             // this SDK's to get right. They should be unreachable: a challenge that fails any of the
-            // three cannot be constructed. Arriving anyway means our validation and the platform's
-            // disagree, which is worth surfacing as our bug rather than retrying into the same answer.
+            // three cannot be constructed. Arriving anyway means this SDK's validation and the platform's
+            // disagree, which is a defect to surface rather than to retry into the same answer.
             IntegrityErrorCode.CLOUD_PROJECT_NUMBER_IS_INVALID,
             IntegrityErrorCode.NONCE_TOO_SHORT,
             IntegrityErrorCode.NONCE_TOO_LONG,
@@ -133,7 +131,7 @@ internal object PlayIntegrityErrorMapping {
      * A code neither table knows, a failure the platform reported without one, and the platform's own
      * "no error" arriving as a failure.
      *
-     * Retryable rather than a hard failure, deliberately. The platform adds codes over releases, and a new
+     * Retryable rather than a hard failure. The platform adds codes over releases, and a new
      * one is far more likely to be a new transient condition than a new verdict; classifying the unknown as
      * a failed integrity check would turn the next such addition into a decline. Nothing is weakened by
      * this, because retrying never produces a token that was not issued: the caller either eventually gets

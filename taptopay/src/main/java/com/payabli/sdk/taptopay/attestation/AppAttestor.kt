@@ -23,14 +23,13 @@ public interface AppAttestor {
      *
      * **The challenge is spent once the request is attempted, and not before.** A second call with the same
      * one then fails with [AttestationException.ChallengeReused] rather than producing a second token,
-     * whether or not the first attempt succeeded: what makes a challenge single-use is that it was offered
-     * to the platform, not that it worked.
+     * whatever the earlier call returned: what makes a challenge single-use is that it was offered to the
+     * platform, not that it worked.
      *
-     * **That refusal is a bounded caller-error guard, not replay protection.** It remembers a limited
-     * number of recent values per attestor instance, so a value can be accepted again once enough others
-     * have displaced it, and a second instance shares nothing with the first. Real single use is the
-     * issuer's to enforce, since only it knows what it handed out and what it has retired. Do not build on
-     * this as though it were authoritative.
+     * **That refusal is a bounded local guard.** It remembers a limited number of recent values per attestor
+     * instance, so a value can be accepted again once enough others have displaced it, and a second instance
+     * shares nothing with the first. Single use belongs to whoever issued the challenge, since only the
+     * issuer knows what it handed out. Do not build on this as though it were authoritative.
      *
      * **Obtain a fresh challenge after any failure.** Some failures land before the request is attempted
      * and leave the value unspent: a challenge built for the other request shape, a local refusal for a

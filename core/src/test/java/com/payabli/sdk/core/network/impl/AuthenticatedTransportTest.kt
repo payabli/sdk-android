@@ -108,7 +108,7 @@ class AuthenticatedTransportTest {
             route = ROUTE,
         )
 
-    /** [guardedReplayRequest]'s counterpart for a route whose credential the service pins. */
+    /** [guardedReplayRequest]'s counterpart for a route that pins the credential it was sent. */
     private fun pinnedRequest(method: HttpMethod): PayabliRequest =
         PayabliRequest(
             method = method,
@@ -938,12 +938,12 @@ class AuthenticatedTransportTest {
             assertEquals("PATCH is not replayable for widened non-401 statuses", 1, base.sends)
         }
 
-    // ---- a route whose credential the service pins --------------------------------------------------
+    // ---- a route that pins the credential it was sent ------------------------------------------------
     //
-    // The card-present device routes are the case: the service records the exact token that attested a
-    // device and requires that same one afterwards, so a refresh between two calls breaks the device until
-    // it re-attests. The refusal rides on the request rather than on the policy, which is what makes it
-    // survive a widened policy and a method that would otherwise be replayable.
+    // The card-present device routes are the case: an attestation is valid only for the credential that
+    // obtained it, so a refresh between two calls breaks the device until it re-attests. The refusal rides
+    // on the request rather than on the policy, which is what makes it survive a widened policy and a
+    // method that would otherwise be replayable.
 
     @Test
     fun `a 401 on a pinned route neither refreshes nor replays`() =

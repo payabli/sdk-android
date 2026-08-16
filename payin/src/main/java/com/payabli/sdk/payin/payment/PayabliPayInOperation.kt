@@ -26,7 +26,7 @@ public sealed class PayabliPayInOperation {
         public val options: PayInTransactionOptions,
     ) : PayabliPayInOperation()
 
-    /** Places a hold without taking it, which the service does for entered card data only. */
+    /** Places a hold without taking it, which is possible for entered card data only. */
     public class Authorize(
         public val options: PayInTransactionOptions,
     ) : PayabliPayInOperation()
@@ -34,8 +34,8 @@ public sealed class PayabliPayInOperation {
     /**
      * The instruments this operation can carry.
      *
-     * The service authorizes entered card data and nothing else, and `MoneyInClient` refuses the rest before
-     * sending. A form offering a bank tab for an authorization draws a form a payer can complete and no
+     * An authorization is against entered card data and nothing else, and `MoneyInClient` refuses the rest
+     * before sending. A form offering a bank tab for an authorization draws a form a payer can complete and no
      * request can be made from, so the form reads this and offers what is left.
      */
     internal val instruments: Set<PayInMethodType>

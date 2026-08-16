@@ -12,7 +12,7 @@ package com.payabli.sdk.core.devicekey.impl
  * Versioned, so a later change to how keys are minted moves to a new alias instead of adopting keys created
  * under the old scheme.
  *
- * **This is not the identifier the service records.** That is derived per key from the public half; see
+ * **This is not the identifier a key is known by on the wire.** That is derived per key from the public half; see
  * [JwkThumbprint]. One value cannot be both, because this one is the same on every install and that one has
  * to distinguish one key from its replacement.
  */

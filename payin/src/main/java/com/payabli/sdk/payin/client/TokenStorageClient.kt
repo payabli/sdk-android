@@ -24,11 +24,10 @@ import kotlinx.serialization.SerializationException
  * Takes the session's authenticated transport, as [MoneyInClient] does, so the whole SDK has one bearer and
  * one 401 recovery.
  *
- * **This route reports a refusal as HTTP 200 with `isSuccess: false`**, which is the older envelope rather than
- * the one the transaction routes use. A caller that skipped that check would read a refusal as a success.
+ * **This route reports a refusal inside a 200, as `isSuccess: false`**, in the older envelope rather than the
+ * one the transaction routes use. A caller that skipped that check would read a refusal as a success.
  *
- * No `idempotencyKey`: the service runs its idempotency middleware over the MoneyIn paths only, so a key sent
- * here is read by nobody.
+ * No `idempotencyKey`: a repeat is not recognizable on this route, so a key sent here is read by nobody.
  */
 internal class TokenStorageClient(
     private val transport: PayabliTransport,

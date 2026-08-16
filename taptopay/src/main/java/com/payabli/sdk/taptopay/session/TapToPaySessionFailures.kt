@@ -46,11 +46,11 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * A device the service does not hold as active is refused, and so is a caller whose token is not scoped
-     * for the route. Both arrive as one case, so both land here; the reader is unavailable either way.
+     * A device that owes activation and a credential that is not scoped for the call arrive as one case, so
+     * both land here: the reader is unavailable either way.
      *
-     * A 404 discards nothing. It covers a paypoint, a device and a gateway the service could not find, and
-     * only one of those three means the identity is stale. Telling them apart needs the service's own text.
+     * Nothing found discards nothing. More than one thing can be the one that was not found, and only one of
+     * them means the stored identity is stale, so the safe landing is the one that keeps it.
      */
     private fun landingForService(failure: DeviceServiceException): TapToPaySessionState? =
         when (failure) {
@@ -68,7 +68,7 @@ internal object TapToPaySessionFailures {
      * Most activation failures leave the session alone, because the device still owes the code the caller
      * was in the middle of spending.
      *
-     * Two of them say the record names a device or an attestation the service does not have.
+     * Two of them say the record names a device or an attestation that is gone.
      */
     private fun landingForActivation(failure: DeviceActivationException): TapToPaySessionState? =
         when (failure) {
@@ -82,7 +82,7 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * A platform verdict, which the service would refuse anyway.
+     * A platform verdict, which would be refused anyway.
      *
      * The two the platform says to ask again about are service failures. Nothing about the device changed,
      * so a host is told to retry.

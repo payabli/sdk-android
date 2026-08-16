@@ -36,15 +36,14 @@ private val URL_SAFE_BASE64 = Regex("^[A-Za-z0-9_-]+={0,2}$")
  * The single-use, **server-issued** value an attestation is bound to.
  *
  * Freshness is the whole point of the value, and freshness a client mints is not freshness: a value the
- * device chose proves only that the device can choose values. So there is deliberately **no generator on
- * this type**, and nothing here will invent a value for a caller.
+ * device chose proves only that the device can choose values. So there is **no generator on this type**, and
+ * nothing here will invent a value for a caller.
  *
- * **That is a speed bump, not an enforcement, and the difference matters.** Both entry points take a
- * `String`, so a caller can pass anything, including something it generated itself. This type cannot tell
- * a server-issued value from a self-issued one, and no client-side type could. Provenance is an invariant
- * held between whoever issues the challenge and whoever verifies the resulting token: the verifier accepts
- * only values it issued and has not yet retired, and that check is what makes freshness real. Omitting a
- * generator removes the easy way to get this wrong; it does not make it impossible.
+ * **That is a speed bump, and the difference matters.** Both entry points take a `String`, so a caller can
+ * pass anything, including something it generated itself. This type cannot tell an issued value from a
+ * self-issued one, and no client-side type could. Provenance is an invariant between whoever issues a
+ * challenge and whoever verifies the resulting token. Omitting a generator removes the easy way to get
+ * this wrong; it does not make it impossible.
  *
  * Which field it lands in depends on [verdictClass]: `requestHash` for [VerdictClass.STANDARD], `nonce`
  * for [VerdictClass.CLASSIC]. The two carry different validity rules, which is why there are two
@@ -55,8 +54,8 @@ private val URL_SAFE_BASE64 = Regex("^[A-Za-z0-9_-]+={0,2}$")
  * call site instead. `IllegalArgumentException`, matching how a malformed storage key is treated, because
  * a caller cannot recover from a value it built wrong.
  *
- * Single use is **not** enforced here. A value is a value, and nothing about it says whether it has been
- * spent; that ledger belongs to whatever performs the attestation, and it is enforced there.
+ * Single use belongs to the value's issuer rather than to this type. A value is a value, and nothing about
+ * it says whether it has been spent.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class AttestationChallenge private constructor(

@@ -184,8 +184,8 @@ class CaptureViewModel(
      * The SDK refused it.
      *
      * The panel records the failure's classification and nothing from the wire. What a screen shows is
-     * displayable and never loggable: the service echoes submitted values into some of it, and this panel is
-     * on screen and gets copied into bug reports.
+     * displayable and never loggable, because some of it can quote what was submitted, and this panel is on
+     * screen and gets copied into bug reports.
      */
     fun onFailed(outcome: PayInOutcome.Refused) {
         rotateIdempotencyKey(outcome)

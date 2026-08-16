@@ -8,8 +8,8 @@ import com.payabli.sdk.payin.model.PayInCustomerData
  * What the payer typed that is not part of the instrument.
  *
  * The form collects a customer, and a description for the method it stores, alongside the card or account
- * details. None of it belongs to `PayInInstrument`, so without this they are typed and then dropped: the QA
- * paypoint answers a capture carrying no customer with `400 Error in customer data`.
+ * details. None of it belongs to `PayInInstrument`, so without this they are typed and then dropped, and a
+ * capture that carries no customer can be refused outright.
  *
  * A configured customer and a typed one meet where the body is written. Where the box holds something, that is
  * what is sent; where it is empty, the configured value is, so **a blank box does not delete one**. Only the
@@ -46,8 +46,8 @@ internal class PayInEnteredDetails(
 /**
  * The configured customer with the typed fields over it, or null when neither side named anything.
  *
- * Null rather than an empty object: the service reads a present `customerData` as a customer to act on, and an
- * empty one is a different request from no customer at all.
+ * Null rather than an empty object: a present `customerData` is a customer to act on, and an empty one is a
+ * different request from no customer at all.
  */
 internal fun PayInCustomerData?.toBody(entered: PayInEnteredDetails): CustomerDataBody? {
     val configured = this?.toBody() ?: CustomerDataBody()

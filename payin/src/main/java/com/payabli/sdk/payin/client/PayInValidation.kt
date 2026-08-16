@@ -23,11 +23,11 @@ import java.math.BigInteger
  * about the same field, so this reads the rules and adds only what they do not cover: the two name lengths,
  * the holder-name character set, the amount, and the fields that must not be blank.
  *
- * Every refusal names the field in the service's own spelling, so a caller can mark it without a second
- * mapping, and carries a message with no submitted value in it.
+ * Every refusal names the field in its wire spelling, so a caller can mark it without a second mapping, and
+ * carries a message with no submitted value in it.
  */
 internal object PayInValidation {
-    /** The service's own limit, and the one bound not expressible as a field rule. */
+    /** The wire limit, and the one bound not expressible as a field rule. */
     private const val NAME_MAX = 60
 
     /** The largest mantissa a `decimal` holds, which is 96 bits, and the whole of the range check. */
@@ -110,7 +110,7 @@ internal object PayInValidation {
     fun transId(value: String) {
         if (value.isBlank()) throw PayInException.InvalidInput("transId", "A transaction id is required")
         // A dot segment is unreserved, so encoding leaves it intact and it would still address a different
-        // path. No transaction the service issues looks like this.
+        // path. No transaction identifier looks like this.
         if (value.trim() == "." || value.trim() == "..") {
             throw PayInException.InvalidInput("transId", "A transaction id is required")
         }
@@ -148,7 +148,7 @@ internal object PayInValidation {
                 ?.let { throw PayInException.InvalidInput(FIELD_CARD_CVV, "The security code is not valid") }
         }
 
-        // The form refuses a past expiry and the service would too, one round trip later.
+        // The form refuses a past expiry, and so would the capture, one round trip later.
         val today = ExpiryValue.today()
         if (data.expiry.isExpired(today.year, today.month)) {
             throw PayInException.InvalidInput(FIELD_CARD_EXPIRY, "The card has expired")
@@ -194,13 +194,13 @@ internal object PayInValidation {
     }
 
     /**
-     * The value as it will be sent, or null when the service could not hold it.
+     * The value as it will be sent, or null when the wire type could not hold it.
      *
      * The bound is on the **rounded** value, because that is what goes on the wire: `10.` followed by
      * twenty-nine zeros is sendable as `10.00`, and twenty-nine digits with cents is not, however either one
-     * was written. The service reads these as a `decimal`, whose mantissa is 96 bits, so at two decimal
-     * places the largest it holds is `792281625142643375935439503.35`. It imposes no maximum of its own
-     * beyond refusing zero, so the type is the only bound there is.
+     * was written. These fields travel as a `decimal`, whose mantissa is 96 bits, so at two decimal places
+     * the largest it holds is `792281625142643375935439503.35`. Nothing narrows that further beyond refusing
+     * zero, so the type is the only bound there is.
      *
      * The two guards before the rounding exist only so the rounding itself cannot throw: `setScale` raises
      * `ArithmeticException` at both extremes of the exponent. Both read `precision` and `scale` rather than
@@ -209,7 +209,7 @@ internal object PayInValidation {
     private fun BigDecimal.sendableOrNull(): BigDecimal? {
         // Zero rescales at any scale: rounding `BigDecimal.ZERO.setScale(Int.MAX_VALUE)` to two places
         // answers 0.00 without expanding, because zero short-circuits. The guards below would otherwise
-        // refuse a fee of zero written with an extreme scale, and a fee of zero is a value the service takes.
+        // refuse a fee of zero written with an extreme scale, and a fee of zero is a sendable value.
         if (signum() == 0) return atWireScale()
         if (scale().toLong() > MAX_ROUNDABLE_SCALE) return null
         if (precision().toLong() - scale().toLong() > MAX_INTEGER_DIGITS) return null
@@ -249,8 +249,8 @@ internal object PayInValidation {
     /**
      * The names a refusal carries, built from the wire spellings [PayInRoutes] already holds.
      *
-     * A refusal from this module and a refusal from the service then name the same field, and the spelling
-     * has one home. `paymentMethod.` is the path the service uses when it reports a nested field.
+     * A refusal from this module and one from the wire then name the same field, and the spelling has one
+     * home. `paymentMethod.` is the path a nested field is reported under.
      */
     private fun inPaymentMethod(field: String): String = "${PayInRoutes.FIELD_PAYMENT_METHOD}.$field"
 

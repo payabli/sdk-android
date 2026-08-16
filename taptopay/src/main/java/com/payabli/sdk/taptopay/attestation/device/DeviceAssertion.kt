@@ -32,13 +32,11 @@ internal class DeviceIdentity(
 /**
  * The proof-of-possession headers `/activate` requires, and `/config` after it.
  *
- * The server re-derives what was signed from [timestamp] alone, as `SHA256(UTF8(timestamp))`, and checks the
- * signature over that digest against the public key stored at attestation. **So [timestamp] must
- * be the exact string the signer signed, byte for byte.** That is why it is carried as a string rather than
- * an instant formatted here: a second formatting of the same moment can differ in fractional digits or offset
- * spelling, and the failure would surface as a signature mismatch with nothing pointing at the cause. The
- * shape the server parses is ISO-8601 with fractional seconds, and it accepts a window of 120 seconds plus 5
- * of skew, so an assertion is minted per call and never cached.
+ * What is verified is a signature over [timestamp] and nothing else, so **[timestamp] must be the exact string
+ * the signer signed, byte for byte.** That is why it is carried as a string rather than an instant formatted
+ * here: a second formatting of the same moment can differ in fractional digits or offset spelling, and the
+ * failure would surface as a signature mismatch with nothing pointing at the cause. The shape is ISO-8601 with
+ * fractional seconds, and an assertion is short-lived, so one is minted per call and never cached.
  *
  * This type only carries the values. [DeviceAssertionSigner] produces them from the device key.
  *
@@ -52,7 +50,8 @@ internal class DeviceAssertion(
     /** Base64 of the DER ECDSA signature over `UTF8(timestamp)`, which the algorithm hashes once. */
     val assertion: String,
     /**
-     * The signing key's identifier, matched against the attestation row. Derived from the key, not its alias.
+     * The signing key's identifier, matched against the attestation this device made. Derived from the key,
+     * not from its alias.
      */
     val keyId: String,
     val deviceId: String,
@@ -69,8 +68,8 @@ internal class DeviceAssertion(
     /**
      * The four headers, ready for [com.payabli.sdk.core.network.PayabliRequest.headers].
      *
-     * `X-Device-Id` is not read by `/activate`, which takes the device from the body, and is sent anyway
-     * because `/config` does require it and one assertion serves both.
+     * `X-Device-Id` is what `/config` reads the device from, where `/activate` takes it from the body. Sent on
+     * both, because one assertion serves both.
      */
     fun asHeaders(): Map<String, String> =
         mapOf(
@@ -100,11 +99,11 @@ internal class DeviceAssertion(
             }
             // A space is the printable floor, so the range check above accepts one at either end. HTTP treats
             // leading and trailing whitespace as optional padding around a field value rather than part of it,
-            // so the server can legitimately read back a trimmed string. For `timestamp` that is fatal and
-            // silent: the signer hashed the untrimmed value, the server hashes what it received, and the
-            // signature fails as "assertion verification failed" with nothing pointing at whitespace. The
-            // other three would mismatch a stored alias or device id the same way. Rejected here, where the
-            // field is still named, rather than surfacing as a verification failure two calls later.
+            // so what is read back can legitimately be a trimmed string. For `timestamp` that is fatal and
+            // silent: the signer signed the untrimmed value, verification runs over what arrived, and the
+            // signature fails with nothing pointing at whitespace. The other three would mismatch a stored
+            // identifier the same way. Rejected here, where the field is still named, rather than surfacing as
+            // a verification failure two calls later.
             require(value.trim() == value) { "$field must not begin or end with whitespace" }
         }
     }

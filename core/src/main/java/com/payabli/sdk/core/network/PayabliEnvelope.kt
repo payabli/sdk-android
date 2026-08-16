@@ -10,10 +10,10 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 
 /**
- * The legacy `isSuccess` / `responseData` envelope, used by the `/api/v2/device/...` routes.
+ * The legacy `isSuccess` / `responseData` envelope, used by the device routes.
  *
- * These endpoints report business failures as HTTP 200 with `isSuccess: false` and the reason inside
- * `responseData`, so a caller peeks at [Status] before committing to a full decode:
+ * A refusal arrives inside a 200, as `isSuccess: false` with the reason in `responseData`, so a caller peeks
+ * at [Status] before committing to a full decode:
  *
  * ```kotlin
  * val outcome = PayabliEnvelope.declineOutcome(body)

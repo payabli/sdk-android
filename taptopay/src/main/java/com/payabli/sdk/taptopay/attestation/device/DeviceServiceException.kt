@@ -7,41 +7,33 @@ import java.net.HttpURLConnection.HTTP_NOT_FOUND
 import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
- * A refusal from one of the `/api/v2/device/taptopay` routes.
+ * A refusal from one of the device routes.
  *
- * **These routes answer a business failure with HTTP 200.** The transport status says only that the request
- * reached the service; the refusal lives in the envelope as `isSuccess: false` and a `resultCode` that looks
- * like an HTTP status and is not one. So a caller that checks the status and stops sees every one of these as
- * a success. `PayabliHttpErrors` still runs first at the call site, for the genuine transport failures — a
- * rejected credential, a rate limit, a proxy — and those arrive as `PayabliException`, not as this type. The
+ * **The transport status is not the verdict.** A refusal arrives inside a successful response, as an envelope
+ * carrying `isSuccess: false` and a `resultCode` that reuses HTTP's numbering without being an HTTP status, so
+ * a caller that checks the status and stops sees every one of these as a success. `PayabliHttpErrors` still
+ * runs first at the call site and raises `PayabliException` for a failure the transport itself reports. The
  * two are disjoint: which one a caller catches says which layer failed.
  *
- * **The family has two failure shapes, and this type covers only the second.** A request the service's DTO
- * validation refuses never reaches a controller: it answers with a real HTTP 400 carrying RFC 9457
- * `problem+json` — `{errors, status, title, traceId, type}` — and no envelope. A blank `entry` and a missing
- * `platform` are both that shape. Only a guard inside a controller produces the 200 decline this type
- * describes. `PayabliHttpErrors` takes the first and is never consulted on a 2xx, so nothing dispatches
- * between them; the trap is looking for an envelope in a body that has none.
+ * **A request refused before it is read carries no envelope at all**, and this type never describes one.
+ * `PayabliHttpErrors` takes that shape and is never consulted on a 2xx, so nothing dispatches between the two;
+ * the trap is looking for an envelope in a body that has none.
  *
- * The field names in that `errors` map do not currently reach the caller. `:core` decodes `errors` as a map of
- * `{message, suggestion}` objects and this service sends a map of strings, so the map arrives empty and the one
- * fact worth having — which field was refused — is lost. The fix belongs in `:core`, where every 400 in the
- * SDK shares the same decode.
+ * Which field a refusal names does not currently reach the caller: `:core` decodes that part of a 400 into a
+ * shape these routes do not send, so it arrives empty. The fix belongs in `:core`, where every 400 in the SDK
+ * shares one decode.
  *
  * Device-local rather than new `PayabliErrorCode` cases, on the precedent
  * [com.payabli.sdk.taptopay.attestation.AttestationException] sets and states: that vocabulary is matched
  * string for string by the sibling SDK and is not this module's to widen.
  *
- * **The subtypes are keyed on [resultCode] alone, and no subtype is chosen by matching message text.** The
- * service currently distinguishes a wrong activation code from a locked-out device from an expired window
- * only by `resultText`, all three under `resultCode` 400, and that error oracle is scheduled for removal. A
- * taxonomy built on those strings would break when it goes. So the 400 bucket stays one case here, and a
- * caller that genuinely needs it split supplies a [DeviceFailureMapper]: the text-matching lives in the one
+ * **The subtypes are keyed on [resultCode] alone, and no subtype is chosen by matching message text.** A
+ * taxonomy built on wording breaks the moment the wording changes. So one result code is one case here, and a
+ * caller that needs one split further supplies a [DeviceFailureMapper]: the text-matching lives in the one
  * place that has a reason to accept the risk, and it changes without touching the client.
  *
- * [reason] is the server's own text. It is displayable and **never loggable**, matching how
- * `PayabliException` treats the same field: the service echoes request data into some of these messages, so
- * it is kept off `toString` and out of every log field.
+ * [reason] is server text. It is displayable and **never loggable**, matching how `PayabliException` treats
+ * the same field: a message can quote what was sent, so it is kept off `toString` and out of every log field.
  */
 internal sealed class DeviceServiceException(
     message: String,
@@ -54,16 +46,14 @@ internal sealed class DeviceServiceException(
     val reason: String,
     cause: Throwable? = null,
 ) : Exception(message, cause) {
-    /** Never [reason]: it is server text that can echo what was sent. */
+    /** Never [reason]: it is server text that can quote what was sent. */
     override fun toString(): String = "${javaClass.simpleName}(resultCode=$resultCode)"
 
     /**
      * The request or the device's state was refused.
      *
-     * The widest case. Everything the activation window can go wrong with lands here —
-     * wrong code, five attempts spent, expired code, rejected assertion, a device that was not pending —
-     * along with plain malformed input. Splitting them needs `reason`, which is why it is a
-     * [DeviceFailureMapper]'s job rather than this class's.
+     * The widest case: everything that shares this result code lands here, a malformed request included.
+     * Splitting it needs `reason`, which is why it is a [DeviceFailureMapper]'s job rather than this class's.
      */
     class BadRequest(
         resultCode: Int?,
@@ -73,9 +63,9 @@ internal sealed class DeviceServiceException(
     /**
      * The attestation this call was made against is missing or revoked.
      *
-     * The row is keyed on the key alias **and the exact bearer token captured at `/attest`**, so this also
-     * fires when the host's credential rotated between attesting and using it. Either way the remedy is the
-     * same and it is not a retry: discard the cached identity and attest again.
+     * **An attestation is valid only for the credential that obtained it**, so this also fires when the host's
+     * credential changed between attesting and using it. Either way the remedy is the same and it is not a
+     * retry: discard the cached identity and attest again.
      */
     class NotAttested(
         resultCode: Int?,
@@ -85,16 +75,12 @@ internal sealed class DeviceServiceException(
     /**
      * The device or the application is not permitted this call.
      *
-     * Three distinct conditions reported identically. Two come from a controller as an envelope decline: a
-     * device that is not yet active, which is the ordinary pending-activation signal, and an application
-     * absent from the paypoint's allowlist, which is configuration. The third is a real HTTP 403 from the
-     * gateway on `/config`, raised when the caller's token is not scoped for the route, and it carries no
-     * [reason] because the gateway sends no service text.
+     * **A device that owes activation reaches a caller this way**, so this case is not a misconfiguration on
+     * its own. It is not split further: what stands behind it cannot be told apart here, and the sibling
+     * client draws the same line, so separating them is a change both platforms make together. [reason] is
+     * empty when the refusal came from the transport rather than from the service.
      *
-     * The third is the imprecise one: a scope problem presents to a caller as a device owing activation.
-     * That matches the sibling client, and separating them is a change both platforms make together.
-     *
-     * None of the three is retryable.
+     * Not retryable.
      */
     class Forbidden(
         resultCode: Int?,
@@ -110,13 +96,10 @@ internal sealed class DeviceServiceException(
     /**
      * The service failed internally.
      *
-     * The only case here worth another attempt, and **not by repeating the call that failed.** A 5xx says the
-     * service broke somewhere in handling the request, which can be after it has already changed state: a
-     * `/attest` that read and deleted its challenge before failing leaves that challenge spent, and an
-     * `/activate` can fail having already counted the attempt. Repeating either call then walks into
-     * `BadRequest` for a consumed challenge or spends a second of five attempts on a request that never had a
-     * chance. The unit to repeat is the whole cold sequence, starting from a new `/challenge`, which is the
-     * same reason nothing in this family is wrapped in `Retry`.
+     * The only case here worth another attempt, and **not by repeating the call that failed.** A failure can
+     * land after the request has already had its effect, so repeating it walks into a refusal for something
+     * already spent. The unit to repeat is the whole cold sequence from its first call, which is the same
+     * reason nothing in this family is wrapped in `Retry`.
      */
     class ServerFailure(
         resultCode: Int?,
@@ -169,14 +152,13 @@ internal sealed class DeviceServiceException(
         /**
          * The disposition for an envelope decline.
          *
-         * The constants are `HttpURLConnection`'s, as `PayabliHttpErrors` uses for real statuses, because the
-         * service builds this field by reusing HTTP's numbering rather than inventing a vocabulary. They name
-         * the same integers with the same meanings; declaring a second set here would be two names per number
-         * and one more place to get one wrong. That these arrive inside a 200 is the envelope's doing and does
-         * not change what the numbers mean.
+         * The constants are `HttpURLConnection`'s, as `PayabliHttpErrors` uses for real statuses: the
+         * envelope's codes name the same integers with the same meanings, and declaring a second set here
+         * would be two names per number and one more place to get one wrong. That these arrive inside a 200
+         * does not change what the numbers mean.
          *
          * `>=` on the server bucket rather than an equality, for the reason `PayabliHttpErrors` gives: an
-         * unforeseen code in that range is still the service's own failure, and narrowing it would classify a
+         * unforeseen code in that range is still a failure on the far side, and narrowing it would classify a
          * 503-shaped result as unrecognised.
          */
         fun of(
@@ -219,12 +201,12 @@ internal class RedactedCause(
  * defers to the default classification, so one that only cares about a single case handles that case and
  * says nothing about the rest.
  *
- * Passed per call rather than held on the client, because the same client serves routes whose 400s mean
- * unrelated things: the mapper that knows what a wrong activation code looks like has no business inspecting
- * a registration failure. This mirrors the shape the iOS client already uses for the same reason.
+ * Passed per call rather than held on the client, because the same client serves routes whose refusals mean
+ * unrelated things under one code: the mapper that classifies an activation failure has no business
+ * inspecting a registration failure. This mirrors the shape the iOS client already uses for the same reason.
  *
- * A mapper is the one place in this package that may read `reason`, and it should expect to be rewritten when
- * the service stops distinguishing its failures by text.
+ * A mapper is the one place in this package that may read `reason`, and it is the only thing here that breaks
+ * when the wording changes.
  */
 internal fun interface DeviceFailureMapper {
     /** The failure to raise, or null to accept [DeviceServiceException.of]'s classification. */

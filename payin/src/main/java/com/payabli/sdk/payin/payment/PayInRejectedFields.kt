@@ -9,9 +9,9 @@ import com.payabli.sdk.payin.model.PayInException
 /**
  * Which form field the service objected to.
  *
- * Two failures name a field, in the same spelling: this module's own refusal, which carries the service's name
- * for the value it would not send, and a validation 400, whose `errors` map is keyed by the parameter the
- * service objected to. Both are translated here, so the message lands on the box that caused it.
+ * Two failures name a field, in the same spelling: this module's own refusal, which carries the wire name for
+ * the value it would not send, and a validation 400, whose errors are keyed by the parameter at fault. Both
+ * are translated here, so the message lands on the box that caused it.
  *
  * A decline, a network failure and a service error name no field and produce nothing.
  */
@@ -33,9 +33,9 @@ internal object PayInRejectedFields {
     /**
      * The field a wire name refers to, or null when the form has no box for it.
      *
-     * The last segment, because the same field is named both bare and under its parent object: this module
-     * refuses `paymentMethod.cardnumber` while ASP.NET model validation reports the property on its own. Lower
-     * cased, because the service's casing for a request field and for the error naming it differ.
+     * The last segment, because the same field arrives named both bare and under its parent object: this
+     * module refuses `paymentMethod.cardnumber` where a refusal from the wire can name the property alone.
+     * Lower cased, because a request field and an error naming it are not cased the same.
      */
     private fun fieldFor(name: String): PayInField? = FIELDS[name.substringAfterLast('.').lowercase()]
 

@@ -120,10 +120,10 @@ class DiagnosticsGateTest {
     }
 
     @Test
-    fun `a refusal records its code and none of the service text`() {
+    fun `a refusal records its code and none of the wire text`() {
         // The failure path, which the success path above cannot speak for. `PayInFailure.reason` and
-        // `explanation` are displayable and never loggable, because the service echoes submitted values into
-        // some of them: a postal code, a name, an account number typed into the wrong field.
+        // `explanation` are displayable and never loggable, because either can quote what was submitted: a
+        // postal code, a name, an account number typed into the wrong field.
         val store = DiagnosticsStore()
         captureModel(store, enabled = true).onFailed(refusedOutcome())
         methodModel(store, enabled = true).onFailed(refusedOutcome())

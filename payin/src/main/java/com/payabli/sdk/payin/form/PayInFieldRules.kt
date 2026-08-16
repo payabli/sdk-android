@@ -8,15 +8,14 @@ import com.payabli.sdk.payin.model.SensitiveDigits
  * Pure functions over strings: no Android, no Compose, no state, no logging. The caller holds the
  * text.
  *
- * Every check here catches something the API also rejects, so none refuses a value the server
- * accepts.
+ * Every check here mirrors one the API makes, so none of them refuses a value that would otherwise have been
+ * accepted.
  */
 public object PayInFieldRules {
     /** Digits only, no separators. Callers strip formatting before asking. */
     private val DIGITS = Regex("^[0-9]*$")
 
-    // A postal code is length-limited and nothing more: ZIP+4, Canadian and British codes are all
-    // accepted by the API.
+    // A postal code is length-limited and nothing more, so ZIP+4, Canadian and British codes all pass.
 
     private const val CARD_NUMBER_MIN = 12
     private const val CARD_NUMBER_MAX = 19

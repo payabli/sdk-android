@@ -65,9 +65,9 @@ private val TEST_TIMEOUT = 120.seconds
  * into a single red line. Two of them reach no attestation and still report when the other two cannot run:
  * the challenge and register pair, and the unattested refusal.
  *
- * **Every run costs something real.** Each spends a challenge. The activation test spends one of five
- * attempts and leaves a registered device row on the paypoint, one per run, which nothing here removes. The
- * unattested refusal spends no attempt: it returns at the attestation lookup, before the code is compared.
+ * **Every run costs something real.** Each spends a challenge. The activation test spends an attempt and
+ * leaves a registered device on the paypoint, one per run, which nothing here removes. The unattested
+ * refusal spends no attempt: it is refused before the code is looked at.
  * Play Integrity also throttles well below its daily budget when a handful of devices are driven in a row.
  * Wait it out; do not re-run.
  */
@@ -138,11 +138,11 @@ class DeviceActivationLiveTest {
      *
      * The failure taxonomy classifies `/activate` by matching the service's message text, and the unit tier
      * asserts that mapping against strings copied into the test. Only a live call shows the strings still
-     * match what the service emits — this is the one refusal reachable without a completed attestation, so
-     * it is the one that can be checked today.
+     * match what comes back — this is the one refusal reachable without a completed attestation, so it is
+     * the one that can be checked today.
      *
-     * Costs no activation attempt: the assertion is verified before the code is compared, so this returns
-     * at the attestation lookup and the five-attempt counter is untouched.
+     * Costs no activation attempt: this is refused before the code is looked at, so the attempt count is
+     * untouched.
      */
     @Test
     fun anUnattestedDeviceIsRefusedWithTheWordingTheMapperExpects() =
@@ -275,7 +275,7 @@ class DeviceActivationLiveTest {
             entry = LiveRunSettings.entry,
             appId = context.packageName,
             client = DeviceServiceClient(session().transport),
-            // Classic, and it has to be: the nonce the service issues derives a classic challenge, which a
+            // Classic, and it has to be: the challenge derived for this flow is a classic one, which a
             // standard attestor refuses outright.
             attestor = AttestorFactory.classic(context, cloudProjectNumber()),
             deviceKey = trust.key,
@@ -289,11 +289,12 @@ class DeviceActivationLiveTest {
     /**
      * A device identity nothing has used before, for the case that needs a device awaiting activation.
      *
-     * The service keys a device row on this value, so a new value is a new row, and a new row is pending.
-     * Sharing the cold sequence's row would make the outcome depend on whether an earlier run activated it.
+     * This value is what identifies a device, so a new value is a new device, and a new device is pending.
+     * Sharing the cold sequence's device would make the outcome depend on whether an earlier run activated
+     * it.
      *
-     * **Each run leaves a row on the paypoint**, registered and never activated. They accumulate, and
-     * nothing here removes them: no route deletes a softpos device. Somebody has to clear them by hand.
+     * **Each run leaves a device on the paypoint**, registered and never activated. They accumulate, and
+     * nothing here removes them: no route deletes one. Somebody has to clear them by hand.
      */
     private fun freshDescription(): DeviceDescription =
         derivedDescription(

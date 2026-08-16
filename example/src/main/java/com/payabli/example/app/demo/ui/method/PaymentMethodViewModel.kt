@@ -132,8 +132,8 @@ class PaymentMethodViewModel(
      * The SDK refused it.
      *
      * What the panel records is the exception's own `toString`, which carries the error code and nothing from
-     * the wire. `reason` and `detail` are displayable and never loggable: the service echoes submitted values
-     * into some of them, and this panel is on screen and gets copied into bug reports.
+     * the wire. `reason` and `detail` are displayable and never loggable, because either can quote what was
+     * submitted, and this panel is on screen and gets copied into bug reports.
      */
     fun onFailed(outcome: PayInOutcome.Refused) {
         record("ERROR paymentMethod\n${outcome.diagnostic}")

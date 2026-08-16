@@ -34,17 +34,17 @@ internal object DeviceDescriptionFactory {
      *
      * **The host's package name is part of the input, and the identifier alone is not enough.** The platform
      * scopes that identifier more widely than one app, so two applications on one device can read the same
-     * value; the service keys a device row on what this returns, so two such applications on one paypoint
-     * would register as one device. Including the package makes the result per application whatever the
-     * platform's scoping turns out to be, which is why it does not rest on that scoping.
+     * value; what this returns is what identifies the device, so two such applications on one paypoint would
+     * register as one. Including the package makes the result per application whatever the platform's scoping
+     * turns out to be, which is why it does not rest on that scoping.
      *
      * The salt is versioned. Changing either it or the package re-registers the device.
      *
      * Truncated to half the digest. 128 bits is far past collision concerns for a per-paypoint lookup, and
-     * the field lands in a column sized for a serial number.
+     * the wire field is sized for a serial number.
      *
      * A device that returns nothing for the platform identifier is left to the caller as a blank, which
-     * `/register` refuses by name. Substituting a random value here is what the sibling SDK does and is the
+     * registration refuses. Substituting a random value here is what the sibling SDK does and is the
      * reason it registers a new device on every call down that path: an identifier invented per call is not
      * an identifier.
      *

@@ -45,7 +45,7 @@ class PayInSubmissionTest {
     private val stored = STORED_METHOD
     private val declined = DECLINED_TRANSACTION
 
-    /** A 400 in the shape ASP.NET model validation sends, which is the shape measured from the platform. */
+    /** A 400 in the shape a field refusal arrives in, as measured against the platform. */
     private val refusedCardNumber =
         """
         {"title":"Validation failed","errors":{"paymentMethod.cardnumber":["The card number is not valid."]}}

@@ -49,7 +49,7 @@ public sealed class AttestationException(
      * roughly five, ten and twenty seconds, and to treat continued failure as a failed integrity check
      * rather than as an outage to wait out.
      *
-     * Throttling is deliberately **not** here; see [Throttled].
+     * Throttling is **not** here; see [Throttled].
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class Retryable(
@@ -61,17 +61,15 @@ public sealed class AttestationException(
      * The request budget is spent. **Do not retry here.**
      *
      * This is the one failure whose cause is not the device reporting it. The daily request budget belongs
-     * to the cloud project and is shared by every app embedding this SDK, so one caller's traffic exhausts
-     * it for all of them while each device sees only its own request refused. A device that retries cannot
-     * restore a budget it does not own, and many devices retrying together is what turns a throttle into an
-     * outage.
+     * to the cloud project the app is registered under rather than to this device, which sees only its own
+     * request refused. A device that retries cannot restore a budget it does not own, and many devices
+     * retrying together is what turns a throttle into an outage.
      *
      * The platform reports short-term throttling and daily exhaustion with the same code, documented as
      * "has been throttled, or your app has exceeded its daily request quota", and a client cannot tell
      * them apart. That ambiguity is why this is a distinct case rather than a slower [Retryable]: the
      * platform's own rule is to retry transient conditions and not to retry conditions that are not
-     * transient, and one of these two branches is each. Only whatever hands out challenges can see which,
-     * because only it can see the budget across tenants. A caller that reaches this stops.
+     * transient, and one of these two branches is each. A caller that reaches this stops.
      *
      * Card-present callers halt the flow. There is no counterpart on the sibling platform, whose
      * attestation service imposes no vendor-side budget, so this case is asymmetric by construction rather
@@ -118,7 +116,7 @@ public sealed class AttestationException(
     ) : AttestationException("the integrity check failed and the caller must be treated as untrusted", errorCode, cause)
 
     /**
-     * Our bug, not the device's.
+     * An SDK or configuration defect, not a fault on the device.
      *
      * A cloud project number that is absent or not one where the API is enabled, or a challenge the
      * platform rejected on shape. The shape half should be unreachable, since [AttestationChallenge]

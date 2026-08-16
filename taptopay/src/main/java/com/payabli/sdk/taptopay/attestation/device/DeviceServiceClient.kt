@@ -30,30 +30,28 @@ private val PATH_SEGMENT = Regex("^[A-Za-z0-9._~-]+$")
  * the sequencing rules — which call follows which, what is cached, what happens when one fails halfway —
  * reviewable in one place, and this is not that place.
  *
- * `/activate/challenge` is absent and stays absent. It is the merchant-side call that mints the six-digit
- * code; the code reaches the device out of band, and an SDK that could mint its own would be an SDK that
- * could activate itself.
+ * The call that issues an activation code is absent and stays absent. It is a merchant-side call, the code
+ * reaches the device out of band, and an SDK that could issue its own would be an SDK that could activate
+ * itself.
  *
- * **Nothing here is wrapped in `Retry`, and that is per route rather than an oversight.** `/attest` consumes
- * the challenge with a delete-on-read, so a second attempt attests against a value the server has already
- * retired; `/activate` counts a failed attempt, so a retry spends one of the five before a lockout;
- * `/challenge` and `/register` both mutate server state as well. `:core`'s `Retry` is documented as a
- * per-call-site primitive precisely so a call site like this one can decline it. The duplicate-safe unit here
- * is the whole cold sequence, not any single call in it, so retrying belongs to whoever owns the sequence.
+ * **Nothing here is wrapped in `Retry`, and that is per route rather than an oversight.** Each of the four
+ * POSTs leaves something changed behind it, so a second attempt runs against what the first one already
+ * spent. `:core`'s `Retry` is documented as a per-call-site primitive precisely so a call site like this one
+ * can decline it. The duplicate-safe unit here is the whole cold sequence, not any single call in it, so
+ * retrying belongs to whoever owns the sequence.
  *
- * `/config` is the first route here that would qualify, since it reads and mutates nothing, and it is still
- * unwrapped: the assertion it carries is valid for two minutes, so a policy for it is a policy about minting
- * a fresh one, which belongs to the same owner.
+ * `/config` is the first route here that would qualify, since it reads and changes nothing, and it is still
+ * unwrapped: the assertion it carries is short-lived, so a policy for it is a policy about minting a fresh
+ * one, which belongs to the same owner.
  *
- * **The server pins the credential, so every request here refuses credential recovery.** The attestation row
- * written at `/attest` records the exact bearer token that made the call, and `/activate` and `/config` require
- * that same one, so a refresh between them fails activation as [DeviceServiceException.NotAttested]. Requests
- * are sent with `isCredentialPinned`, which costs a 401 on these routes its refresh and its replay both: the
- * refresh would rotate the pinned token out of the match, and the replay would spend a single-use challenge or
- * one of the five activation attempts a second time.
+ * **Every request here refuses credential recovery, because an attestation is valid only for the credential
+ * that obtained it.** A refresh between attesting and using the attestation fails as
+ * [DeviceServiceException.NotAttested]. Requests are sent with `isCredentialPinned`, which costs a 401 on
+ * these routes its refresh and its replay both: the refresh would rotate the pinned credential out of the
+ * binding, and the replay would spend a single-use value a second time.
  *
  * A 2xx envelope decline is not a credential rejection, so the ordinary device failures never reached recovery
- * and are unaffected. Nor does the refusal describe what these routes answer with today: they report their
+ * and are unaffected. Nor does the refusal depend on what these routes answer with today: they report their
  * status inside the envelope, and it holds for the day they stop.
  *
  * **A rotation started by some other capability still breaks the binding**, because one session serves them
@@ -68,7 +66,7 @@ internal class DeviceServiceClient(
     /**
      * Requests a fresh challenge for [entry].
      *
-     * The returned value has a five-minute life and is consumed by the first `/attest` that offers it. It is
+     * The returned value is short-lived and single-use: the first `/attest` that offers it consumes it. It is
      * not the value Play Integrity signs; see [DeviceAttestationBinding.nonceChallenge].
      */
     suspend fun challenge(
@@ -87,13 +85,12 @@ internal class DeviceServiceClient(
      * Registers this device against [entry] and returns the identity every later call uses.
      *
      * A fresh registration comes back pending: [RegisterResponse.isPending] is the signal that activation is
-     * still owed. Registering is **not** the end of the cold path even so, because `/attest` accepts a pending
-     * device and writes the attestation row that `/activate` verifies against.
+     * still owed. Registering is **not** the end of the cold path even so — attesting comes next, and
+     * activation verifies against what attesting left behind.
      *
-     * The server keys its own state machine on [hardwareId], so calling this twice with the same one reuses
-     * the pending device rather than creating a second, and an already-active device is superseded by a new
-     * record. That makes this the one call in the family that tolerates being repeated — which is a property
-     * of the server's handling of [hardwareId], not a licence to retry it blindly.
+     * [hardwareId] identifies the device across calls, so repeating this call with the same one does not add a
+     * second device. That makes it the one call in the family that tolerates being repeated, which is a
+     * property of the identifier rather than a licence to retry it blindly.
      */
     suspend fun register(
         entry: String,
@@ -126,13 +123,12 @@ internal class DeviceServiceClient(
      *
      * [token] is the integrity token as the attestor produced it. The encoding the wire field needs is applied
      * here rather than by the caller, because a `String` parameter cannot tell the compact token from its
-     * encoded form: passing the raw one compiles, and the service consumes the single-use challenge in its
-     * prerequisite step before the attestation is decoded, so it answers "Attestation is not valid base64"
-     * with the challenge already spent and the whole sequence needing to restart.
+     * encoded form: passing the raw one compiles and is refused, with the single-use challenge already spent
+     * and the whole sequence needing to restart.
      *
-     * [DeviceIdentity.publicKey] is required on this platform even though the server's own shape calls it
-     * optional: the integrity token does not embed the key, so without it the server has nothing to verify a
-     * later assertion against.
+     * [DeviceIdentity.publicKey] is required on this platform even though the wire shape calls it optional:
+     * the integrity token does not embed the key, so without it a later assertion cannot be verified against
+     * anything.
      *
      * The response body is returned for diagnostics and carries nothing to branch on. Reaching it is the
      * success signal.
@@ -170,14 +166,11 @@ internal class DeviceServiceClient(
     /**
      * Consumes [activationCode], moving a pending device to active.
      *
-     * [assertion] proves possession of the attested key and is verified within a two-minute window, so it is
-     * minted for this call and never reused. The code is idempotent inside its own thirty-minute window and
-     * the device locks out after five failed attempts; both of those are the server's rules, and neither is
-     * enforced or tracked here.
+     * [assertion] is short-lived, so it is minted for this call and never reused. How long a code stays good
+     * and how many attempts it survives are not enforced or tracked here.
      *
-     * A wrong code, a spent lockout, an expired window and a rejected assertion all arrive as
-     * [DeviceServiceException.BadRequest]. Telling them apart needs the server's message text, which is what
-     * [failureMapper] is for.
+     * Several unrelated refusals arrive as [DeviceServiceException.BadRequest]. Telling them apart needs the
+     * refusal's text, which is what [failureMapper] is for.
      */
     suspend fun activate(
         entry: String,
@@ -205,22 +198,17 @@ internal class DeviceServiceClient(
     /**
      * The reader credentials for [entry], which only an active device is given.
      *
-     * Takes all four assertion headers where `/activate` takes three: there is no body to carry the device,
-     * so the service reads it from `X-Device-Id`. That is the header [DeviceAssertion.asHeaders] already
-     * sends on both routes.
+     * Takes all four assertion headers where `/activate` takes three: this call has no body to carry the
+     * device, so the device travels in `X-Device-Id`, which [DeviceAssertion.asHeaders] already sends on both
+     * routes.
      *
-     * **A device that still owes activation is refused, and the refusal arrives two ways.** A device the
-     * service does not hold as active is declined with a 403 inside a 200. A caller whose token is not
-     * scoped for this route is refused with a real 403, by the gateway, before any controller runs. Both
-     * become [DeviceServiceException.Forbidden], so a caller branches once.
+     * **A device that still owes activation is refused here, and the refusal can arrive either as an envelope
+     * decline or as a transport status.** Both become [DeviceServiceException.Forbidden], so a caller branches
+     * once, on a classification that is imprecise for the reason that type states.
      *
-     * They are not the same condition and the shared classification is imprecise: a scope problem presents
-     * as a device that owes a code. It is what the sibling client does, and separating them is a change both
-     * platforms make together or not at all.
-     *
-     * A refusal here is never retried in place. The attestation row pins the bearer, so a rejection under
-     * [DeviceServiceException.NotAttested] means the credential moved and the binding is gone; attesting
-     * again from inside a failing call would spend a challenge and hide the rotation that caused it.
+     * A refusal here is never retried in place. A rejection under [DeviceServiceException.NotAttested] means
+     * the credential moved and the binding with it; attesting again from inside a failing call would spend a
+     * challenge and hide the rotation that caused it.
      */
     suspend fun config(
         entry: String,
@@ -340,10 +328,9 @@ internal class DeviceServiceClient(
      *    It answers only for statuses the route already treats as failures.
      * 1. `PayabliHttpErrors` next, because a transport failure means the envelope below is not this service
      *    speaking. It is called without a `statusOverride`: these routes put their meaning in the envelope, so
-     *    there is no shared status here to give a component reading. It also catches the failures that never
-     *    reach a controller: DTO validation answers with a real 400 and `problem+json`, carrying no envelope.
-     *    A missing `platform` is one of those.
-     * 2. Then the envelope decline, because these routes report a refusal as HTTP 200 and skipping this step
+     *    there is no shared status here to give a component reading. It also catches a request refused before
+     *    it is read, which answers with a real status and carries no envelope at all.
+     * 2. Then the envelope decline, because these routes report a refusal inside a 200 and skipping this step
      *    is exactly how a refusal reads as a success.
      * 3. Only then the payload.
      *
@@ -377,8 +364,8 @@ internal class DeviceServiceClient(
                 LogField.safe("event", "device_call_declined"),
                 LogField.safe("route", route),
                 // As a string so a decline that carried no code records as null rather than as a stand-in
-                // integer a reader would take for a real one. `reason` is never logged: the service echoes
-                // request data into some of these messages.
+                // integer a reader would take for a real one. `reason` is never logged: it can quote what was
+                // sent.
                 LogField.safe("errorCode", declined.code?.toString()),
             ) { "the device service declined the call" }
             throw failureMapper.map(declined.code, declined.reason)
@@ -390,7 +377,7 @@ internal class DeviceServiceClient(
         // this a body of `{}` behind a 200 walks through both checks and reaches the payload decode. On
         // `/challenge` and `/register` that surfaces anyway, because their required fields are missing; on
         // `/attest` and `/activate` it would not, because both substitute an empty ack for an absent payload,
-        // and the call would report success for a response the service never sent.
+        // and the call would report success for a response that was never sent.
         val claimed =
             try {
                 PayabliJson.format.decodeFromString(PayabliEnvelope.Status.serializer(), body)
