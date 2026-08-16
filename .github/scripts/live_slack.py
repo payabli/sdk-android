@@ -51,10 +51,14 @@ class Flow:
 #
 # The classifications and codes are published API surface. `PayInLiveFlowsInstrumentedTest.orFail` already
 # builds its message from exactly these, and this keeps that true of every other suite as well.
+#
+# The prose alternative matches either case, because the message it is for begins a sentence: the runner
+# writes "No compose hierarchies found in the app". The key=value and exception alternatives stay
+# case-sensitive, since those are identifiers rather than sentences.
 REPORTABLE = re.compile(
     r"\b(?:code|httpStatus|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"
     r"|\b(?:AssertionError|IllegalStateException|IllegalArgumentException|ComparisonFailure)\b"
-    r"|\bno (?:compose hierarchies|detail reported)\b",
+    r"|(?i:\bno (?:compose hierarchies|detail reported)\b)",
 )
 
 
