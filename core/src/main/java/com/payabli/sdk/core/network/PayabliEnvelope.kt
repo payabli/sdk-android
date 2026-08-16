@@ -5,9 +5,11 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
+import androidx.annotation.VisibleForTesting
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 
 /**
  * The legacy `isSuccess` / `responseData` envelope, used by the device routes.
@@ -86,10 +88,18 @@ public object PayabliEnvelope {
         )
     }
 
-    private fun <T> decodeOrNull(
+    // Not `runCatching`: it catches `Throwable`, so an OutOfMemoryError would read as a decline.
+    // Not private so a test can pass a serializer that throws.
+    @VisibleForTesting
+    internal fun <T> decodeOrNull(
         serializer: KSerializer<T>,
         body: String,
-    ): T? = runCatching { PayabliJson.format.decodeFromString(serializer, body) }.getOrNull()
+    ): T? =
+        try {
+            PayabliJson.format.decodeFromString(serializer, body)
+        } catch (malformed: SerializationException) {
+            null
+        }
 
     private const val DEFAULT_DECLINE_REASON = "server declined"
 }

@@ -5,6 +5,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -51,6 +52,33 @@ class PayabliEnvelopeTest {
         assertNull(PayabliEnvelope.declineOutcome("not json at all"))
         assertNull(PayabliEnvelope.declineOutcome(""))
         assertNull(PayabliEnvelope.declineOutcome("{"))
+    }
+
+    @Test
+    fun `the byte array overload tolerates a malformed body too`() {
+        assertNull(PayabliEnvelope.declineOutcome("not json at all".toByteArray(Charsets.UTF_8)))
+        assertNull(PayabliEnvelope.declineOutcome(ByteArray(0)))
+    }
+
+    @Test
+    fun `a decline whose payload does not decode still yields an outcome with no code`() {
+        // responseData is a string where DeclineEnvelope wants an object, so the Status decode succeeds
+        // and the payload decode does not. That stays a decline, and the reason falls back.
+        val outcome =
+            PayabliEnvelope.declineOutcome(
+                """{"isSuccess":false,"responseText":"outer reason","responseData":"not an object"}""",
+            )
+
+        assertNotNull(outcome)
+        assertNull(outcome?.code)
+        assertEquals("outer reason", outcome?.reason)
+    }
+
+    @Test
+    fun `an error raised inside a serializer propagates instead of reading as malformed input`() {
+        assertThrows(SimulatedFatalError::class.java) {
+            PayabliEnvelope.decodeOrNull(FatalSerializer, "\"any well-formed body\"")
+        }
     }
 
     @Test
