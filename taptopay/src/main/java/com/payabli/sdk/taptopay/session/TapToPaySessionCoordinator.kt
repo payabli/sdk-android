@@ -10,6 +10,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
+import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -40,7 +41,7 @@ internal class TapToPaySessionCoordinator(
     private val entry: String,
     private val enrollment: DeviceEnrollment,
     private val client: DeviceServiceClient,
-    private val reader: ReaderProvider,
+    private val reader: TapToPayProvider,
     private val manager: TapToPaySessionManager,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
@@ -178,9 +179,14 @@ internal class TapToPaySessionCoordinator(
     /**
      * The cold path, and the warm one, which differ only in what enrollment finds.
      *
-     * It starts with a reset, whatever the caller left behind, since the table of legal moves is narrow.
+     * The handset is asked first, before the state is touched and before anything is sent. A device that
+     * cannot take contactless payments would fail somewhere further in regardless, and every one of those
+     * places would report it as something else.
+     *
+     * Then a reset, whatever the caller left behind, since the table of legal moves is narrow.
      */
     private suspend fun runInitialize() {
+        reader.checkEligibility()
         manager.reset()
         val outcome = manager.advance(TapToPaySessionState.AttestingDevice) { enrollment.enroll() }
         if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {

@@ -4,6 +4,7 @@
 
 package com.payabli.sdk.payin.client
 
+import com.payabli.sdk.core.network.PercentEncoding
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.Serializable
@@ -33,32 +34,10 @@ internal object PayInRoutes {
     /**
      * The resolved path for [CAPTURE_AUTHORIZED]. The template is what a log may carry.
      *
-     * The identifier is percent-encoded as one path segment, so a `?`, `#` or `/` in it stays part of the
-     * identifier instead of becoming a query, a fragment or another route. `:core` already refuses an
-     * authority, an absolute scheme, a different origin and a path that escapes the base, so what is added
-     * here is the rest: the characters that change a request without leaving it.
+     * The identifier is encoded as one path segment, so a `?`, `#` or `/` in it stays part of the
+     * identifier instead of becoming a query, a fragment or another route.
      */
-    fun captureAuthorized(transId: String): String = "/api/v2/MoneyIn/capture/" + encodePathSegment(transId)
-
-    /**
-     * Percent-encodes [value] for use as a single path segment.
-     *
-     * Keeps the unreserved set of RFC 3986 Section 2.3 and encodes everything else from its UTF-8 bytes.
-     * `URLEncoder` is not this: it writes form encoding, where a space becomes `+` rather than `%20`.
-     */
-    internal fun encodePathSegment(value: String): String =
-        buildString(value.length) {
-            value.toByteArray(Charsets.UTF_8).forEach { byte ->
-                val char = byte.toInt().toChar()
-                if (char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' || char in "-._~") {
-                    append(char)
-                } else {
-                    append('%').append(HEX[(byte.toInt() shr 4) and 0xF]).append(HEX[byte.toInt() and 0xF])
-                }
-            }
-        }
-
-    private const val HEX = "0123456789ABCDEF"
+    fun captureAuthorized(transId: String): String = "/api/v2/MoneyIn/capture/" + PercentEncoding.segment(transId)
 
     /** This spelling, not `Idempotency-Key`, and it is read on the transaction routes only. */
     const val HEADER_IDEMPOTENCY_KEY: String = "idempotencyKey"

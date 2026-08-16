@@ -6,8 +6,10 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.ATTESTATION_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 import org.junit.Assert.assertEquals
@@ -59,6 +61,7 @@ class TapToPaySessionFailuresTest {
             AttestationException.Throttled(-8) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),
             AttestationException.IntegrityFailed(-3) to failed(ATTESTATION_REQUIRED),
+            DeviceIneligibleException("contactless payments are not supported") to failed(DEVICE_INELIGIBLE),
             PayabliGenericException(PayabliErrorCode.PERMISSION_DENIED, REASON) to
                 TapToPaySessionState.PendingActivation,
             PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON) to
