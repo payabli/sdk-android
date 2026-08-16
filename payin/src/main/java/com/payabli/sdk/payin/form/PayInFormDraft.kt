@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import kotlin.random.Random
 
 /**
  * What a payer has entered, held outside the composition that draws it.
@@ -18,17 +19,27 @@ import androidx.compose.runtime.setValue
  */
 internal class PayInFormDraft {
     /**
+     * Mixed into every digest below, and different for each draft.
+     *
+     * A digest of a card number is a card number that can be looked up, if the same digest can be computed
+     * elsewhere. Salted per instance it matches nothing precomputed, and it still compares with itself, which
+     * is all this needs.
+     */
+    private val salt: Long = Random.nextLong()
+
+    /**
      * What this was last filled from, so re-entering a composition does not refill it.
      *
-     * The seed is held as its hash and not as the object. A caller's [PayInFormValues] can carry a card number,
-     * and keeping one here would hold the caller's copy for the life of the screen, past the point where an
-     * outcome empties the boxes drawn from it. The configuration is held as itself, carrying no payer input.
+     * A digest rather than the object: a caller's [PayInFormValues] can carry a card number, and keeping one
+     * would hold the caller's copy for the life of the screen, past the point where an outcome empties the
+     * boxes drawn from it. The configuration is held as itself, carrying no payer input.
      *
-     * The cost is that two different seeds sharing a hash are read as one, and the form keeps the values it
-     * already has.
+     * Two seeds sharing a digest are read as one, and a form that skips a refill submits the instrument it was
+     * seeded with before rather than the one the caller has just supplied. The digest reads the characters
+     * rather than [String.hashCode], so that turns on a 64-bit coincidence instead of a 32-bit one.
      */
     @Volatile
-    private var seededFrom: Pair<PayInFormConfiguration, Int?>? = null
+    private var seededFrom: Pair<PayInFormConfiguration, Long?>? = null
 
     private val entered = mutableStateMapOf<PayInField, String>()
 
@@ -77,7 +88,7 @@ internal class PayInFormDraft {
         configuration: PayInFormConfiguration,
         initialValues: PayInFormValues?,
     ) {
-        val key = configuration to initialValues?.hashCode()
+        val key = configuration to initialValues?.digest()
         if (seededFrom == key) return
         seededFrom = key
 
@@ -124,5 +135,27 @@ internal class PayInFormDraft {
         entered.clear()
         rejectedFields = emptyMap()
         submissionPending = false
+    }
+
+    /**
+     * What the caller handed over, as one salted 64-bit value.
+     *
+     * Per field, so two seeds differing anywhere differ here, and summed so the order a caller built the map in
+     * does not matter. Equal values compare equal, which is what a host rebuilding its seed on every
+     * composition needs.
+     */
+    private fun PayInFormValues.digest(): Long =
+        values.entries.fold(mix(salt, method.ordinal.toLong())) { total, (field, value) ->
+            total + value.fold(mix(salt, field.ordinal.toLong())) { running, char -> mix(running, char.code.toLong()) }
+        }
+
+    private fun mix(
+        accumulated: Long,
+        next: Long,
+    ): Long = (accumulated xor next) * DIGEST_PRIME
+
+    private companion object {
+        /** FNV-1a's 64-bit prime, which is what makes one changed character reach every bit of the result. */
+        const val DIGEST_PRIME = 1099511628211L
     }
 }

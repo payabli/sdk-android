@@ -149,6 +149,40 @@ class PayInFormDraftTest {
     }
 
     @Test
+    fun swappingOneStoredCardForAnotherFillsInTheNewOne() {
+        // The case a seed key has to get right. Reading it as unchanged submits the card the payer replaced.
+        draft.seed(configuration, cardSeededWith("4111111111111111"))
+
+        draft.seed(configuration, cardSeededWith("4111111111111112"))
+
+        assertEquals("4111111111111112", draft.typed[PayInField.CardNumber])
+    }
+
+    @Test
+    fun theOrderACallerBuiltItsValuesInIsNotAChange() {
+        // A host assembling the same values in a different order has handed over the same seed, so a form that
+        // refilled here would empty itself on a recomposition.
+        draft.seed(
+            configuration,
+            PayInFormValues(
+                PayInMethodType.Card,
+                linkedMapOf(PayInField.CardNumber to SEEDED_PAN, PayInField.CardPostalCode to "22039"),
+            ),
+        )
+        draft.enter(PayInField.CardholderName, "Ada Lovelace")
+
+        draft.seed(
+            configuration,
+            PayInFormValues(
+                PayInMethodType.Card,
+                linkedMapOf(PayInField.CardPostalCode to "22039", PayInField.CardNumber to SEEDED_PAN),
+            ),
+        )
+
+        assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
+    }
+
+    @Test
     fun aClearedDraftStillAnswersWhichInstrumentIsOnScreen() {
         // The clear runs on whichever thread completed the host's scope, and a reader that has already passed
         // seed's check goes straight on to read the instrument. Clearing that under it fails the read.
@@ -195,6 +229,8 @@ class PayInFormDraftTest {
 
         assertTrue("an unseeded draft answered $thrown", thrown is IllegalStateException)
     }
+
+    private fun cardSeededWith(pan: String) = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardNumber to pan))
 
     private fun withBillingEmail(): List<PayInFormSection> =
         listOf(
