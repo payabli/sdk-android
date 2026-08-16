@@ -35,8 +35,10 @@ class RecordingLogSinkConcurrencyTest {
             assertTrue("a writer never finished", finished.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
             assertEquals(WRITERS * WRITES_EACH, sink.records.size)
         } finally {
-            // In a finally, so a failed assertion leaves no writers behind for whatever test runs next.
+            // In a finally, so a failed assertion leaves no writers behind for whatever test runs next, and
+            // awaited, because shutdownNow interrupts without waiting for anything to notice.
             pool.shutdownNow()
+            assertTrue("the pool outlived the test", pool.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS))
         }
     }
 
