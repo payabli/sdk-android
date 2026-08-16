@@ -160,7 +160,7 @@ internal sealed class DeviceActivationException(
     /**
      * The credential is not authorised for this paypoint.
      *
-     * The enrolment is fine and the credential is not. **Discards nothing.**
+     * The enrollment is fine and the credential is not. **Discards nothing.**
      */
     class EntryNotAuthorized(
         resultCode: Int?,
@@ -206,10 +206,10 @@ internal sealed class DeviceActivationException(
     class NotEnrolled : DeviceActivationException("this device is not enrolled; enroll before activating", null, "")
 
     /**
-     * The refusal carried something this mapper does not recognise.
+     * The refusal carried something this mapper does not recognize.
      *
      * The destination for anything unmatched, and it discards nothing. Classification is built on wording, so
-     * the unrecognised outcome has to be the safe one.
+     * the unrecognized outcome has to be the safe one.
      */
     class Unclassified(
         resultCode: Int?,

@@ -194,7 +194,7 @@ internal class DeviceEnrollment(
             val known = store.read() ?: throw DeviceActivationException.NotEnrolled()
 
             // A record made under another paypoint names a device this entry does not have. Sending it
-            // would be refused in a way that discards the record, destroying a valid enrolment for the
+            // would be refused in a way that discards the record, destroying a valid enrollment for the
             // paypoint it does belong to. For this entry the device is simply not enrolled, which is what
             // the caller is told.
             if (known.entry != entry) throw DeviceActivationException.NotEnrolled()
@@ -294,12 +294,12 @@ internal class DeviceEnrollment(
     }
 
     /**
-     * Says so when a registration did not recognise the device this record named.
+     * Says so when a registration did not recognize the device this record named.
      *
      * Diagnostic only, and nothing branches on it — by this point the returned handle has been taken and the
      * record is about to be rewritten, which is correct in every case. What it catches is the combination
      * that should not happen: this device held a record **for this paypoint**, so it expected to be
-     * recognised, and something new came back instead. That is the signature of a hardware identifier that is
+     * recognized, and something new came back instead. That is the signature of a hardware identifier that is
      * not staying still, or of a device that can no longer be found.
      *
      * A record for another paypoint carries no such expectation, and a new device is the right answer there,

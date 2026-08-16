@@ -7,7 +7,7 @@ package com.payabli.sdk.taptopay.enrollment
  * [com.payabli.sdk.taptopay.enrollment.platform.DeviceDescriptionFactory].
  *
  * [hardwareId] is the load-bearing one and the rest are descriptive. It is what identifies this device across
- * registrations, so it decides whether a returning install is recognised as itself or registered as a
+ * registrations, so it decides whether a returning install is recognized as itself or registered as a
  * stranger. Two properties matter and both are easy to lose: it must be **stable across an uninstall and
  * reinstall**, or a returning device is registered as a second one and owes a fresh activation code; and it
  * must be **the same on every call**, or that happens on every launch.
