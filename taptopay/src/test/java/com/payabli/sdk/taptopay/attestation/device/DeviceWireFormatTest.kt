@@ -125,7 +125,8 @@ class DeviceWireFormatTest {
 
     @Test
     fun `an activation code that cannot be right is refused before it costs an attempt`() {
-        // Every one of these would be refused, and would spend an attempt to be refused.
+        // Each of these would spend an attempt if it were sent, which is why the constructor refuses them
+        // before there is a request to send.
         for (wrong in listOf("", "   ", "12345", "1234567", "12a456", "12 456", "abcdef", "12.456")) {
             val failure =
                 runCatching {
