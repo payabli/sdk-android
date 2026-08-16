@@ -18,6 +18,7 @@ because the service echoes submitted values into some of them.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -43,6 +44,32 @@ class Flow:
         return self.detail is not None
 
 
+# What a failure is allowed to say in the channel. An allowlist rather than a redaction pass, because these
+# flows submit a card and a bank account and the assertion text around them is not written with a chat
+# channel in mind: a redaction list has to anticipate every shape that could carry a submitted value, and
+# gets it wrong silently, whereas this can only ever emit what it matched.
+#
+# The classifications and codes are published API surface. `PayInLiveFlowsInstrumentedTest.orFail` already
+# builds its message from exactly these, and this keeps that true of every other suite as well.
+REPORTABLE = re.compile(
+    r"\b(?:code|httpStatus|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"
+    r"|\b(?:AssertionError|IllegalStateException|IllegalArgumentException|ComparisonFailure)\b"
+    r"|\bno (?:compose hierarchies|detail reported)\b",
+)
+
+
+def summarize(message: str) -> str:
+    """The reportable parts of a failure message, in order, or a pointer to the artifact when there are none.
+
+    A live failure is read from the JUnit XML in the uploaded artifact. That stays complete; this is the
+    line that goes into a channel, and the two do not have to carry the same thing.
+    """
+    matched = REPORTABLE.findall(message)
+    if not matched:
+        return "no reportable detail; read the results artifact"
+    return " ".join(dict.fromkeys(matched))[:300]
+
+
 def flows(results: Path) -> list[Flow]:
     found: list[Flow] = []
     for path in sorted(results.glob("**/TEST-*.xml")):
@@ -57,8 +84,7 @@ def flows(results: Path) -> list[Flow]:
                 failure = case.find("error")
             detail = None
             if failure is not None:
-                message = (failure.get("message") or failure.text or "").strip()
-                detail = message.splitlines()[0][:300] if message else "no detail reported"
+                detail = summarize(failure.get("message") or failure.text or "")
             found.append(Flow((case.get("classname") or "").split(".")[-1], case.get("name") or "?", detail))
     return found
 
