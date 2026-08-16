@@ -45,10 +45,10 @@ internal object DeviceDescriptionFactory {
      * Truncated to half the digest. 128 bits is far past collision concerns for a per-paypoint lookup, and
      * the wire field is sized for a serial number.
      *
-     * A device that returns nothing for the platform identifier is left to the caller as a blank, which
-     * registration refuses. Substituting a random value here is what the sibling SDK does and is the
-     * reason it registers a new device on every call down that path: an identifier invented per call is not
-     * an identifier.
+     * A device that returns nothing for the platform identifier is left to the caller as a blank, and a blank
+     * is refused when the device registers. Substituting a random value here is what the sibling SDK does, and
+     * is the reason it registers a new device on every call down that path: an identifier invented per call is
+     * not an identifier.
      *
      * `HardwareIds` is suppressed because reading the identifier is the requirement, and the mitigation the
      * check asks for is the digest above: the raw value is never held, sent or logged, which
