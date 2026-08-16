@@ -126,11 +126,6 @@ class PayInLiveFlowsInstrumentedTest {
     @Test
     fun capturingABankAccountThePayerEntered() =
         runBlocking {
-            // Excluded by name from `payin/build.gradle.kts` unless `payabli.liveTest.achDebits` is true, because
-            // whether a paypoint's connector takes an ACH debit is its configuration rather than anything this
-            // SDK sends: one that refuses them refuses every request shape, and asserting an approval there
-            // would leave a permanently red test against a working client. Excluded rather than skipped, so the
-            // counts stay honest.
             assertApproved(flow.capture(transaction(), bankAccount()).orFail("capturing a bank account").code)
         }
 
@@ -207,8 +202,8 @@ class PayInLiveFlowsInstrumentedTest {
             PayInMethodType.BankAccount,
             mapOf(
                 PayInField.AccountHolder to "QA Tester",
-                PayInField.RoutingNumber to "021000021",
-                PayInField.AccountNumber to "1111111111",
+                PayInField.RoutingNumber to "121000248",
+                PayInField.AccountNumber to "1234567890",
                 PayInField.AccountType to "Checking",
                 PayInField.FirstName to "QA",
                 PayInField.LastName to "Tester",
@@ -302,6 +297,6 @@ class PayInLiveFlowsInstrumentedTest {
         val AMOUNT: BigDecimal = BigDecimal("1.10")
 
         /** A second test card, so a swapped seed is a different instrument rather than the same one again. */
-        const val REPLACEMENT_PAN = "5555555555554444"
+        const val REPLACEMENT_PAN = "4242424242424242"
     }
 }

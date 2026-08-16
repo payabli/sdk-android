@@ -65,15 +65,6 @@ android {
 
         if (liveTest.values.none { it == null }) {
             liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
-
-            // One flow excluded on its own, by method, because whether a paypoint's connector takes an ACH debit
-            // is its configuration rather than anything this SDK sends: a paypoint that refuses them refuses
-            // every request shape, so the flow would be permanently red there against a working client. Set
-            // `payabli.liveTest.achDebits=true` for a paypoint that accepts them. Excluded rather than skipped,
-            // as the tiers are, so the counts stay honest.
-            if (providers.gradleProperty("payabli.liveTest.achDebits").orNull != "true") {
-                excluded += "$liveFlows#capturingABankAccountThePayerEntered"
-            }
         } else {
             excluded += liveFlows
         }
