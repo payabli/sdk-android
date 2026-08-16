@@ -35,19 +35,10 @@ android {
         //     -Ppayabli.liveTest.environment=sandbox -Ppayabli.liveTest.entryPoint=<entry> \
         //     -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret>
         //
-        // Each also reads the variable beside it. A -P value is an argument, so it lands in the process
-        // command line; an environment variable does not.
+        // Each also reads an environment variable, which is what an automated run sets. Both halves live in
+        // build-logic, because `:example` resolves the same four for the same credentials.
         val liveFlows = "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"
-        val liveTest =
-            mapOf(
-                "environment" to "PAYABLI_LIVETEST_ENVIRONMENT",
-                "entryPoint" to "PAYABLI_LIVETEST_ENTRY_POINT",
-                "clientId" to "PAYABLI_LIVETEST_CLIENT_ID",
-                "clientSecret" to "PAYABLI_LIVETEST_CLIENT_SECRET",
-            ).mapValues { (property, variable) ->
-                providers.gradleProperty("payabli.liveTest.$property").orNull
-                    ?: providers.environmentVariable(variable).orNull
-            }
+        val liveTest = liveTestCredentials(providers)
 
         // Every class or method kept out of an ordinary run, as one list, because `notClass` is a single
         // runner argument: setting it twice keeps the last write and silently readmits whatever the earlier
@@ -73,7 +64,7 @@ android {
             excluded += "com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest"
         }
 
-        if (liveTest.values.none { it == null }) {
+        if (liveTestCredentialsUsable(liveTest)) {
             liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
         } else {
             excluded += liveFlows

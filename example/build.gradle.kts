@@ -116,25 +116,9 @@ android {
             // All four or none, refused here as well as in the test. Forwarding a subset is what makes the
             // difference invisible: the run looks configured, takes the bench path anyway, and fails several
             // steps later on a form that never unlocked.
-            //
-            // Each also reads the variable beside it. A -P value is an argument, so it lands in the process
-            // command line; an environment variable does not.
-            val liveTest =
-                mapOf(
-                    "environment" to "PAYABLI_LIVETEST_ENVIRONMENT",
-                    "entryPoint" to "PAYABLI_LIVETEST_ENTRY_POINT",
-                    "clientId" to "PAYABLI_LIVETEST_CLIENT_ID",
-                    "clientSecret" to "PAYABLI_LIVETEST_CLIENT_SECRET",
-                ).mapValues { (property, variable) ->
-                    providers.gradleProperty("payabli.liveTest.$property").orNull
-                        ?: providers.environmentVariable(variable).orNull
-                }
-            val missing = liveTest.filterValues { it == null }.keys
-            if (missing.isNotEmpty() && missing.size < liveTest.size) {
-                error("payabli.liveTest.* is partly set. Missing: ${missing.sorted().joinToString()}")
-            }
-            liveTest.forEach { (name, value) ->
-                value?.let { testInstrumentationRunnerArguments["liveTest.$name"] = it }
+            val liveTest = liveTestCredentials(providers)
+            if (liveTestCredentialsUsable(liveTest)) {
+                liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
             }
         }
 
