@@ -1,7 +1,6 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
-import androidx.annotation.VisibleForTesting
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -31,9 +30,7 @@ public object PayabliJson {
      * failure. One copy so the two cannot draw the boundary differently.
      *
      * Not `runCatching`: it catches `Throwable`, so an OutOfMemoryError would read as a decline.
-     * Not private so a test can pass a serializer that throws.
      */
-    @VisibleForTesting
     internal fun <T> decodeOrNull(
         serializer: KSerializer<T>,
         body: String,
