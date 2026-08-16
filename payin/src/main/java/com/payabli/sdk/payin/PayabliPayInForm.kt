@@ -39,8 +39,15 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * **Consumes no window insets.** Give it a scrolling viewport that accounts for the keyboard.
  *
  * **Retention is [flow]'s, not this composable's.** Hold the flow in something that survives a configuration
- * change and the outcome of a submission in flight is still delivered afterwards. This function keeps only
- * what the payer has typed and which fields the service rejected.
+ * change, and a rotation keeps both the outcome of a submission in flight and everything the payer has typed.
+ * Held anywhere else, the form empties whenever it leaves the composition.
+ *
+ * **Nothing typed reaches saved instance state**, so a form reopened after process death is an empty form. What
+ * recovers a payment interrupted there is `PayInSubmissionState.Failed.retryKey`.
+ *
+ * **One form per [flow].** The typed values are the flow's, so two forms given the same one draw the same
+ * boxes, and two given the same one with different configurations refill each other on every frame. A second
+ * form on a screen takes a second flow.
  *
  * @param flow where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.
@@ -79,6 +86,7 @@ public fun PayabliPayInForm(
 
     PayInFormContent(
         submission = submission,
+        draft = flow.draft,
         configuration = offered,
         modifier = modifier,
         labels = labels,

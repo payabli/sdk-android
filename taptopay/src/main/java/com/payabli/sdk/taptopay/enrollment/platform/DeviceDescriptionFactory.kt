@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import com.payabli.sdk.taptopay.BuildConfig
 import com.payabli.sdk.taptopay.enrollment.DeviceDescription
 import java.security.MessageDigest
 
@@ -25,7 +26,7 @@ internal object DeviceDescriptionFactory {
      * The value is hashed before it is sent. The digest has the same lifetime and keeps the raw platform
      * identifier on the device, so a party holding only the digest cannot recover it.
      *
-     * **It is a pseudonym, and it is not unlinkable.** The package name and the salt are both in the APK, so
+     * **It is a pseudonym, and it is not unlinkable.** Both of the other inputs are in the APK, so
      * any library that reads the same platform identifier inside this app can compute this value and match
      * it. What the digest buys is that the raw identifier is never sent, stored or logged. Making it
      * unlinkable would need a key or a server-issued value, and both break the lifetime above: a key in the
@@ -38,7 +39,8 @@ internal object DeviceDescriptionFactory {
      * register as one. Including the package makes the result per application whatever the platform's scoping
      * turns out to be, which is why it does not rest on that scoping.
      *
-     * The salt is versioned. Changing either it or the package re-registers the device.
+     * `BuildConfig.SDK_IDENTIFIER` is this module's namespace, set once in its build file. Changing it, or the
+     * host's package, changes what this returns for every device.
      *
      * Truncated to half the digest. 128 bits is far past collision concerns for a per-paypoint lookup, and
      * the wire field is sized for a serial number.
@@ -82,17 +84,11 @@ internal object DeviceDescriptionFactory {
         val bytes =
             MessageDigest
                 .getInstance("SHA-256")
-                .digest("$installationId|$packageName|$SALT".toByteArray(Charsets.UTF_8))
-        val hex = StringBuilder(IDENTIFIER_BYTES * 2)
-        for (index in 0 until IDENTIFIER_BYTES) {
-            hex.append(HEX[(bytes[index].toInt() shr 4) and 0xF])
-            hex.append(HEX[bytes[index].toInt() and 0xF])
-        }
-        return hex.toString()
+                .digest(
+                    "$installationId|$packageName|${BuildConfig.SDK_IDENTIFIER}".toByteArray(Charsets.UTF_8),
+                )
+        return bytes.toHexString(0, IDENTIFIER_BYTES)
     }
 
-    /** Versioned: changing it re-registers every device, so it moves only with that understood. */
-    private const val SALT = "com.payabli.sdk.taptopay.hardware.v1"
     private const val IDENTIFIER_BYTES = 16
-    private val HEX = "0123456789abcdef".toCharArray()
 }

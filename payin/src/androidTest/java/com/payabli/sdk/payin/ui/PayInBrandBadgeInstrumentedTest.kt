@@ -18,6 +18,7 @@ import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -38,6 +39,9 @@ import org.junit.runner.RunWith
 class PayInBrandBadgeInstrumentedTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
+
+    /** Held here rather than inside the composition, which is where a host holds it. */
+    private val draft = PayInFormDraft()
 
     @Test
     fun aVisaNumberDrawsTheVisaMark() {
@@ -161,7 +165,11 @@ class PayInBrandBadgeInstrumentedTest {
             )
         rule.setContent {
             MaterialTheme {
-                PayInFormContent(submission = PayInSubmissionState.Idle, configuration = configuration)
+                PayInFormContent(
+                    submission = PayInSubmissionState.Idle,
+                    draft = draft,
+                    configuration = configuration,
+                )
             }
         }
     }

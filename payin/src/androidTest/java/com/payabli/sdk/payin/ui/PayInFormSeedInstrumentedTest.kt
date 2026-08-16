@@ -23,6 +23,7 @@ import com.payabli.sdk.payin.form.CardBrand
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
@@ -48,6 +49,9 @@ import org.junit.runner.RunWith
 class PayInFormSeedInstrumentedTest {
     @get:Rule
     val rule = createAndroidComposeRule<ComponentActivity>()
+
+    /** Held here rather than inside the composition, which is where a host holds it. */
+    private val draft = PayInFormDraft()
 
     private var seed by mutableStateOf<PayInFormValues?>(null)
 
@@ -200,6 +204,7 @@ class PayInFormSeedInstrumentedTest {
             MaterialTheme {
                 PayInFormContent(
                     submission = submission,
+                    draft = draft,
                     configuration = configuration,
                     initialValues = this.seed,
                     onSubmit = {
