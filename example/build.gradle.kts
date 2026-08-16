@@ -108,16 +108,14 @@ android {
             // for a form that stayed locked. Measured: 3 of 3 flows failed that way in a whole-suite run and
             // all 3 passed in an invocation of their own.
             testInstrumentationRunnerArguments["class"] = walkthrough
-        }
 
-        if (providers.gradleProperty("payabli.qaWalkthrough").orNull == "true" &&
-            providers.gradleProperty("payabli.qaWalkthrough.achDebits").orNull != "true"
-        ) {
-            // One flow excluded on its own, by method, as `:payin` excludes its live counterpart and for the
-            // same reason: whether a paypoint's connector takes an ACH debit is its configuration rather than
-            // anything this app sends, so a paypoint that refuses them refuses every request shape and the flow
-            // would be permanently red against a working app. Set this for a paypoint that accepts them.
-            excluded += "$walkthrough#capturingABankAccountThePayerEntered"
+            // The same four `:payin`'s live tier takes, and the same names, because one set of secrets feeds
+            // both. Given them, the walkthrough serves its own token and needs no server beside it; without
+            // them it runs against whatever the build configured and a token server on the bench.
+            listOf("environment", "entryPoint", "clientId", "clientSecret")
+                .mapNotNull { name ->
+                    providers.gradleProperty("payabli.liveTest.$name").orNull?.let { name to it }
+                }.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value }
         }
 
         // One list, because `notClass` is a single runner argument: setting it twice keeps the last write and

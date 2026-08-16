@@ -1,0 +1,29 @@
+name: Live flows (sandbox)
+
+# One of two entry points into `live-flows.yml`, which carries the whole explanation. This file exists so qa
+# and sandbox are separate runs with separate results rather than two jobs whose failures share a verdict.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:30 Pacific as 11:30 UTC, half an hour after the qa run so the two do not submit into both paypoints
+    # at once and a runner is free for the second.
+    - cron: '30 11 * * *'
+
+concurrency:
+  group: live-sandbox-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sandbox:
+    uses: ./.github/workflows/live-flows.yml
+    with:
+      environment: sandbox
+    secrets:
+      client-id: ${{ secrets.PAYABLI_CLIENT_ID_SBX }}
+      client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_SBX }}
+      entry-point: ${{ secrets.PAYABLI_ENTRY_SBX }}
+      slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}

@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+"""Report one live-flows run to Slack: which environment, which flows, and no blame.
+
+Deliberately not `nightly_slack.py`. That reporter answers "what changed to break this", with a culprit per
+failure from git history and a commit range since the last green run. A live failure is usually the service's
+answer rather than a commit, so the same rendering would name whoever last touched a file for a connector
+outage, which is worse than saying nothing. This one names the environment and the flows and stops.
+
+It also posts on green, where the nightly stays silent behind a scheduled liveness alarm. Two runs a day at
+one line each is little enough to read, and it buys the same guarantee without the machinery: silence means
+the workflow itself stopped, rather than meaning everything passed.
+
+What reaches the channel from a failure is the classification, the HTTP status and the service's own code.
+`PayInLiveFlowsInstrumentedTest.orFail` builds that string and deliberately leaves out `reason` and `detail`,
+because the service echoes submitted values into some of them.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+from nightly_slack import mrkdwn, slack_post, warn
+
+# The two suites this workflow runs, mapped to what a reader calls them. A class not listed still reports,
+# under its own name, because a new suite must not go missing from the message that announces failures.
+SUITES = {
+    "PayInLiveFlowsInstrumentedTest": "SDK surface",
+    "QaWalkthroughTest": "sample app",
+}
+
+
+class Flow:
+    def __init__(self, suite: str, name: str, detail: str | None) -> None:
+        self.suite = SUITES.get(suite, suite)
+        self.name = name
+        self.detail = detail
+
+    @property
+    def failed(self) -> bool:
+        return self.detail is not None
+
+
+def flows(results: Path) -> list[Flow]:
+    found: list[Flow] = []
+    for path in sorted(results.glob("**/TEST-*.xml")):
+        try:
+            root = ET.parse(path).getroot()
+        except (ET.ParseError, OSError) as error:
+            found.append(Flow(path.name, "unreadable results", f"{type(error).__name__}"))
+            continue
+        for case in root.iter("testcase"):
+            failure = case.find("failure")
+            if failure is None:
+                failure = case.find("error")
+            detail = None
+            if failure is not None:
+                message = (failure.get("message") or failure.text or "").strip()
+                detail = message.splitlines()[0][:300] if message else "no detail reported"
+            found.append(Flow((case.get("classname") or "").split(".")[-1], case.get("name") or "?", detail))
+    return found
+
+
+def run_url() -> str:
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    return f"{server}/{repository}/actions/runs/{run_id}" if repository and run_id else ""
+
+
+def main() -> int:
+    if len(sys.argv) != 2:
+        print(f"usage: {Path(sys.argv[0]).name} <results-directory>", file=sys.stderr)
+        return 2
+
+    token = os.environ.get("SLACK_BOT_TOKEN", "").strip()
+    channel = os.environ.get("SLACK_CHANNEL_ID", "").strip()
+    # Absent credentials warn and skip, as the nightly does. A delivery problem is not a test result, and a
+    # live run that really did pass must not be reported as failed because Slack was unreachable.
+    if not token or not channel:
+        warn("SLACK_BOT_TOKEN or SLACK_CHANNEL_ID is not set, so no live report was posted.")
+        return 0
+
+    environment = os.environ.get("LIVE_ENVIRONMENT", "unknown").strip() or "unknown"
+    job_result = os.environ.get("LIVE_JOB_RESULT", "unknown").strip() or "unknown"
+    platform = os.environ.get("PLATFORM", "Android").strip() or "Android"
+
+    found = flows(Path(sys.argv[1]))
+    failed = [flow for flow in found if flow.failed]
+
+    # Three ways to be red, and the third is the one a count cannot see: a step that succeeded having run
+    # nothing writes no XML, and a suite total of zero would otherwise render as "0 of 0 approved".
+    silent = not found
+    red = bool(failed) or silent or job_result != "success"
+
+    link = run_url()
+    where = f"{platform} · live flows · {environment}"
+    if silent:
+        headline = f"{where} · no results written"
+    elif failed:
+        headline = f"{where} · {len(failed)} of {len(found)} refused"
+    elif job_result != "success":
+        headline = f"{where} · the job reported {job_result}"
+    else:
+        headline = f"{where} · {len(found)} of {len(found)} approved"
+
+    text = f"{'🔴' if red else '🟢'} {headline}"
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{mrkdwn(headline)}*"}}]
+    if link:
+        blocks.append({
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": f"<{link}|run>"}],
+        })
+
+    parent = slack_post("chat.postMessage", token, {"channel": channel, "text": text, "blocks": blocks})
+    if parent is None or not parent.get("ok"):
+        # The run's own verdict is the workflow's to decide. Losing the report must not change it.
+        return 0
+
+    if failed:
+        lines = [f"• `{mrkdwn(flow.suite)}` {mrkdwn(flow.name)} — {mrkdwn(flow.detail or '')}" for flow in failed]
+        slack_post("chat.postMessage", token, {
+            "channel": channel,
+            "thread_ts": parent.get("ts"),
+            "text": "\n".join(lines)[:2900],
+        })
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

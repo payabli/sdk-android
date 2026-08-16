@@ -11,9 +11,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -39,8 +41,9 @@ import org.junit.runner.RunWith
  *   -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
  * ```
  *
- * Add `-Ppayabli.qaWalkthrough.achDebits=true` for a paypoint whose connector takes an ACH debit; without it the
- * bank capture is excluded by name rather than left to fail.
+ * Given the four `payabli.liveTest.*` values instead, it serves its own token from [LiveTokenServer] and points
+ * the app there, so nothing runs beside it and no port is forwarded. That is the form CI takes; the command
+ * above is the bench, where the running `example-server` is the thing being exercised.
  *
  * **The device has to be unlocked.** A phone that locked while idle is awake and still shows the keyguard, so
  * no activity reaches the foreground and every flow here fails with "No compose hierarchies found in the app",
@@ -52,15 +55,19 @@ class QaWalkthroughTest {
     val compose = createComposeRule()
 
     private lateinit var container: AppContainer
+    private var tokenServer: LiveTokenServer? = null
 
     /**
      * The prefill button is what fills the form, and it is drawn only for a build that was told to offer it.
      *
      * Checked before anything is driven, because without it the failure is a missing node partway through a
      * flow that had already reached the service.
+     *
+     * One method rather than two, because JUnit orders `@Before` methods arbitrarily: split, the token setup
+     * ran first on this runner and failed on a `container` the other half had not assigned yet.
      */
     @Before
-    fun requireTheBuildOffersThePrefill() {
+    fun prepareTheApp() {
         val application =
             InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
                 as PayabliDemoApplication
@@ -70,6 +77,32 @@ class QaWalkthroughTest {
             "this build offers no prefill button: install it with -Ppayabli.demo.prefill=true",
             container.configuration.prefillEnabled,
         )
+
+        serveTheTokenWhenCredentialsWerePassed()
+    }
+
+    private fun serveTheTokenWhenCredentialsWerePassed() {
+        val arguments = InstrumentationRegistry.getArguments()
+        val values = CREDENTIAL_ARGUMENTS.associateWith { arguments.getString("liveTest.$it") }
+        if (values.values.any { it == null }) return
+
+        val environment =
+            DemoEnvironment.entries.firstOrNull { it.label.equals(values.getValue("environment"), true) }
+                ?: error("liveTest.environment named no environment: ${values.getValue("environment")}")
+
+        tokenServer =
+            LiveTokenServer(
+                baseUrl = environment.baseUrl,
+                clientId = values.getValue("clientId")!!,
+                clientSecret = values.getValue("clientSecret")!!,
+            ).also { container.applyLaunchOverride("127.0.0.1:${it.port}") }
+
+        container.applyTestConfiguration(values.getValue("entryPoint")!!, environment)
+    }
+
+    @After
+    fun stopTheTokenServer() {
+        tokenServer?.close()
     }
 
     @Test
@@ -112,13 +145,6 @@ class QaWalkthroughTest {
         awaitOutcome("Payment submitted")
     }
 
-    /**
-     * Excluded by method unless `payabli.qaWalkthrough.achDebits=true`.
-     *
-     * Whether a paypoint's connector takes an ACH debit is its configuration rather than anything this app sends:
-     * one that refuses them refuses every request shape, so asserting an approval there leaves a permanently red
-     * flow against a working app. Excluded rather than skipped, so the counts stay honest.
-     */
     @Test
     fun capturingABankAccountThePayerEntered() {
         openTheForm(TopLevelDestination.Capture, submit = CAPTURE)
@@ -224,6 +250,8 @@ class QaWalkthroughTest {
     private fun nodesWith(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes()
 
     private companion object {
+        val CREDENTIAL_ARGUMENTS = listOf("environment", "entryPoint", "clientId", "clientSecret")
+
         const val SAVE = "Save payment method"
         const val CAPTURE = "Submit payment"
 

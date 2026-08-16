@@ -1,0 +1,30 @@
+# Keeps the pinned action references current.
+#
+# It exists for one of them. `live-flows.yml` pins `android-emulator-runner` to a commit because it hands
+# that action a client secret, and a pinned SHA is otherwise a string that ages silently: GitHub does not
+# announce a new release to a workflow that names a commit. Dependabot is what turns that into a pull
+# request. Verified against the shape used here rather than assumed: on `ossf/scorecard#5137` Dependabot
+# rewrote `actions/setup-go@4b73464… # v6.3.0` to `@b7ad1da… # v7.0.0`, so it maintains the trailing version
+# comment as well as the SHA, which is why that comment is written in the pinned form.
+#
+# `nightly.yml` deliberately does not pin, and its own header says why. That decision stands: a moving tag
+# takes upstream fixes without anyone acting, which is the right trade for a job holding no credential.
+# **A pull request here that replaces `@v2` with a SHA or a point release should be closed, not merged.**
+# Whether Dependabot ever raises one is untested; the public repositories checked pin every action, so
+# nothing observed says either way. Closing it costs a click and merging it would quietly reverse a
+# recorded decision.
+#
+# Scoped to actions alone. Gradle dependencies are a separate question with a different blast radius, and
+# adding them here would arrive as a surprise on a change about a workflow pin.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # One pull request rather than one per action, which is what `ossf/scorecard` does: its
+    # "Bump the github-actions group across 1 directory with 9 updates" is the grouped form.
+    groups:
+      actions:
+        patterns:
+          - "*"
