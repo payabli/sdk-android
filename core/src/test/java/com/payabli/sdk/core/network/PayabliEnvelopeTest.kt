@@ -82,6 +82,12 @@ class PayabliEnvelopeTest {
     fun `the byte array overload agrees with the string overload`() {
         val json = """{"isSuccess":false,"responseData":{"resultCode":7,"resultText":"nope"}}"""
         val fromBytes = PayabliEnvelope.declineOutcome(json.toByteArray(Charsets.UTF_8))
+
+        // Against literals, not against the other overload: comparing the two nullable results to each
+        // other passes when both are null, so it would survive declineOutcome returning null always.
+        assertNotNull(fromBytes)
+        assertEquals(7, fromBytes?.code)
+        assertEquals("nope", fromBytes?.reason)
         assertEquals(PayabliEnvelope.declineOutcome(json)?.code, fromBytes?.code)
         assertEquals(PayabliEnvelope.declineOutcome(json)?.reason, fromBytes?.reason)
     }
