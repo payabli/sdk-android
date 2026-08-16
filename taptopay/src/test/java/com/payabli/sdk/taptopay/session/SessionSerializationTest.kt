@@ -87,6 +87,9 @@ class SessionSerializationTest {
                 listOf(RouteScript.CHALLENGE, RouteScript.REGISTER, RouteScript.ATTEST, RouteScript.CONFIG),
                 fixture.routes,
             )
+            // Eligibility included. It is the one phase that announces no state, so it is also the one a
+            // reader can mistake for running outside the region; it runs first inside the same lock.
+            assertEquals(1, fixture.reader.eligibilityCount)
             assertEquals(1, fixture.reader.configureCount)
             assertEquals(1, fixture.reader.prepareCount)
             assertEquals(TapToPaySessionState.Ready, fixture.state)
