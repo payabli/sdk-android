@@ -60,6 +60,33 @@ class PercentEncodingTest {
     }
 
     @Test
+    fun `every ascii character is either kept or encoded, and the kept set is exactly the unreserved one`() {
+        // Exhaustive over the range where the decision is made, and derived from the RFC rather than from
+        // the implementation, so it holds whatever technique the encoder uses to classify a byte.
+        val unreserved = (('A'..'Z') + ('a'..'z') + ('0'..'9')).toSet() + setOf('-', '.', '_', '~')
+
+        for (code in 0..127) {
+            val char = code.toChar()
+            val expected = if (char in unreserved) char.toString() else "%%%02X".format(code)
+
+            assertEquals("code point $code", expected, PercentEncoding.segment(char.toString()))
+        }
+    }
+
+    @Test
+    fun `a character above ascii is encoded from every one of its utf-8 bytes`() {
+        // The reference reads each byte unsigned. Every byte over 0x7F is negative in Kotlin, so an encoder
+        // mishandling that sign fails here rather than somewhere a reader would think to look. Written as
+        // escapes: the first code point needing two, three and four bytes, and the last of each width.
+        listOf("\u00e9", "\u0080", "\u07ff", "\u0800", "\uffff", "\ud83d\udcb3").forEach { value ->
+            val expected =
+                value.toByteArray(Charsets.UTF_8).joinToString("") { "%%%02X".format(it.toInt() and 0xFF) }
+
+            assertEquals(value, expected, PercentEncoding.segment(value))
+        }
+    }
+
+    @Test
     fun `an empty value encodes to an empty segment rather than being refused`() {
         // Stated because it is a trap: the caller gets a path with a trailing slash and no identifier, which
         // is a different route. Whether that is allowed is the caller's question, and this says so.

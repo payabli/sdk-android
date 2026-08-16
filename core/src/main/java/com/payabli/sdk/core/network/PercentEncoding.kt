@@ -41,11 +41,12 @@ public object PercentEncoding {
     public fun segment(value: String): String =
         buildString(value.length) {
             value.toByteArray(Charsets.UTF_8).forEach { byte ->
-                val char = byte.toInt().toChar()
+                val code = byte.toInt() and 0xFF
+                val char = code.toChar()
                 if (char in 'A'..'Z' || char in 'a'..'z' || char in '0'..'9' || char in UNRESERVED) {
                     append(char)
                 } else {
-                    append('%').append(HEX[(byte.toInt() shr 4) and 0xF]).append(HEX[byte.toInt() and 0xF])
+                    append('%').append(HEX[code shr 4]).append(HEX[code and 0xF])
                 }
             }
         }
