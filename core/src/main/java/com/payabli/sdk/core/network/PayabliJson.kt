@@ -37,7 +37,7 @@ public object PayabliJson {
     ): T? =
         try {
             format.decodeFromString(serializer, body)
-        } catch (malformed: SerializationException) {
+        } catch (_: SerializationException) {
             null
         }
 }
