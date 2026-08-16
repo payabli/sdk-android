@@ -20,9 +20,11 @@ import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonUnquotedLiteral
 import kotlinx.serialization.json.buildJsonObject
 import java.math.BigDecimal
@@ -78,12 +80,14 @@ internal const val NFC_FAILURE_REASON: String = "nfc_read"
  * `10` is sent as `10.00` and `10.005` as `10.01`. The service's own request payloads write these fields as
  * a decimal literal with two places, so the scale is the contract rather than a formatting preference.
  *
- * **Write-only.** No response this module reads carries an amount — a charge reads back one field, the
- * transaction identifier — so [deserialize] refuses rather than guessing at a shape nothing has sent. A
- * tolerant reader here would be a reader no test could ever have exercised.
+ * **The descriptor names how a value is read, and the write side bypasses it.** Reading accepts a number
+ * and a quoted number alike, which is what [PrimitiveKind.STRING] declares; writing goes through
+ * [JsonUnquotedLiteral], which does not consult the kind. There is no decimal kind to declare instead, and
+ * the one numeric kind that would fit the emitted digits is `DOUBLE`, which asserts the single property a
+ * payment amount cannot have.
  *
- * The card-not-present module writes amounts identically. Sharing it would mean a capability module
- * depending on a sibling, which is the one thing the module layout forbids.
+ * The card-not-present module makes the same two choices for the same reasons. Sharing one serializer would
+ * mean a capability module depending on a sibling, which is the one thing the module layout forbids.
  */
 internal object TTPAmountSerializer : KSerializer<BigDecimal> {
     override val descriptor: SerialDescriptor =
@@ -99,8 +103,18 @@ internal object TTPAmountSerializer : KSerializer<BigDecimal> {
         json.encodeJsonElement(JsonUnquotedLiteral(value.setScale(AMOUNT_SCALE, RoundingMode.HALF_UP).toPlainString()))
     }
 
-    override fun deserialize(decoder: Decoder): BigDecimal =
-        throw SerializationException("No card-present response carries an amount")
+    /** Tolerant in one direction only: a number and a quoted number both read, anything else is a failure. */
+    override fun deserialize(decoder: Decoder): BigDecimal {
+        val json = decoder as? JsonDecoder ?: return parse(decoder.decodeString())
+        val primitive =
+            json.decodeJsonElement() as? JsonPrimitive
+                ?: throw SerializationException("An amount is a number, and this was not one")
+        return parse(primitive.content)
+    }
+
+    /** The text is never in the message: an amount is not a secret, but a decode error is not the place. */
+    private fun parse(text: String): BigDecimal =
+        text.toBigDecimalOrNull() ?: throw SerializationException("An amount could not be read as a number")
 }
 
 /**

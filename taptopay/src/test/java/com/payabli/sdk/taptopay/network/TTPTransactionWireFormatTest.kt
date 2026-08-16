@@ -188,13 +188,21 @@ class TTPTransactionWireFormatTest {
     }
 
     @Test
-    fun `no card-present response carries an amount, so reading one is refused`() {
-        val failure =
-            runCatching {
-                PayabliJson.format.decodeFromString(TTPAmountSerializer, "\"10.00\"")
-            }.exceptionOrNull()
+    fun `an amount reads whether or not it arrives quoted`() {
+        // The descriptor declares a string and the writer emits a number, so both forms have to read or the
+        // serializer cannot round-trip its own output.
+        assertEquals(BigDecimal("10.00"), PayabliJson.format.decodeFromString(TTPAmountSerializer, "\"10.00\""))
+        assertEquals(BigDecimal("10.00"), PayabliJson.format.decodeFromString(TTPAmountSerializer, "10.00"))
+    }
 
-        assertTrue("$failure", failure is SerializationException)
+    @Test
+    fun `a value that is not a number is a decode failure rather than a zero`() {
+        listOf("\"ten\"", "true", "{}").forEach { body ->
+            val failure =
+                runCatching { PayabliJson.format.decodeFromString(TTPAmountSerializer, body) }.exceptionOrNull()
+
+            assertTrue("$body gave $failure", failure is SerializationException)
+        }
     }
 
     @Test
