@@ -1,6 +1,9 @@
 package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.network.PayabliJson
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.SerializationException
 import org.junit.Assert.assertEquals
@@ -231,6 +234,32 @@ class DeviceBindingsTest {
         assertTrue(decoded.exceptionOrNull() is SerializationException)
         assertNull(decoded.getOrNull())
     }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `two stores over one backing entry do not lose each other's bindings`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Parked after its read, so it holds a value taken before the other store's write. Parking it
+            // before the read instead proves nothing: it would resume and see that write, which is how this
+            // test passed against the defect it was written for.
+            val held = CompletableDeferred<Unit>()
+            val storage = FakeSecureStore(afterFirstReadGate = { held.await() })
+            val first = AttestedDeviceStore(storage)
+            val second = AttestedDeviceStore(storage)
+
+            val writingFirst = launch(UnconfinedTestDispatcher(testScheduler)) { first.write(binding(ENTRY)) }
+            val writingSecond =
+                launch(UnconfinedTestDispatcher(testScheduler)) { second.write(binding(OTHER_ENTRY)) }
+            held.complete(Unit)
+            writingFirst.join()
+            writingSecond.join()
+
+            // Writing one binding means reading them all and writing them back, so a lock held per object
+            // rather than per backing entry lets the later write land on a collection read before the
+            // earlier one existed, and the earlier binding is gone with nothing raised.
+            assertNotNull(first.read(ENTRY))
+            assertNotNull(first.read(OTHER_ENTRY))
+        }
 
     @Test
     fun `the collection never prints the entry points it holds`() {

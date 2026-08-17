@@ -42,14 +42,20 @@ internal class AttestedDeviceStore(
      * Serialises the read-modify-write that every entry point below performs.
      *
      * One entry holds every binding, so writing one means reading them all, replacing one and writing them
-     * back. Two callers interleaving that lose whichever binding was read before the other's write — and a
+     * back. Two callers interleaving that lose whichever binding was read before the other's write, and a
      * lost binding is what this store exists to prevent. Callers for different entry points are exactly the
      * ones that would interleave, since nothing above serialises across them.
      *
-     * **One instance per backing entry.** The lock is this object's, so a second instance over the same
-     * storage would not see it.
+     * **Held on the companion, not the instance**, so two stores over one backing file serialise against each
+     * other. An instance lock would not: the store below is constructed per caller, and two of them reach the
+     * same file through separate objects. The store's own lock does not cover this either, because it
+     * serialises one operation and this is a read and a write with a decision between them.
+     *
+     * One lock for every instance is one lock per backing entry, because [ENTRY] is fixed: an app has one
+     * such entry, so there is no second file to contend with. If that ever stops being true, key this the way
+     * the persistence layer keys its own, by the store's resolved identity.
      */
-    private val lock = Mutex()
+    private val lock = SHARED_LOCK
 
     /**
      * The binding held for [entry], or null when there is nothing usable to read.
@@ -236,5 +242,8 @@ internal class AttestedDeviceStore(
 
         const val EVENT_LOST = "device_identity_lost"
         const val EVENT_ORDER_UNWRITTEN = "device_binding_order_unwritten"
+
+        /** One per process, so every store over the one backing entry takes the same lock. */
+        val SHARED_LOCK = Mutex()
     }
 }
