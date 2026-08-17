@@ -207,14 +207,27 @@ class SessionSerializationTest {
      * `runBlocking` and a wall-clock probe, where every other test in this file uses virtual time. Virtual
      * time cannot see a scheduler that is starved: a caller that spins holds the thread the deadline needs,
      * so the deadline never fires and the suite hangs. Only real threads tell waiting and spinning apart.
+     *
+     * The repair is launched only once the build is inside the region, because on real threads nothing orders
+     * two launches. A repair that got there first would enter from `Idle`, reach the credentials with nothing
+     * attested and throw, which is the failure this had on CI twice.
      */
     @Test
     fun `a repair genuinely waits on real threads rather than spinning`() {
+        val entered = CompletableDeferred<Unit>()
         val held = CompletableDeferred<Unit>()
-        val fixture = SessionFixture(SessionFixture.coldScript(), firstReadGate = { held.await() })
+        val fixture =
+            SessionFixture(
+                SessionFixture.coldScript(),
+                firstReadGate = {
+                    entered.complete(Unit)
+                    held.await()
+                },
+            )
 
         runBlocking(Dispatchers.Default) {
             val build = launch { fixture.coordinator.initialize() }
+            withTimeout(COMPLETION_PROBE) { entered.await() }
             val repair = launch { fixture.coordinator.reinitializeIfNeeded() }
             try {
                 assertNull(
