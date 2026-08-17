@@ -179,6 +179,28 @@ jobs:
             ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest
             ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true
 
+      # The run's own verdict, so it cannot disagree with the message the report job sends. A suite that
+      # succeeded having discovered no tests writes no results, leaves the step green, and reaches Slack as
+      # "no results written" while the run itself stays successful. nightly.yml refuses the same case through
+      # INSTRUMENTED_MODULES, per module rather than over the total, because one silent suite is hidden by the
+      # other's output.
+      #
+      # Only after a successful step, which is the case it is for: a step that already failed is red without
+      # this, and would report a missing suite it never got to.
+      - name: Every suite wrote results
+        env:
+          INSTRUMENTED_MODULES: payin example
+        run: |
+          missing=
+          for module in $INSTRUMENTED_MODULES; do
+            found=$(find "$module/build/outputs/androidTest-results" -name 'TEST-*.xml' 2>/dev/null | wc -l)
+            [ "$found" -gt 0 ] || missing="$missing $module"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::the step succeeded but these wrote no instrumented results:$missing"
+            exit 1
+          fi
+
       # On failure too: a live failure is read from the XML, and the runner is gone by the time anyone looks.
       - name: Upload results
         if: always()

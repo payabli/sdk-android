@@ -2096,6 +2096,17 @@ def test_workflows():
               not line.endswith("\\"), line)
         check("W5 every line of the emulator script is a command", line.startswith("./"), line)
 
+    # A suite that succeeded having discovered no tests writes no results, so the step stays green and only
+    # the Slack message says otherwise. The guard has to name each module: one silent suite is invisible in a
+    # total the other one fills.
+    guard = next((b for b in blocks if "wrote no instrumented results" in b), "")
+    check("W7 the reusable workflow refuses a suite that wrote no results", bool(guard))
+    for module in ("payin", "example"):
+        check(f"W7 and it names {module}",
+              any(line.strip().startswith("INSTRUMENTED_MODULES:") and module in line
+                  for line in guard.splitlines()),
+              guard)
+
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.
     for name in LIVE_WORKFLOWS:

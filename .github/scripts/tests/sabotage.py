@@ -276,6 +276,11 @@ MUTATIONS = [
      "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true "
      "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
 
+    # The guard that keeps the run's verdict and the channel's from disagreeing. Dropping a module from it is
+    # how one silent suite gets hidden by the other's results.
+    ("The results guard stops naming the sample app", LIVE_FLOWS, "workflows",
+     "          INSTRUMENTED_MODULES: payin example", "          INSTRUMENTED_MODULES: payin"),
+
     # Substitution happens before the script runs, so the guard inside the script cannot see the value that
     # replaced it. This is the form the file used to carry.
     ("The environment is interpolated into the script instead of reaching it as a variable", LIVE_FLOWS,
