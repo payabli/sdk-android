@@ -154,22 +154,29 @@ internal class AttestedDeviceStore(
      *
      * **Best effort, and after the write rather than beside it.** A removal that raised here would turn a
      * migration that had already succeeded into a failed read, and the binding it wrote is sound and
-     * readable. Left for the next attempt instead. Once per store, because nothing writes the old shape any
-     * more, so a store that has removed it will not meet it again; and removing an absent entry costs no
-     * write in the layer below.
+     * readable. Removing an absent entry costs no write in the layer below, which is what makes it cheap
+     * enough to attempt on a read at all.
+     *
+     * **Attempted once, whether or not it worked.** Retrying on every later read would repeat the attempt and
+     * the record of it for as long as the removal keeps failing, and buy nothing that matters: this is only
+     * reached once the current entry has decoded, so the store is answering reads, and a removal that fails
+     * under those conditions is not a transient the next call clears. The next store gets its own attempt,
+     * which is a new session rather than a new call.
      */
     private suspend fun scrubLegacy() {
         if (legacyScrubbed) return
-        try {
-            storage.remove(LEGACY_ENTRY)
-            legacyScrubbed = true
-        } catch (unremovable: SecureStorageException) {
-            logger.debug(RedactedCause(unremovable), LogField.safe("event", EVENT_LEGACY_KEPT)) {
-                "could not remove the superseded device identity"
-            }
-        }
+        legacyScrubbed = true
+        removeQuietly(LEGACY_ENTRY, EVENT_LEGACY_KEPT)
     }
 
+    /**
+     * Removes an entry that is no longer usable, and never fails the caller for it.
+     *
+     * Both callers have already decided their answer and are disposing of something dead on the way out: a
+     * record that would not decode, and an entry the current one has superseded. Raising here would turn an
+     * answer the caller can act on into a failure it cannot, and would strand the entry as well, because a
+     * read that raises never reaches the removal on the next attempt either.
+     */
     private suspend fun removeQuietly(
         key: String,
         event: String,

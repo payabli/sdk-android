@@ -307,6 +307,23 @@ class DeviceBindingsTest {
         }
 
     @Test
+    fun `a removal that keeps failing is attempted once, not on every read`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val storage =
+                FakeSecureStore(FakeSecureStore.failing("remove", SecureStorageException.StorageUnavailable()))
+            val store = AttestedDeviceStore(storage)
+            store.write(binding(ENTRY))
+            val before = storage.operations.size
+
+            repeat(3) { store.read(ENTRY) }
+
+            // This is only reached once the current entry has decoded, so the store is answering reads and a
+            // removal failing under those conditions is not a transient the next call clears. Repeating it
+            // would record itself every time and change nothing.
+            assertEquals(1, storage.operations.drop(before).count { it.startsWith("remove:") })
+        }
+
+    @Test
     fun `the collection never prints the entry points it holds`() {
         val printed = DeviceBindings(listOf(binding(ENTRY), binding(OTHER_ENTRY))).toString()
 
