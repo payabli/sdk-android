@@ -49,9 +49,12 @@ class DeviceEnrollmentTest {
             assertEquals(
                 listOf(
                     "get:$RECORD_ENTRY",
+                    "get:$LEGACY_RECORD_ENTRY",
                     RouteScript.CHALLENGE,
                     RouteScript.REGISTER,
                     RouteScript.ATTEST,
+                    "get:$RECORD_ENTRY",
+                    "get:$LEGACY_RECORD_ENTRY",
                     "set:$RECORD_ENTRY",
                 ),
                 fixture.trace,
@@ -208,7 +211,7 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `a record made against another paypoint survives an enrollment that fails`() =
+    fun `a binding made against another paypoint survives an enrollment that fails`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 EnrollmentFixture(
@@ -224,24 +227,38 @@ class DeviceEnrollmentTest {
             // The other paypoint's binding is still live at the service. Discarding it here would send that
             // paypoint's next enrollment through the cold sequence, and registering retires an active
             // device and costs the merchant a fresh code.
-            assertEquals("a-different-entry-point", fixture.storedRecord()!!.entry)
-            assertEquals(listOf("get:$RECORD_ENTRY"), fixture.storage.operations)
+            assertNotNull(fixture.storedRecord("a-different-entry-point"))
+            assertEquals(
+                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY"),
+                fixture.storage.operations,
+            )
         }
 
     @Test
-    fun `a record made against another paypoint is replaced only once this one is attested`() =
+    fun `a binding made against another paypoint is kept when this one is attested`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(coldScript())
             fixture.seedRecord(entry = "a-different-entry-point")
 
             fixture.enrollment.enroll()
 
-            // One read and one write. No remove, so nothing is unstored between the two.
-            assertEquals(listOf("get:$RECORD_ENTRY", "set:$RECORD_ENTRY"), fixture.storage.operations)
+            // Reads and one write. No remove, so nothing is unstored between them.
+            assertEquals(
+                listOf(
+                    "get:$RECORD_ENTRY",
+                    "remove:$LEGACY_RECORD_ENTRY",
+                    "get:$RECORD_ENTRY",
+                    "set:$RECORD_ENTRY",
+                ),
+                fixture.storage.operations,
+            )
+            // Both bindings are held: this one is newly attested, the other one is untouched.
+            assertNotNull(fixture.storedRecord())
+            assertNotNull(fixture.storedRecord("a-different-entry-point"))
         }
 
     @Test
-    fun `resetting leaves another paypoint's record alone`() =
+    fun `resetting leaves another paypoint's binding alone`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
             fixture.seedRecord(entry = "a-different-entry-point")
@@ -250,12 +267,15 @@ class DeviceEnrollmentTest {
 
             // Reset forgets this paypoint. The other one's binding is live, and removing it would send its
             // next enrollment through a registration that retires an active device.
-            assertEquals("a-different-entry-point", fixture.storedRecord()!!.entry)
-            assertEquals(listOf("get:$RECORD_ENTRY"), fixture.storage.operations)
+            assertNotNull(fixture.storedRecord("a-different-entry-point"))
+            assertEquals(
+                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY"),
+                fixture.storage.operations,
+            )
         }
 
     @Test
-    fun `being told the row was created reports nothing when the record was another paypoint's`() =
+    fun `being told the row was created reports nothing when the binding was another paypoint's`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 EnrollmentFixture(

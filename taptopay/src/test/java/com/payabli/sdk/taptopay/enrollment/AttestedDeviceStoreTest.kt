@@ -30,7 +30,7 @@ class AttestedDeviceStoreTest {
             val store = AttestedDeviceStore(storage)
 
             store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY))
-            val read = store.read()!!
+            val read = store.read(ENTRY)!!
 
             assertEquals(ENTRY, read.entry)
             assertEquals(DEVICE_ID, read.deviceId)
@@ -40,7 +40,7 @@ class AttestedDeviceStoreTest {
     @Test
     fun `nothing stored reads as nothing, not as a failure`() =
         runTest(timeout = TEST_TIMEOUT) {
-            assertNull(AttestedDeviceStore(FakeSecureStore()).read())
+            assertNull(AttestedDeviceStore(FakeSecureStore()).read(ENTRY))
         }
 
     @Test
@@ -51,7 +51,7 @@ class AttestedDeviceStoreTest {
                     FakeSecureStore(FakeSecureStore.failing("get", SecureStorageException.KeyInvalidated())),
                 )
 
-            assertNull(store.read())
+            assertNull(store.read(ENTRY))
         }
 
     @Test
@@ -62,7 +62,7 @@ class AttestedDeviceStoreTest {
                     FakeSecureStore(FakeSecureStore.failing("get", SecureStorageException.ValueUnreadable())),
                 )
 
-            assertNull(store.read())
+            assertNull(store.read(ENTRY))
         }
 
     @Test
@@ -73,7 +73,7 @@ class AttestedDeviceStoreTest {
                     FakeSecureStore(FakeSecureStore.failing("get", SecureStorageException.CryptoUnavailable())),
                 )
 
-            val thrown = runCatching { store.read() }.exceptionOrNull()
+            val thrown = runCatching { store.read(ENTRY) }.exceptionOrNull()
             assertEquals(SecureStorageException.CryptoUnavailable::class.java, thrown?.javaClass)
         }
 
@@ -85,7 +85,7 @@ class AttestedDeviceStoreTest {
                     FakeSecureStore(FakeSecureStore.failing("get", SecureStorageException.StorageUnavailable())),
                 )
 
-            val thrown = runCatching { store.read() }.exceptionOrNull()
+            val thrown = runCatching { store.read(ENTRY) }.exceptionOrNull()
             assertEquals(SecureStorageException.StorageUnavailable::class.java, thrown?.javaClass)
         }
 
@@ -110,7 +110,7 @@ class AttestedDeviceStoreTest {
                     AttestedDeviceStore(
                         FakeSecureStore(FakeSecureStore.failing("get", failure)),
                     )
-                assertNull(failure.javaClass.simpleName, store.read())
+                assertNull(failure.javaClass.simpleName, store.read(ENTRY))
             }
             for (failure in raised) {
                 val store =
@@ -120,7 +120,7 @@ class AttestedDeviceStoreTest {
                 assertEquals(
                     failure.javaClass.simpleName,
                     failure.javaClass,
-                    runCatching { store.read() }.exceptionOrNull()?.javaClass,
+                    runCatching { store.read(ENTRY) }.exceptionOrNull()?.javaClass,
                 )
             }
         }
@@ -132,7 +132,7 @@ class AttestedDeviceStoreTest {
             storage.seed(RECORD_ENTRY, "not json at all".encodeToByteArray())
             val store = AttestedDeviceStore(storage)
 
-            assertNull(store.read())
+            assertNull(store.read(ENTRY))
             assertTrue(storage.isEmpty)
         }
 
@@ -144,7 +144,7 @@ class AttestedDeviceStoreTest {
             // Truncated mid-value, which is what the serializer quotes back in its message.
             storage.seed(RECORD_ENTRY, """{"entry":"$ENTRY","deviceId":"$DEVICE_ID","key""".encodeToByteArray())
 
-            AttestedDeviceStore(storage, logger).read()
+            AttestedDeviceStore(storage, logger).read(ENTRY)
 
             val record = logger.records.single { it.message.contains("stored device identity is gone") }
             val rendered = "${record.throwable}${record.throwable?.message}"
@@ -155,13 +155,26 @@ class AttestedDeviceStoreTest {
         }
 
     @Test
+    fun `an undecodable record reads as nothing even when it cannot be dropped`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val storage =
+                FakeSecureStore(FakeSecureStore.failing("remove", SecureStorageException.StorageUnavailable()))
+            storage.seed(RECORD_ENTRY, "not json at all".encodeToByteArray())
+
+            // The record is gone whether or not the entry holding it can be dropped. Raising instead would
+            // report it as a store that could not be read this time, and the next attempt decodes the same
+            // bytes and raises again, so the entry is never dropped on any of them.
+            assertNull(AttestedDeviceStore(storage).read(ENTRY))
+        }
+
+    @Test
     fun `a record missing a field reads as nothing and is dropped`() =
         runTest(timeout = TEST_TIMEOUT) {
             val storage = FakeSecureStore()
             storage.seed(RECORD_ENTRY, """{"entry":"$ENTRY","deviceId":"$DEVICE_ID"}""".encodeToByteArray())
             val store = AttestedDeviceStore(storage)
 
-            assertNull(store.read())
+            assertNull(store.read(ENTRY))
             assertTrue(storage.isEmpty)
         }
 
@@ -186,9 +199,9 @@ class AttestedDeviceStoreTest {
             val store = AttestedDeviceStore(storage)
             store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY))
 
-            store.clear()
+            store.clear(ENTRY)
 
-            assertNull(store.read())
+            assertNull(store.read(ENTRY))
             assertNotNull(storage.peek("com.payabli.sdk.core.some.other.entry"))
         }
 

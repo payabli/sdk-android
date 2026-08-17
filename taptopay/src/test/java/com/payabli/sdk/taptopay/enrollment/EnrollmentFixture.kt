@@ -24,7 +24,13 @@ internal const val HARDWARE_ID = "hardware-id-value"
 internal const val MODEL = "model-value"
 internal const val OS_VERSION = "os-version-value"
 internal const val ACTIVATION_CODE = "123456"
-internal const val RECORD_ENTRY = "com.payabli.sdk.taptopay.device.v1"
+internal const val RECORD_ENTRY = "com.payabli.sdk.taptopay.device.v2"
+
+/** The single-binding entry the store carries forward and removes. */
+internal const val LEGACY_RECORD_ENTRY = "com.payabli.sdk.taptopay.device.v1"
+
+/** A second entry point, for the case where one device serves more than one. */
+internal const val OTHER_ENTRY = "other-entry-point-value"
 
 /** A base64 challenge, so the nonce derivation has something valid to decode. */
 internal const val SERVER_CHALLENGE = "c2VydmVyLWlzc3VlZC1jaGFsbGVuZ2UtdmFsdWU="
@@ -146,27 +152,71 @@ internal class EnrollmentFixture(
             logger = logger,
         )
 
-    /** Writes the record an earlier successful run would have left. */
+    /**
+     * A second coordinator for [entry], over the same store, key and transport.
+     *
+     * What one device serving two entry points actually looks like: separate coordinators, each holding its
+     * own entry, sharing the one store every binding lives in.
+     */
+    fun enrollmentFor(entry: String): DeviceEnrollment =
+        DeviceEnrollment(
+            entry = entry,
+            appId = APP_ID,
+            client = client,
+            attestor = attestor,
+            deviceKey = deviceKey,
+            signer = DeviceAssertionSigner(deviceKey, FIXED_CLOCK),
+            store = store,
+            description =
+                DeviceDescription(
+                    hardwareId = HARDWARE_ID,
+                    deviceName = null,
+                    model = MODEL,
+                    osVersion = OS_VERSION,
+                ),
+            dispatcher = UnconfinedTestDispatcher(),
+            logger = logger,
+        )
+
+    /** Writes the bindings an earlier successful run would have left, most recently used first. */
+    fun seedBindings(vararg held: AttestedDevice) {
+        storage.seed(
+            RECORD_ENTRY,
+            PayabliJson.format
+                .encodeToString(DeviceBindings.serializer(), DeviceBindings(held.toList()))
+                .encodeToByteArray(),
+        )
+    }
+
+    /** Writes one binding, the way a run against a single entry point would have left it. */
     fun seedRecord(
+        entry: String = ENTRY,
+        deviceId: String = DEVICE_ID,
+        keyId: String = FakeDeviceKey.KEY_IDENTITY,
+    ) = seedBindings(AttestedDevice(entry, deviceId, keyId))
+
+    /** Writes the single-binding shape an install from before the collection existed would carry. */
+    fun seedLegacyRecord(
         entry: String = ENTRY,
         deviceId: String = DEVICE_ID,
         keyId: String = FakeDeviceKey.KEY_IDENTITY,
     ) {
         storage.seed(
-            RECORD_ENTRY,
+            LEGACY_RECORD_ENTRY,
             PayabliJson.format
-                .encodeToString(
-                    AttestedDevice.serializer(),
-                    AttestedDevice(entry, deviceId, keyId),
-                ).encodeToByteArray(),
+                .encodeToString(AttestedDevice.serializer(), AttestedDevice(entry, deviceId, keyId))
+                .encodeToByteArray(),
         )
     }
 
-    /** The stored record, decoded, or null when nothing is stored. */
-    fun storedRecord(): AttestedDevice? =
+    /** Everything stored, decoded, or null when nothing is stored. */
+    fun storedBindings(): DeviceBindings? =
         storage.peek(RECORD_ENTRY)?.let {
-            PayabliJson.format.decodeFromString(AttestedDevice.serializer(), it.decodeToString())
+            PayabliJson.format.decodeFromString(DeviceBindings.serializer(), it.decodeToString())
         }
+
+    /** The stored binding for [entry], or null when none is held for it. */
+    fun storedRecord(entry: String = ENTRY): AttestedDevice? = storedBindings()?.forEntry(entry)
 
     /**
      * Only the transport's half of the trace, for asserting call order alone.

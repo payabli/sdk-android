@@ -51,9 +51,9 @@ internal class DeviceEnrollment(
     /**
      * The paypoint every call is scoped to.
      *
-     * Held, not passed per call. **A device belongs to one paypoint**, and using one under another paypoint
-     * is refused rather than being a near miss. Holding the entry makes that mismatch unwritable at the call
-     * site.
+     * Held, not passed per call. **A device holds a separate binding for each paypoint**, and one cannot
+     * stand for another. Holding the entry is what keys every read, write and clear below, so reaching
+     * another paypoint's binding is unwritable at the call site rather than checked for afterwards.
      */
     private val entry: String,
     private val appId: String,
@@ -93,32 +93,24 @@ internal class DeviceEnrollment(
         lock.withLock {
             val identity = withContext(dispatcher) { deviceKey.publicKey() }
 
-            val known = store.read()
-            val knownHere = known?.takeIf { it.entry == entry }
+            // Scoped to this entry point, so another one's binding is neither read nor disturbed here.
+            val known = store.read(entry)
 
-            if (knownHere != null && knownHere.keyId == identity.identity) {
+            if (known != null && known.keyId == identity.identity) {
                 logger.debug(LogField.safe("event", "device_already_enrolled")) {
                     "device identity is current, skipping the cold sequence"
                 }
                 return@withLock EnrollmentOutcome.AlreadyAttested
             }
 
-            if (knownHere != null) {
+            if (known != null) {
                 // The key at the handle was replaced, so the record names a binding this device can no
                 // longer sign for. Discarded here, locally, rather than left for a later refusal to
                 // classify.
                 logger.warn(LogField.safe("event", "device_identity_stale")) {
                     "stored device identity names a key this device no longer holds, re-enrolling"
                 }
-                store.clear()
-            } else if (known != null) {
-                // A record for another paypoint, whose binding this sequence does not touch: each paypoint
-                // has its own device. So it is kept until the write below replaces it. Discarding it here
-                // and then failing anywhere in the sequence would leave the other paypoint with no record,
-                // and its next enrollment would replace a device that was active.
-                logger.debug(LogField.safe("event", "device_identity_other_paypoint")) {
-                    "stored device identity is for another paypoint, keeping it until this one is attested"
-                }
+                store.clear(entry)
             }
 
             val challenge = client.challenge(entry)
@@ -133,7 +125,7 @@ internal class DeviceEnrollment(
                     osVersion = description.osVersion,
                 )
 
-            if (knownHere != null) {
+            if (known != null) {
                 reportRowChange(registration.outcome)
             }
 
@@ -191,13 +183,9 @@ internal class DeviceEnrollment(
         lock.withLock {
             if (!SIX_DIGITS.matches(activationCode)) throw DeviceActivationException.CodeMalformed()
 
-            val known = store.read() ?: throw DeviceActivationException.NotEnrolled()
-
-            // A record made under another paypoint names a device this entry does not have. Sending it
-            // would be refused in a way that discards the record, destroying a valid enrollment for the
-            // paypoint it does belong to. For this entry the device is simply not enrolled, which is what
-            // the caller is told.
-            if (known.entry != entry) throw DeviceActivationException.NotEnrolled()
+            // Scoped to this entry point. A binding held for another one names a device this entry point
+            // does not have, so for this one the device is simply not enrolled.
+            val known = store.read(entry) ?: throw DeviceActivationException.NotEnrolled()
 
             val assertion =
                 try {
@@ -249,7 +237,7 @@ internal class DeviceEnrollment(
      */
     suspend fun assertion(): DeviceAssertion? =
         lock.withLock {
-            val known = store.read()?.takeIf { it.entry == entry } ?: return@withLock null
+            val known = store.read(entry) ?: return@withLock null
             try {
                 withContext(dispatcher) { signer.sign(known.deviceId) }
             } catch (lost: DeviceKeyException.KeyLost) {
@@ -261,23 +249,15 @@ internal class DeviceEnrollment(
         }
 
     /**
-     * Forgets the device without touching its key, so the next [enroll] runs the cold sequence.
+     * Forgets this entry point's device without touching its key, so the next [enroll] runs the cold
+     * sequence.
      *
-     * Scoped to this paypoint. A record belonging to another one is left alone: it names a binding this
-     * coordinator did not make and cannot check, and removing it would send that paypoint's next enrollment
-     * through a registration that replaces a device that was active.
+     * Every other entry point's binding is left where it was, by the shape of the store rather than by a
+     * check here: removing one this coordinator did not make would send that entry point's next enrollment
+     * through a registration it does not need.
      */
     suspend fun reset() {
-        lock.withLock {
-            val known = store.read()
-            if (known != null && known.entry != entry) {
-                logger.debug(LogField.safe("event", "device_identity_other_paypoint")) {
-                    "stored device identity is for another paypoint, leaving it in place"
-                }
-                return@withLock
-            }
-            forget("reset")
-        }
+        lock.withLock { forget("reset") }
     }
 
     /**
@@ -287,7 +267,7 @@ internal class DeviceEnrollment(
      * withdrawing here leaves a record known to be dead, which walks the next attempt into the same refusal.
      */
     private suspend fun forget(state: String) {
-        withContext(NonCancellable) { store.clear() }
+        withContext(NonCancellable) { store.clear(entry) }
         logger.warn(LogField.safe("event", "device_identity_cleared"), LogField.safe("state", state)) {
             "discarded the stored device identity"
         }
@@ -298,12 +278,12 @@ internal class DeviceEnrollment(
      *
      * Diagnostic only, and nothing branches on it — by this point the returned handle has been taken and the
      * record is about to be rewritten, which is correct in every case. What it catches is the combination
-     * that should not happen: this device held a record **for this paypoint**, so it expected to be
+     * that should not happen: this device held a binding **for this paypoint**, so it expected to be
      * recognized, and something new came back instead. That is the signature of a hardware identifier that is
      * not staying still, or of a device that can no longer be found.
      *
-     * A record for another paypoint carries no such expectation, and a new device is the right answer there,
-     * so the caller does not reach this.
+     * A device holding no binding for this paypoint carries no such expectation, and a new device is the
+     * right answer there, so the caller does not reach this.
      *
      * Absent from the response until it starts being sent, which reads as nothing to report.
      */

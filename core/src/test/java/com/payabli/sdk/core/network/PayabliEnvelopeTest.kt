@@ -54,6 +54,26 @@ class PayabliEnvelopeTest {
     }
 
     @Test
+    fun `the byte array overload tolerates a malformed body too`() {
+        assertNull(PayabliEnvelope.declineOutcome("not json at all".toByteArray(Charsets.UTF_8)))
+        assertNull(PayabliEnvelope.declineOutcome(ByteArray(0)))
+    }
+
+    @Test
+    fun `a decline whose payload does not decode still yields an outcome with no code`() {
+        // responseData is a string where DeclineEnvelope wants an object, so the Status decode succeeds
+        // and the payload decode does not. That stays a decline, and the reason falls back.
+        val outcome =
+            PayabliEnvelope.declineOutcome(
+                """{"isSuccess":false,"responseText":"outer reason","responseData":"not an object"}""",
+            )
+
+        assertNotNull(outcome)
+        assertNull(outcome?.code)
+        assertEquals("outer reason", outcome?.reason)
+    }
+
+    @Test
     fun `an absent isSuccess reads as not a decline`() {
         assertNull(PayabliEnvelope.declineOutcome("""{"responseText":"nothing conclusive"}"""))
     }
@@ -62,6 +82,12 @@ class PayabliEnvelopeTest {
     fun `the byte array overload agrees with the string overload`() {
         val json = """{"isSuccess":false,"responseData":{"resultCode":7,"resultText":"nope"}}"""
         val fromBytes = PayabliEnvelope.declineOutcome(json.toByteArray(Charsets.UTF_8))
+
+        // Against literals, not against the other overload: comparing the two nullable results to each
+        // other passes when both are null, so it would survive declineOutcome returning null always.
+        assertNotNull(fromBytes)
+        assertEquals(7, fromBytes?.code)
+        assertEquals("nope", fromBytes?.reason)
         assertEquals(PayabliEnvelope.declineOutcome(json)?.code, fromBytes?.code)
         assertEquals(PayabliEnvelope.declineOutcome(json)?.reason, fromBytes?.reason)
     }
