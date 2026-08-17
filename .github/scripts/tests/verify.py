@@ -1917,12 +1917,19 @@ def test_live_summary(mod):
 
 def test_workflows():
     for name in LIVE_WORKFLOWS:
-        keys = trigger_keys(workflow_text(name))
+        text = workflow_text(name)
+        keys = trigger_keys(text)
         check(f"W1 {name} has triggers at all", bool(keys), f"{keys}")
         # pull_request_target is the dangerous one and the easy one to add by mistake: it runs against a
         # fork's head with the base repository's secrets available.
         check(f"W1 {name} cannot be triggered by a pull request",
               not any(key.startswith("pull_request") for key in keys), f"{keys}")
+        # Again without reading the structure, because the check above cannot see a trigger written in a form
+        # it does not model: a file mixing the block and shorthand styles passed every check while carrying
+        # one. These files have no other use for the word.
+        check(f"W1 {name} does not mention a pull request trigger anywhere",
+              "pull_request" not in text,
+              next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
 
     reusable = workflow_text("live-flows.yml")
     blocks = steps_of(reusable)
