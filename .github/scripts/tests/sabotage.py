@@ -41,9 +41,20 @@ VERIFY = HERE / "verify.py"
 WORK = Path(tempfile.mkdtemp(prefix="nightly-sabotage-"))
 COLLECTOR = WORK / "nightly_report.py"
 POSTER = WORK / "nightly_slack.py"
+# The live workflows are mutated too, because what keeps a client credential out of the emulator step and out
+# of a fork's reach is how those files are written. A copy each, in the same scratch directory, so the same
+# guarantee holds: nothing here writes into the repository.
+WORKFLOW_DIR = WORK / "workflows"
+WORKFLOW_DIR.mkdir(exist_ok=True)
+LIVE_FLOWS = WORKFLOW_DIR / "live-flows.yml"
+LIVE_QA = WORKFLOW_DIR / "live-qa.yml"
+LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
 SOURCE = {
     COLLECTOR: SDK / ".github/scripts/nightly_report.py",
     POSTER: SDK / ".github/scripts/nightly_slack.py",
+    LIVE_FLOWS: SDK / ".github/workflows/live-flows.yml",
+    LIVE_QA: SDK / ".github/workflows/live-qa.yml",
+    LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -231,13 +242,59 @@ MUTATIONS = [
     ("Verdict no longer published for the gate", COLLECTOR, "collector",
      'handle.write(f"verdict={\'red\' if red else \'green\'}\\n")',
      'handle.write("")'),
+
+    # The live workflows. Each of these is a change that would read as reasonable on its own and would hand a
+    # client credential somewhere it does not belong.
+    ("A pull request can trigger the qa live run, so a fork reaches the secrets", LIVE_QA, "workflows",
+     "on:\n  workflow_dispatch:", "on:\n  pull_request:\n  workflow_dispatch:"),
+
+    ("pull_request_target on the sandbox live run, which runs with the base repo's secrets",
+     LIVE_SANDBOX, "workflows",
+     "on:\n  workflow_dispatch:", "on:\n  pull_request_target:\n  workflow_dispatch:"),
+
+    ("The emulator step is handed the client secret again", LIVE_FLOWS, "workflows",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
+     "          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets.client-secret }}"),
+
+    ("The token host is dropped, so the tests fall back to the compiled-in address", LIVE_FLOWS, "workflows",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
+     "          PAYABLI_LIVETEST_TOKEN_HOST_DISABLED: 10.0.2.2:8787"),
+
+    ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
+     "            ./gradlew :example:connectedAndroidTest \\",
+     "            ./gradlew :example:connectedAndroidTest \\\n"
+     "              -Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\" \\"),
 ]
+
+
+def still_parses(path: Path) -> str:
+    """Empty when the patched file is still the kind of file the harness can read, else why not.
+
+    A mutation is meant to break a behaviour, not a parse: a file the harness cannot read would fail for the
+    wrong reason and be scored as caught. Python gets the compiler. YAML gets a structural check rather than a
+    parser, because this harness is standard library only and a hand-rolled parser would be a second thing to
+    trust; what matters is that the document still has the shape the checks read.
+    """
+    if path.suffix == ".py":
+        try:
+            py_compile.compile(str(path), doraise=True, cfile=str(WORK / "compile-probe.pyc"))
+        except py_compile.PyCompileError as error:
+            return f"patched file does not compile: {error}"
+        return ""
+
+    text = path.read_text()
+    for key in ("on:", "jobs:"):
+        if f"\n{key}" not in f"\n{text}":
+            return f"patched workflow lost its {key.rstrip(':')} block"
+    return ""
 
 
 def run_verify(half: str) -> tuple[int, int, str]:
     # Aimed at the copies, so the harness reads what this run mutated rather than what the repository holds.
     env = {**os.environ, "NIGHTLY_ONLY": half,
-           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER)}
+           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER),
+           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
     if not match:
@@ -255,7 +312,7 @@ def main() -> int:
         shutil.copy(source, target)
 
     print("Baseline, unmodified:")
-    for half in ("collector", "poster"):
+    for half in ("collector", "poster", "workflows"):
         passed, failed, _ = run_verify(half)
         print(f"  {half}: {passed} passed, {failed} failed")
         if failed != 0:
@@ -272,11 +329,10 @@ def main() -> int:
             continue
 
         path.write_text(source.replace(anchor, replacement))
-        try:
-            py_compile.compile(str(path), doraise=True, cfile=str(WORK / "compile-probe.pyc"))
-        except py_compile.PyCompileError as error:
-            invalid.append((description, f"patched file does not compile: {error}"))
-            print(f"  INVALID  {description}: does not compile")
+        broken = still_parses(path)
+        if broken:
+            invalid.append((description, broken))
+            print(f"  INVALID  {description}: {broken}")
             shutil.copy(pristine[path], path)
             continue
 

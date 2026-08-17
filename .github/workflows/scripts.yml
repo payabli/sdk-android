@@ -3,6 +3,11 @@ name: Nightly reporter tests
 # `nightly_report.py` decides the nightly verdict and gates the run, and `nightly_slack.py` is the only
 # thing that reports a failure. They are covered here rather than trusted.
 #
+# The same harness asserts three properties of the live workflows, which hold a client credential: no
+# pull_request trigger, so a fork's pull request cannot reach the secrets; the credential reaching exactly one
+# step, and not the one that runs a third-party action or the tests; and nothing passing it as a Gradle
+# argument. Each was true of how those files were written, which is not the same as being enforced.
+#
 # It also gives a change to those scripts somewhere cheap to be checked. A scheduled run never fires from a
 # feature branch. A dispatch can be pointed at one, since `nightly.yml` is on the default branch, but that
 # runs the whole nightly including the emulator suite and its report job posts to the team channel, which is
@@ -24,11 +29,16 @@ on:
       # The workflow file is in the filter so a change to it tests itself.
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      # The harness also asserts properties of the live workflows: no pull_request trigger, and the client
+      # credential reaching one step that is not the one running the emulator or the tests. Those files have
+      # to be in the filter or the assertions would not run on the change that broke them.
+      - '.github/workflows/live-*.yml'
   push:
     branches: [main]
     paths:
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/live-*.yml'
 
 concurrency:
   group: scripts-${{ github.ref }}

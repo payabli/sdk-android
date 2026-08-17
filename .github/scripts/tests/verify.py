@@ -1794,7 +1794,107 @@ def test_poster(mod):
           "unchanged since the last green nightly" not in threaded, threaded)
 
 
-HALVES = ("both", "collector", "poster")
+# --------------------------------------------------------------------------------------------------
+# Workflows
+# --------------------------------------------------------------------------------------------------
+#
+# The live workflows hold a client credential, and three properties are what keep it where it belongs. Each
+# is currently true of how the files are written, which is not the same as being enforced: any of the three
+# could be undone by an edit that looks reasonable in isolation, and the consequence would not show up in a
+# test run or a review diff as anything alarming.
+#
+#   * no pull_request trigger, so a fork's pull request cannot reach the secrets
+#   * the credential reaches one step, and not the step that runs a third-party action or the tests
+#   * nothing passes it with -P, which would put it in a command line
+#
+# Read textually and on purpose. This harness is standard library only, so there is no YAML parser to lean
+# on, and a hand-rolled one would be a second thing to trust. What these checks need is coarse: which lines
+# a step spans, and which of them mention a secret.
+
+# Overridable for the same reason the two scripts above are: the sabotage harness rewrites copies and points
+# this at them, so a mutation is never applied to the working tree.
+WORKFLOWS = Path(os.environ.get("NIGHTLY_WORKFLOWS", SDK / ".github/workflows"))
+
+LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
+
+
+def workflow_text(name: str) -> str:
+    return (WORKFLOWS / name).read_text(encoding="utf-8")
+
+
+def trigger_keys(text: str) -> list[str]:
+    """The keys under `on:`, read as the two-space-indented names between it and the next top-level key."""
+    keys: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if line.startswith("on:"):
+            inside = True
+            continue
+        if inside:
+            if line and not line.startswith(" ") and not line.startswith("#"):
+                break
+            stripped = line.strip()
+            if line.startswith("  ") and not line.startswith("   ") and stripped.endswith(":"):
+                keys.append(stripped.rstrip(":"))
+    return keys
+
+
+def steps_of(text: str) -> list[str]:
+    """Each step as one block of text, split on the `- ` that starts a list item under `steps:`."""
+    blocks: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("      - "):
+            if current:
+                blocks.append("\n".join(current))
+            current = [line]
+        elif current:
+            current.append(line)
+    if current:
+        blocks.append("\n".join(current))
+    return blocks
+
+
+def test_workflows():
+    for name in LIVE_WORKFLOWS:
+        keys = trigger_keys(workflow_text(name))
+        check(f"W1 {name} has triggers at all", bool(keys), f"{keys}")
+        # pull_request_target is the dangerous one and the easy one to add by mistake: it runs against a
+        # fork's head with the base repository's secrets available.
+        check(f"W1 {name} cannot be triggered by a pull request",
+              not any(key.startswith("pull_request") for key in keys), f"{keys}")
+
+    reusable = workflow_text("live-flows.yml")
+    blocks = steps_of(reusable)
+    check("W2 the reusable workflow has steps", len(blocks) > 3, f"{len(blocks)}")
+
+    holding = [b for b in blocks if "secrets.client-secret" in b]
+    check("W2 exactly one step is given the client secret", len(holding) == 1,
+          f"{len(holding)} steps: " + " | ".join(b.splitlines()[0].strip() for b in holding))
+    if holding:
+        check("W2 and it is the step that runs the token server", "server.mjs" in holding[0],
+              holding[0].splitlines()[0].strip())
+
+    emulator = [b for b in blocks if "android-emulator-runner" in b]
+    check("W3 the emulator steps are found", len(emulator) == 2, f"{len(emulator)}")
+    check("W3 no emulator step is given the client secret",
+          not any("secrets.client-secret" in b or "secrets.client-id" in b for b in emulator))
+    # The address is what replaced the credential, so its absence would mean the tests fall back to whatever
+    # the build compiled in rather than reaching the server this workflow started.
+    #
+    # Matched as a whole key. A substring test read PAYABLI_LIVETEST_TOKEN_HOST_DISABLED as the key being
+    # present, which the sabotage pass caught: renaming a variable is exactly how this would be lost.
+    def sets_token_host(block: str) -> bool:
+        return any(line.strip().startswith("PAYABLI_LIVETEST_TOKEN_HOST:") for line in block.splitlines())
+
+    check("W3 the live step is given the token host", any(sets_token_host(b) for b in emulator))
+
+    check("W4 no live setting is passed as a gradle argument",
+          "-Ppayabli.liveTest." not in reusable,
+          next((line.strip() for line in reusable.splitlines() if "-Ppayabli.liveTest." in line), ""))
+
+
+HALVES = ("both", "collector", "poster", "workflows")
 
 
 def main():
@@ -1812,6 +1912,8 @@ def main():
             test_collector()
         if ONLY in ("both", "poster"):
             test_poster(load_poster(base))
+        if ONLY in ("both", "workflows"):
+            test_workflows()
     finally:
         server.shutdown()
 
