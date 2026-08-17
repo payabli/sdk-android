@@ -116,9 +116,8 @@ android {
             // All three or none, refused here as well as in the test. Forwarding a subset is what makes the
             // difference invisible: the run looks configured, points the app at whatever the build compiled
             // in, and fails several steps later on a form that never unlocked.
-            val liveTest = liveTestSettings(providers)
-            if (liveTestSettingsUsable(liveTest)) {
-                liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
+            liveTestSettings(providers)?.forEach { (name, value) ->
+                testInstrumentationRunnerArguments["liveTest.$name"] = value
             }
         }
 

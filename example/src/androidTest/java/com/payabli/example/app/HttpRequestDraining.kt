@@ -17,14 +17,16 @@ import java.io.InputStream
  */
 internal fun drainHttpRequest(stream: InputStream) {
     var length = 0
-    var headerBytes = 0
+    var headerBudget = MAX_HEADER_BYTES
     while (true) {
-        val line = readLine(stream, MAX_HEADER_BYTES - headerBytes) ?: return
-        headerBytes += line.length + 2
-        if (headerBytes > MAX_HEADER_BYTES) throw IOException("request headers exceeded $MAX_HEADER_BYTES bytes")
-        if (line.isEmpty()) break
-        if (line.substringBefore(':').equals("Content-Length", ignoreCase = true)) {
-            length = line.substringAfter(':').trim().toIntOrNull() ?: 0
+        val line = readLine(stream, headerBudget) ?: return
+        headerBudget -= line.bytesRead
+        if (line.value.isEmpty()) break
+        if (line.value.substringBefore(':').equals("Content-Length", ignoreCase = true)) {
+            length = line.value
+                .substringAfter(':')
+                .trim()
+                .toIntOrNull() ?: 0
         }
     }
 
@@ -37,21 +39,30 @@ internal fun drainHttpRequest(stream: InputStream) {
     }
 }
 
+/** A header line and what it cost, so the caller's budget is spent in the units it is denominated in. */
+private class HeaderLine(
+    val value: String,
+    val bytesRead: Int,
+)
+
 /**
  * One header line, without its terminator, or null at end of stream.
  *
- * A byte at a time, so the stream is left positioned exactly after the blank line for the body read above.
+ * A byte at a time, so the stream is left positioned exactly after the blank line for the body read above,
+ * and every byte is counted as it arrives rather than inferred from the string afterwards.
  */
 private fun readLine(
     stream: InputStream,
-    limit: Int,
-): String? {
+    budget: Int,
+): HeaderLine? {
     val line = StringBuilder()
+    var bytesRead = 0
     while (true) {
-        if (line.length > limit) throw IOException("header line exceeded $MAX_HEADER_BYTES bytes")
         val byte = stream.read()
-        if (byte < 0) return if (line.isEmpty()) null else line.toString()
-        if (byte == '\n'.code) return line.toString().removeSuffix("\r")
+        if (byte < 0) return if (bytesRead == 0) null else HeaderLine(line.toString(), bytesRead)
+        bytesRead++
+        if (bytesRead > budget) throw IOException("request headers exceeded $MAX_HEADER_BYTES bytes")
+        if (byte == '\n'.code) return HeaderLine(line.toString().removeSuffix("\r"), bytesRead)
         line.append(byte.toChar())
     }
 }

@@ -70,8 +70,8 @@ android {
             excluded += "com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest"
         }
 
-        if (liveTestSettingsUsable(liveTest)) {
-            liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
+        if (liveTest != null) {
+            liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value }
         } else {
             excluded += liveFlows
         }

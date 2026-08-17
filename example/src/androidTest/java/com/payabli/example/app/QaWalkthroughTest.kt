@@ -99,12 +99,15 @@ class QaWalkthroughTest {
             error("liveTest arguments are partly set. Missing: ${missing.sorted().joinToString()}")
         }
 
+        // Narrowed once, so what follows reads as the settled values it is rather than as three more places
+        // nullability might arise.
+        val settings = values.mapValues { (name, value) -> requireNotNull(value) { "liveTest.$name" } }
         val environment =
-            DemoEnvironment.entries.firstOrNull { it.label.equals(values.getValue("environment"), true) }
-                ?: error("liveTest.environment named no environment: ${values.getValue("environment")}")
+            DemoEnvironment.entries.firstOrNull { it.label.equals(settings.getValue("environment"), true) }
+                ?: error("liveTest.environment named no environment: ${settings.getValue("environment")}")
 
-        container.applyLaunchOverride(values.getValue("tokenHost")!!)
-        container.applyTestConfiguration(values.getValue("entryPoint")!!, environment)
+        container.applyLaunchOverride(settings.getValue("tokenHost"))
+        container.applyTestConfiguration(settings.getValue("entryPoint"), environment)
     }
 
     @Test
