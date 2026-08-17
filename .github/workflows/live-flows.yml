@@ -114,17 +114,22 @@ jobs:
       # a developer runs on the bench, so CI and the bench exercise one path.
       #
       # Every setting is injected, so no `.env` is needed and nothing is read from the checkout.
+      # The environment reaches the script as a variable rather than as `${{ }}`. An expression is substituted
+      # into the script text before any of it runs, so the `case` below could not guard a value that closed
+      # the quote it sits in; today both callers pass a literal, and a dispatch input on either would be the
+      # ordinary change that makes that reachable.
       - name: Start the token server
         env:
           PORT: '8787'
+          ENVIRONMENT: ${{ inputs.environment }}
           PAYABLI_CLIENT_ID: ${{ secrets.client-id }}
           PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
           PAYABLI_ENTRY: ${{ secrets.entry-point }}
         run: |
-          case "${{ inputs.environment }}" in
+          case "$ENVIRONMENT" in
             qa)      export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api ;;
             sandbox) export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api ;;
-            *) echo "::error::unknown environment ${{ inputs.environment }}"; exit 1 ;;
+            *) echo "::error::unknown environment $ENVIRONMENT"; exit 1 ;;
           esac
           nohup node example-server/server.mjs > "$RUNNER_TEMP/token-server.log" 2>&1 &
           # Waited on rather than assumed: the tests fail as an unlocked-form timeout if it is not up yet,

@@ -1905,6 +1905,38 @@ def steps_of(text: str) -> list[str]:
     return blocks
 
 
+def run_block_lines(text: str) -> list[str]:
+    """The body of every `run:` step, both the block form and the one-liner.
+
+    The one-liner counts because `run: echo ${{ ... }}` is the same substitution written shorter, and a check
+    reading only the block form would pass a file that had moved the expression onto the key's own line.
+    """
+    lines: list[str] = []
+    run_indent: int | None = None
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+
+        if stripped in ("run: |", "run: >"):
+            run_indent = indent
+            continue
+        if stripped.startswith("run: "):
+            lines.append(stripped)
+            run_indent = None
+            continue
+        if run_indent is None:
+            continue
+        if not stripped:
+            continue
+        if indent <= run_indent:
+            run_indent = None
+            continue
+        lines.append(stripped)
+
+    return lines
+
+
 def emulator_script_lines(text: str) -> list[str]:
     """The command lines of every `script: |` block, which is what the emulator action is handed.
 
@@ -2063,6 +2095,13 @@ def test_workflows():
         check("W5 no line of the emulator script continues onto the next",
               not line.endswith("\\"), line)
         check("W5 every line of the emulator script is a command", line.startswith("./"), line)
+
+    # An expression is substituted into a script before any of it runs, so a value that closes its own quote
+    # runs as a command with this job's secrets in the environment. Values reach a script as variables.
+    for name in LIVE_WORKFLOWS:
+        offending = [line.strip() for line in run_block_lines(workflow_text(name)) if "${{" in line]
+        check(f"W6 {name} interpolates no expression inside a run script",
+              not offending, " | ".join(offending))
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")

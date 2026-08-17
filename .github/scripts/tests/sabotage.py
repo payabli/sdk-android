@@ -276,6 +276,11 @@ MUTATIONS = [
      "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true "
      "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
 
+    # Substitution happens before the script runs, so the guard inside the script cannot see the value that
+    # replaced it. This is the form the file used to carry.
+    ("The environment is interpolated into the script instead of reaching it as a variable", LIVE_FLOWS,
+     "workflows", '          case "$ENVIRONMENT" in', '          case "${{ inputs.environment }}" in'),
+
     # The action splits the script on newlines, so a continuation is not one. Both halves of the split are
     # broken and neither says so: the command loses its arguments and the arguments become a command.
     ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
