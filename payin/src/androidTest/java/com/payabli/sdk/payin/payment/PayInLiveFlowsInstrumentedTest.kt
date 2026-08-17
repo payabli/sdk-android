@@ -299,7 +299,7 @@ class PayInLiveFlowsInstrumentedTest {
     private val tokenBaseUrl: String
         get() {
             val given = tokenHost.trim().trimEnd('/')
-            val scheme = given.substringBefore("://", missingDelimiterValue = "http")
+            val scheme = given.substringBefore("://", missingDelimiterValue = "http").lowercase()
             require(scheme == "http" || scheme == "https") {
                 "liveTest.tokenHost must be http or https: $given"
             }
