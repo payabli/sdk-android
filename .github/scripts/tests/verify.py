@@ -1905,6 +1905,34 @@ def steps_of(text: str) -> list[str]:
     return blocks
 
 
+def emulator_script_lines(text: str) -> list[str]:
+    """The command lines of every `script: |` block, which is what the emulator action is handed.
+
+    The block ends where the indentation returns to the key's own depth or shallower, so a following key
+    cannot be read as a command. Comments and blanks are dropped, which is what the action does with them.
+    """
+    lines: list[str] = []
+    script_indent: int | None = None
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+
+        if stripped == "script: |":
+            script_indent = indent
+            continue
+        if script_indent is None:
+            continue
+        if not stripped or stripped.startswith("#"):
+            continue
+        if indent <= script_indent:
+            script_indent = None
+            continue
+        lines.append(stripped)
+
+    return lines
+
+
 LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
 
 
@@ -2026,6 +2054,15 @@ def test_workflows():
     check("W4 no live setting is passed as a gradle argument",
           "-Ppayabli.liveTest." not in reusable,
           next((line.strip() for line in reusable.splitlines() if "-Ppayabli.liveTest." in line), ""))
+
+    # The emulator action splits its `script` input on newlines and runs each resulting line as its own
+    # `sh -c`, so a trailing backslash joins nothing: the command runs without its arguments and the
+    # arguments run as a command. Invisible in review, and these workflows have no pull request trigger, so
+    # nothing else would find it before a scheduled run did.
+    for line in emulator_script_lines(reusable):
+        check("W5 no line of the emulator script continues onto the next",
+              not line.endswith("\\"), line)
+        check("W5 every line of the emulator script is a command", line.startswith("./"), line)
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")

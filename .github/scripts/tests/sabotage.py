@@ -272,9 +272,23 @@ MUTATIONS = [
      "          PAYABLI_LIVETEST_TOKEN_HOST_DISABLED: 10.0.2.2:8787"),
 
     ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
-     "            ./gradlew :example:connectedAndroidTest \\",
+     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true",
+     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true "
+     "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
+
+    # The action splits the script on newlines, so a continuation is not one. Both halves of the split are
+    # broken and neither says so: the command loses its arguments and the arguments become a command.
+    ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
+     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true",
      "            ./gradlew :example:connectedAndroidTest \\\n"
-     "              -Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\" \\"),
+     "              -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true"),
+
+    ("The pay-in suite loses its class filter and runs the whole instrumented suite", LIVE_FLOWS, "workflows",
+     "            ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest",
+     "            ./gradlew :payin:connectedAndroidTest\n"
+     "            -Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
