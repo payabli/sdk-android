@@ -11,10 +11,11 @@
   Only the token server is reached this way. Every payment the tier submits goes to the environment over HTTPS
   and is unaffected by this file.
 
-  Scoped to the two addresses a token server is reached at rather than a blanket usesCleartextTraffic, so a
-  test cannot take a plaintext route to a real host. What makes it safe is the file: it belongs to the
-  androidTest APK alone, is never merged into the library or into a consuming app, and widens nothing that
-  ships. `:core` carries the same pair for its loopback harness.
+  Scoped to the two addresses a token server is reached at rather than a blanket usesCleartextTraffic. That
+  narrows what is reachable in cleartext; it does not make the pair unreachable, since 10.0.2.2 is an ordinary
+  RFC 1918 address and routable on any network using 10.0.0.0/8. What makes it safe is the file: it belongs to
+  the androidTest APK alone, is never merged into the library or into a consuming app, and widens nothing that
+  ships. `:core` carries the same pair, and says the same thing about the second address.
 -->
 <network-security-config>
     <!-- Explicit because the default varies by targetSdk: denied from 28, permitted at 27 and below. -->
