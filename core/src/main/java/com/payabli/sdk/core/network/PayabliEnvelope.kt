@@ -6,7 +6,6 @@ package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
 import kotlinx.serialization.InternalSerializationApi
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 
 /**
@@ -77,19 +76,14 @@ public object PayabliEnvelope {
 
     /** String overload of [declineOutcome]. */
     public fun declineOutcome(body: String): DeclineOutcome? {
-        val status = decodeOrNull(Status.serializer(), body)
+        val status = PayabliJson.decodeOrNull(Status.serializer(), body)
         if (status?.isSuccess != false) return null
-        val declined = decodeOrNull(DeclineEnvelope.serializer(), body)?.responseData
+        val declined = PayabliJson.decodeOrNull(DeclineEnvelope.serializer(), body)?.responseData
         return DeclineOutcome(
             code = declined?.resultCode,
             reason = declined?.resultText ?: status.responseText ?: DEFAULT_DECLINE_REASON,
         )
     }
-
-    private fun <T> decodeOrNull(
-        serializer: KSerializer<T>,
-        body: String,
-    ): T? = runCatching { PayabliJson.format.decodeFromString(serializer, body) }.getOrNull()
 
     private const val DEFAULT_DECLINE_REASON = "server declined"
 }
