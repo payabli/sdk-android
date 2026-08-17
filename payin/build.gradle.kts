@@ -36,7 +36,10 @@ android {
         //
         //   ./gradlew :payin:connectedDebugAndroidTest \
         //     -Ppayabli.liveTest.environment=sandbox -Ppayabli.liveTest.entryPoint=<entry> \
-        //     -Ppayabli.liveTest.tokenHost=10.0.2.2:8788
+        //     -Ppayabli.liveTest.tokenHost=<host:port the token server is listening on>
+        //
+        // 10.0.2.2 is where an emulator reaches the machine running it, and 127.0.0.1 where a handset reaches
+        // it once the port is forwarded. Which port depends on what the server was started with.
         //
         // Each also reads an environment variable, which is what an automated run sets. Both halves live in
         // build-logic, because `:example` resolves the same three.

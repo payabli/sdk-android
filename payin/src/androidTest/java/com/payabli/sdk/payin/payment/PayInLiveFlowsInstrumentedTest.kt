@@ -244,7 +244,7 @@ class PayInLiveFlowsInstrumentedTest {
      */
     private fun mintToken(): String {
         val connection =
-            (URL("http://$tokenHost$TOKEN_PATH").openConnection() as HttpURLConnection).apply {
+            (URL("$tokenBaseUrl$TOKEN_PATH").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = TIMEOUT_MILLIS
@@ -284,8 +284,18 @@ class PayInLiveFlowsInstrumentedTest {
 
     private val entryPoint: String get() = argument("entryPoint")
 
-    /** `host:port` of a token server. `example-server` is one; an integrator's backend is the real thing. */
+    /** A token server. `example-server` is one; an integrator's backend is the real thing. */
     private val tokenHost: String get() = argument("tokenHost")
+
+    /**
+     * The same address as a base URL, whether or not it was given with a scheme.
+     *
+     * The sample app accepts either, taking a value that carries one as written, so the same argument reaches
+     * both and only one of them would otherwise have built `http://http://host`. Cleartext is what the test
+     * APK permits to loopback, so `http` is the default rather than a preference.
+     */
+    private val tokenBaseUrl: String
+        get() = tokenHost.trim().let { if (it.contains("://")) it.trimEnd('/') else "http://$it" }
 
     private val environment: PayabliEnvironment
         get() =

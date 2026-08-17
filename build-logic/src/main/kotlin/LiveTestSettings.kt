@@ -18,9 +18,18 @@ import org.gradle.api.provider.ProviderFactory
  */
 fun liveTestSettings(providers: ProviderFactory): Map<String, String?> =
     LIVE_TEST_VARIABLES.mapValues { (property, variable) ->
-        providers.gradleProperty("payabli.liveTest.$property").orNull
-            ?: providers.environmentVariable(variable).orNull
+        providers.gradleProperty("payabli.liveTest.$property").orNull.usable()
+            ?: providers.environmentVariable(variable).orNull.usable()
     }
+
+/**
+ * Trimmed, and blank read as absent.
+ *
+ * `-Ppayabli.liveTest.tokenHost=` and an environment variable set to nothing both arrive as "", which counts
+ * as present and would satisfy the check below while producing an address that is a scheme and a path. The
+ * sample app's own `demoSetting` guards its settings the same way and for the same reason.
+ */
+private fun String?.usable(): String? = this?.trim()?.takeIf { it.isNotEmpty() }
 
 /**
  * True when all three are present, false when none are, and an error in between.
