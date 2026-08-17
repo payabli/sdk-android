@@ -15,7 +15,6 @@ import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
-import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -41,9 +40,9 @@ import org.junit.runner.RunWith
  *   -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
  * ```
  *
- * Given the four `payabli.liveTest.*` values instead, it serves its own token from [LiveTokenServer] and points
- * the app there, so nothing runs beside it and no port is forwarded. That is the form CI takes; the command
- * above is the bench, where the running `example-server` is the thing being exercised.
+ * Given the three `payabli.liveTest.*` values instead, the address, entry point and environment come from the
+ * run rather than from what the build compiled in, which is how CI points the app at the server it started. A
+ * token server is required either way, and holds the client credential the app never sees.
  *
  * **The device has to be unlocked.** A phone that locked while idle is awake and still shows the keyguard, so
  * no activity reaches the foreground and every flow here fails with "No compose hierarchies found in the app",
@@ -55,7 +54,6 @@ class QaWalkthroughTest {
     val compose = createComposeRule()
 
     private lateinit var container: AppContainer
-    private var tokenServer: LiveTokenServer? = null
 
     /**
      * The prefill button is what fills the form, and it is drawn only for a build that was told to offer it.
@@ -63,7 +61,7 @@ class QaWalkthroughTest {
      * Checked before anything is driven, because without it the failure is a missing node partway through a
      * flow that had already reached the service.
      *
-     * One method rather than two, because JUnit orders `@Before` methods arbitrarily: split, the token setup
+     * One method rather than two, because JUnit orders `@Before` methods arbitrarily: split, the address setup
      * ran first on this runner and failed on a `container` the other half had not assigned yet.
      */
     @Before
@@ -78,18 +76,25 @@ class QaWalkthroughTest {
             container.configuration.prefillEnabled,
         )
 
-        serveTheTokenWhenCredentialsWerePassed()
+        pointTheAppAtTheTokenServerWhenOneWasNamed()
     }
 
-    private fun serveTheTokenWhenCredentialsWerePassed() {
+    /**
+     * Points the app at the token server the run named, if it named one.
+     *
+     * What arrives is an address, an entry point and an environment. No client credential does, and none is
+     * needed here: the token server holds it and the app asks for a token, which is the arrangement an
+     * integrator's backend implements and the boundary the SDK is built on.
+     */
+    private fun pointTheAppAtTheTokenServerWhenOneWasNamed() {
         val arguments = InstrumentationRegistry.getArguments()
-        val values = CREDENTIAL_ARGUMENTS.associateWith { arguments.getString("liveTest.$it") }
+        val values = LIVE_ARGUMENTS.associateWith { arguments.getString("liveTest.$it") }
         val missing = values.filterValues { it == null }.keys
 
-        // All four or none. A partial set is refused rather than left to the bench path, which asks for a
-        // token at whatever address the build was compiled with: that fails at the first step and names a
-        // form that never unlocked, not the argument nobody passed.
-        if (missing.size == CREDENTIAL_ARGUMENTS.size) return
+        // All three or none. A partial set is refused rather than left to the compiled-in address, which is
+        // whatever the build carried: that fails at the first step and names a form that never unlocked,
+        // rather than the argument nobody passed.
+        if (missing.size == LIVE_ARGUMENTS.size) return
         if (missing.isNotEmpty()) {
             error("liveTest arguments are partly set. Missing: ${missing.sorted().joinToString()}")
         }
@@ -98,24 +103,8 @@ class QaWalkthroughTest {
             DemoEnvironment.entries.firstOrNull { it.label.equals(values.getValue("environment"), true) }
                 ?: error("liveTest.environment named no environment: ${values.getValue("environment")}")
 
-        tokenServer =
-            LiveTokenServer(
-                baseUrl = environment.baseUrl,
-                clientId = values.getValue("clientId")!!,
-                clientSecret = values.getValue("clientSecret")!!,
-            ).also { container.applyLaunchOverride("127.0.0.1:${it.port}") }
-
+        container.applyLaunchOverride(values.getValue("tokenHost")!!)
         container.applyTestConfiguration(values.getValue("entryPoint")!!, environment)
-    }
-
-    @After
-    fun stopTheTokenServer() {
-        val server = tokenServer ?: return
-        val failure = server.servingFailure
-        server.close()
-        // Raised here because the app cannot: a token step that got no token leaves a form that never
-        // unlocked, and every unreachable server looks like that. This says which one it was.
-        if (failure != null) throw AssertionError("the token endpoint failed: ${failure.message}", failure)
     }
 
     @Test
@@ -263,7 +252,7 @@ class QaWalkthroughTest {
     private fun nodesWith(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes()
 
     private companion object {
-        val CREDENTIAL_ARGUMENTS = listOf("environment", "entryPoint", "clientId", "clientSecret")
+        val LIVE_ARGUMENTS = listOf("environment", "entryPoint", "tokenHost")
 
         const val SAVE = "Save payment method"
         const val CAPTURE = "Submit payment"

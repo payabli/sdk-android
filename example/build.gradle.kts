@@ -109,15 +109,15 @@ android {
             // all 3 passed in an invocation of their own.
             testInstrumentationRunnerArguments["class"] = walkthrough
 
-            // The same four `:payin`'s live tier takes, and the same names, because one set of secrets feeds
-            // both. Given them, the walkthrough serves its own token and needs no server beside it; without
-            // them it runs against whatever the build configured and a token server on the bench.
+            // The same three `:payin`'s live tier takes, and the same names, because one run configures both.
+            // None is a credential: a token server is reachable at `tokenHost` and holds the client id and
+            // secret, and the app asks it for a token exactly as it would ask an integrator's backend.
             //
-            // All four or none, refused here as well as in the test. Forwarding a subset is what makes the
-            // difference invisible: the run looks configured, takes the bench path anyway, and fails several
-            // steps later on a form that never unlocked.
-            val liveTest = liveTestCredentials(providers)
-            if (liveTestCredentialsUsable(liveTest)) {
+            // All three or none, refused here as well as in the test. Forwarding a subset is what makes the
+            // difference invisible: the run looks configured, points the app at whatever the build compiled
+            // in, and fails several steps later on a form that never unlocked.
+            val liveTest = liveTestSettings(providers)
+            if (liveTestSettingsUsable(liveTest)) {
                 liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
             }
         }

@@ -107,24 +107,57 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
+      # The app's backend, for the length of this job.
+      #
+      # The device asks a server for a token and never holds the client credential that mints one, which is the
+      # boundary the SDK exists to keep. So the credential stays here: this step is the only one that sees it,
+      # and it is not the step that runs the emulator action or the tests. `example-server` is the same server
+      # a developer runs on the bench, so CI and the bench exercise one path.
+      #
+      # Every setting is injected, so no `.env` is needed and nothing is read from the checkout.
+      - name: Start the token server
+        env:
+          PORT: '8787'
+          PAYABLI_CLIENT_ID: ${{ secrets.client-id }}
+          PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
+          PAYABLI_ENTRY: ${{ secrets.entry-point }}
+        run: |
+          case "${{ inputs.environment }}" in
+            qa)      export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api ;;
+            sandbox) export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api ;;
+            *) echo "::error::unknown environment ${{ inputs.environment }}"; exit 1 ;;
+          esac
+          nohup node example-server/server.mjs > "$RUNNER_TEMP/token-server.log" 2>&1 &
+          # Waited on rather than assumed: the tests fail as an unlocked-form timeout if it is not up yet,
+          # which names the form and not the server.
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8787/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::the token server did not answer /health"
+          cat "$RUNNER_TEMP/token-server.log"
+          exit 1
+
       # No notAnnotation is passed, deliberately. Both suites are gated by name in their own build file when
-      # the credentials are absent, and passing them here is what admits them; the manual-tier annotation on
+      # their settings are absent, and passing them here is what admits them; the manual-tier annotation on
       # `:payin`'s live class would exclude it again if a filter were added, which is the mistake to avoid
       # rather than a filter to write. `class` narrows `:payin` to the live tier so this workflow does not
       # re-run the ordinary instrumented suite the nightly already covers.
       #
-      # The credentials never reach a command line. The build reads PAYABLI_LIVETEST_* itself, so nothing here
-      # passes them with -P: an argument is in the process's command line and readable by anything that can
-      # list processes on the runner, which an environment variable is not. They are still visible to this
-      # step, which is what pinning the action above is about.
+      # Note what this step is not given: no client id and no client secret. It gets an address to reach the
+      # server started above, plus the entry point the app is configured with and the environment. The build
+      # reads them from the environment rather than from -P, so they are not in a command line either.
+      #
+      # 10.0.2.2 is the emulator's alias for the loopback interface of the machine running it, which is where
+      # the server is bound. The sample app's debug build and `:payin`'s test APK each permit cleartext to that
+      # address and to 127.0.0.1, and to nothing else.
       - name: Live flows
         timeout-minutes: 30
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         env:
           PAYABLI_LIVETEST_ENVIRONMENT: ${{ inputs.environment }}
           PAYABLI_LIVETEST_ENTRY_POINT: ${{ secrets.entry-point }}
-          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets.client-id }}
-          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets.client-secret }}
+          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}

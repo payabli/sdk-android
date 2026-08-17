@@ -23,8 +23,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.builtins.MapSerializer
-import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -43,17 +41,16 @@ import java.util.UUID
 /**
  * Every flow this module supports, against a real environment.
  *
- * **`@ManualDeviceTest`, and excluded by name from `payin/build.gradle.kts` when the credentials are absent.**
+ * **`@ManualDeviceTest`, and excluded by name from `payin/build.gradle.kts` when its settings are absent.**
  * Two gates rather than one: the annotation says which tier this belongs to, and the name check means a run
- * without credentials reports no skip instead of a standing one. CI cannot hold the credentials yet, which is
- * the only reason this is not in the ordinary instrumented suite. The environment,
- * the entry point and the client credentials arrive as runner arguments, so nothing here is committed and CI can
- * pass the same four values as secrets. One environment per invocation, because the SDK installs one session per
- * process and refuses a second configuration: QA and sandbox are two runs.
+ * without them reports no skip instead of a standing one. The environment, the entry point and the address of a
+ * token server arrive as runner arguments, so nothing here is committed. One environment per invocation, because
+ * the SDK installs one session per process and refuses a second configuration: QA and sandbox are two runs.
  *
- * The token is minted here rather than by the sample's local server, which keeps the test to one process and no
- * `adb reverse`. The exchange is the same one that server performs: `POST {base}/api/v2/token/serverside` with
- * `clientId` and `clientSecret`, reading `accessToken`.
+ * **No client credential reaches this device, and none of the three above is one.** A token comes from the app's
+ * backend, which holds the client id and secret and exchanges them; `example-server` plays that part for a test
+ * run. Minting here instead would put the credential inside the process this SDK is supposed to keep it out of,
+ * and a test is the worst place to make that exception, because it is the one run that proves the boundary.
  *
  * These are real transactions. The amounts are small and the instruments are the sample app's test values, which
  * is what the recorded walks used.
@@ -236,15 +233,18 @@ class PayInLiveFlowsInstrumentedTest {
             ).getOrThrow()
 
     /**
-     * The credential exchange, over HTTPS on this device.
+     * A token from the app's backend, the way a host app gets one.
+     *
+     * The exchange that turns a client id and secret into a token happens on that server and not here. The
+     * device never holds either, which is the boundary this SDK exists to keep, and a test that minted its own
+     * would be the one place the boundary did not hold.
      *
      * `HttpURLConnection` because the SDK takes no third-party HTTP client and a test has no business
-     * introducing one. The token is read into a local and never logged: it is the credential this whole design
-     * keeps out of an APK.
+     * introducing one. The token is read into a local and never logged.
      */
     private fun mintToken(): String {
         val connection =
-            (URL("${environment.baseUrl}$TOKEN_PATH").openConnection() as HttpURLConnection).apply {
+            (URL("http://$tokenHost$TOKEN_PATH").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = TIMEOUT_MILLIS
@@ -253,15 +253,9 @@ class PayInLiveFlowsInstrumentedTest {
                 setRequestProperty("Accept", "application/json")
             }
         return try {
-            // Built by the serializer rather than by interpolation. A credential is opaque, so a quote or a
-            // backslash in one is not a strange input: it would end the string early and the exchange would
-            // refuse a request that says nothing about why.
-            val credentials =
-                Json.encodeToString(
-                    MapSerializer(String.serializer(), String.serializer()),
-                    mapOf("clientId" to clientId, "clientSecret" to clientSecret),
-                )
-            connection.outputStream.use { out -> out.write(credentials.toByteArray()) }
+            // The route takes an empty object: what it needs to mint is its own configuration, which is the
+            // whole point of asking it rather than doing this here.
+            connection.outputStream.use { out -> out.write("{}".toByteArray()) }
             // getInputStream throws for 4xx and 5xx; the body, when the server sent one, is on errorStream,
             // which is null when it sent none. Reading it first is what makes a refused exchange report its
             // status instead of an IOException naming the URL.
@@ -289,8 +283,9 @@ class PayInLiveFlowsInstrumentedTest {
         }
 
     private val entryPoint: String get() = argument("entryPoint")
-    private val clientId: String get() = argument("clientId")
-    private val clientSecret: String get() = argument("clientSecret")
+
+    /** `host:port` of a token server. `example-server` is one; an integrator's backend is the real thing. */
+    private val tokenHost: String get() = argument("tokenHost")
 
     private val environment: PayabliEnvironment
         get() =
@@ -303,7 +298,9 @@ class PayInLiveFlowsInstrumentedTest {
         @Volatile
         private var installed: PayabliSession? = null
 
-        const val TOKEN_PATH = "/api/v2/token/serverside"
+        // The route the sample app's own token client calls, so the test asks for a token the same way the
+        // app does. `access-token` serves a cached value; this one mints, which is what a provider owes.
+        const val TOKEN_PATH = "/payabli/exchange-token"
         const val TIMEOUT_MILLIS = 20_000
         val TOKEN_FIELDS = listOf("accessToken", "access_token", "token")
         val AMOUNT: BigDecimal = BigDecimal("1.10")
