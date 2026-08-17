@@ -262,6 +262,30 @@ class DeviceBindingsTest {
         }
 
     @Test
+    fun `the storage entry names are the ones installed devices already carry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val current = FakeSecureStore()
+            AttestedDeviceStore(current).write(binding(ENTRY))
+
+            val older = FakeSecureStore()
+            older.seed(
+                "com.payabli.sdk.taptopay.device.v1",
+                PayabliJson.format
+                    .encodeToString(AttestedDevice.serializer(), binding(ENTRY))
+                    .encodeToByteArray(),
+            )
+
+            // Renaming either is a migration and not a refactor: an installed device looks under these
+            // exact names and finds its binding under no other. The literals here and the ones the fixture
+            // seeds with are a second, independent statement of them, held apart from the store's own on
+            // purpose. Pointing the tests at the store's constants instead would make a rename invisible,
+            // since every test would follow it and the migration cases would go on passing under names
+            // their own titles no longer describe.
+            assertNotNull("the current entry name moved", current.peek("com.payabli.sdk.taptopay.device.v2"))
+            assertNotNull("the older entry name moved", AttestedDeviceStore(older).read(ENTRY))
+        }
+
+    @Test
     fun `the collection never prints the entry points it holds`() {
         val printed = DeviceBindings(listOf(binding(ENTRY), binding(OTHER_ENTRY))).toString()
 
