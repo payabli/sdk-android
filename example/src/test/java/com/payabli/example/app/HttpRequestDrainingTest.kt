@@ -51,6 +51,24 @@ class HttpRequestDrainingTest {
     }
 
     @Test
+    fun `a negative length is refused rather than read as an empty body`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: -1\r\n\r\nbody")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("Content-Length is negative: -1", failure.message)
+    }
+
+    @Test
+    fun `a negative chunk size is refused`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\nab\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("chunk size is negative: -1", failure.message)
+    }
+
+    @Test
     fun `a length that is not a number is refused rather than read as none`() {
         val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: banana\r\n\r\nbody")
 

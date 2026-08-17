@@ -44,6 +44,9 @@ internal fun drainHttpRequest(stream: InputStream) {
     when {
         chunked -> drainChunked(stream)
         length != null -> {
+            // A negative parses, and left alone it reaches drainExactly as a count that reads nothing, so the
+            // body would stay on the socket and be answered over.
+            if (length < 0) throw IOException("Content-Length is negative: $declared")
             if (length > MAX_BODY_BYTES) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
             drainExactly(stream, length)
         }
@@ -81,6 +84,7 @@ private fun drainChunked(stream: InputStream) {
                 .toIntOrNull(radix = 16)
                 ?: throw IOException("chunk size is not hexadecimal: ${header.value}")
 
+        if (size < 0) throw IOException("chunk size is negative: ${header.value}")
         if (size == 0) break
         total += size
         if (total > MAX_BODY_BYTES) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
