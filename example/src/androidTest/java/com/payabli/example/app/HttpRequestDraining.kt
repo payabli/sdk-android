@@ -16,21 +16,39 @@ import java.io.InputStream
  * fail: the run then times out somewhere else entirely.
  */
 internal fun drainHttpRequest(stream: InputStream) {
-    var length = 0
+    var declared: String? = null
+    var chunked = false
     var headerBudget = MAX_HEADER_BYTES
     while (true) {
         val line = readLine(stream, headerBudget) ?: return
         headerBudget -= line.bytesRead
         if (line.value.isEmpty()) break
-        if (line.value.substringBefore(':').equals("Content-Length", ignoreCase = true)) {
-            length = line.value
-                .substringAfter(':')
-                .trim()
-                .toIntOrNull() ?: 0
+        val name = line.value.substringBefore(':')
+        if (name.equals("Content-Length", ignoreCase = true)) {
+            declared = line.value.substringAfter(':').trim()
+        }
+        if (name.equals("Transfer-Encoding", ignoreCase = true)) {
+            chunked = true
         }
     }
 
-    var remaining = minOf(length, MAX_BODY_BYTES)
+    // A body is declared by one header or the other. Neither means there is none, which is the ordinary case
+    // for the request these servers answer.
+    val length = declared?.toIntOrNull()
+    when {
+        length != null -> drainExactly(stream, minOf(length, MAX_BODY_BYTES))
+        // Declared and unusable: a length that does not parse, or a chunked encoding this does not decode.
+        // Reading to the cap is what keeps the promise above, since answering now is answering mid-body.
+        // The caller's read timeout is what ends it when the client has stopped without closing.
+        declared != null || chunked -> drainExactly(stream, MAX_BODY_BYTES)
+    }
+}
+
+private fun drainExactly(
+    stream: InputStream,
+    limit: Int,
+) {
+    var remaining = limit
     val chunk = ByteArray(DRAIN_CHUNK)
     while (remaining > 0) {
         val read = stream.read(chunk, 0, minOf(chunk.size, remaining))
