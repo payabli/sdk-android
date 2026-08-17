@@ -206,8 +206,8 @@ class ActivationFailurePolicyTest {
             assertEquals(DeviceActivationException.NotEnrolled::class.java, thrown?.javaClass)
             assertTrue(fixture.transport.requests.isEmpty())
             // Sending it would be answered as an unknown device, and that classification discards the
-            // record — which belongs to a paypoint this session is not talking to.
-            assertNotNull(fixture.storedRecord())
+            // binding — which belongs to a paypoint this session is not talking to.
+            assertNotNull(fixture.storedRecord("a-different-entry-point"))
         }
 
     @Test

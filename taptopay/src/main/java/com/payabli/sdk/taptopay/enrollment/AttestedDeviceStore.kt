@@ -4,25 +4,32 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.device.RedactedCause
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 
 /**
- * The one entry [AttestedDevice] lives in, and the rules for reading it back.
+ * The one entry [DeviceBindings] lives in, and the rules for reading it back.
  *
- * It holds the attestation binding and nothing else. Activation state is not this SDK's to hold, so it is
+ * It holds the attestation bindings and nothing else. Activation state is not this SDK's to hold, so it is
  * asked for rather than kept — a copy here would be a claim nobody re-checks.
  *
- * One entry holds the whole record, so there is no ordering between its parts and no window where half of
- * it is present. No rollback is needed.
+ * One entry holds every binding, so there is no ordering between them and no window where some are present
+ * and others are not. No rollback is needed.
  *
- * The entry name is fixed. It cannot carry the paypoint, because the store offers no enumeration: a name
- * built from a value that changes leaves an entry that nothing can find and nothing can remove. The paypoint
- * lives inside the record, where a mismatch is checked instead of searched for.
+ * The entry name is fixed, and one name holds them all. It cannot carry the entry point, because the store
+ * offers no enumeration: a name built from a value that changes leaves an entry that nothing can find and
+ * nothing can remove. The entry point lives inside each binding, where a lookup answers it instead of a
+ * search over names.
  *
  * No dispatcher: [PayabliSecureStorage] suspends and already holds the one it was built with. A second hop
  * onto the same pool would be a hop for the look of the thing.
@@ -32,23 +39,145 @@ internal class AttestedDeviceStore(
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /**
-     * The stored record, or null when there is nothing usable to read.
+     * Serialises the read-modify-write that every entry point below performs.
      *
-     * **Null and a failure are different answers and must stay that way.** Null means the record is gone,
-     * and the correct response is a cold start. A failure means the store could not be read *this time*, and
-     * treating that as null would run the cold sequence against a device that may still be active, which
-     * replaces it and costs the merchant a fresh activation code. The store's own contract
-     * separates the two, and this is the caller that has to honour it:
+     * One entry holds every binding, so writing one means reading them all, replacing one and writing them
+     * back. Two callers interleaving that lose whichever binding was read before the other's write — and a
+     * lost binding is what this store exists to prevent. Callers for different entry points are exactly the
+     * ones that would interleave, since nothing above serialises across them.
+     *
+     * **One instance per backing entry.** The lock is this object's, so a second instance over the same
+     * storage would not see it.
+     */
+    private val lock = Mutex()
+
+    /**
+     * The binding held for [entry], or null when there is nothing usable to read.
+     *
+     * **Null and a failure are different answers and must stay that way.** Null means this device holds no
+     * binding for [entry], and the correct response is a cold start. A failure means the store could not be
+     * read *this time*, and treating that as null would run the cold sequence against a device that may
+     * still be active, replacing it. The store's own contract separates the two, and this is the caller that
+     * has to honour it:
      *
      * - the key was lost, or this entry alone could not be authenticated: the data is gone, so null;
      * - the record decoded to nothing recognisable: also gone, and the entry is dropped on the way out;
      * - the platform's cipher or the file was unavailable: **raised**, because the record may be perfectly
      *   fine and unreadable only for a moment.
+     *
+     * Reading promotes the binding to the front, so the one discarded when [DeviceBindings.MAX] is reached is
+     * the one nothing has used, rather than the one enrolled longest ago.
      */
-    suspend fun read(): AttestedDevice? {
+    suspend fun read(entry: String): AttestedDevice? =
+        lock.withLock {
+            val held = load() ?: return@withLock null
+            val record = held.forEntry(entry) ?: return@withLock null
+            if (!held.isMostRecent(entry)) promote(held, record)
+            record
+        }
+
+    /**
+     * Replaces the binding for this record's entry point, leaving every other entry point's alone.
+     *
+     * One call, so there is no half-written state to compensate for.
+     */
+    suspend fun write(record: AttestedDevice) {
+        lock.withLock {
+            val held = load() ?: DeviceBindings(emptyList())
+            store(held.with(record))
+        }
+    }
+
+    /**
+     * Forgets [entry]'s binding. Never touches the key, another entry point's binding, or another consumer's
+     * entries.
+     *
+     * Reads first, because the binding to remove has to be found among the rest. That read is also what
+     * carries an older single-binding record forward, so a clear cannot leave one behind for a later read to
+     * restore.
+     */
+    suspend fun clear(entry: String) {
+        lock.withLock {
+            val held = load() ?: return@withLock
+            // Nothing held for this entry point, so there is nothing to remove and no reason to rewrite
+            // what is held for the others.
+            if (held.forEntry(entry) == null) return@withLock
+            val remaining = held.without(entry)
+            if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
+        }
+    }
+
+    /**
+     * Everything stored, in the current shape, carrying an older record forward on the way.
+     *
+     * Reached by every entry point above rather than by [read] alone. A clear that skipped it would remove
+     * nothing from the old entry, and the next read would carry that record forward again — restoring a
+     * binding the caller had just discarded.
+     */
+    private suspend fun load(): DeviceBindings? {
+        // The current entry answers alone whenever it is there, so the old one is never read once this
+        // device has written anything, and a binding discarded since the upgrade cannot be restored from it.
+        decode(ENTRY, DeviceBindings.serializer())?.let { return it }
+
+        // Nothing in the current entry. An older record is the only other thing that can be there, and
+        // reading it is what keeps an enrolled device enrolled across the upgrade.
+        val legacy = decode(LEGACY_ENTRY, AttestedDevice.serializer()) ?: return null
+        val migrated = DeviceBindings.of(legacy)
+
+        // Written before the old entry is removed, never the reverse. Interrupted between the two, both are
+        // present, and the line above answers from the current one and leaves the old one inert. The other
+        // order loses the binding outright. Uncancellable so only the process ending can land between them.
+        withContext(NonCancellable) {
+            store(migrated)
+            storage.remove(LEGACY_ENTRY)
+        }
+        return migrated
+    }
+
+    /**
+     * Moves a binding to the front, and does not fail the read that asked for it.
+     *
+     * The order decides only which binding is discarded first when the collection is full. Losing an update
+     * to it costs at most a worse choice of which to discard, which the next enrollment repairs — where
+     * failing here would turn a read that already has its answer into a cold start.
+     */
+    private suspend fun promote(
+        held: DeviceBindings,
+        record: AttestedDevice,
+    ) {
+        try {
+            store(held.with(record))
+        } catch (unwritable: SecureStorageException) {
+            logger.debug(RedactedCause(unwritable), LogField.safe("event", EVENT_ORDER_UNWRITTEN)) {
+                "could not record which binding was used last"
+            }
+        }
+    }
+
+    /** Encodes and stores the whole collection, wiping the buffer whichever way the write goes. */
+    private suspend fun store(held: DeviceBindings) {
+        val bytes = PayabliJson.format.encodeToString(DeviceBindings.serializer(), held).encodeToByteArray()
+        try {
+            storage.set(ENTRY, bytes)
+        } finally {
+            // The store neither copies what it is given nor wipes it, so the caller owns both ends.
+            bytes.fill(0)
+        }
+    }
+
+    /**
+     * Reads one entry and decodes it, or answers null for every way it can turn out not to be there.
+     *
+     * Shared by both shapes so the four storage failures are classified in one place. A store whose key is
+     * gone answers null for each entry it is asked for, which is the right answer for all of them.
+     */
+    private suspend fun <T> decode(
+        key: String,
+        serializer: KSerializer<T>,
+    ): T? {
         val bytes =
             try {
-                storage.get(ENTRY)
+                storage.get(key)
             } catch (lost: SecureStorageException.KeyInvalidated) {
                 reportLost(lost, "key_invalidated")
                 return null
@@ -59,38 +188,24 @@ internal class AttestedDeviceStore(
                 ?: return null
 
         return try {
-            PayabliJson.format.decodeFromString(AttestedDevice.serializer(), bytes.decodeToString())
+            PayabliJson.format.decodeFromString(serializer, bytes.decodeToString())
         } catch (malformed: SerializationException) {
             // Narrowed to the serializer's own failure. A storage failure raised by the read above must
             // not be swallowed here on its way past.
             reportLost(malformed, "undecodable")
-            storage.remove(ENTRY)
+            storage.remove(key)
             null
         } finally {
             bytes.fill(0)
         }
     }
 
-    /** Replaces the record. One call, so there is no half-written state to compensate for. */
-    suspend fun write(record: AttestedDevice) {
-        val bytes = PayabliJson.format.encodeToString(AttestedDevice.serializer(), record).encodeToByteArray()
-        try {
-            storage.set(ENTRY, bytes)
-        } finally {
-            // The store neither copies what it is given nor wipes it, so the caller owns both ends.
-            bytes.fill(0)
-        }
-    }
-
-    /** Forgets the device. Never touches the key, and never another consumer's entries. */
-    suspend fun clear(): Unit = storage.remove(ENTRY)
-
     /**
      * One record for every way the stored identity can turn out to be unreadable, naming which.
      *
      * The cause is redacted to its type and stack trace. By the time a decode fails the record has been
      * decrypted, and `kotlinx.serialization` quotes the input it could not parse into the exception
-     * message — so an unredacted cause puts the paypoint, the device handle and the key thumbprint into
+     * message — so an unredacted cause puts every entry point, device handle and key thumbprint held into
      * the platform log. [state] already says which case this was, which is the whole diagnostic value the
      * message carried.
      */
@@ -106,7 +221,20 @@ internal class AttestedDeviceStore(
          * Versioned for the reason the key handle is: if the record's shape ever changes, the next version
          * takes a new name and removes this one explicitly, because this is the last code that knows it.
          */
-        const val ENTRY = "com.payabli.sdk.taptopay.device.v1"
+        const val ENTRY = "com.payabli.sdk.taptopay.device.v2"
+
+        /**
+         * The single-binding shape this replaces, read once and removed.
+         *
+         * A separate name rather than a widened shape, because the SDK's decoder ignores unrecognized keys:
+         * the older record read through the current serializer would decode without complaint and answer
+         * that the device holds no bindings at all. Two names keep the two shapes from ever meeting.
+         *
+         * Removable once no install can still be carrying it.
+         */
+        const val LEGACY_ENTRY = "com.payabli.sdk.taptopay.device.v1"
+
         const val EVENT_LOST = "device_identity_lost"
+        const val EVENT_ORDER_UNWRITTEN = "device_binding_order_unwritten"
     }
 }

@@ -25,14 +25,11 @@ import kotlinx.serialization.Serializable
  * copied from another device names a key this one does not hold, which [DeviceEnrollment] rejects before it
  * reaches the network.
  *
- * **One binding is stored, and it is the current paypoint's.** A device serves one paypoint at a time, so a
- * completed enrollment elsewhere replaces this record. Until that enrollment completes the existing record
- * stands, and [DeviceEnrollment.reset] scoped to another paypoint leaves it alone — so a failed or abandoned
- * attempt against a second paypoint costs the first one nothing. What is not covered is a device alternating
- * between two paypoints: returning to the first finds no record and registers again, which replaces a device
- * that was active and costs a fresh code. Holding a binding per paypoint would fix that and is a change to the shape of
- * this record, not to the coordinator; it needs a bound on how many are kept and a rule for when one is
- * dropped, and neither has been decided.
+ * **One binding per entry point, and this is one of them.** A device is issued its own handle for each entry
+ * point it enrolls against, so enrolling elsewhere adds a binding rather than replacing this one, and
+ * returning to an entry point already enrolled finds its binding where it left it. [DeviceBindings] holds
+ * the set and decides which is discarded when it is full. Nothing here is shared between two of them: a
+ * binding answers for its own entry point and for no other.
  *
  * Not a data class: a generated `toString` would print all three, and [entry] names a merchant.
  */

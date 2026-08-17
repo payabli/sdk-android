@@ -91,7 +91,7 @@ class DeviceActivationLiveTest {
     fun forgetTheDevice() =
         runTest(timeout = TEST_TIMEOUT) {
             // The service's row stays: it is what the next run is recognised by.
-            AttestedDeviceStore(DeviceTrust.open(context).store).clear()
+            AttestedDeviceStore(DeviceTrust.open(context).store).clear(LiveRunSettings.entry)
         }
 
     @Test
@@ -129,7 +129,7 @@ class DeviceActivationLiveTest {
 
                 // A device the service already holds as active answers false, which is also a pass.
                 assertNotNull(outcome)
-                assertNotNull(AttestedDeviceStore(DeviceTrust.open(context).store).read())
+                assertNotNull(AttestedDeviceStore(DeviceTrust.open(context).store).read(LiveRunSettings.entry))
             }
         }
 
@@ -194,7 +194,7 @@ class DeviceActivationLiveTest {
                     thrown is DeviceActivationException.AttestationRevoked,
                 )
                 // And the disposition that classification carries: the record is discarded, the key is not.
-                assertNull(store.read())
+                assertNull(store.read(LiveRunSettings.entry))
                 assertNotNull(trust.key.publicKey())
             }
         }
@@ -210,7 +210,9 @@ class DeviceActivationLiveTest {
                 val enrollment = enrollment(description)
                 val outcome = enrollment.enroll()
                 val store = AttestedDeviceStore(DeviceTrust.open(context).store)
-                val record = store.read() ?: error("the cold sequence recorded nothing to activate")
+                val record =
+                    store.read(LiveRunSettings.entry)
+                        ?: error("the cold sequence recorded nothing to activate")
 
                 assertTrue(
                     "a device registered for this run must be pending, got $outcome",
@@ -231,7 +233,7 @@ class DeviceActivationLiveTest {
 
                 // Success is reaching here. Nothing is written on activation, so what is asserted is that
                 // the binding survives and a second run is answered from it without re-attesting.
-                assertNotNull(store.read())
+                assertNotNull(store.read(LiveRunSettings.entry))
                 assertEquals(EnrollmentOutcome.AlreadyAttested, enrollment.enroll())
             }
         }

@@ -89,7 +89,7 @@ class TTPTransactionLiveTest {
         runTest(timeout = TEST_TIMEOUT) {
             // The service's row stays: it is what the next run is recognised by, and what keeps a later run
             // from spending another activation attempt.
-            AttestedDeviceStore(DeviceTrust.open(context).store).clear()
+            AttestedDeviceStore(DeviceTrust.open(context).store).clear(LiveRunSettings.entry)
         }
 
     @Test
@@ -181,7 +181,7 @@ class TTPTransactionLiveTest {
         val enrollment = enrollment()
         val outcome = enrollment.enroll()
         val store = AttestedDeviceStore(DeviceTrust.open(context).store)
-        val record = store.read() ?: error("the cold sequence recorded nothing to charge with")
+        val record = store.read(LiveRunSettings.entry) ?: error("the cold sequence recorded nothing to charge with")
 
         if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
             // Playing the merchant's part, as the activation tier does. The SDK cannot mint its own code,
