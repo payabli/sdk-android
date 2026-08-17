@@ -88,7 +88,12 @@ class QaWalkthroughTest {
      */
     private fun pointTheAppAtTheTokenServerWhenOneWasNamed() {
         val arguments = InstrumentationRegistry.getArguments()
-        val values = LIVE_ARGUMENTS.associateWith { arguments.getString("liveTest.$it") }
+        // Trimmed, and blank read as absent, as the build resolves them: an argument passed as an empty
+        // string counts as present otherwise, clears the guard below, and points the app at an address that
+        // is a scheme and a path. The build no longer forwards a blank, but an instrumentation argument does
+        // not have to come from the build.
+        val values =
+            LIVE_ARGUMENTS.associateWith { arguments.getString("liveTest.$it")?.trim()?.ifEmpty { null } }
         val missing = values.filterValues { it == null }.keys
 
         // All three or none. A partial set is refused rather than left to the compiled-in address, which is
