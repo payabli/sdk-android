@@ -300,7 +300,9 @@ class PayInLiveFlowsInstrumentedTest {
         get() {
             val given = tokenHost.trim().trimEnd('/')
             val scheme = given.substringBefore("://", missingDelimiterValue = "http")
-            require(scheme == "http" || scheme == "https") { "liveTest.tokenHost names no http address: $given" }
+            require(scheme == "http" || scheme == "https") {
+                "liveTest.tokenHost must be http or https: $given"
+            }
             require(given.substringAfter("://").none { it == '/' || it == '?' || it == '#' }) {
                 "liveTest.tokenHost carries a path: $given"
             }

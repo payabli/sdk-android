@@ -145,6 +145,13 @@ android {
         // AGP defaults this off, and the demo settings above are read through BuildConfig.
         buildConfig = true
     }
+
+    // The request drain, as `:payin` shares its fixtures. A fake server uses it on a device and its own tests
+    // run on the JVM, so it is compiled into both. Nothing here may be Android-only.
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/java")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+    }
 }
 
 dependencies {

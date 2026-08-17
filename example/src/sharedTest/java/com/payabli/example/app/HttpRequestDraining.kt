@@ -11,9 +11,11 @@ import java.io.InputStream
  *
  * Bytes throughout, because `Content-Length` counts bytes.
  *
- * Bounded in both directions, and the caller sets a read timeout. This runs on the accept thread, so a client
- * that never terminates its headers, or declares more body than it sends, would wedge the server rather than
- * fail: the run then times out somewhere else entirely.
+ * A request past the caps below throws rather than being partly read, so the caller closes without answering.
+ * Answering a request that was only partly read is the race this exists to prevent.
+ *
+ * This runs on the accept thread, so a client that never terminates its headers would wedge the server rather
+ * than fail it. The caps and the caller's read timeout are what bound that.
  */
 internal fun drainHttpRequest(stream: InputStream) {
     var declared: String? = null
@@ -40,24 +42,56 @@ internal fun drainHttpRequest(stream: InputStream) {
     // for the request these servers answer.
     val length = declared?.toIntOrNull()
     when {
-        length != null -> drainExactly(stream, minOf(length, MAX_BODY_BYTES))
-        // Declared and unusable: a length that does not parse, or a chunked encoding this does not decode.
-        // Reading to the cap is what keeps the promise above, since answering now is answering mid-body.
-        // The caller's read timeout is what ends it when the client has stopped without closing.
-        declared != null || chunked -> drainExactly(stream, MAX_BODY_BYTES)
+        chunked -> drainChunked(stream)
+        length != null -> {
+            if (length > MAX_BODY_BYTES) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
+            drainExactly(stream, length)
+        }
+        declared != null -> throw IOException("Content-Length is not a number: $declared")
     }
 }
 
 private fun drainExactly(
     stream: InputStream,
-    limit: Int,
+    length: Int,
 ) {
-    var remaining = limit
+    var remaining = length
     val chunk = ByteArray(DRAIN_CHUNK)
     while (remaining > 0) {
         val read = stream.read(chunk, 0, minOf(chunk.size, remaining))
-        if (read < 0) return
+        if (read < 0) throw IOException("request body ended $remaining bytes early")
         remaining -= read
+    }
+}
+
+/**
+ * A chunked body, read by its framing: a hex size, that many bytes, and a zero size to finish.
+ *
+ * Decoded rather than read to a cap, which could not tell a finished small body from a stalled large one and
+ * so waited out the socket timeout on both.
+ */
+private fun drainChunked(stream: InputStream) {
+    var total = 0
+    while (true) {
+        val header = readLine(stream, MAX_HEADER_BYTES) ?: throw IOException("chunked body ended early")
+        val size =
+            header.value
+                .substringBefore(';')
+                .trim()
+                .toIntOrNull(radix = 16)
+                ?: throw IOException("chunk size is not hexadecimal: ${header.value}")
+
+        if (size == 0) break
+        total += size
+        if (total > MAX_BODY_BYTES) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
+        drainExactly(stream, size)
+        readLine(stream, MAX_HEADER_BYTES) ?: throw IOException("chunked body ended early")
+    }
+
+    // Trailers, then the blank line that ends them.
+    while (true) {
+        val line = readLine(stream, MAX_HEADER_BYTES) ?: return
+        if (line.value.isEmpty()) return
     }
 }
 
