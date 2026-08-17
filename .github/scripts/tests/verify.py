@@ -1840,16 +1840,45 @@ def trigger_keys(text: str) -> list[str]:
 
 
 def steps_of(text: str) -> list[str]:
-    """Each step as one block of text, split on the `- ` that starts a list item under `steps:`."""
+    """Each step as one block of text: the list items under any `steps:`, at whatever depth it sits.
+
+    Measured against a fixed indentation before this: reindenting the file emptied the list, which failed
+    closed on the guard below but failed on a reformat that changed no semantics. The `steps:` line supplies
+    the depth, an item is a `- ` deeper than it, and a line back at or above that depth ends the block.
+    """
     blocks: list[str] = []
     current: list[str] = []
+    steps_indent: int | None = None
+
     for line in text.splitlines():
-        if line.startswith("      - "):
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+
+        if stripped == "steps:":
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+            steps_indent = indent
+            continue
+        if steps_indent is None:
+            continue
+
+        # Out of the block: a key at or above the depth `steps:` sits at. A blank line or a comment carries
+        # no depth of its own and belongs to whatever is open.
+        if stripped and not stripped.startswith("#") and indent <= steps_indent:
+            if current:
+                blocks.append("\n".join(current))
+                current = []
+            steps_indent = None
+            continue
+
+        if stripped.startswith("- ") and indent > steps_indent:
             if current:
                 blocks.append("\n".join(current))
             current = [line]
         elif current:
             current.append(line)
+
     if current:
         blocks.append("\n".join(current))
     return blocks
