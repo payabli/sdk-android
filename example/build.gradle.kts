@@ -1,3 +1,4 @@
+import com.payabli.buildlogic.liveTestSettings
 import java.util.Properties
 
 plugins {

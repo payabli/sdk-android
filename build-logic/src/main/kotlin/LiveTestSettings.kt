@@ -1,3 +1,5 @@
+package com.payabli.buildlogic
+
 import org.gradle.api.provider.ProviderFactory
 
 /**
