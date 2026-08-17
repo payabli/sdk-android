@@ -257,6 +257,13 @@ MUTATIONS = [
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
      "          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets.client-secret }}"),
 
+    # Only the other half of the credential. Worth its own row because a check written for the secret alone
+    # passes this, which is what the review found.
+    ("The emulator step is handed the client id, and only that", LIVE_FLOWS, "workflows",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
+     "          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets.client-id }}"),
+
     ("The token host is dropped, so the tests fall back to the compiled-in address", LIVE_FLOWS, "workflows",
      "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
      "          PAYABLI_LIVETEST_TOKEN_HOST_DISABLED: 10.0.2.2:8787"),

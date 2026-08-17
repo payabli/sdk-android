@@ -1868,12 +1868,15 @@ def test_workflows():
     blocks = steps_of(reusable)
     check("W2 the reusable workflow has steps", len(blocks) > 3, f"{len(blocks)}")
 
-    holding = [b for b in blocks if "secrets.client-secret" in b]
-    check("W2 exactly one step is given the client secret", len(holding) == 1,
-          f"{len(holding)} steps: " + " | ".join(b.splitlines()[0].strip() for b in holding))
-    if holding:
-        check("W2 and it is the step that runs the token server", "server.mjs" in holding[0],
-              holding[0].splitlines()[0].strip())
+    # Both halves, because the credential is the pair: a regression that moved only the client id would
+    # otherwise pass, and an id alone is enough to matter beside a secret that leaks another way.
+    for half in ("client-secret", "client-id"):
+        holding = [b for b in blocks if f"secrets.{half}" in b]
+        check(f"W2 exactly one step is given the {half}", len(holding) == 1,
+              f"{len(holding)} steps: " + " | ".join(b.splitlines()[0].strip() for b in holding))
+        if holding:
+            check(f"W2 and the {half} goes to the step that runs the token server", "server.mjs" in holding[0],
+                  holding[0].splitlines()[0].strip())
 
     emulator = [b for b in blocks if "android-emulator-runner" in b]
     check("W3 the emulator steps are found", len(emulator) == 2, f"{len(emulator)}")

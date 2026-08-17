@@ -136,7 +136,10 @@ def main() -> int:
     else:
         headline = f"{where} · {len(found)} of {len(found)} approved"
 
-    text = f"{'🔴' if red else '🟢'} {headline}"
+    # Escaped like the block, not because anything untrusted reaches the headline today: it is built from the
+    # environment name, the platform and two counts. The fallback is the same string rendered a second way,
+    # and one of the two escaping is how the pair drifts.
+    text = f"{'🔴' if red else '🟢'} {mrkdwn(headline)}"
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{mrkdwn(headline)}*"}}]
     if link:
         blocks.append({
