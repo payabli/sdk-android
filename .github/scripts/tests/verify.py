@@ -1855,6 +1855,66 @@ def steps_of(text: str) -> list[str]:
     return blocks
 
 
+LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
+
+
+def load_live_poster():
+    """`live_slack.py`, which imports `nightly_slack`, so its directory has to be importable."""
+    sys.path.insert(0, str(LIVE_POSTER.parent))
+    try:
+        spec = importlib.util.spec_from_file_location("live_slack", LIVE_POSTER)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        sys.path.pop(0)
+
+
+def test_live_summary(mod):
+    """`summarize` is the boundary between a failure message and a chat channel.
+
+    The live flows submit a card and a bank account, and the assertion text around them is not written with a
+    channel in mind. What stops a submitted value reaching one is this function emitting only what it matched,
+    so widening the pattern by accident is the failure worth catching, and it is invisible in a diff.
+    """
+    # The values a failure message can carry, in one string, with a reportable code beside them so the
+    # summary is not empty for the wrong reason.
+    leaky = ('junit.framework.ComparisonFailure: expected:<Approved> but was:<Declined for 4111111111111111 '
+             'held by QA Tester, acct 1234567890, token abc-secret-xyz> code=PAYMENT_DECLINED')
+    summary = mod.summarize(leaky)
+    check("L1 the classification survives", "ComparisonFailure" in summary, summary)
+    check("L1 the wire code survives", "code=PAYMENT_DECLINED" in summary, summary)
+    for secret in ("4111111111111111", "QA Tester", "1234567890", "abc-secret-xyz"):
+        check(f"L1 {secret!r} does not reach the channel", secret not in summary, summary)
+
+    # The runner writes this one capitalised, and the pattern carried it in lower case once.
+    started = "ComposeTimeoutException: No compose hierarchies found in the app"
+    check("L2 the capitalised phrase is reportable", "No compose hierarchies" in mod.summarize(started),
+          mod.summarize(started))
+
+    # An identifier is matched exactly, so a message writing CODE= is not reportable and cannot carry the
+    # text beside it through.
+    wrong_case = "CODE=leaked 4111111111111111"
+    check("L3 a wrong-case identifier is not reportable", "4111111111111111" not in mod.summarize(wrong_case),
+          mod.summarize(wrong_case))
+    check("L3 and says so rather than going empty", "no reportable detail" in mod.summarize(wrong_case),
+          mod.summarize(wrong_case))
+
+    check("L4 a message with nothing reportable points at the artifact",
+          "read the results artifact" in mod.summarize("Payment for QA Tester failed at step 3"))
+    check("L4 an empty message does the same", "read the results artifact" in mod.summarize(""))
+
+    # Deduplicated and in order, so a message repeating a code does not repeat it in the channel.
+    check("L5 repeats are collapsed, order kept",
+          mod.summarize("code=X httpStatus=500 code=X") == "code=X httpStatus=500",
+          mod.summarize("code=X httpStatus=500 code=X"))
+
+    # Bounded, because a failure message is not: the thread post is capped separately and this is the value
+    # that goes into it.
+    check("L6 the summary is bounded", len(mod.summarize("code=A " * 400)) <= 300,
+          str(len(mod.summarize("code=A " * 400))))
+
+
 def test_workflows():
     for name in LIVE_WORKFLOWS:
         keys = trigger_keys(workflow_text(name))
@@ -1897,7 +1957,7 @@ def test_workflows():
           next((line.strip() for line in reusable.splitlines() if "-Ppayabli.liveTest." in line), ""))
 
 
-HALVES = ("both", "collector", "poster", "workflows")
+HALVES = ("both", "collector", "poster", "workflows", "live")
 
 
 def main():
@@ -1917,6 +1977,8 @@ def main():
             test_poster(load_poster(base))
         if ONLY in ("both", "workflows"):
             test_workflows()
+        if ONLY in ("both", "live"):
+            test_live_summary(load_live_poster())
     finally:
         server.shutdown()
 

@@ -49,9 +49,12 @@ WORKFLOW_DIR.mkdir(exist_ok=True)
 LIVE_FLOWS = WORKFLOW_DIR / "live-flows.yml"
 LIVE_QA = WORKFLOW_DIR / "live-qa.yml"
 LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
+# The live reporter, whose allowlist is what keeps a submitted value out of the channel.
+LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
     COLLECTOR: SDK / ".github/scripts/nightly_report.py",
     POSTER: SDK / ".github/scripts/nightly_slack.py",
+    LIVE_POSTER: SDK / ".github/scripts/live_slack.py",
     LIVE_FLOWS: SDK / ".github/workflows/live-flows.yml",
     LIVE_QA: SDK / ".github/workflows/live-qa.yml",
     LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
@@ -272,6 +275,22 @@ MUTATIONS = [
      "            ./gradlew :example:connectedAndroidTest \\",
      "            ./gradlew :example:connectedAndroidTest \\\n"
      "              -Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\" \\"),
+
+    # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
+    # alarming in a diff, which is why they are covered rather than trusted.
+    ("The failure message is reported whole, allowlist bypassed", LIVE_POSTER, "live",
+     '    matched = REPORTABLE.findall(message)', '    matched = [message]'),
+
+    ("The allowlist gains a catch-all, so any word is reportable", LIVE_POSTER, "live",
+     r'    r"|(?i:\bno (?:compose hierarchies|detail reported)\b)",',
+     '    r"|.+",'),
+
+    ("The identifier pattern loses its case sensitivity, admitting the text beside it", LIVE_POSTER, "live",
+     r'    r"\b(?:code|httpStatus|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"',
+     r'    r"(?i:\b(?:code|httpStatus|serviceCode|declineCode|type)=.{1,40})"'),
+
+    ("The summary is no longer bounded", LIVE_POSTER, "live",
+     '    return " ".join(dict.fromkeys(matched))[:300]', '    return " ".join(matched)'),
 ]
 
 
@@ -301,7 +320,7 @@ def run_verify(half: str) -> tuple[int, int, str]:
     # Aimed at the copies, so the harness reads what this run mutated rather than what the repository holds.
     env = {**os.environ, "NIGHTLY_ONLY": half,
            "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER),
-           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR)}
+           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
     if not match:
@@ -319,7 +338,7 @@ def main() -> int:
         shutil.copy(source, target)
 
     print("Baseline, unmodified:")
-    for half in ("collector", "poster", "workflows"):
+    for half in ("collector", "poster", "workflows", "live"):
         passed, failed, _ = run_verify(half)
         print(f"  {half}: {passed} passed, {failed} failed")
         if failed != 0:
