@@ -310,8 +310,12 @@ MUTATIONS = [
      '    r"|.+",'),
 
     ("The identifier pattern loses its case sensitivity, admitting the text beside it", LIVE_POSTER, "live",
-     r'    r"\b(?:code|httpStatus|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"',
-     r'    r"(?i:\b(?:code|httpStatus|serviceCode|declineCode|type)=.{1,40})"'),
+     r'    r"|\b(?:code|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"',
+     r'    r"|(?i:\b(?:code|serviceCode|declineCode|type)=.{1,40})"'),
+
+    ("The status key takes any value again, not only digits", LIVE_POSTER, "live",
+     r'    r"\bhttpStatus=\d{3}"',
+     r'    r"\bhttpStatus=[A-Za-z0-9_.-]{1,40}"'),
 
     # A list that emptied is the case the notice is the whole message, and appending it to nothing left a
     # blank line where the failures had been.

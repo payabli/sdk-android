@@ -59,7 +59,11 @@ class Flow:
 # writes "No compose hierarchies found in the app". The key=value and exception alternatives stay
 # case-sensitive, since those are identifiers rather than sentences.
 REPORTABLE = re.compile(
-    r"\b(?:code|httpStatus|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"
+    # An HTTP status is an `Int` at its source, so digits is what it can be. Narrowed anyway, because this
+    # pattern has to hold for messages no suite here has written yet, and a key that can only ever be a number
+    # is one fewer place a general value shape has to be trusted.
+    r"\bhttpStatus=\d{3}"
+    r"|\b(?:code|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"
     r"|\b(?:AssertionError|IllegalStateException|IllegalArgumentException|ComparisonFailure)\b"
     r"|(?i:\bno (?:compose hierarchies|detail reported)\b)",
 )

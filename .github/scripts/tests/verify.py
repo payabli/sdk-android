@@ -2002,6 +2002,14 @@ def test_live_summary(mod):
     check("L2 the capitalised phrase is reportable", "No compose hierarchies" in mod.summarize(started),
           mod.summarize(started))
 
+    # The status is an `Int` at its source, so anything else under that key is not a status and the value
+    # shape for identifiers does not have to cover it.
+    numeric = "httpStatus=500 code=X"
+    check("L2 a numeric status is reportable", "httpStatus=500" in mod.summarize(numeric), mod.summarize(numeric))
+    lettered = "httpStatus=abcdefghij code=X"
+    check("L2 a status that is not a number is not", "abcdefghij" not in mod.summarize(lettered),
+          mod.summarize(lettered))
+
     # An identifier is matched exactly, so a message writing CODE= is not reportable and cannot carry the
     # text beside it through.
     wrong_case = "CODE=leaked 4111111111111111"
