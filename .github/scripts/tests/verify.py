@@ -1798,14 +1798,12 @@ def test_poster(mod):
 # Workflows
 # --------------------------------------------------------------------------------------------------
 #
-# The live workflows hold a client credential, and three properties are what keep it where it belongs. Each
-# is currently true of how the files are written, which is not the same as being enforced: any of the three
-# could be undone by an edit that looks reasonable in isolation, and the consequence would not show up in a
-# test run or a review diff as anything alarming.
+# The live workflows hold a client credential, and what keeps it where it belongs is how those files are
+# written, which is not the same as being enforced. Any of the checks below could be undone by an edit that
+# looks reasonable in isolation, and the consequence would not show up in a test run or a review diff as
+# anything alarming: two of them exist because the file was written wrong and nothing said so.
 #
-#   * no pull_request trigger, so a fork's pull request cannot reach the secrets
-#   * the credential reaches one step, and not the step that runs a third-party action or the tests
-#   * nothing passes it with -P, which would put it in a command line
+# The checks are the list. A prose copy beside them went stale as they were added to, twice.
 #
 # Read textually and on purpose. This harness is standard library only, so there is no YAML parser to lean
 # on, and a hand-rolled one would be a second thing to trust. What these checks need is coarse: which lines
