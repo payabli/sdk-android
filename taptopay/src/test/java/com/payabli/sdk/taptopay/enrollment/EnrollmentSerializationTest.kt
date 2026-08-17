@@ -84,8 +84,18 @@ class EnrollmentSerializationTest {
 
             // The reset ran after the write, so the record is gone. Interleaved, its own read would have
             // landed before the write and found nothing to remove.
+            // Each read consults the older entry too, until something has been written to the current one.
             assertEquals(
-                listOf("get:$RECORD_ENTRY", "set:$RECORD_ENTRY", "get:$RECORD_ENTRY", "remove:$RECORD_ENTRY"),
+                listOf(
+                    "get:$RECORD_ENTRY",
+                    "get:$LEGACY_RECORD_ENTRY",
+                    "get:$RECORD_ENTRY",
+                    "get:$LEGACY_RECORD_ENTRY",
+                    "set:$RECORD_ENTRY",
+                    "get:$RECORD_ENTRY",
+                    "remove:$LEGACY_RECORD_ENTRY",
+                    "remove:$RECORD_ENTRY",
+                ),
                 fixture.storage.operations,
             )
         }

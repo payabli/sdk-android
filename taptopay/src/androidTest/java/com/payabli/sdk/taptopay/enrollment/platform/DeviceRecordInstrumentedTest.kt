@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.enrollment.platform
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.enrollment.AttestedDevice
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
@@ -49,7 +50,46 @@ class DeviceRecordInstrumentedTest {
         runTest(timeout = TEST_TIMEOUT) {
             val trust = DeviceTrust.open(context)
             trust.store.remove(RECORD_ENTRY)
+            trust.store.remove(LEGACY_RECORD_ENTRY)
             trust.store.remove(FOREIGN_ENTRY)
+        }
+
+    @Test
+    fun anOlderRecordIsCarriedForwardThroughTheRealCipher() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val trust = DeviceTrust.open(context)
+            // Written the way the build before this one left it, so the migration meets a real encrypted
+            // entry rather than a fake that cannot fail the same ways.
+            trust.store.set(
+                LEGACY_RECORD_ENTRY,
+                PayabliJson.format
+                    .encodeToString(AttestedDevice.serializer(), AttestedDevice(ENTRY, DEVICE_ID, KEY_ID))
+                    .encodeToByteArray(),
+            )
+
+            val read = AttestedDeviceStore(DeviceTrust.open(context).store).read(ENTRY)
+
+            // Losing this on upgrade would run the cold sequence against a device the service still holds
+            // as active, which costs the merchant a fresh code.
+            assertNotNull(read)
+            assertEquals(DEVICE_ID, read!!.deviceId)
+            assertNull(trust.store.get(LEGACY_RECORD_ENTRY))
+            assertNotNull(trust.store.get(RECORD_ENTRY))
+        }
+
+    @Test
+    fun twoEntryPointsAreHeldAtOnceAndClearedIndependently() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestedDeviceStore(DeviceTrust.open(context).store)
+            store.write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID))
+            store.write(AttestedDevice(OTHER_ENTRY, "other-device-id", KEY_ID))
+
+            store.clear(ENTRY)
+
+            // Both survive one file and one key; clearing one leaves the other where it was.
+            val reopened = AttestedDeviceStore(DeviceTrust.open(context).store)
+            assertNull(reopened.read(ENTRY))
+            assertEquals("other-device-id", reopened.read(OTHER_ENTRY)?.deviceId)
         }
 
     @Test
@@ -58,7 +98,7 @@ class DeviceRecordInstrumentedTest {
             AttestedDeviceStore(DeviceTrust.open(context).store)
                 .write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID))
 
-            val read = AttestedDeviceStore(DeviceTrust.open(context).store).read()
+            val read = AttestedDeviceStore(DeviceTrust.open(context).store).read(ENTRY)
 
             assertNotNull(read)
             assertEquals(DEVICE_ID, read!!.deviceId)
@@ -88,11 +128,11 @@ class DeviceRecordInstrumentedTest {
             val store = AttestedDeviceStore(trust.store)
             store.write(AttestedDevice(ENTRY, DEVICE_ID, KEY_ID))
 
-            store.clear()
+            store.clear(ENTRY)
 
             // The store is shared, which is the whole reason removal is per entry and there is no bulk
             // clear on the accessor. This is the test that defends that decision.
-            assertNull(store.read())
+            assertNull(store.read(ENTRY))
             assertArrayEquals(FOREIGN_VALUE.encodeToByteArray(), trust.store.get(FOREIGN_ENTRY))
         }
 
@@ -134,10 +174,14 @@ class DeviceRecordInstrumentedTest {
         }
 
     private companion object {
-        const val RECORD_ENTRY = "com.payabli.sdk.taptopay.device.v1"
+        const val RECORD_ENTRY = "com.payabli.sdk.taptopay.device.v2"
+
+        /** Removed before each test: a build installed earlier may have left one on this device. */
+        const val LEGACY_RECORD_ENTRY = "com.payabli.sdk.taptopay.device.v1"
         const val FOREIGN_ENTRY = "com.payabli.sdk.core.devicerecord.test.foreign"
         const val FOREIGN_VALUE = "another consumer's value"
         const val ENTRY = "entry-point-value"
+        const val OTHER_ENTRY = "other-entry-point-value"
         const val DEVICE_ID = "device-id-value"
         const val KEY_ID = "key-identity-value"
     }

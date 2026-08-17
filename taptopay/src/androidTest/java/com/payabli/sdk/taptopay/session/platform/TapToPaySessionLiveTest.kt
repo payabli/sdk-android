@@ -102,7 +102,7 @@ class TapToPaySessionLiveTest {
         runTest(timeout = TEST_TIMEOUT) {
             // The service's row stays: it is what the next run is recognised by, and what keeps a later run
             // from spending another activation attempt.
-            AttestedDeviceStore(DeviceTrust.open(context).store).clear()
+            AttestedDeviceStore(DeviceTrust.open(context).store).clear(LiveRunSettings.entry)
         }
 
     @Test
@@ -124,7 +124,7 @@ class TapToPaySessionLiveTest {
                 if (owed is TapToPaySessionException.PendingActivation) {
                     // Playing the merchant's part. The SDK cannot mint its own code.
                     val record =
-                        AttestedDeviceStore(DeviceTrust.open(context).store).read()
+                        AttestedDeviceStore(DeviceTrust.open(context).store).read(LiveRunSettings.entry)
                             ?: error("the session asked for activation and recorded nothing to activate")
                     Log.i(LIVE_TAG, "device owes a code; minting one out of band")
                     coordinator.confirmActivation(

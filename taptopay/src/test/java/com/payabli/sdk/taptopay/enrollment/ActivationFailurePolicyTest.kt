@@ -206,8 +206,8 @@ class ActivationFailurePolicyTest {
             assertEquals(DeviceActivationException.NotEnrolled::class.java, thrown?.javaClass)
             assertTrue(fixture.transport.requests.isEmpty())
             // Sending it would be answered as an unknown device, and that classification discards the
-            // record — which belongs to a paypoint this session is not talking to.
-            assertNotNull(fixture.storedRecord())
+            // binding — which belongs to a paypoint this session is not talking to.
+            assertNotNull(fixture.storedRecord("a-different-entry-point"))
         }
 
     @Test
@@ -231,7 +231,10 @@ class ActivationFailurePolicyTest {
 
             // Nothing is written on success, so there is no post-success write that can fail and leave a
             // record disagreeing with the service.
-            assertEquals(listOf("get:$RECORD_ENTRY", RouteScript.ACTIVATE), fixture.trace)
+            assertEquals(
+                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY", RouteScript.ACTIVATE),
+                fixture.trace,
+            )
         }
 
     @Test

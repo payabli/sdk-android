@@ -23,6 +23,14 @@ internal class FakeSecureStore(
      * the test hoping it does.
      */
     private val firstReadGate: (suspend () -> Unit)? = null,
+    /**
+     * Awaited once, on the first read, **after** it has taken its value.
+     *
+     * [firstReadGate] parks a caller before it reads, so a caller resumed later sees whatever was written
+     * while it waited. That cannot construct a lost update, which needs one caller holding a value read
+     * before another's write. This one parks it holding that value.
+     */
+    private val afterFirstReadGate: (suspend () -> Unit)? = null,
     /** Appended to on every call, so a test can assert order across this and the transport at once. */
     private val trace: MutableList<String> = mutableListOf(),
 ) : PayabliSecureStorage {
@@ -36,6 +44,7 @@ internal class FakeSecureStore(
         }
 
     private var firstReadSeen = false
+    private var afterFirstReadSeen = false
 
     override suspend fun get(key: String): ByteArray? {
         require(
@@ -47,7 +56,12 @@ internal class FakeSecureStore(
         }
         trace += "get:$key"
         failWith("get", key)?.let { throw it }
-        return entries[key]?.copyOf()
+        val value = entries[key]?.copyOf()
+        if (!afterFirstReadSeen) {
+            afterFirstReadSeen = true
+            afterFirstReadGate?.invoke()
+        }
+        return value
     }
 
     override suspend fun set(
