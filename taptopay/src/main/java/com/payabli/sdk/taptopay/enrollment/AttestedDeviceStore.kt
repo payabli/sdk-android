@@ -137,11 +137,33 @@ internal class AttestedDeviceStore(
         val migrated = DeviceBindings.of(legacy)
 
         // Written before the old entry goes, never the reverse. Interrupted between them, both are present
-        // and the branch above answers from the current one. The other order loses the binding outright.
-        withContext(NonCancellable) { store(migrated) }
-        scrubLegacy()
+        // and the branch above answers from the current one. The other order loses the binding outright,
+        // which is also why the removal is conditional: the old entry is the only copy until the write lands.
+        if (persist(migrated)) scrubLegacy()
         return migrated
     }
+
+    /**
+     * Writes the carried-forward collection, and says whether it landed.
+     *
+     * **A write that fails does not withhold the binding.** The old record decoded, so this device holds a
+     * usable binding and the caller can act on it; raising instead would report a record that was read
+     * perfectly well as a store that could not be read, and send an upgraded install into a cold sequence or
+     * a failed session over a write. The migration is how the binding is kept, not how it is answered.
+     *
+     * Retried on the next read, unlike the disposal removals, and for the opposite reason: this is reached
+     * only while the current entry is still absent, which is exactly the condition the write exists to end.
+     */
+    private suspend fun persist(migrated: DeviceBindings): Boolean =
+        try {
+            withContext(NonCancellable) { store(migrated) }
+            true
+        } catch (unwritable: SecureStorageException) {
+            logger.debug(RedactedCause(unwritable), LogField.safe("event", EVENT_MIGRATION_DEFERRED)) {
+                "could not carry the stored device identity forward"
+            }
+            false
+        }
 
     /**
      * Removes the older entry once this store has read the current one, and never fails the caller for it.
@@ -300,6 +322,7 @@ internal class AttestedDeviceStore(
         const val EVENT_ORDER_UNWRITTEN = "device_binding_order_unwritten"
         const val EVENT_LEGACY_KEPT = "device_identity_superseded_kept"
         const val EVENT_UNREADABLE_KEPT = "device_identity_undecodable_kept"
+        const val EVENT_MIGRATION_DEFERRED = "device_identity_carry_forward_deferred"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
         val SHARED_LOCK = Mutex()

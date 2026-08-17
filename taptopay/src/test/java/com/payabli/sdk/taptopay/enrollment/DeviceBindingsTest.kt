@@ -307,6 +307,27 @@ class DeviceBindingsTest {
         }
 
     @Test
+    fun `a carry-forward that cannot be written still answers, and keeps the older entry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val storage =
+                FakeSecureStore(FakeSecureStore.failing("set", SecureStorageException.StorageUnavailable()))
+            storage.seed(
+                LEGACY_RECORD_ENTRY,
+                PayabliJson.format
+                    .encodeToString(AttestedDevice.serializer(), binding(ENTRY))
+                    .encodeToByteArray(),
+            )
+
+            // The older record decoded, so this device holds a usable binding. Raising over a write would
+            // report a record that was read perfectly well as a store that could not be read.
+            assertEquals("$ENTRY-device", AttestedDeviceStore(storage).read(ENTRY)?.deviceId)
+            // And the older entry is the only copy until the write lands, so removing it here would lose
+            // the binding outright.
+            assertNotNull(storage.peek(LEGACY_RECORD_ENTRY))
+            assertNull(storage.peek(RECORD_ENTRY))
+        }
+
+    @Test
     fun `a removal that keeps failing is attempted once, not on every read`() =
         runTest(timeout = TEST_TIMEOUT) {
             val storage =
