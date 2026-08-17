@@ -13,19 +13,18 @@ name: Live flows
 #
 # ## Two suites, two invocations
 #
-# `:payin`'s live tier drives the public pay-in surface directly and mints its own token. The sample app's
-# walkthrough drives the same flows through the form a person sees, and serves its own token from an
-# in-process endpoint, so nothing runs beside the test and no port is forwarded. They are separate `gradlew`
-# calls because asking for the walkthrough narrows `:example` to it, and because each installs a session in
-# its own process.
+# `:payin`'s live tier drives the public pay-in surface directly. The sample app's walkthrough drives the same
+# flows through the form a person sees. Neither mints a token: both ask the server started below, as a host
+# app asks an integrator's backend. They are separate `gradlew` calls because asking for the walkthrough
+# narrows `:example` to it, and because each installs a session in its own process.
 #
-# ## The action is pinned here and not in the nightly
+# ## Every action is pinned here, and none is in the nightly
 #
-# The difference is the credential. `nightly.yml` records why it stays on a moving tag, and that reasoning
-# holds there: this repository has no Dependabot or Renovate, so a pinned SHA is one nobody bumps, and the
-# action is closely coupled to Android tooling churn. This workflow hands that action a client secret, so the
-# trade goes the other way. The nightly is the canary: when its unpinned run keeps passing on a newer
-# release, bump the SHA here to match.
+# The difference is the credential. A step cannot be isolated from code that ran earlier in the same job, so
+# every action in this job is one that could reach the client secret, whoever publishes it. `nightly.yml`
+# records why it stays on moving tags and that reasoning holds there, since it holds no payment credential.
+#
+# Its premise was that nothing bumps a pin, which `.github/dependabot.yml` now answers.
 #
 # ## What the credential can do
 #
@@ -70,14 +69,14 @@ jobs:
     steps:
       # Depth 1 is enough: nothing here attributes a failure to a commit. A live failure is usually the
       # service's answer rather than a change, which is the whole reason this is not the nightly.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
 
       - name: Enable KVM group perms
         run: |
@@ -86,7 +85,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: AVD cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         id: avd-cache
         with:
           path: |
@@ -176,7 +175,7 @@ jobs:
       - name: Upload results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: live-${{ inputs.environment }}-results
           path: |
@@ -204,7 +203,7 @@ jobs:
     steps:
       # Only the poster script is wanted. persist-credentials is off because this job holds a Slack token and
       # has nothing to push.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
@@ -212,7 +211,7 @@ jobs:
       # is the case that arises when the live job never finished.
       - name: Download the results
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: live-${{ inputs.environment }}-results
           path: ${{ runner.temp }}/live-results
