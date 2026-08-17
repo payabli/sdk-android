@@ -1964,6 +1964,20 @@ def test_live_summary(mod):
     check("L6 the summary is bounded", len(mod.summarize("code=A " * 400)) <= 300,
           str(len(mod.summarize("code=A " * 400))))
 
+    # The thread post's own bound. A list cut through the middle of a line reads as the whole list, which is
+    # the failure mode: the reader cannot tell a report of three failures from a report of thirty.
+    many = [mod.Flow("PayInLiveFlowsInstrumentedTest", f"flow{index}", "code=A " * 40) for index in range(60)]
+    body = mod.thread_body(many)
+    check("L7 the thread post is bounded", len(body) <= mod.SLACK_TEXT_LIMIT, str(len(body)))
+    check("L7 it says how many it dropped", "further failure(s) not listed here" in body, body[-120:])
+    check("L7 and every line it kept is whole",
+          all(line.startswith(("•", "_")) for line in body.splitlines()),
+          body.splitlines()[-1])
+
+    few = [mod.Flow("QaWalkthroughTest", "one", "code=B")]
+    check("L7 a list that fits carries no notice", "not listed here" not in mod.thread_body(few),
+          mod.thread_body(few))
+
 
 def test_workflows():
     for name in LIVE_WORKFLOWS:

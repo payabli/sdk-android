@@ -32,6 +32,9 @@ SUITES = {
     "QaWalkthroughTest": "sample app",
 }
 
+# Under Slack's 3000-character block limit, leaving room for the notice that reports what was dropped.
+SLACK_TEXT_LIMIT = 2900
+
 
 class Flow:
     def __init__(self, suite: str, name: str, detail: str | None) -> None:
@@ -72,6 +75,23 @@ def summarize(message: str) -> str:
     if not matched:
         return "no reportable detail; read the results artifact"
     return " ".join(dict.fromkeys(matched))[:300]
+
+
+def thread_body(failed: list[Flow]) -> str:
+    """One line per refused flow, dropped whole where they do not all fit, and counted where they are dropped.
+
+    `nightly_slack.thread_blocks` bounds its list the same way and for the same reason: a cut through the
+    middle of a line reads as the whole list, so the count is what keeps the message honest.
+    """
+    lines = [f"• `{mrkdwn(flow.suite)}` {mrkdwn(flow.name)} — {mrkdwn(flow.detail or '')}" for flow in failed]
+    while True:
+        hidden = len(failed) - len(lines)
+        notice = f"\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""
+        body = "\n".join(lines) + notice
+        if len(body) <= SLACK_TEXT_LIMIT or not lines:
+            break
+        lines.pop()
+    return body[:SLACK_TEXT_LIMIT]
 
 
 def flows(results: Path) -> list[Flow]:
@@ -153,11 +173,10 @@ def main() -> int:
         return 0
 
     if failed:
-        lines = [f"• `{mrkdwn(flow.suite)}` {mrkdwn(flow.name)} — {mrkdwn(flow.detail or '')}" for flow in failed]
         slack_post("chat.postMessage", token, {
             "channel": channel,
             "thread_ts": parent.get("ts"),
-            "text": "\n".join(lines)[:2900],
+            "text": thread_body(failed),
         })
 
     return 0

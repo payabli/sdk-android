@@ -291,6 +291,17 @@ MUTATIONS = [
 
     ("The summary is no longer bounded", LIVE_POSTER, "live",
      '    return " ".join(dict.fromkeys(matched))[:300]', '    return " ".join(matched)'),
+
+    # The thread post's bound. Cutting the finished string is what this replaced, and it is the version that
+    # reads as a complete list while being anything but.
+    ("The thread post is sliced mid-line again", LIVE_POSTER, "live",
+     '    lines = [f"• `{mrkdwn(flow.suite)}` {mrkdwn(flow.name)} — {mrkdwn(flow.detail or \'\')}" '
+     'for flow in failed]',
+     '    return "\\n".join(f"• {flow.name} — {flow.detail}" for flow in failed)[:SLACK_TEXT_LIMIT]'),
+
+    ("The dropped failures are no longer counted", LIVE_POSTER, "live",
+     '        notice = f"\\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""',
+     '        notice = ""'),
 ]
 
 
