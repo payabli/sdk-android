@@ -155,6 +155,19 @@ class AttestedDeviceStoreTest {
         }
 
     @Test
+    fun `an undecodable record reads as nothing even when it cannot be dropped`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val storage =
+                FakeSecureStore(FakeSecureStore.failing("remove", SecureStorageException.StorageUnavailable()))
+            storage.seed(RECORD_ENTRY, "not json at all".encodeToByteArray())
+
+            // The record is gone whether or not the entry holding it can be dropped. Raising instead would
+            // report it as a store that could not be read this time, and the next attempt decodes the same
+            // bytes and raises again, so the entry is never dropped on any of them.
+            assertNull(AttestedDeviceStore(storage).read(ENTRY))
+        }
+
+    @Test
     fun `a record missing a field reads as nothing and is dropped`() =
         runTest(timeout = TEST_TIMEOUT) {
             val storage = FakeSecureStore()

@@ -170,6 +170,19 @@ internal class AttestedDeviceStore(
         }
     }
 
+    private suspend fun removeQuietly(
+        key: String,
+        event: String,
+    ) {
+        try {
+            storage.remove(key)
+        } catch (unremovable: SecureStorageException) {
+            logger.debug(RedactedCause(unremovable), LogField.safe("event", event)) {
+                "could not remove an unusable stored entry"
+            }
+        }
+    }
+
     /**
      * Moves a binding to the front, and does not fail the read that asked for it.
      *
@@ -228,8 +241,14 @@ internal class AttestedDeviceStore(
         } catch (malformed: SerializationException) {
             // Narrowed to the serializer's own failure. A storage failure raised by the read above must
             // not be swallowed here on its way past.
+            //
+            // The removal is the disposal of something already known to be dead, so it does not decide the
+            // answer: a record that will not decode is gone whether or not the entry holding it can be
+            // dropped, and raising here would report it as a store that could not be read this time. That
+            // reading wedges rather than degrades, because the caller retries, decodes the same unreadable
+            // bytes and raises again, and the entry is never removed on any of those attempts.
             reportLost(malformed, "undecodable")
-            storage.remove(key)
+            removeQuietly(key, EVENT_UNREADABLE_KEPT)
             null
         } finally {
             bytes.fill(0)
@@ -273,6 +292,7 @@ internal class AttestedDeviceStore(
         const val EVENT_LOST = "device_identity_lost"
         const val EVENT_ORDER_UNWRITTEN = "device_binding_order_unwritten"
         const val EVENT_LEGACY_KEPT = "device_identity_superseded_kept"
+        const val EVENT_UNREADABLE_KEPT = "device_identity_undecodable_kept"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
         val SHARED_LOCK = Mutex()
