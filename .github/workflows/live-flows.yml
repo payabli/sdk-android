@@ -133,8 +133,7 @@ jobs:
             curl -fsS http://127.0.0.1:8787/health >/dev/null && exit 0
             sleep 1
           done
-          echo "::error::the token server did not answer /health"
-          cat "$RUNNER_TEMP/token-server.log"
+          echo "::error::the token server did not answer /health on port 8787"
           exit 1
 
       # No notAnnotation is passed, deliberately. Both suites are gated by name in their own build file when
