@@ -216,6 +216,9 @@ private class FakeTokenServer : Closeable {
             while (!socket.isClosed) {
                 runCatching {
                     socket.accept().use { client ->
+                        // A read here has no deadline of its own, and this is the accept thread: a client
+                        // that stops mid-request would stall every later one behind it.
+                        client.soTimeout = READ_TIMEOUT_MILLIS
                         drainHttpRequest(client.getInputStream())
                         client.getOutputStream().write(RESPONSE.toByteArray())
                         client.getOutputStream().flush()
@@ -228,6 +231,7 @@ private class FakeTokenServer : Closeable {
     override fun close() = socket.close()
 
     private companion object {
+        const val READ_TIMEOUT_MILLIS = 5_000
         const val BODY = """{"accessToken":"not-a-real-token"}"""
         val RESPONSE =
             "HTTP/1.1 200 OK\r\n" +
