@@ -10,6 +10,8 @@
   real host.
 -->
 <network-security-config>
+    <!-- Explicit because the default varies by targetSdk: denied from 28, permitted at 27 and below. -->
+    <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <!-- Matching the one address LoopbackServer binds. It pins 127.0.0.1 and builds its base URL from
              that literal, so the address form is what has to match and no name is involved. Widen this
