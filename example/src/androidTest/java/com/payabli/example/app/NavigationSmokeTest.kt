@@ -216,7 +216,7 @@ private class FakeTokenServer : Closeable {
             while (!socket.isClosed) {
                 runCatching {
                     socket.accept().use { client ->
-                        drainHttpRequest(client.getInputStream().bufferedReader())
+                        drainHttpRequest(client.getInputStream())
                         client.getOutputStream().write(RESPONSE.toByteArray())
                         client.getOutputStream().flush()
                     }
