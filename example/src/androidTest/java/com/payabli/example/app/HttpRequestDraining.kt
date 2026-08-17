@@ -28,7 +28,11 @@ internal fun drainHttpRequest(stream: InputStream) {
             declared = line.value.substringAfter(':').trim()
         }
         if (name.equals("Transfer-Encoding", ignoreCase = true)) {
-            chunked = true
+            chunked =
+                line.value
+                    .substringAfter(':')
+                    .split(',')
+                    .any { it.trim().equals("chunked", ignoreCase = true) }
         }
     }
 

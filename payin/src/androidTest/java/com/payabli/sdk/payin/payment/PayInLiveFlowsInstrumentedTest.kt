@@ -290,17 +290,22 @@ class PayInLiveFlowsInstrumentedTest {
     /**
      * The same address as a base URL, whether or not it was given with a scheme.
      *
-     * The sample app accepts either, taking a value that carries one as written, so the same argument reaches
-     * both and only one of them would otherwise have built `http://http://host`. Cleartext is what the test
-     * APK permits to loopback, so `http` is the default rather than a preference.
+     * The sample app takes a value carrying one as written, so the same argument reaches both. `http` is the
+     * default because cleartext is what the test APK permits to loopback.
      *
-     * A trailing slash is trimmed before the scheme is decided rather than after, because the route below
-     * begins with one: trimmed only in the branch that already had a scheme, `host:port/` produced a path
-     * starting `//`, which the token server does not route.
+     * Refused rather than accepted quietly: another scheme cannot reach this server, and a path would move
+     * the route below without looking like it had.
      */
     private val tokenBaseUrl: String
-        get() =
-            tokenHost.trim().trimEnd('/').let { if (it.contains("://")) it else "http://$it" }
+        get() {
+            val given = tokenHost.trim().trimEnd('/')
+            val scheme = given.substringBefore("://", missingDelimiterValue = "http")
+            require(scheme == "http" || scheme == "https") { "liveTest.tokenHost names no http address: $given" }
+            require(given.substringAfter("://").none { it == '/' || it == '?' || it == '#' }) {
+                "liveTest.tokenHost carries a path: $given"
+            }
+            return if (given.contains("://")) given else "http://$given"
+        }
 
     private val environment: PayabliEnvironment
         get() =
