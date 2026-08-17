@@ -313,6 +313,14 @@ MUTATIONS = [
      r'    r"\b(?:code|httpStatus|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"',
      r'    r"(?i:\b(?:code|httpStatus|serviceCode|declineCode|type)=.{1,40})"'),
 
+    # A list that emptied is the case the notice is the whole message, and appending it to nothing left a
+    # blank line where the failures had been.
+    ("The notice is appended to the list rather than joined with it", LIVE_POSTER, "live",
+     '        shown = lines + ([f"_{hidden} further failure(s) not listed here; see the run._"] if hidden '
+     'else [])\n        body = "\\n".join(shown)',
+     '        notice = f"\\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""\n'
+     '        body = "\\n".join(lines) + notice'),
+
     ("The summary is no longer bounded", LIVE_POSTER, "live",
      '    return " ".join(dict.fromkeys(matched))[:300]', '    return " ".join(matched)'),
 
@@ -324,8 +332,9 @@ MUTATIONS = [
      '    return "\\n".join(f"• {flow.name} — {flow.detail}" for flow in failed)[:SLACK_TEXT_LIMIT]'),
 
     ("The dropped failures are no longer counted", LIVE_POSTER, "live",
-     '        notice = f"\\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""',
-     '        notice = ""'),
+     '        shown = lines + ([f"_{hidden} further failure(s) not listed here; see the run._"] if hidden '
+     'else [])',
+     '        shown = lines'),
 ]
 
 

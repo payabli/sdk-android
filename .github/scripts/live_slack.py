@@ -86,8 +86,12 @@ def thread_body(failed: list[Flow]) -> str:
     lines = [f"• `{mrkdwn(flow.suite)}` {mrkdwn(flow.name)} — {mrkdwn(flow.detail or '')}" for flow in failed]
     while True:
         hidden = len(failed) - len(lines)
-        notice = f"\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""
-        body = "\n".join(lines) + notice
+        # The notice is a line among the others rather than a suffix, so a list that emptied leaves the notice
+        # alone rather than a blank line above it. One failure longer than the limit is what empties it, from a
+        # parameterized test name; the loop drops to nothing on purpose, because stopping at one would put back
+        # the mid-line cut this exists to prevent.
+        shown = lines + ([f"_{hidden} further failure(s) not listed here; see the run._"] if hidden else [])
+        body = "\n".join(shown)
         if len(body) <= SLACK_TEXT_LIMIT or not lines:
             break
         lines.pop()

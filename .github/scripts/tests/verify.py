@@ -2038,6 +2038,12 @@ def test_live_summary(mod):
     check("L7 a list that fits carries no notice", "not listed here" not in mod.thread_body(few),
           mod.thread_body(few))
 
+    # The case the loop drops to nothing on: one failure longer than the limit, which a parameterized test
+    # name reaches. The notice is then the whole message, and it was arriving under a blank line.
+    huge = mod.thread_body([mod.Flow("PayInLiveFlowsInstrumentedTest", "x" * 3200, "code=A")])
+    check("L8 a single oversized failure leaves the notice alone", huge.splitlines() == [
+        "_1 further failure(s) not listed here; see the run._"], repr(huge))
+
 
 def test_workflows():
     for name in LIVE_WORKFLOWS:
