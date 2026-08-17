@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The live tier asks a token server for a token, and that server speaks http. Cleartext is denied by default:
-  the platform's base-config is cleartextTrafficPermitted="false" from targetSdk 28, and the implicit loopback
-  exemption arrives only in API 37, so at this module's floor of 23 an explicit entry is required.
+  The live tier asks a token server for a token, and that server speaks http. Cleartext is denied by default
+  from targetSdk 28, and the implicit loopback exemption arrives only in API 37, so an explicit entry is
+  required on every level this runs on.
+
+  It does nothing at this module's floor. `android:networkSecurityConfig` was added in API 24, so at 23 the
+  file is not read at all, and nothing is needed there because cleartext is permitted by default that far
+  back. `:example` sets its own floor to 24 for the same reason.
 
   Only the token server is reached this way. Every payment the tier submits goes to the environment over HTTPS
   and is unaffected by this file.

@@ -2,8 +2,12 @@
 <!--
   The loopback harness speaks http, and cleartext is denied by default: the platform's base-config is
   cleartextTrafficPermitted="false" from targetSdk 28, and this module's tests build against a far higher
-  compileSdk. The implicit loopback exemption arrives only in API 37, so at this module's floor of 23 an
-  explicit entry is required rather than merely tidy.
+  compileSdk. The implicit loopback exemption arrives only in API 37, so an explicit entry is required on
+  every level this runs on rather than merely tidy.
+
+  It does nothing at this module's floor. `android:networkSecurityConfig` was added in API 24, so at 23 the
+  file is not read at all, and nothing is needed there because cleartext is permitted by default that far
+  back.
 
   Scoped to the single address the harness binds instead of a blanket usesCleartextTraffic, so nothing but
   the harness is reachable in cleartext and a test cannot accidentally exercise a plaintext route to a
