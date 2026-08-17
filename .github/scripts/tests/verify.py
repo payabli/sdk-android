@@ -1823,18 +1823,39 @@ def workflow_text(name: str) -> str:
 
 
 def trigger_keys(text: str) -> list[str]:
-    """The keys under `on:`, read as the two-space-indented names between it and the next top-level key."""
+    """The triggers named by `on:`, in any of the three forms YAML allows for it.
+
+    `on: push` and `on: [push, workflow_dispatch]` are the same document as the block form, and reading only
+    the block form returned nothing for either. That failed closed on the guard below, but on a reformat that
+    changed no semantics, which is a false failure rather than a finding.
+    """
     keys: list[str] = []
-    inside = False
+    on_indent: int | None = None
+    child_indent: int | None = None
+
     for line in text.splitlines():
-        if line.startswith("on:"):
-            inside = True
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+
+        if on_indent is None:
+            if not stripped.startswith("on:"):
+                continue
+            on_indent = indent
+            inline = stripped[len("on:"):].strip()
+            if inline.startswith("["):
+                return [key.strip() for key in inline.strip("[]").split(",") if key.strip()]
+            if inline and not inline.startswith("#"):
+                return [inline]
             continue
-        if inside:
-            if line and not line.startswith(" ") and not line.startswith("#"):
+
+        if stripped and not stripped.startswith("#"):
+            if indent <= on_indent:
                 break
-            stripped = line.strip()
-            if line.startswith("  ") and not line.startswith("   ") and stripped.endswith(":"):
+            # Direct children only. `workflow_call` carries `inputs:` and a key per input, and taking those
+            # as triggers would make the list say things the document does not.
+            if child_indent is None:
+                child_indent = indent
+            if indent == child_indent and stripped.endswith(":"):
                 keys.append(stripped.rstrip(":"))
     return keys
 
