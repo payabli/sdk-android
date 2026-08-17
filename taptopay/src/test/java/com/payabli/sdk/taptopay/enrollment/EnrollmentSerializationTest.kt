@@ -93,6 +93,7 @@ class EnrollmentSerializationTest {
                     "get:$LEGACY_RECORD_ENTRY",
                     "set:$RECORD_ENTRY",
                     "get:$RECORD_ENTRY",
+                    "remove:$LEGACY_RECORD_ENTRY",
                     "remove:$RECORD_ENTRY",
                 ),
                 fixture.storage.operations,

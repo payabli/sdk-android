@@ -57,6 +57,9 @@ internal class AttestedDeviceStore(
      */
     private val lock = SHARED_LOCK
 
+    /** Whether this store has removed the superseded entry. Read and written only under [lock]. */
+    private var legacyScrubbed = false
+
     /**
      * The binding held for [entry], or null when there is nothing usable to read.
      *
@@ -123,21 +126,48 @@ internal class AttestedDeviceStore(
     private suspend fun load(): DeviceBindings? {
         // The current entry answers alone whenever it is there, so the old one is never read once this
         // device has written anything, and a binding discarded since the upgrade cannot be restored from it.
-        decode(ENTRY, DeviceBindings.serializer())?.let { return it }
+        decode(ENTRY, DeviceBindings.serializer())?.let {
+            scrubLegacy()
+            return it
+        }
 
         // Nothing in the current entry. An older record is the only other thing that can be there, and
         // reading it is what keeps an enrolled device enrolled across the upgrade.
         val legacy = decode(LEGACY_ENTRY, AttestedDevice.serializer()) ?: return null
         val migrated = DeviceBindings.of(legacy)
 
-        // Written before the old entry is removed, never the reverse. Interrupted between the two, both are
-        // present, and the line above answers from the current one and leaves the old one inert. The other
-        // order loses the binding outright. Uncancellable so only the process ending can land between them.
-        withContext(NonCancellable) {
-            store(migrated)
-            storage.remove(LEGACY_ENTRY)
-        }
+        // Written before the old entry goes, never the reverse. Interrupted between them, both are present
+        // and the branch above answers from the current one. The other order loses the binding outright.
+        withContext(NonCancellable) { store(migrated) }
+        scrubLegacy()
         return migrated
+    }
+
+    /**
+     * Removes the older entry once this store has read the current one, and never fails the caller for it.
+     *
+     * Two entries can coexist: a migration that was interrupted between its write and this removal, and an
+     * install that went back to a build writing the old shape and then forward again. In both the current
+     * entry answers and the old one is never read, so what is left is an identity record naming a merchant,
+     * held for as long as the app is installed and read by nothing. Removing it is the same reasoning as the
+     * bound on how many bindings are kept.
+     *
+     * **Best effort, and after the write rather than beside it.** A removal that raised here would turn a
+     * migration that had already succeeded into a failed read, and the binding it wrote is sound and
+     * readable. Left for the next attempt instead. Once per store, because nothing writes the old shape any
+     * more, so a store that has removed it will not meet it again; and removing an absent entry costs no
+     * write in the layer below.
+     */
+    private suspend fun scrubLegacy() {
+        if (legacyScrubbed) return
+        try {
+            storage.remove(LEGACY_ENTRY)
+            legacyScrubbed = true
+        } catch (unremovable: SecureStorageException) {
+            logger.debug(RedactedCause(unremovable), LogField.safe("event", EVENT_LEGACY_KEPT)) {
+                "could not remove the superseded device identity"
+            }
+        }
     }
 
     /**
@@ -242,6 +272,7 @@ internal class AttestedDeviceStore(
 
         const val EVENT_LOST = "device_identity_lost"
         const val EVENT_ORDER_UNWRITTEN = "device_binding_order_unwritten"
+        const val EVENT_LEGACY_KEPT = "device_identity_superseded_kept"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
         val SHARED_LOCK = Mutex()

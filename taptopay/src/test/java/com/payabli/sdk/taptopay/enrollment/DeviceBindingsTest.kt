@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.network.PayabliJson
+import com.payabli.sdk.core.storage.SecureStorageException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -102,7 +103,10 @@ class DeviceBindingsTest {
             store.clear(OTHER_ENTRY)
 
             // A read to look, and no write: the bindings held for other entry points are untouched.
-            assertEquals(listOf("get:$RECORD_ENTRY"), storage.operations.drop(before))
+            assertEquals(
+                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY"),
+                storage.operations.drop(before),
+            )
             assertNotNull(store.read(ENTRY))
         }
 
@@ -187,7 +191,7 @@ class DeviceBindingsTest {
         }
 
     @Test
-    fun `the current entry answers alone, and the older one is left unread`() =
+    fun `the current entry answers alone, and the older one is removed`() =
         runTest(timeout = TEST_TIMEOUT) {
             val storage = FakeSecureStore()
             val store = AttestedDeviceStore(storage)
@@ -203,6 +207,23 @@ class DeviceBindingsTest {
             // Restoring from it would bring back a binding discarded since the upgrade.
             assertNull(store.read(OTHER_ENTRY))
             assertNotNull(store.read(ENTRY))
+            // And it does not stay: unread is not enough, because it names a merchant and would sit there
+            // for as long as the app is installed.
+            assertNull(storage.peek(LEGACY_RECORD_ENTRY))
+        }
+
+    @Test
+    fun `an older entry that cannot be removed does not fail the read`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val storage =
+                FakeSecureStore(
+                    failWith = FakeSecureStore.failing("remove", SecureStorageException.StorageUnavailable()),
+                )
+            AttestedDeviceStore(storage).write(binding(ENTRY))
+
+            // The migration wrote a sound binding, and the read has its answer. Raising here would turn
+            // that into a failed read and send the caller through a cold sequence it does not need.
+            assertEquals("$ENTRY-device", AttestedDeviceStore(storage).read(ENTRY)?.deviceId)
         }
 
     @Test

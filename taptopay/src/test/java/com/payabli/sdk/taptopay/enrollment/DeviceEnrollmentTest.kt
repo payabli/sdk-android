@@ -228,7 +228,10 @@ class DeviceEnrollmentTest {
             // paypoint's next enrollment through the cold sequence, and registering retires an active
             // device and costs the merchant a fresh code.
             assertNotNull(fixture.storedRecord("a-different-entry-point"))
-            assertEquals(listOf("get:$RECORD_ENTRY"), fixture.storage.operations)
+            assertEquals(
+                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY"),
+                fixture.storage.operations,
+            )
         }
 
     @Test
@@ -241,7 +244,12 @@ class DeviceEnrollmentTest {
 
             // Reads and one write. No remove, so nothing is unstored between them.
             assertEquals(
-                listOf("get:$RECORD_ENTRY", "get:$RECORD_ENTRY", "set:$RECORD_ENTRY"),
+                listOf(
+                    "get:$RECORD_ENTRY",
+                    "remove:$LEGACY_RECORD_ENTRY",
+                    "get:$RECORD_ENTRY",
+                    "set:$RECORD_ENTRY",
+                ),
                 fixture.storage.operations,
             )
             // Both bindings are held: this one is newly attested, the other one is untouched.
@@ -260,7 +268,10 @@ class DeviceEnrollmentTest {
             // Reset forgets this paypoint. The other one's binding is live, and removing it would send its
             // next enrollment through a registration that retires an active device.
             assertNotNull(fixture.storedRecord("a-different-entry-point"))
-            assertEquals(listOf("get:$RECORD_ENTRY"), fixture.storage.operations)
+            assertEquals(
+                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY"),
+                fixture.storage.operations,
+            )
         }
 
     @Test

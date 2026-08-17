@@ -231,7 +231,10 @@ class ActivationFailurePolicyTest {
 
             // Nothing is written on success, so there is no post-success write that can fail and leave a
             // record disagreeing with the service.
-            assertEquals(listOf("get:$RECORD_ENTRY", RouteScript.ACTIVATE), fixture.trace)
+            assertEquals(
+                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY", RouteScript.ACTIVATE),
+                fixture.trace,
+            )
         }
 
     @Test
