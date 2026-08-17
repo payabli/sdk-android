@@ -293,9 +293,14 @@ class PayInLiveFlowsInstrumentedTest {
      * The sample app accepts either, taking a value that carries one as written, so the same argument reaches
      * both and only one of them would otherwise have built `http://http://host`. Cleartext is what the test
      * APK permits to loopback, so `http` is the default rather than a preference.
+     *
+     * A trailing slash is trimmed before the scheme is decided rather than after, because the route below
+     * begins with one: trimmed only in the branch that already had a scheme, `host:port/` produced a path
+     * starting `//`, which the token server does not route.
      */
     private val tokenBaseUrl: String
-        get() = tokenHost.trim().let { if (it.contains("://")) it.trimEnd('/') else "http://$it" }
+        get() =
+            tokenHost.trim().trimEnd('/').let { if (it.contains("://")) it else "http://$it" }
 
     private val environment: PayabliEnvironment
         get() =
