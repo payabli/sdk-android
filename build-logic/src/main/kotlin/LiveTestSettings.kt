@@ -34,7 +34,10 @@ fun liveTestSettings(providers: ProviderFactory): Map<String, String>? {
 
     val missing = values.filterValues { it == null }.keys
     if (missing.isNotEmpty() && missing.size < values.size) {
-        error("payabli.liveTest.* is partly set. Missing: ${missing.sorted().joinToString()}")
+        error(
+            "The live test settings are partly set. Missing, as a payabli.liveTest.* property or the " +
+                "matching PAYABLI_LIVETEST_* variable: ${missing.sorted().joinToString()}",
+        )
     }
     if (missing.isNotEmpty()) return null
     return values.mapValues { (name, value) -> requireNotNull(value) { "payabli.liveTest.$name" } }
