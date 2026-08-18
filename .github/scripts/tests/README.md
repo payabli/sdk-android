@@ -4,16 +4,16 @@
 thing that reports a failure. Between them they are the reason anyone finds out a night went red, so they
 are covered here rather than trusted.
 
-Two entry points and no setup. The requirements are `python3` and `git`: the collector half shells out to
-`git` to build the synthetic repository it runs against, so it fails without one on `PATH`. No third-party
-Python package is involved, so the workflow needs no `setup-python` and no install step.
+Two entry points and no setup. The requirements are `python3`, `git` and `PyYAML`: the collector half
+shells out to `git` to build the synthetic repository it runs against, and the workflow checks parse the
+files they read. `ubuntu-latest` carries PyYAML in the runner's own python3, so CI installs nothing and needs
+no `setup-python`; the harness job asserts it is there rather than assuming.
 
-**That is a convenience, not the SDK's rule.** `CLAUDE.md`'s platform-native rule is about what ships in the
-SDK: no third-party HTTP client, crypto engine, DI framework or JSON mapper inside `:core` and the capability
-modules. Nothing here ships. This harness, the sample app and `example-server` are outside it, and reading
-the rule as covering them has a measured cost: the workflow checks parse YAML textually because of it, and
-five separate rounds of review found five different valid spellings that the textual reader missed, each one
-a guard silently examining nothing. Weigh a real parser here on its own merits.
+**PyYAML is here because the SDK's rule does not reach this far.** `CLAUDE.md`'s platform-native rule is
+about what ships in the SDK: no third-party HTTP client, crypto engine, DI framework or JSON mapper inside
+`:core` and the capability modules. Nothing here ships, and neither does the sample app or `example-server`.
+Reading the rule as covering them cost five rounds of review, each finding a different valid spelling that
+the textual reader it forced missed, and each one a guard silently examining nothing.
 
 ```bash
 python3 .github/scripts/tests/verify.py     # about 4 seconds

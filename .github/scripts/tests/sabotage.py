@@ -27,6 +27,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import yaml
+
 HERE = Path(__file__).resolve().parent
 # Not `os.environ.get("NIGHTLY_SDK", HERE.parents[2])`: a default argument is evaluated eagerly, so the
 # fallback would raise IndexError for a copy of this file sitting fewer than three directories deep even
@@ -346,9 +348,12 @@ def still_parses(path: Path) -> str:
     """Empty when the patched file is still the kind of file the harness can read, else why not.
 
     A mutation is meant to break a behaviour, not a parse: a file the harness cannot read would fail for the
-    wrong reason and be scored as caught. Python gets the compiler. YAML gets a structural check rather than a
-    parser, because this harness is standard library only and a hand-rolled parser would be a second thing to
-    trust; what matters is that the document still has the shape the checks read.
+    wrong reason and be scored as caught. Python gets the compiler, and YAML gets the same parser the checks
+    read the document with, so a mutation that produces something they cannot load is reported as invalid
+    rather than counted as a break they caught.
+
+    A structural text check stood here while the harness had no parser, and it could only ask whether two
+    keys were still present.
     """
     if path.suffix == ".py":
         try:
@@ -357,10 +362,16 @@ def still_parses(path: Path) -> str:
             return f"patched file does not compile: {error}"
         return ""
 
-    text = path.read_text()
-    for key in ("on:", "jobs:"):
-        if f"\n{key}" not in f"\n{text}":
-            return f"patched workflow lost its {key.rstrip(':')} block"
+    try:
+        document = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as error:
+        return f"patched workflow does not parse: {error}"
+    if not isinstance(document, dict):
+        return f"patched workflow is not a mapping: {type(document).__name__}"
+    if "jobs" not in document:
+        return "patched workflow lost its jobs block"
+    if True not in document and "on" not in document:
+        return "patched workflow lost its on block"
     return ""
 
 

@@ -61,12 +61,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Answers one question, and blocks nothing: whether this image's python3 imports yaml. The workflow
-      # checks read YAML textually, which has cost five rounds of review finding five valid spellings the
-      # reader missed, and a parser is the fix. What it needs is either a module already on the image or an
-      # install step, and that is what this reports.
-      - name: Report whether a YAML parser is on the image
-        run: python3 -c "import yaml; print('yaml', yaml.__version__)" || echo "python3 has no yaml module"
+      # The workflow checks parse YAML, so the module has to be there. Measured on this image rather than
+      # assumed: `ubuntu-latest` carries PyYAML 6.0.1 in the runner's own python3, so nothing is installed
+      # and no `setup-python` is needed. This fails the job if that ever stops being true, which is the
+      # difference between a missing parser and checks that quietly examine nothing.
+      - name: A YAML parser is present
+        run: python3 -c "import yaml; print('yaml', yaml.__version__)"
 
       # No count here. The last two went stale, which is what nightly.yml records about counts in a comment.
       # The collector runs as a subprocess in a synthetic git repository; the poster runs in-process against

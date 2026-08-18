@@ -15,7 +15,6 @@ import importlib.util
 import io
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -24,6 +23,8 @@ import threading
 from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import yaml
 
 HERE = Path(__file__).resolve().parent
 
@@ -1831,209 +1832,80 @@ def workflow_text(name: str) -> str:
         return ""
 
 
-def unquoted(key: str) -> str:
-    """A scalar with the quotes YAML allows around it removed.
+def workflow_doc(name: str) -> dict:
+    """The workflow parsed, or an empty mapping after failing a check that says why.
 
-    `on: ["pull_request"]` is the same document as `on: [pull_request]`, and returning the first with its
-    quotes attached means the trigger check compares `"pull_request"` against `pull_request` and finds no
-    match. That is a guard passing a workflow that carries the trigger it exists to forbid.
+    Parsed rather than read line by line. The textual reader this replaces was correct for the spelling each
+    file happened to use and wrong for every other spelling of the same document: quoted trigger names,
+    inline comments after a key, `on:` in its shorthand forms, and the block scalar indicators `|-`, `|+`,
+    `|2` and `>-`. Five rounds of review found five of those, each one a guard that examined nothing and
+    reported a pass. A parser has no opinion about how the document is written.
     """
-    key = key.strip()
-    for quote in ('"', "'"):
-        if len(key) >= 2 and key.startswith(quote) and key.endswith(quote):
-            return key[1:-1].strip()
-    return key
+    text = workflow_text(name)
+    if not text:
+        return {}
+    try:
+        loaded = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        check(f"W0 {name} parses", False, f"{type(error).__name__}: {error}")
+        return {}
+    if not isinstance(loaded, dict):
+        check(f"W0 {name} is a mapping", False, type(loaded).__name__)
+        return {}
+    return loaded
 
 
-def without_comment(text: str) -> str:
-    """The value with a trailing inline comment removed.
+def trigger_keys(doc: dict) -> list[str]:
+    """The triggers named by `on:`, whichever of the three forms the file uses.
 
-    `on: [push] # comment` returned `push] # comment` as a trigger name, and `on: push # comment` returned
-    the whole tail. The pull-request check survived that on a prefix match, which is luck rather than
-    design: the list it reads was wrong, and the next check written against it would inherit that.
-
-    Cut at a `#` that follows whitespace, so a `#` inside a value is left alone. Nothing in an `on:` needs
-    one, and a rule that cannot damage a legitimate value is the one to pick when the parser is textual.
+    **YAML 1.1 reads a bare `on` as the boolean true**, so `doc["on"]` finds nothing in a workflow written
+    the ordinary way and `doc[True]` is where the triggers are. Quoted, the key stays a string, so both are
+    looked for. Getting this wrong would empty the list for every file and fail closed on the guard below,
+    but it is the one thing about parsing a workflow that is not obvious from reading one.
     """
-    for index, character in enumerate(text):
-        if character == "#" and (index == 0 or text[index - 1].isspace()):
-            return text[:index]
-    return text
+    for key in (True, "on"):
+        if key not in doc:
+            continue
+        value = doc[key]
+        if isinstance(value, dict):
+            return [str(name) for name in value]
+        if isinstance(value, list):
+            return [str(name) for name in value]
+        return [] if value is None else [str(value)]
+    return []
 
 
-def trigger_keys(text: str) -> list[str]:
-    """The triggers named by `on:`, in any of the three forms YAML allows for it.
+def steps_of(doc: dict) -> list[dict]:
+    """Every step of every job, as the mappings they are."""
+    steps: list[dict] = []
+    for job in (doc.get("jobs") or {}).values():
+        if not isinstance(job, dict):
+            continue
+        for step in job.get("steps") or []:
+            if isinstance(step, dict):
+                steps.append(step)
+    return steps
 
-    `on: push` and `on: [push, workflow_dispatch]` are the same document as the block form, and reading only
-    the block form returned nothing for either. That failed closed on the guard below, but on a reformat that
-    changed no semantics, which is a false failure rather than a finding.
+
+def step_text(step: dict) -> str:
+    """A step rendered back to YAML, for the checks that ask whether it mentions something anywhere.
+
+    Rendered rather than searched key by key, because what those checks are about is a secret appearing in a
+    step at all, and enumerating the places one could appear is the enumeration a parser exists to avoid.
     """
-    keys: list[str] = []
-    on_indent: int | None = None
-    child_indent: int | None = None
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip())
-
-        if on_indent is None:
-            if not stripped.startswith("on:"):
-                continue
-            on_indent = indent
-            inline = without_comment(stripped[len("on:"):]).strip()
-            if inline.startswith("["):
-                inner = inline[1:inline.index("]")] if "]" in inline else inline[1:]
-                return [unquoted(key) for key in inner.split(",") if key.strip()]
-            if inline:
-                return [unquoted(inline)]
-            continue
-
-        if stripped and not stripped.startswith("#"):
-            if indent <= on_indent:
-                break
-            # Direct children only. `workflow_call` carries `inputs:` and a key per input, and taking those
-            # as triggers would make the list say things the document does not.
-            if child_indent is None:
-                child_indent = indent
-            # The comment comes off before the trailing colon is looked for, as it does on the shorthand
-            # forms above. `pull_request:  # why` does not end in a colon, so the key went unlisted and the
-            # trigger check had nothing to refuse.
-            naked = without_comment(stripped).strip()
-            if indent == child_indent and naked.endswith(":"):
-                keys.append(naked.rstrip(":"))
-    return keys
+    return yaml.safe_dump(step, default_flow_style=False, sort_keys=False)
 
 
-def steps_of(text: str) -> list[str]:
-    """Each step as one block of text: the list items under any `steps:`, at whatever depth it sits.
-
-    Measured against a fixed indentation before this: reindenting the file emptied the list, which failed
-    closed on the guard below but failed on a reformat that changed no semantics. The `steps:` line supplies
-    the depth, an item is a `- ` deeper than it, and a line back at or above that depth ends the block.
-    """
-    blocks: list[str] = []
-    current: list[str] = []
-    steps_indent: int | None = None
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip())
-
-        if is_key(stripped, "steps:"):
-            if current:
-                blocks.append("\n".join(current))
-                current = []
-            steps_indent = indent
-            continue
-        if steps_indent is None:
-            continue
-
-        # Out of the block: a key at or above the depth `steps:` sits at. A blank line or a comment carries
-        # no depth of its own and belongs to whatever is open.
-        if stripped and not stripped.startswith("#") and indent <= steps_indent:
-            if current:
-                blocks.append("\n".join(current))
-                current = []
-            steps_indent = None
-            continue
-
-        if stripped.startswith("- ") and indent > steps_indent:
-            if current:
-                blocks.append("\n".join(current))
-            current = [line]
-        elif current:
-            current.append(line)
-
-    if current:
-        blocks.append("\n".join(current))
-    return blocks
+def script_lines(step: dict) -> list[str]:
+    """The commands in a step's `script` input, which is what the emulator action is handed."""
+    return meaningful_lines((step.get("with") or {}).get("script"))
 
 
-def is_key(stripped: str, key: str) -> bool:
-    """That the line is exactly `key`, allowing the trailing space and inline comment YAML permits.
-
-    Compared exactly before this, so `steps:  # the steps below` read as no steps at all: `steps_of` returned
-    an empty list and every check reading it went with it. Two of those fail closed on a guard, and the
-    emulator script checks had none, so a reformat nobody would look twice at silently removed them.
-    """
-    if stripped == key:
-        return True
-    rest = stripped[len(key):]
-    return stripped.startswith(key) and rest.strip().startswith("#")
-
-
-def opens_block_scalar(stripped: str, key: str) -> bool:
-    """That the line opens a block scalar for `key`, in any of the forms YAML writes one.
-
-    `|` and `>` were matched and nothing else, so `run: |-`, `run: |+`, `run: |2` and `run: >-` were not
-    recognised as opening a body. For `run:` that was worse than skipping it: the line fell through to the
-    one-line branch below and came back as the command `run: |-`, so the body was never scanned and the
-    check reading it saw a step with nothing in it. Every one of those is the same document reformatted.
-
-    The chomping and indentation indicators may appear in either order, so both are taken as one run of
-    characters rather than modelled.
-    """
-    return re.fullmatch(rf"{re.escape(key)}:\s*[|>][0-9+\-]*\s*(#.*)?", stripped) is not None
-
-
-def run_block_lines(text: str) -> list[str]:
-    """The body of every `run:` step, both the block form and the one-liner.
-
-    The one-liner counts because `run: echo ${{ ... }}` is the same substitution written shorter, and a check
-    reading only the block form would pass a file that had moved the expression onto the key's own line.
-    """
-    lines: list[str] = []
-    run_indent: int | None = None
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip())
-
-        if opens_block_scalar(stripped, "run"):
-            run_indent = indent
-            continue
-        if stripped.startswith("run: "):
-            lines.append(stripped)
-            run_indent = None
-            continue
-        if run_indent is None:
-            continue
-        if not stripped:
-            continue
-        if indent <= run_indent:
-            run_indent = None
-            continue
-        lines.append(stripped)
-
-    return lines
-
-
-def emulator_script_lines(text: str) -> list[str]:
-    """The command lines of every `script: |` block, which is what the emulator action is handed.
-
-    The block ends where the indentation returns to the key's own depth or shallower, so a following key
-    cannot be read as a command. Comments and blanks are dropped, which is what the action does with them.
-    """
-    lines: list[str] = []
-    script_indent: int | None = None
-
-    for line in text.splitlines():
-        stripped = line.strip()
-        indent = len(line) - len(line.lstrip())
-
-        if opens_block_scalar(stripped, "script"):
-            script_indent = indent
-            continue
-        if script_indent is None:
-            continue
-        if not stripped or stripped.startswith("#"):
-            continue
-        if indent <= script_indent:
-            script_indent = None
-            continue
-        lines.append(stripped)
-
-    return lines
+def meaningful_lines(body) -> list[str]:
+    """The lines of a block body, without the blanks and comments the action itself drops."""
+    if not isinstance(body, str):
+        return []
+    return [line.strip() for line in body.splitlines() if line.strip() and not line.strip().startswith("#")]
 
 
 LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
@@ -2127,51 +1999,30 @@ def test_live_summary(mod):
 def test_workflows():
     for name in LIVE_WORKFLOWS:
         text = workflow_text(name)
-        keys = trigger_keys(text)
+        keys = trigger_keys(workflow_doc(name))
         check(f"W1 {name} has triggers at all", bool(keys), f"{keys}")
         # pull_request_target is the dangerous one and the easy one to add by mistake: it runs against a
         # fork's head with the base repository's secrets available.
         check(f"W1 {name} cannot be triggered by a pull request",
               not any(key.startswith("pull_request") for key in keys), f"{keys}")
-        # Again without reading the structure, because the check above cannot see a trigger written in a form
-        # it does not model: a file mixing the block and shorthand styles passed every check while carrying
-        # one. These files have no other use for the word.
+        # The same question asked of the raw text, because the check above trusts one library to agree with
+        # what Actions does with the file. Cheap, and these files have no other use for the word.
         check(f"W1 {name} does not mention a pull request trigger anywhere",
               "pull_request" not in text,
               next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
 
-    # The parsers themselves, against documents these files could be reformatted into at any time. Both
-    # shapes below are valid YAML that changes nothing, and both used to empty a parser and take its checks
-    # with them; the trigger one is the case where a guard passes a workflow carrying what it forbids.
-    double_quoted = trigger_keys('on: ["pull_request"]')
-    check("W1 a quoted trigger is read as the trigger it is", double_quoted == ["pull_request"],
-          f"{double_quoted}")
-    single_quoted = trigger_keys("on: 'pull_request'")
-    check("W1 a single-quoted scalar trigger too", single_quoted == ["pull_request"], f"{single_quoted}")
+    # The one thing about parsing a workflow that is not obvious from reading one: YAML 1.1 reads a bare
+    # `on` as the boolean true, so a lookup by the string finds nothing at all.
+    bare = trigger_keys(yaml.safe_load("on:\n  pull_request:\n    branches: [main]\n"))
+    check("W1 a bare on: key is found despite YAML reading it as a boolean", bare == ["pull_request"],
+          f"{bare}")
+    quoted = trigger_keys(yaml.safe_load('"on": ["pull_request"]'))
+    check("W1 and a quoted one, which stays a string", quoted == ["pull_request"], f"{quoted}")
 
-    listed = trigger_keys("on: [push, pull_request]  # both of them")
-    check("W1 an inline comment after a shorthand list is not a trigger",
-          listed == ["push", "pull_request"], f"{listed}")
-    scalar = trigger_keys("on: pull_request # and here")
-    check("W1 nor after a shorthand scalar", scalar == ["pull_request"], f"{scalar}")
-    blocked = trigger_keys("on:\n  workflow_dispatch:  # on demand\n  pull_request:  # and this\n")
-    check("W1 nor after a block trigger key", blocked == ["workflow_dispatch", "pull_request"],
-          f"{blocked}")
-
-    commented = (
-        "jobs:\n  live:\n    steps:  # what runs\n      - name: one\n        run: |  # the script\n"
-        "          echo hi\n      - name: two\n        with:\n          script: |  # two lines\n"
-        "            ./gradlew a\n"
-    )
-    check("W1 an inline comment does not hide the steps", len(steps_of(commented)) == 2,
-          f"{len(steps_of(commented))}")
-    check("W1 nor the emulator script", emulator_script_lines(commented) == ["./gradlew a"],
-          f"{emulator_script_lines(commented)}")
-    check("W1 nor a run block", run_block_lines(commented) == ["echo hi"], f"{run_block_lines(commented)}")
-
-    reusable = workflow_text("live-flows.yml")
-    blocks = steps_of(reusable)
-    check("W2 the reusable workflow has steps", len(blocks) > 3, f"{len(blocks)}")
+    reusable = workflow_doc("live-flows.yml")
+    reusable_text = workflow_text("live-flows.yml")
+    steps = steps_of(reusable)
+    check("W2 the reusable workflow has steps", len(steps) > 3, f"{len(steps)}")
 
     # Which step names the credential, which is what these can see. It is not isolation: the server the
     # credential starts is backgrounded and outlives its step, so every later step on that runner can reach
@@ -2180,66 +2031,72 @@ def test_workflows():
     #
     # Both halves, because the credential is the pair: a regression that moved only the client id would
     # otherwise pass, and an id alone is enough to matter beside a secret that leaks another way.
+    rendered = [(step, step_text(step)) for step in steps]
     for half in ("client-secret", "client-id"):
-        holding = [b for b in blocks if f"secrets.{half}" in b]
+        holding = [step for step, body in rendered if f"secrets.{half}" in body]
         check(f"W2 exactly one step is given the {half}", len(holding) == 1,
-              f"{len(holding)} steps: " + " | ".join(b.splitlines()[0].strip() for b in holding))
+              f"{len(holding)} steps: " + " | ".join(str(step.get('name', '?')) for step in holding))
         if holding:
-            check(f"W2 and the {half} goes to the step that runs the token server", "server.mjs" in holding[0],
-                  holding[0].splitlines()[0].strip())
+            check(f"W2 and the {half} goes to the step that runs the token server",
+                  "server.mjs" in str(holding[0].get("run", "")), str(holding[0].get("name", "?")))
 
-    emulator = [b for b in blocks if "android-emulator-runner" in b]
+    emulator = [(step, body) for step, body in rendered
+                if "android-emulator-runner" in str(step.get("uses", ""))]
     check("W3 the emulator steps are found", len(emulator) == 2, f"{len(emulator)}")
     check("W3 no emulator step is given the client secret",
-          not any("secrets.client-secret" in b or "secrets.client-id" in b for b in emulator))
+          not any("secrets.client-secret" in body or "secrets.client-id" in body for _, body in emulator))
     # The address is what replaced the credential, so its absence would mean the tests fall back to whatever
-    # the build compiled in rather than reaching the server this workflow started.
-    #
-    # Matched as a whole key. A substring test read PAYABLI_LIVETEST_TOKEN_HOST_DISABLED as the key being
-    # present, which the sabotage pass caught: renaming a variable is exactly how this would be lost.
-    def sets_token_host(block: str) -> bool:
-        return any(line.strip().startswith("PAYABLI_LIVETEST_TOKEN_HOST:") for line in block.splitlines())
-
-    check("W3 the live step is given the token host", any(sets_token_host(b) for b in emulator))
+    # the build compiled in rather than reaching the server this workflow started. Read as a key of the step's
+    # environment, so renaming it to anything else is an absence rather than a near miss.
+    check("W3 the live step is given the token host",
+          any("PAYABLI_LIVETEST_TOKEN_HOST" in (step.get("env") or {}) for step, _ in emulator))
 
     check("W4 no live setting is passed as a gradle argument",
-          "-Ppayabli.liveTest." not in reusable,
-          next((line.strip() for line in reusable.splitlines() if "-Ppayabli.liveTest." in line), ""))
+          "-Ppayabli.liveTest." not in reusable_text,
+          next((line.strip() for line in reusable_text.splitlines() if "-Ppayabli.liveTest." in line), ""))
 
     # The emulator action splits its `script` input on newlines and runs each resulting line as its own
     # `sh -c`, so a trailing backslash joins nothing: the command runs without its arguments and the
     # arguments run as a command. Invisible in review, and these workflows have no pull request trigger, so
     # nothing else would find it before a scheduled run did.
-    # Guarded before it is read, as the step list is. A loop over nothing runs no checks and reports a pass,
-    # so an empty parse here used to remove these two rather than fail them.
-    script_lines = emulator_script_lines(reusable)
-    check("W5 the emulator script was found", len(script_lines) == 2, f"{script_lines}")
-    for line in script_lines:
-        check("W5 no line of the emulator script continues onto the next",
-              not line.endswith("\\"), line)
-        check("W5 every line of the emulator script is a command", line.startswith("./"), line)
+    #
+    # Guarded before it is read, as the step list is. A loop over nothing runs no checks and reports a pass.
+    # No line of any emulator script continues, including the AVD step's one-liner. The textual reader could
+    # not see that one at all, because it is a plain `script:` value rather than a block, which is the shape
+    # of gap a parser closes without being told about it.
+    for step, _ in emulator:
+        for line in script_lines(step):
+            check("W5 no line of an emulator script continues onto the next",
+                  not line.endswith("\\"), line)
 
-    # A suite that succeeded having discovered no tests writes no results, so the step stays green and only
-    # the Slack message says otherwise. The guard has to name each module: one silent suite is invisible in a
-    # total the other one fills.
-    guard = next((b for b in blocks if "wrote no instrumented results" in b), "")
-    check("W7 the reusable workflow refuses a suite that wrote no results", bool(guard))
-    for module in ("payin", "example"):
-        check(f"W7 and it names {module}",
-              any(line.strip().startswith("INSTRUMENTED_MODULES:") and module in line
-                  for line in guard.splitlines()),
-              guard)
+    # The step that runs the tests, identified the way W3 identifies it, so this cannot drift onto the other.
+    live = [step for step, _ in emulator if "PAYABLI_LIVETEST_TOKEN_HOST" in (step.get("env") or {})]
+    check("W5 the live step was found", len(live) == 1, f"{len(live)}")
+    commands = [line for step in live for line in script_lines(step)]
+    check("W5 the live script runs two suites", len(commands) == 2, f"{commands}")
+    for line in commands:
+        check("W5 every line of the live script is a command", line.startswith("./"), line)
 
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.
     for name in LIVE_WORKFLOWS:
-        body = run_block_lines(workflow_text(name))
-        offending = [line.strip() for line in body if "${{" in line]
+        bodies = [str(step.get("run", "")) for step in steps_of(workflow_doc(name))]
+        offending = [line for body in bodies for line in meaningful_lines(body) if "${{" in line]
         check(f"W6 {name} interpolates no expression inside a run script",
               not offending, " | ".join(offending))
     # The same guard as W5, on the file that has run steps at all: nothing found means the check above
     # examined nothing rather than found nothing wrong.
-    check("W6 the run scripts were found", bool(run_block_lines(reusable)))
+    check("W6 the run scripts were found", any(step.get("run") for step in steps))
+
+    # A suite that succeeded having discovered no tests writes no results, so the step stays green and only
+    # the Slack message says otherwise. The guard has to name each module: one silent suite is invisible in a
+    # total the other one fills.
+    guard = next((step for step in steps if "wrote no instrumented results" in str(step.get("run", ""))), None)
+    check("W7 the reusable workflow refuses a suite that wrote no results", guard is not None)
+    if guard is not None:
+        named = str((guard.get("env") or {}).get("INSTRUMENTED_MODULES", ""))
+        for module in ("payin", "example"):
+            check(f"W7 and it names {module}", module in named.split(), named)
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")
