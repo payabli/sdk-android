@@ -15,6 +15,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1957,6 +1958,20 @@ def is_key(stripped: str, key: str) -> bool:
     return stripped.startswith(key) and rest.strip().startswith("#")
 
 
+def opens_block_scalar(stripped: str, key: str) -> bool:
+    """That the line opens a block scalar for `key`, in any of the forms YAML writes one.
+
+    `|` and `>` were matched and nothing else, so `run: |-`, `run: |+`, `run: |2` and `run: >-` were not
+    recognised as opening a body. For `run:` that was worse than skipping it: the line fell through to the
+    one-line branch below and came back as the command `run: |-`, so the body was never scanned and the
+    check reading it saw a step with nothing in it. Every one of those is the same document reformatted.
+
+    The chomping and indentation indicators may appear in either order, so both are taken as one run of
+    characters rather than modelled.
+    """
+    return re.fullmatch(rf"{re.escape(key)}:\s*[|>][0-9+\-]*\s*(#.*)?", stripped) is not None
+
+
 def run_block_lines(text: str) -> list[str]:
     """The body of every `run:` step, both the block form and the one-liner.
 
@@ -1970,7 +1985,7 @@ def run_block_lines(text: str) -> list[str]:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
 
-        if is_key(stripped, "run: |") or is_key(stripped, "run: >"):
+        if opens_block_scalar(stripped, "run"):
             run_indent = indent
             continue
         if stripped.startswith("run: "):
@@ -2002,7 +2017,7 @@ def emulator_script_lines(text: str) -> list[str]:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
 
-        if is_key(stripped, "script: |"):
+        if opens_block_scalar(stripped, "script"):
             script_indent = indent
             continue
         if script_indent is None:
