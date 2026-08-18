@@ -1,0 +1,90 @@
+package com.payabli.sdk.testutils.logging
+
+import com.payabli.sdk.core.logging.LogField
+import com.payabli.sdk.core.logging.LogLevel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+private const val WRITERS = 8
+private const val LINES_EACH = 2_000
+
+/**
+ * The fixture's own tests, because every caller of [RecordingSdkLogger.everythingWritten] asserts that a
+ * value is **absent** from it. A flattening that misses somewhere a value can hide reports absence for
+ * something present, and no caller's assertion can tell the difference.
+ */
+class RecordingSdkLoggerTest {
+    @Test
+    fun `a value in an attached throwable is written`() {
+        val logger = RecordingSdkLogger()
+
+        logger.log(LogLevel.WARN, emptyList(), IllegalStateException("4111111111111111")) { "failed" }
+
+        assertTrue(logger.everythingWritten().contains("4111111111111111"))
+    }
+
+    @Test
+    fun `a value in a wrapped cause is written`() {
+        val logger = RecordingSdkLogger()
+        val wrapped = IllegalStateException("outer", IllegalArgumentException("4111111111111111"))
+
+        logger.log(LogLevel.WARN, emptyList(), wrapped) { "failed" }
+
+        assertTrue(logger.everythingWritten().contains("4111111111111111"))
+    }
+
+    /** `initCause` refuses a throwable as its own cause, so a cycle takes two of them. */
+    @Test
+    fun `a cyclic cause chain terminates`() {
+        val logger = RecordingSdkLogger()
+        val outer = IllegalStateException("outer")
+        val inner = IllegalArgumentException("inner")
+        outer.initCause(inner)
+        inner.initCause(outer)
+
+        logger.log(LogLevel.WARN, emptyList(), outer) { "failed" }
+
+        assertTrue(logger.everythingWritten().contains("inner"))
+    }
+
+    @Test
+    fun `a field name is written but its value is not`() {
+        val logger = RecordingSdkLogger()
+
+        logger.log(LogLevel.INFO, listOf(LogField.safe("route", "/pay")), null) { "called" }
+
+        val written = logger.everythingWritten()
+        assertTrue(written.contains("route"))
+        // Pins the boundary rather than a defect: the value sits on a subtype internal to the module
+        // that declares it, so a test asserting a value never reaches a field belongs in that module.
+        assertFalse(written.contains("/pay"))
+    }
+
+    /**
+     * Concurrent writers, because the loggers this module hands out are held by a transport that has every
+     * request in flight at once. An unsynchronised list drops records here rather than reporting anything,
+     * which would silently weaken every absence assertion built on it.
+     */
+    @Test
+    fun `records survive concurrent writers`() =
+        runTest {
+            val logger = RecordingSdkLogger()
+
+            (1..WRITERS)
+                .map { writer ->
+                    async(Dispatchers.IO) {
+                        repeat(LINES_EACH) { line ->
+                            logger.log(LogLevel.DEBUG, emptyList(), null) { "writer $writer line $line" }
+                        }
+                    }
+                }.awaitAll()
+
+            assertEquals(WRITERS * LINES_EACH, logger.records.size)
+        }
+}

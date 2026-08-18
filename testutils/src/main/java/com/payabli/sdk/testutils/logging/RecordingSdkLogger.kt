@@ -3,6 +3,10 @@ package com.payabli.sdk.testutils.logging
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.SdkLogger
+import java.util.concurrent.CopyOnWriteArrayList
+
+/** Enough to reach a wrapped cause, and a bound so a self-referencing chain cannot spin. */
+private const val MAX_CAUSE_DEPTH = 10
 
 /**
  * Captures log calls instead of making them.
@@ -34,7 +38,15 @@ public class RecordingSdkLogger : SdkLogger {
         public val fieldNames: List<String> get() = fields.map { it.name }
     }
 
-    public val records: MutableList<Record> = mutableListOf()
+    /**
+     * Thread-safe, because a transport under test writes from every request in flight at once, and the
+     * auth holder this module's `testAuth` builds logs from whichever caller is refreshing.
+     *
+     * An `ArrayList` here loses records rather than reporting anything, and the same race throws out of
+     * `ArrayList.add` often enough to redden a run with nothing wrong with it. `RecordingLogSink` is a
+     * `CopyOnWriteArrayList` for the same reason.
+     */
+    public val records: MutableList<Record> = CopyOnWriteArrayList()
 
     /** Everything, so a test sees every record the SDK writes. */
     override fun isLoggable(level: LogLevel): Boolean = true
@@ -48,9 +60,43 @@ public class RecordingSdkLogger : SdkLogger {
         records += Record(level, fields, message(), throwable)
     }
 
-    /** Every field and every message, flattened, for asserting that a value never appears anywhere. */
+    /**
+     * Every message, every field **name** and every attached throwable, flattened, for asserting that a
+     * value never appears in one of them.
+     *
+     * **Field values are not in here and cannot be.** A field's value lives on a subtype of [LogField]
+     * that is internal to the module declaring it, so nothing outside that module can read one, and
+     * `toString` on the field yields object identity rather than the value. Anything asserting that a
+     * value never reaches a *field* has to be a test in that module; what this covers is the free text,
+     * which is where an accidental interpolation lands.
+     *
+     * **The whole cause chain, not just the throwable handed over.** A caller wraps, so a value that must
+     * not be logged is as likely to sit in a cause as in the outermost exception, and a flattening that
+     * stops at the top reports absence for something present one level down. That is the one answer this
+     * method must never give, since every caller asserts on it being empty.
+     */
     public fun everythingWritten(): String =
         records.joinToString(" ") { record ->
-            record.message + " " + record.fields.joinToString(" ") { it.toString() }
+            record.message + " " + record.fieldNames.joinToString(" ") + " " +
+                record.throwable.causeChainText()
         }
+}
+
+/**
+ * The throwable and its causes as text, bounded.
+ *
+ * A cause chain can be self-referencing, and an unbounded walk over one does not return.
+ */
+private fun Throwable?.causeChainText(): String {
+    val parts = mutableListOf<String>()
+    var current = this
+    var depth = 0
+    while (current != null && depth < MAX_CAUSE_DEPTH) {
+        parts += current.toString()
+        val next = current.cause
+        if (next === current) break
+        current = next
+        depth++
+    }
+    return parts.joinToString(" ")
 }
