@@ -20,6 +20,15 @@ private val REASON = "server text"
 private fun failed(reason: TapToPayFailureReason) = TapToPaySessionState.Failed(reason)
 
 /**
+ * The family and the classification, because the simple name alone is not unique here.
+ *
+ * `Unclassified` is a member of two of these hierarchies with opposite landings, so a set built on simple
+ * names is satisfied by either one and a swap between them reads as unchanged.
+ */
+private val Throwable.classification: String
+    get() = javaClass.enclosingClass?.let { "${it.simpleName}.${javaClass.simpleName}" } ?: javaClass.simpleName
+
+/**
  * Every failure a session can meet, and where it lands.
  *
  * The table is the contract: a host branches on the reason, so a failure that lands on the wrong one sends
@@ -103,18 +112,18 @@ class TapToPaySessionFailuresTest {
         val discarding =
             cases
                 .filter { TapToPaySessionFailures.landingFor(it.first) == failed(ATTESTATION_REQUIRED) }
-                .map { it.first.javaClass.simpleName }
+                .map { it.first.classification }
                 .toSet()
 
         assertEquals(
             setOf(
-                "AttestationRequired",
-                "NotAttested",
-                "AttestationRevoked",
-                "DeviceUnknown",
-                "NotEnrolled",
-                "IntegrityFailed",
-                "KeyLost",
+                "TapToPaySessionException.AttestationRequired",
+                "DeviceServiceException.NotAttested",
+                "DeviceActivationException.AttestationRevoked",
+                "DeviceActivationException.DeviceUnknown",
+                "DeviceActivationException.NotEnrolled",
+                "AttestationException.IntegrityFailed",
+                "DeviceKeyException.KeyLost",
             ),
             discarding,
         )
@@ -125,22 +134,22 @@ class TapToPaySessionFailuresTest {
         val unchanged =
             cases
                 .filter { TapToPaySessionFailures.landingFor(it.first) == null }
-                .map { it.first.javaClass.simpleName }
+                .map { it.first.classification }
                 .toSet()
 
         assertEquals(
             setOf(
-                "NotRecoverable",
-                "CodeIncorrect",
-                "CodeMalformed",
-                "CodeExpired",
-                "AttemptsExhausted",
-                "CodeNotIssued",
-                "CodeUnreadable",
-                "DeviceNotPending",
-                "AssertionRejected",
-                "RequestRejected",
-                "Unclassified",
+                "TapToPaySessionException.NotRecoverable",
+                "DeviceActivationException.CodeIncorrect",
+                "DeviceActivationException.CodeMalformed",
+                "DeviceActivationException.CodeExpired",
+                "DeviceActivationException.AttemptsExhausted",
+                "DeviceActivationException.CodeNotIssued",
+                "DeviceActivationException.CodeUnreadable",
+                "DeviceActivationException.DeviceNotPending",
+                "DeviceActivationException.AssertionRejected",
+                "DeviceActivationException.RequestRejected",
+                "DeviceActivationException.Unclassified",
             ),
             unchanged,
         )
