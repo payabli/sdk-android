@@ -1807,9 +1807,10 @@ def test_poster(mod):
 #
 # The checks are the list. A prose copy beside them went stale as they were added to, twice.
 #
-# Read textually and on purpose. This harness is standard library only, so there is no YAML parser to lean
-# on, and a hand-rolled one would be a second thing to trust. What these checks need is coarse: which lines
-# a step spans, and which of them mention a secret.
+# Read with PyYAML, so the checks see the document rather than the way it happens to be written. The reader
+# that stood here matched keys textually, and five rounds of review found five valid spellings it missed:
+# each one left a guard examining nothing and reporting a pass. Do not reintroduce that to remove the
+# dependency. It is a test harness, not the SDK, and the platform-native rule does not reach it.
 
 # Overridable for the same reason the two scripts above are: the sabotage harness rewrites copies and points
 # this at them, so a mutation is never applied to the working tree.
