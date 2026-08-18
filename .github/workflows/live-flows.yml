@@ -109,9 +109,20 @@ jobs:
       # The app's backend, for the length of this job.
       #
       # The device asks a server for a token and never holds the client credential that mints one, which is the
-      # boundary the SDK exists to keep. So the credential stays here: this step is the only one that sees it,
-      # and it is not the step that runs the emulator action or the tests. `example-server` is the same server
-      # a developer runs on the bench, so CI and the bench exercise one path.
+      # boundary the SDK exists to keep. So the credential stays on the runner. `example-server` is the same
+      # server a developer runs on the bench, so CI and the bench exercise one path.
+      #
+      # **This step is the only one that names the credential, which is not the same as the only one that can
+      # reach it.** The server is backgrounded on purpose, so it outlives this step carrying those variables in
+      # its environment, where any later step on this runner can read them: every step runs as the same user,
+      # and `/proc/<pid>/environ` is readable by the user owning the process. The step's `env:` bounds what a
+      # log or an accidental dump can show, not what a hostile step can take.
+      #
+      # Nor would removing that path close it. The token endpoint is listening on loopback and mints a token
+      # for whoever asks, so anything running here can have one without reading anybody's environment. The
+      # credential is on this machine because the route being tested requires it to be, and the control for a
+      # third-party action running beside it is the commit pin on that action, not the shape of this step. The
+      # `report` job below is where a secret is genuinely kept out of reach, by living in another job.
       #
       # Every setting is injected, so no `.env` is needed and nothing is read from the checkout.
       # The environment reaches the script as a variable rather than as `${{ }}`. An expression is substituted
@@ -150,6 +161,10 @@ jobs:
       # Note what this step is not given: no client id and no client secret. It gets an address to reach the
       # server started above, plus the entry point the app is configured with and the environment. The build
       # reads them from the environment rather than from -P, so they are not in a command line either.
+      #
+      # Not given is not the same as cannot obtain. This action runs on the machine the token server is on, so
+      # it can ask that server for a token or read the credential out of its environment. That is why it is
+      # pinned to a commit while nightly.yml's copy is not, and it is the reason for the pin.
       #
       # 10.0.2.2 is the emulator's alias for the loopback interface of the machine running it, which is where
       # the server is bound. The sample app's debug build and `:payin`'s test APK each permit cleartext to that

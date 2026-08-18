@@ -2071,6 +2071,11 @@ def test_workflows():
     blocks = steps_of(reusable)
     check("W2 the reusable workflow has steps", len(blocks) > 3, f"{len(blocks)}")
 
+    # Which step names the credential, which is what these can see. It is not isolation: the server the
+    # credential starts is backgrounded and outlives its step, so every later step on that runner can reach
+    # it, and live-flows.yml says so where it starts the thing. What this catches is the credential being
+    # written into a step that had no business naming it.
+    #
     # Both halves, because the credential is the pair: a regression that moved only the client id would
     # otherwise pass, and an id alone is enough to matter beside a secret that leaks another way.
     for half in ("client-secret", "client-id"):

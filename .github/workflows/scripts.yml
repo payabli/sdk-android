@@ -4,7 +4,7 @@ name: Nightly reporter tests
 # thing that reports a failure. They are covered here rather than trusted.
 #
 # The same harness asserts what the live workflows have to be, since those hold a client credential: which
-# triggers they may carry, which single step sees the credential, how a value reaches a script, and that a
+# triggers they may carry, which single step names the credential, how a value reaches a script, and that a
 # suite writing nothing fails the run. Each was true of how those files were written, which is not the same
 # as being enforced. The checks themselves are the list, under `test_workflows` in `verify.py`; naming them
 # here as well is a second copy that goes stale, which this comment has already done once.
