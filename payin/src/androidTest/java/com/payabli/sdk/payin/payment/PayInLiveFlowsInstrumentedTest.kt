@@ -331,10 +331,9 @@ class PayInLiveFlowsInstrumentedTest {
             require(parsed.query == null) { "liveTest.tokenHost carries a query: $given" }
             require(parsed.fragment == null) { "liveTest.tokenHost carries a fragment: $given" }
 
-            // An IPv6 literal has to keep its brackets or the port reads as another group of the address.
-            // Measured on the JVM, `URI.getHost()` returns `[::1]` with them, so this adds nothing there; it
-            // is here because this runs on Android's own URI and that is a platform detail rather than a
-            // promise, and bracketing what is already bracketed is what the check avoids.
+            // An IPv6 literal keeps its brackets, or the port that follows reads as another group of the
+            // address. Whether the parse returns them is the platform's business, so this adds them when
+            // they are absent and leaves them when they are not.
             val authority = if (':' in host && !host.startsWith("[")) "[$host]" else host
             return if (parsed.port == -1) "$scheme://$authority" else "$scheme://$authority:${parsed.port}"
         }
