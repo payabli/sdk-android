@@ -64,7 +64,7 @@ android {
                 // taken that change yet, and the reader has to say which environment they checked rather
                 // than discovering it from a red. The exclusion is a method, which the runner accepts in the
                 // same form as a class; the test's own documentation says how to check before passing this.
-                if (!providers.gradleProperty("payabli.ttp.entryPointRefusalDeployed").isPresent) {
+                if (providers.gradleProperty("payabli.ttp.entryPointRefusalDeployed").orNull != "true") {
                     add(
                         "com.payabli.sdk.taptopay.enrollment.platform.DeviceActivationLiveTest" +
                             "#theServiceRefusesAnEntryPointWithTheWordingTheMapperExpects",
