@@ -147,6 +147,17 @@ class HttpRequestDrainingTest {
         assertEquals("request body exceeded 65536 bytes", failure.message)
     }
 
+    /** One budget across every trailer, so a run of short ones cannot hold the thread indefinitely. */
+    @Test
+    fun `trailers past the header cap are refused`() {
+        val trailers = (1..900).joinToString("") { "X-Pad-$it: ${"a".repeat(20)}\r\n" }
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n$trailers")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request headers exceeded 16384 bytes", failure.message)
+    }
+
     @Test
     fun `a chunk size that is not hexadecimal is refused`() {
         val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\nab\r\n")

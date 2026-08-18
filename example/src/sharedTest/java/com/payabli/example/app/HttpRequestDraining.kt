@@ -107,9 +107,13 @@ private fun drainChunked(stream: InputStream) {
         readLine(stream, MAX_HEADER_BYTES) ?: throw IOException("chunked body ended early")
     }
 
-    // Trailers, then the blank line that ends them.
+    // Trailers, then the blank line that ends them, under one budget for all of them together. Bounding each
+    // line on its own bounds nothing: a client sending one short trailer after another holds the accept
+    // thread until the socket timeout, which is the read this function claims to refuse.
+    var trailerBudget = MAX_HEADER_BYTES
     while (true) {
-        val line = readLine(stream, MAX_HEADER_BYTES) ?: return
+        val line = readLine(stream, trailerBudget) ?: return
+        trailerBudget -= line.bytesRead
         if (line.value.isEmpty()) return
     }
 }
