@@ -84,9 +84,18 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException.PaypointUnknown -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.ServiceFailed -> failed(SERVICE_UNAVAILABLE)
-            // Not exhaustive, so a classification added without a case here lands nowhere and the caller is
-            // told nothing. A new classification needs its case in the same change.
-            else -> null
+            // Each error is listed and not collapsed into one `else`, so a new classification fails to
+            // compile here.
+            is DeviceActivationException.CodeMalformed -> null
+            is DeviceActivationException.CodeIncorrect -> null
+            is DeviceActivationException.CodeExpired -> null
+            is DeviceActivationException.AttemptsExhausted -> null
+            is DeviceActivationException.CodeNotIssued -> null
+            is DeviceActivationException.CodeUnreadable -> null
+            is DeviceActivationException.DeviceNotPending -> null
+            is DeviceActivationException.AssertionRejected -> null
+            is DeviceActivationException.RequestRejected -> null
+            is DeviceActivationException.Unclassified -> null
         }
 
     /**
