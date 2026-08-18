@@ -88,22 +88,26 @@ private fun drainChunked(stream: InputStream) {
     var total = 0
     while (true) {
         val header = readLine(stream, MAX_HEADER_BYTES) ?: throw IOException("chunked body ended early")
+        // A Long, so a size too large for an Int is refused as the oversized body it is. Read as an Int,
+        // `ffffffff` came back null and was reported as not hexadecimal, which it plainly is, and which sends
+        // whoever reads that message looking for a malformed header. The `Content-Length` path above says the
+        // same thing about the same mistake.
         val size =
             header.value
                 .substringBefore(';')
                 .trim()
-                .toIntOrNull(radix = 16)
+                .toLongOrNull(radix = 16)
                 ?: throw IOException("chunk size is not hexadecimal: ${header.value}")
 
         if (size < 0) throw IOException("chunk size is negative: ${header.value}")
-        if (size == 0) break
+        if (size == 0L) break
         // Compared before the addition, and against what is left rather than against the running total. A
         // chunk of 0x7fffffff added to any non-zero total wraps it negative, which reads as under the cap and
         // hands drainExactly a two gigabyte read. Both sides here are between zero and the cap, so neither
         // the subtraction nor the addition below can wrap.
         if (size > MAX_BODY_BYTES - total) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
-        total += size
-        drainExactly(stream, size)
+        total += size.toInt()
+        drainExactly(stream, size.toInt())
         readLine(stream, MAX_HEADER_BYTES) ?: throw IOException("chunked body ended early")
     }
 

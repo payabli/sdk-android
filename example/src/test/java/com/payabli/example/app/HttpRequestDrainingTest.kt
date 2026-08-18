@@ -178,6 +178,16 @@ class HttpRequestDrainingTest {
         assertEquals("request headers exceeded 16384 bytes", failure.message)
     }
 
+    /** Hexadecimal and far past the cap, which is an oversized body rather than a malformed header. */
+    @Test
+    fun `a chunk size too large for an Int is refused as oversized`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nffffffff\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body exceeded 65536 bytes", failure.message)
+    }
+
     @Test
     fun `a chunk size that is not hexadecimal is refused`() {
         val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\nab\r\n")
