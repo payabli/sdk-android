@@ -33,6 +33,16 @@ jobs:
           java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          # v6 moved caching into `gradle-actions-caching`, which is proprietary and not covered by the
+          # MIT licence: its release note says upgrading to the default `enhanced` provider accepts a
+          # separate Terms of Use. `basic` is the open-source implementation over the GitHub Actions
+          # cache, which is what v5 did, and the component is not loaded when it is not selected.
+          #
+          # Chosen so nobody has to agree to a third party's terms on the organisation's behalf for a
+          # public repository. `enhanced` may well be faster; that has not been measured here, and it is
+          # a licensing decision rather than a build one.
+          cache-provider: basic
 
       # :taptopay needs a credential fork PRs cannot have; see the card-present job.
       - name: Build
@@ -123,6 +133,9 @@ jobs:
           java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          # See the note on the first setup-gradle in this file.
+          cache-provider: basic
 
       - name: Build
         run: ./gradlew :taptopay:assembleDebug
@@ -159,6 +172,9 @@ jobs:
           java-version: '21'
 
       - uses: gradle/actions/setup-gradle@v6
+        with:
+          # See the note on the first setup-gradle in this file.
+          cache-provider: basic
 
       # Analysis reads these reports, so they run first. Scoped to the modules that build
       # without a credential. :example is absent because the root build skips it in the
