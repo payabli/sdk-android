@@ -103,18 +103,18 @@ class TapToPaySessionFailuresTest {
         val discarding =
             cases
                 .filter { TapToPaySessionFailures.landingFor(it.first) == failed(ATTESTATION_REQUIRED) }
-                .map { it.first.javaClass.name }
+                .map { it.first::class }
                 .toSet()
 
         assertEquals(
             setOf(
-                "com.payabli.sdk.taptopay.session.TapToPaySessionException\$AttestationRequired",
-                "com.payabli.sdk.taptopay.attestation.device.DeviceServiceException\$NotAttested",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$AttestationRevoked",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$DeviceUnknown",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$NotEnrolled",
-                "com.payabli.sdk.taptopay.attestation.AttestationException\$IntegrityFailed",
-                "com.payabli.sdk.core.devicekey.DeviceKeyException\$KeyLost",
+                TapToPaySessionException.AttestationRequired::class,
+                DeviceServiceException.NotAttested::class,
+                DeviceActivationException.AttestationRevoked::class,
+                DeviceActivationException.DeviceUnknown::class,
+                DeviceActivationException.NotEnrolled::class,
+                AttestationException.IntegrityFailed::class,
+                DeviceKeyException.KeyLost::class,
             ),
             discarding,
         )
@@ -125,22 +125,22 @@ class TapToPaySessionFailuresTest {
         val unchanged =
             cases
                 .filter { TapToPaySessionFailures.landingFor(it.first) == null }
-                .map { it.first.javaClass.name }
+                .map { it.first::class }
                 .toSet()
 
         assertEquals(
             setOf(
-                "com.payabli.sdk.taptopay.session.TapToPaySessionException\$NotRecoverable",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$CodeIncorrect",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$CodeMalformed",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$CodeExpired",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$AttemptsExhausted",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$CodeNotIssued",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$CodeUnreadable",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$DeviceNotPending",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$AssertionRejected",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$RequestRejected",
-                "com.payabli.sdk.taptopay.enrollment.DeviceActivationException\$Unclassified",
+                TapToPaySessionException.NotRecoverable::class,
+                DeviceActivationException.CodeIncorrect::class,
+                DeviceActivationException.CodeMalformed::class,
+                DeviceActivationException.CodeExpired::class,
+                DeviceActivationException.AttemptsExhausted::class,
+                DeviceActivationException.CodeNotIssued::class,
+                DeviceActivationException.CodeUnreadable::class,
+                DeviceActivationException.DeviceNotPending::class,
+                DeviceActivationException.AssertionRejected::class,
+                DeviceActivationException.RequestRejected::class,
+                DeviceActivationException.Unclassified::class,
             ),
             unchanged,
         )
