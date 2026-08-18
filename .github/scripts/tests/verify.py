@@ -24,7 +24,14 @@ from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import yaml
+try:
+    import yaml
+except ImportError:  # pragma: no cover - the message is the point
+    # A traceback with no verdict is the one outcome this harness rules out: zero FAIL lines reads exactly
+    # like zero failures. CI has PyYAML on the image and asserts it in the job; a bench that does not says so
+    # here, in one line, with the way to fix it.
+    print("This harness needs PyYAML to read the workflow files: python3 -m pip install pyyaml")
+    raise SystemExit(2)
 
 HERE = Path(__file__).resolve().parent
 
