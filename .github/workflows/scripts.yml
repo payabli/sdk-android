@@ -9,7 +9,7 @@ name: Nightly reporter tests
 # as being enforced. The checks themselves are the list, under `test_workflows` in `verify.py`; naming them
 # here as well is a second copy that goes stale, which this comment has already done once.
 #
-# It also gives a change to those scripts somewhere cheap to be checked. A scheduled run never fires from a
+# It also gives a change to those scripts a cheap place to be checked. A scheduled run never fires from a
 # feature branch. A dispatch can be pointed at one, since `nightly.yml` is on the default branch, but that
 # runs the whole nightly including the emulator suite and its report job posts to the team channel, which is
 # a great deal of machinery and noise for a change to a Python script. So the practical options were a
