@@ -125,10 +125,15 @@ private class HeaderLine(
 )
 
 /**
- * One header line, without its terminator, or null at end of stream.
+ * One header line, without its terminator, or null when the stream ended before the line began.
  *
  * A byte at a time, so the stream is left positioned exactly after the blank line for the body read above,
  * and every byte is counted as it arrives rather than inferred from the string afterwards.
+ *
+ * A stream that ends part way through a line throws. Returning what had arrived so far handed the caller a
+ * line that was never terminated, and each caller then took it at face value: a truncated chunk header was
+ * parsed as a size, and a truncated trailer ended the request as though it were complete. Null means the
+ * stream ended cleanly between lines, which is the only case a caller can tell anything from.
  */
 private fun readLine(
     stream: InputStream,
@@ -138,7 +143,10 @@ private fun readLine(
     var bytesRead = 0
     while (true) {
         val byte = stream.read()
-        if (byte < 0) return if (bytesRead == 0) null else HeaderLine(line.toString(), bytesRead)
+        if (byte < 0) {
+            if (bytesRead == 0) return null
+            throw IOException("request ended part way through a line")
+        }
         bytesRead++
         if (bytesRead > budget) throw IOException("request headers exceeded $MAX_HEADER_BYTES bytes")
         if (byte == '\n'.code) return HeaderLine(line.toString().removeSuffix("\r"), bytesRead)
