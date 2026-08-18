@@ -236,7 +236,10 @@ private class FakeTokenServer : Closeable {
         val RESPONSE =
             "HTTP/1.1 200 OK\r\n" +
                 "Content-Type: application/json\r\n" +
-                "Content-Length: ${BODY.length}\r\n" +
+                // Bytes, not characters, as PayInSessionSourceInstrumentedTest's fake counts them. Equal
+                // while the body is ASCII, and a client reading the declared count would truncate the first
+                // time it is not.
+                "Content-Length: ${BODY.toByteArray().size}\r\n" +
                 "Connection: close\r\n\r\n" +
                 BODY
     }
