@@ -184,9 +184,7 @@ internal sealed class DeviceActivationException(
     /**
      * The entry point this call names cannot be used for it.
      *
-     * Covers both of what [EntryNotAuthorized] and [PaypointUnknown] separate, so a host that cannot act on
-     * the difference gets one remedy: correct the entry point or the credential it was paired with.
-     * **Discards nothing.**
+     * The remedy is to correct the entry point or the credential it was paired with. **Discards nothing.**
      */
     class EntryPointUnusable(
         resultCode: Int?,
