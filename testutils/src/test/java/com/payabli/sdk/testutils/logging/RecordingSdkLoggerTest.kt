@@ -14,6 +14,9 @@ import org.junit.Test
 private const val WRITERS = 8
 private const val LINES_EACH = 2_000
 
+/** Deep enough that a walk bounded by a plausible constant would stop before the value. */
+private const val DEEP_CHAIN = 50
+
 /**
  * The fixture's own tests, because every caller of [RecordingSdkLogger.everythingWritten] asserts that a
  * value is **absent** from it. A flattening that misses somewhere a value can hide reports absence for
@@ -37,6 +40,28 @@ class RecordingSdkLoggerTest {
         logger.log(LogLevel.WARN, emptyList(), wrapped) { "failed" }
 
         assertTrue(logger.everythingWritten().contains("4111111111111111"))
+    }
+
+    @Test
+    fun `a value deep in the cause chain is written`() {
+        val logger = RecordingSdkLogger()
+        var chain: Throwable = IllegalArgumentException("4111111111111111")
+        repeat(DEEP_CHAIN) { link -> chain = IllegalStateException("link $link", chain) }
+
+        logger.log(LogLevel.WARN, emptyList(), chain) { "failed" }
+
+        assertTrue(logger.everythingWritten().contains("4111111111111111"))
+    }
+
+    @Test
+    fun `a field list the caller keeps cannot change a record`() {
+        val logger = RecordingSdkLogger()
+        val fields = mutableListOf(LogField.safe("route", "/pay"))
+
+        logger.log(LogLevel.INFO, fields, null) { "called" }
+        fields.add(LogField.safe("statusCode", 500))
+
+        assertEquals(listOf("route"), logger.records.single().fieldNames)
     }
 
     /** `initCause` refuses a throwable as its own cause, so a cycle takes two of them. */

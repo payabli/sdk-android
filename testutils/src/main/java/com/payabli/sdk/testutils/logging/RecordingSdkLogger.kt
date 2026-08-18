@@ -3,10 +3,9 @@ package com.payabli.sdk.testutils.logging
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.SdkLogger
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.CopyOnWriteArrayList
-
-/** Enough to reach a wrapped cause, and a bound so a self-referencing chain cannot spin. */
-private const val MAX_CAUSE_DEPTH = 10
 
 /**
  * Captures log calls instead of making them.
@@ -57,7 +56,9 @@ public class RecordingSdkLogger : SdkLogger {
         throwable: Throwable?,
         message: () -> String,
     ) {
-        records += Record(level, fields, message(), throwable)
+        // Copied, so a caller that hands over a list it still holds cannot change what was recorded after
+        // the fact. A record is what was logged at the moment it was logged.
+        records += Record(level, fields.toList(), message(), throwable)
     }
 
     /**
@@ -70,10 +71,10 @@ public class RecordingSdkLogger : SdkLogger {
      * value never reaches a *field* has to be a test in that module; what this covers is the free text,
      * which is where an accidental interpolation lands.
      *
-     * **The whole cause chain, not just the throwable handed over.** A caller wraps, so a value that must
-     * not be logged is as likely to sit in a cause as in the outermost exception, and a flattening that
-     * stops at the top reports absence for something present one level down. That is the one answer this
-     * method must never give, since every caller asserts on it being empty.
+     * **The whole cause chain, not just the throwable handed over, and to its end.** A caller wraps, so a
+     * value that must not be logged is as likely to sit in a cause as in the outermost exception, and a
+     * flattening that stops anywhere short reports absence for something present below it. That is the one
+     * answer this method must never give, since every caller asserts on it being empty.
      */
     public fun everythingWritten(): String =
         records.joinToString(" ") { record ->
@@ -83,20 +84,20 @@ public class RecordingSdkLogger : SdkLogger {
 }
 
 /**
- * The throwable and its causes as text, bounded.
+ * The throwable and its causes as text, to the end of the chain.
  *
- * A cause chain can be self-referencing, and an unbounded walk over one does not return.
+ * **Terminated by identity, not by a depth limit.** A caller asserts that this text does not contain a
+ * value, so a walk that stops early reports absence for anything below where it stopped. Remembering the
+ * throwables already seen ends a cycle on the first repeat and leaves an ordinary chain walked whole,
+ * however deep it is.
  */
 private fun Throwable?.causeChainText(): String {
     val parts = mutableListOf<String>()
+    val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
     var current = this
-    var depth = 0
-    while (current != null && depth < MAX_CAUSE_DEPTH) {
+    while (current != null && seen.add(current)) {
         parts += current.toString()
-        val next = current.cause
-        if (next === current) break
-        current = next
-        depth++
+        current = current.cause
     }
     return parts.joinToString(" ")
 }
