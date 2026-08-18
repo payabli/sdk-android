@@ -181,6 +181,22 @@ internal sealed class DeviceActivationException(
             reason,
         )
 
+    /**
+     * The entry point this call names cannot be used for it.
+     *
+     * Covers both of what [EntryNotAuthorized] and [PaypointUnknown] separate, so a host that cannot act on
+     * the difference gets one remedy: correct the entry point or the credential it was paired with.
+     * **Discards nothing.**
+     */
+    class EntryPointUnusable(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceActivationException(
+            "the configured entry point cannot be used with this access token; check both in PayabliConfig",
+            resultCode,
+            reason,
+        )
+
     /** The device this record names does not exist under this paypoint. Discards the stored identity. */
     class DeviceUnknown(
         resultCode: Int?,

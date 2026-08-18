@@ -6,20 +6,20 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.taptopay.attestation.device.DeviceFailureMapper
+import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import java.net.HttpURLConnection
 
 /**
  * Turns `/activate`'s refusals into [DeviceActivationException], by reading the service's own wording.
  *
  * The only place in this module that reads a decline's text, which is the role the mapper interface was
- * given. Every literal below is here, in one file, so the day the service stops distinguishing its failures
- * by text there is one file to rewrite.
+ * given. Every literal is here, in one file, so the day the service stops distinguishing its failures by
+ * text there is one file to rewrite. The entry-point literal is the one exception and lives on
+ * [EntryPointFailures], because four other routes compare it too.
  *
- * **Two result codes each carry two unrelated meanings, and that is the whole reason this file is careful.**
- * Under 401 the service says both "this credential is not authorised for the paypoint" and "there is no live
- * attestation for this device"; under 404 both "no such paypoint" and "no such device". One of each pair is
- * a reason to discard the stored identity and the other is emphatically not — discarding on a permission
- * problem would destroy a working enrolment over a token that was simply scoped wrong.
+ * **A result code alone cannot say whether the stored identity goes.** Some refusals mean the record names
+ * something that is gone, and others mean the host configured a credential or an entry point wrong.
+ * Discarding on the second would destroy a working enrolment over a token that was simply scoped wrong.
  *
  * So **the destructive classifications require a positive match and everything else falls to
  * [DeviceActivationException.Unclassified]**, which discards nothing. A service that rewords its messages
@@ -66,6 +66,11 @@ internal class DeviceActivationFailures(
                 DeviceActivationException.DeviceUnknown(resultCode, reason)
             resultCode == HttpURLConnection.HTTP_NOT_FOUND && reason.startsWith(PAYPOINT_NOT_FOUND_PREFIX) ->
                 DeviceActivationException.PaypointUnknown(resultCode, reason)
+
+            // The literal is EntryPointFailures', so this route and the four that use that mapper cannot
+            // drift onto two spellings of one comparison.
+            resultCode == HttpURLConnection.HTTP_FORBIDDEN && reason == EntryPointFailures.ENTRY_POINT_UNUSABLE ->
+                DeviceActivationException.EntryPointUnusable(resultCode, reason)
 
             resultCode != null && resultCode >= HttpURLConnection.HTTP_INTERNAL_ERROR ->
                 DeviceActivationException.ServiceFailed(resultCode, reason)

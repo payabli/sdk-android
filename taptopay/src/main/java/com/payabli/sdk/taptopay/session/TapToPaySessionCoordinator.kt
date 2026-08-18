@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
+import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
@@ -232,7 +233,7 @@ internal class TapToPaySessionCoordinator(
     private suspend fun fetchConfig(): ReaderCredentials {
         val assertion = enrollment.assertion() ?: throw TapToPaySessionException.AttestationRequired()
         return try {
-            client.config(entry, assertion).credentials
+            client.config(entry, assertion, failureMapper = EntryPointFailures).credentials
         } catch (inactive: DeviceServiceException.Forbidden) {
             // Both shapes of the refusal arrive as this one type, and this is where a warm start learns it:
             // registration is the only other place the device is told it owes a code, and a warm start does

@@ -40,6 +40,7 @@ class TapToPaySessionFailuresTest {
             TapToPaySessionException.SetupFailed() to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation,
             DeviceServiceException.NotAttested(401, REASON) to failed(ATTESTATION_REQUIRED),
+            DeviceServiceException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.BadRequest(400, REASON) to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.ServerFailure(500, REASON) to failed(SERVICE_UNAVAILABLE),
@@ -50,6 +51,7 @@ class TapToPaySessionFailuresTest {
             DeviceActivationException.NotEnrolled() to failed(ATTESTATION_REQUIRED),
             DeviceActivationException.EntryNotAuthorized(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceActivationException.PaypointUnknown(404, REASON) to failed(CONFIGURATION_REJECTED),
+            DeviceActivationException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceActivationException.ServiceFailed(500, REASON) to failed(SERVICE_UNAVAILABLE),
             // A wrong code leaves the session alone: the device still owes one.
             DeviceActivationException.CodeIncorrect(400, REASON) to null,
@@ -74,8 +76,10 @@ class TapToPaySessionFailuresTest {
     @Test
     fun `every failure lands where the table says`() {
         for ((failure, expected) in cases) {
+            // The qualified name, because two families carry a classification of the same simple name and a
+            // wrong landing has to say which one moved.
             assertEquals(
-                failure.javaClass.simpleName,
+                failure.javaClass.name,
                 expected,
                 TapToPaySessionFailures.landingFor(failure),
             )

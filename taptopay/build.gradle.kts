@@ -58,6 +58,18 @@ android {
                     add("com.payabli.sdk.taptopay.network.platform.TTPTransactionLiveTest")
                     add("com.payabli.sdk.taptopay.session.platform.TapToPaySessionLiveTest")
                 }
+
+                // One test asserts an answer only a deployed service change produces, and this module ships
+                // ahead of it. Excluded by name, so a live run stays green on an environment that has not
+                // taken that change yet, and the reader has to say which environment they checked rather
+                // than discovering it from a red. The exclusion is a method, which the runner accepts in the
+                // same form as a class; the test's own documentation says how to check before passing this.
+                if (!providers.gradleProperty("payabli.ttp.entryPointRefusalDeployed").isPresent) {
+                    add(
+                        "com.payabli.sdk.taptopay.enrollment.platform.DeviceActivationLiveTest" +
+                            "#theServiceRefusesAnEntryPointWithTheWordingTheMapperExpects",
+                    )
+                }
             }
         if (excluded.isNotEmpty()) {
             testInstrumentationRunnerArguments["notClass"] = excluded.joinToString(",")

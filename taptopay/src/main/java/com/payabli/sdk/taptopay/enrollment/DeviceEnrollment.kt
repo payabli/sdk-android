@@ -14,6 +14,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceAttestationBinding
 import com.payabli.sdk.taptopay.attestation.device.DeviceIdentity
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
+import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
@@ -113,7 +114,7 @@ internal class DeviceEnrollment(
                 store.clear(entry)
             }
 
-            val challenge = client.challenge(entry)
+            val challenge = client.challenge(entry, failureMapper = EntryPointFailures)
 
             val registration =
                 client.register(
@@ -123,6 +124,7 @@ internal class DeviceEnrollment(
                     deviceName = description.deviceName,
                     model = description.model,
                     osVersion = description.osVersion,
+                    failureMapper = EntryPointFailures,
                 )
 
             if (known != null) {
@@ -150,6 +152,7 @@ internal class DeviceEnrollment(
                     ),
                 appId = appId,
                 token = token,
+                failureMapper = EntryPointFailures,
             )
 
             // One write, so there is no ordering to get right and no half-written state to compensate for.

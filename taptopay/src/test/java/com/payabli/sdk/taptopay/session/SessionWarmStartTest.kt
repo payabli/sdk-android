@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
+import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.configBody
 import com.payabli.sdk.taptopay.enrollment.decline
@@ -33,6 +35,26 @@ class SessionWarmStartTest {
             assertEquals(TapToPaySessionState.PendingActivation, fixture.state)
             assertEquals(listOf(RouteScript.CONFIG), fixture.routes)
             assertEquals("the platform was never asked for a verdict", 0, fixture.enrollment.attestor.challenges.size)
+            assertEquals("the reader was never reached", 0, fixture.reader.configureCount)
+        }
+
+    @Test
+    fun `a warm start refused for its entry point reports a rejected configuration, not a pending code`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The route answers this and the refusal above under one result code, and the two send a host to
+            // opposite repairs. Reading them alike is the defect this asserts against.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CONFIG to listOf(decline(403, EntryPointFailures.ENTRY_POINT_UNUSABLE)),
+                    ),
+                )
+            fixture.seedRecord()
+
+            val failure = failureOf { fixture.coordinator.initialize() }
+
+            assertTrue("$failure", failure is DeviceServiceException.EntryPointUnusable)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.CONFIGURATION_REJECTED), fixture.state)
             assertEquals("the reader was never reached", 0, fixture.reader.configureCount)
         }
 
