@@ -125,6 +125,15 @@ class DeviceFailureMappingTest {
                     failureMapper = EntryPointFailures,
                 )
             assertTrue(otherCode is DeviceServiceException.NotFound)
+
+            // A decline that carried no code at all reaches the same comparison, where the wording alone is
+            // not enough to classify it.
+            val noCode =
+                challengeAgainst(
+                    declineEnvelope(null, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                    failureMapper = EntryPointFailures,
+                )
+            assertTrue(noCode is DeviceServiceException.Unclassified)
         }
 
     @Test

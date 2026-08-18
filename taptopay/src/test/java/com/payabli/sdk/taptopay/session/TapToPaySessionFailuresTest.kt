@@ -53,8 +53,18 @@ class TapToPaySessionFailuresTest {
             DeviceActivationException.PaypointUnknown(404, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceActivationException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceActivationException.ServiceFailed(500, REASON) to failed(SERVICE_UNAVAILABLE),
-            // A wrong code leaves the session alone: the device still owes one.
+            // A wrong code leaves the session alone: the device still owes one. So does everything else the
+            // caller can answer by sending the code again, which is the rest of this group.
             DeviceActivationException.CodeIncorrect(400, REASON) to null,
+            DeviceActivationException.CodeMalformed() to null,
+            DeviceActivationException.CodeExpired(400, REASON) to null,
+            DeviceActivationException.AttemptsExhausted(400, REASON) to null,
+            DeviceActivationException.CodeNotIssued(400, REASON) to null,
+            DeviceActivationException.CodeUnreadable(400, REASON) to null,
+            DeviceActivationException.DeviceNotPending(400, REASON) to null,
+            DeviceActivationException.AssertionRejected(400, REASON) to null,
+            DeviceActivationException.RequestRejected(400, REASON) to null,
+            DeviceActivationException.Unclassified(418, REASON) to null,
             // The key is gone, so the identity is: enrollment discards the record before raising it.
             DeviceKeyException.KeyLost() to failed(ATTESTATION_REQUIRED),
             DeviceKeyException.SigningFailed() to failed(SDK_INTERNAL_ERROR),
@@ -118,6 +128,21 @@ class TapToPaySessionFailuresTest {
                 .map { it.first.javaClass.simpleName }
                 .toSet()
 
-        assertEquals(setOf("NotRecoverable", "CodeIncorrect"), unchanged)
+        assertEquals(
+            setOf(
+                "NotRecoverable",
+                "CodeIncorrect",
+                "CodeMalformed",
+                "CodeExpired",
+                "AttemptsExhausted",
+                "CodeNotIssued",
+                "CodeUnreadable",
+                "DeviceNotPending",
+                "AssertionRejected",
+                "RequestRejected",
+                "Unclassified",
+            ),
+            unchanged,
+        )
     }
 }
