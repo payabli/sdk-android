@@ -4,14 +4,20 @@
 thing that reports a failure. Between them they are the reason anyone finds out a night went red, so they
 are covered here rather than trusted.
 
-Two entry points and no setup. The requirements are `python3` and `git`: the collector half shells out to
-`git` to build the synthetic repository it runs against, so it fails without one on `PATH`. No third-party
-Python package is involved at all, which is deliberate: it matches the repository's posture on third-party
-code and means these tests add no supply-chain surface to a security SDK.
+Two entry points and no setup. The requirements are `python3`, `git` and `PyYAML`: the collector half
+shells out to `git` to build the synthetic repository it runs against, and the workflow checks parse the
+files they read. `ubuntu-latest` carries PyYAML in the runner's own python3, so CI installs nothing and needs
+no `setup-python`; the harness job asserts it is there rather than assuming.
+
+**PyYAML is here because the SDK's rule does not reach this far.** `CLAUDE.md`'s platform-native rule is
+about what ships in the SDK: no third-party HTTP client, crypto engine, DI framework or JSON mapper inside
+`:core` and the capability modules. Nothing here ships, and neither does the sample app or `example-server`.
+Reading the rule as covering them cost five rounds of review, each finding a different valid spelling that
+the textual reader it forced missed, and each one a guard silently examining nothing.
 
 ```bash
-python3 .github/scripts/tests/verify.py     # 405 checks, about 4 seconds
-python3 .github/scripts/tests/sabotage.py   # 46 deliberate breaks, about a minute
+python3 .github/scripts/tests/verify.py     # about 4 seconds
+python3 .github/scripts/tests/sabotage.py   # about a minute
 ```
 
 Both run in CI through `.github/workflows/scripts.yml`, but only when `.github/scripts/**` or that

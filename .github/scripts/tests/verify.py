@@ -24,6 +24,15 @@ from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - the message is the point
+    # A traceback with no verdict is the one outcome this harness rules out: zero FAIL lines reads exactly
+    # like zero failures. CI has PyYAML on the image and asserts it in the job; a bench that does not says so
+    # here, in one line, with the way to fix it.
+    print("This harness needs PyYAML to read the workflow files: python3 -m pip install pyyaml")
+    raise SystemExit(2)
+
 HERE = Path(__file__).resolve().parent
 
 # Pointing COLLECTOR or POSTER at an older revision is how a check is proved red before it is proved green,
@@ -1794,7 +1803,324 @@ def test_poster(mod):
           "unchanged since the last green nightly" not in threaded, threaded)
 
 
-HALVES = ("both", "collector", "poster")
+# --------------------------------------------------------------------------------------------------
+# Workflows
+# --------------------------------------------------------------------------------------------------
+#
+# The live workflows hold a client credential, and what keeps it where it belongs is how those files are
+# written, which is not the same as being enforced. Any of the checks below could be undone by an edit that
+# looks reasonable in isolation, and the consequence would not show up in a test run or a review diff as
+# anything alarming: two of them exist because the file was written wrong and nothing said so.
+#
+# The checks are the list. A prose copy beside them went stale as they were added to, twice.
+#
+# Read with PyYAML, so the checks see the document rather than the way it happens to be written. The reader
+# that stood here matched keys textually, and five rounds of review found five valid spellings it missed:
+# each one left a guard examining nothing and reporting a pass. Do not reintroduce that to remove the
+# dependency. It is a test harness, not the SDK, and the platform-native rule does not reach it.
+
+# Overridable for the same reason the two scripts above are: the sabotage harness rewrites copies and points
+# this at them, so a mutation is never applied to the working tree.
+WORKFLOWS = Path(os.environ.get("NIGHTLY_WORKFLOWS", SDK / ".github/workflows"))
+
+LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
+
+
+def workflow_text(name: str) -> str:
+    """The file, or empty text after failing a check that says which file is missing.
+
+    A rename used to raise out of the harness, which prints a traceback and no FAIL lines and stops before
+    every later check. That reads far too much like a clean run for something that examined nothing: the
+    checks that follow are what say whether a credential is where it belongs, and none of them ran.
+    """
+    try:
+        return (WORKFLOWS / name).read_text(encoding="utf-8")
+    except OSError as error:
+        check(f"W0 {name} is readable", False, f"{type(error).__name__}: {error}")
+        return ""
+
+
+def workflow_doc(name: str) -> dict:
+    """The workflow parsed, or an empty mapping after failing a check that says why.
+
+    Parsed rather than read line by line. The textual reader this replaces was correct for the spelling each
+    file happened to use and wrong for every other spelling of the same document: quoted trigger names,
+    inline comments after a key, `on:` in its shorthand forms, and the block scalar indicators `|-`, `|+`,
+    `|2` and `>-`. Five rounds of review found five of those, each one a guard that examined nothing and
+    reported a pass. A parser has no opinion about how the document is written.
+    """
+    text = workflow_text(name)
+    if not text:
+        return {}
+    try:
+        loaded = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        check(f"W0 {name} parses", False, f"{type(error).__name__}: {error}")
+        return {}
+    if not isinstance(loaded, dict):
+        check(f"W0 {name} is a mapping", False, type(loaded).__name__)
+        return {}
+    return loaded
+
+
+def trigger_keys(doc: dict) -> list[str]:
+    """The triggers named by `on:`, whichever of the three forms the file uses.
+
+    **YAML 1.1 reads a bare `on` as the boolean true**, so `doc["on"]` finds nothing in a workflow written
+    the ordinary way and `doc[True]` is where the triggers are. Quoted, the key stays a string, so both are
+    looked for. Getting this wrong would empty the list for every file and fail closed on the guard below,
+    but it is the one thing about parsing a workflow that is not obvious from reading one.
+    """
+    for key in (True, "on"):
+        if key not in doc:
+            continue
+        value = doc[key]
+        if isinstance(value, dict):
+            return [str(name) for name in value]
+        if isinstance(value, list):
+            return [str(name) for name in value]
+        return [] if value is None else [str(value)]
+    return []
+
+
+def steps_of(doc: dict) -> list[dict]:
+    """Every step of every job, as the mappings they are."""
+    steps: list[dict] = []
+    for job in (doc.get("jobs") or {}).values():
+        if not isinstance(job, dict):
+            continue
+        for step in job.get("steps") or []:
+            if isinstance(step, dict):
+                steps.append(step)
+    return steps
+
+
+def step_text(step: dict) -> str:
+    """A step rendered back to YAML, for the checks that ask whether it mentions something anywhere.
+
+    Rendered rather than searched key by key, because what those checks are about is a secret appearing in a
+    step at all, and enumerating the places one could appear is the enumeration a parser exists to avoid.
+    """
+    return yaml.safe_dump(step, default_flow_style=False, sort_keys=False)
+
+
+def script_lines(step: dict) -> list[str]:
+    """The commands in a step's `script` input, which is what the emulator action is handed."""
+    return meaningful_lines((step.get("with") or {}).get("script"))
+
+
+def meaningful_lines(body) -> list[str]:
+    """The lines of a block body, without the blanks and comments the action itself drops."""
+    if not isinstance(body, str):
+        return []
+    return [line.strip() for line in body.splitlines() if line.strip() and not line.strip().startswith("#")]
+
+
+LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
+
+
+def load_live_poster():
+    """`live_slack.py`, which imports `nightly_slack`, so its directory has to be importable."""
+    sys.path.insert(0, str(LIVE_POSTER.parent))
+    try:
+        spec = importlib.util.spec_from_file_location("live_slack", LIVE_POSTER)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    finally:
+        sys.path.pop(0)
+
+
+def test_live_summary(mod):
+    """`summarize` is the boundary between a failure message and a chat channel.
+
+    The live flows submit a card and a bank account, and the assertion text around them is not written with a
+    channel in mind. What stops a submitted value reaching one is this function emitting only what it matched,
+    so widening the pattern by accident is the failure worth catching, and it is invisible in a diff.
+    """
+    # The values a failure message can carry, in one string, with a reportable code beside them so the
+    # summary is not empty for the wrong reason.
+    leaky = ('junit.framework.ComparisonFailure: expected:<Approved> but was:<Declined for 4111111111111111 '
+             'held by QA Tester, acct 1234567890, token abc-secret-xyz> code=PAYMENT_DECLINED')
+    summary = mod.summarize(leaky)
+    check("L1 the classification survives", "ComparisonFailure" in summary, summary)
+    check("L1 the wire code survives", "code=PAYMENT_DECLINED" in summary, summary)
+    for secret in ("4111111111111111", "QA Tester", "1234567890", "abc-secret-xyz"):
+        check(f"L1 {secret!r} does not reach the channel", secret not in summary, summary)
+
+    # The runner writes this one capitalised, and the pattern carried it in lower case once.
+    started = "ComposeTimeoutException: No compose hierarchies found in the app"
+    check("L2 the capitalised phrase is reportable", "No compose hierarchies" in mod.summarize(started),
+          mod.summarize(started))
+
+    # The status is an `Int` at its source, so anything else under that key is not a status and the value
+    # shape for identifiers does not have to cover it.
+    numeric = "httpStatus=500 code=X"
+    check("L2 a numeric status is reportable", "httpStatus=500" in mod.summarize(numeric), mod.summarize(numeric))
+    lettered = "httpStatus=abcdefghij code=X"
+    check("L2 a status that is not a number is not", "abcdefghij" not in mod.summarize(lettered),
+          mod.summarize(lettered))
+
+    # An identifier is matched exactly, so a message writing CODE= is not reportable and cannot carry the
+    # text beside it through.
+    wrong_case = "CODE=leaked 4111111111111111"
+    check("L3 a wrong-case identifier is not reportable", "4111111111111111" not in mod.summarize(wrong_case),
+          mod.summarize(wrong_case))
+    check("L3 and says so rather than going empty", "no reportable detail" in mod.summarize(wrong_case),
+          mod.summarize(wrong_case))
+
+    check("L4 a message with nothing reportable points at the artifact",
+          "read the results artifact" in mod.summarize("Payment for QA Tester failed at step 3"))
+    check("L4 an empty message does the same", "read the results artifact" in mod.summarize(""))
+
+    # Deduplicated and in order, so a message repeating a code does not repeat it in the channel.
+    check("L5 repeats are collapsed, order kept",
+          mod.summarize("code=X httpStatus=500 code=X") == "code=X httpStatus=500",
+          mod.summarize("code=X httpStatus=500 code=X"))
+
+    # Bounded, because a failure message is not: the thread post is capped separately and this is the value
+    # that goes into it.
+    check("L6 the summary is bounded", len(mod.summarize("code=A " * 400)) <= 300,
+          str(len(mod.summarize("code=A " * 400))))
+
+    # The thread post's own bound. A list cut through the middle of a line reads as the whole list, which is
+    # the failure mode: the reader cannot tell a report of three failures from a report of thirty.
+    many = [mod.Flow("PayInLiveFlowsInstrumentedTest", f"flow{index}", "code=A " * 40) for index in range(60)]
+    body = mod.thread_body(many)
+    check("L7 the thread post is bounded", len(body) <= mod.SLACK_TEXT_LIMIT, str(len(body)))
+    check("L7 it says how many it dropped", "further failure(s) not listed here" in body, body[-120:])
+    check("L7 and every line it kept is whole",
+          all(line.startswith(("•", "_")) for line in body.splitlines()),
+          body.splitlines()[-1])
+
+    few = [mod.Flow("QaWalkthroughTest", "one", "code=B")]
+    check("L7 a list that fits carries no notice", "not listed here" not in mod.thread_body(few),
+          mod.thread_body(few))
+
+    # The case the loop drops to nothing on: one failure longer than the limit, which a parameterized test
+    # name reaches. The notice is then the whole message, and it was arriving under a blank line.
+    huge = mod.thread_body([mod.Flow("PayInLiveFlowsInstrumentedTest", "x" * 3200, "code=A")])
+    check("L8 a single oversized failure leaves the notice alone", huge.splitlines() == [
+        "_1 further failure(s) not listed here; see the run._"], repr(huge))
+
+
+def test_workflows():
+    for name in LIVE_WORKFLOWS:
+        text = workflow_text(name)
+        keys = trigger_keys(workflow_doc(name))
+        check(f"W1 {name} has triggers at all", bool(keys), f"{keys}")
+        # pull_request_target is the dangerous one and the easy one to add by mistake: it runs against a
+        # fork's head with the base repository's secrets available.
+        check(f"W1 {name} cannot be triggered by a pull request",
+              not any(key.startswith("pull_request") for key in keys), f"{keys}")
+        # The same question asked of the raw text, because the check above trusts one library to agree with
+        # what Actions does with the file. Cheap, and these files have no other use for the word.
+        check(f"W1 {name} does not mention a pull request trigger anywhere",
+              "pull_request" not in text,
+              next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
+
+    # The one thing about parsing a workflow that is not obvious from reading one: YAML 1.1 reads a bare
+    # `on` as the boolean true, so a lookup by the string finds nothing at all.
+    bare = trigger_keys(yaml.safe_load("on:\n  pull_request:\n    branches: [main]\n"))
+    check("W1 a bare on: key is found despite YAML reading it as a boolean", bare == ["pull_request"],
+          f"{bare}")
+    quoted = trigger_keys(yaml.safe_load('"on": ["pull_request"]'))
+    check("W1 and a quoted one, which stays a string", quoted == ["pull_request"], f"{quoted}")
+
+    reusable = workflow_doc("live-flows.yml")
+    reusable_text = workflow_text("live-flows.yml")
+    steps = steps_of(reusable)
+    check("W2 the reusable workflow has steps", len(steps) > 3, f"{len(steps)}")
+
+    # Which step names the credential, which is what these can see. It is not isolation: the server the
+    # credential starts is backgrounded and outlives its step, so every later step on that runner can reach
+    # it, and live-flows.yml says so where it starts the thing. What this catches is the credential being
+    # written into a step that had no business naming it.
+    #
+    # Both halves, because the credential is the pair: a regression that moved only the client id would
+    # otherwise pass, and an id alone is enough to matter beside a secret that leaks another way.
+    rendered = [(step, step_text(step)) for step in steps]
+    for half in ("client-secret", "client-id"):
+        holding = [step for step, body in rendered if f"secrets.{half}" in body]
+        check(f"W2 exactly one step is given the {half}", len(holding) == 1,
+              f"{len(holding)} steps: " + " | ".join(str(step.get('name', '?')) for step in holding))
+        if holding:
+            check(f"W2 and the {half} goes to the step that runs the token server",
+                  "server.mjs" in str(holding[0].get("run", "")), str(holding[0].get("name", "?")))
+
+    emulator = [(step, body) for step, body in rendered
+                if "android-emulator-runner" in str(step.get("uses", ""))]
+    check("W3 the emulator steps are found", len(emulator) == 2, f"{len(emulator)}")
+    check("W3 no emulator step is given the client secret",
+          not any("secrets.client-secret" in body or "secrets.client-id" in body for _, body in emulator))
+    # The address is what replaced the credential, so its absence would mean the tests fall back to whatever
+    # the build compiled in rather than reaching the server this workflow started. Read as a key of the step's
+    # environment, so renaming it to anything else is an absence rather than a near miss.
+    check("W3 the live step is given the token host",
+          any("PAYABLI_LIVETEST_TOKEN_HOST" in (step.get("env") or {}) for step, _ in emulator))
+
+    check("W4 no live setting is passed as a gradle argument",
+          "-Ppayabli.liveTest." not in reusable_text,
+          next((line.strip() for line in reusable_text.splitlines() if "-Ppayabli.liveTest." in line), ""))
+
+    # The emulator action splits its `script` input on newlines and runs each resulting line as its own
+    # `sh -c`, so a trailing backslash joins nothing: the command runs without its arguments and the
+    # arguments run as a command. Invisible in review, and these workflows have no pull request trigger, so
+    # nothing else would find it before a scheduled run did.
+    #
+    # Guarded before it is read, as the step list is. A loop over nothing runs no checks and reports a pass.
+    # No line of any emulator script continues, including the AVD step's one-liner. The textual reader could
+    # not see that one at all, because it is a plain `script:` value rather than a block, which is the shape
+    # of gap a parser closes without being told about it.
+    for step, _ in emulator:
+        for line in script_lines(step):
+            check("W5 no line of an emulator script continues onto the next",
+                  not line.endswith("\\"), line)
+
+    # The step that runs the tests, identified the way W3 identifies it, so this cannot drift onto the other.
+    live = [step for step, _ in emulator if "PAYABLI_LIVETEST_TOKEN_HOST" in (step.get("env") or {})]
+    check("W5 the live step was found", len(live) == 1, f"{len(live)}")
+    commands = [line for step in live for line in script_lines(step)]
+    check("W5 the live script runs two suites", len(commands) == 2, f"{commands}")
+    for line in commands:
+        check("W5 every line of the live script is a command", line.startswith("./"), line)
+
+    # An expression is substituted into a script before any of it runs, so a value that closes its own quote
+    # runs as a command with this job's secrets in the environment. Values reach a script as variables.
+    #
+    # Every line of the body, comments included. Substitution does not care whether the shell would run the
+    # line, and Actions echoes the script it substituted into the log, so an expression parked behind a `#`
+    # is interpolated just the same. Dropping comments is right where the emulator action drops them itself,
+    # which is the check above, and wrong here.
+    for name in LIVE_WORKFLOWS:
+        bodies = [str(step.get("run", "")) for step in steps_of(workflow_doc(name))]
+        offending = [line.strip() for body in bodies for line in body.splitlines() if "${{" in line]
+        check(f"W6 {name} interpolates no expression inside a run script",
+              not offending, " | ".join(offending))
+
+    behind_comment = yaml.safe_load(
+        "on:\n  workflow_dispatch:\njobs:\n  j:\n    steps:\n      - name: one\n"
+        "        run: |\n          # ${{ secrets.client-secret }}\n          echo hi\n"
+    )
+    hidden = [line.strip() for step in steps_of(behind_comment)
+              for line in str(step.get("run", "")).splitlines() if "${{" in line]
+    check("W6 an expression behind a shell comment is still found", bool(hidden), f"{hidden}")
+    # The same guard as W5, on the file that has run steps at all: nothing found means the check above
+    # examined nothing rather than found nothing wrong.
+    check("W6 the run scripts were found", any(step.get("run") for step in steps))
+
+    # A suite that succeeded having discovered no tests writes no results, so the step stays green and only
+    # the Slack message says otherwise. The guard has to name each module: one silent suite is invisible in a
+    # total the other one fills.
+    guard = next((step for step in steps if "wrote no instrumented results" in str(step.get("run", ""))), None)
+    check("W7 the reusable workflow refuses a suite that wrote no results", guard is not None)
+    if guard is not None:
+        named = str((guard.get("env") or {}).get("INSTRUMENTED_MODULES", ""))
+        for module in ("payin", "example"):
+            check(f"W7 and it names {module}", module in named.split(), named)
+
+
+HALVES = ("both", "collector", "poster", "workflows", "live")
 
 
 def main():
@@ -1812,6 +2138,10 @@ def main():
             test_collector()
         if ONLY in ("both", "poster"):
             test_poster(load_poster(base))
+        if ONLY in ("both", "workflows"):
+            test_workflows()
+        if ONLY in ("both", "live"):
+            test_live_summary(load_live_poster())
     finally:
         server.shutdown()
 

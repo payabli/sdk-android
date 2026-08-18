@@ -1,3 +1,4 @@
+import com.payabli.buildlogic.liveTestSettings
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
@@ -23,21 +24,28 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // The live tier, which sends real requests to a real environment and needs credentials no repository
-        // holds. Configured, they reach the test as runner arguments; absent, the class is excluded by name so
-        // the run reports no skip, which is how `:taptopay` gates its real Play Integrity test and for the same
-        // reason: a standing skip cannot be told apart from a regression that started skipping.
+        // The live tier, which sends real requests to a real environment. Configured, its settings reach the
+        // test as runner arguments; absent, the class is excluded by name so the run reports no skip, which is
+        // how `:taptopay` gates its real Play Integrity test and for the same reason: a standing skip cannot
+        // be told apart from a regression that started skipping.
+        //
+        // A token server has to be reachable at `tokenHost`, because nothing here mints one: the client
+        // credential belongs to that server and never to the device. `example-server` is one.
         //
         // Set these in ~/.gradle/gradle.properties, never here, and one environment per invocation because the
         // SDK installs one session per process:
         //
         //   ./gradlew :payin:connectedDebugAndroidTest \
         //     -Ppayabli.liveTest.environment=sandbox -Ppayabli.liveTest.entryPoint=<entry> \
-        //     -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret>
+        //     -Ppayabli.liveTest.tokenHost=<host:port the token server is listening on>
+        //
+        // 10.0.2.2 is where an emulator reaches the machine running it, and 127.0.0.1 where a handset reaches
+        // it once the port is forwarded. Which port depends on what the server was started with.
+        //
+        // Each also reads an environment variable, which is what an automated run sets. Both halves live in
+        // build-logic, because `:example` resolves the same three.
         val liveFlows = "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"
-        val liveTest =
-            listOf("environment", "entryPoint", "clientId", "clientSecret")
-                .associateWith { providers.gradleProperty("payabli.liveTest.$it").orNull }
+        val liveTest = liveTestSettings(providers)
 
         // Every class or method kept out of an ordinary run, as one list, because `notClass` is a single
         // runner argument: setting it twice keeps the last write and silently readmits whatever the earlier
@@ -54,8 +62,8 @@ android {
         // does, and it runs meanwhile with the property below.
         //
         // Named by class as well, because the property alone readmits it to a whole-module run: a developer
-        // who has stored the four live credentials above would send real transactions while rechecking a
-        // form test. The class filter keeps the run to the four tests being rechecked.
+        // who has stored the live settings above would send real transactions while rechecking a form test.
+        // The class filter keeps the run to the four tests being rechecked.
         //
         //   ./gradlew :payin:connectedAndroidTest -Ppayabli.quarantine.run=true \
         //     -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest
@@ -63,17 +71,8 @@ android {
             excluded += "com.payabli.sdk.payin.ui.PayInFormOutcomeAcrossRecreationInstrumentedTest"
         }
 
-        if (liveTest.values.none { it == null }) {
-            liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value!! }
-
-            // One flow excluded on its own, by method, because whether a paypoint's connector takes an ACH debit
-            // is its configuration rather than anything this SDK sends: a paypoint that refuses them refuses
-            // every request shape, so the flow would be permanently red there against a working client. Set
-            // `payabli.liveTest.achDebits=true` for a paypoint that accepts them. Excluded rather than skipped,
-            // as the tiers are, so the counts stay honest.
-            if (providers.gradleProperty("payabli.liveTest.achDebits").orNull != "true") {
-                excluded += "$liveFlows#capturingABankAccountThePayerEntered"
-            }
+        if (liveTest != null) {
+            liveTest.forEach { (name, value) -> testInstrumentationRunnerArguments["liveTest.$name"] = value }
         } else {
             excluded += liveFlows
         }

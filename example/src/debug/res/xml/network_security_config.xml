@@ -16,6 +16,8 @@
   the wide bind publishes an unauthenticated token endpoint to the network.
 -->
 <network-security-config>
+    <!-- Explicit because the default varies by targetSdk: denied from 28, permitted at 27 and below. -->
+    <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <!-- The device's own loopback. A physical handset reaches the development machine here once
              `adb reverse tcp:8787 tcp:8787` is forwarding, and so does the server's default bind. -->

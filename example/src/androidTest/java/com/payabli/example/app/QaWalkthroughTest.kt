@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
@@ -39,8 +40,9 @@ import org.junit.runner.RunWith
  *   -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
  * ```
  *
- * Add `-Ppayabli.qaWalkthrough.achDebits=true` for a paypoint whose connector takes an ACH debit; without it the
- * bank capture is excluded by name rather than left to fail.
+ * Given the three `payabli.liveTest.*` values instead, the address, entry point and environment come from the
+ * run rather than from what the build compiled in, which is how CI points the app at the server it started. A
+ * token server is required either way, and holds the client credential the app never sees.
  *
  * **The device has to be unlocked.** A phone that locked while idle is awake and still shows the keyguard, so
  * no activity reaches the foreground and every flow here fails with "No compose hierarchies found in the app",
@@ -58,9 +60,12 @@ class QaWalkthroughTest {
      *
      * Checked before anything is driven, because without it the failure is a missing node partway through a
      * flow that had already reached the service.
+     *
+     * One method rather than two, because JUnit orders `@Before` methods arbitrarily: split, the address setup
+     * ran first on this runner and failed on a `container` the other half had not assigned yet.
      */
     @Before
-    fun requireTheBuildOffersThePrefill() {
+    fun prepareTheApp() {
         val application =
             InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
                 as PayabliDemoApplication
@@ -70,6 +75,44 @@ class QaWalkthroughTest {
             "this build offers no prefill button: install it with -Ppayabli.demo.prefill=true",
             container.configuration.prefillEnabled,
         )
+
+        pointTheAppAtTheTokenServerWhenOneWasNamed()
+    }
+
+    /**
+     * Points the app at the token server the run named, if it named one.
+     *
+     * What arrives is an address, an entry point and an environment. No client credential does, and none is
+     * needed here: the token server holds it and the app asks for a token, which is the arrangement an
+     * integrator's backend implements and the boundary the SDK is built on.
+     */
+    private fun pointTheAppAtTheTokenServerWhenOneWasNamed() {
+        val arguments = InstrumentationRegistry.getArguments()
+        // Trimmed, and blank read as absent, as the build resolves them: an argument passed as an empty
+        // string counts as present otherwise, clears the guard below, and points the app at an address that
+        // is a scheme and a path. The build no longer forwards a blank, but an instrumentation argument does
+        // not have to come from the build.
+        val values =
+            LIVE_ARGUMENTS.associateWith { arguments.getString("liveTest.$it")?.trim()?.ifEmpty { null } }
+        val missing = values.filterValues { it == null }.keys
+
+        // All three or none. A partial set is refused rather than left to the compiled-in address, which is
+        // whatever the build carried: that fails at the first step and names a form that never unlocked,
+        // rather than the argument nobody passed.
+        if (missing.size == LIVE_ARGUMENTS.size) return
+        if (missing.isNotEmpty()) {
+            error("liveTest arguments are partly set. Missing: ${missing.sorted().joinToString()}")
+        }
+
+        // Narrowed once, so what follows reads as the settled values it is rather than as three more places
+        // nullability might arise.
+        val settings = values.mapValues { (name, value) -> requireNotNull(value) { "liveTest.$name" } }
+        val environment =
+            DemoEnvironment.entries.firstOrNull { it.label.equals(settings.getValue("environment"), true) }
+                ?: error("liveTest.environment named no environment: ${settings.getValue("environment")}")
+
+        container.applyLaunchOverride(settings.getValue("tokenHost"))
+        container.applyTestConfiguration(settings.getValue("entryPoint"), environment)
     }
 
     @Test
@@ -112,13 +155,6 @@ class QaWalkthroughTest {
         awaitOutcome("Payment submitted")
     }
 
-    /**
-     * Excluded by method unless `payabli.qaWalkthrough.achDebits=true`.
-     *
-     * Whether a paypoint's connector takes an ACH debit is its configuration rather than anything this app sends:
-     * one that refuses them refuses every request shape, so asserting an approval there leaves a permanently red
-     * flow against a working app. Excluded rather than skipped, so the counts stay honest.
-     */
     @Test
     fun capturingABankAccountThePayerEntered() {
         openTheForm(TopLevelDestination.Capture, submit = CAPTURE)
@@ -224,6 +260,8 @@ class QaWalkthroughTest {
     private fun nodesWith(text: String) = compose.onAllNodesWithText(text).fetchSemanticsNodes()
 
     private companion object {
+        val LIVE_ARGUMENTS = listOf("environment", "entryPoint", "tokenHost")
+
         const val SAVE = "Save payment method"
         const val CAPTURE = "Submit payment"
 

@@ -1,0 +1,273 @@
+name: Live flows
+
+# The card-not-present flows against a real environment, on a real service, sending real transactions.
+#
+# Called rather than triggered: `live-qa.yml` and `live-sandbox.yml` are the two entry points, one per
+# environment, because `PayabliSession` installs one session per process and refuses a second configuration,
+# so an environment is a run rather than a job. Two workflows also keep the results apart: a qa outage
+# reddens the qa run and leaves the sandbox one alone, which one matrixed workflow cannot do.
+#
+# What this answers that `nightly.yml` cannot: the nightly proves the client is internally consistent against
+# its own fakes, and this proves the request it builds is one the service accepts. Neither substitutes for
+# the other, which is why they are separate workflows rather than more steps in one.
+#
+# ## Two suites, two invocations
+#
+# `:payin`'s live tier drives the public pay-in surface directly. The sample app's walkthrough drives the same
+# flows through the form a person sees. Neither mints a token: both ask the server started below, as a host
+# app asks an integrator's backend. They are separate `gradlew` calls because asking for the walkthrough
+# narrows `:example` to it, and because each installs a session in its own process.
+#
+# ## Every action is pinned here, and none is in the nightly
+#
+# The difference is the credential. A step cannot be isolated from code that ran earlier in the same job, so
+# every action in this job is one that could reach the client secret, whoever publishes it. `nightly.yml`
+# records why it stays on moving tags and that reasoning holds there, since it holds no payment credential.
+#
+# Its premise was that nothing bumps a pin, which `.github/dependabot.yml` now answers.
+#
+# ## What the credential can do
+#
+# Mint tokens for one qa or sandbox paypoint. A production credential does not belong in this workflow, and
+# pinning would not make it belong.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: The environment to run against, as the SDK names it.
+        required: true
+        type: string
+    secrets:
+      client-id:
+        required: true
+      client-secret:
+        required: true
+      entry-point:
+        required: true
+      slack-bot-token:
+        description: Absent, the run still decides its own verdict and posts nothing.
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  # Never --info or --debug here: verbose Gradle logs can print repository credentials.
+  GRADLE_OPTS: -Dorg.gradle.console=plain
+
+jobs:
+  live:
+    name: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # The same coordinates the nightly uses, so the two share an AVD cache key shape and a known-good image.
+      API_LEVEL: '34'
+      EMULATOR_TARGET: google_apis
+      EMULATOR_ARCH: x86_64
+    steps:
+      # Depth 1 is enough: nothing here attributes a failure to a commit. A live failure is usually the
+      # service's answer rather than a change, which is the whole reason this is not the nightly.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: AVD cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ env.API_LEVEL }}-${{ env.EMULATOR_TARGET }}-${{ env.EMULATOR_ARCH }}
+
+      - name: Create AVD and generate snapshot for caching
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 15
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: ${{ env.EMULATOR_TARGET }}
+          arch: ${{ env.EMULATOR_ARCH }}
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+
+      # The app's backend, for the length of this job.
+      #
+      # The device asks a server for a token and never holds the client credential that mints one, which is the
+      # boundary the SDK exists to keep. So the credential stays on the runner. `example-server` is the same
+      # server a developer runs on the bench, so CI and the bench exercise one path.
+      #
+      # **This step is the only one that names the credential, which is not the same as the only one that can
+      # reach it.** The server is backgrounded on purpose, so it outlives this step carrying those variables in
+      # its environment, where any later step on this runner can read them: every step runs as the same user,
+      # and `/proc/<pid>/environ` is readable by the user owning the process. The step's `env:` bounds what a
+      # log or an accidental dump can show, not what a hostile step can take.
+      #
+      # Nor would removing that path close it. The token endpoint is listening on loopback and mints a token
+      # for whoever asks, so anything running here can have one without reading anybody's environment. The
+      # credential is on this machine because the route being tested requires it to be, and the control for a
+      # third-party action running beside it is the commit pin on that action, not the shape of this step. The
+      # `report` job below is where a secret is genuinely kept out of reach, by living in another job.
+      #
+      # Every setting is injected, so no `.env` is needed and nothing is read from the checkout.
+      # The environment reaches the script as a variable rather than as `${{ }}`. An expression is substituted
+      # into the script text before any of it runs, so the `case` below could not guard a value that closed
+      # the quote it sits in; today both callers pass a literal, and a dispatch input on either would be the
+      # ordinary change that makes that reachable.
+      - name: Start the token server
+        env:
+          PORT: '8787'
+          ENVIRONMENT: ${{ inputs.environment }}
+          PAYABLI_CLIENT_ID: ${{ secrets.client-id }}
+          PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
+          PAYABLI_ENTRY: ${{ secrets.entry-point }}
+        run: |
+          case "$ENVIRONMENT" in
+            qa)      export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api ;;
+            sandbox) export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api ;;
+            *) echo "::error::unknown environment $ENVIRONMENT"; exit 1 ;;
+          esac
+          nohup node example-server/server.mjs > "$RUNNER_TEMP/token-server.log" 2>&1 &
+          # Waited on rather than assumed: the tests fail as an unlocked-form timeout if it is not up yet,
+          # which names the form and not the server.
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8787/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::the token server did not answer /health on port 8787"
+          exit 1
+
+      # No notAnnotation is passed, deliberately. Both suites are gated by name in their own build file when
+      # their settings are absent, and passing them here is what admits them; the manual-tier annotation on
+      # `:payin`'s live class would exclude it again if a filter were added, which is the mistake to avoid
+      # rather than a filter to write. `class` narrows `:payin` to the live tier so this workflow does not
+      # re-run the ordinary instrumented suite the nightly already covers.
+      #
+      # Note what this step is not given: no client id and no client secret. It gets an address to reach the
+      # server started above, plus the entry point the app is configured with and the environment. The build
+      # reads them from the environment rather than from -P, so they are not in a command line either.
+      #
+      # Not given is not the same as cannot obtain. This action runs on the machine the token server is on, so
+      # it can ask that server for a token or read the credential out of its environment. That is why it is
+      # pinned to a commit while nightly.yml's copy is not, and it is the reason for the pin.
+      #
+      # 10.0.2.2 is the emulator's alias for the loopback interface of the machine running it, which is where
+      # the server is bound. The sample app's debug build and `:payin`'s test APK each permit cleartext to that
+      # address and to 127.0.0.1, and to nothing else.
+      - name: Live flows
+        timeout-minutes: 30
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          PAYABLI_LIVETEST_ENVIRONMENT: ${{ inputs.environment }}
+          PAYABLI_LIVETEST_ENTRY_POINT: ${{ secrets.entry-point }}
+          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: ${{ env.EMULATOR_TARGET }}
+          arch: ${{ env.EMULATOR_ARCH }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          # One command per line, and no continuations. The action splits this input on newlines and runs each
+          # resulting line as its own `sh -c`, so a `\` at the end of a line does not join it to the next: the
+          # first line would run without its arguments and the arguments would run as a command. That is why
+          # nightly.yml writes its longer invocation as a folded scalar instead of a literal block.
+          #
+          # Splitting is also what serialises the two: the action awaits each line and throws on a non-zero
+          # exit, so a refused pay-in flow stops here rather than being reported over by the sample app's run.
+          script: |
+            ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest
+            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true
+
+      # The run's own verdict, so it cannot disagree with the message the report job sends. A suite that
+      # succeeded having discovered no tests writes no results, leaves the step green, and reaches Slack as
+      # "no results written" while the run itself stays successful. nightly.yml refuses the same case through
+      # INSTRUMENTED_MODULES, per module rather than over the total, because one silent suite is hidden by the
+      # other's output.
+      #
+      # Only after a successful step, which is the case it is for: a step that already failed is red without
+      # this, and would report a missing suite it never got to.
+      - name: Every suite wrote results
+        env:
+          INSTRUMENTED_MODULES: payin example
+        run: |
+          missing=
+          for module in $INSTRUMENTED_MODULES; do
+            found=$(find "$module/build/outputs/androidTest-results" -name 'TEST-*.xml' 2>/dev/null | wc -l)
+            [ "$found" -gt 0 ] || missing="$missing $module"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::the step succeeded but these wrote no instrumented results:$missing"
+            exit 1
+          fi
+
+      # On failure too: a live failure is read from the XML, and the runner is gone by the time anyone looks.
+      - name: Upload results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: live-${{ inputs.environment }}-results
+          path: |
+            **/build/reports/androidTests/**
+            **/build/outputs/androidTest-results/**
+          retention-days: 7
+
+  # The same split the nightly makes, for the same reason: step-scoping a secret does not isolate it from code
+  # that ran earlier in the same job, so the only way the emulator action cannot reach the Slack token is for
+  # the token to live in another job. Here it matters twice over, since that job also holds a client secret.
+  #
+  # It also means a live job that times out or dies still gets announced, which is the case worth announcing:
+  # a paypoint that stops answering looks exactly like a job that never finished.
+  report:
+    name: Report ${{ inputs.environment }} to Slack
+    needs: live
+    continue-on-error: true
+    # Not `always()`. A superseded or hand-cancelled run is silent on purpose; a job that died on its own is
+    # not. Same reasoning as the nightly's report job, which states it at length.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Only the poster script is wanted. persist-credentials is off because this job holds a Slack token and
+      # has nothing to push.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Non-blocking: a missing artifact is the case the poster reports rather than a reason to fail, and it
+      # is the case that arises when the live job never finished.
+      - name: Download the results
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: live-${{ inputs.environment }}-results
+          path: ${{ runner.temp }}/live-results
+
+      - name: Post the live report
+        timeout-minutes: 5
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.slack-bot-token }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+          LIVE_ENVIRONMENT: ${{ inputs.environment }}
+          # So a run with no results can say what became of the job instead of guessing.
+          LIVE_JOB_RESULT: ${{ needs.live.result }}
+          PLATFORM: Android
+        run: python3 .github/scripts/live_slack.py "$RUNNER_TEMP/live-results"

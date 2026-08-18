@@ -1,0 +1,30 @@
+name: Live flows (qa)
+
+# One of two entry points into `live-flows.yml`, which carries the whole explanation. This file exists so qa
+# and sandbox are separate runs with separate results rather than two jobs whose failures share a verdict.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:00 Pacific as 11:00 UTC, an hour behind the nightly so the two are not competing for a runner and a
+    # red morning is read in order: the nightly says whether the client changed, this says what the service
+    # answered.
+    - cron: '0 11 * * *'
+
+concurrency:
+  group: live-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    uses: ./.github/workflows/live-flows.yml
+    with:
+      environment: qa
+    secrets:
+      client-id: ${{ secrets.PAYABLI_CLIENT_ID_QA }}
+      client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_QA }}
+      entry-point: ${{ secrets.PAYABLI_ENTRY_QA }}
+      slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}

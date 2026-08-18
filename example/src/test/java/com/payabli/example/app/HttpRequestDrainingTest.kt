@@ -1,0 +1,220 @@
+package com.payabli.example.app
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.IOException
+
+/**
+ * What the fake token servers do before they answer.
+ *
+ * Answering a request that was only partly read races the client's write, and the app reports that as a reset
+ * rather than as the reply it was sent. These assert the stream is positioned after the request, or that the
+ * drain refused it, which is what makes the caller close instead of answering.
+ */
+class HttpRequestDrainingTest {
+    @Test
+    fun `a request with no body leaves the stream at its end`() {
+        val stream = streamOf("GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n")
+
+        drainHttpRequest(stream)
+
+        assertEquals("nothing should be left to read", -1, stream.read())
+    }
+
+    @Test
+    fun `a declared body is read to its end`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 9\r\n\r\n{\"a\":\"b\"}TRAILING")
+
+        drainHttpRequest(stream)
+
+        assertEquals("the body should be consumed and nothing more", "TRAILING", stream.readBytes().decodeToString())
+    }
+
+    @Test
+    fun `a body shorter than it declared is refused`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 40\r\n\r\nshort")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body ended 35 bytes early", failure.message)
+    }
+
+    /** A request that stopped part way through its headers, which read as one that had finished. */
+    @Test
+    fun `a request whose headers end early is refused rather than answered`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 5\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request ended before its headers did", failure.message)
+    }
+
+    /** A line the stream ended part way through, which is not a line a caller can act on. */
+    @Test
+    fun `a request that stops part way through a line is refused`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Len")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request ended part way through a line", failure.message)
+    }
+
+    /** The same truncation where a chunk size is expected, so a partial line cannot be read as one. */
+    @Test
+    fun `a chunk header that stops part way is refused rather than read as a size`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n7f")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request ended part way through a line", failure.message)
+    }
+
+    /** A client that connects and says nothing is not a request, and needs no reply and no failure. */
+    @Test
+    fun `a stream that was empty from the start is not a truncated request`() {
+        drainHttpRequest(streamOf(""))
+    }
+
+    @Test
+    fun `a length too large for an Int is refused as oversized, not as unparseable`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 3000000000\r\n\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body exceeded 65536 bytes", failure.message)
+    }
+
+    @Test
+    fun `a body larger than the cap is refused before it is read`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 999999\r\n\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body exceeded 65536 bytes", failure.message)
+    }
+
+    @Test
+    fun `a negative length is refused rather than read as an empty body`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: -1\r\n\r\nbody")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("Content-Length is negative: -1", failure.message)
+    }
+
+    @Test
+    fun `a negative chunk size is refused`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\nab\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("chunk size is negative: -1", failure.message)
+    }
+
+    @Test
+    fun `a length that is not a number is refused rather than read as none`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: banana\r\n\r\nbody")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("Content-Length is not a number: banana", failure.message)
+    }
+
+    @Test
+    fun `a chunked body is read by its framing`() {
+        val stream =
+            streamOf(
+                "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n" +
+                    "4\r\nabcd\r\n" +
+                    "2\r\nef\r\n" +
+                    "0\r\n\r\n" +
+                    "TRAILING",
+            )
+
+        drainHttpRequest(stream)
+
+        assertEquals("TRAILING", stream.readBytes().decodeToString())
+    }
+
+    @Test
+    fun `a chunk size carrying an extension is read`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n3;name=v\r\nabc\r\n0\r\n\r\nX")
+
+        drainHttpRequest(stream)
+
+        assertEquals("X", stream.readBytes().decodeToString())
+    }
+
+    @Test
+    fun `a chunked body with trailers is read past them`() {
+        val stream =
+            streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n0\r\nExpires: soon\r\n\r\nX")
+
+        drainHttpRequest(stream)
+
+        assertEquals("X", stream.readBytes().decodeToString())
+    }
+
+    /** A size that would wrap the running total negative, which read as under the cap. */
+    @Test
+    fun `a chunk size that would overflow the running total is refused`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n7fffffff\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body exceeded 65536 bytes", failure.message)
+    }
+
+    /** One budget across every trailer, so a run of short ones cannot hold the thread indefinitely. */
+    @Test
+    fun `trailers past the header cap are refused`() {
+        val trailers = (1..900).joinToString("") { "X-Pad-$it: ${"a".repeat(20)}\r\n" }
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n$trailers")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request headers exceeded 16384 bytes", failure.message)
+    }
+
+    /** Hexadecimal and far past the cap, which is an oversized body rather than a malformed header. */
+    @Test
+    fun `a chunk size too large for an Int is refused as oversized`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nffffffff\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body exceeded 65536 bytes", failure.message)
+    }
+
+    @Test
+    fun `a chunk size that is not hexadecimal is refused`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\nab\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("chunk size is not hexadecimal: zz", failure.message)
+    }
+
+    /** `identity` declares no chunked body, so the request has none and nothing is drained. */
+    @Test
+    fun `a transfer encoding that is not chunked declares no body`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: identity\r\n\r\nX")
+
+        drainHttpRequest(stream)
+
+        assertEquals("X", stream.readBytes().decodeToString())
+    }
+
+    @Test
+    fun `headers past the cap are refused`() {
+        val stream = streamOf("GET / HTTP/1.1\r\nX-Long: " + "a".repeat(20_000) + "\r\n\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request headers exceeded 16384 bytes", failure.message)
+    }
+
+    private fun streamOf(request: String) = ByteArrayInputStream(request.toByteArray())
+}

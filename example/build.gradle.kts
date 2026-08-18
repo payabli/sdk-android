@@ -1,3 +1,4 @@
+import com.payabli.buildlogic.liveTestSettings
 import java.util.Properties
 
 plugins {
@@ -108,16 +109,17 @@ android {
             // for a form that stayed locked. Measured: 3 of 3 flows failed that way in a whole-suite run and
             // all 3 passed in an invocation of their own.
             testInstrumentationRunnerArguments["class"] = walkthrough
-        }
 
-        if (providers.gradleProperty("payabli.qaWalkthrough").orNull == "true" &&
-            providers.gradleProperty("payabli.qaWalkthrough.achDebits").orNull != "true"
-        ) {
-            // One flow excluded on its own, by method, as `:payin` excludes its live counterpart and for the
-            // same reason: whether a paypoint's connector takes an ACH debit is its configuration rather than
-            // anything this app sends, so a paypoint that refuses them refuses every request shape and the flow
-            // would be permanently red against a working app. Set this for a paypoint that accepts them.
-            excluded += "$walkthrough#capturingABankAccountThePayerEntered"
+            // The same three `:payin`'s live tier takes, and the same names, because one run configures both.
+            // None is a credential: a token server is reachable at `tokenHost` and holds the client id and
+            // secret, and the app asks it for a token exactly as it would ask an integrator's backend.
+            //
+            // All three or none, refused here as well as in the test. Forwarding a subset is what makes the
+            // difference invisible: the run looks configured, points the app at whatever the build compiled
+            // in, and fails several steps later on a form that never unlocked.
+            liveTestSettings(providers)?.forEach { (name, value) ->
+                testInstrumentationRunnerArguments["liveTest.$name"] = value
+            }
         }
 
         // One list, because `notClass` is a single runner argument: setting it twice keeps the last write and
@@ -142,6 +144,13 @@ android {
         compose = true
         // AGP defaults this off, and the demo settings above are read through BuildConfig.
         buildConfig = true
+    }
+
+    // The request drain, as `:payin` shares its fixtures. A fake server uses it on a device and its own tests
+    // run on the JVM, so it is compiled into both. Nothing here may be Android-only.
+    sourceSets {
+        getByName("test").kotlin.srcDir("src/sharedTest/java")
+        getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
     }
 }
 

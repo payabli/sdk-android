@@ -27,6 +27,15 @@ import sys
 import tempfile
 from pathlib import Path
 
+try:
+    import yaml
+except ImportError:  # pragma: no cover - the message is the point
+    # A traceback with no verdict is the one outcome this harness rules out: zero FAIL lines reads exactly
+    # like zero failures. CI has PyYAML on the image and asserts it in the job; a bench that does not says so
+    # here, in one line, with the way to fix it.
+    print("This harness needs PyYAML to read the workflow files: python3 -m pip install pyyaml")
+    raise SystemExit(2)
+
 HERE = Path(__file__).resolve().parent
 # Not `os.environ.get("NIGHTLY_SDK", HERE.parents[2])`: a default argument is evaluated eagerly, so the
 # fallback would raise IndexError for a copy of this file sitting fewer than three directories deep even
@@ -41,9 +50,23 @@ VERIFY = HERE / "verify.py"
 WORK = Path(tempfile.mkdtemp(prefix="nightly-sabotage-"))
 COLLECTOR = WORK / "nightly_report.py"
 POSTER = WORK / "nightly_slack.py"
+# The live workflows are mutated too, because what keeps a client credential out of the emulator step and out
+# of a fork's reach is how those files are written. A copy each, in the same scratch directory, so the same
+# guarantee holds: nothing here writes into the repository.
+WORKFLOW_DIR = WORK / "workflows"
+WORKFLOW_DIR.mkdir(exist_ok=True)
+LIVE_FLOWS = WORKFLOW_DIR / "live-flows.yml"
+LIVE_QA = WORKFLOW_DIR / "live-qa.yml"
+LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
+# The live reporter, whose allowlist is what keeps a submitted value out of the channel.
+LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
     COLLECTOR: SDK / ".github/scripts/nightly_report.py",
     POSTER: SDK / ".github/scripts/nightly_slack.py",
+    LIVE_POSTER: SDK / ".github/scripts/live_slack.py",
+    LIVE_FLOWS: SDK / ".github/workflows/live-flows.yml",
+    LIVE_QA: SDK / ".github/workflows/live-qa.yml",
+    LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -231,13 +254,139 @@ MUTATIONS = [
     ("Verdict no longer published for the gate", COLLECTOR, "collector",
      'handle.write(f"verdict={\'red\' if red else \'green\'}\\n")',
      'handle.write("")'),
+
+    # The live workflows. Each of these is a change that would read as reasonable on its own and would hand a
+    # client credential somewhere it does not belong.
+    ("A pull request can trigger the qa live run, so a fork reaches the secrets", LIVE_QA, "workflows",
+     "on:\n  workflow_dispatch:", "on:\n  pull_request:\n  workflow_dispatch:"),
+
+    ("pull_request_target on the sandbox live run, which runs with the base repo's secrets",
+     LIVE_SANDBOX, "workflows",
+     "on:\n  workflow_dispatch:", "on:\n  pull_request_target:\n  workflow_dispatch:"),
+
+    ("The emulator step is handed the client secret again", LIVE_FLOWS, "workflows",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
+     "          PAYABLI_LIVETEST_CLIENT_SECRET: ${{ secrets.client-secret }}"),
+
+    # Only the other half of the credential. Worth its own row because a check written for the secret alone
+    # passes this, which is what the review found.
+    ("The emulator step is handed the client id, and only that", LIVE_FLOWS, "workflows",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787\n"
+     "          PAYABLI_LIVETEST_CLIENT_ID: ${{ secrets.client-id }}"),
+
+    ("The token host is dropped, so the tests fall back to the compiled-in address", LIVE_FLOWS, "workflows",
+     "          PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787",
+     "          PAYABLI_LIVETEST_TOKEN_HOST_DISABLED: 10.0.2.2:8787"),
+
+    ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
+     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true",
+     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true "
+     "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
+
+    # The guard that keeps the run's verdict and the channel's from disagreeing. Dropping a module from it is
+    # how one silent suite gets hidden by the other's results.
+    ("The results guard stops naming the sample app", LIVE_FLOWS, "workflows",
+     "          INSTRUMENTED_MODULES: payin example", "          INSTRUMENTED_MODULES: payin"),
+
+    # Substitution happens before the script runs, so the guard inside the script cannot see the value that
+    # replaced it. This is the form the file used to carry.
+    ("The environment is interpolated into the script instead of reaching it as a variable", LIVE_FLOWS,
+     "workflows", '          case "$ENVIRONMENT" in', '          case "${{ inputs.environment }}" in'),
+
+    # The action splits the script on newlines, so a continuation is not one. Both halves of the split are
+    # broken and neither says so: the command loses its arguments and the arguments become a command.
+    ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
+     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true",
+     "            ./gradlew :example:connectedAndroidTest \\\n"
+     "              -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true"),
+
+    ("The pay-in suite loses its class filter and runs the whole instrumented suite", LIVE_FLOWS, "workflows",
+     "            ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest",
+     "            ./gradlew :payin:connectedAndroidTest\n"
+     "            -Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"),
+
+    # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
+    # alarming in a diff, which is why they are covered rather than trusted.
+    ("The failure message is reported whole, allowlist bypassed", LIVE_POSTER, "live",
+     '    matched = REPORTABLE.findall(message)', '    matched = [message]'),
+
+    ("The allowlist gains a catch-all, so any word is reportable", LIVE_POSTER, "live",
+     r'    r"|(?i:\bno (?:compose hierarchies|detail reported)\b)",',
+     '    r"|.+",'),
+
+    ("The identifier pattern loses its case sensitivity, admitting the text beside it", LIVE_POSTER, "live",
+     r'    r"|\b(?:code|serviceCode|declineCode|type)=[A-Za-z0-9_.-]{1,40}"',
+     r'    r"|(?i:\b(?:code|serviceCode|declineCode|type)=.{1,40})"'),
+
+    ("The status key takes any value again, not only digits", LIVE_POSTER, "live",
+     r'    r"\bhttpStatus=\d{3}"',
+     r'    r"\bhttpStatus=[A-Za-z0-9_.-]{1,40}"'),
+
+    # A list that emptied is the case the notice is the whole message, and appending it to nothing left a
+    # blank line where the failures had been.
+    ("The notice is appended to the list rather than joined with it", LIVE_POSTER, "live",
+     '        shown = lines + ([f"_{hidden} further failure(s) not listed here; see the run._"] if hidden '
+     'else [])\n        body = "\\n".join(shown)',
+     '        notice = f"\\n_{hidden} further failure(s) not listed here; see the run._" if hidden else ""\n'
+     '        body = "\\n".join(lines) + notice'),
+
+    ("The summary is no longer bounded", LIVE_POSTER, "live",
+     '    return " ".join(dict.fromkeys(matched))[:300]', '    return " ".join(matched)'),
+
+    # The thread post's bound. Cutting the finished string is what this replaced, and it is the version that
+    # reads as a complete list while being anything but.
+    ("The thread post is sliced mid-line again", LIVE_POSTER, "live",
+     '    lines = [f"• `{mrkdwn(flow.suite)}` {mrkdwn(flow.name)} — {mrkdwn(flow.detail or \'\')}" '
+     'for flow in failed]',
+     '    return "\\n".join(f"• {flow.name} — {flow.detail}" for flow in failed)[:SLACK_TEXT_LIMIT]'),
+
+    ("The dropped failures are no longer counted", LIVE_POSTER, "live",
+     '        shown = lines + ([f"_{hidden} further failure(s) not listed here; see the run._"] if hidden '
+     'else [])',
+     '        shown = lines'),
 ]
+
+
+def still_parses(path: Path) -> str:
+    """Empty when the patched file is still the kind of file the harness can read, else why not.
+
+    A mutation is meant to break a behaviour, not a parse: a file the harness cannot read would fail for the
+    wrong reason and be scored as caught. Python gets the compiler, and YAML gets the same parser the checks
+    read the document with, so a mutation that produces something they cannot load is reported as invalid
+    rather than counted as a break they caught.
+
+    A structural text check stood here while the harness had no parser, and it could only ask whether two
+    keys were still present.
+    """
+    if path.suffix == ".py":
+        try:
+            py_compile.compile(str(path), doraise=True, cfile=str(WORK / "compile-probe.pyc"))
+        except py_compile.PyCompileError as error:
+            return f"patched file does not compile: {error}"
+        return ""
+
+    try:
+        document = yaml.safe_load(path.read_text())
+    except yaml.YAMLError as error:
+        return f"patched workflow does not parse: {error}"
+    if not isinstance(document, dict):
+        return f"patched workflow is not a mapping: {type(document).__name__}"
+    if "jobs" not in document:
+        return "patched workflow lost its jobs block"
+    if True not in document and "on" not in document:
+        return "patched workflow lost its on block"
+    return ""
 
 
 def run_verify(half: str) -> tuple[int, int, str]:
     # Aimed at the copies, so the harness reads what this run mutated rather than what the repository holds.
     env = {**os.environ, "NIGHTLY_ONLY": half,
-           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER)}
+           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER),
+           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
     if not match:
@@ -255,7 +404,7 @@ def main() -> int:
         shutil.copy(source, target)
 
     print("Baseline, unmodified:")
-    for half in ("collector", "poster"):
+    for half in ("collector", "poster", "workflows", "live"):
         passed, failed, _ = run_verify(half)
         print(f"  {half}: {passed} passed, {failed} failed")
         if failed != 0:
@@ -272,11 +421,10 @@ def main() -> int:
             continue
 
         path.write_text(source.replace(anchor, replacement))
-        try:
-            py_compile.compile(str(path), doraise=True, cfile=str(WORK / "compile-probe.pyc"))
-        except py_compile.PyCompileError as error:
-            invalid.append((description, f"patched file does not compile: {error}"))
-            print(f"  INVALID  {description}: does not compile")
+        broken = still_parses(path)
+        if broken:
+            invalid.append((description, broken))
+            print(f"  INVALID  {description}: {broken}")
             shutil.copy(pristine[path], path)
             continue
 

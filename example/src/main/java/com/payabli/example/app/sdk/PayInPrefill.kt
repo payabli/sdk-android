@@ -54,8 +54,8 @@ object PayInPrefill {
             PayInMethodType.BankAccount,
             mapOf(
                 PayInField.AccountHolder to identity.holderName,
-                PayInField.RoutingNumber to "021000021",
-                PayInField.AccountNumber to "1111111111",
+                PayInField.RoutingNumber to "121000248",
+                PayInField.AccountNumber to "1234567890",
                 // The wire value the choice carries, which is what the field holds and what the request sends.
                 PayInField.AccountType to "Checking",
                 PayInField.FirstName to identity.firstName,

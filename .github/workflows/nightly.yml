@@ -4,21 +4,22 @@ name: Nightly
 # deliberately not a required check.
 #
 # `ci.yml` is the per-PR gate and stays fast. This runs every unit test, the card-present module included,
-# and the instrumented tests of :core and :payin. The unit tests overlap with ci.yml on purpose, so a nightly
-# failure is readable on its own without cross-referencing another run.
+# and the instrumented tests of :core, :payin and :example. The unit tests overlap with ci.yml on purpose, so a
+# nightly failure is readable on its own without cross-referencing another run.
 #
-# Instrumented coverage is :core and :payin, and what is left out is a scope statement rather than an
+# Instrumented coverage is :core, :payin and :example, and what is left out is a scope statement rather than an
 # oversight. :telemetry holds only the generated ExampleInstrumentedTest and declares no androidx.test:runner,
-# so that task would die with ClassNotFoundException before running a thing. :example declares the runner and
-# does run, and is out for a different reason: one of its two navigation tests needs demo settings no checkout
-# ships, so it fails wherever it runs unattended. The other passes on the bench today but asserts a step is on
-# screen without scrolling to it, which is a claim about the handset and the current layout rather than about
-# the app: it failed here until the sample app's own restructure moved that step further up the screen.
-# Neither is flaky, and both are decisions about those tests rather than a line in this script.
+# so that task would die with ClassNotFoundException before running a thing.
+#
+# :example is in because nothing in it needs a credential or a phone. Its walkthrough is the one part that
+# sends real payments, and that is excluded by the module unless asked for by name, so what runs here is the
+# navigation, form and component tests, which stand up their own endpoints and supply their own configuration.
+# It was out until the navigation tests were made to pass in a configuration this job can run.
 #
 # Both tiers grow with each capability that binds to a platform API. No count is kept here, because the last
-# one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest
-# and payin/src/androidTest that is not @ManualDeviceTest, less whatever a module's own build file excludes.
+# one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest,
+# payin/src/androidTest and example/src/androidTest that is not @ManualDeviceTest, less whatever a module's own
+# build file excludes.
 # That is not hypothetical: payin/build.gradle.kts quarantines one form class, four tests, which carry no
 # annotation and so are invisible to the filter this step passes. A module can quiet its own tests without
 # touching this file, so the count here is an upper bound rather than a promise.
@@ -188,10 +189,11 @@ jobs:
       # because this step exists to write the snapshot rather than to run anything.
       # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin twice.
       #
-      # A pin is brittle here. This repository has no Dependabot or Renovate configuration, so a pinned SHA
-      # would never be bumped, and this action is the one most coupled to Android tooling churn, with two to
-      # six releases a year. The trade would be a low-probability tag compromise against a nightly that
-      # silently stops receiving upstream fixes.
+      # A pin is brittle here. This action is the one most coupled to Android tooling churn, with two to six
+      # releases a year, so the trade is a low-probability tag compromise against a nightly that stops
+      # receiving upstream fixes. That argument used to rest on there being no Dependabot configuration at
+      # all; `.github/dependabot.yml` now exists for the live workflows' pins, so a pin here would be bumped.
+      # The decision stands on what is below instead: this job holds no payment credential.
       #
       # What made the pin worth arguing about was the secret this job used to hold: step-scoping a credential
       # does not isolate it from code that ran earlier in the same job, so this action could have tampered
@@ -240,9 +242,10 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Scoped to :core and :payin; see the header for why :taptopay is not here. Short version: not
-          # hardware, a credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator
-          # action. :payin resolves nothing outside the project, so it adds no credential to this step.
+          # Scoped to :core, :payin and :example; see the header for why :taptopay is not here. Short version:
+          # not hardware, a credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator
+          # action. Neither :payin nor :example resolves anything outside the project, so neither adds a
+          # credential to this step.
           #
           # --continue because the two tasks are independent and Gradle otherwise "aborts execution and fails
           # the build when any task fails", which leaves whether the second module ran at all down to how the
@@ -272,16 +275,17 @@ jobs:
           # have reported a standing skip in Slack every night, and a permanent skip is indistinguishable from
           # a regression that started skipping.
           #
-          # Two of :payin's classes are excluded by the module rather than from here, and this step cannot see
-          # either: payin/build.gradle.kts names the live tier whenever its credentials are absent, which is
-          # always in CI, and it names one quarantined form class outright. Both travel under `notClass`.
+          # Three classes are excluded by their own module rather than from here, and this step cannot see any
+          # of them: payin/build.gradle.kts names the live tier whenever its credentials are absent, which is
+          # always in this step, and names one quarantined form class outright; example/build.gradle.kts names
+          # the walkthrough unless it is asked for. All three travel under `notClass`.
           #
           # A -P runner argument replaces the DSL's value for the key it names, and merges only in the sense
           # that a different key leaves the first alone. `notAnnotation` above is a different key, which is
-          # the whole reason the two coexist. A -P `notClass` here would overwrite that list and readmit both
-          # classes, sending real payments from CI, so nothing in this workflow passes one. What this step
-          # runs is the annotation filter minus whatever the module excluded.
-          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
+          # the whole reason the two coexist. A -P `notClass` here would overwrite those lists and readmit all
+          # three, sending real payments from this step, so nothing in this workflow passes one. What this step
+          # runs is the annotation filter minus whatever each module excluded.
+          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest :example:connectedAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
@@ -312,7 +316,7 @@ jobs:
           # The modules the instrumented step above ran. The collector checks each one wrote results,
           # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
           # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
-          INSTRUMENTED_MODULES: core,payin
+          INSTRUMENTED_MODULES: core,payin,example
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than

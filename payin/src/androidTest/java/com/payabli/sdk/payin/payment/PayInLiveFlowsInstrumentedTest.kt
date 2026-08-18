@@ -35,23 +35,23 @@ import org.junit.runner.RunWith
 import java.io.BufferedReader
 import java.math.BigDecimal
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.util.UUID
 
 /**
  * Every flow this module supports, against a real environment.
  *
- * **`@ManualDeviceTest`, and excluded by name from `payin/build.gradle.kts` when the credentials are absent.**
+ * **`@ManualDeviceTest`, and excluded by name from `payin/build.gradle.kts` when its settings are absent.**
  * Two gates rather than one: the annotation says which tier this belongs to, and the name check means a run
- * without credentials reports no skip instead of a standing one. CI cannot hold the credentials yet, which is
- * the only reason this is not in the ordinary instrumented suite. The environment,
- * the entry point and the client credentials arrive as runner arguments, so nothing here is committed and CI can
- * pass the same four values as secrets. One environment per invocation, because the SDK installs one session per
- * process and refuses a second configuration: QA and sandbox are two runs.
+ * without them reports no skip instead of a standing one. The environment, the entry point and the address of a
+ * token server arrive as runner arguments, so nothing here is committed. One environment per invocation, because
+ * the SDK installs one session per process and refuses a second configuration: QA and sandbox are two runs.
  *
- * The token is minted here rather than by the sample's local server, which keeps the test to one process and no
- * `adb reverse`. The exchange is the same one that server performs: `POST {base}/api/v2/token/serverside` with
- * `clientId` and `clientSecret`, reading `accessToken`.
+ * **No client credential reaches this device, and none of the three above is one.** A token comes from the app's
+ * backend, which holds the client id and secret and exchanges them; `example-server` plays that part for a test
+ * run. Minting here instead would put the credential inside the process this SDK is supposed to keep it out of,
+ * and a test is the worst place to make that exception, because it is the one run that proves the boundary.
  *
  * These are real transactions. The amounts are small and the instruments are the sample app's test values, which
  * is what the recorded walks used.
@@ -126,11 +126,6 @@ class PayInLiveFlowsInstrumentedTest {
     @Test
     fun capturingABankAccountThePayerEntered() =
         runBlocking {
-            // Excluded by name from `payin/build.gradle.kts` unless `payabli.liveTest.achDebits` is true, because
-            // whether a paypoint's connector takes an ACH debit is its configuration rather than anything this
-            // SDK sends: one that refuses them refuses every request shape, and asserting an approval there
-            // would leave a permanently red test against a working client. Excluded rather than skipped, so the
-            // counts stay honest.
             assertApproved(flow.capture(transaction(), bankAccount()).orFail("capturing a bank account").code)
         }
 
@@ -207,8 +202,8 @@ class PayInLiveFlowsInstrumentedTest {
             PayInMethodType.BankAccount,
             mapOf(
                 PayInField.AccountHolder to "QA Tester",
-                PayInField.RoutingNumber to "021000021",
-                PayInField.AccountNumber to "1111111111",
+                PayInField.RoutingNumber to "121000248",
+                PayInField.AccountNumber to "1234567890",
                 PayInField.AccountType to "Checking",
                 PayInField.FirstName to "QA",
                 PayInField.LastName to "Tester",
@@ -239,15 +234,18 @@ class PayInLiveFlowsInstrumentedTest {
             ).getOrThrow()
 
     /**
-     * The credential exchange, over HTTPS on this device.
+     * A token from the app's backend, the way a host app gets one.
+     *
+     * The exchange that turns a client id and secret into a token happens on that server and not here. The
+     * device never holds either, which is the boundary this SDK exists to keep, and a test that minted its own
+     * would be the one place the boundary did not hold.
      *
      * `HttpURLConnection` because the SDK takes no third-party HTTP client and a test has no business
-     * introducing one. The token is read into a local and never logged: it is the credential this whole design
-     * keeps out of an APK.
+     * introducing one. The token is read into a local and never logged.
      */
     private fun mintToken(): String {
         val connection =
-            (URL("${environment.baseUrl}$TOKEN_PATH").openConnection() as HttpURLConnection).apply {
+            (URL("$tokenBaseUrl$TOKEN_PATH").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = TIMEOUT_MILLIS
@@ -256,21 +254,25 @@ class PayInLiveFlowsInstrumentedTest {
                 setRequestProperty("Accept", "application/json")
             }
         return try {
-            connection.outputStream.use { out ->
-                out.write("""{"clientId":"$clientId","clientSecret":"$clientSecret"}""".toByteArray())
-            }
-            val body =
-                connection.inputStream
-                    .bufferedReader()
-                    .use(BufferedReader::readText)
-            val payload = Json.parseToJsonElement(body).jsonObject
+            // The route takes an empty object: what it needs to mint is its own configuration, which is the
+            // whole point of asking it rather than doing this here.
+            connection.outputStream.use { out -> out.write("{}".toByteArray()) }
+            // getInputStream throws for 4xx and 5xx; the body, when the server sent one, is on errorStream,
+            // which is null when it sent none. Reading it first is what makes a refused exchange report its
+            // status instead of an IOException naming the URL.
+            val status = connection.responseCode
+            val stream =
+                if (status < HttpURLConnection.HTTP_BAD_REQUEST) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             val token: String? =
-                TOKEN_FIELDS.firstNotNullOfOrNull { field ->
-                    payload[field]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-                }
-            requireNotNull(token) {
-                "the token exchange answered HTTP ${connection.responseCode} without a token"
-            }
+                runCatching { Json.parseToJsonElement(body).jsonObject }
+                    .getOrNull()
+                    ?.let { payload ->
+                        TOKEN_FIELDS.firstNotNullOfOrNull { field ->
+                            payload[field]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                        }
+                    }
+            requireNotNull(token) { "the token exchange answered HTTP $status without a token" }
         } finally {
             connection.disconnect()
         }
@@ -282,8 +284,59 @@ class PayInLiveFlowsInstrumentedTest {
         }
 
     private val entryPoint: String get() = argument("entryPoint")
-    private val clientId: String get() = argument("clientId")
-    private val clientSecret: String get() = argument("clientSecret")
+
+    /** A token server. `example-server` is one; an integrator's backend is the real thing. */
+    private val tokenHost: String get() = argument("tokenHost")
+
+    /**
+     * The same address as a base URL, whether or not it was given with a scheme.
+     *
+     * The sample app takes a value carrying one as written, so the same argument reaches both. `http` is the
+     * default because cleartext is what the test APK permits to loopback.
+     *
+     * Refused rather than accepted quietly: another scheme cannot reach this server, and a path would move
+     * the route below without looking like it had.
+     *
+     * Parsed rather than inspected as text, and rebuilt from what the parse returned. `127.0.0.1:8787@evil.com`
+     * has no path and no second scheme, so a textual check passes it, while everything that then resolves the
+     * address reads it as user information followed by the host `evil.com`. What is returned is a scheme and a
+     * host that were read the same way the request will read them.
+     */
+    private val tokenBaseUrl: String
+        get() {
+            // No trailing-slash trim before the parse: it would eat a bare `http://` down to `http:`, which then
+            // reads as a host named http. A trailing slash is a path of "/", which the parse reports and the
+            // check below allows.
+            val given = tokenHost.trim()
+            val withScheme = if (given.contains("://")) given else "http://$given"
+            val parsed =
+                runCatching { URI(withScheme) }.getOrNull()
+                    ?: error("liveTest.tokenHost is not an address: $given")
+
+            val scheme = parsed.scheme?.lowercase()
+            require(scheme == "http" || scheme == "https") {
+                "liveTest.tokenHost must be http or https: $given"
+            }
+            // Rejected on the text as well as on the parse. Which component an authority splits into is the
+            // parser's decision, and this refuses the character rather than trusting two parsers to agree.
+            require(parsed.userInfo == null && '@' !in withScheme) {
+                "liveTest.tokenHost carries user information: $given"
+            }
+            val host = parsed.host
+            require(!host.isNullOrEmpty()) { "liveTest.tokenHost names no host: $given" }
+            // One check each, because one message for three rejections names the wrong one twice and sends
+            // whoever reads it looking at the part of the value that is fine.
+            val path = parsed.path.orEmpty()
+            require(path.isEmpty() || path == "/") { "liveTest.tokenHost carries a path: $given" }
+            require(parsed.query == null) { "liveTest.tokenHost carries a query: $given" }
+            require(parsed.fragment == null) { "liveTest.tokenHost carries a fragment: $given" }
+
+            // An IPv6 literal keeps its brackets, or the port that follows reads as another group of the
+            // address. Whether the parse returns them is the platform's business, so this adds them when
+            // they are absent and leaves them when they are not.
+            val authority = if (':' in host && !host.startsWith("[")) "[$host]" else host
+            return if (parsed.port == -1) "$scheme://$authority" else "$scheme://$authority:${parsed.port}"
+        }
 
     private val environment: PayabliEnvironment
         get() =
@@ -296,12 +349,14 @@ class PayInLiveFlowsInstrumentedTest {
         @Volatile
         private var installed: PayabliSession? = null
 
-        const val TOKEN_PATH = "/api/v2/token/serverside"
+        // The route the sample app's own token client calls, so the test asks for a token the same way the
+        // app does. `access-token` serves a cached value; this one mints, which is what a provider owes.
+        const val TOKEN_PATH = "/payabli/exchange-token"
         const val TIMEOUT_MILLIS = 20_000
         val TOKEN_FIELDS = listOf("accessToken", "access_token", "token")
         val AMOUNT: BigDecimal = BigDecimal("1.10")
 
         /** A second test card, so a swapped seed is a different instrument rather than the same one again. */
-        const val REPLACEMENT_PAN = "5555555555554444"
+        const val REPLACEMENT_PAN = "4242424242424242"
     }
 }

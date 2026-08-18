@@ -3,7 +3,13 @@ name: Nightly reporter tests
 # `nightly_report.py` decides the nightly verdict and gates the run, and `nightly_slack.py` is the only
 # thing that reports a failure. They are covered here rather than trusted.
 #
-# It also gives a change to those scripts somewhere cheap to be checked. A scheduled run never fires from a
+# The same harness asserts what the live workflows have to be, since those hold a client credential: which
+# triggers they may carry, which single step names the credential, how a value reaches a script, and that a
+# suite writing nothing fails the run. Each was true of how those files were written, which is not the same
+# as being enforced. The checks themselves are the list, under `test_workflows` in `verify.py`; naming them
+# here as well is a second copy that goes stale, which this comment has already done once.
+#
+# A change to those scripts also gets a cheap place to be checked here. A scheduled run never fires from a
 # feature branch. A dispatch can be pointed at one, since `nightly.yml` is on the default branch, but that
 # runs the whole nightly including the emulator suite and its report job posts to the team channel, which is
 # a great deal of machinery and noise for a change to a Python script. So the practical options were a
@@ -14,9 +20,12 @@ name: Nightly reporter tests
 # required check: a required check that never runs blocks a merge rather than passing it. Neither is
 # `nightly.yml`.
 #
-# No `setup-python` and nothing third-party. The runner's `python3` is what `nightly.yml` already invokes
-# these scripts with, and the harness is standard library only, deliberately. `git` is needed and present,
-# because the collector half builds a synthetic repository to run against.
+# No `setup-python` and no install step. The runner's `python3` is what `nightly.yml` already invokes these
+# scripts with, and the harness is standard library only, so there is nothing to fetch. `git` is needed and
+# present, because the collector half builds a synthetic repository to run against.
+#
+# Standard library only is what this job costs nothing, not a rule inherited from the SDK. See the README in
+# `.github/scripts/tests/` for why that distinction is written down.
 
 on:
   pull_request:
@@ -24,11 +33,15 @@ on:
       # The workflow file is in the filter so a change to it tests itself.
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      # The harness reads the live workflows, so they have to be here or its assertions would not run on the
+      # change that broke them.
+      - '.github/workflows/live-*.yml'
   push:
     branches: [main]
     paths:
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
+      - '.github/workflows/live-*.yml'
 
 concurrency:
   group: scripts-${{ github.ref }}
@@ -48,13 +61,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # 369 checks. The collector runs as a subprocess in a synthetic git repository; the poster runs
-      # in-process against a fake Slack on loopback.
+      # The workflow checks parse YAML, so the module has to be there. Measured on this image rather than
+      # assumed: `ubuntu-latest` carries PyYAML 6.0.1 in the runner's own python3, so nothing is installed
+      # and no `setup-python` is needed. This fails the job if that ever stops being true, which is the
+      # difference between a missing parser and checks that quietly examine nothing.
+      - name: A YAML parser is present
+        run: python3 -c "import yaml; print('yaml', yaml.__version__)"
+
+      # No count here. The last two went stale, which is what nightly.yml records about counts in a comment.
+      # The collector runs as a subprocess in a synthetic git repository; the poster runs in-process against
+      # a fake Slack on loopback.
       - name: Verify
         run: python3 .github/scripts/tests/verify.py
 
-      # 38 deliberate breaks, each confirmed to turn a check red. Rewrites copies in a scratch directory and
-      # never the files in the tree, so an interrupted run leaves nothing behind. An edit that moves a
-      # mutation anchor reports INVALID and fails here; re-point the anchor in the same change.
+      # Each break is confirmed to turn a check red. Rewrites copies in a scratch directory and never the
+      # files in the tree, so an interrupted run leaves nothing behind. An edit that moves a mutation anchor
+      # reports INVALID and fails here; re-point the anchor in the same change.
       - name: Sabotage
         run: python3 .github/scripts/tests/sabotage.py

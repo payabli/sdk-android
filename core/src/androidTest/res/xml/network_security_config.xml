@@ -2,14 +2,20 @@
 <!--
   The loopback harness speaks http, and cleartext is denied by default: the platform's base-config is
   cleartextTrafficPermitted="false" from targetSdk 28, and this module's tests build against a far higher
-  compileSdk. The implicit loopback exemption arrives only in API 37, so at this module's floor of 23 an
-  explicit entry is required rather than merely tidy.
+  compileSdk. The implicit loopback exemption arrives only in API 37, so an explicit entry is required on
+  every level this runs on rather than merely tidy.
 
-  Scoped to the single address the harness binds instead of a blanket usesCleartextTraffic, so nothing but
-  the harness is reachable in cleartext and a test cannot accidentally exercise a plaintext route to a
-  real host.
+  It does nothing at this module's floor. `android:networkSecurityConfig` was added in API 24, so at 23 the
+  file is not read at all, and nothing is needed there because cleartext is permitted by default that far
+  back.
+
+  Scoped to two addresses instead of a blanket usesCleartextTraffic: the one the harness binds, and the one
+  the manual tier's broker is reached at. Each is justified where it is declared, and the second carries the
+  reason that scoping alone is not what makes this safe.
 -->
 <network-security-config>
+    <!-- Explicit because the default varies by targetSdk: denied from 28, permitted at 27 and below. -->
+    <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <!-- Matching the one address LoopbackServer binds. It pins 127.0.0.1 and builds its base URL from
              that literal, so the address form is what has to match and no name is involved. Widen this
