@@ -324,10 +324,12 @@ class PayInLiveFlowsInstrumentedTest {
             }
             val host = parsed.host
             require(!host.isNullOrEmpty()) { "liveTest.tokenHost names no host: $given" }
+            // One check each, because one message for three rejections names the wrong one twice and sends
+            // whoever reads it looking at the part of the value that is fine.
             val path = parsed.path.orEmpty()
-            require((path.isEmpty() || path == "/") && parsed.query == null && parsed.fragment == null) {
-                "liveTest.tokenHost carries a path: $given"
-            }
+            require(path.isEmpty() || path == "/") { "liveTest.tokenHost carries a path: $given" }
+            require(parsed.query == null) { "liveTest.tokenHost carries a query: $given" }
+            require(parsed.fragment == null) { "liveTest.tokenHost carries a fragment: $given" }
 
             return if (parsed.port == -1) "$scheme://$host" else "$scheme://$host:${parsed.port}"
         }
