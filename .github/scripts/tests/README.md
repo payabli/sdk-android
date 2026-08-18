@@ -6,8 +6,14 @@ are covered here rather than trusted.
 
 Two entry points and no setup. The requirements are `python3` and `git`: the collector half shells out to
 `git` to build the synthetic repository it runs against, so it fails without one on `PATH`. No third-party
-Python package is involved at all, which is deliberate: it matches the repository's posture on third-party
-code and means these tests add no supply-chain surface to a security SDK.
+Python package is involved, so the workflow needs no `setup-python` and no install step.
+
+**That is a convenience, not the SDK's rule.** `CLAUDE.md`'s platform-native rule is about what ships in the
+SDK: no third-party HTTP client, crypto engine, DI framework or JSON mapper inside `:core` and the capability
+modules. Nothing here ships. This harness, the sample app and `example-server` are outside it, and reading
+the rule as covering them has a measured cost: the workflow checks parse YAML textually because of it, and
+five separate rounds of review found five different valid spellings that the textual reader missed, each one
+a guard silently examining nothing. Weigh a real parser here on its own merits.
 
 ```bash
 python3 .github/scripts/tests/verify.py     # 405 checks, about 4 seconds

@@ -20,9 +20,12 @@ name: Nightly reporter tests
 # required check: a required check that never runs blocks a merge rather than passing it. Neither is
 # `nightly.yml`.
 #
-# No `setup-python` and nothing third-party. The runner's `python3` is what `nightly.yml` already invokes
-# these scripts with, and the harness is standard library only, deliberately. `git` is needed and present,
-# because the collector half builds a synthetic repository to run against.
+# No `setup-python` and no install step. The runner's `python3` is what `nightly.yml` already invokes these
+# scripts with, and the harness is standard library only, so there is nothing to fetch. `git` is needed and
+# present, because the collector half builds a synthetic repository to run against.
+#
+# Standard library only is what this job costs nothing, not a rule inherited from the SDK. See the README in
+# `.github/scripts/tests/` for why that distinction is written down.
 
 on:
   pull_request:
