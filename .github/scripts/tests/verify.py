@@ -1817,7 +1817,31 @@ LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 
 
 def workflow_text(name: str) -> str:
-    return (WORKFLOWS / name).read_text(encoding="utf-8")
+    """The file, or empty text after failing a check that says which file is missing.
+
+    A rename used to raise out of the harness, which prints a traceback and no FAIL lines and stops before
+    every later check. That reads far too much like a clean run for something that examined nothing: the
+    checks that follow are what say whether a credential is where it belongs, and none of them ran.
+    """
+    try:
+        return (WORKFLOWS / name).read_text(encoding="utf-8")
+    except OSError as error:
+        check(f"W0 {name} is readable", False, f"{type(error).__name__}: {error}")
+        return ""
+
+
+def unquoted(key: str) -> str:
+    """A scalar with the quotes YAML allows around it removed.
+
+    `on: ["pull_request"]` is the same document as `on: [pull_request]`, and returning the first with its
+    quotes attached means the trigger check compares `"pull_request"` against `pull_request` and finds no
+    match. That is a guard passing a workflow that carries the trigger it exists to forbid.
+    """
+    key = key.strip()
+    for quote in ('"', "'"):
+        if len(key) >= 2 and key.startswith(quote) and key.endswith(quote):
+            return key[1:-1].strip()
+    return key
 
 
 def trigger_keys(text: str) -> list[str]:
@@ -1841,9 +1865,9 @@ def trigger_keys(text: str) -> list[str]:
             on_indent = indent
             inline = stripped[len("on:"):].strip()
             if inline.startswith("["):
-                return [key.strip() for key in inline.strip("[]").split(",") if key.strip()]
+                return [unquoted(key) for key in inline.strip("[]").split(",") if key.strip()]
             if inline and not inline.startswith("#"):
-                return [inline]
+                return [unquoted(inline)]
             continue
 
         if stripped and not stripped.startswith("#"):
@@ -1873,7 +1897,7 @@ def steps_of(text: str) -> list[str]:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
 
-        if stripped == "steps:":
+        if is_key(stripped, "steps:"):
             if current:
                 blocks.append("\n".join(current))
                 current = []
@@ -1903,6 +1927,19 @@ def steps_of(text: str) -> list[str]:
     return blocks
 
 
+def is_key(stripped: str, key: str) -> bool:
+    """That the line is exactly `key`, allowing the trailing space and inline comment YAML permits.
+
+    Compared exactly before this, so `steps:  # the steps below` read as no steps at all: `steps_of` returned
+    an empty list and every check reading it went with it. Two of those fail closed on a guard, and the
+    emulator script checks had none, so a reformat nobody would look twice at silently removed them.
+    """
+    if stripped == key:
+        return True
+    rest = stripped[len(key):]
+    return stripped.startswith(key) and rest.strip().startswith("#")
+
+
 def run_block_lines(text: str) -> list[str]:
     """The body of every `run:` step, both the block form and the one-liner.
 
@@ -1916,7 +1953,7 @@ def run_block_lines(text: str) -> list[str]:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
 
-        if stripped in ("run: |", "run: >"):
+        if is_key(stripped, "run: |") or is_key(stripped, "run: >"):
             run_indent = indent
             continue
         if stripped.startswith("run: "):
@@ -1948,7 +1985,7 @@ def emulator_script_lines(text: str) -> list[str]:
         stripped = line.strip()
         indent = len(line) - len(line.lstrip())
 
-        if stripped == "script: |":
+        if is_key(stripped, "script: |"):
             script_indent = indent
             continue
         if script_indent is None:
@@ -2067,6 +2104,26 @@ def test_workflows():
               "pull_request" not in text,
               next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
 
+    # The parsers themselves, against documents these files could be reformatted into at any time. Both
+    # shapes below are valid YAML that changes nothing, and both used to empty a parser and take its checks
+    # with them; the trigger one is the case where a guard passes a workflow carrying what it forbids.
+    double_quoted = trigger_keys('on: ["pull_request"]')
+    check("W1 a quoted trigger is read as the trigger it is", double_quoted == ["pull_request"],
+          f"{double_quoted}")
+    single_quoted = trigger_keys("on: 'pull_request'")
+    check("W1 a single-quoted scalar trigger too", single_quoted == ["pull_request"], f"{single_quoted}")
+
+    commented = (
+        "jobs:\n  live:\n    steps:  # what runs\n      - name: one\n        run: |  # the script\n"
+        "          echo hi\n      - name: two\n        with:\n          script: |  # two lines\n"
+        "            ./gradlew a\n"
+    )
+    check("W1 an inline comment does not hide the steps", len(steps_of(commented)) == 2,
+          f"{len(steps_of(commented))}")
+    check("W1 nor the emulator script", emulator_script_lines(commented) == ["./gradlew a"],
+          f"{emulator_script_lines(commented)}")
+    check("W1 nor a run block", run_block_lines(commented) == ["echo hi"], f"{run_block_lines(commented)}")
+
     reusable = workflow_text("live-flows.yml")
     blocks = steps_of(reusable)
     check("W2 the reusable workflow has steps", len(blocks) > 3, f"{len(blocks)}")
@@ -2108,7 +2165,11 @@ def test_workflows():
     # `sh -c`, so a trailing backslash joins nothing: the command runs without its arguments and the
     # arguments run as a command. Invisible in review, and these workflows have no pull request trigger, so
     # nothing else would find it before a scheduled run did.
-    for line in emulator_script_lines(reusable):
+    # Guarded before it is read, as the step list is. A loop over nothing runs no checks and reports a pass,
+    # so an empty parse here used to remove these two rather than fail them.
+    script_lines = emulator_script_lines(reusable)
+    check("W5 the emulator script was found", len(script_lines) == 2, f"{script_lines}")
+    for line in script_lines:
         check("W5 no line of the emulator script continues onto the next",
               not line.endswith("\\"), line)
         check("W5 every line of the emulator script is a command", line.startswith("./"), line)
@@ -2127,9 +2188,13 @@ def test_workflows():
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.
     for name in LIVE_WORKFLOWS:
-        offending = [line.strip() for line in run_block_lines(workflow_text(name)) if "${{" in line]
+        body = run_block_lines(workflow_text(name))
+        offending = [line.strip() for line in body if "${{" in line]
         check(f"W6 {name} interpolates no expression inside a run script",
               not offending, " | ".join(offending))
+    # The same guard as W5, on the file that has run steps at all: nothing found means the check above
+    # examined nothing rather than found nothing wrong.
+    check("W6 the run scripts were found", bool(run_block_lines(reusable)))
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")
