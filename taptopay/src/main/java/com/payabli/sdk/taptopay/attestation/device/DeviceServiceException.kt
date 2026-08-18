@@ -77,8 +77,8 @@ internal sealed class DeviceServiceException(
      *
      * **A device that owes activation reaches a caller this way**, so this case is not a misconfiguration on
      * its own. What is left under it is not split further: nothing separates those by [resultCode], and a
-     * caller needing one of them supplies a [DeviceFailureMapper], as [EntryPointUnusable] is raised by one.
-     * [reason] is empty when the refusal came from the transport rather than from the service.
+     * caller needing one of them supplies a [DeviceFailureMapper]. [reason] is empty when the refusal came
+     * from the transport rather than from the service.
      *
      * Not retryable.
      */
