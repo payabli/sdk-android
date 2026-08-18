@@ -117,8 +117,22 @@ jobs:
   card-present:
     name: Build & Test (card-present)
     runs-on: ubuntu-latest
-    # Fork PRs never receive secrets, so skip rather than fail on auth.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Skipped wherever the run has no secrets to build :taptopay with, so it reports skipped rather than
+    # dying on an auth error. Two such runs, and GitHub decides both: a fork's pull request never receives
+    # secrets at all, and a Dependabot pull request reads a separate secret store this repository does not
+    # populate. Measured on #57, where the card reader resolved as `401 Unauthorized` from GitHub Packages.
+    #
+    # The Dependabot half is deliberately inside the pull-request clause. A push to main runs this job
+    # whoever pushed it, including a merge auto-completed on Dependabot's behalf, and that push is where a
+    # bumped action is actually tested against :taptopay.
+    #
+    # Giving Dependabot the credential instead was considered and rejected. Its `github_actions` ecosystem
+    # edits workflow files, and a pull_request run uses the workflow from the head, so the run would execute
+    # an unreviewed action version with a package credential available. Verified on #57: the log reads
+    # `Download action repository 'gradle/actions@v6'`, the version the branch introduces.
+    if: github.event_name != 'pull_request'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && github.event.pull_request.user.login != 'dependabot[bot]')
     env:
       GPR_USER: ${{ secrets.GPR_USER }}
       GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
@@ -156,7 +170,10 @@ jobs:
     name: SonarCloud
     runs-on: ubuntu-latest
     needs: [build]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Same condition as card-present, for the same reason: this job builds :taptopay too.
+    if: github.event_name != 'pull_request'
+      || (github.event.pull_request.head.repo.full_name == github.repository
+          && github.event.pull_request.user.login != 'dependabot[bot]')
     env:
       GPR_USER: ${{ secrets.GPR_USER }}
       GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
