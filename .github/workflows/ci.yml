@@ -32,6 +32,9 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # Left on the moving tag, as nightly.yml is and for the reason recorded there: this job holds no
+      # credential, and the action is the one most coupled to Android tooling churn. The two jobs below are
+      # pinned instead, because they hold GPR_USER and GPR_TOKEN.
       - uses: gradle/actions/setup-gradle@v6
         with:
           # v6 moved caching into `gradle-actions-caching`, which is proprietary and not covered by the
@@ -146,7 +149,7 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           # See the note on the first setup-gradle in this file.
           cache-provider: basic
@@ -188,7 +191,7 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
         with:
           # See the note on the first setup-gradle in this file.
           cache-provider: basic
