@@ -106,6 +106,9 @@ def thread_body(failed: list[Flow]) -> str:
         if len(body) <= SLACK_TEXT_LIMIT or not lines:
             break
         lines.pop()
+    # Unreachable while the loop above is right, and kept for when it is not, as `nightly_slack.thread_blocks`
+    # keeps its own. A cut here would be the mid-line cut this function exists to avoid, so it is a backstop
+    # against a post Slack would reject rather than part of how the body is built.
     return body[:SLACK_TEXT_LIMIT]
 
 
@@ -174,7 +177,9 @@ def main() -> int:
     # Escaped like the block, not because anything untrusted reaches the headline today: it is built from the
     # environment name, the platform and two counts. The fallback is the same string rendered a second way,
     # and one of the two escaping is how the pair drifts.
-    text = f"{'🔴' if red else '🟢'} {mrkdwn(headline)}"
+    # Slack's own tokens, as `nightly_slack` uses, so the two reporters render the same in every client and
+    # in a notification. A literal codepoint also has to survive this file's encoding to reach the channel.
+    text = f"{':red_circle:' if red else ':white_check_mark:'} {mrkdwn(headline)}"
     blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{mrkdwn(headline)}*"}}]
     if link:
         blocks.append({
