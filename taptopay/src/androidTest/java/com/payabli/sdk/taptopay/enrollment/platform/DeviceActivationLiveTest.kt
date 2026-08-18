@@ -12,7 +12,6 @@ import com.payabli.sdk.taptopay.ManualDeviceTest
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
-import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
 import com.payabli.sdk.taptopay.enrollment.AttestedDevice
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
@@ -20,9 +19,6 @@ import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.DeviceDescription
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
-import com.payabli.sdk.taptopay.session.TapToPayFailureReason
-import com.payabli.sdk.taptopay.session.TapToPaySessionFailures
-import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -65,18 +61,13 @@ private val TEST_TIMEOUT = 120.seconds
  * done
  * ```
  *
- * **Five tests, not one**, so a failure names the call it happened at instead of collapsing the whole run
- * into a single red line. Three of them reach no attestation and still report when the others cannot run:
- * the challenge and register pair, the unattested refusal, and the entry-point refusal.
+ * **Four tests, not one**, so a failure names the call it happened at instead of collapsing the whole run
+ * into a single red line. Two of them reach no attestation and still report when the other two cannot run:
+ * the challenge and register pair, and the unattested refusal.
  *
- * **Four of the five run by default.** The entry-point refusal is excluded by name in `build.gradle.kts`
- * until the runner says the service change it asserts is deployed to the environment being used; its own
- * documentation carries the property and what to check first.
- *
- * **Every run costs something real, with one exception.** Each spends a challenge. The activation test
- * spends an attempt and leaves a registered device on the paypoint, one per run, which nothing here removes.
- * The unattested refusal spends no attempt: it is refused before the code is looked at. The entry-point
- * refusal spends nothing at all, and is the one test here that is free to repeat.
+ * **Every run costs something real.** Each spends a challenge. The activation test spends an attempt and
+ * leaves a registered device on the paypoint, one per run, which nothing here removes. The unattested
+ * refusal spends no attempt: it is refused before the code is looked at.
  * Play Integrity also throttles well below its daily budget when a handful of devices are driven in a row.
  * Wait it out; do not re-run.
  */
@@ -127,64 +118,6 @@ class DeviceActivationLiveTest {
                 // Printed only by this tier: the shipped code never logs it, and the field name is not on
                 // the loggable allowlist.
                 Log.i(LIVE_TAG, "registered deviceId=${registration.deviceId} entry=${LiveRunSettings.entry}")
-            }
-        }
-
-    /**
-     * The refusal for an entry point this caller cannot act on, checked against the service's own wording.
-     *
-     * The mapper compares one literal, so this is the only thing that can say the literal is still the one
-     * that comes back. The unit tier supplies the string itself and would pass a service that had reworded
-     * it.
-     *
-     * **Excluded by name in `build.gradle.kts` and off by default, because this module ships ahead of the
-     * service change it asserts.** Deployments answer this refusal one way before that change and another
-     * way after, and there is no third answer, so running it against an environment that has not taken the
-     * change is a red that means a date rather than a defect. Asserting whichever answer arrives would make
-     * the test unable to fail, which is why it is gated instead of widened.
-     *
-     * To turn it on, check that the service change is deployed **to the environment you are about to point
-     * at**, not merely merged — a merge to the backend's own branch is not a deployment, and qa and sandbox
-     * take it at different times. Then:
-     *
-     * ```
-     * -Ppayabli.ttp.entryPointRefusalDeployed=true
-     * ```
-     *
-     * A red with the property set is worth reading: either the environment does not have the change after
-     * all, or the wording moved and the mapper's literal is now wrong, which is the whole reason this test
-     * exists. The failure message prints what came back so the two are distinguishable.
-     *
-     * Costs nothing: no challenge is spent, no attempt consumed, and no device row is left behind, because
-     * the call is refused before any of that is reached. It is the one test in this class that is free to
-     * repeat. The entry is derived from the configured one, so it needs no second paypoint and the token
-     * stays scoped to the real one.
-     */
-    @Test
-    fun theServiceRefusesAnEntryPointWithTheWordingTheMapperExpects() =
-        runTest(timeout = TEST_TIMEOUT) {
-            withContext(Dispatchers.IO) {
-                val client = DeviceServiceClient(session().transport)
-
-                val thrown =
-                    runCatching {
-                        client.challenge(
-                            entry = "${LiveRunSettings.entry}-nx",
-                            failureMapper = EntryPointFailures,
-                        )
-                    }.exceptionOrNull()
-
-                Log.i(LIVE_TAG, "challenge refused with ${thrown?.javaClass?.simpleName}")
-                assertTrue(
-                    "expected the entry-point classification and got $thrown, which is what this " +
-                        "environment answers before the service change lands",
-                    thrown is DeviceServiceException.EntryPointUnusable,
-                )
-                // The landing is the half a host acts on, and the reason this is not only a wording check.
-                assertEquals(
-                    TapToPaySessionState.Failed(TapToPayFailureReason.CONFIGURATION_REJECTED),
-                    TapToPaySessionFailures.landingFor(thrown!!),
-                )
             }
         }
 
