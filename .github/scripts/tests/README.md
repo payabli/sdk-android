@@ -16,8 +16,8 @@ five separate rounds of review found five different valid spellings that the tex
 a guard silently examining nothing. Weigh a real parser here on its own merits.
 
 ```bash
-python3 .github/scripts/tests/verify.py     # 405 checks, about 4 seconds
-python3 .github/scripts/tests/sabotage.py   # 46 deliberate breaks, about a minute
+python3 .github/scripts/tests/verify.py     # about 4 seconds
+python3 .github/scripts/tests/sabotage.py   # about a minute
 ```
 
 Both run in CI through `.github/workflows/scripts.yml`, but only when `.github/scripts/**` or that
