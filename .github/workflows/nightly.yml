@@ -121,7 +121,10 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v5
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # `basic` keeps caching on the open-source implementation; ci.yml carries why.
+          cache-provider: basic
 
       # Cheap and emulator-free, so it runs first: a compile or unit-test break should not wait on a boot.
       #
