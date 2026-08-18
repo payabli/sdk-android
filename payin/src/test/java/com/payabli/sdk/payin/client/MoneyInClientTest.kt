@@ -8,6 +8,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -62,7 +63,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            val result = MoneyInClient(transport, RecordingLogger()).capture("merchant-entry", cardRequest())
+            val result = MoneyInClient(transport, RecordingSdkLogger()).capture("merchant-entry", cardRequest())
 
             assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
             val body = transport.bodyText()
@@ -89,7 +90,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger())
+            MoneyInClient(transport, RecordingSdkLogger())
                 .capture("merchant-entry", cardRequest(PayInPaymentMethod.BankAccount(testAccount())))
 
             val body = transport.bodyText()
@@ -111,7 +112,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger())
+            MoneyInClient(transport, RecordingSdkLogger())
                 .capture("e", cardRequest(idempotencyKey = "key-1", validationCode = "code-9"))
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
@@ -130,7 +131,7 @@ class MoneyInClientTest {
 
             val failure =
                 refusal {
-                    MoneyInClient(transport, RecordingLogger())
+                    MoneyInClient(transport, RecordingSdkLogger())
                         .capture("e", cardRequest(idempotencyKey = "key-1\r\nX-Injected: v"))
                 }
 
@@ -146,7 +147,7 @@ class MoneyInClientTest {
 
             val failure =
                 refusal {
-                    MoneyInClient(transport, RecordingLogger())
+                    MoneyInClient(transport, RecordingSdkLogger())
                         .capture("e", cardRequest(validationCode = "code\u0000nine"))
                 }
 
@@ -159,7 +160,7 @@ class MoneyInClientTest {
             // The check looks at what trimming leaves, so an ordinary padded value keeps working.
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest(idempotencyKey = "  key-1  "))
+            MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(idempotencyKey = "  key-1  "))
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -173,7 +174,7 @@ class MoneyInClientTest {
 
             val failure =
                 refusal {
-                    MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest(idempotencyKey = " "))
+                    MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(idempotencyKey = " "))
                 }
 
             assertEquals("idempotencyKey", failure?.field)
@@ -186,7 +187,7 @@ class MoneyInClientTest {
             // null is how a caller says it did not set one, and stays the only way to say it.
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest(idempotencyKey = null))
+            MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest(idempotencyKey = null))
 
             assertNull(transport.request?.headers?.get("idempotencyKey"))
         }
@@ -208,7 +209,7 @@ class MoneyInClientTest {
             // second hold on the payer's funds.
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger()).authorize("e", cardRequest(idempotencyKey = "key-1"))
+            MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(idempotencyKey = "key-1"))
 
             assertEquals("key-1", transport.request?.headers?.get("idempotencyKey"))
         }
@@ -218,7 +219,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger())
+            MoneyInClient(transport, RecordingSdkLogger())
                 .capture("e", cardRequest(achValidation = true, sameDayAch = false, isAsync = true))
 
             val query = transport.request?.query.orEmpty()
@@ -236,7 +237,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger()).authorize("e", cardRequest(achValidation = true))
+            MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(achValidation = true))
 
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
             assertFalse(
@@ -262,7 +263,7 @@ class MoneyInClientTest {
             methods.forEach { method ->
                 val transport = FakePayInTransport.answering(approved)
                 val failure =
-                    runCatching { MoneyInClient(transport, RecordingLogger()).authorize("e", cardRequest(method)) }
+                    runCatching { MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(method)) }
                         .exceptionOrNull()
 
                 assertTrue(method.toString(), failure is PayInException.InvalidInput)
@@ -276,7 +277,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger())
+            MoneyInClient(transport, RecordingSdkLogger())
                 .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50")))
 
             assertEquals("/api/v2/MoneyIn/capture/101-abc", transport.request?.path)
@@ -292,7 +293,7 @@ class MoneyInClientTest {
             // cannot be retried without risking a second partial capture.
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger())
+            MoneyInClient(transport, RecordingSdkLogger())
                 .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50"), idempotencyKey = "key-2"))
 
             assertEquals("key-2", transport.request?.headers?.get("idempotencyKey"))
@@ -303,7 +304,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger())
+            MoneyInClient(transport, RecordingSdkLogger())
                 .captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails("4.50")))
 
             assertFalse(
@@ -322,7 +323,7 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering(declined)
 
             val failure =
-                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
                     .exceptionOrNull()
 
             assertTrue(failure is PayInException.Refused)
@@ -341,7 +342,7 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering(body)
 
             val failure =
-                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
                     .exceptionOrNull()
 
             assertTrue(failure is PayInException.ServiceError)
@@ -356,7 +357,7 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering("""{"code":"X9999","reason":"Something else"}""")
 
             val failure =
-                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
                     .exceptionOrNull()
 
             assertTrue(failure is PayInException.ServiceError)
@@ -369,7 +370,7 @@ class MoneyInClientTest {
             // asserting 200 would refuse the ordinary case.
             val transport = FakePayInTransport.answering(approved, statusCode = 201)
 
-            val result = MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest())
+            val result = MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest())
 
             assertEquals("A0000", result.code)
         }
@@ -382,7 +383,7 @@ class MoneyInClientTest {
             listOf("{}", "<html>502</html>", """{"reason":"no code here"}""").forEach { body ->
                 val transport = FakePayInTransport.answering(body)
                 val failure =
-                    runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                    runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
                         .exceptionOrNull()
 
                 assertTrue(body, failure is PayInException.Undecodable)
@@ -399,7 +400,7 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.answering("", statusCode = 401)
 
             val failure =
-                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
                     .exceptionOrNull()
 
             assertEquals(
@@ -413,7 +414,7 @@ class MoneyInClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
 
-            MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest())
+            MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest())
 
             // The same array the client handed the transport, which it wipes afterwards rather than before:
             // credential recovery may replay the request inside the transport and needs the bytes intact.
@@ -428,7 +429,7 @@ class MoneyInClientTest {
             val transport = FakePayInTransport.failingWith(java.io.IOException("connection reset"))
 
             val failure =
-                runCatching { MoneyInClient(transport, RecordingLogger()).capture("e", cardRequest()) }
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
                     .exceptionOrNull()
 
             assertTrue(failure is java.io.IOException)
@@ -466,7 +467,7 @@ class MoneyInClientTest {
                         ),
                 )
 
-            MoneyInClient(transport, RecordingLogger()).capture("merchant-entry", request)
+            MoneyInClient(transport, RecordingSdkLogger()).capture("merchant-entry", request)
 
             val body = transport.bodyText()
             assertTrue(body, body.contains(""""firstName":"Test""""))
@@ -484,7 +485,7 @@ class MoneyInClientTest {
     @Test
     fun `nothing sensitive reaches a log record`() =
         runTest(timeout = timeout) {
-            val logger = RecordingLogger()
+            val logger = RecordingSdkLogger()
 
             MoneyInClient(FakePayInTransport.answering(approved), logger).capture("e", cardRequest())
 
@@ -501,7 +502,7 @@ class MoneyInClientTest {
             // loggable.
             val echoing = "Card 4111111111111111 was refused"
             val declined = """{"code":"D0001","reason":"$echoing"}"""
-            val logger = RecordingLogger()
+            val logger = RecordingSdkLogger()
 
             runCatching { MoneyInClient(FakePayInTransport.answering(declined), logger).capture("e", cardRequest()) }
 

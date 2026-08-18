@@ -5,6 +5,8 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.testutils.network.LoopbackServer
+import com.payabli.sdk.testutils.network.elapsedMillisSince
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -41,9 +43,9 @@ private val UNBUDGETED = (CALL_BUDGET_STALL_MILLIS * 10).milliseconds
  * The whole-call bound, which no socket-level timeout provides: the read timeout only ever bounds the wait
  * for the next byte.
  *
- * **Asserts the elapsed time, not only the error.** An earlier version checked the error alone and passed at
- * 810ms against a 200ms budget, because the call waited out the whole stall and failed afterwards. That is
- * what a test looks like when the mechanism it covers does not work.
+ * **Asserts the elapsed time, not only the error.** Checking the error alone passes at 810ms against a
+ * 200ms budget, because the call waits out the whole stall and fails afterwards. The error says a deadline
+ * was reported; only the clock says it was enforced.
  *
  * **And it asserts that over attempts rather than once.** Elapsed time is the only observable that separates
  * a cut-off from a completed stall, and on a shared emulator it is not a reliable one: measured on the

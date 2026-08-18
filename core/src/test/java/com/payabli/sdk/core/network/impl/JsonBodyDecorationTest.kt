@@ -2,6 +2,7 @@ package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.testutils.auth.testAuth
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

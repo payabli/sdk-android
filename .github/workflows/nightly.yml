@@ -150,6 +150,7 @@ jobs:
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
           :example:createDebugUnitTestCoverageReport
+          :testutils:createDebugUnitTestCoverageReport
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
       # when the credential is absent, matching the card-present job in ci.yml.

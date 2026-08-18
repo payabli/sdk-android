@@ -6,6 +6,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInVendorData
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -33,7 +34,7 @@ class TokenStorageClientTest {
             val transport = FakePayInTransport.answering(stored)
 
             val result =
-                TokenStorageClient(transport, RecordingLogger())
+                TokenStorageClient(transport, RecordingSdkLogger())
                     .storeMethod("merchant-entry", PayInInstrument.Card(testCard()))
 
             assertEquals("/api/TokenStorage/add", transport.request?.path)
@@ -61,7 +62,7 @@ class TokenStorageClientTest {
             val transport = FakePayInTransport.answering(stored)
 
             val result =
-                TokenStorageClient(transport, RecordingLogger())
+                TokenStorageClient(transport, RecordingSdkLogger())
                     .storeMethod("e", PayInInstrument.BankAccount(testAccount()))
 
             assertTrue(transport.bodyText().contains(""""achAccount":"$TEST_ACCOUNT""""))
@@ -73,7 +74,7 @@ class TokenStorageClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(stored)
 
-            TokenStorageClient(transport, RecordingLogger()).storeMethod(
+            TokenStorageClient(transport, RecordingSdkLogger()).storeMethod(
                 "e",
                 PayInInstrument.Card(testCard()),
                 PayInStoreOptions(
@@ -103,7 +104,7 @@ class TokenStorageClientTest {
             // read by nobody and the option does not exist.
             val transport = FakePayInTransport.answering(stored)
 
-            TokenStorageClient(transport, RecordingLogger()).storeMethod("e", PayInInstrument.Card(testCard()))
+            TokenStorageClient(transport, RecordingSdkLogger()).storeMethod("e", PayInInstrument.Card(testCard()))
 
             assertFalse(
                 transport.request
@@ -127,7 +128,7 @@ class TokenStorageClientTest {
 
             val failure =
                 runCatching {
-                    TokenStorageClient(transport, RecordingLogger())
+                    TokenStorageClient(transport, RecordingSdkLogger())
                         .storeMethod("e", PayInInstrument.Card(testCard()))
                 }.exceptionOrNull()
 
@@ -147,7 +148,7 @@ class TokenStorageClientTest {
 
             val failure =
                 runCatching {
-                    TokenStorageClient(transport, RecordingLogger())
+                    TokenStorageClient(transport, RecordingSdkLogger())
                         .storeMethod("e", PayInInstrument.Card(testCard()))
                 }.exceptionOrNull()
 
@@ -161,7 +162,7 @@ class TokenStorageClientTest {
             val transport = FakePayInTransport.answering(body)
 
             val result =
-                TokenStorageClient(transport, RecordingLogger()).storeMethod("e", PayInInstrument.Card(testCard()))
+                TokenStorageClient(transport, RecordingSdkLogger()).storeMethod("e", PayInInstrument.Card(testCard()))
 
             assertEquals("tok-9", result.storedMethodId)
         }
@@ -175,7 +176,7 @@ class TokenStorageClientTest {
 
             val failure =
                 runCatching {
-                    TokenStorageClient(transport, RecordingLogger())
+                    TokenStorageClient(transport, RecordingSdkLogger())
                         .storeMethod("e", PayInInstrument.Card(testCard()))
                 }.exceptionOrNull()
 
@@ -196,7 +197,7 @@ class TokenStorageClientTest {
 
                 val failure =
                     runCatching {
-                        TokenStorageClient(transport, RecordingLogger())
+                        TokenStorageClient(transport, RecordingSdkLogger())
                             .storeMethod("e", PayInInstrument.Card(testCard()))
                     }.exceptionOrNull()
 
@@ -211,7 +212,7 @@ class TokenStorageClientTest {
 
             val failure =
                 runCatching {
-                    TokenStorageClient(transport, RecordingLogger())
+                    TokenStorageClient(transport, RecordingSdkLogger())
                         .storeMethod("e", PayInInstrument.Card(testCard()))
                 }.exceptionOrNull()
 
@@ -226,7 +227,7 @@ class TokenStorageClientTest {
 
             val failure =
                 runCatching {
-                    TokenStorageClient(transport, RecordingLogger())
+                    TokenStorageClient(transport, RecordingSdkLogger())
                         .storeMethod("e", PayInInstrument.Card(testCard()))
                 }.exceptionOrNull()
 
@@ -238,7 +239,7 @@ class TokenStorageClientTest {
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(stored)
 
-            TokenStorageClient(transport, RecordingLogger()).storeMethod("e", PayInInstrument.Card(testCard()))
+            TokenStorageClient(transport, RecordingSdkLogger()).storeMethod("e", PayInInstrument.Card(testCard()))
 
             assertTrue(transport.bodyReference!!.all { it == 0.toByte() })
         }
@@ -249,7 +250,7 @@ class TokenStorageClientTest {
             val transport = FakePayInTransport.failingWith(java.io.IOException("connection reset"))
 
             runCatching {
-                TokenStorageClient(transport, RecordingLogger())
+                TokenStorageClient(transport, RecordingSdkLogger())
                     .storeMethod("e", PayInInstrument.Card(testCard()))
             }
 
@@ -270,7 +271,7 @@ class TokenStorageClientTest {
                     source = "mobile",
                 )
 
-            TokenStorageClient(transport, RecordingLogger())
+            TokenStorageClient(transport, RecordingSdkLogger())
                 .storeMethod("merchant-entry", PayInInstrument.Card(testCard()), options)
 
             val body = transport.bodyText()
@@ -286,7 +287,7 @@ class TokenStorageClientTest {
     @Test
     fun `nothing sensitive reaches a log record`() =
         runTest(timeout = timeout) {
-            val logger = RecordingLogger()
+            val logger = RecordingSdkLogger()
 
             TokenStorageClient(FakePayInTransport.answering(stored), logger)
                 .storeMethod("e", PayInInstrument.Card(testCard()))
