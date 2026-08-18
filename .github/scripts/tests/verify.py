@@ -1844,6 +1844,22 @@ def unquoted(key: str) -> str:
     return key
 
 
+def without_comment(text: str) -> str:
+    """The value with a trailing inline comment removed.
+
+    `on: [push] # comment` returned `push] # comment` as a trigger name, and `on: push # comment` returned
+    the whole tail. The pull-request check survived that on a prefix match, which is luck rather than
+    design: the list it reads was wrong, and the next check written against it would inherit that.
+
+    Cut at a `#` that follows whitespace, so a `#` inside a value is left alone. Nothing in an `on:` needs
+    one, and a rule that cannot damage a legitimate value is the one to pick when the parser is textual.
+    """
+    for index, character in enumerate(text):
+        if character == "#" and (index == 0 or text[index - 1].isspace()):
+            return text[:index]
+    return text
+
+
 def trigger_keys(text: str) -> list[str]:
     """The triggers named by `on:`, in any of the three forms YAML allows for it.
 
@@ -1863,10 +1879,11 @@ def trigger_keys(text: str) -> list[str]:
             if not stripped.startswith("on:"):
                 continue
             on_indent = indent
-            inline = stripped[len("on:"):].strip()
+            inline = without_comment(stripped[len("on:"):]).strip()
             if inline.startswith("["):
-                return [unquoted(key) for key in inline.strip("[]").split(",") if key.strip()]
-            if inline and not inline.startswith("#"):
+                inner = inline[1:inline.index("]")] if "]" in inline else inline[1:]
+                return [unquoted(key) for key in inner.split(",") if key.strip()]
+            if inline:
                 return [unquoted(inline)]
             continue
 
@@ -2112,6 +2129,12 @@ def test_workflows():
           f"{double_quoted}")
     single_quoted = trigger_keys("on: 'pull_request'")
     check("W1 a single-quoted scalar trigger too", single_quoted == ["pull_request"], f"{single_quoted}")
+
+    listed = trigger_keys("on: [push, pull_request]  # both of them")
+    check("W1 an inline comment after a shorthand list is not a trigger",
+          listed == ["push", "pull_request"], f"{listed}")
+    scalar = trigger_keys("on: pull_request # and here")
+    check("W1 nor after a shorthand scalar", scalar == ["pull_request"], f"{scalar}")
 
     commented = (
         "jobs:\n  live:\n    steps:  # what runs\n      - name: one\n        run: |  # the script\n"
