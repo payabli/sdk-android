@@ -189,10 +189,11 @@ jobs:
       # because this step exists to write the snapshot rather than to run anything.
       # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin twice.
       #
-      # A pin is brittle here. This repository has no Dependabot or Renovate configuration, so a pinned SHA
-      # would never be bumped, and this action is the one most coupled to Android tooling churn, with two to
-      # six releases a year. The trade would be a low-probability tag compromise against a nightly that
-      # silently stops receiving upstream fixes.
+      # A pin is brittle here. This action is the one most coupled to Android tooling churn, with two to six
+      # releases a year, so the trade is a low-probability tag compromise against a nightly that stops
+      # receiving upstream fixes. That argument used to rest on there being no Dependabot configuration at
+      # all; `.github/dependabot.yml` now exists for the live workflows' pins, so a pin here would be bumped.
+      # The decision stands on what is below instead: this job holds no payment credential.
       #
       # What made the pin worth arguing about was the secret this job used to hold: step-scoping a credential
       # does not isolate it from code that ran earlier in the same job, so this action could have tampered
@@ -243,8 +244,8 @@ jobs:
           disable-animations: true
           # Scoped to :core, :payin and :example; see the header for why :taptopay is not here. Short version:
           # not hardware, a credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator
-          # action, pinned to a commit above rather than a tag that can be moved under it. Neither :payin nor
-          # :example resolves anything outside the project, so neither adds a credential to this step.
+          # action. Neither :payin nor :example resolves anything outside the project, so neither adds a
+          # credential to this step.
           #
           # --continue because the two tasks are independent and Gradle otherwise "aborts execution and fails
           # the build when any task fails", which leaves whether the second module ran at all down to how the
