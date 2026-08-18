@@ -86,10 +86,10 @@ class TapToPaySessionFailuresTest {
     @Test
     fun `every failure lands where the table says`() {
         for ((failure, expected) in cases) {
-            // The qualified name, because two families carry a classification of the same simple name and a
-            // wrong landing has to say which one moved.
+            // Qualified, because two families carry a classification of the same simple name and a wrong
+            // landing has to say which one moved.
             assertEquals(
-                failure.javaClass.name,
+                failure::class.qualifiedName ?: failure.javaClass.name,
                 expected,
                 TapToPaySessionFailures.landingFor(failure),
             )
