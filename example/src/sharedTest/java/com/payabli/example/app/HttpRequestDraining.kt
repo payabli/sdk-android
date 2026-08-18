@@ -86,8 +86,12 @@ private fun drainChunked(stream: InputStream) {
 
         if (size < 0) throw IOException("chunk size is negative: ${header.value}")
         if (size == 0) break
+        // Compared before the addition, and against what is left rather than against the running total. A
+        // chunk of 0x7fffffff added to any non-zero total wraps it negative, which reads as under the cap and
+        // hands drainExactly a two gigabyte read. Both sides here are between zero and the cap, so neither
+        // the subtraction nor the addition below can wrap.
+        if (size > MAX_BODY_BYTES - total) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
         total += size
-        if (total > MAX_BODY_BYTES) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
         drainExactly(stream, size)
         readLine(stream, MAX_HEADER_BYTES) ?: throw IOException("chunked body ended early")
     }

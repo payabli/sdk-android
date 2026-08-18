@@ -112,6 +112,16 @@ class HttpRequestDrainingTest {
         assertEquals("X", stream.readBytes().decodeToString())
     }
 
+    /** A size that would wrap the running total negative, which read as under the cap. */
+    @Test
+    fun `a chunk size that would overflow the running total is refused`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n7fffffff\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body exceeded 65536 bytes", failure.message)
+    }
+
     @Test
     fun `a chunk size that is not hexadecimal is refused`() {
         val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\nab\r\n")
