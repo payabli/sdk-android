@@ -130,10 +130,9 @@ private class HeaderLine(
  * A byte at a time, so the stream is left positioned exactly after the blank line for the body read above,
  * and every byte is counted as it arrives rather than inferred from the string afterwards.
  *
- * A stream that ends part way through a line throws. Returning what had arrived so far handed the caller a
- * line that was never terminated, and each caller then took it at face value: a truncated chunk header was
- * parsed as a size, and a truncated trailer ended the request as though it were complete. Null means the
- * stream ended cleanly between lines, which is the only case a caller can tell anything from.
+ * A stream that ends part way through a line throws, because an unterminated line is one every caller here
+ * would take at face value: as a chunk size, or as the trailer that ends a request. Null means the stream
+ * ended cleanly between lines, which is the only ending a caller can tell anything from.
  */
 private fun readLine(
     stream: InputStream,

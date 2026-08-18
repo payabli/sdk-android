@@ -51,7 +51,7 @@ class HttpRequestDrainingTest {
         assertEquals("request ended before its headers did", failure.message)
     }
 
-    /** A line that never ended, which used to come back as though it had. */
+    /** A line the stream ended part way through, which is not a line a caller can act on. */
     @Test
     fun `a request that stops part way through a line is refused`() {
         val stream = streamOf("POST / HTTP/1.1\r\nContent-Len")
@@ -61,7 +61,7 @@ class HttpRequestDrainingTest {
         assertEquals("request ended part way through a line", failure.message)
     }
 
-    /** The same truncation in a chunk header, which used to be parsed as a size. */
+    /** The same truncation where a chunk size is expected, so a partial line cannot be read as one. */
     @Test
     fun `a chunk header that stops part way is refused rather than read as a size`() {
         val stream = streamOf("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n7f")
