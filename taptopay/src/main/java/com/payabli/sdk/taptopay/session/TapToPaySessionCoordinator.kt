@@ -238,6 +238,8 @@ internal class TapToPaySessionCoordinator(
             // An envelope decline and a transport status both arrive as this one type.
             throw TapToPaySessionException.PendingActivation(inactive)
         } catch (stale: DeviceServiceException.NotAttested) {
+            // Never attested again from in here: that spends a challenge inside a call that is already
+            // failing.
             enrollment.reset()
             throw TapToPaySessionException.AttestationRequired(stale)
         }
