@@ -238,12 +238,6 @@ internal class TapToPaySessionCoordinator(
             // An envelope decline and a transport status both arrive as this one type.
             throw TapToPaySessionException.PendingActivation(inactive)
         } catch (stale: DeviceServiceException.NotAttested) {
-            // The service is holding the binding to the exact credential that made it, and it no longer
-            // matches. The stored record names something that cannot be used, so it goes; the key it was
-            // made with is left alone, and the next build attests against it again.
-            //
-            // Never attested again from in here. Doing that would spend a fresh challenge inside a call that
-            // is already failing, and hide the rotation that caused it.
             enrollment.reset()
             throw TapToPaySessionException.AttestationRequired(stale)
         }
