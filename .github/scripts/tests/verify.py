@@ -1895,8 +1895,12 @@ def trigger_keys(text: str) -> list[str]:
             # as triggers would make the list say things the document does not.
             if child_indent is None:
                 child_indent = indent
-            if indent == child_indent and stripped.endswith(":"):
-                keys.append(stripped.rstrip(":"))
+            # The comment comes off before the trailing colon is looked for, as it does on the shorthand
+            # forms above. `pull_request:  # why` does not end in a colon, so the key went unlisted and the
+            # trigger check had nothing to refuse.
+            naked = without_comment(stripped).strip()
+            if indent == child_indent and naked.endswith(":"):
+                keys.append(naked.rstrip(":"))
     return keys
 
 
@@ -2150,6 +2154,9 @@ def test_workflows():
           listed == ["push", "pull_request"], f"{listed}")
     scalar = trigger_keys("on: pull_request # and here")
     check("W1 nor after a shorthand scalar", scalar == ["pull_request"], f"{scalar}")
+    blocked = trigger_keys("on:\n  workflow_dispatch:  # on demand\n  pull_request:  # and this\n")
+    check("W1 nor after a block trigger key", blocked == ["workflow_dispatch", "pull_request"],
+          f"{blocked}")
 
     commented = (
         "jobs:\n  live:\n    steps:  # what runs\n      - name: one\n        run: |  # the script\n"
