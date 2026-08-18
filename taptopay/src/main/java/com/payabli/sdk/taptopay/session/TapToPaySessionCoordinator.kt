@@ -235,9 +235,10 @@ internal class TapToPaySessionCoordinator(
         return try {
             client.config(entry, assertion, failureMapper = EntryPointFailures).credentials
         } catch (inactive: DeviceServiceException.Forbidden) {
-            // Both shapes of the refusal arrive as this one type, and this is where a warm start learns it:
-            // registration is the only other place the device is told it owes a code, and a warm start does
-            // not register. Translated here, so one condition reaches a caller as one failure.
+            // An envelope decline and a transport status both arrive as this one type, and this is where a
+            // warm start learns the device owes a code: registration is the only other place it is told, and
+            // a warm start does not register. Translated here, so one condition reaches a caller as one
+            // failure.
             throw TapToPaySessionException.PendingActivation(inactive)
         } catch (stale: DeviceServiceException.NotAttested) {
             // The service is holding the binding to the exact credential that made it, and it no longer
