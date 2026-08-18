@@ -2087,11 +2087,24 @@ def test_workflows():
 
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.
+    #
+    # Every line of the body, comments included. Substitution does not care whether the shell would run the
+    # line, and Actions echoes the script it substituted into the log, so an expression parked behind a `#`
+    # is interpolated just the same. Dropping comments is right where the emulator action drops them itself,
+    # which is the check above, and wrong here.
     for name in LIVE_WORKFLOWS:
         bodies = [str(step.get("run", "")) for step in steps_of(workflow_doc(name))]
-        offending = [line for body in bodies for line in meaningful_lines(body) if "${{" in line]
+        offending = [line.strip() for body in bodies for line in body.splitlines() if "${{" in line]
         check(f"W6 {name} interpolates no expression inside a run script",
               not offending, " | ".join(offending))
+
+    behind_comment = yaml.safe_load(
+        "on:\n  workflow_dispatch:\njobs:\n  j:\n    steps:\n      - name: one\n"
+        "        run: |\n          # ${{ secrets.client-secret }}\n          echo hi\n"
+    )
+    hidden = [line.strip() for step in steps_of(behind_comment)
+              for line in str(step.get("run", "")).splitlines() if "${{" in line]
+    check("W6 an expression behind a shell comment is still found", bool(hidden), f"{hidden}")
     # The same guard as W5, on the file that has run steps at all: nothing found means the check above
     # examined nothing rather than found nothing wrong.
     check("W6 the run scripts were found", any(step.get("run") for step in steps))
