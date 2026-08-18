@@ -58,6 +58,14 @@ android {
                     add("com.payabli.sdk.taptopay.network.platform.TTPTransactionLiveTest")
                     add("com.payabli.sdk.taptopay.session.platform.TapToPaySessionLiveTest")
                 }
+
+                // Asserts an answer only a deployed service change produces, and this module ships ahead of
+                // it. Excluded until a run says that change is live where it is pointed, so the tier stays
+                // green on an environment that has not taken it. The test's own documentation says what to
+                // check before passing this.
+                if (providers.gradleProperty("payabli.ttp.entryPointRefusalDeployed").orNull != "true") {
+                    add("com.payabli.sdk.taptopay.enrollment.platform.EntryPointRefusalLiveTest")
+                }
             }
         if (excluded.isNotEmpty()) {
             testInstrumentationRunnerArguments["notClass"] = excluded.joinToString(",")

@@ -142,6 +142,33 @@ class DeviceServiceConfigTest {
         }
 
     @Test
+    fun `an unusable entry point is told apart from a device that owes a code`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The two arrive under one result code on this route and carry opposite remedies, so the session
+            // reads them from the wording or gets one of them wrong.
+            val (refused, _) = clientFor(declineEnvelope(403, EntryPointFailures.ENTRY_POINT_UNUSABLE))
+            val entryPoint = failureOf { refused.config(ENTRY, ASSERTION, failureMapper = EntryPointFailures) }
+            assertTrue("$entryPoint", entryPoint is DeviceServiceException.EntryPointUnusable)
+
+            val (inactive, _) = clientFor(declineEnvelope(403, "Device is not active."))
+            val pending = failureOf { inactive.config(ENTRY, ASSERTION, failureMapper = EntryPointFailures) }
+            assertTrue("$pending", pending is DeviceServiceException.Forbidden)
+        }
+
+    @Test
+    fun `the gateway's own 403 stays forbidden even under the entry-point mapper`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // It carries no service text, so there is nothing for a wording match to read, and the mapper
+            // never sees it: the status override runs on the transport and the mapper on the envelope.
+            val (client, _) = clientFor("", statusCode = HTTP_FORBIDDEN)
+
+            val failure = failureOf { client.config(ENTRY, ASSERTION, failureMapper = EntryPointFailures) }
+
+            assertTrue("$failure", failure is DeviceServiceException.Forbidden)
+            assertEquals("", (failure as DeviceServiceException).reason)
+        }
+
+    @Test
     fun `a credential rotation between attesting and fetching is reported as unattested`() =
         runTest(timeout = TEST_TIMEOUT) {
             val (client, _) = clientFor(declineEnvelope(401, "Device not attested or attestation revoked."))

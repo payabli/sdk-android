@@ -90,6 +90,20 @@ class ActivationFailurePolicyTest {
                 DeviceActivationException.PaypointUnknown::class.java,
                 false,
             ),
+            Case(
+                403,
+                "Entry point is not available for this request.",
+                DeviceActivationException.EntryPointUnusable::class.java,
+                false,
+            ),
+            // The same code carrying anything else stays unclassified, which is what holds the match above to
+            // the one wording it was written for.
+            Case(
+                403,
+                "Device is not in a state that allows attestation.",
+                DeviceActivationException.Unclassified::class.java,
+                false,
+            ),
             Case(500, "Internal server error.", DeviceActivationException.ServiceFailed::class.java, false),
             Case(418, "something nobody has written down", DeviceActivationException.Unclassified::class.java, false),
         )

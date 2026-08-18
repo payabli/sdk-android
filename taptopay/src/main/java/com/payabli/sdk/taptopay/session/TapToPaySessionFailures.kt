@@ -49,8 +49,9 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * A device that owes activation and a credential that is not scoped for the call arrive as one case, so
-     * both land here: the reader is unavailable either way.
+     * A device that owes activation and an application this paypoint does not permit arrive as one case, so
+     * both land on pending activation: the reader is unavailable either way, and the host's next move is the
+     * same. An unusable entry point is not among them; its next move is the opposite.
      *
      * Nothing found discards nothing. More than one thing can be the one that was not found, and only one of
      * them means the stored identity is stale, so the safe landing is the one that keeps it.
@@ -58,6 +59,7 @@ internal object TapToPaySessionFailures {
     private fun landingForService(failure: DeviceServiceException): TapToPaySessionState? =
         when (failure) {
             is DeviceServiceException.Forbidden -> TapToPaySessionState.PendingActivation
+            is DeviceServiceException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
             is DeviceServiceException.NotAttested -> failed(ATTESTATION_REQUIRED)
             is DeviceServiceException.NotFound -> failed(CONFIGURATION_REJECTED)
             // The request this SDK built was refused, which makes it this SDK's defect.
@@ -80,8 +82,20 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException.NotEnrolled -> failed(ATTESTATION_REQUIRED)
             is DeviceActivationException.EntryNotAuthorized -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.PaypointUnknown -> failed(CONFIGURATION_REJECTED)
+            is DeviceActivationException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.ServiceFailed -> failed(SERVICE_UNAVAILABLE)
-            else -> null
+            // Each error is listed and not collapsed into one `else`, so a new classification fails to
+            // compile here.
+            is DeviceActivationException.CodeMalformed -> null
+            is DeviceActivationException.CodeIncorrect -> null
+            is DeviceActivationException.CodeExpired -> null
+            is DeviceActivationException.AttemptsExhausted -> null
+            is DeviceActivationException.CodeNotIssued -> null
+            is DeviceActivationException.CodeUnreadable -> null
+            is DeviceActivationException.DeviceNotPending -> null
+            is DeviceActivationException.AssertionRejected -> null
+            is DeviceActivationException.RequestRejected -> null
+            is DeviceActivationException.Unclassified -> null
         }
 
     /**

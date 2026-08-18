@@ -36,9 +36,11 @@ class DeviceFailureMappingTest {
     private suspend fun challengeAgainst(
         body: String,
         statusCode: Int = 200,
+        failureMapper: DeviceFailureMapper = DeviceFailureMapper.None,
     ): Throwable? =
         runCatching {
-            DeviceServiceClient(FakeDeviceTransport.answering(body, statusCode), logger).challenge(ENTRY)
+            DeviceServiceClient(FakeDeviceTransport.answering(body, statusCode), logger)
+                .challenge(ENTRY, failureMapper = failureMapper)
         }.exceptionOrNull()
 
     @Test
@@ -95,6 +97,43 @@ class DeviceFailureMappingTest {
             // 400 bucket stays whole here, and the text-matching lives wherever accepting that risk is worth it.
             assertTrue(unmapped is DeviceServiceException.BadRequest)
             assertEquals(ECHOING_REASON, (unmapped as DeviceServiceException).reason)
+        }
+
+    @Test
+    fun `the entry-point mapper lifts one wording out, and defers everything else`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val lifted =
+                challengeAgainst(
+                    declineEnvelope(403, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                    failureMapper = EntryPointFailures,
+                )
+            assertTrue(lifted is DeviceServiceException.EntryPointUnusable)
+
+            // The narrowness is the property under test. Another wording under the same code keeps the
+            // classification it already had, and the wording under another code is not this failure. Without
+            // both halves the mapper could widen to the whole code and still pass the assertion above.
+            val otherWording =
+                challengeAgainst(
+                    declineEnvelope(403, "Device is not active."),
+                    failureMapper = EntryPointFailures,
+                )
+            assertTrue(otherWording is DeviceServiceException.Forbidden)
+
+            val otherCode =
+                challengeAgainst(
+                    declineEnvelope(404, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                    failureMapper = EntryPointFailures,
+                )
+            assertTrue(otherCode is DeviceServiceException.NotFound)
+
+            // A decline that carried no code at all reaches the same comparison, where the wording alone is
+            // not enough to classify it.
+            val noCode =
+                challengeAgainst(
+                    declineEnvelope(null, EntryPointFailures.ENTRY_POINT_UNUSABLE),
+                    failureMapper = EntryPointFailures,
+                )
+            assertTrue(noCode is DeviceServiceException.Unclassified)
         }
 
     @Test

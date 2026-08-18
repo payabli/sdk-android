@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
+import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
@@ -232,19 +233,13 @@ internal class TapToPaySessionCoordinator(
     private suspend fun fetchConfig(): ReaderCredentials {
         val assertion = enrollment.assertion() ?: throw TapToPaySessionException.AttestationRequired()
         return try {
-            client.config(entry, assertion).credentials
+            client.config(entry, assertion, failureMapper = EntryPointFailures).credentials
         } catch (inactive: DeviceServiceException.Forbidden) {
-            // Both shapes of the refusal arrive as this one type, and this is where a warm start learns it:
-            // registration is the only other place the device is told it owes a code, and a warm start does
-            // not register. Translated here, so one condition reaches a caller as one failure.
+            // An envelope decline and a transport status both arrive as this one type.
             throw TapToPaySessionException.PendingActivation(inactive)
         } catch (stale: DeviceServiceException.NotAttested) {
-            // The service is holding the binding to the exact credential that made it, and it no longer
-            // matches. The stored record names something that cannot be used, so it goes; the key it was
-            // made with is left alone, and the next build attests against it again.
-            //
-            // Never attested again from in here. Doing that would spend a fresh challenge inside a call that
-            // is already failing, and hide the rotation that caused it.
+            // Never attested again from in here: that spends a challenge inside a call that is already
+            // failing.
             enrollment.reset()
             throw TapToPaySessionException.AttestationRequired(stale)
         }

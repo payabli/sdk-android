@@ -40,6 +40,7 @@ class TapToPaySessionFailuresTest {
             TapToPaySessionException.SetupFailed() to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation,
             DeviceServiceException.NotAttested(401, REASON) to failed(ATTESTATION_REQUIRED),
+            DeviceServiceException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.BadRequest(400, REASON) to failed(SDK_INTERNAL_ERROR),
             DeviceServiceException.ServerFailure(500, REASON) to failed(SERVICE_UNAVAILABLE),
@@ -50,9 +51,20 @@ class TapToPaySessionFailuresTest {
             DeviceActivationException.NotEnrolled() to failed(ATTESTATION_REQUIRED),
             DeviceActivationException.EntryNotAuthorized(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceActivationException.PaypointUnknown(404, REASON) to failed(CONFIGURATION_REJECTED),
+            DeviceActivationException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceActivationException.ServiceFailed(500, REASON) to failed(SERVICE_UNAVAILABLE),
-            // A wrong code leaves the session alone: the device still owes one.
+            // A wrong code leaves the session alone: the device still owes one. So does everything else the
+            // caller can answer by sending the code again, which is the rest of this group.
             DeviceActivationException.CodeIncorrect(400, REASON) to null,
+            DeviceActivationException.CodeMalformed() to null,
+            DeviceActivationException.CodeExpired(400, REASON) to null,
+            DeviceActivationException.AttemptsExhausted(400, REASON) to null,
+            DeviceActivationException.CodeNotIssued(400, REASON) to null,
+            DeviceActivationException.CodeUnreadable(400, REASON) to null,
+            DeviceActivationException.DeviceNotPending(400, REASON) to null,
+            DeviceActivationException.AssertionRejected(400, REASON) to null,
+            DeviceActivationException.RequestRejected(400, REASON) to null,
+            DeviceActivationException.Unclassified(418, REASON) to null,
             // The key is gone, so the identity is: enrollment discards the record before raising it.
             DeviceKeyException.KeyLost() to failed(ATTESTATION_REQUIRED),
             DeviceKeyException.SigningFailed() to failed(SDK_INTERNAL_ERROR),
@@ -74,8 +86,10 @@ class TapToPaySessionFailuresTest {
     @Test
     fun `every failure lands where the table says`() {
         for ((failure, expected) in cases) {
+            // Qualified, because two families carry a classification of the same simple name and a wrong
+            // landing has to say which one moved.
             assertEquals(
-                failure.javaClass.simpleName,
+                failure::class.qualifiedName ?: failure.javaClass.name,
                 expected,
                 TapToPaySessionFailures.landingFor(failure),
             )
@@ -89,18 +103,18 @@ class TapToPaySessionFailuresTest {
         val discarding =
             cases
                 .filter { TapToPaySessionFailures.landingFor(it.first) == failed(ATTESTATION_REQUIRED) }
-                .map { it.first.javaClass.simpleName }
+                .map { it.first::class }
                 .toSet()
 
         assertEquals(
             setOf(
-                "AttestationRequired",
-                "NotAttested",
-                "AttestationRevoked",
-                "DeviceUnknown",
-                "NotEnrolled",
-                "IntegrityFailed",
-                "KeyLost",
+                TapToPaySessionException.AttestationRequired::class,
+                DeviceServiceException.NotAttested::class,
+                DeviceActivationException.AttestationRevoked::class,
+                DeviceActivationException.DeviceUnknown::class,
+                DeviceActivationException.NotEnrolled::class,
+                AttestationException.IntegrityFailed::class,
+                DeviceKeyException.KeyLost::class,
             ),
             discarding,
         )
@@ -111,9 +125,24 @@ class TapToPaySessionFailuresTest {
         val unchanged =
             cases
                 .filter { TapToPaySessionFailures.landingFor(it.first) == null }
-                .map { it.first.javaClass.simpleName }
+                .map { it.first::class }
                 .toSet()
 
-        assertEquals(setOf("NotRecoverable", "CodeIncorrect"), unchanged)
+        assertEquals(
+            setOf(
+                TapToPaySessionException.NotRecoverable::class,
+                DeviceActivationException.CodeIncorrect::class,
+                DeviceActivationException.CodeMalformed::class,
+                DeviceActivationException.CodeExpired::class,
+                DeviceActivationException.AttemptsExhausted::class,
+                DeviceActivationException.CodeNotIssued::class,
+                DeviceActivationException.CodeUnreadable::class,
+                DeviceActivationException.DeviceNotPending::class,
+                DeviceActivationException.AssertionRejected::class,
+                DeviceActivationException.RequestRejected::class,
+                DeviceActivationException.Unclassified::class,
+            ),
+            unchanged,
+        )
     }
 }

@@ -76,9 +76,9 @@ internal sealed class DeviceServiceException(
      * The device or the application is not permitted this call.
      *
      * **A device that owes activation reaches a caller this way**, so this case is not a misconfiguration on
-     * its own. It is not split further: what stands behind it cannot be told apart here, and the sibling
-     * client draws the same line, so separating them is a change both platforms make together. [reason] is
-     * empty when the refusal came from the transport rather than from the service.
+     * its own. What is left under it is not split further: nothing separates those by [resultCode], and a
+     * caller needing one of them supplies a [DeviceFailureMapper]. [reason] is empty when the refusal came
+     * from the transport rather than from the service.
      *
      * Not retryable.
      */
@@ -86,6 +86,20 @@ internal sealed class DeviceServiceException(
         resultCode: Int?,
         reason: String,
     ) : DeviceServiceException("the device service forbade the request", resultCode, reason)
+
+    /**
+     * The entry point this call names cannot be used for it.
+     *
+     * A fault in what the host configured, not in the device: the remedy is to correct the entry point or the
+     * credential it was paired with, and never to wait for an activation code. [Forbidden] carries the
+     * opposite remedy under the same [resultCode], which is what keeps the two apart.
+     *
+     * Discards nothing, and not retryable.
+     */
+    class EntryPointUnusable(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceServiceException("the device service refused the entry point", resultCode, reason)
 
     /** The entity, paypoint or device named in the request does not exist. */
     class NotFound(
