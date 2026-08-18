@@ -6,9 +6,16 @@ failure from git history and a commit range since the last green run. A live fai
 answer rather than a commit, so the same rendering would name whoever last touched a file for a connector
 outage, which is worse than saying nothing. This one names the environment and the flows and stops.
 
-It also posts on green, where the nightly stays silent behind a scheduled liveness alarm. Two runs a day at
-one line each is little enough to read, and it buys the same guarantee without the machinery: silence means
-the workflow itself stopped, rather than meaning everything passed.
+It also posts on green, where the nightly stays silent behind a scheduled liveness alarm. Two runs a day at one
+line each is little enough to read, and it makes silence mean the workflow stopped rather than meaning
+everything passed, which is what the nightly needs its alarm to establish.
+
+**It is not that alarm.** Nothing here arms anything, so a schedule that stops is noticed by somebody missing
+two daily messages and not by anything raising its hand. This repository is public, so scheduled workflows are
+disabled after 60 days without repository activity with no announcement, and queued scheduled jobs can be
+dropped under load; either of those goes unreported until a person reads the channel and finds the last message
+is old. Arming a switch per environment, as `nightly_slack.py` does for the nightly, is what would close that,
+and posting on green is a weaker thing that costs nothing.
 
 What reaches the channel from a failure is the classification, the HTTP status and the service's own code.
 `PayInLiveFlowsInstrumentedTest.orFail` builds that string and deliberately leaves out `reason` and `detail`,
