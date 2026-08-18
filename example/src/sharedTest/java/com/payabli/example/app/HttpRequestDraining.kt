@@ -21,8 +21,16 @@ internal fun drainHttpRequest(stream: InputStream) {
     var declared: String? = null
     var chunked = false
     var headerBudget = MAX_HEADER_BYTES
+    var read = 0
     while (true) {
-        val line = readLine(stream, headerBudget) ?: return
+        // End of stream with nothing read is a client that connected and said nothing, which is not a request
+        // and needs no reply. End of stream part way through the headers is a request that stopped, and
+        // returning there would report it as fully drained and let the caller answer it, which is the race
+        // this exists to prevent arriving by the one path that looks like success.
+        val line =
+            readLine(stream, headerBudget)
+                ?: if (read == 0) return else throw IOException("request ended before its headers did")
+        read += line.bytesRead
         headerBudget -= line.bytesRead
         if (line.value.isEmpty()) break
         val name = line.value.substringBefore(':')
@@ -40,7 +48,10 @@ internal fun drainHttpRequest(stream: InputStream) {
 
     // A body is declared by one header or the other. Neither means there is none, which is the ordinary case
     // for the request these servers answer.
-    val length = declared?.toIntOrNull()
+    // Read as a Long so a number too large for an Int is refused as the oversized body it is. Parsed as an
+    // Int, `Content-Length: 3000000000` came back null and was reported as not a number, which sends whoever
+    // reads that message looking for a typo.
+    val length = declared?.toLongOrNull()
     when {
         chunked -> drainChunked(stream)
         length != null -> {
@@ -48,7 +59,7 @@ internal fun drainHttpRequest(stream: InputStream) {
             // body would stay on the socket and be answered over.
             if (length < 0) throw IOException("Content-Length is negative: $declared")
             if (length > MAX_BODY_BYTES) throw IOException("request body exceeded $MAX_BODY_BYTES bytes")
-            drainExactly(stream, length)
+            drainExactly(stream, length.toInt())
         }
         declared != null -> throw IOException("Content-Length is not a number: $declared")
     }

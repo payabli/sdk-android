@@ -41,6 +41,31 @@ class HttpRequestDrainingTest {
         assertEquals("request body ended 35 bytes early", failure.message)
     }
 
+    /** A request that stopped part way through its headers, which read as one that had finished. */
+    @Test
+    fun `a request whose headers end early is refused rather than answered`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 5\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request ended before its headers did", failure.message)
+    }
+
+    /** A client that connects and says nothing is not a request, and needs no reply and no failure. */
+    @Test
+    fun `a stream that was empty from the start is not a truncated request`() {
+        drainHttpRequest(streamOf(""))
+    }
+
+    @Test
+    fun `a length too large for an Int is refused as oversized, not as unparseable`() {
+        val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 3000000000\r\n\r\n")
+
+        val failure = assertThrows(IOException::class.java) { drainHttpRequest(stream) }
+
+        assertEquals("request body exceeded 65536 bytes", failure.message)
+    }
+
     @Test
     fun `a body larger than the cap is refused before it is read`() {
         val stream = streamOf("POST / HTTP/1.1\r\nContent-Length: 999999\r\n\r\n")
