@@ -35,6 +35,7 @@ import org.junit.runner.RunWith
 import java.io.BufferedReader
 import java.math.BigDecimal
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.util.UUID
 
@@ -295,18 +296,40 @@ class PayInLiveFlowsInstrumentedTest {
      *
      * Refused rather than accepted quietly: another scheme cannot reach this server, and a path would move
      * the route below without looking like it had.
+     *
+     * Parsed rather than inspected as text, and rebuilt from what the parse returned. `127.0.0.1:8787@evil.com`
+     * has no path and no second scheme, so a textual check passes it, while everything that then resolves the
+     * address reads it as user information followed by the host `evil.com`. What is returned is a scheme and a
+     * host that were read the same way the request will read them.
      */
     private val tokenBaseUrl: String
         get() {
-            val given = tokenHost.trim().trimEnd('/')
-            val scheme = given.substringBefore("://", missingDelimiterValue = "http").lowercase()
+            // No trailing-slash trim before the parse: it would eat a bare `http://` down to `http:`, which then
+            // reads as a host named http. A trailing slash is a path of "/", which the parse reports and the
+            // check below allows.
+            val given = tokenHost.trim()
+            val withScheme = if (given.contains("://")) given else "http://$given"
+            val parsed =
+                runCatching { URI(withScheme) }.getOrNull()
+                    ?: error("liveTest.tokenHost is not an address: $given")
+
+            val scheme = parsed.scheme?.lowercase()
             require(scheme == "http" || scheme == "https") {
                 "liveTest.tokenHost must be http or https: $given"
             }
-            require(given.substringAfter("://").none { it == '/' || it == '?' || it == '#' }) {
+            // Rejected on the text as well as on the parse. Which component an authority splits into is the
+            // parser's decision, and this refuses the character rather than trusting two parsers to agree.
+            require(parsed.userInfo == null && '@' !in withScheme) {
+                "liveTest.tokenHost carries user information: $given"
+            }
+            val host = parsed.host
+            require(!host.isNullOrEmpty()) { "liveTest.tokenHost names no host: $given" }
+            val path = parsed.path.orEmpty()
+            require((path.isEmpty() || path == "/") && parsed.query == null && parsed.fragment == null) {
                 "liveTest.tokenHost carries a path: $given"
             }
-            return if (given.contains("://")) given else "http://$given"
+
+            return if (parsed.port == -1) "$scheme://$host" else "$scheme://$host:${parsed.port}"
         }
 
     private val environment: PayabliEnvironment
