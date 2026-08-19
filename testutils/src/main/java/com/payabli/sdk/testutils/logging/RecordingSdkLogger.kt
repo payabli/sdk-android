@@ -57,9 +57,10 @@ public class RecordingSdkLogger : SdkLogger {
      *
      * Wrapped rather than only typed as `List`: the declared type is erased at runtime, so a cast reaches
      * the backing store and the guarantee would hold only for callers who were not trying. Still a view of
-     * the same list rather than a copy of it, so a reader that took it before a write sees the write.
+     * the same list rather than a copy of it, so a reader that took it before a write sees the write, and
+     * one wrapper serves every read for the same reason.
      */
-    public val records: List<Record> get() = Collections.unmodifiableList(written)
+    public val records: List<Record> = Collections.unmodifiableList(written)
 
     /** Everything, so a test sees every record the SDK writes. */
     override fun isLoggable(level: LogLevel): Boolean = true
