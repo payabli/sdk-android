@@ -44,8 +44,18 @@ public class RecordingSdkLogger : SdkLogger {
      * An `ArrayList` here loses records rather than reporting anything, and the same race throws out of
      * `ArrayList.add` often enough to redden a run with nothing wrong with it. `RecordingLogSink` is a
      * `CopyOnWriteArrayList` for the same reason.
+     *
+     * Copy-on-write also gives every reader a snapshot iterator, which is what makes an assertion safe to
+     * run while a transport under test is still writing. A lock-guarded list would need each of those
+     * readers to hold the lock, and they are ordinary `single` and `filter` calls in other modules.
      */
-    public val records: MutableList<Record> = CopyOnWriteArrayList()
+    private val written: MutableList<Record> = CopyOnWriteArrayList()
+
+    /**
+     * Read-only, because a caller that can clear or append changes the answer its own assertion is about
+     * to read. Only [log] writes here.
+     */
+    public val records: List<Record> get() = written
 
     /** Everything, so a test sees every record the SDK writes. */
     override fun isLoggable(level: LogLevel): Boolean = true
@@ -58,7 +68,7 @@ public class RecordingSdkLogger : SdkLogger {
     ) {
         // Copied, so a caller that hands over a list it still holds cannot change what was recorded after
         // the fact. A record is what was logged at the moment it was logged.
-        records += Record(level, fields.toList(), message(), throwable)
+        written += Record(level, fields.toList(), message(), throwable)
     }
 
     /**

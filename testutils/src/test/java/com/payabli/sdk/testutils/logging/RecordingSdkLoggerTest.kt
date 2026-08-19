@@ -64,6 +64,20 @@ class RecordingSdkLoggerTest {
         assertEquals(listOf("route"), logger.records.single().fieldNames)
     }
 
+    /**
+     * The exposed list is a read-only view of the backing store, not a copy of it, so a caller that read
+     * `records` before a write still sees the write.
+     */
+    @Test
+    fun `records is a live read-only view`() {
+        val logger = RecordingSdkLogger()
+        val view = logger.records
+
+        logger.log(LogLevel.INFO, emptyList(), null) { "called" }
+
+        assertEquals(1, view.size)
+    }
+
     /** `initCause` refuses a throwable as its own cause, so a cycle takes two of them. */
     @Test
     fun `a cyclic cause chain terminates`() {
