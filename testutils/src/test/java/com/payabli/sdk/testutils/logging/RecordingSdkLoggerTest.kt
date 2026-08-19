@@ -10,6 +10,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.time.Duration.Companion.seconds
+
+/** Real threads and a real clock, so the bound is wall time, as the storage fixture's own suite sets it. */
+private val CONCURRENCY_TIMEOUT = 30.seconds
 
 private const val WRITERS = 8
 private const val LINES_EACH = 2_000
@@ -112,7 +116,7 @@ class RecordingSdkLoggerTest {
      */
     @Test
     fun `records survive concurrent writers`() =
-        runTest {
+        runTest(timeout = CONCURRENCY_TIMEOUT) {
             val logger = RecordingSdkLogger()
 
             (1..WRITERS)
