@@ -121,6 +121,8 @@ dependencies {
     // This module's @Preview functions only.
     implementation(libs.androidx.compose.ui.tooling.preview)
 
+    testImplementation(project(":testutils"))
+    androidTestImplementation(project(":testutils"))
     testImplementation(libs.junit)
     // The clients are suspending, so their tests need a test dispatcher, as :core's and :taptopay's do.
     testImplementation(libs.kotlinx.coroutines.test)

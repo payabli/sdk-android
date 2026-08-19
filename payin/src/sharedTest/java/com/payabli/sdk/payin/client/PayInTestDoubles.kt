@@ -1,8 +1,5 @@
 package com.payabli.sdk.payin.client
 
-import com.payabli.sdk.core.logging.LogField
-import com.payabli.sdk.core.logging.LogLevel
-import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -19,8 +16,8 @@ import java.math.BigDecimal
 /**
  * A transport that answers from a script and keeps what it was asked.
  *
- * `:core`'s `LoopbackServer` is not reachable from here: it lives in `core/src/sharedTest` and leans on
- * `internal` `:core` fixtures. `:taptopay` has its own double.
+ * The shared `LoopbackServer` runs a real socket and answers whatever it is scripted to; this answers without
+ * one, which is what a test about request shaping needs. Reach for the server when the subject is the wire.
  *
  * **The recorded body is a copy**, taken when the request is executed. The client overwrites the original once
  * the call returns, so a test reading `request.body` afterwards would see zeros — which is the behavior under
@@ -83,40 +80,6 @@ internal class FakePayInTransport(
                 failure = failure,
             )
     }
-}
-
-/**
- * A logger that keeps what it was given.
- *
- * `:core`'s recording sink is internal to `:core`, so this implements the public [SdkLogger] instead: two
- * members, which is what that interface documents as the cost of a fake.
- */
-internal class RecordingLogger : SdkLogger {
-    class Record(
-        val level: LogLevel,
-        val fields: List<LogField>,
-        val message: String,
-    )
-
-    val records: MutableList<Record> = mutableListOf()
-
-    /** Everything, so a test sees every record the SDK writes. */
-    override fun isLoggable(level: LogLevel): Boolean = true
-
-    override fun log(
-        level: LogLevel,
-        fields: List<LogField>,
-        throwable: Throwable?,
-        message: () -> String,
-    ) {
-        records += Record(level, fields, message())
-    }
-
-    /** Every field value and every message, flattened, for asserting that a value never appears. */
-    fun everythingWritten(): String =
-        records.joinToString(" ") { record ->
-            record.message + " " + record.fields.joinToString(" ") { it.toString() }
-        }
 }
 
 /** The test card, which passes the Luhn check. */

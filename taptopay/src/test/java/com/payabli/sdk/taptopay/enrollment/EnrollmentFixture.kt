@@ -9,7 +9,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.FakeDeviceTransport
 import com.payabli.sdk.taptopay.attestation.device.declineEnvelope
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
-import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import java.time.Clock
 import java.time.Instant

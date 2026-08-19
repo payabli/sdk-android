@@ -60,7 +60,7 @@ MAX_SUMMARY_BYTES = 900_000
 # :example is here because payabli.quality enables unit-test coverage for application modules as well as
 # libraries, so the sample app has a coverage task and both ci.yml and the nightly run it. It was absent
 # while that was not true.
-COVERAGE_MODULES = ("core", "example", "payin", "taptopay", "telemetry")
+COVERAGE_MODULES = ("core", "example", "payin", "taptopay", "telemetry", "testutils")
 
 # Attribution stops here, because the report cannot show more than this and the work is not free: each
 # failure costs two recursive source globs and up to two `git log` subprocesses. Measured against this repo
@@ -442,7 +442,7 @@ def main() -> int:
     # succeeded while writing nothing.
     unit_patterns = [
         f"{module}/build/test-results/test*UnitTest/TEST-*.xml"
-        for module in ("core", "payin", "telemetry", "example", "payabli-android")
+        for module in ("core", "payin", "telemetry", "example", "payabli-android", "testutils")
     ]
     card_patterns = ["taptopay/build/test-results/test*UnitTest/TEST-*.xml"]
     android_patterns = ["*/build/outputs/androidTest-results/connected/**/TEST-*.xml"]
