@@ -85,33 +85,44 @@ public class RecordingSdkLogger : SdkLogger {
      * value never reaches a *field* has to be a test in that module; what this covers is the free text,
      * which is where an accidental interpolation lands.
      *
-     * **The whole cause chain, not just the throwable handed over, and to its end.** A caller wraps, so a
-     * value that must not be logged is as likely to sit in a cause as in the outermost exception, and a
-     * flattening that stops anywhere short reports absence for something present below it. That is the one
-     * answer this method must never give, since every caller asserts on it being empty.
+     * **Every throwable reachable from the one handed over, by cause and by suppression alike.** A caller
+     * wraps, and a `use` block attaches a failure from `close` as suppressed rather than as a cause, so a
+     * value that must not be logged can sit anywhere in that tree. A flattening that stops short of it
+     * reports absence for something present, which is the one answer this method must never give, since
+     * every caller asserts on it being empty.
      */
     public fun everythingWritten(): String =
         records.joinToString(" ") { record ->
             record.message + " " + record.fieldNames.joinToString(" ") + " " +
-                record.throwable.causeChainText()
+                record.throwable.causeAndSuppressedText()
         }
 }
 
 /**
- * The throwable and its causes as text, to the end of the chain.
+ * A throwable, its causes and everything suppressed under any of them, as text.
+ *
+ * **Suppressed as well as caused, because both carry a message and either can carry the value.** A `use`
+ * block attaches a failure from `close` as suppressed rather than as a cause, and cancellation aggregates
+ * the same way, so a walk down `cause` alone reaches none of it. `LoopbackServer` is exactly that case: it
+ * throws from `close` with the serving failure as its cause, and arrives suppressed under whatever the
+ * body raised.
  *
  * **Terminated by identity, not by a depth limit.** A caller asserts that this text does not contain a
- * value, so a walk that stops early reports absence for anything below where it stopped. Remembering the
- * throwables already seen ends a cycle on the first repeat and leaves an ordinary chain walked whole,
+ * value, so a walk that stops early reports absence for anything past where it stopped. Remembering the
+ * throwables already visited ends a cycle on the first repeat and leaves an ordinary tree walked whole,
  * however deep it is.
  */
-private fun Throwable?.causeChainText(): String {
+private fun Throwable?.causeAndSuppressedText(): String {
     val parts = mutableListOf<String>()
     val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
-    var current = this
-    while (current != null && seen.add(current)) {
+    val pending = ArrayDeque<Throwable>()
+    this?.let { pending += it }
+    while (pending.isNotEmpty()) {
+        val current = pending.removeFirst()
+        if (!seen.add(current)) continue
         parts += current.toString()
-        current = current.cause
+        current.cause?.let { pending += it }
+        pending += current.suppressed
     }
     return parts.joinToString(" ")
 }

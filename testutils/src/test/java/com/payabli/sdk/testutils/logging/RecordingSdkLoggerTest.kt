@@ -63,6 +63,31 @@ class RecordingSdkLoggerTest {
         assertTrue(logger.everythingWritten().contains(SENSITIVE))
     }
 
+    /** What a `use` block produces: the body's failure, carrying the one from `close` as suppressed. */
+    @Test
+    fun `a value in a suppressed exception is written`() {
+        val logger = RecordingSdkLogger()
+        val thrown = IllegalStateException("body failed")
+        thrown.addSuppressed(IllegalStateException("close failed", IllegalArgumentException(SENSITIVE)))
+
+        logger.log(LogLevel.WARN, emptyList(), thrown) { "failed" }
+
+        assertTrue(logger.everythingWritten().contains(SENSITIVE))
+    }
+
+    @Test
+    fun `a cycle through suppressed terminates`() {
+        val logger = RecordingSdkLogger()
+        val outer = IllegalStateException("outer")
+        val inner = IllegalStateException(SENSITIVE)
+        outer.addSuppressed(inner)
+        inner.addSuppressed(outer)
+
+        logger.log(LogLevel.WARN, emptyList(), outer) { "failed" }
+
+        assertTrue(logger.everythingWritten().contains(SENSITIVE))
+    }
+
     @Test
     fun `a field list the caller keeps cannot change a record`() {
         val logger = RecordingSdkLogger()
