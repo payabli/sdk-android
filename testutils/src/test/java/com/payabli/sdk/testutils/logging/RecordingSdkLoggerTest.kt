@@ -15,6 +15,12 @@ import kotlin.time.Duration.Companion.seconds
 /** Real threads and a real clock, so the bound is wall time, as the storage fixture's own suite sets it. */
 private val CONCURRENCY_TIMEOUT = 30.seconds
 
+/**
+ * Stands in for whatever a caller must not log. A card number would do the same job and read as one to a
+ * secret scanner, and these tests are about where the flattening looks rather than about cards.
+ */
+private const val SENSITIVE = "SENTINEL-MUST-NOT-APPEAR"
+
 private const val WRITERS = 8
 private const val LINES_EACH = 2_000
 
@@ -31,30 +37,30 @@ class RecordingSdkLoggerTest {
     fun `a value in an attached throwable is written`() {
         val logger = RecordingSdkLogger()
 
-        logger.log(LogLevel.WARN, emptyList(), IllegalStateException("4111111111111111")) { "failed" }
+        logger.log(LogLevel.WARN, emptyList(), IllegalStateException(SENSITIVE)) { "failed" }
 
-        assertTrue(logger.everythingWritten().contains("4111111111111111"))
+        assertTrue(logger.everythingWritten().contains(SENSITIVE))
     }
 
     @Test
     fun `a value in a wrapped cause is written`() {
         val logger = RecordingSdkLogger()
-        val wrapped = IllegalStateException("outer", IllegalArgumentException("4111111111111111"))
+        val wrapped = IllegalStateException("outer", IllegalArgumentException(SENSITIVE))
 
         logger.log(LogLevel.WARN, emptyList(), wrapped) { "failed" }
 
-        assertTrue(logger.everythingWritten().contains("4111111111111111"))
+        assertTrue(logger.everythingWritten().contains(SENSITIVE))
     }
 
     @Test
     fun `a value deep in the cause chain is written`() {
         val logger = RecordingSdkLogger()
-        var chain: Throwable = IllegalArgumentException("4111111111111111")
+        var chain: Throwable = IllegalArgumentException(SENSITIVE)
         repeat(DEEP_CHAIN) { link -> chain = IllegalStateException("link $link", chain) }
 
         logger.log(LogLevel.WARN, emptyList(), chain) { "failed" }
 
-        assertTrue(logger.everythingWritten().contains("4111111111111111"))
+        assertTrue(logger.everythingWritten().contains(SENSITIVE))
     }
 
     @Test
