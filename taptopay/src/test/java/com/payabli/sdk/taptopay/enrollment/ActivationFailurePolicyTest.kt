@@ -119,7 +119,7 @@ class ActivationFailurePolicyTest {
                 fixture.seedRecord()
 
                 val thrown =
-                    runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }.exceptionOrNull()
+                    runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }.exceptionOrNull()
 
                 assertEquals(case.reason, case.expected, thrown?.javaClass)
                 if (case.discards) {
@@ -142,7 +142,7 @@ class ActivationFailurePolicyTest {
                     ),
                 )
             revoked.seedRecord()
-            runCatching { revoked.enrollment.confirmActivation(ACTIVATION_CODE) }
+            runCatching { revoked.enrollment.activateDevice(ACTIVATION_CODE) }
             assertNull("a revoked attestation discards the record", revoked.storedRecord())
 
             val unauthorized =
@@ -152,7 +152,7 @@ class ActivationFailurePolicyTest {
                     ),
                 )
             unauthorized.seedRecord()
-            runCatching { unauthorized.enrollment.confirmActivation(ACTIVATION_CODE) }
+            runCatching { unauthorized.enrollment.activateDevice(ACTIVATION_CODE) }
             // Discarding here would destroy a working enrolment over a token that is merely scoped wrong.
             assertNotNull("a permission problem discards nothing", unauthorized.storedRecord())
         }
@@ -166,7 +166,7 @@ class ActivationFailurePolicyTest {
                 )
             fixture.seedRecord()
 
-            runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }
+            runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }
 
             // The destructive branch needs a positive match, so a service that rewords stops discarding
             // and never starts discarding the wrong things.
@@ -187,8 +187,8 @@ class ActivationFailurePolicyTest {
                 )
             fixture.seedRecord()
 
-            runCatching { fixture.enrollment.confirmActivation("000000") }
-            fixture.enrollment.confirmActivation(ACTIVATION_CODE)
+            runCatching { fixture.enrollment.activateDevice("000000") }
+            fixture.enrollment.activateDevice(ACTIVATION_CODE)
 
             // The binding is untouched by activation: it records what was attested, not what the service
             // did afterwards.
@@ -202,7 +202,7 @@ class ActivationFailurePolicyTest {
             fixture.seedRecord()
 
             for (bad in listOf("12345", "1234567", "12345a", "", " 12345")) {
-                val thrown = runCatching { fixture.enrollment.confirmActivation(bad) }.exceptionOrNull()
+                val thrown = runCatching { fixture.enrollment.activateDevice(bad) }.exceptionOrNull()
                 assertEquals(bad, DeviceActivationException.CodeMalformed::class.java, thrown?.javaClass)
             }
             // A code that is sent counts against the attempt limit; a typo must not spend one.
@@ -215,7 +215,7 @@ class ActivationFailurePolicyTest {
             val fixture = EnrollmentFixture(RouteScript())
             fixture.seedRecord(entry = "a-different-entry-point")
 
-            val thrown = runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }.exceptionOrNull()
+            val thrown = runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }.exceptionOrNull()
 
             assertEquals(DeviceActivationException.NotEnrolled::class.java, thrown?.javaClass)
             assertTrue(fixture.transport.requests.isEmpty())
@@ -229,7 +229,7 @@ class ActivationFailurePolicyTest {
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
 
-            val thrown = runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }.exceptionOrNull()
+            val thrown = runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }.exceptionOrNull()
 
             assertEquals(DeviceActivationException.NotEnrolled::class.java, thrown?.javaClass)
             assertTrue(fixture.transport.requests.isEmpty())
@@ -241,7 +241,7 @@ class ActivationFailurePolicyTest {
             val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
             fixture.seedRecord()
 
-            fixture.enrollment.confirmActivation(ACTIVATION_CODE)
+            fixture.enrollment.activateDevice(ACTIVATION_CODE)
 
             // Nothing is written on success, so there is no post-success write that can fail and leave a
             // record disagreeing with the service.
@@ -257,7 +257,7 @@ class ActivationFailurePolicyTest {
             val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
             fixture.seedRecord()
 
-            fixture.enrollment.confirmActivation(ACTIVATION_CODE)
+            fixture.enrollment.activateDevice(ACTIVATION_CODE)
 
             val headers = fixture.transport.request.headers
             for (name in listOf("X-App-Assertion", "X-App-KeyId", "X-Device-Id", "X-Assertion-Timestamp")) {

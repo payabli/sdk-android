@@ -110,7 +110,7 @@ class DeviceKeyNeverDeletedTest {
                         deviceKey = FakeDeviceKey(signFailure = failure),
                     )
                 signing.seedRecord()
-                runCatching { signing.enrollment.confirmActivation(ACTIVATION_CODE) }
+                runCatching { signing.enrollment.activateDevice(ACTIVATION_CODE) }
                 assertEquals(failure.javaClass.simpleName, 0, signing.deviceKey.deletions)
             }
         }
@@ -153,7 +153,7 @@ class DeviceKeyNeverDeletedTest {
                 )
             fixture.seedRecord()
 
-            runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }
+            runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }
 
             // The key store has already discarded it, so the record names something that cannot exist.
             assertNull(fixture.storedRecord())

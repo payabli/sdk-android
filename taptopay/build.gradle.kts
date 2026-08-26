@@ -57,6 +57,10 @@ android {
                     add("com.payabli.sdk.taptopay.enrollment.platform.DeviceActivationLiveTest")
                     add("com.payabli.sdk.taptopay.network.platform.TTPTransactionLiveTest")
                     add("com.payabli.sdk.taptopay.session.platform.TapToPaySessionLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.FiservCardReaderLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.TapToPayChargeLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.FiservDiagnosticsLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.ChargeWithoutTapLiveTest")
                 }
 
                 // Asserts an answer only a deployed service change produces, and this module ships ahead of

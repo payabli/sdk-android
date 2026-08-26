@@ -49,6 +49,9 @@ internal class TapToPaySessionCoordinator(
     /** Where the session has got to. Safe to collect at any time; reading it takes no lock. */
     val state: StateFlow<TapToPaySessionState> get() = manager.state
 
+    /** Whether a payment can be taken right now. */
+    val isReady: StateFlow<Boolean> get() = manager.isReady
+
     /** Serialises the work. Held for a whole run, so no two runs are ever inside the reader together. */
     private val region = Mutex()
 
@@ -102,8 +105,8 @@ internal class TapToPaySessionCoordinator(
      * handle a concurrent registration has just replaced is a code wasted. A refused code leaves the session
      * exactly where it was, since the device still owes one.
      */
-    suspend fun confirmActivation(activationCode: String) =
-        runExclusively(SessionWorkKind.ACTIVATE) { runConfirmActivation(activationCode) }
+    suspend fun activateDevice(activationCode: String) =
+        runExclusively(SessionWorkKind.ACTIVATE) { runActivateDevice(activationCode) }
 
     /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
@@ -251,8 +254,8 @@ internal class TapToPaySessionCoordinator(
      * Whether the device is active is not this SDK's to hold, so nothing is recorded here. A code that is
      * refused leaves the state alone, because the device still owes one.
      */
-    private suspend fun runConfirmActivation(activationCode: String) {
-        enrollment.confirmActivation(activationCode)
+    private suspend fun runActivateDevice(activationCode: String) {
+        enrollment.activateDevice(activationCode)
         manager.settle(TapToPaySessionState.Idle)
     }
 }

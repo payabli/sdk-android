@@ -44,6 +44,13 @@ internal class FakeTapToPayProvider(
 
     private var inside = false
 
+    private var nextReadFailure: Throwable? = null
+
+    /** Makes the next tap fail, which is how the charge path's two failure branches are reached. */
+    fun failNextRead(failure: Throwable) {
+        nextReadFailure = failure
+    }
+
     override suspend fun checkEligibility() {
         trace += "reader:eligibility"
         eligibilityCount++
@@ -71,6 +78,10 @@ internal class FakeTapToPayProvider(
     override suspend fun startReading(request: CardReadRequest): CardReadResult {
         trace += "reader:read"
         lastReadRequest = request
+        nextReadFailure?.let {
+            nextReadFailure = null
+            throw it
+        }
         return readResult
     }
 }
