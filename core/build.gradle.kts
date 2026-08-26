@@ -47,6 +47,10 @@ dependencies {
     api(libs.androidx.annotation)
     api(libs.kotlinx.coroutines.core)
     api(libs.kotlinx.serialization.json)
+    // The shared fixtures. It depends on :core, and this direction is test-only, so there is no cycle:
+    // :testutils compiles against :core's main, and only :core's test compilations see :testutils.
+    testImplementation(project(":testutils"))
+    androidTestImplementation(project(":testutils"))
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)

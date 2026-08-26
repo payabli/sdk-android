@@ -9,7 +9,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.core.network.PayabliTransport
-import com.payabli.sdk.payin.client.RecordingLogger
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,7 +55,7 @@ class PayInSubmissionRetentionInstrumentedTest {
                 entryPoint = TEST_ENTRY_POINT,
                 scope = viewModelScope,
                 dispatcher = Dispatchers.IO,
-                logger = RecordingLogger(),
+                logger = RecordingSdkLogger(),
             )
     }
 

@@ -1,4 +1,4 @@
-package com.payabli.sdk.core.storage
+package com.payabli.sdk.testutils.storage
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +74,7 @@ class InMemorySecureStorageTest {
      * Mirrors `FileSecureStorageTest`'s own concurrency test: a fixture that is less safe than what it stands in for
      * makes a consumer's concurrency test flake for a reason production does not have.
      *
-     * A behavioural smoke test, not the guard. Measured, it catches a removed mutex 0 to 1 runs in 5, because the
+     * A behavioural smoke test, not the guard. It catches a removed mutex at most one run in five, because the
      * critical section is a single map assignment and raising the writer count does not widen it. Exclusion is
      * proven deterministically by `a second operation cannot enter while the first holds the lock`; this one states
      * the contract in the terms a consumer sees and would catch a gross regression such as dropping the copy.
@@ -128,8 +128,8 @@ class InMemorySecureStorageTest {
 
             // A sentinel, not the operation's own result. `withTimeoutOrNull { subject.get(...) }` returns null
             // both when it times out and when it enters and finds nothing, and the parked writer has not written
-            // yet, so the first version of this test passed by reading the wrong null: measured, it caught a removed
-            // lock 0 times in 5. Returning a value the operation cannot produce separates the two.
+            // yet, so reading that null asserts nothing and holds against a removed lock. Returning a value the
+            // operation cannot produce separates the two.
             val entered =
                 withTimeoutOrNull(500.milliseconds) {
                     subject.get("held")

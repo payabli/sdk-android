@@ -33,7 +33,13 @@ sonar {
         // See CLAUDE.md "Testing" for what belongs there. A `ui` package is the same case for the same
         // reason: a composable needs a composition, and therefore a device. `:payin` puts every composable
         // under `ui` and every testable type outside it, so this stays a package rule too.
-        property("sonar.coverage.exclusions", "**/platform/**,**/sdk/payin/ui/**")
+        // A third case, and a different one from the two above: these lines are executed, just not by the
+        // module that owns them. The fixtures run from every other module's test task, and JaCoCo runs per
+        // module and instruments only that module's own classes, so none of that execution is attributable
+        // here. They were test sources before they had a module of their own, which counts toward no
+        // module's coverage at all; giving them a `main` source set is what makes them look uncovered.
+        // Coverage only, so the fixtures are still analysed for issues and duplication like any other code.
+        property("sonar.coverage.exclusions", "**/platform/**,**/sdk/payin/ui/**,**/sdk/testutils/**")
 
         // Every entry below is one rule over one path. `@Suppress("LongParameterList")` was tried first and
         // the analyser does not honour it: the issue was still reported on the commit carrying it, so the

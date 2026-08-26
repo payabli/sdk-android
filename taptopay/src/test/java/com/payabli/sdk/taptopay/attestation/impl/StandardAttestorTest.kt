@@ -4,6 +4,7 @@ import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -139,7 +140,7 @@ class StandardAttestorTest {
     @Test
     fun `a burst whose preparation fails costs one attempt, not one each`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The failure case of the test above, and the one that used to behave differently. Ten callers
+            // The failure case of the test above. Ten callers
             // join one preparation; it fails with a transient code, so the throttle gate never closes and
             // nothing else stops a caller from trying. They must still share the one outcome.
             //

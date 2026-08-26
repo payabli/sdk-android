@@ -148,6 +148,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
+          :testutils:createDebugUnitTestCoverageReport
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
       # when the credential is absent, matching the card-present job in ci.yml.
@@ -189,7 +190,9 @@ jobs:
       #
       # Note what is absent: no -no-snapshot-save, and disable-animations left false. Both are deliberate,
       # because this step exists to write the snapshot rather than to run anything.
-      # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin twice.
+      # Left on @v2 deliberately, and the reasoning is recorded because review asked for a commit pin
+      # twice. It covers every action in this workflow, all of which are on moving tags, rather than
+      # this one: what the argument turns on is the job, not which action is being named.
       #
       # A pin is brittle here. This action is the one most coupled to Android tooling churn, with two to six
       # releases a year, so the trade is a low-probability tag compromise against a nightly that stops

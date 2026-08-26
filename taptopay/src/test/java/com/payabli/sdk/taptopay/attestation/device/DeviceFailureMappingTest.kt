@@ -7,7 +7,7 @@ import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.taptopay.attestation.AttestationToken
-import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

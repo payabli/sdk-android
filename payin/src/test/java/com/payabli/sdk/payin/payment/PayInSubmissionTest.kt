@@ -5,7 +5,6 @@ import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
-import com.payabli.sdk.payin.client.RecordingLogger
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_EXPIRY_WIRE
 import com.payabli.sdk.payin.client.TEST_PAN
@@ -17,6 +16,7 @@ import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -207,7 +207,7 @@ class PayInSubmissionTest {
     @Test
     fun `nothing the payer typed for the instrument reaches the state or a log line`() =
         runTest(timeout = timeout) {
-            val logger = RecordingLogger()
+            val logger = RecordingSdkLogger()
             val transport = FakePayInTransport.answering(declined)
             val submission =
                 PayInSubmission(
@@ -571,7 +571,7 @@ class PayInSubmissionTest {
         }
 
     private fun TestScope.submissionOver(transport: PayabliTransport): PayInSubmission {
-        val logger = RecordingLogger()
+        val logger = RecordingSdkLogger()
         return PayInSubmission(
             moneyIn = MoneyInClient(transport, logger),
             storage = TokenStorageClient(transport, logger),

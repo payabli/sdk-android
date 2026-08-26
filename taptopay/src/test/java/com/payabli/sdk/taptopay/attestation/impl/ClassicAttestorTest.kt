@@ -4,6 +4,7 @@ import com.google.android.play.core.integrity.model.IntegrityErrorCode
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -100,7 +101,7 @@ class ClassicAttestorTest {
     fun `a platform error is mapped against the classic table`() =
         runTest(timeout = TEST_TIMEOUT) {
             // -17 is the collision: transient here, a misconfiguration for a standard request. Mapping a
-            // classic failure against the wrong table would report this as our bug and never retry it.
+            // classic failure against the wrong table would report this as an SDK bug and never retry it.
             val gateway =
                 FakeClassicGateway(onRequest = {
                     _,

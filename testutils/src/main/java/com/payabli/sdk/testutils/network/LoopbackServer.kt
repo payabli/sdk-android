@@ -1,4 +1,4 @@
-package com.payabli.sdk.core.network.impl
+package com.payabli.sdk.testutils.network
 
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
@@ -30,7 +30,7 @@ private const val REQUEST_WAIT_POLL_MILLIS = 10L
  * Parses only what the transport sends: a request line, headers, and a `Content-Length` body.
  * Chunked encoding fails loudly rather than reading an empty body and passing.
  */
-internal class LoopbackServer : AutoCloseable {
+public class LoopbackServer : AutoCloseable {
     /**
      * Pinned to the IPv4 loopback rather than `getLoopbackAddress()`, which lets the platform pick the
      * family: this Android emulator answers `::1` where the JVM answers `127.0.0.1`. That difference is not
@@ -125,9 +125,9 @@ internal class LoopbackServer : AutoCloseable {
      * Scripts one response per request, in order, for a test whose subject is a sequence: a 401 followed
      * by a 200 is not expressible with a single canned response.
      *
-     * **The last entry answers every request after it, deliberately.** Running out and hanging would make
-     * "no third attempt" fail as a timeout instead of as a count, and a test that hangs is not a test that
-     * goes in. So an extra attempt gets served and the assertion on [recorded] size is what fails.
+     * **The last entry answers every request after it.** Running out and hanging would make "no third
+     * attempt" fail as a timeout instead of as a count, so an extra attempt is served and the assertion on
+     * [recorded] size is what fails.
      */
     fun respondInOrder(vararg responses: Pair<Int, String>): LoopbackServer {
         require(responses.isNotEmpty()) { "a script needs at least one response" }
@@ -233,7 +233,7 @@ internal class LoopbackServer : AutoCloseable {
                 }
             } catch (_: IOException) {
                 // The client hanging up mid-response is expected: the response-ceiling tests abandon
-                // the read and disconnect, which breaks the pipe under us.
+                // the read and disconnect, which breaks the pipe mid-write.
             } catch (t: Throwable) {
                 failure = failure ?: t
             } finally {
@@ -271,7 +271,7 @@ internal class LoopbackServer : AutoCloseable {
         )
     }
 
-    internal class Recorded(
+    public class Recorded(
         val method: String,
         val path: String,
         val query: String?,

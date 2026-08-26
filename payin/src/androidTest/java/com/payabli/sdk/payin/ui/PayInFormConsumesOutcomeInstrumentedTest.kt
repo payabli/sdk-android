@@ -13,7 +13,6 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.FakePayInTransport
-import com.payabli.sdk.payin.client.RecordingLogger
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.form.BANK_INSTRUMENT_FIELDS
@@ -29,6 +28,7 @@ import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import com.payabli.sdk.payin.payment.TEST_ENTRY_POINT
 import com.payabli.sdk.payin.payment.testOptions
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -115,7 +115,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
             entryPoint = TEST_ENTRY_POINT,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
             dispatcher = Dispatchers.Main,
-            logger = RecordingLogger(),
+            logger = RecordingSdkLogger(),
         )
 
     private fun bankForm(total: String? = null) =

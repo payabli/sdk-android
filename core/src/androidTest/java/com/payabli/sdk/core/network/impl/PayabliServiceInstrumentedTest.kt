@@ -6,6 +6,8 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.testutils.auth.testAuth
+import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -25,8 +27,8 @@ import kotlin.time.Duration
  * covered on the JVM too and is repeated here because the mechanism is platform-specific.
  *
  * **No pull request runs this.** The per-PR workflow has no emulator, so a regression here will not turn a
- * pull request red. The nightly workflow does run `:core:connectedAndroidTest` on one, deliberately as a
- * non-required check, so the gap is same-day feedback rather than coverage.
+ * pull request red. The nightly workflow runs `:core:connectedAndroidTest` on one as a non-required
+ * check, so the gap is same-day feedback rather than coverage.
  */
 @RunWith(AndroidJUnit4::class)
 class PayabliServiceInstrumentedTest {

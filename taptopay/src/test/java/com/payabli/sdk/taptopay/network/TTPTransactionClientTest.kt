@@ -2,7 +2,6 @@ package com.payabli.sdk.taptopay.network
 
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
-import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
@@ -10,6 +9,7 @@ import com.payabli.sdk.taptopay.network.FakeTransactionTransport.Companion.answe
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.FakeTapToPayProvider
 import com.payabli.sdk.taptopay.provider.cardRead
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

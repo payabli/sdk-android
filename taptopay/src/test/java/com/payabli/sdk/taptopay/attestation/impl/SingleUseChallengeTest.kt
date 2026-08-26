@@ -4,6 +4,7 @@ import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.taptopay.attestation.AttestationChallenge
 import com.payabli.sdk.taptopay.attestation.AttestationException
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -29,7 +30,7 @@ private const val ROUNDS = 5
 private const val SLOW_ADD_MILLIS = 20L
 
 /**
- * A set whose membership check and insert are deliberately slow, so concurrent callers overlap inside the
+ * A set whose membership check and insert are slow enough that concurrent callers overlap inside the
  * window the ledger's mutex exists to close. Insertion-ordered, as the ledger requires.
  */
 private class SlowSet(
@@ -37,9 +38,9 @@ private class SlowSet(
 ) : MutableSet<String> by delegate {
     override fun add(element: String): Boolean {
         // Reports what an unsynchronised check-then-act reports: every caller that observed absence claims
-        // to have inserted. Returning the delegate's own result instead would hide the lost update behind
-        // the delegate's internal ordering, which is what made an earlier version of this test pass four
-        // times in five against a ledger with no mutex.
+        // to have inserted. Returning the delegate's own result instead hides the lost update behind the
+        // delegate's internal ordering, and the test then passes four times in five against a ledger with
+        // no mutex.
         val absent = !delegate.contains(element)
         Thread.sleep(SLOW_ADD_MILLIS)
         delegate.add(element)
@@ -122,8 +123,8 @@ class SingleUseChallengeTest {
     fun `a reused challenge is logged, since it is the one failure that is the caller's own`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Every other failure logs on its way out. This one is raised before the platform is consulted,
-            // so it used to leave no trace at all, which is the wrong way round: it is the only failure that
-            // is unambiguously a bug in the calling code rather than a device or platform condition.
+            // so without this it leaves no trace at all, which is the wrong way round: it is the only
+            // failure that is unambiguously a bug in the calling code rather than a device condition.
             val logger = RecordingSdkLogger()
             val gateway = FakeStandardGateway()
             val attestor = StandardAttestor(gateway, FAKE_CLOUD_PROJECT, logger = logger)
@@ -178,8 +179,8 @@ class SingleUseChallengeTest {
     @Test
     fun `genuinely simultaneous callers still produce exactly one attestation`() {
         // Real threads, because the guarantee is about synchronisation and a single-threaded scheduler
-        // cannot exercise it. Measured: with `ChallengeLedger`'s mutex removed, the whole suite still
-        // passed, so the sequential test above defends nothing about concurrent access.
+        // cannot exercise it. With `ChallengeLedger`'s mutex removed the whole suite still passes, so the
+        // sequential test above defends nothing about concurrent access.
         //
         // Dispatchers.IO rather than Default: the barrier blocks its thread, and IO is sized for that.
         // Repeated, because a lost update is a race rather than a certainty; the repeats are what make an
@@ -231,7 +232,7 @@ class SingleUseChallengeTest {
     @Test
     fun `the ledger forgets the oldest once it is full`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Bounded on purpose: an attestor lives as long as the app, and remembering every value ever
+            // The ledger is bounded: an attestor lives as long as the app, and remembering every value ever
             // seen is a leak with no ceiling. What this pins is that the bound exists and that the value
             // it forgets is the oldest one, so the guard stays useful for recent traffic.
             val ledger = ChallengeLedger()

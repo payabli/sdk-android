@@ -3,11 +3,11 @@ package com.payabli.sdk.payin.payment
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.client.FakePayInTransport
-import com.payabli.sdk.payin.client.RecordingLogger
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -212,6 +212,6 @@ class PayabliPayInPaymentFlowTest {
             entryPoint = TEST_ENTRY_POINT,
             scope = this,
             dispatcher = StandardTestDispatcher(testScheduler),
-            logger = RecordingLogger(),
+            logger = RecordingSdkLogger(),
         )
 }

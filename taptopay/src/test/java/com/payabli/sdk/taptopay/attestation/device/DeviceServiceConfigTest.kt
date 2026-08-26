@@ -3,8 +3,8 @@ package com.payabli.sdk.taptopay.attestation.device
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
-import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
 import com.payabli.sdk.taptopay.enrollment.configBody
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
