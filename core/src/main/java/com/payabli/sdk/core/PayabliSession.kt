@@ -252,7 +252,9 @@ public class PayabliSession private constructor(
 
                 // Inside the lock, so a session is never installed with the previous one's channel still
                 // reporting for it. Starting is an enqueue and a launch, which is why it can be here at all.
-                TelemetryBootstraps.installed()?.start(session, host)
+                // Whatever the module does is absorbed there: this line runs after the session is published
+                // and marked ready, so anything escaping it would fail an initialize that had succeeded.
+                TelemetryBootstraps.startInstalled(session, host)
 
                 Result.success(session)
             }

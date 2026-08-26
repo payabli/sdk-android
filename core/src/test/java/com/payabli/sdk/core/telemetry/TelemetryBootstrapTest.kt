@@ -68,6 +68,65 @@ class TelemetryBootstrapTest {
             assertEquals("an-entry-point", session.telemetry.entryPoint)
         }
 
+    /**
+     * A module that throws while starting must not fail the initialize that started it.
+     *
+     * This runs after the session is published and marked ready, so an escaping failure produced the worst
+     * shape available: the first `initialize` throws, and the next one returns the session the first had
+     * already installed. Both kinds are covered because they are caught separately: a `RuntimeException`
+     * from the module's own code, and an `Error` from a symbol that resolves only once `start` runs, which
+     * is what a stripped or mismatched artifact does.
+     */
+    @Test
+    fun aModuleThatThrowsWhileStartingDoesNotFailTheSession() =
+        runTest {
+            listOf(
+                BootstrapThatThrowsOnStart::class.java.name,
+                BootstrapThatFailsToLink::class.java.name,
+                BootstrapThatThrowsOnStartAndStop::class.java.name,
+            ).forEach { hostile ->
+                PayabliSession.reset()
+                TelemetryBootstraps.implementation = hostile
+                TelemetryBootstraps.forget()
+
+                val session = install()
+
+                assertEquals(hostile, SdkState.Ready, PayabliSession.state.value)
+                assertEquals(hostile, "an-entry-point", session.telemetry.entryPoint)
+            }
+        }
+
+    /**
+     * A module that failed to start is forgotten rather than retried on every initialize.
+     *
+     * Left cached it would throw once per session install for the life of the process, and the unwind would
+     * run against a channel that never started.
+     */
+    @Test
+    fun aModuleThatFailedToStartIsNotAskedAgain() =
+        runTest {
+            TelemetryBootstraps.implementation = BootstrapThatThrowsOnStart::class.java.name
+            TelemetryBootstraps.forget()
+
+            install()
+
+            assertNull("a module that threw while starting is still installed", TelemetryBootstraps.installed())
+        }
+
+    /** That the assertions above are not passing because nothing is being started at all. */
+    @Test
+    fun aModuleThatStartsCleanlyIsStartedExactlyOnce() =
+        runTest {
+            CountingBootstrap.reset()
+            TelemetryBootstraps.implementation = CountingBootstrap::class.java.name
+            TelemetryBootstraps.forget()
+
+            install()
+
+            assertEquals(1, CountingBootstrap.starts)
+            assertEquals(0, CountingBootstrap.stops)
+        }
+
     /** The emitting sites run unchanged whether or not anything is listening. */
     @Test
     fun emittingWithNoModuleLinkedDoesNothingAndThrowsNothing() =

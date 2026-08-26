@@ -95,6 +95,52 @@ internal object TelemetryBootstraps {
         return resolved
     }
 
+    /**
+     * Starts the module if there is one, and absorbs whatever it does.
+     *
+     * **Finding the module was already non-fatal; running it was not.** A `RuntimeException` out of `start`,
+     * or a `LinkageError` from a symbol resolved only once that method runs, propagated out of the call that
+     * installs a session — after the session was published and marked ready. The first `initialize` threw and
+     * the next returned the session the first one had installed, which is the opposite of what an optional
+     * module is for.
+     *
+     * A module that fails to start is stopped and forgotten, so nothing is left half-registered and the next
+     * `initialize` does not walk into the same failure.
+     */
+    @Synchronized
+    fun startInstalled(
+        session: PayabliSession,
+        host: HostBindings?,
+    ) {
+        val module = installed() ?: return
+        try {
+            module.start(session, host)
+        } catch (failure: RuntimeException) {
+            unusable(failure)
+            discard(module)
+        } catch (failure: LinkageError) {
+            unusable(failure)
+            discard(module)
+        }
+    }
+
+    /**
+     * Unwinds a module that threw while starting.
+     *
+     * `stop` is the same untrusted code, so it is absorbed the same way. Forgetting it is what keeps the
+     * failure to one initialize instead of one per initialize.
+     */
+    private fun discard(module: TelemetryBootstrap) {
+        try {
+            module.stop()
+        } catch (_: RuntimeException) {
+            // Already reported as unusable. A module that cannot stop either has nothing left to say.
+        } catch (_: LinkageError) {
+        }
+        resolved = null
+        lookedUp = true
+    }
+
     /** Drops the cached answer so a test can install a different module. */
     @Synchronized
     fun forget() {
