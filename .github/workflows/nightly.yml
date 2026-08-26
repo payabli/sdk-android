@@ -4,22 +4,21 @@ name: Nightly
 # deliberately not a required check.
 #
 # `ci.yml` is the per-PR gate and stays fast. This runs every unit test, the card-present module included,
-# and the instrumented tests of :core, :payin and :example. The unit tests overlap with ci.yml on purpose, so a
+# and the instrumented tests of :core and :payin. The unit tests overlap with ci.yml on purpose, so a
 # nightly failure is readable on its own without cross-referencing another run.
 #
-# Instrumented coverage is :core, :payin and :example, and what is left out is a scope statement rather than an
+# Instrumented coverage is :core and :payin, and what is left out is a scope statement rather than an
 # oversight. :telemetry holds only the generated ExampleInstrumentedTest and declares no androidx.test:runner,
 # so that task would die with ClassNotFoundException before running a thing.
 #
-# :example is in because nothing in it needs a credential or a phone. Its walkthrough is the one part that
-# sends real payments, and that is excluded by the module unless asked for by name, so what runs here is the
-# navigation, form and component tests, which stand up their own endpoints and supply their own configuration.
-# It was out until the navigation tests were made to pass in a configuration this job can run.
+# :example is out for the same reason :taptopay is, and it used to be in. It now links :taptopay for the Tap
+# to pay screen, so building it resolves the card reader from the Fiserv GitHub Packages repo, and running it
+# here would hand GPR_TOKEN to the third-party emulator action. Its navigation, form and component tests come
+# back with the separate credentialed instrumented job described below, which both modules need.
 #
 # Both tiers grow with each capability that binds to a platform API. No count is kept here, because the last
-# one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest,
-# payin/src/androidTest and example/src/androidTest that is not @ManualDeviceTest, less whatever a module's own
-# build file excludes.
+# one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest
+# and payin/src/androidTest that is not @ManualDeviceTest, less whatever a module's own build file excludes.
 # That is not hypothetical: payin/build.gradle.kts quarantines one form class, four tests, which carry no
 # annotation and so are invisible to the filter this step passes. A module can quiet its own tests without
 # touching this file, so the count here is an upper bound rather than a promise.
@@ -130,15 +129,15 @@ jobs:
       #
       # The coverage task rather than the plain test task, because it depends on it: this writes both the
       # JUnit results and the JaCoCo report, and the Slack summary reports coverage as well as failures.
-      # :example is here for the same reason as the rest: payabli.quality enables unit-test coverage for
-      # application modules as well as libraries, so the task exists and ci.yml already runs it.
+      # :example is not here: it links :taptopay, so its build needs the credential and it moves to the
+      # card-present step below, where that credential already lives.
       #
       # continue-on-error throughout, so a failure still reaches Slack with its detail instead of aborting
       # the job at the first red suite. The final step turns any failure back into a red run.
       # --continue is load-bearing, not tidiness. `continue-on-error` is a GitHub step setting and does
       # nothing inside a Gradle invocation: without it Gradle abandons the task graph at the first failure,
-      # so a broken :core would stop :payin, :telemetry and :example from running at all and the report
-      # would describe part of the suite as though it were the whole of it.
+      # so a broken :core would stop :payin and :telemetry from running at all and the report would
+      # describe part of the suite as though it were the whole of it.
       - name: Unit tests and coverage
         id: unit
         continue-on-error: true
@@ -149,7 +148,6 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
       # when the credential is absent, matching the card-present job in ci.yml.
@@ -167,6 +165,7 @@ jobs:
           GPR_USER: ${{ secrets.GPR_USER }}
           GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
+          :example:createDebugUnitTestCoverageReport
 
       # Required on ubuntu-latest, and the step most often left out. Without it the emulator runs
       # unaccelerated, which is the one condition that makes the call-budget assertion flaky.
@@ -245,9 +244,9 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Scoped to :core, :payin and :example; see the header for why :taptopay is not here. Short version:
-          # not hardware, a credential. Its build needs GPR_TOKEN, and this step runs the third-party emulator
-          # action. Neither :payin nor :example resolves anything outside the project, so neither adds a
+          # Scoped to :core and :payin; see the header for why :taptopay and :example are not here. Short
+          # version: not hardware, a credential. Both builds need GPR_TOKEN, and this step runs the
+          # third-party emulator action. :payin resolves nothing outside the project, so it adds no
           # credential to this step.
           #
           # --continue because the two tasks are independent and Gradle otherwise "aborts execution and fails
@@ -288,7 +287,7 @@ jobs:
           # the whole reason the two coexist. A -P `notClass` here would overwrite those lists and readmit all
           # three, sending real payments from this step, so nothing in this workflow passes one. What this step
           # runs is the annotation filter minus whatever each module excluded.
-          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest :example:connectedAndroidTest
+          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
@@ -319,7 +318,7 @@ jobs:
           # The modules the instrumented step above ran. The collector checks each one wrote results,
           # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
           # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
-          INSTRUMENTED_MODULES: core,payin,example
+          INSTRUMENTED_MODULES: core,payin
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than
