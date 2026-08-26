@@ -45,7 +45,14 @@ public object TelemetryCatalog {
             TelemetryProperties.DURATION_MS,
         )
 
-    private val ROUTE = TIMED_OUTCOME + TelemetryProperties.ATTEMPT
+    /**
+     * The device routes carry no attempt, and cannot.
+     *
+     * Nothing in the card-present client retries a route: a caller retries the whole enrolment, so the layer
+     * that emits these has no attempt to count and no way to learn one. A key allowed here that no call site
+     * can fill is a dimension a reader will look for and never find, which is worse than its absence.
+     */
+    private val ROUTE = TIMED_OUTCOME
 
     /**
      * The whole vocabulary, event by event.
@@ -89,12 +96,9 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_DEVICE_ATTEST_COMPLETED to ROUTE,
             TelemetryEvents.TTP_DEVICE_ACTIVATE_COMPLETED to ROUTE,
             TelemetryEvents.TTP_DEVICE_CONFIG_COMPLETED to ROUTE,
+            // No attempt here either: the mapping that emits this classifies one refusal and counts nothing.
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED to
-                setOf(
-                    TelemetryProperties.CODE,
-                    TelemetryProperties.REASON,
-                    TelemetryProperties.ATTEMPT,
-                ),
+                setOf(TelemetryProperties.CODE, TelemetryProperties.REASON),
             TelemetryEvents.PAYIN_CAPTURE_COMPLETED to TIMED_OUTCOME,
             TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED to TIMED_OUTCOME,
             TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED to TIMED_OUTCOME,

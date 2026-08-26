@@ -1,5 +1,7 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
@@ -7,6 +9,7 @@ import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -99,6 +102,44 @@ class PayInSubmissionTelemetryTest {
             assertTrue(properties[TelemetryProperties.DURATION_MS] == null)
         }
 
+    /**
+     * An abandoned payment is the one outcome nobody is left to report, which is why it is reported here.
+     *
+     * The report lives in a `finally`, so it runs on the cancelled path as on any other. Nothing else covers
+     * it: the cancellation tests install no recorder, so deleting that `finally` left the whole suite green
+     * while the SDK stopped counting the payments a user walked away from.
+     */
+    @Test
+    fun `an abandoned submission is reported as interrupted, and cancellation still propagates`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
+            val submission = submissionOver(transport)
+
+            val running =
+                launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+            transport.arrived.await()
+            running.cancel()
+            // join, not a scheduler advance: a cancelled coroutine completes when its finally has run, which
+            // is where the report is.
+            running.join()
+
+            assertTrue("cancellation did not propagate", running.isCancelled)
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
+            assertEquals(
+                TelemetryProperties.Outcome.INTERRUPTED,
+                properties[TelemetryProperties.OUTCOME],
+            )
+            assertEquals(
+                PayabliErrorCode.USER_CANCELLED.wireName,
+                properties[TelemetryProperties.CODE],
+            )
+            assertTrue(
+                "an abandoned payment took some measurable time",
+                properties[TelemetryProperties.DURATION_MS] != null,
+            )
+        }
+
     @Test
     fun `no instrument and no payer data reaches a report`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -113,7 +154,7 @@ class PayInSubmissionTelemetryTest {
             )
         }
 
-    private fun TestScope.submissionOver(transport: FakePayInTransport): PayInSubmission {
+    private fun TestScope.submissionOver(transport: PayabliTransport): PayInSubmission {
         val logger = RecordingSdkLogger()
         return PayInSubmission(
             moneyIn = MoneyInClient(transport, logger),
