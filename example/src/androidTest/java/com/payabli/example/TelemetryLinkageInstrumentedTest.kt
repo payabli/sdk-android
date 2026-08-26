@@ -3,17 +3,18 @@ package com.payabli.example
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.example.app.BuildConfig
+import com.payabli.example.app.InstrumentedSession
 import com.payabli.sdk.core.HostBindings
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.SdkState
 import com.payabli.sdk.core.config.PayabliConfig
-import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -48,23 +49,27 @@ class TelemetryLinkageInstrumentedTest {
         )
     }
 
-    @Test
-    fun theSdkInitializesAndIsUsableEitherWay() {
+    /**
+     * Every test here owns its precondition.
+     *
+     * `reset` is internal to `:core`, so the first install in this process decides what the rest get and a
+     * later `initialize` naming a different configuration is refused. Installing here rather than leaning on
+     * a sibling test means no method in this class depends on running after another, which JUnit does not
+     * promise.
+     */
+    @Before
+    fun installTheSharedSession() {
         val host = HostBindings(InstrumentationRegistry.getInstrumentation().targetContext)
 
-        val session =
+        installed =
             runBlocking {
-                PayabliSession.initialize(
-                    PayabliConfig(
-                        accessToken = "a-token-for-this-test",
-                        entryPoint = "an-entry-point",
-                        environment = PayabliEnvironment.QA,
-                    ),
-                    host,
-                )
+                PayabliSession.initialize(sharedConfiguration(), host)
             }
+    }
 
-        assertTrue("initialize failed on flavor ${BuildConfig.FLAVOR}", session.isSuccess)
+    @Test
+    fun theSdkInitializesAndIsUsableEitherWay() {
+        assertTrue("initialize failed on flavor ${BuildConfig.FLAVOR}", installed?.isSuccess == true)
         assertEquals(SdkState.Ready, PayabliSession.state.value)
     }
 
@@ -83,6 +88,7 @@ class TelemetryLinkageInstrumentedTest {
      */
     @Test
     fun aCompletedCardNotPresentFlowReportsOrCostsNothing() {
+        assertTrue("the session this assertion rests on was not installed", installed?.isSuccess == true)
         var propertiesBuilt = 0
 
         @Suppress("RestrictedApi")
@@ -115,6 +121,23 @@ class TelemetryLinkageInstrumentedTest {
     }
 
     private fun linked(): Boolean = BuildConfig.FLAVOR == "withTelemetry"
+
+    /**
+     * The one configuration every instrumented test in this application installs.
+     *
+     * All four values the SDK compares are here, including whether a token provider was supplied: the
+     * comparison counts its presence, so a config without one is a different configuration however well the
+     * other three agree. `InstrumentedSession` holds the two the sibling classes also name.
+     */
+    private fun sharedConfiguration() =
+        PayabliConfig(
+            accessToken = "a-token-for-this-test",
+            entryPoint = InstrumentedSession.ENTRY_POINT,
+            environment = InstrumentedSession.SDK_ENVIRONMENT,
+            tokenProvider = { "a-token-for-this-test" },
+        )
+
+    private var installed: Result<PayabliSession>? = null
 
     private companion object {
         const val TELEMETRY_MODULE = "com.payabli.sdk.telemetry.TelemetryModule"
