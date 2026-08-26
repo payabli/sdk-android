@@ -10,6 +10,8 @@ import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.job
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -78,6 +80,62 @@ class TelemetryClientTest {
 
                 advanceTimeBy(2.seconds)
                 assertEquals(1, transport.sent.size)
+            }
+        }
+
+    /**
+     * Stopping sends everything, not one request's worth.
+     *
+     * A queue holds far more than one request carries, so a final flush that ran once left the rest to die
+     * with the scope it was about to cancel. Nothing reported it: the events were accepted by `record`, and
+     * the contract says queued events leave.
+     */
+    @Test
+    fun stoppingSendsEverythingQueuedAndNotJustOneRequest() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 10) { client ->
+                client.start()
+                repeat(45) { record(client) }
+
+                client.stop()
+
+                assertEquals("every queued event should have left", 45, transport.eventsSent())
+                assertEquals("in five requests of at most ten each", 5, transport.sent.size)
+            }
+        }
+
+    /**
+     * A stalled upload must not grow the process by event volume.
+     *
+     * The queue is bounded; the coroutines draining it were not. Every event past the batch size launched
+     * its own, and against a request that is not returning each one parks on the same lock, so a busy app
+     * holds a job per event while the queue it is bounded by never moves.
+     *
+     * Counted on the scope rather than on the transport, because the transport cannot tell the two apart:
+     * one call is in flight either way and the rest are parked behind it.
+     */
+    @Test
+    fun aStalledUploadDoesNotAccumulateAJobPerEvent() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+            transport.stall()
+            val scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+            val client = clientOn(scope, transport, batchSize = 1)
+
+            try {
+                repeat(200) { record(client) }
+
+                assertEquals(
+                    "one flush should be in flight whatever the event count",
+                    1,
+                    scope.coroutineContext.job.children
+                        .count(),
+                )
+            } finally {
+                transport.release()
+                scope.cancel()
             }
         }
 
@@ -157,15 +215,11 @@ class TelemetryClientTest {
         body: suspend (TelemetryClient) -> Unit,
     ) {
         val client =
-            TelemetryClient(
-                queue = TelemetryQueue(capacity = 500),
-                uploader = TelemetryUploader(transport, context, logger),
+            clientOn(
                 scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
-                flushInterval = FLUSH_INTERVAL,
+                transport = transport,
                 batchSize = batchSize,
                 maxEventsPerRequest = maxEventsPerRequest,
-                logger = logger,
-                now = { FIXED_NOW },
             )
         try {
             body(client)
@@ -173,6 +227,22 @@ class TelemetryClientTest {
             client.stop()
         }
     }
+
+    private fun clientOn(
+        scope: CoroutineScope,
+        transport: FakeTransport,
+        batchSize: Int,
+        maxEventsPerRequest: Int = 100,
+    ) = TelemetryClient(
+        queue = TelemetryQueue(capacity = 500),
+        uploader = TelemetryUploader(transport, context, logger),
+        scope = scope,
+        flushInterval = FLUSH_INTERVAL,
+        batchSize = batchSize,
+        maxEventsPerRequest = maxEventsPerRequest,
+        logger = logger,
+        now = { FIXED_NOW },
+    )
 
     private fun record(client: TelemetryClient) {
         client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperties.STATE to "ready"))

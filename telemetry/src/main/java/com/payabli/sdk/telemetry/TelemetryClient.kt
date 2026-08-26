@@ -2,7 +2,6 @@ package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.SdkLogger
-import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.telemetry.TelemetryCatalog
 import com.payabli.sdk.core.telemetry.TelemetryRecorder
@@ -14,6 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 
 /**
@@ -39,8 +39,25 @@ internal class TelemetryClient(
     private val maxEventsPerRequest: Int,
     private val logger: SdkLogger,
     private val now: () -> Long,
+    /**
+     * Most requests a shutdown drain will send.
+     *
+     * Sized from the queue rather than guessed: enough to empty a full one, and a ceiling so a client still
+     * being written to cannot hold shutdown open.
+     */
+    private val maxDrainRequests: Int = DEFAULT_MAX_DRAIN_REQUESTS,
 ) : TelemetryRecorder {
     private val sending = Mutex()
+
+    /**
+     * Whether a flush is already on its way, so a full queue schedules one rather than one per event.
+     *
+     * Without it every event past [batchSize] launched its own coroutine. The queue is bounded and those
+     * jobs were not: against a slow or offline upload they all park on [sending], and a busy app grows the
+     * process by event volume while the queue it is bounded by never moves. Coalescing is what makes the
+     * bound on the queue a bound on the client.
+     */
+    private val flushScheduled = AtomicBoolean(false)
 
     @Volatile
     private var timer: Job? = null
@@ -72,41 +89,72 @@ internal class TelemetryClient(
     }
 
     /**
-     * Sends the last batch and stops.
+     * Sends everything queued and stops.
      *
-     * The final flush runs before the scope is cancelled, so events already queued still leave rather than
-     * dying with the session that produced them.
+     * **Drains rather than flushing once.** [flush] sends one request's worth, and the queue holds far more
+     * than one request's worth, so a single final flush left the rest to die with the scope it was about to
+     * cancel: a burst before shutdown lost everything past the first batch, silently, against a contract
+     * that says queued events leave.
+     *
+     * The loop terminates because the recorder is detached before this runs, so nothing is producing. The
+     * bound is there anyway: a caller that still holds the client could otherwise refill it forever, and a
+     * shutdown that does not finish is worse than one that drops the tail it names.
      */
     fun stop() {
         timer?.cancel()
         timer = null
-        scope.launch { flush() }.invokeOnCompletion { scope.cancel() }
-    }
-
-    /** Flushes without waiting, for the callers that are not in a coroutine. */
-    fun flushAsync() {
-        scope.launch { flush() }
+        scope
+            .launch {
+                var requests = 0
+                while (requests < maxDrainRequests && flush()) {
+                    requests++
+                }
+            }.invokeOnCompletion { scope.cancel() }
     }
 
     /**
-     * Sends one request's worth, at most.
+     * Flushes without waiting, for the callers that are not in a coroutine.
+     *
+     * At most one is in flight. Another arriving while one is scheduled is dropped rather than queued: the
+     * queue it would drain is the same queue, and whatever it would have carried the scheduled one carries.
+     */
+    fun flushAsync() {
+        if (!flushScheduled.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                flush()
+            } finally {
+                flushScheduled.set(false)
+            }
+        }
+    }
+
+    /**
+     * Sends one request's worth, at most, and answers whether it sent anything.
      *
      * Not a loop until empty: a burst refills as fast as it drains, and a flush that chased it would hold
      * this coroutine and the queue's lock against every emitting thread. Whatever is left is picked up by the
-     * next full batch or the next tick.
+     * next full batch or the next tick. Shutdown is the exception and loops in [stop], because there is no
+     * next tick.
+     *
+     * The return value is for that loop alone. Nothing else asks: a flush that sent nothing and a flush that
+     * failed are the same answer to every other caller, which is that reporting is best effort.
      */
-    suspend fun flush() {
+    suspend fun flush(): Boolean =
         sending.withLock {
             val batch = queue.drain(maxEventsPerRequest)
             val dropped = queue.takeDropCount()
             if (dropped > 0) {
-                logger.debug(
+                logger.warn(
                     LogField.safe("event", "telemetry_queue_overflow"),
                     LogField.safe("dropped", dropped),
                 ) { "queue was full; oldest events evicted" }
             }
-            if (batch.isEmpty()) return@withLock
+            if (batch.isEmpty()) return@withLock false
             uploader.send(batch)
+            true
         }
-    }
 }
+
+/** Enough requests to empty a full queue at this module's sizes, with room to spare. */
+private const val DEFAULT_MAX_DRAIN_REQUESTS = 16

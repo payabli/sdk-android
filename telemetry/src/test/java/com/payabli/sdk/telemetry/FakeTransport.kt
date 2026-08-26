@@ -6,6 +6,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.KSerializer
 
 /**
@@ -19,10 +20,33 @@ internal class FakeTransport(
 ) : PayabliTransport {
     val sent = mutableListOf<PayabliRequest>()
 
+    /**
+     * Holds every call inside `execute` until it is completed.
+     *
+     * A stalled upload is the condition the client's bounds are for, and it cannot be shown with a transport
+     * that answers: what matters is what the client does while a request is in flight and not returning.
+     */
+    private var gate: CompletableDeferred<Unit>? = null
+
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
         sent += request
+        gate?.await()
         return answer(request)
     }
+
+    /** Parks every call from here on, as an offline or very slow host does. */
+    fun stall() {
+        gate = CompletableDeferred()
+    }
+
+    /** Lets the parked calls finish, so a test can end without a live coroutine. */
+    fun release() {
+        gate?.complete(Unit)
+        gate = null
+    }
+
+    /** How many events reached the wire across every request, which is the only count that matters. */
+    fun eventsSent(): Int = sent.indices.sumOf { bodyAsText(it).split("\"schemaVersion\"").size - 1 }
 
     override suspend fun <T> execute(
         request: PayabliRequest,
