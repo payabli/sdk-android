@@ -13,12 +13,13 @@ import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.preflight.platform.DeviceFactsReader
 import com.payabli.example.app.demo.qa.DemoCustomerSetting
 import com.payabli.example.app.demo.qa.QaIdentity
-import com.payabli.example.app.demo.terminal.DemoTerminalController
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.example.app.sdk.PayInStartup
+import com.payabli.example.app.sdk.TapToPayTerminal
 import com.payabli.example.app.sdk.payInFlowGate
 import com.payabli.example.app.sdk.payInStartup
+import kotlinx.coroutines.MainScope
 
 /**
  * Everything the app is built from, assembled once per process.
@@ -34,7 +35,7 @@ import com.payabli.example.app.sdk.payInStartup
  * token host from a launch Intent, and the entry point and environment from an instrumented test. Both
  * overrides exist because what they carry is not knowable at build time on the machine that needs it.
  *
- * The `Demo*` line is the card-present seam. The card-not-present screens start the SDK through
+ * The card-present screen reaches the SDK through [terminal]; the card-not-present screens start it through
  * [payInStartup] and it submits for them.
  */
 class AppContainer(
@@ -83,8 +84,23 @@ class AppContainer(
 
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
 
-    /** ⟵ swap point: the card-present SDK goes here. */
-    val terminal: TerminalController = DemoTerminalController()
+    /**
+     * The card-present SDK.
+     *
+     * Lazy for the reason [sessionSource] is: it captures [configuration], and both writes that can change
+     * it land before any screen asks for a terminal.
+     */
+    val terminal: TerminalController by lazy {
+        TapToPayTerminal(
+            appContext = appContext,
+            sessionSource = sessionSource,
+            entryPoint = configuration.entryPoint,
+            // Read here rather than through DemoConfiguration: the Tap to pay screen is the only reader,
+            // and blank means the screen says it is unset instead of failing at the platform verdict.
+            cloudProjectNumber = BuildConfig.DEMO_CLOUD_PROJECT_NUMBER.toLongOrNull(),
+            scope = MainScope(),
+        )
+    }
 
     /**
      * Where the token server is.

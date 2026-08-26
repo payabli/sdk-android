@@ -96,7 +96,7 @@ object TerminalSteps {
                 status = device,
             ),
             FlowStep(
-                title = "Turn on the terminal",
+                title = "Set up the terminal",
                 detail = "The SDK attests the device, fetches its configuration and starts the reader.",
                 status = enable,
             ),

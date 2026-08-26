@@ -4,7 +4,7 @@ package com.payabli.example.app.demo.terminal
 enum class TerminalAction(
     val label: String,
 ) {
-    Initialize("Enable terminal"),
+    Initialize("Set up the terminal"),
     Reinitialize("Re-initialize"),
     Charge("Charge"),
     Activate("Activate device"),

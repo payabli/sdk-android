@@ -102,7 +102,7 @@ class TerminalStateTest {
 
     @Test
     fun `a success without detail still names the action`() {
-        assertEquals("✓ Enable terminal succeeded", TerminalActionOutcome.success(TerminalAction.Initialize))
+        assertEquals("✓ Set up the terminal succeeded", TerminalActionOutcome.success(TerminalAction.Initialize))
     }
 
     @Test
@@ -139,6 +139,23 @@ class TerminalStateTest {
             listOf(TerminalSessionState.SessionExpired, TerminalSessionState.Error).sorted(),
             withReason.sorted(),
         )
+    }
+
+    @Test
+    fun `a stopped session reports the reason the SDK named`() {
+        // Without this the step says only that the session stopped, which is the same sentence whether a
+        // paypoint needs changing, a service is down, or the device can never do this at all.
+        TerminalFailureReason.entries.forEach { reason ->
+            assertEquals(
+                reason.message,
+                sessionFailureReason(TerminalSessionState.Error, reason),
+            )
+        }
+    }
+
+    @Test
+    fun `a stopped session with no reason still says something`() {
+        assertEquals("The session stopped.", sessionFailureReason(TerminalSessionState.Error, null))
     }
 
     @Test
