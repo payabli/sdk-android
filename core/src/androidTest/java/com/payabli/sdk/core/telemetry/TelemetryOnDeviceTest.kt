@@ -10,6 +10,7 @@ import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,11 +91,22 @@ class TelemetryOnDeviceTest {
             "osVersion" to device.osVersion,
             "modelName" to device.modelName,
         ).forEach { (field, value) ->
-            assertTrue("$field is not on the wire as \"$value\": $body", body.contains("\"$field\":\"$value\""))
+            if (value.isBlank()) {
+                assertFalse("$field was sent blank rather than omitted: $body", body.contains(field))
+            } else {
+                assertTrue("$field is not on the wire as \"$value\": $body", body.contains("\"$field\":\"$value\""))
+            }
         }
+
         assertEquals("Android", device.os)
         assertTrue("the platform reported no model", device.modelName.isNotBlank())
         assertTrue("the platform reported no release", device.osVersion.isNotBlank())
+
+        // No device type, because this test application takes no card-present payments and so can hold no
+        // device record. That is the negative case on real hardware; the positive one cannot be shown from
+        // here, since nothing in this repository puts card-present and reporting on one classpath. What
+        // covers it is the pair `CardPresentModuleDiscoveryTest` and the uploader's own wire assertion.
+        assertEquals("", device.type)
     }
 
     private companion object {

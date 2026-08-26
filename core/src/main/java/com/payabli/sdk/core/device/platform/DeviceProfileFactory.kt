@@ -3,6 +3,7 @@ package com.payabli.sdk.core.device.platform
 import android.content.Context
 import android.os.Build
 import androidx.annotation.RestrictTo
+import com.payabli.sdk.core.device.CardPresentLinkage
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 
 /**
@@ -19,8 +20,12 @@ import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object DeviceProfileFactory {
     /**
-     * What the SDK's host is. `Softpos` is the member of the service's device vocabulary that names a
-     * phone-resident point of sale, and it is the only one a handset can be: the other three are terminals.
+     * What the SDK's host is, where it is anything at all.
+     *
+     * `Softpos` is the member of the service's device vocabulary that names a phone-resident point of sale,
+     * and it is the only one a handset can be: the other three are terminals. It is reported only by an app
+     * that linked card-present, because only such an app can hold the device record this claim is comparable
+     * against. See [CardPresentLinkage].
      */
     internal const val TYPE: String = "Softpos"
 
@@ -40,7 +45,7 @@ public object DeviceProfileFactory {
         cached ?: synchronized(this) {
             cached ?: TelemetryDeviceContext(
                 idHash = DeviceIdentifierFactory.of(context),
-                type = TYPE,
+                type = if (CardPresentLinkage.isLinked()) TYPE else "",
                 os = OS,
                 osVersion = Build.VERSION.RELEASE.orEmpty(),
                 modelName = Build.MODEL.orEmpty(),
