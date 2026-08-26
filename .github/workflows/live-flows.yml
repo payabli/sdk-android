@@ -195,7 +195,7 @@ jobs:
           # exit, so a refused pay-in flow stops here rather than being reported over by the sample app's run.
           script: |
             ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest
-            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true
+            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true
 
       # The run's own verdict, so it cannot disagree with the message the report job sends. A suite that
       # succeeded having discovered no tests writes no results, leaves the step green, and reaches Slack as

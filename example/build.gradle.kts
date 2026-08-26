@@ -129,11 +129,37 @@ android {
         }
     }
 
-    buildTypes {
-        release {
-            optimization {
-                enable = false
-            }
+    // Two builds of the sample app, differing in one dependency and nothing else.
+    //
+    // **Linking the telemetry artifact is the whole of the integration**, so the only honest test of an app
+    // that did not link it is an app that did not link it. Simulating the absence from inside a test can only
+    // reach the code path; it cannot show that the SDK initializes, runs and reports nothing when the class
+    // is genuinely not on the classpath, which is what every integrator who depends on `:core` alone gets.
+    //
+    // `withTelemetry` is what the umbrella gives an integrator and is the default for ordinary runs.
+    flavorDimensions += "reporting"
+    productFlavors {
+        create("withTelemetry") {
+            dimension = "reporting"
+        }
+        create("withoutTelemetry") {
+            dimension = "reporting"
+
+            // This build exists to answer one question — does the SDK work when the artifact is not linked —
+            // so it runs the one class that asks it. Running the whole instrumented suite twice would double
+            // a device run to re-prove things the other flavor already proved, and the walkthrough talks to
+            // real paypoints.
+            testInstrumentationRunnerArguments["class"] =
+                "com.payabli.example.TelemetryLinkageInstrumentedTest"
+        }
+    }
+
+    // **The demo app has no release build.** It is never published, never signed and never shipped, so a
+    // release variant is a thing CI could assemble and nobody could say why. The minified build worth
+    // checking is an integrator's, against the published artifacts and their own keep rules — not this.
+    androidComponents {
+        beforeVariants(selector().withBuildType("release")) { variant ->
+            variant.enable = false
         }
     }
     compileOptions {
@@ -158,6 +184,8 @@ dependencies {
     // The SDK's payment form. An integrator would take the umbrella; this app takes the module
     // directly because it is in the same build.
     implementation(project(":payin"))
+    // Only one flavor links it; `withoutTelemetry` is the build that proves the SDK works without it.
+    "withTelemetryImplementation"(project(":telemetry"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

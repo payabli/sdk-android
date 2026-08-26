@@ -291,7 +291,9 @@ jobs:
           # the whole reason the two coexist. A -P `notClass` here would overwrite those lists and readmit all
           # three, sending real payments from this step, so nothing in this workflow passes one. What this step
           # runs is the annotation filter minus whatever each module excluded.
-          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest :example:connectedAndroidTest
+          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
+            :example:connectedWithTelemetryDebugAndroidTest
+            :example:connectedWithoutTelemetryDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact

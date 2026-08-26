@@ -1,0 +1,198 @@
+package com.payabli.sdk.telemetry
+
+import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.network.HttpMethod
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
+import com.payabli.sdk.telemetry.wire.wireName
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TelemetryUploaderTest {
+    private val logger = RecordingSdkLogger()
+
+    private val context =
+        TelemetrySessionContext(
+            entryPoint = "an-entry-point",
+            environment = PayabliEnvironment.SANDBOX,
+            telemetryEnabled = true,
+            sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
+            deviceIdHash = DEVICE,
+        )
+
+    /**
+     * The whole wire shape in one assertion.
+     *
+     * Every rule this body is held to is enforced by dropping the event in silence, so a change that broke one
+     * would leave a client that reports nothing and says nothing. That makes a literal the right assertion
+     * here: it fails on the character that changed rather than on the field somebody thought to check.
+     */
+    @Test
+    fun theBatchIsTheShapeTheFarSideAccepts() =
+        runTest {
+            val transport = FakeTransport()
+            val uploader = TelemetryUploader(transport, context, logger)
+
+            uploader.send(
+                listOf(
+                    QueuedTelemetryEvent(
+                        name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                        properties = mapOf(TelemetryProperties.OUTCOME to "approved"),
+                        occurredAtMillis = 1_755_000_000_000,
+                    ),
+                ),
+            )
+
+            assertEquals(
+                """{"entry":"an-entry-point","events":[{"schemaVersion":"1","sdkVersion":"0.1.0",""" +
+                    """"timestamp":"2025-08-12T12:00:00.000Z","sessionId":""" +
+                    """"0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d","entry":"an-entry-point",""" +
+                    """"environment":"sandbox","event":"payin.capture.completed",""" +
+                    """"properties":{"outcome":"approved"},""" +
+                    """"deviceIdHash":"9f2c4b7e1a05d38c6e4b90f7c2a1d5e3"}]}""",
+                transport.bodyAsText(),
+            )
+        }
+
+    @Test
+    fun theRequestNamesItsRouteAndDeclinesCredentialRecovery() =
+        runTest {
+            val transport = FakeTransport()
+
+            TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
+
+            val request = transport.sent.single()
+            assertEquals(HttpMethod.POST, request.method)
+            assertEquals(TelemetryUploader.ROUTE, request.path)
+            assertEquals(TelemetryUploader.ROUTE, request.route)
+            // A rejected credential here must not spend the session's one refresh, and must not be able to
+            // condemn a session a payment is using.
+            assertTrue(request.isCredentialPinned)
+        }
+
+    /**
+     * The session id is on every event, not once per request.
+     *
+     * It is what ties a run together — one SDK lifetime, one id, across device routes, payments, the quota
+     * signal and initialization alike. A batch that carried it once, or on some events, would leave the rest
+     * unattributable to the run that produced them. The live and on-device tests assert this too and both
+     * skip without a device or an endpoint, so it is pinned here where an ordinary run reaches it.
+     */
+    @Test
+    fun everyEventInABatchCarriesTheSessionId() =
+        runTest {
+            val transport = FakeTransport()
+            val batch =
+                listOf(
+                    anEvent(),
+                    QueuedTelemetryEvent(
+                        name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                        properties = mapOf(TelemetryProperties.OUTCOME to "approved"),
+                        occurredAtMillis = 1_755_000_000_001,
+                    ),
+                    QueuedTelemetryEvent(
+                        name = TelemetryEvents.TTP_DEVICE_ATTEST_COMPLETED,
+                        properties = emptyMap(),
+                        occurredAtMillis = 1_755_000_000_002,
+                    ),
+                )
+
+            TelemetryUploader(transport, context, logger).send(batch)
+
+            val body = transport.bodyAsText()
+            assertEquals(
+                "one session id per event, and no event without one",
+                batch.size,
+                body.split(""""sessionId":"${context.sessionId}"""").size - 1,
+            )
+        }
+
+    /**
+     * A device that gave the platform nothing is absent from the field, not blank in it.
+     *
+     * Absent and empty are different statements and only one of them is true: the SDK does not have an
+     * identifier for this device, rather than having one that is the empty string.
+     */
+    @Test
+    fun aBlankDeviceIdentifierIsOmittedRatherThanSentEmpty() =
+        runTest {
+            val transport = FakeTransport()
+            val unidentified =
+                TelemetrySessionContext(
+                    entryPoint = "an-entry-point",
+                    environment = PayabliEnvironment.SANDBOX,
+                    telemetryEnabled = true,
+                    sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
+                    deviceIdHash = "",
+                )
+
+            TelemetryUploader(transport, unidentified, logger).send(listOf(anEvent()))
+
+            assertFalse(transport.bodyAsText().contains("deviceIdHash"))
+        }
+
+    @Test
+    fun everyEventInABatchCarriesTheDeviceIdentifier() =
+        runTest {
+            val transport = FakeTransport()
+            val batch = listOf(anEvent(), anEvent(), anEvent())
+
+            TelemetryUploader(transport, context, logger).send(batch)
+
+            assertEquals(
+                "one device id per event, matching what registration sends",
+                batch.size,
+                transport.bodyAsText().split(""""deviceIdHash":"$DEVICE"""").size - 1,
+            )
+        }
+
+    @Test
+    fun anEmptyBatchIsNotSent() =
+        runTest {
+            val transport = FakeTransport()
+
+            TelemetryUploader(transport, context, logger).send(emptyList())
+
+            assertTrue(transport.sent.isEmpty())
+        }
+
+    @Test
+    fun arefusedBatchIsDiscardedWithoutReachingTheCaller() =
+        runTest {
+            val transport = FakeTransport.refusing(statusCode = 401)
+
+            TelemetryUploader(transport, context, logger).send(listOf(anEvent()))
+
+            assertEquals(1, transport.sent.size)
+        }
+
+    @Test
+    fun atransportFailureIsDiscardedWithoutReachingTheCaller() =
+        runTest {
+            TelemetryUploader(FakeTransport.failing(), context, logger).send(listOf(anEvent()))
+        }
+
+    @Test
+    fun everyEnvironmentHasAReportableName() {
+        assertEquals(
+            listOf("qa", "sandbox", "production"),
+            PayabliEnvironment.entries.map { it.wireName() },
+        )
+    }
+
+    private companion object {
+        const val DEVICE = "9f2c4b7e1a05d38c6e4b90f7c2a1d5e3"
+    }
+
+    private fun anEvent() =
+        QueuedTelemetryEvent(
+            name = TelemetryEvents.SDK_INITIALIZED,
+            properties = mapOf(TelemetryProperties.STATE to "ready"),
+            occurredAtMillis = 1_755_000_000_000,
+        )
+}

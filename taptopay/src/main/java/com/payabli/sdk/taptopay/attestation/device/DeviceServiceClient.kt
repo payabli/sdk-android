@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliEnvelope
 import com.payabli.sdk.core.network.PayabliHttpErrors
@@ -13,10 +14,15 @@ import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.attestation.AttestationToken
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 
 /** Unreserved characters, per RFC 3986 Section 2.3. What an entry point may hold to be one path segment. */
 private val PATH_SEGMENT = Regex("^[A-Za-z0-9._~-]+$")
@@ -276,13 +282,15 @@ internal class DeviceServiceClient(
                 headers = headers,
                 isCredentialPinned = true,
             )
-        return read(
-            route = route,
-            response = transport.execute(request),
-            payloadSerializer = payloadSerializer,
-            failureMapper = failureMapper,
-            emptyPayload = emptyPayload,
-        )
+        return measured(route) {
+            read(
+                route = route,
+                response = transport.execute(request),
+                payloadSerializer = payloadSerializer,
+                failureMapper = failureMapper,
+                emptyPayload = emptyPayload,
+            )
+        }
     }
 
     /**
@@ -310,14 +318,77 @@ internal class DeviceServiceClient(
                 headers = headers,
                 isCredentialPinned = true,
             )
-        return read(
-            route = route,
-            response = transport.execute(request),
-            payloadSerializer = payloadSerializer,
-            failureMapper = failureMapper,
-            statusOverride = statusOverride,
-        )
+        return measured(route) {
+            read(
+                route = route,
+                response = transport.execute(request),
+                payloadSerializer = payloadSerializer,
+                failureMapper = failureMapper,
+                statusOverride = statusOverride,
+            )
+        }
     }
+
+    /**
+     * Times one call and reports how it ended.
+     *
+     * Wrapped around the whole exchange rather than around [read], so a call that never produced a response
+     * is counted too: a route unreachable for a minute and a route refusing everything for a minute look
+     * identical to a counter that only sees answers.
+     *
+     * A cancelled call is not reported. It has no outcome of its own, and counting it as a failure would make
+     * a screen closed mid-enrollment read as the service refusing.
+     */
+    private suspend fun <T> measured(
+        route: String,
+        call: suspend () -> T,
+    ): T {
+        val startedAt = System.nanoTime()
+        return try {
+            val result = call()
+            report(route, TelemetryProperties.Outcome.SUCCEEDED, null, startedAt)
+            result
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (refusal: DeviceServiceException) {
+            report(route, outcomeOf(refusal), refusal.resultCode, startedAt)
+            throw refusal
+        } catch (failure: PayabliException) {
+            report(route, TelemetryProperties.Outcome.FAILED, null, startedAt)
+            throw failure
+        }
+    }
+
+    /**
+     * Refused means the far side answered and said no; failed means no usable answer arrived.
+     *
+     * The distinction is the one an incident asks first, and it is not the same as the status: a refusal
+     * arrives inside a 200 on these routes.
+     */
+    private fun outcomeOf(refusal: DeviceServiceException): String =
+        when (refusal) {
+            is DeviceServiceException.Undecodable, is DeviceServiceException.ServerFailure ->
+                TelemetryProperties.Outcome.FAILED
+            else -> TelemetryProperties.Outcome.REFUSED
+        }
+
+    private fun report(
+        route: String,
+        outcome: String,
+        resultCode: Int?,
+        startedAt: Long,
+    ) {
+        val event = EVENTS[route] ?: return
+        TelemetryRecorders.record(event) {
+            buildMap {
+                put(TelemetryProperties.OUTCOME, outcome)
+                put(TelemetryProperties.DURATION_MS, elapsedMillis(startedAt).toString())
+                resultCode?.let { put(TelemetryProperties.CODE, it.toString()) }
+            }
+        }
+    }
+
+    private fun elapsedMillis(startedAt: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 
     /**
      * The whole of this class's care, once a response exists.
@@ -449,5 +520,20 @@ internal class DeviceServiceClient(
         const val ROUTE_ATTEST: String = "$BASE/attest"
         const val ROUTE_ACTIVATE: String = "$BASE/activate"
         const val ROUTE_CONFIG: String = "$BASE/config/{entry}"
+
+        /**
+         * The event each route is counted under.
+         *
+         * One name per route rather than one name carrying the route, because a route added here without an
+         * event is then a route nobody is counting, and a missing key is easier to see than a missing value.
+         */
+        private val EVENTS: Map<String, String> =
+            mapOf(
+                ROUTE_CHALLENGE to TelemetryEvents.TTP_DEVICE_CHALLENGE_COMPLETED,
+                ROUTE_REGISTER to TelemetryEvents.TTP_DEVICE_REGISTER_COMPLETED,
+                ROUTE_ATTEST to TelemetryEvents.TTP_DEVICE_ATTEST_COMPLETED,
+                ROUTE_ACTIVATE to TelemetryEvents.TTP_DEVICE_ACTIVATE_COMPLETED,
+                ROUTE_CONFIG to TelemetryEvents.TTP_DEVICE_CONFIG_COMPLETED,
+            )
     }
 }

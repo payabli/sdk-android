@@ -1,5 +1,8 @@
 plugins {
     alias(libs.plugins.android.library)
+    // @Serializable needs this plugin per module; the runtime comes from :core. Absent, every serializer()
+    // call reads as an unresolved reference.
+    alias(libs.plugins.kotlin.serialization)
     id("payabli.publish")
     id("payabli.quality")
 }
@@ -25,9 +28,15 @@ android {
     }
 }
 
+kotlin {
+    explicitApi()
+}
+
 dependencies {
     // Capability modules depend on :core only, never on a sibling capability.
     api(project(":core"))
+    testImplementation(project(":testutils"))
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
 }

@@ -8,6 +8,9 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.PayInEnteredDetails
 import com.payabli.sdk.payin.client.TokenStorageClient
@@ -22,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -68,7 +72,7 @@ internal class PayInSubmission(
         values: PayInFormValues,
         onReserved: (Boolean) -> Unit = {},
     ): PayInSubmissionState? =
-        perform(onReserved) { retry ->
+        perform(operation.event, onReserved) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
             // once here, so all three operations carry what the same form collected.
             val entered = PayInEnteredDetails.of(values)
@@ -100,7 +104,7 @@ internal class PayInSubmission(
 
     /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
     suspend fun captureAuthorized(request: PayInAuthorizedRequest): PayInSubmissionState? =
-        perform { retry ->
+        perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED) { retry ->
             val key = retry.reserve(request.idempotencyKey)
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
         }
@@ -126,6 +130,7 @@ internal class PayInSubmission(
      * and the caller's scope on a payment screen is the main thread.
      */
     private suspend fun perform(
+        event: String,
         onReserved: (Boolean) -> Unit = {},
         call: suspend (RetryKey) -> PayInSubmissionState,
     ): PayInSubmissionState? {
@@ -136,6 +141,7 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_already_in_flight")) {
                 "a submission is already in flight, so this one was refused"
             }
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null)
             return null
         }
         // Starting here would overwrite an outcome nothing has read yet, and a taken payment would leave no
@@ -146,10 +152,12 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_outcome_unacknowledged")) {
                 "an outcome has not been acknowledged, so this submission was refused"
             }
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null)
             return null
         }
         onReserved(true)
         val retry = RetryKey()
+        val startedAt = System.nanoTime()
         sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
         try {
@@ -162,8 +170,12 @@ internal class PayInSubmission(
         } catch (failure: Exception) {
             outcome = failure.asFailed(retry.key)
         } finally {
-            // Neither line suspends, so both run on the canceled path as they do on any other.
-            outcome?.let { sink.value = it }
+            // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
+            // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
+            outcome?.let {
+                sink.value = it
+                report(event, outcomeOf(it), codeOf(it), startedAt)
+            }
             inFlight.unlock()
         }
         return outcome
@@ -190,6 +202,59 @@ internal class PayInSubmission(
             retryKey = attemptKey.takeIf { cause.code.leavesOutcomeUnknown },
         )
     }
+
+    /**
+     * Reports how one submission ended.
+     *
+     * The boundary is form to transport, which is the span a payment incident asks about and the one no
+     * per-request record can answer: a log line names one outcome, and the questions here are rates.
+     *
+     * Carries no instrument, no payer and no amount. [code] is the classification the failure already
+     * published to the caller, which is a fixed set.
+     */
+    private fun report(
+        event: String,
+        outcome: String,
+        code: String?,
+        startedAt: Long?,
+    ) {
+        TelemetryRecorders.record(event) {
+            buildMap {
+                put(TelemetryProperties.OUTCOME, outcome)
+                code?.let { put(TelemetryProperties.CODE, it) }
+                startedAt?.let {
+                    put(
+                        TelemetryProperties.DURATION_MS,
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - it).toString(),
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * The four things that can happen to a payment, told apart.
+     *
+     * Keyed on the code rather than on the exception type, because that code is what the caller was told and
+     * a record that classified it differently would disagree with the screen the payer saw.
+     */
+    private fun outcomeOf(state: PayInSubmissionState): String =
+        when (state) {
+            is PayInSubmissionState.Succeeded -> TelemetryProperties.Outcome.APPROVED
+            is PayInSubmissionState.Failed ->
+                when (state.cause.code) {
+                    PayabliErrorCode.PAYMENT_DECLINED -> TelemetryProperties.Outcome.DECLINED
+                    PayabliErrorCode.USER_CANCELLED -> TelemetryProperties.Outcome.INTERRUPTED
+                    PayabliErrorCode.VALIDATION_ERROR,
+                    PayabliErrorCode.INVALID_CONFIGURATION,
+                    -> TelemetryProperties.Outcome.REFUSED_LOCALLY
+                    else -> TelemetryProperties.Outcome.FAILED
+                }
+            else -> TelemetryProperties.Outcome.FAILED
+        }
+
+    private fun codeOf(state: PayInSubmissionState): String? =
+        (state as? PayInSubmissionState.Failed)?.cause?.code?.wireName
 
     /**
      * The idempotency key of the request that went out, once there is one.

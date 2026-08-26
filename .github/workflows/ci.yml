@@ -50,7 +50,8 @@ jobs:
       # :taptopay needs a credential fork PRs cannot have; see the card-present job.
       - name: Build
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
-          :payabli-android:assembleDebug :example:assembleDebug :testutils:assembleDebug
+          :payabli-android:assembleDebug :example:assembleWithTelemetryDebug
+          :example:assembleWithoutTelemetryDebug :testutils:assembleDebug
 
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :example:test :testutils:test

@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -45,6 +46,20 @@ public sealed class PayabliPayInOperation {
                 is Capture, is StoreMethod -> PayInMethodType.entries.toSet()
             }
 }
+
+/**
+ * The event this operation is counted under.
+ *
+ * One name per operation rather than one name carrying the operation, so what is counted comes from a fixed
+ * set and an operation added here without a name does not compile.
+ */
+internal val PayabliPayInOperation.event: String
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED
+            is PayabliPayInOperation.Capture -> TelemetryEvents.PAYIN_CAPTURE_COMPLETED
+            is PayabliPayInOperation.Authorize -> TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED
+        }
 
 /**
  * Everything [offering] reads about an operation, as a `remember` key.
