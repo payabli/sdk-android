@@ -24,9 +24,14 @@ data class SessionChipSpec(
  *
  * The session ends on its own clock, so no action outcome describes it.
  */
-fun sessionFailureReason(state: TerminalSessionState): String =
+fun sessionFailureReason(
+    state: TerminalSessionState,
+    reason: TerminalFailureReason? = null,
+): String =
     when (state) {
-        TerminalSessionState.Error -> "The session stopped."
+        // The SDK names the reason, and it is what says whether to wait, to change a setting or to
+        // fetch another device. The fallback is for a failure that arrived without one.
+        TerminalSessionState.Error -> reason?.message ?: "The session stopped."
         TerminalSessionState.SessionExpired -> "The session expired."
         else -> ""
     }

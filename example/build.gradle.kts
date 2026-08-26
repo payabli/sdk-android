@@ -49,9 +49,14 @@ android {
 
     defaultConfig {
         applicationId = "com.payabli.example.app"
-        // 24. The debug build reaches the local token server over cleartext, and the network
-        // security config that permits it for two addresses is ignored below 24.
-        minSdk = 24
+        // 30, imposed by the card reader this app links. The floor also has to stay at or above 24,
+        // which is where the network security config permitting cleartext to the local token server
+        // stops being ignored.
+        //
+        // The card reader's native library is arm64 only, and the app still installs on a 32-bit-only
+        // handset because another dependency carries an armeabi-v7a one. There, the Tap to pay screen
+        // is the one part that cannot work.
+        minSdk = 30
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -86,6 +91,14 @@ android {
         buildConfigField("boolean", "DEMO_DIAGNOSTICS", demoSetting("payabli.demo.diagnostics", "true"))
         // Off unless asked for, and the button it enables is drawn in a debug build only.
         buildConfigField("boolean", "DEMO_PREFILL", demoSetting("payabli.demo.prefill", "false"))
+        // The Google Cloud project the Play Integrity API is enabled in, which the card-present screen
+        // needs and a hand-installed build cannot infer. Not a secret: every app shipping Play Integrity
+        // carries its project number. Blank leaves the Tap to pay screen reporting that it is unset.
+        buildConfigField(
+            "String",
+            "DEMO_CLOUD_PROJECT_NUMBER",
+            quoted(demoSetting("payabli.cloudProjectNumber", "")),
+        )
 
         // The walkthrough submits real payments through the form, so it is kept out of an ordinary run and
         // excluded by name rather than skipped: a standing skip cannot be told apart from a regression that
@@ -158,6 +171,11 @@ dependencies {
     // The SDK's payment form. An integrator would take the umbrella; this app takes the module
     // directly because it is in the same build.
     implementation(project(":payin"))
+
+    // The SDK's card-present module, which the Tap to pay screen drives. It resolves from a credentialed
+    // repository, so every job that builds this app needs GPR_TOKEN; ci.yml puts it beside :taptopay for
+    // that reason.
+    implementation(project(":taptopay"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

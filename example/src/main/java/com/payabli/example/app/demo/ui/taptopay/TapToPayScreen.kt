@@ -25,7 +25,6 @@ import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.flow.FlowStep
 import com.payabli.example.app.demo.flow.StepStatus
 import com.payabli.example.app.demo.flow.TerminalSteps
-import com.payabli.example.app.demo.terminal.DemoTerminalController
 import com.payabli.example.app.demo.terminal.EventBuffer
 import com.payabli.example.app.demo.terminal.TerminalEvent
 import com.payabli.example.app.demo.terminal.TerminalEventCode
@@ -98,9 +97,9 @@ fun TapToPayScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[1], sessionFailureReason(state.session))
+                FailureReason(steps[1], sessionFailureReason(state.session, state.failureReason))
                 ProminentButton(
-                    text = "Turn on the terminal",
+                    text = "Set up the terminal",
                     icon = DemoIcons.TapToPay,
                     onClick = actions.onEnable,
                     enabled = !state.isWorking,
@@ -190,7 +189,7 @@ private fun PaymentBlock(
             enabled = !state.isWorking && state.isReady,
         )
         if (!state.isReady) {
-            Caption("Turn on the terminal first. Charging needs a prepared reader.")
+            Caption("Set up the terminal first. Charging needs a prepared reader.")
         }
     }
 }
@@ -252,9 +251,7 @@ private fun ActivationSheet(
                     ),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Caption(
-                "Type ${DemoTerminalController.REJECTED_ACTIVATION_CODE} to see what a rejected code looks like.",
-            )
+            Caption("Six digits, issued to the merchant out of band.")
             ProminentButton(
                 text = "Activate",
                 icon = DemoIcons.Activate,
