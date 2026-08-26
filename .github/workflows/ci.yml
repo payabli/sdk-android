@@ -47,20 +47,22 @@ jobs:
           # a licensing decision rather than a build one.
           cache-provider: basic
 
-      # :taptopay needs a credential fork PRs cannot have; see the card-present job.
+      # :taptopay needs a credential fork PRs cannot have; see the card-present job. :example is there
+      # too, and not here, because it links :taptopay for the Tap to pay screen and so resolves the card
+      # reader as well.
       - name: Build
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
-          :payabli-android:assembleDebug :example:assembleDebug
+          :payabli-android:assembleDebug
 
       - name: Unit tests
-        run: ./gradlew :core:test :payin:test :telemetry:test :example:test
+        run: ./gradlew :core:test :payin:test :telemetry:test
 
       - name: Format
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
+          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck
 
       - name: Android Lint
-        run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
+        run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint
 
       # The aggregate module has no tests, so no coverage task.
       #
@@ -107,7 +109,6 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
 
       - name: Upload reports
         if: always()
@@ -156,19 +157,20 @@ jobs:
           cache-provider: basic
 
       - name: Build
-        run: ./gradlew :taptopay:assembleDebug
+        run: ./gradlew :taptopay:assembleDebug :example:assembleDebug
 
       - name: Unit tests
-        run: ./gradlew :taptopay:test
+        run: ./gradlew :taptopay:test :example:test
 
       - name: Format
-        run: ./gradlew :taptopay:ktlintCheck
+        run: ./gradlew :taptopay:ktlintCheck :example:ktlintCheck
 
       - name: Android Lint
-        run: ./gradlew :taptopay:lint
+        run: ./gradlew :taptopay:lint :example:lint
 
       - name: Coverage
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
+          :example:createDebugUnitTestCoverageReport
 
   sonar:
     name: SonarCloud
@@ -200,7 +202,7 @@ jobs:
 
       # Analysis reads these reports, so they run first. Scoped to the modules that build
       # without a credential. :example is absent because the root build skips it in the
-      # analysis, so nothing here would read its reports. The build job still builds, tests,
+      # analysis, so nothing here would read its reports. The card-present job builds, tests,
       # lints and formats it.
       - name: Produce reports
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
