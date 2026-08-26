@@ -62,6 +62,12 @@ MAX_SUMMARY_BYTES = 900_000
 # while that was not true.
 COVERAGE_MODULES = ("core", "example", "payin", "taptopay", "telemetry", "testutils")
 
+# Which variant's report to read, for the modules where it is not `debug`. The sample app is the only module
+# with product flavors, so its unit-test coverage is written under the flavored variant name and a reader
+# looking for `debug` finds nothing -- which this collector reports as `missing`, indistinguishable from a
+# module whose tests did not run.
+COVERAGE_VARIANTS = {"example": "withTelemetry/debug"}
+
 # Attribution stops here, because the report cannot show more than this and the work is not free: each
 # failure costs two recursive source globs and up to two `git log` subprocesses. Measured against this repo
 # one attribution is about 50 ms, so 335 failures is nearer 17 seconds than the collector's 300-second bound,
@@ -193,7 +199,8 @@ def coverage(counter_type: str) -> list[tuple[str, float | None, str]]:
     """
     out: list[tuple[str, float | None, str]] = []
     for module in COVERAGE_MODULES:
-        path = REPO_ROOT / module / "build/reports/coverage/test/debug/report.xml"
+        variant = COVERAGE_VARIANTS.get(module, "debug")
+        path = REPO_ROOT / module / f"build/reports/coverage/test/{variant}/report.xml"
         if not path.is_file():
             out.append((module, None, "missing"))
             continue

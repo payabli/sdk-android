@@ -110,7 +110,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
+          :example:createWithTelemetryDebugUnitTestCoverageReport
           :testutils:createDebugUnitTestCoverageReport
 
       - name: Upload reports

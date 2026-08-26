@@ -149,7 +149,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
+          :example:createWithTelemetryDebugUnitTestCoverageReport
           :testutils:createDebugUnitTestCoverageReport
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
