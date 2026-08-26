@@ -24,18 +24,19 @@ public class TelemetrySessionContext(
     /** Identifies this SDK lifetime. Fresh per install. */
     public val sessionId: String,
     /**
-     * Which device this is, as a digest, or blank where the platform offered nothing.
+     * What this is running on, for every event to carry.
      *
-     * The same value device registration sends, so one device is one identity in both. [sessionId] says
-     * which run an event came from; this says which device the run happened on, which is the difference
-     * between one device retrying and a fleet failing once.
+     * [sessionId] says which run an event came from; this says which device the run happened on, what kind
+     * of device it is, and which platform release — the difference between one handset retrying and a fleet
+     * failing once, and between a fault everywhere and a fault on one OS version.
      */
-    public val deviceIdHash: String,
+    public val device: TelemetryDeviceContext,
 ) {
     /**
      * Withholds the entry point, matching `PayabliConfig.toString`. It names a specific merchant, and this
      * string reaches exception messages and crash reports.
      */
     override fun toString(): String =
-        "TelemetrySessionContext(environment=$environment, telemetryEnabled=$telemetryEnabled)"
+        "TelemetrySessionContext(environment=$environment, telemetryEnabled=$telemetryEnabled, " +
+            "device=$device)"
 }

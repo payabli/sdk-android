@@ -2,6 +2,7 @@ package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.HttpMethod
+import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
@@ -22,7 +23,7 @@ class TelemetryUploaderTest {
             environment = PayabliEnvironment.SANDBOX,
             telemetryEnabled = true,
             sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
-            deviceIdHash = DEVICE,
+            device = aDevice(),
         )
 
     /**
@@ -54,7 +55,8 @@ class TelemetryUploaderTest {
                     """"0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d","entry":"an-entry-point",""" +
                     """"environment":"sandbox","event":"payin.capture.completed",""" +
                     """"properties":{"outcome":"approved"},""" +
-                    """"deviceIdHash":"9f2c4b7e1a05d38c6e4b90f7c2a1d5e3"}]}""",
+                    """"deviceIdHash":"9f2c4b7e1a05d38c6e4b90f7c2a1d5e3","deviceType":"Softpos",""" +
+                    """"deviceOs":"Android","osVersion":"14","modelName":"Pixel 7a"}]}""",
                 transport.bodyAsText(),
             )
         }
@@ -79,8 +81,8 @@ class TelemetryUploaderTest {
      * The session id is on every event, not once per request.
      *
      * It is what ties a run together — one SDK lifetime, one id, across device routes, payments, the quota
-     * signal and initialization alike. A batch that carried it once, or on some events, would leave the rest
-     * unattributable to the run that produced them. The live and on-device tests assert this too and both
+     * signal and initialization alike. A batch that put it at the envelope level, or on some of its events,
+     * leaves the rest unattributable to the run that produced them. The live and on-device tests assert this too and both
      * skip without a device or an endpoint, so it is pinned here where an ordinary run reaches it.
      */
     @Test
@@ -128,12 +130,50 @@ class TelemetryUploaderTest {
                     environment = PayabliEnvironment.SANDBOX,
                     telemetryEnabled = true,
                     sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
-                    deviceIdHash = "",
+                    device = TelemetryDeviceContext.NONE,
                 )
 
             TelemetryUploader(transport, unidentified, logger).send(listOf(anEvent()))
 
-            assertFalse(transport.bodyAsText().contains("deviceIdHash"))
+            val body = transport.bodyAsText()
+            listOf("deviceIdHash", "deviceType", "deviceOs", "osVersion", "modelName").forEach { field ->
+                assertFalse("$field was sent by a run with no device: $body", body.contains(field))
+            }
+        }
+
+    /**
+     * The fixed fields are fixed, and a caller cannot reach them.
+     *
+     * Everything below the event name is added underneath the call, so an emitting site cannot omit one, and
+     * a property named like one of them does not become one: properties are their own object on the wire.
+     */
+    @Test
+    fun theDeviceFactsAreOnEveryEventAndNotReachableAsProperties() =
+        runTest {
+            val transport = FakeTransport()
+            val event =
+                QueuedTelemetryEvent(
+                    name = TelemetryEvents.SDK_INITIALIZED,
+                    properties = mapOf(TelemetryProperties.STATE to "ready"),
+                    occurredAtMillis = 1_755_000_000_000,
+                )
+
+            TelemetryUploader(transport, context, logger).send(listOf(event, event))
+
+            val body = transport.bodyAsText()
+            mapOf(
+                "deviceType" to "Softpos",
+                "deviceOs" to "Android",
+                "osVersion" to "14",
+                "modelName" to "Pixel 7a",
+            ).forEach { (field, value) ->
+                assertEquals(
+                    "$field should be on both events exactly once each",
+                    2,
+                    body.split(""""$field":"$value""").size - 1,
+                )
+            }
+            assertTrue(body.contains(""""properties":{"state":"ready"}"""))
         }
 
     @Test
@@ -187,6 +227,15 @@ class TelemetryUploaderTest {
 
     private companion object {
         const val DEVICE = "9f2c4b7e1a05d38c6e4b90f7c2a1d5e3"
+
+        fun aDevice() =
+            TelemetryDeviceContext(
+                idHash = DEVICE,
+                type = "Softpos",
+                os = "Android",
+                osVersion = "14",
+                modelName = "Pixel 7a",
+            )
     }
 
     private fun anEvent() =

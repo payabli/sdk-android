@@ -77,9 +77,9 @@ class TelemetryLinkageInstrumentedTest {
      * rather than this. What matters is what the emitting seam does when nothing is listening, and that is
      * this function.
      *
-     * The assertion differs by flavor on purpose. With nothing linked the properties are **never built**,
-     * which is the claim that an app that did not ask for reporting pays nothing for it — and it is a claim
-     * about a real build here rather than about a mocked-out registry.
+     * The assertion differs by flavor. With nothing linked the properties are **never built**, which is the
+     * claim that an app that did not ask for reporting pays nothing for it — and it is a claim about a real
+     * build here rather than about a mocked-out registry.
      */
     @Test
     fun aCompletedCardNotPresentFlowReportsOrCostsNothing() {

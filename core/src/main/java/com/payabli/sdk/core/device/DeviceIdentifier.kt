@@ -5,8 +5,8 @@ import java.security.MessageDigest
 /**
  * Derives the identifier that says which device this is, from values a caller supplies.
  *
- * Platform-free on purpose: naming `Settings.Secure` here would put this out of reach of a unit test, and
- * this is the half worth testing. `DeviceIdentifierFactory` reads the platform value and calls this.
+ * Naming `Settings.Secure` here would put this out of reach of a unit test, and this is the half worth
+ * testing. `DeviceIdentifierFactory` reads the platform value and calls this.
  *
  * **It is a digest, never the platform value.** The raw identifier stays on the device: what is sent, stored
  * and logged is this, and a party holding only this cannot recover it.

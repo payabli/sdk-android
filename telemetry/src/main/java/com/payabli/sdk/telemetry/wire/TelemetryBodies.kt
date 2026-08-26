@@ -22,9 +22,10 @@ internal class TelemetryBatchBody(
  * [schemaVersion] is a string and not a number. It versions the shape rather than counting anything, and the
  * two platforms have to agree on the encoding as much as on the value.
  *
- * [deviceIdHash] is the digest device registration sends, so a device is one device in both. It is omitted
- * rather than blank where the platform offered nothing, because absent and empty are different statements
- * and only one of them is true.
+ * [deviceIdHash] is the digest device registration sends, so a device is one device in both. It and the
+ * three fields after it are the fixed device facts every event carries; each is omitted rather than sent
+ * blank where the platform offered nothing, because absent and empty are different statements and only one
+ * of them is true.
  */
 @Serializable
 internal class TelemetryEventBody(
@@ -37,6 +38,10 @@ internal class TelemetryEventBody(
     val event: String,
     val properties: Map<String, String>,
     val deviceIdHash: String? = null,
+    val deviceType: String? = null,
+    val deviceOs: String? = null,
+    val osVersion: String? = null,
+    val modelName: String? = null,
 ) {
     companion object {
         /** The only shape this client sends. */

@@ -3,6 +3,7 @@
 package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
@@ -41,7 +42,14 @@ class TelemetryClientTest {
             environment = PayabliEnvironment.SANDBOX,
             telemetryEnabled = true,
             sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
-            deviceIdHash = DEVICE,
+            device =
+                TelemetryDeviceContext(
+                    idHash = DEVICE,
+                    type = "Softpos",
+                    os = "Android",
+                    osVersion = "14",
+                    modelName = "Pixel 7a",
+                ),
         )
 
     @Test

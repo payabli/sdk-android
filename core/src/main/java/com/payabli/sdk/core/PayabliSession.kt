@@ -3,7 +3,7 @@ package com.payabli.sdk.core
 import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
-import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
+import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LogLevel
@@ -19,6 +19,7 @@ import com.payabli.sdk.core.network.TransportAssembly
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import com.payabli.sdk.core.telemetry.TelemetryBootstraps
+import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
@@ -232,9 +233,10 @@ public class PayabliSession private constructor(
                                 telemetryEnabled = config.telemetryEnabled,
                                 sessionId = UUID.randomUUID().toString(),
                                 // Blank without host bindings, which is the SDK's own tests rather than an
-                                // app: the value needs a `Context` and there is none to read.
-                                deviceIdHash =
-                                    host?.appContext?.let { DeviceIdentifierFactory.of(it) }.orEmpty(),
+                                // app: the values need a device and there is none to read.
+                                device =
+                                    host?.appContext?.let { DeviceProfileFactory.of(it) }
+                                        ?: TelemetryDeviceContext.NONE,
                             ),
                     )
                 machine.markReady()

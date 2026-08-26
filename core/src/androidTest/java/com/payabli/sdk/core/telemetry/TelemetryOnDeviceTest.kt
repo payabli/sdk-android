@@ -5,7 +5,7 @@ import com.payabli.sdk.core.HostBindings
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
-import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
+import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -80,11 +80,21 @@ class TelemetryOnDeviceTest {
         assertTrue("the batch was not attributed to the session's entry", body.contains("\"entry\":\"$ENTRY\""))
         assertTrue("schemaVersion is not the string form", body.contains("\"schemaVersion\":\"1\""))
         assertTrue("the session's own id is not on the wire", body.contains(session.telemetry.sessionId))
-        // Which device the run happened on, derived from the platform value only a device has.
-        assertTrue(
-            "the device is not identified on the wire",
-            body.contains("\"deviceIdHash\":\"${DeviceIdentifierFactory.of(context)}\""),
-        )
+        // The fixed device facts, which only a device can answer: on a JVM `Build` throws rather than
+        // returning, so every one of these is blank in a unit test and this is the only tier that sees them.
+        val device = DeviceProfileFactory.of(context)
+        mapOf(
+            "deviceIdHash" to device.idHash,
+            "deviceType" to device.type,
+            "deviceOs" to device.os,
+            "osVersion" to device.osVersion,
+            "modelName" to device.modelName,
+        ).forEach { (field, value) ->
+            assertTrue("$field is not on the wire as \"$value\": $body", body.contains("\"$field\":\"$value\""))
+        }
+        assertEquals("Android", device.os)
+        assertTrue("the platform reported no model", device.modelName.isNotBlank())
+        assertTrue("the platform reported no release", device.osVersion.isNotBlank())
     }
 
     private companion object {

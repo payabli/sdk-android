@@ -22,8 +22,8 @@ import kotlin.time.Duration.Companion.seconds
  *
  * **This module's classpath is that build.** `:taptopay` depends on `:core` and nothing else, so the
  * reporting module is genuinely absent here rather than mocked away — which is the configuration a
- * card-present integrator gets, since the umbrella deliberately omits this artifact and an app linking it
- * has to add reporting separately or not at all.
+ * card-present integrator gets: the umbrella omits this artifact, so an app linking it has to add reporting
+ * separately or not at all.
  *
  * These drive the real call sites rather than imitating the calls they make. Every one of them reports, and
  * every one of them has to behave identically with nothing listening: the route still answers, the failure

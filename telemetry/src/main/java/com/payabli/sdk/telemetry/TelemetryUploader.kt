@@ -101,7 +101,11 @@ internal class TelemetryUploader(
             environment = context.environment.wireName(),
             event = name,
             properties = properties,
-            deviceIdHash = context.deviceIdHash.ifBlank { null },
+            deviceIdHash = context.device.idHash.ifBlank { null },
+            deviceType = context.device.type.ifBlank { null },
+            deviceOs = context.device.os.ifBlank { null },
+            osVersion = context.device.osVersion.ifBlank { null },
+            modelName = context.device.modelName.ifBlank { null },
         )
 
     internal companion object {
