@@ -2,7 +2,7 @@ package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.device.RedactedCause
-import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

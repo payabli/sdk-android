@@ -87,6 +87,8 @@ dependencies {
     implementation(libs.fiserv.ttp)
     implementation(libs.play.integrity)
     implementation(libs.kotlinx.coroutines.play.services)
+    testImplementation(project(":testutils"))
+    androidTestImplementation(project(":testutils"))
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)

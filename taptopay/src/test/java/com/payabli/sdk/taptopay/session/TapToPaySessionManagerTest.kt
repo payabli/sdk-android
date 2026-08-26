@@ -1,6 +1,6 @@
 package com.payabli.sdk.taptopay.session
 
-import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher

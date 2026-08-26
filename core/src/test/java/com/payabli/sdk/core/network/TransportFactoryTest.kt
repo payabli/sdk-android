@@ -8,7 +8,7 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
-import com.payabli.sdk.core.network.impl.LoopbackServer
+import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -263,11 +263,8 @@ class TransportFactoryTest {
     /**
      * The documented layering: a slow refresh under `Retry` still costs one provider call and one replay.
      *
-     * This began as a regression test for a per-attempt wall-clock budget that cancelled a refresh and then
-     * repeated it once per attempt. That budget is gone, and with `totalTimeoutMillis` unset there is now no
-     * deadline in `Retry` at all, so what remains under test is the composition rather than the old defect:
-     * `Retry` must not turn one slow refresh into several. Kept because that property is still worth pinning,
-     * relabelled because claiming to cover a removed mechanism is worse than covering nothing.
+     * With `totalTimeoutMillis` unset there is no deadline in `Retry` at all, so what is under test is the
+     * composition: `Retry` must not turn one slow refresh into several.
      *
      * On a real dispatcher because the socket work is real, not because of any deadline being measured.
      *

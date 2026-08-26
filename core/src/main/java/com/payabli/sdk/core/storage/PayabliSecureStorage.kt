@@ -5,7 +5,7 @@ import androidx.annotation.RestrictTo
 /**
  * A key/value store whose values are encrypted at rest.
  *
- * Free of `android.*` imports, so a consumer can be unit-tested against [InMemorySecureStorage] with no
+ * Free of `android.*` imports, so a consumer can be unit-tested against the in-memory fixture with no
  * device. The Android implementation lives in `impl`.
  *
  * **Keys are names, values are secrets.** A key is stored in plaintext and may be logged; a value is

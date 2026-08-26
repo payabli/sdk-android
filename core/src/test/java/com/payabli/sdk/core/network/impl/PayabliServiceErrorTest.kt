@@ -8,6 +8,8 @@ import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.testutils.auth.testAuth
+import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
@@ -91,7 +93,7 @@ class PayabliServiceErrorTest {
             LoopbackServer().use { server ->
                 // Both shapes resolve can reject, because they throw different types and only one echoes
                 // its input: a raw space raises URISyntaxException, which quotes the whole reference,
-                // while an authority fails our own require, whose message is path-free. The invariant has
+                // while an authority fails the SDK's own require, whose message is path-free. The invariant has
                 // to hold either way, because the type is not a reliable signal of which is which.
                 val identifier = "9999999999"
                 val cases =
@@ -144,7 +146,7 @@ class PayabliServiceErrorTest {
                 // the input it could not parse to its own message, and a host crash reporter renders the
                 // whole cause chain, which this SDK cannot scrub.
                 val sentinel = "SENTINEL-PAYLOAD-CONTENT"
-                // Non-JSON on purpose, standing in for a proxy error page that echoes request data.
+                // Non-JSON, standing in for a proxy error page that echoes request data.
                 // Only that path leaks: kotlinx appends `JSON input: <body>` to a JsonDecodingException,
                 // whereas well-formed JSON missing a field raises MissingFieldException, which names the
                 // field and echoes nothing. A well-formed body here would pass with or without the fix.

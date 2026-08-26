@@ -11,7 +11,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
-import com.payabli.sdk.core.network.impl.LoopbackServer
+import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -190,7 +190,7 @@ class PayabliSessionTest {
         }
 
     /**
-     * `runBlocking` rather than `runTest`, deliberately and unusually for this file.
+     * `runBlocking`, where the rest of this file uses `runTest`.
      *
      * This is the one test here about real threads interleaving, and `runTest`'s virtual clock is the wrong
      * clock for it: the blocked-probe below never elapses in virtual time while a real coroutine is parked
@@ -205,10 +205,10 @@ class PayabliSessionTest {
                     val insideFirst = CompletableDeferred<Unit>()
                     val releaseFirst = CompletableDeferred<Unit>()
                     try {
-                        // Deterministic rather than hopeful. The critical section is a few microseconds of
-                        // object construction, so two callers launched together almost never collide, and a
-                        // test that just races them passes with the lock removed. Measured, exactly that.
-                        // Holding the section open is what makes the second caller's wait observable.
+                        // The critical section is a few microseconds of object construction, so two callers
+                        // launched together almost never collide and a test that just races them passes
+                        // with the lock removed. Holding the section open is what makes the second caller's
+                        // wait observable.
                         val first =
                             async(Dispatchers.IO) {
                                 PayabliSession.initializeWith(config()) { _ ->

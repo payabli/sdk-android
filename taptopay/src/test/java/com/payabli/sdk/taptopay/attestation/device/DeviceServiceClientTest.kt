@@ -5,7 +5,7 @@ import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.taptopay.attestation.AttestationToken
-import com.payabli.sdk.taptopay.attestation.impl.RecordingSdkLogger
+import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject

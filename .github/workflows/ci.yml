@@ -52,17 +52,18 @@ jobs:
       # reader as well.
       - name: Build
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
-          :payabli-android:assembleDebug
+          :payabli-android:assembleDebug :testutils:assembleDebug
 
       - name: Unit tests
-        run: ./gradlew :core:test :payin:test :telemetry:test
+        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
 
       - name: Format
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck
+          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :testutils:ktlintCheck
 
       - name: Android Lint
         run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint
+          :testutils:lint
 
       # The aggregate module has no tests, so no coverage task.
       #
@@ -109,6 +110,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
+          :testutils:createDebugUnitTestCoverageReport
 
       - name: Upload reports
         if: always()
@@ -206,8 +208,8 @@ jobs:
       # lints and formats it.
       - name: Produce reports
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck
-          :core:lint :payin:lint :telemetry:lint :payabli-android:lint
+          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :testutils:ktlintCheck
+          :core:lint :payin:lint :telemetry:lint :payabli-android:lint :testutils:lint
 
       # Split from the step above so the serialising flag reaches the coverage tasks without also
       # serialising nine lint and format tasks. See the note in the build job.
@@ -216,6 +218,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
+          :testutils:createDebugUnitTestCoverageReport
 
       # Card-present reports, only when the credential is available.
       - name: Produce card-present reports
