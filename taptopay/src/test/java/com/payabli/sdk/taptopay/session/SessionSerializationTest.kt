@@ -260,7 +260,7 @@ class SessionSerializationTest {
             val activation =
                 launch(UnconfinedTestDispatcher(testScheduler)) {
                     try {
-                        fixture.coordinator.confirmActivation("123456")
+                        fixture.coordinator.activateDevice("123456")
                     } catch (failure: Throwable) {
                         activationFailure = failure
                     }

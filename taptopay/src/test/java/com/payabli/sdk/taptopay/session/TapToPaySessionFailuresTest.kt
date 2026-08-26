@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.session
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
@@ -74,6 +75,12 @@ class TapToPaySessionFailuresTest {
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),
             AttestationException.IntegrityFailed(-3) to failed(ATTESTATION_REQUIRED),
             DeviceIneligibleException("contactless payments are not supported") to failed(DEVICE_INELIGIBLE),
+            CardReaderException.CredentialsUnusable("terminalId is blank") to failed(CONFIGURATION_REJECTED),
+            CardReaderException.ArmingFailed(null) to failed(SERVICE_UNAVAILABLE),
+            // The one landing a repair exists for, and the only failure that reaches it.
+            CardReaderException.SessionUnusable(null) to TapToPaySessionState.SessionExpired,
+            // A tap that did not complete says nothing about the session it ran on.
+            CardReaderException.ReadFailed(null) to null,
             PayabliGenericException(PayabliErrorCode.PERMISSION_DENIED, REASON) to
                 TapToPaySessionState.PendingActivation,
             PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON) to
@@ -141,6 +148,7 @@ class TapToPaySessionFailuresTest {
                 DeviceActivationException.AssertionRejected::class,
                 DeviceActivationException.RequestRejected::class,
                 DeviceActivationException.Unclassified::class,
+                CardReaderException.ReadFailed::class,
             ),
             unchanged,
         )

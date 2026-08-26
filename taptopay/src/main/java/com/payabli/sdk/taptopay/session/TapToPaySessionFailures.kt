@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.session
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
@@ -44,6 +45,7 @@ internal object TapToPaySessionFailures {
             is AttestationException -> landingForAttestation(failure)
             is DeviceKeyException -> landingForDeviceKey(failure)
             is DeviceIneligibleException -> failed(DEVICE_INELIGIBLE)
+            is CardReaderException -> landingForReader(failure)
             is PayabliException -> landingForTransport(failure)
             else -> failed(SDK_INTERNAL_ERROR)
         }
@@ -96,6 +98,16 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException.AssertionRejected -> null
             is DeviceActivationException.RequestRejected -> null
             is DeviceActivationException.Unclassified -> null
+        }
+
+    /** Naming the expired session is what lets a charge ask for a repair instead of a rebuild. */
+    private fun landingForReader(failure: CardReaderException): TapToPaySessionState? =
+        when (failure) {
+            is CardReaderException.CredentialsUnusable -> failed(CONFIGURATION_REJECTED)
+            is CardReaderException.ArmingFailed -> failed(SERVICE_UNAVAILABLE)
+            is CardReaderException.SessionUnusable -> TapToPaySessionState.SessionExpired
+            // The tap failed and the session did not. Nothing about the session changed.
+            is CardReaderException.ReadFailed -> null
         }
 
     /**

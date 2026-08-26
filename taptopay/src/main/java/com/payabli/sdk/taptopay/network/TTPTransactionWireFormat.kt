@@ -258,7 +258,8 @@ internal fun updateSuccessBody(result: CardReadResult): JsonObject {
 /** The wire shape of [TapToPayPaymentDetails]. */
 internal fun TapToPayPaymentDetails.toBody(): InitiatePaymentDetailsBody =
     InitiatePaymentDetailsBody(
-        totalAmount = totalAmount,
+        // The wire keeps the service's own key; the surface uses the name both platforms publish.
+        totalAmount = amount,
         serviceFee = serviceFee,
         currency = currency.trimOrNull()?.uppercase(),
         paymentDescription = paymentDescription.trimOrNull(),

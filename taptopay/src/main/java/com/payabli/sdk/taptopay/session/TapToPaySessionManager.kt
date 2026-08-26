@@ -37,6 +37,17 @@ internal class TapToPaySessionManager(
     /** Where the session has got to. Conflated, so a collector joining late sees the current value. */
     val state: StateFlow<TapToPaySessionState> = sink.asStateFlow()
 
+    private val readySink = MutableStateFlow(false)
+
+    /**
+     * Whether a payment can be taken right now.
+     *
+     * Its own flow, written wherever [state] is written, so the two cannot fall out of step. Deriving it
+     * with `stateIn` would need a scope, and a scope handed in from outside is a coroutine that never
+     * completes.
+     */
+    val isReady: StateFlow<Boolean> = readySink.asStateFlow()
+
     /**
      * Moves to [to] and then runs [work] under it.
      *
@@ -141,6 +152,7 @@ internal class TapToPaySessionManager(
             ) { "refused a session state change" }
         }
         if (published) {
+            readySink.value = to == TapToPaySessionState.Ready
             logger.info(
                 LogField.safe("event", "ttp_session_state"),
                 LogField.safe("state", to.diagnosticName),

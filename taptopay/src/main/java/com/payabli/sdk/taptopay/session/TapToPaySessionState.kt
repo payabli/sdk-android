@@ -12,7 +12,7 @@ package com.payabli.sdk.taptopay.session
  * [Failed], not `Error`: `kotlin.Error` is default-imported and is a `Throwable`, so a member of that name
  * needs qualifying anywhere a session and a throwable are handled together.
  */
-internal sealed interface TapToPaySessionState {
+public sealed interface TapToPaySessionState {
     /** Nothing has been attempted, or the last attempt was withdrawn. Reachable from every state. */
     data object Idle : TapToPaySessionState
 

@@ -90,7 +90,8 @@ class DeviceActivationLiveTest {
     @After
     fun forgetTheDevice() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The service's row stays: it is what the next run is recognised by.
+            // This class drives the cold sequence, so it starts from nothing stored and every run registers
+            // another device against the paypoint. The other live classes keep their record.
             AttestedDeviceStore(DeviceTrust.open(context).store).clear(LiveRunSettings.entry)
         }
 
@@ -186,7 +187,7 @@ class DeviceActivationLiveTest {
                     )
 
                 val thrown =
-                    runCatching { enrollment(description).confirmActivation(code) }.exceptionOrNull()
+                    runCatching { enrollment(description).activateDevice(code) }.exceptionOrNull()
 
                 Log.i(LIVE_TAG, "activate refused with ${thrown?.javaClass?.simpleName}")
                 assertTrue(
@@ -229,7 +230,7 @@ class DeviceActivationLiveTest {
                         deviceId = record.deviceId,
                     )
 
-                enrollment.confirmActivation(code)
+                enrollment.activateDevice(code)
 
                 // Success is reaching here. Nothing is written on activation, so what is asserted is that
                 // the binding survives and a second run is answered from it without re-attesting.

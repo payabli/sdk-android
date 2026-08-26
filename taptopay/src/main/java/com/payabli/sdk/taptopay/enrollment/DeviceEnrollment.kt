@@ -78,7 +78,7 @@ internal class DeviceEnrollment(
     /**
      * Serialises the two entry points against each other.
      *
-     * Without it a concurrent [enroll] can re-register underneath a [confirmActivation] and the code is then
+     * Without it a concurrent [enroll] can re-register underneath a [activateDevice] and the code is then
      * spent against a handle the service has just replaced.
      */
     private val lock = Mutex()
@@ -182,7 +182,7 @@ internal class DeviceEnrollment(
      * The code's shape is checked here, because a code that is sent counts against the attempt limit and a
      * typo should not spend one.
      */
-    suspend fun confirmActivation(activationCode: String) {
+    suspend fun activateDevice(activationCode: String) {
         lock.withLock {
             if (!SIX_DIGITS.matches(activationCode)) throw DeviceActivationException.CodeMalformed()
 

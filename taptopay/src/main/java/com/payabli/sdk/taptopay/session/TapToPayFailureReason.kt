@@ -9,7 +9,7 @@ package com.payabli.sdk.taptopay.session
  * it, and a `Throwable` carries a cause chain that can hold a response body. The exception still reaches
  * the caller that was waiting, by being thrown.
  */
-internal enum class TapToPayFailureReason {
+public enum class TapToPayFailureReason {
     /**
      * The device's proof of identity is gone or was refused, so the session must be built from the top.
      *
