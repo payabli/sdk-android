@@ -4,6 +4,8 @@ import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationFailures
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -83,6 +85,43 @@ class DeviceRouteTelemetryTest {
                 TelemetryProperties.Outcome.FAILED,
                 recorded.single().second[TelemetryProperty.OUTCOME.key],
             )
+        }
+
+    /**
+     * A refusal the caller mapped to its own type is still a refusal.
+     *
+     * `/activate` is the only route whose caller hands in a mapper producing something outside the two types
+     * the measurement catches: `DeviceActivationException` extends `Exception` directly, where every other
+     * mapper returns a `DeviceServiceException`. So the one route that can refuse a payer's code was the one
+     * route reporting nothing when it did.
+     */
+    @Test
+    fun `an activation refusal mapped by its caller is still reported`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeDeviceTransport.answering(declineEnvelope(400, "Invalid activation code"))
+
+            val raised =
+                runCatching {
+                    DeviceServiceClient(transport, logger).activate(
+                        entry = ENTRY_POINT,
+                        deviceId = "a-device-id",
+                        activationCode = "000000",
+                        assertion =
+                            DeviceAssertion(
+                                assertion = "an-assertion",
+                                keyId = "key-id-value",
+                                deviceId = "a-device-id",
+                                timestamp = "2026-08-27T00:00:00Z",
+                            ),
+                        failureMapper = DeviceActivationFailures(logger),
+                    )
+                }.exceptionOrNull()
+
+            assertTrue("the caller's mapper did not run: $raised", raised is DeviceActivationException)
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.TTP_DEVICE_ACTIVATE_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.REFUSED, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals("400", properties[TelemetryProperty.CODE.key])
         }
 
     private companion object {

@@ -19,6 +19,7 @@ import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.attestation.AttestationToken
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
@@ -353,6 +354,12 @@ internal class DeviceServiceClient(
             throw cancellation
         } catch (refusal: DeviceServiceException) {
             report(route, outcomeOf(refusal), refusal.resultCode, startedAt)
+            throw refusal
+        } catch (refusal: DeviceActivationException) {
+            // `/activate` is the one route whose caller maps refusals to its own type, which extends neither
+            // of the two below. Without this the only route that can refuse a payer's code reported nothing
+            // when it did.
+            report(route, TelemetryProperties.Outcome.REFUSED, refusal.resultCode, startedAt)
             throw refusal
         } catch (failure: PayabliException) {
             report(route, TelemetryProperties.Outcome.FAILED, null, startedAt)
