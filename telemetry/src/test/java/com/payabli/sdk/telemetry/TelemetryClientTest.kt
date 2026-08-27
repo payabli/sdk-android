@@ -275,10 +275,9 @@ class TelemetryClientTest {
     /**
      * A refused batch does not take the count with it.
      *
-     * The events of a refused batch are discarded on purpose, but the count describes the gap rather than
-     * filling it. Losing it with them is what makes an offline stream that overflowed arrive looking quiet:
-     * the first attempt consumes the count, the uploader swallows the refusal, and the batch that finally
-     * lands reports nothing.
+     * A refused batch's events are not retried, and the uploader swallows the refusal, so a count taken
+     * with them is a count nobody sees: the batch that finally lands reports none, and a stream that
+     * overflowed while offline arrives looking quiet.
      */
     @Test
     fun aCountSurvivesTheBatchThatWasRefused() =
