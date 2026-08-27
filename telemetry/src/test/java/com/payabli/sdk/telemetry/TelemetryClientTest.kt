@@ -3,6 +3,7 @@
 package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -268,6 +269,42 @@ class TelemetryClientTest {
                 repeat(2) { record(client) }
 
                 assertTrue(transport.bodyAsText(), !transport.bodyAsText().contains("dropped"))
+            }
+        }
+
+    /**
+     * A refused batch does not take the count with it.
+     *
+     * The events of a refused batch are discarded on purpose, but the count describes the gap rather than
+     * filling it. Losing it with them is what makes an offline stream that overflowed arrive looking quiet:
+     * the first attempt consumes the count, the uploader swallows the refusal, and the batch that finally
+     * lands reports nothing.
+     */
+    @Test
+    fun aCountSurvivesTheBatchThatWasRefused() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var refuse = true
+            val transport =
+                FakeTransport {
+                    if (refuse) {
+                        PayabliResponse(statusCode = 500, headers = emptyMap(), body = ByteArray(0))
+                    } else {
+                        FakeTransport.accepted()
+                    }
+                }
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
+                repeat(10) { record(client) }
+                client.flush()
+
+                refuse = false
+                record(client)
+                client.flush()
+
+                assertTrue(
+                    "the refused batch took the count with it: ${transport.bodyAsText(1)}",
+                    transport.bodyAsText(1).contains(""""droppedSinceLastSend":6"""),
+                )
             }
         }
 

@@ -148,7 +148,12 @@ internal class TelemetryClient(
                     LogField.safe("dropped", dropped),
                 ) { "queue was full; oldest events evicted" }
             }
-            uploader.send(batch, dropped)
+
+            // The events of a refused batch are gone, deliberately: the response says nothing about their
+            // content, so a retry would repeat whatever was refused. The count of what the queue evicted is
+            // not gone with them, because it describes the gap rather than filling it, and a stream that
+            // overflows while offline would otherwise arrive looking quiet.
+            if (!uploader.send(batch, dropped)) queue.restoreDropCount(dropped)
             true
         }
 }

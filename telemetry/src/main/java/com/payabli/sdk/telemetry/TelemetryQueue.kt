@@ -66,8 +66,8 @@ internal class TelemetryQueue(
     /**
      * How many events have been evicted since this was last asked, and resets the count.
      *
-     * Read once per flush and reported in a log record. Nothing else learns that events were lost, and a
-     * queue silently discarding is how a gap in a chart gets mistaken for a quiet period.
+     * A queue that discards silently is how a gap in a chart gets mistaken for a quiet period, so the count
+     * rides the next batch that is accepted. [restoreDropCount] puts it back when that batch is not.
      */
     fun takeDropCount(): Int =
         synchronized(lock) {
@@ -75,4 +75,15 @@ internal class TelemetryQueue(
             droppedSinceLastDrain = 0
             dropped
         }
+
+    /**
+     * Returns an unreported count to the queue, to travel with the next batch that is accepted.
+     *
+     * Added rather than assigned, under the same lock: evictions carry on during a send, and overwriting
+     * would discard whatever was counted while the request was in flight.
+     */
+    fun restoreDropCount(dropped: Int) {
+        if (dropped <= 0) return
+        synchronized(lock) { droppedSinceLastDrain += dropped }
+    }
 }
