@@ -50,6 +50,32 @@ class TelemetryBootstrapTest {
         }
 
     /**
+     * A module that throws on the way out does not leave a session behind it.
+     *
+     * Starting one is absorbed; stopping one was not, although it is the same untrusted code called at a
+     * worse moment. The throw came out between publishing `Uninitialized` and clearing the install, so the
+     * state said no session while a live one was still held, and the next initialize found it.
+     *
+     * Reachable from the tests rather than from a host, since teardown is test-only, which is what makes it
+     * worth pinning: the failure surfaces as an unrelated test in the same process seeing a session it never
+     * installed.
+     */
+    @Test
+    fun aModuleThatThrowsOnStopDoesNotStrandTheSession() =
+        runTest {
+            TelemetryBootstraps.implementation = BootstrapThatThrowsOnStop::class.java.name
+            TelemetryBootstraps.forget()
+            install()
+
+            PayabliSession.reset()
+
+            assertEquals(SdkState.Uninitialized, PayabliSession.state.value)
+            TelemetryBootstraps.implementation = TelemetryBootstrap.IMPLEMENTATION
+            TelemetryBootstraps.forget()
+            assertEquals("a-second-entry-point", install(entryPoint = "a-second-entry-point").telemetry.entryPoint)
+        }
+
+    /**
      * The build an integrator gets when they depend on `:core` and nothing else.
      *
      * The lookup misses, no recorder is installed, and every one of these has to be a no-op rather than a
@@ -163,12 +189,12 @@ class TelemetryBootstrapTest {
         assertEquals(first, second)
     }
 
-    private suspend fun install(): PayabliSession =
+    private suspend fun install(entryPoint: String = "an-entry-point"): PayabliSession =
         PayabliSession
             .initializeWith(
                 PayabliConfig(
                     accessToken = "a-token",
-                    entryPoint = "an-entry-point",
+                    entryPoint = entryPoint,
                     environment = PayabliEnvironment.SANDBOX,
                 ),
             ) { UnusedTransport }

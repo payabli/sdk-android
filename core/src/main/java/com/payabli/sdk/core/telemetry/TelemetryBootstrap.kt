@@ -125,6 +125,27 @@ internal object TelemetryBootstraps {
     }
 
     /**
+     * Stops the module if there is one, and absorbs whatever it does.
+     *
+     * The same code `start` is, and the caller is tearing a session down: a throw here left the teardown
+     * half done, with the module still registered and the session neither retired nor cleared. A module that
+     * cannot stop is forgotten, as one that cannot start is.
+     */
+    @Synchronized
+    fun stopInstalled() {
+        val module = installed() ?: return
+        try {
+            module.stop()
+        } catch (failure: RuntimeException) {
+            unusable(failure)
+            forgetUnusable()
+        } catch (failure: LinkageError) {
+            unusable(failure)
+            forgetUnusable()
+        }
+    }
+
+    /**
      * Unwinds a module that threw while starting.
      *
      * `stop` is the same untrusted code, so it is absorbed the same way. Forgetting it is what keeps the
@@ -137,6 +158,11 @@ internal object TelemetryBootstraps {
             // Already reported as unusable. A module that cannot stop either has nothing left to say.
         } catch (_: LinkageError) {
         }
+        forgetUnusable()
+    }
+
+    /** Drops a module that cannot be run, so the next lookup does not find it again. */
+    private fun forgetUnusable() {
         resolved = null
         lookedUp = true
     }

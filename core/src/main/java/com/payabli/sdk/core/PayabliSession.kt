@@ -164,7 +164,7 @@ public class PayabliSession private constructor(
             sink.value = SdkState.Uninitialized
 
             lock.withLock {
-                TelemetryBootstraps.installed()?.stop()
+                TelemetryBootstraps.stopInstalled()
                 installed?.machine?.finish()
                 installed = null
                 sink.value = SdkState.Uninitialized

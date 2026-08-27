@@ -41,6 +41,16 @@ class BootstrapThatThrowsOnStartAndStop : TelemetryBootstrap {
     override fun stop(): Unit = throw IllegalStateException("and it cannot be unwound either")
 }
 
+/** A module that starts cleanly and then throws on the way out, which is the teardown path's own hazard. */
+class BootstrapThatThrowsOnStop : TelemetryBootstrap {
+    override fun start(
+        session: PayabliSession,
+        host: HostBindings?,
+    ) = Unit
+
+    override fun stop(): Unit = throw IllegalStateException("the queue could not be drained")
+}
+
 /** Counts what it was asked to do, for the assertions about being stopped and forgotten. */
 class CountingBootstrap : TelemetryBootstrap {
     override fun start(
