@@ -4,7 +4,6 @@ import com.payabli.sdk.core.PayabliSdkVersion
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
-import com.payabli.sdk.core.telemetry.TelemetryDigest
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
@@ -60,8 +59,7 @@ class TelemetryUploaderTest {
                     """"environment":"sandbox","event":"payin.capture.completed",""" +
                     """"properties":{"outcome":"approved"},""" +
                     """"deviceIdHash":"9f2c4b7e1a05d38c6e4b90f7c2a1d5e3","deviceType":"Softpos",""" +
-                    """"deviceOs":"Android","osVersion":"14","modelName":"Pixel 7a",""" +
-                    """"entryHash":"2cdd1350178a0114c62f4a2eb59400ce"}]}""",
+                    """"deviceOs":"Android","osVersion":"14","modelName":"Pixel 7a"}]}""",
                 transport.bodyAsText(),
             )
         }
@@ -124,11 +122,12 @@ class TelemetryUploaderTest {
     /**
      * Which app, beside which merchant, since one entry point serves several of them.
      *
-     * Both are digests, and the entry point rides the batch in the clear regardless, because that is what
-     * authorizes the request. What this keeps out of the event bodies is the raw name.
+     * Both in the clear. The entry point is a public identifier, which Payabli's own embedded components put
+     * in browser JavaScript, and it rides the batch envelope regardless because that is what authorizes the
+     * request; a digest beside it would carry nothing the batch does not already say.
      */
     @Test
-    fun theEntryPointAndTheApplicationAreCarriedAsDigests() =
+    fun theApplicationIsCarriedBesideTheEntryPoint() =
         runTest {
             val transport = FakeTransport()
             val installed =
@@ -144,16 +143,15 @@ class TelemetryUploaderTest {
                             os = "Android",
                             osVersion = "14",
                             modelName = "Pixel 7a",
-                            packageHash = TelemetryDigest.of("com.payabli.example.app"),
+                            packageName = "com.payabli.example.app",
                         ),
                 )
 
             TelemetryUploader(transport, installed, logger).send(listOf(anEvent(installed)))
 
             val body = transport.bodyAsText()
-            assertTrue(body, body.contains(""""entryHash":"2cdd1350178a0114c62f4a2eb59400ce""""))
-            assertTrue(body, body.contains(""""packageHash":"837c57db307b1a3804b08e751641057f""""))
-            assertFalse("the raw package name reached an event: $body", body.contains("com.payabli.example.app"))
+            assertTrue(body, body.contains(""""entry":"an-entry-point""""))
+            assertTrue(body, body.contains(""""packageName":"com.payabli.example.app""""))
         }
 
     /**
@@ -178,7 +176,7 @@ class TelemetryUploaderTest {
             TelemetryUploader(transport, unidentified, logger).send(listOf(anEvent(unidentified)))
 
             val body = transport.bodyAsText()
-            listOf("deviceIdHash", "deviceType", "deviceOs", "osVersion", "modelName", "packageHash")
+            listOf("deviceIdHash", "deviceType", "deviceOs", "osVersion", "modelName", "packageName")
                 .forEach { field ->
                     assertFalse("$field was sent by a run with no device: $body", body.contains(field))
                 }

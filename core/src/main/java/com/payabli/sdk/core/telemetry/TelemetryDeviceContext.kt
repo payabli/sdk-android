@@ -31,13 +31,8 @@ public class TelemetryDeviceContext(
     public val osVersion: String,
     /** The handset, as the platform states it: `Pixel 7a`. */
     public val modelName: String,
-    /**
-     * Which app this is, as a digest.
-     *
-     * One entry point serves several applications, so this is what tells them apart. A digest for the reason
-     * [idHash] is one: the raw name is enumerable and identifies a partner's product. See [TelemetryDigest].
-     */
-    public val packageHash: String = "",
+    /** Which app this is. One entry point serves several, so this is what tells them apart. */
+    public val packageName: String = "",
 ) {
     /** Withholds nothing: not one of these identifies a merchant, a payer or an account. */
     override fun toString(): String =
@@ -53,7 +48,7 @@ public class TelemetryDeviceContext(
                 os = "",
                 osVersion = "",
                 modelName = "",
-                packageHash = "",
+                packageName = "",
             )
     }
 }

@@ -114,8 +114,7 @@ internal class TelemetryUploader(
             deviceOs = session.device.os.ifBlank { null },
             osVersion = session.device.osVersion.ifBlank { null },
             modelName = session.device.modelName.ifBlank { null },
-            entryHash = session.entryHash.ifBlank { null },
-            packageHash = session.device.packageHash.ifBlank { null },
+            packageName = session.device.packageName.ifBlank { null },
         )
 
     internal companion object {

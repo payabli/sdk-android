@@ -33,15 +33,6 @@ public class TelemetrySessionContext(
     public val device: TelemetryDeviceContext,
 ) {
     /**
-     * [entryPoint] as a digest, which is what an event carries.
-     *
-     * The batch still carries the entry point itself, because that is what authorizes the request. This is
-     * what everything reading event bodies groups by, so the raw value is absent from there. See
-     * [TelemetryDigest] for the derivation, which the sibling platform has to match.
-     */
-    public val entryHash: String = TelemetryDigest.of(entryPoint)
-
-    /**
      * Withholds the entry point, matching `PayabliConfig.toString`. It names a specific merchant, and this
      * string reaches exception messages and crash reports.
      */
