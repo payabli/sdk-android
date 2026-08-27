@@ -38,28 +38,30 @@ internal class TelemetryUploader(
     suspend fun send(
         batch: List<QueuedTelemetryEvent>,
         droppedSinceLastSend: Int = 0,
-    ) {
-        if (batch.isEmpty()) return
-
-        val body =
-            TelemetryBatchBody(
-                entry = context.entryPoint,
-                events = batch.map { it.toBody() },
-                droppedSinceLastSend = droppedSinceLastSend.takeIf { it > 0 },
-            )
-        val request =
-            PayabliRequest.json(
-                method = HttpMethod.POST,
-                path = ROUTE,
-                body = body,
-                bodySerializer = TelemetryBatchBody.serializer(),
-                route = ROUTE,
-                // A rejected credential here must not spend the session's one refresh, and must not be able
-                // to condemn a session a payment is using.
-                isCredentialPinned = true,
-            )
+    ): Boolean {
+        if (batch.isEmpty()) return false
 
         try {
+            // Assembly is inside the guard. `PayabliRequest.json` serializes as it builds, so a wire model
+            // that cannot encode raises here, and outside the guard that reaches the thread's default handler.
+            val body =
+                TelemetryBatchBody(
+                    entry = context.entryPoint,
+                    events = batch.map { it.toBody() },
+                    droppedSinceLastSend = droppedSinceLastSend.takeIf { it > 0 },
+                )
+            val request =
+                PayabliRequest.json(
+                    method = HttpMethod.POST,
+                    path = ROUTE,
+                    body = body,
+                    bodySerializer = TelemetryBatchBody.serializer(),
+                    route = ROUTE,
+                    // A rejected credential here must not spend the session's one refresh, and must not be
+                    // able to condemn a session a payment is using.
+                    isCredentialPinned = true,
+                )
+
             val response = transport.execute(request)
             if (response.isSuccessful) {
                 logger.debug(
@@ -67,6 +69,7 @@ internal class TelemetryUploader(
                     LogField.safe("route", ROUTE),
                     LogField.safe("statusCode", response.statusCode),
                 ) { "sent ${batch.size} events" }
+                return true
             } else {
                 logger.debug(
                     LogField.safe("event", "telemetry_batch_refused"),
@@ -93,6 +96,7 @@ internal class TelemetryUploader(
                 LogField.safe("errorKind", failure.javaClass.simpleName),
             ) { "batch could not be sent; discarded" }
         }
+        return false
     }
 
     private fun QueuedTelemetryEvent.toBody(): TelemetryEventBody =

@@ -246,4 +246,40 @@ class TelemetryUploaderTest {
             properties = mapOf(TelemetryProperty.STATE.key to "ready"),
             occurredAtMillis = 1_755_000_000_000,
         )
+
+    /**
+     * A body that cannot be encoded is contained, not raised.
+     *
+     * `PayabliRequest.json` serializes as it builds, so assembling the request outside the guard put a
+     * `RuntimeException` on the background coroutine that calls this, where it reaches the thread's default
+     * handler and ends the host app. Nothing this module does may end a payment app.
+     *
+     * The unencodable value is reached through Java's map rather than through any input a call site can
+     * produce: what is under test is the boundary, and a guard wider than the failures known today is worth
+     * having only if tomorrow's does not have to be one of them.
+     */
+    @Test
+    fun aBodyThatCannotBeEncodedDoesNotEscape() =
+        runTest {
+            val transport = FakeTransport()
+            val uploader = TelemetryUploader(transport, context, logger)
+
+            @Suppress("UNCHECKED_CAST")
+            val unencodable =
+                java.util.LinkedHashMap<String?, String>().apply { put(null, "a-value") } as Map<String, String>
+
+            val sent =
+                uploader.send(
+                    listOf(
+                        QueuedTelemetryEvent(
+                            name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                            properties = unencodable,
+                            occurredAtMillis = 1_755_000_000_000,
+                        ),
+                    ),
+                )
+
+            assertFalse("an unsendable batch reported as sent", sent)
+            assertTrue("the request was assembled and sent anyway", transport.sent.isEmpty())
+        }
 }
