@@ -276,8 +276,7 @@ class TelemetryClientTest {
      * A record keeps the session it was made under, whichever channel ends up sending it.
      *
      * An operation that starts under one session and answers after a re-initialize is recorded on the
-     * successor's channel, because that is what is installed by then. The identity used to be written from
-     * the sending channel, so the record arrived carrying the wrong session id.
+     * successor's channel, since that is what is installed by then.
      */
     @Test
     fun aRecordCarriesTheSessionItWasMadeUnder() =
@@ -397,12 +396,23 @@ class TelemetryClientTest {
     @Test
     fun aFlushWithNothingToSendDoesNotConsumeTheCount() =
         runTest(timeout = TEST_TIMEOUT) {
-            val transport = FakeTransport()
+            var refuse = true
+            val transport =
+                FakeTransport {
+                    if (refuse) {
+                        PayabliResponse(statusCode = 500, headers = emptyMap(), body = ByteArray(0))
+                    } else {
+                        FakeTransport.accepted()
+                    }
+                }
 
             withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
+                // Refused, so the count goes back to the queue and is still owed while nothing is queued.
+                // Reported instead, the counter would be zero here and this would pass against the defect.
                 repeat(10) { record(client) }
                 client.flush()
                 transport.sent.clear()
+                refuse = false
 
                 // Nothing queued, so this sends nothing and must take nothing.
                 client.flush()
@@ -410,8 +420,8 @@ class TelemetryClientTest {
                 record(client)
                 client.flush()
                 assertTrue(
-                    "a later batch reported drops that were already reported",
-                    !transport.bodyAsText().contains("droppedSinceLastSend"),
+                    "the empty flush consumed what was still owed: ${transport.bodyAsText()}",
+                    transport.bodyAsText().contains(""""droppedSinceLastSend":6"""),
                 )
             }
         }
