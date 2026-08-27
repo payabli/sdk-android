@@ -90,6 +90,7 @@ class TelemetryOnDeviceTest {
             "deviceOs" to device.os,
             "osVersion" to device.osVersion,
             "modelName" to device.modelName,
+            "packageName" to device.packageName,
         ).forEach { (field, value) ->
             if (value.isBlank()) {
                 assertFalse("$field was sent blank rather than omitted: $body", body.contains(field))
@@ -101,6 +102,7 @@ class TelemetryOnDeviceTest {
         assertEquals("Android", device.os)
         assertTrue("the platform reported no model", device.modelName.isNotBlank())
         assertTrue("the platform reported no release", device.osVersion.isNotBlank())
+        assertEquals(context.packageName, device.packageName)
 
         // No device type, because this test application takes no card-present payments and so can hold no
         // device record. That is the negative case on real hardware; the positive one cannot be shown from
