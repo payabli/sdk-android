@@ -55,6 +55,11 @@ public object TelemetryRecorders {
         event: String,
         properties: () -> Map<String, String> = { emptyMap() },
     ) {
+        // The opt-out is the one that was in force when the operation ran. A session with reporting off
+        // installs no recorder, so nothing of its own can reach here; a successor that enabled it does have
+        // one, and without this the earlier session's work would leave on it.
+        if (!session.telemetryEnabled) return
+
         val recorder = current() ?: return
         try {
             if (recorder is SessionScopedRecorder) {

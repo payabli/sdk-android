@@ -1,5 +1,6 @@
 package com.payabli.sdk.core.telemetry
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -25,6 +26,48 @@ class TelemetryRecordersTest {
 
         assertEquals(listOf(TelemetryEvents.SDK_INITIALIZED to mapOf("state" to "ready")), seen)
     }
+
+    /**
+     * A record from a session that had reporting off does not leave on a session that has it on.
+     *
+     * The opt-out that counts is the one in force when the operation ran. Nothing of that session's own can
+     * reach an installed recorder, because it installs none; what can is an operation that started under it
+     * and finished after a successor with reporting enabled took over.
+     */
+    @Test
+    fun aRecordFromAnOptedOutSessionIsNotDelivered() {
+        val seen = mutableListOf<String>()
+        var built = 0
+        TelemetryRecorders.install { event, _ -> seen += event }
+
+        TelemetryRecorders.recordFor(aSession(telemetryEnabled = false), TelemetryEvents.PAYIN_CAPTURE_COMPLETED) {
+            built++
+            emptyMap()
+        }
+
+        assertTrue(seen.isEmpty())
+        assertEquals("the properties were built for an event nobody may have", 0, built)
+    }
+
+    /** And the same call for a session that allows it is delivered. */
+    @Test
+    fun aRecordFromAnEnabledSessionIsDelivered() {
+        val seen = mutableListOf<String>()
+        TelemetryRecorders.install { event, _ -> seen += event }
+
+        TelemetryRecorders.recordFor(aSession(telemetryEnabled = true), TelemetryEvents.PAYIN_CAPTURE_COMPLETED)
+
+        assertEquals(listOf(TelemetryEvents.PAYIN_CAPTURE_COMPLETED), seen)
+    }
+
+    private fun aSession(telemetryEnabled: Boolean) =
+        TelemetrySessionContext(
+            entryPoint = "an-entry-point",
+            environment = PayabliEnvironment.SANDBOX,
+            telemetryEnabled = telemetryEnabled,
+            sessionId = "a-session",
+            device = TelemetryDeviceContext.NONE,
+        )
 
     @Test
     fun clearingStopsDelivery() {
