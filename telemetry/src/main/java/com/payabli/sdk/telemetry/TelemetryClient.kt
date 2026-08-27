@@ -56,7 +56,7 @@ internal class TelemetryClient(
     private val flushes: Job =
         scope.launch {
             for (request in flushRequests) {
-                flush()
+                drainWhatWasWaiting()
             }
         }
 
@@ -117,7 +117,27 @@ internal class TelemetryClient(
             }.invokeOnCompletion { scope.cancel() }
     }
 
-    /** Asks for a flush. The `Unit` is a signal: one of these drains a whole batch. */
+    /**
+     * Sends what was queued when the signal was taken, in as many requests as that needs.
+     *
+     * One request per signal was not enough, because the channel conflates: an upload that stalls while a
+     * burst fills the queue collapses every request made meanwhile into one, and the single request that
+     * followed sent the oldest hundred. A failure queued behind them then waited for the timer, having asked
+     * to leave at once.
+     *
+     * Bounded by the count read here rather than by the queue emptying: whatever arrives during these
+     * requests carries its own signal, and chasing it would hold this coroutine against every emitting
+     * thread.
+     */
+    private suspend fun drainWhatWasWaiting() {
+        val waiting = queue.size()
+        var requests = ((waiting + maxEventsPerRequest - 1) / maxEventsPerRequest).coerceIn(1, maxDrainRequests)
+        while (requests > 0 && flush()) {
+            requests--
+        }
+    }
+
+    /** Asks for a flush. The `Unit` is a signal: one of these drains what is waiting. */
     fun flushAsync() {
         flushRequests.trySend(Unit)
     }

@@ -273,6 +273,36 @@ class TelemetryClientTest {
         }
 
     /**
+     * One signal sends what was waiting when it was taken, not one request's worth of it.
+     *
+     * The channel conflates, so every request made while an upload is parked collapses into one. Answering it
+     * with a single batch left the rest of a burst waiting for the timer, including anything that had asked
+     * to leave at once, which is the whole of what the force-send tier promises.
+     */
+    @Test
+    fun oneSignalDrainsWhatTheStallHadQueued() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+            transport.stall()
+
+            withClient(transport, batchSize = 100, maxEventsPerRequest = 100, capacity = 500) { client ->
+                // One event, and a flush that reaches the transport and parks there holding it.
+                record(client)
+                client.flushAsync()
+
+                // Two and a half requests' worth arrive behind it, and every request they ask for is one
+                // pending signal by the time anything reads it.
+                repeat(250) { record(client) }
+
+                transport.release()
+
+                // Nothing flushes here. A rescue would pass whether or not the signal covers more than a
+                // single batch, which is the thing under test.
+                assertEquals("the burst was left for the timer", 251, transport.eventsSent())
+            }
+        }
+
+    /**
      * A refused batch does not take the count with it.
      *
      * A refused batch's events are not retried, and the uploader swallows the refusal, so a count taken
