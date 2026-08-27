@@ -145,6 +145,45 @@ class PayInSubmissionTelemetryTest {
         }
 
     /**
+     * The report names the entry point the request was sent to, not the session's.
+     *
+     * A flow takes its entry point independently of the session, so the two can differ. Reporting the
+     * session's would file one merchant's payment under another, which is the same error as reading the
+     * identity from the sending channel and arrives by a different route.
+     */
+    @Test
+    fun `an outcome is reported under the entry point the request was sent to`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val seen = mutableListOf<TelemetrySessionContext>()
+            TelemetryRecorders.install(
+                object : TelemetryRecorder, SessionScopedRecorder {
+                    override fun record(
+                        event: String,
+                        properties: Map<String, String>,
+                    ) = Unit
+
+                    override fun record(
+                        event: String,
+                        properties: Map<String, String>,
+                        session: TelemetrySessionContext,
+                    ) {
+                        seen += session
+                    }
+                },
+            )
+            val submission = submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION), aTestSession())
+
+            submission.submit("another-entry-point", captureOf(), cardForm())
+
+            assertEquals("another-entry-point", seen.single().entryPoint)
+            assertEquals(
+                "the run is still the same run",
+                "the-session-this-flow-was-built-for",
+                seen.single().sessionId,
+            )
+        }
+
+    /**
      * A field the service rejects is the service refusing, and it is not the same number.
      *
      * `PayabliValidationException` carries `VALIDATION_ERROR`, and so does the exception this module raises

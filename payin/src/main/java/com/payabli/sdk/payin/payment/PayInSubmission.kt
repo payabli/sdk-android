@@ -76,7 +76,7 @@ internal class PayInSubmission(
         values: PayInFormValues,
         onReserved: (Boolean) -> Unit = {},
     ): PayInSubmissionState? =
-        perform(operation.event, onReserved) { retry ->
+        perform(operation.event, entryPoint, onReserved) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
             // once here, so all three operations carry what the same form collected.
             val entered = PayInEnteredDetails.of(values)
@@ -135,6 +135,7 @@ internal class PayInSubmission(
      */
     private suspend fun perform(
         event: String,
+        entryPoint: String? = null,
         onReserved: (Boolean) -> Unit = {},
         call: suspend (RetryKey) -> PayInSubmissionState,
     ): PayInSubmissionState? {
@@ -145,7 +146,7 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_already_in_flight")) {
                 "a submission is already in flight, so this one was refused"
             }
-            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null)
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint)
             return null
         }
         // Starting here would overwrite an outcome nothing has read yet, and a taken payment would leave no
@@ -156,7 +157,7 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_outcome_unacknowledged")) {
                 "an outcome has not been acknowledged, so this submission was refused"
             }
-            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null)
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint)
             return null
         }
         onReserved(true)
@@ -178,7 +179,7 @@ internal class PayInSubmission(
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
             outcome?.let {
                 sink.value = it
-                report(event, outcomeOf(it), codeOf(it), startedAt)
+                report(event, outcomeOf(it), codeOf(it), startedAt, entryPoint)
             }
             inFlight.unlock()
         }
@@ -221,9 +222,14 @@ internal class PayInSubmission(
         outcome: String,
         code: String?,
         startedAt: Long?,
+        entryPoint: String?,
     ) {
-        if (session != null) {
-            TelemetryRecorders.recordFor(session, event) { measurements(outcome, code, startedAt) }
+        // The entry point the request was sent to, which a capability can be pointed at independently of the
+        // one the session was configured with. Reporting the session's would file it under another merchant.
+        val attributed = if (entryPoint == null) session else session?.forEntryPoint(entryPoint)
+
+        if (attributed != null) {
+            TelemetryRecorders.recordFor(attributed, event) { measurements(outcome, code, startedAt) }
         } else {
             TelemetryRecorders.record(event) { measurements(outcome, code, startedAt) }
         }

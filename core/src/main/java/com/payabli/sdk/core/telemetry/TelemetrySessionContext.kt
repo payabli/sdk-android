@@ -33,6 +33,20 @@ public class TelemetrySessionContext(
     public val device: TelemetryDeviceContext,
 ) {
     /**
+     * This session, attributed to [entryPoint] instead of its own.
+     *
+     * A capability can be pointed at an entry point other than the one the session was configured with, and
+     * the report has to name the one the request was sent to. Everything else is the session's: the run is
+     * the same run and the device is the same device.
+     */
+    public fun forEntryPoint(entryPoint: String): TelemetrySessionContext =
+        if (entryPoint == this.entryPoint) {
+            this
+        } else {
+            TelemetrySessionContext(entryPoint, environment, telemetryEnabled, sessionId, device)
+        }
+
+    /**
      * Withholds the entry point, matching `PayabliConfig.toString`. It names a specific merchant, and this
      * string reaches exception messages and crash reports.
      */
