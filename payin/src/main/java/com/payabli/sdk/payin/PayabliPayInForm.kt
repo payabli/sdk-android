@@ -88,8 +88,11 @@ public fun PayabliPayInForm(
     val narrowingKey = operation.narrowingKey
     val offered = remember(narrowingKey, configuration) { operation.offering(configuration) }
 
-    // Keyed on nothing, so a recomposition is not a second presentation.
-    LaunchedEffect(Unit) { reportFormPresented(operation.step) }
+    // Keyed on the step for the same reason the narrowing is keyed on what it reads: an operation handed
+    // over inline is a new instance on every recomposition, and the step is a fixed word per flow. So a
+    // recomposition is not a second presentation, and a host that swaps the flow on screen is.
+    val step = operation.step
+    LaunchedEffect(step) { reportFormPresented(step) }
 
     PayInFormContent(
         submission = submission,

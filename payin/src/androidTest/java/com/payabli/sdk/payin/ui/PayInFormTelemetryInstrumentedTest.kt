@@ -2,6 +2,8 @@ package com.payabli.sdk.payin.ui
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -92,6 +94,43 @@ class PayInFormTelemetryInstrumentedTest {
 
         showForm()
         fillBank()
+        rule.waitForIdle()
+
+        assertEquals(1, recorded.count { it.first == TelemetryEvents.FORM_PRESENTED })
+    }
+
+    /**
+     * A host that swaps the flow on screen has presented a second form.
+     *
+     * This composable recomputes the instruments it offers when the operation changes, so the screen the
+     * payer sees changes with it. Keyed on nothing, the funnel then read as a capture presented and a stored
+     * method submitted, with no presentation for the flow that was actually filled in.
+     */
+    @Test
+    fun changingTheOperationReportsTheFlowThatReplacedIt() {
+        listen()
+
+        val operation = mutableStateOf<PayabliPayInOperation>(PayabliPayInOperation.Capture(testOptions()))
+        showForm(operation = operation)
+        rule.runOnUiThread { operation.value = PayabliPayInOperation.StoreMethod() }
+        rule.waitForIdle()
+
+        assertEquals(
+            listOf("capture", "store_method"),
+            recorded
+                .filter { it.first == TelemetryEvents.FORM_PRESENTED }
+                .mapNotNull { it.second[TelemetryProperty.STEP.key] },
+        )
+    }
+
+    /** And the same flow handed over as a fresh instance is the same presentation. */
+    @Test
+    fun aNewInstanceOfTheSameOperationDoesNotReportAgain() {
+        listen()
+
+        val operation = mutableStateOf<PayabliPayInOperation>(PayabliPayInOperation.Capture(testOptions()))
+        showForm(operation = operation)
+        rule.runOnUiThread { operation.value = PayabliPayInOperation.Capture(testOptions()) }
         rule.waitForIdle()
 
         assertEquals(1, recorded.count { it.first == TelemetryEvents.FORM_PRESENTED })
@@ -221,7 +260,10 @@ class PayInFormTelemetryInstrumentedTest {
             ),
         )
 
-    private fun showForm(transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION)) {
+    private fun showForm(
+        transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION),
+        operation: State<PayabliPayInOperation> = mutableStateOf(PayabliPayInOperation.Capture(testOptions())),
+    ) {
         val flow =
             PayabliPayInPaymentFlow(
                 transport = transport,
@@ -234,7 +276,7 @@ class PayInFormTelemetryInstrumentedTest {
             MaterialTheme {
                 PayabliPayInForm(
                     flow = flow,
-                    operation = PayabliPayInOperation.Capture(testOptions()),
+                    operation = operation.value,
                     configuration = bankForm(),
                     onCompleted = {},
                     onFailed = {},
