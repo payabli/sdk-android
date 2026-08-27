@@ -93,13 +93,15 @@ public class TelemetryModule : TelemetryBootstrap {
     }
 }
 
-/** Runs [block] on the main thread, inline when already there. `ProcessLifecycleOwner` requires it. */
+/**
+ * Runs [block] on the main looper, always by posting. `ProcessLifecycleOwner` requires that thread.
+ *
+ * Posting even when already there, so the registrations keep their order: run inline, a stop on the main
+ * thread removes the observer before a background start's posted add has run, and that add then installs a
+ * watcher nothing removes.
+ */
 private fun onMainThread(block: () -> Unit) {
-    if (Looper.myLooper() == Looper.getMainLooper()) {
-        block()
-    } else {
-        Handler(Looper.getMainLooper()).post(block)
-    }
+    Handler(Looper.getMainLooper()).post(block)
 }
 
 /**
