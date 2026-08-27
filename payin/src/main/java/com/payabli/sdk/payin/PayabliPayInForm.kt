@@ -92,19 +92,20 @@ public fun PayabliPayInForm(
     // the form on screen does. Not the operation itself: written inline it is a new instance on every
     // recomposition, which would count one opened form once per keystroke.
     val step = operation.step
-    LaunchedEffect(flow, step) { reportFormPresented(step) }
+    LaunchedEffect(flow, step) { reportFormPresented(flow.telemetry, step) }
 
     PayInFormContent(
         submission = submission,
         draft = flow.draft,
         configuration = offered,
+        telemetry = flow.telemetry,
         modifier = modifier,
         labels = labels,
         style = style,
         initialValues = initialValues,
         onSubmit = { values ->
             // Before the send, so a submit that never reaches the service is still counted.
-            reportFormSubmitted(operation.step)
+            reportFormSubmitted(flow.telemetry, operation.step)
             flow.start(operation, values)
         },
         onCompleted = { outcome ->

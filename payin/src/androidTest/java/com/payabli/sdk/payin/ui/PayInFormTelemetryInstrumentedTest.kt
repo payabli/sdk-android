@@ -9,13 +9,16 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliFieldError
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.FakePayInTransport
@@ -155,6 +158,45 @@ class PayInFormTelemetryInstrumentedTest {
         assertEquals(1, recorded.count { it.first == TelemetryEvents.FORM_PRESENTED })
     }
 
+    /**
+     * A form built under a session that had reporting off stays off, whatever replaced that session.
+     *
+     * A form outlives a re-initialize: the flow holds the retired session's transport and the composition
+     * holds the flow. Reported through whichever recorder is installed, presenting it after an enabled
+     * successor arrives emits events the host had opted out of, and under the successor's identity.
+     */
+    @Test
+    fun aFormFromAnOptedOutSessionReportsNothing() {
+        listen()
+
+        showForm(telemetry = aSession(telemetryEnabled = false))
+        fillBank()
+        submit()
+        rule.waitForIdle()
+
+        assertEquals(emptyList<Pair<String, Map<String, String>>>(), recorded)
+    }
+
+    /** And the same form under a session that allows it reports the funnel as usual. */
+    @Test
+    fun aFormFromAnEnabledSessionReportsAsUsual() {
+        listen()
+
+        showForm(telemetry = aSession(telemetryEnabled = true))
+        rule.waitForIdle()
+
+        assertEquals(1, recorded.count { it.first == TelemetryEvents.FORM_PRESENTED })
+    }
+
+    private fun aSession(telemetryEnabled: Boolean) =
+        TelemetrySessionContext(
+            entryPoint = TEST_ENTRY_POINT,
+            environment = PayabliEnvironment.SANDBOX,
+            telemetryEnabled = telemetryEnabled,
+            sessionId = "a-session",
+            device = TelemetryDeviceContext.NONE,
+        )
+
     @Test
     fun submittingIsReportedBeforeAnythingIsSent() {
         listen()
@@ -279,19 +321,23 @@ class PayInFormTelemetryInstrumentedTest {
             ),
         )
 
-    private fun aFlow(transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION)) =
-        PayabliPayInPaymentFlow(
-            transport = transport,
-            entryPoint = TEST_ENTRY_POINT,
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
-            dispatcher = Dispatchers.Main,
-            logger = RecordingSdkLogger(),
-        )
+    private fun aFlow(
+        transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION),
+        telemetry: TelemetrySessionContext? = null,
+    ) = PayabliPayInPaymentFlow(
+        transport = transport,
+        entryPoint = TEST_ENTRY_POINT,
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+        dispatcher = Dispatchers.Main,
+        logger = RecordingSdkLogger(),
+        telemetry = telemetry,
+    )
 
     private fun showForm(
         transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION),
         operation: State<PayabliPayInOperation> = mutableStateOf(PayabliPayInOperation.Capture(testOptions())),
-        flow: State<PayabliPayInPaymentFlow> = mutableStateOf(aFlow(transport)),
+        telemetry: TelemetrySessionContext? = null,
+        flow: State<PayabliPayInPaymentFlow> = mutableStateOf(aFlow(transport, telemetry)),
     ) {
         rule.setContent {
             MaterialTheme {

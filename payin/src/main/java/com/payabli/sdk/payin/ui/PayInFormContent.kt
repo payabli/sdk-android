@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
@@ -56,6 +57,7 @@ internal fun PayInFormContent(
     submission: PayInSubmissionState,
     draft: PayInFormDraft,
     configuration: PayInFormConfiguration,
+    telemetry: TelemetrySessionContext? = null,
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
@@ -115,7 +117,7 @@ internal fun PayInFormContent(
         val outcome = submission.takeIf { draft.submissionPending } ?: return@LaunchedEffect
         val rejected = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
 
-        reportRefusedFields(rejected)
+        reportRefusedFields(telemetry, rejected)
         draft.rejectedFields = rejected
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         draft.submissionPending = outcome.deliver(draft::clearInstrument, completed, failed)
