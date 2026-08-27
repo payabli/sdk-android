@@ -189,12 +189,6 @@ public class PayabliSession private constructor(
             host: HostBindings?,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
         ): Result<PayabliSession> {
-            // Before the lock and before a session exists. On the very first call nothing is listening —
-            // the channel is what this call creates — so this lands only on a re-initialize, which is the
-            // path where knowing that one was asked for at all is worth having.
-            TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
-                mapOf(TelemetryProperty.STATE.key to reportedState())
-            }
             val startedAt = System.nanoTime()
 
             return lock.withLock {
@@ -203,18 +197,30 @@ public class PayabliSession private constructor(
                 // The machine rather than [state], because this is a question about the session install
                 // holds. The published value is process-wide, and reading it here would let one stray write
                 // replace a healthy session, which is the two-sessions state this type exists to prevent.
-                if (current != null && !current.machine.isFinished) {
-                    return@withLock if (current.identity == identity) {
-                        Result.success(current)
-                    } else {
-                        val refusal =
-                            PayabliGenericException(
-                                PayabliErrorCode.INVALID_CONFIGURATION,
-                                REASON_ALREADY_INITIALIZED,
-                            )
-                        reportFailure(refusal, startedAt)
-                        Result.failure(refusal)
-                    }
+                val live = current != null && !current.machine.isFinished
+
+                // A call that changes nothing reports nothing. It used to report a start, which then had no
+                // outcome after it, and the pattern that produces it is the ordinary one: an Application and
+                // an Activity both initializing.
+                if (live && current!!.identity == identity) {
+                    return@withLock Result.success(current)
+                }
+
+                // After that check, so every start has an outcome after it. Nothing is listening on a first
+                // install or after a reset — the channel is what this call creates — so what this reaches is
+                // a re-initialize against a session that is already live.
+                TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
+                    mapOf(TelemetryProperty.STATE.key to reportedState())
+                }
+
+                if (live) {
+                    val refusal =
+                        PayabliGenericException(
+                            PayabliErrorCode.INVALID_CONFIGURATION,
+                            REASON_ALREADY_INITIALIZED,
+                        )
+                    reportFailure(refusal, startedAt)
+                    return@withLock Result.failure(refusal)
                 }
 
                 val machine = SessionStateMachine(sink)

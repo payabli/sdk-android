@@ -6,9 +6,9 @@ import kotlinx.serialization.Serializable
 /**
  * A batch of events, which is what one request carries.
  *
- * [entry] is on the batch rather than on each event because it is what the whole request is attributed to.
- * Each event repeats it, and the two always agree here: a client that let them differ would be reporting one
- * merchant's activity under another's.
+ * [entry] is on both the batch and every event, and the two always agree here. The batch's is what the
+ * request is authorized against; an event whose own value differs is dropped, so a client that let them
+ * differ would be reporting one merchant's activity under another's.
  */
 @Serializable
 internal class TelemetryBatchBody(
