@@ -324,7 +324,7 @@ jobs:
           # The modules the instrumented step above ran. The collector checks each one wrote results,
           # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
           # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
-          INSTRUMENTED_MODULES: core,payin,example
+          INSTRUMENTED_MODULES: core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than

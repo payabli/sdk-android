@@ -488,11 +488,16 @@ def main() -> int:
     # workflow names the modules its step ran in INSTRUMENTED_MODULES, because that is where the gradle
     # command lives and the two have to agree; absent, this degrades to the suite-level check above rather
     # than inventing a list, so a copy of this script run by hand keeps working.
-    inst_expected = [m for m in os.environ.get("INSTRUMENTED_MODULES", "").split(",") if m.strip()]
-    inst_silent = [
-        module for module in inst_expected
-        if parse_results([f"{module}/build/outputs/androidTest-results/connected/**/TEST-*.xml"])[0] == 0
-    ]
+    # An entry may name a variant as `module:variant`, because a module with product flavors writes one
+    # results directory per variant and `**` matches any of them: one variant that ran covers a sibling that
+    # did not, which is the same hiding one level further down.
+    inst_expected = [m.strip() for m in os.environ.get("INSTRUMENTED_MODULES", "").split(",") if m.strip()]
+    inst_silent = []
+    for entry in inst_expected:
+        module, _, variant = entry.partition(":")
+        results = f"{module}/build/outputs/androidTest-results/connected/{variant or '**'}/TEST-*.xml"
+        if parse_results([results])[0] == 0:
+            inst_silent.append(entry)
 
     unit_missing = unit_step == "success" and unit_total == 0
     inst_missing = inst_step == "success" and (inst_total == 0 or bool(inst_silent))

@@ -421,6 +421,38 @@ def test_collector():
     check("C16 a real report is still 'measured'",
           b2["core"]["state"] == "measured" and b2["core"]["percent"] == 90.0, json.dumps(b2["core"]))
 
+    # C22 a module with product flavors is expected per variant. The nightly runs :example twice, and the
+    # absent-artifact build is the whole reason the flavors exist, so a variant that stops running has to be
+    # visible. Globbing the module covers one variant with the other: the count is never zero and the module
+    # never reads as silent.
+    example_inst = "example/build/outputs/androidTest-results/connected"
+    r = run_collector(
+        make_repo({
+            UNIT_XML: junit("S", [("a", None)]),
+            INST_XML: junit("I", [("b", None)]),
+            PAYIN_INST_XML: junit("P", [("c", None)]),
+            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
+            # withoutTelemetryDebug wrote nothing: the flavor that proves the absent-artifact path stopped
+            # running, and the module as a whole still has results.
+        }),
+        INSTRUMENTED_OUTCOME="success",
+        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+    )
+    check("C22 a silent variant is caught", "verdict=red" in r["output"], r["output"])
+
+    r = run_collector(
+        make_repo({
+            UNIT_XML: junit("S", [("a", None)]),
+            INST_XML: junit("I", [("b", None)]),
+            PAYIN_INST_XML: junit("P", [("c", None)]),
+            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
+            f"{example_inst}/withoutTelemetryDebug/TEST-emulator.xml": junit("E2", [("e", None)]),
+        }),
+        INSTRUMENTED_OUTCOME="success",
+        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+    )
+    check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
+
     # C21 the one module whose report is not under `debug`. :example has product flavors, so its coverage is
     # written under the flavored variant, and a collector looking for `debug` finds nothing and calls it
     # missing -- which reads exactly like a module whose tests did not run. Nothing else here writes that
