@@ -1,13 +1,18 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliFieldError
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.telemetry.SessionScopedRecorder
+import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
+import com.payabli.sdk.core.telemetry.TelemetryRecorder
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
@@ -106,7 +111,41 @@ class PayInSubmissionTelemetryTest {
         }
 
     /**
-     * A field the service rejected is the service refusing, and it is not the same number.
+     * The outcome is filed under the session the flow was built for.
+     *
+     * A capture that answers after a re-initialize is reported through the successor's channel, so without
+     * the session travelling with the report the record carries the successor's identity.
+     */
+    @Test
+    fun `an outcome is reported under the session the flow was built for`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val session = aTestSession()
+            val seen = mutableListOf<TelemetrySessionContext>()
+            TelemetryRecorders.install(
+                object : TelemetryRecorder, SessionScopedRecorder {
+                    override fun record(
+                        event: String,
+                        properties: Map<String, String>,
+                    ) = Unit
+
+                    override fun record(
+                        event: String,
+                        properties: Map<String, String>,
+                        session: TelemetrySessionContext,
+                    ) {
+                        seen += session
+                    }
+                },
+            )
+            val submission = submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION), session)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            assertEquals(listOf(session), seen)
+        }
+
+    /**
+     * A field the service rejects is the service refusing, and it is not the same number.
      *
      * `PayabliValidationException` carries `VALIDATION_ERROR`, and so does the exception this module raises
      * for a value it will not send, so a classification reading the code alone calls a spent request a local
@@ -181,7 +220,10 @@ class PayInSubmissionTelemetryTest {
             )
         }
 
-    private fun TestScope.submissionOver(transport: PayabliTransport): PayInSubmission {
+    private fun TestScope.submissionOver(
+        transport: PayabliTransport,
+        session: TelemetrySessionContext? = null,
+    ): PayInSubmission {
         val logger = RecordingSdkLogger()
         return PayInSubmission(
             moneyIn = MoneyInClient(transport, logger),
@@ -189,8 +231,18 @@ class PayInSubmissionTelemetryTest {
             dispatcher = StandardTestDispatcher(testScheduler),
             newIdempotencyKey = { "a-minted-key" },
             logger = logger,
+            session = session,
         )
     }
+
+    private fun aTestSession() =
+        TelemetrySessionContext(
+            entryPoint = TEST_ENTRY_POINT,
+            environment = PayabliEnvironment.SANDBOX,
+            telemetryEnabled = true,
+            sessionId = "the-session-this-flow-was-built-for",
+            device = TelemetryDeviceContext.NONE,
+        )
 
     private companion object {
         val TEST_TIMEOUT = 5.seconds

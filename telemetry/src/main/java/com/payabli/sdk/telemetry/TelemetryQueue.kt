@@ -1,5 +1,7 @@
 package com.payabli.sdk.telemetry
 
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
+
 /**
  * One scrubbed event, waiting for a flush.
  *
@@ -10,6 +12,7 @@ internal class QueuedTelemetryEvent(
     val name: String,
     val properties: Map<String, String>,
     val occurredAtMillis: Long,
+    val session: TelemetrySessionContext,
 )
 
 /**

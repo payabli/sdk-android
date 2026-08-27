@@ -49,6 +49,7 @@ public class TelemetryModule : TelemetryBootstrap {
 
         val client =
             TelemetryClient(
+                context = context,
                 queue = TelemetryQueue(QUEUE_CAPACITY),
                 uploader = TelemetryUploader(session.transport, context, logger),
                 scope = CoroutineScope(SupervisorJob() + IO_DISPATCHER),

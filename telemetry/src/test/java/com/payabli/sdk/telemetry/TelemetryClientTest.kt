@@ -273,6 +273,57 @@ class TelemetryClientTest {
         }
 
     /**
+     * A record keeps the session it was made under, whichever channel ends up sending it.
+     *
+     * An operation that starts under one session and answers after a re-initialize is recorded on the
+     * successor's channel, because that is what is installed by then. The identity used to be written from
+     * the sending channel, so the record arrived carrying the wrong session id.
+     */
+    @Test
+    fun aRecordCarriesTheSessionItWasMadeUnder() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+            val earlier = aSession(sessionId = "the-retired-session")
+
+            withClient(transport, batchSize = 1) { client ->
+                client.record(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.APPROVED),
+                    earlier,
+                )
+
+                assertTrue(
+                    "the sending channel stamped its own session: ${transport.bodyAsText()}",
+                    transport.bodyAsText().contains(""""sessionId":"the-retired-session""""),
+                )
+            }
+        }
+
+    /**
+     * A record from another entry point is dropped rather than rewritten.
+     *
+     * The batch's entry is what the request is authorized against and the service drops an event whose own
+     * entry differs, so this record cannot be delivered truthfully on this channel at any price. Rewriting it
+     * to the sending session's entry is what filed one merchant's work under another.
+     */
+    @Test
+    fun aRecordFromAnotherEntryPointIsNotSentUnderThisOne() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+            val elsewhere = aSession(entryPoint = "another-entry-point", sessionId = "a-session-elsewhere")
+
+            withClient(transport, batchSize = 1) { client ->
+                client.record(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.APPROVED),
+                    elsewhere,
+                )
+
+                assertEquals("a foreign record was sent: ${transport.bodiesAsText()}", 0, transport.eventsSent())
+            }
+        }
+
+    /**
      * One signal sends what was waiting when it was taken, not one request's worth of it.
      *
      * The channel conflates, so every request made while an upload is parked collapses into one. Answering it
@@ -463,6 +514,7 @@ class TelemetryClientTest {
         maxEventsPerRequest: Int = 100,
         capacity: Int = 500,
     ) = TelemetryClient(
+        context = context,
         queue = TelemetryQueue(capacity = capacity),
         uploader = TelemetryUploader(transport, context, logger),
         scope = scope,

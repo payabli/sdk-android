@@ -13,6 +13,7 @@ import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.PayInEnteredDetails
 import com.payabli.sdk.payin.client.TokenStorageClient
@@ -49,6 +50,7 @@ internal class PayInSubmission(
     private val dispatcher: CoroutineDispatcher,
     private val newIdempotencyKey: () -> String,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
+    private val session: TelemetrySessionContext? = null,
 ) {
     /**
      * The single flight, held for the whole call.
@@ -220,19 +222,28 @@ internal class PayInSubmission(
         code: String?,
         startedAt: Long?,
     ) {
-        TelemetryRecorders.record(event) {
-            buildMap {
-                put(TelemetryProperty.OUTCOME.key, outcome)
-                code?.let { put(TelemetryProperty.CODE.key, it) }
-                startedAt?.let {
-                    put(
-                        TelemetryProperty.DURATION_MS.key,
-                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - it).toString(),
-                    )
-                }
-            }
+        if (session != null) {
+            TelemetryRecorders.recordFor(session, event) { measurements(outcome, code, startedAt) }
+        } else {
+            TelemetryRecorders.record(event) { measurements(outcome, code, startedAt) }
         }
     }
+
+    private fun measurements(
+        outcome: String,
+        code: String?,
+        startedAt: Long?,
+    ): Map<String, String> =
+        buildMap {
+            put(TelemetryProperty.OUTCOME.key, outcome)
+            code?.let { put(TelemetryProperty.CODE.key, it) }
+            startedAt?.let {
+                put(
+                    TelemetryProperty.DURATION_MS.key,
+                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - it).toString(),
+                )
+            }
+        }
 
     /**
      * The five things that can happen to a payment, told apart.

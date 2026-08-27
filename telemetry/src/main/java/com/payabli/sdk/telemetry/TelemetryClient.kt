@@ -2,9 +2,12 @@ package com.payabli.sdk.telemetry
 
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.telemetry.SessionScopedRecorder
 import com.payabli.sdk.core.telemetry.TelemetryCatalog
 import com.payabli.sdk.core.telemetry.TelemetryRecorder
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -31,6 +34,7 @@ import kotlin.time.Duration
  * moment before a process that may never run again.
  */
 internal class TelemetryClient(
+    private val context: TelemetrySessionContext,
     private val queue: TelemetryQueue,
     private val uploader: TelemetryUploader,
     private val scope: CoroutineScope,
@@ -39,14 +43,10 @@ internal class TelemetryClient(
     private val maxEventsPerRequest: Int,
     private val logger: SdkLogger,
     private val now: () -> Long,
-    /**
-     * Most requests a shutdown drain will send.
-     *
-     * Sized from the queue rather than guessed: enough to empty a full one, and a ceiling so a client still
-     * being written to cannot hold shutdown open.
-     */
+    /** Most requests a drain sends: enough to empty a full queue, capped so one refilling cannot hold it open. */
     private val maxDrainRequests: Int = DEFAULT_MAX_DRAIN_REQUESTS,
-) : TelemetryRecorder {
+) : TelemetryRecorder,
+    SessionScopedRecorder {
     private val sending = Mutex()
 
     /** Requests to flush. Conflated, so one made while a flush runs is kept rather than dropped. */
@@ -66,6 +66,31 @@ internal class TelemetryClient(
     override fun record(
         event: String,
         properties: Map<String, String>,
+        session: TelemetrySessionContext,
+    ) {
+        // The batch's entry is what the request is authorized against, and the service drops an event whose
+        // own entry differs from it, so a record from another entry point cannot be delivered on this channel.
+        if (session.entryPoint != context.entryPoint || session.environment != context.environment) {
+            logger.debug(
+                LogField.safe("event", "telemetry_event_foreign_session"),
+                LogField.safe("name", event),
+            ) { "the session this event belongs to is no longer the one reporting; dropped" }
+            return
+        }
+        enqueue(event, properties, session)
+    }
+
+    override fun record(
+        event: String,
+        properties: Map<String, String>,
+    ) {
+        enqueue(event, properties, context)
+    }
+
+    private fun enqueue(
+        event: String,
+        properties: Map<String, String>,
+        session: TelemetrySessionContext,
     ) {
         val scrubbed = TelemetryCatalog.scrub(event, properties)
         if (scrubbed == null) {
@@ -73,7 +98,7 @@ internal class TelemetryClient(
             return
         }
 
-        val queued = queue.offer(QueuedTelemetryEvent(event, scrubbed, now()))
+        val queued = queue.offer(QueuedTelemetryEvent(event, scrubbed, now(), session))
 
         if (queued >= batchSize || TelemetryCatalog.forcesSend(event, scrubbed)) flushAsync()
     }
@@ -94,14 +119,9 @@ internal class TelemetryClient(
     /**
      * Sends everything queued and stops.
      *
-     * **Drains rather than flushing once.** [flush] sends one request's worth, and the queue holds far more
-     * than one request's worth, so a single final flush left the rest to die with the scope it was about to
-     * cancel: a burst before shutdown lost everything past the first batch, silently, against a contract
-     * that says queued events leave.
-     *
-     * The loop terminates because the recorder is detached before this runs, so nothing is producing. The
-     * bound is there anyway: a caller that still holds the client could otherwise refill it forever, and a
-     * shutdown that does not finish is worse than one that drops the tail it names.
+     * Drains rather than flushing once: [flush] sends one request's worth and the queue holds more. The loop
+     * terminates because the recorder is detached before this runs, and the bound is there so a caller still
+     * writing cannot hold shutdown open.
      */
     @Synchronized
     fun stop() {
@@ -120,14 +140,8 @@ internal class TelemetryClient(
     /**
      * Sends what was queued when the signal was taken, in as many requests as that needs.
      *
-     * One request per signal was not enough, because the channel conflates: an upload that stalls while a
-     * burst fills the queue collapses every request made meanwhile into one, and the single request that
-     * followed sent the oldest hundred. A failure queued behind them then waited for the timer, having asked
-     * to leave at once.
-     *
-     * Bounded by the count read here rather than by the queue emptying: whatever arrives during these
-     * requests carries its own signal, and chasing it would hold this coroutine against every emitting
-     * thread.
+     * The channel conflates, so one signal can stand for a burst. Bounded by the count read here rather than
+     * by the queue emptying: what arrives during these requests carries its own signal.
      */
     private suspend fun drainWhatWasWaiting() {
         val waiting = queue.size()

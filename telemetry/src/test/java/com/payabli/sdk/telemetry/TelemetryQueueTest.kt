@@ -49,5 +49,6 @@ class TelemetryQueueTest {
             name = "e$index",
             properties = emptyMap(),
             occurredAtMillis = index.toLong(),
+            session = aSession(),
         )
 }

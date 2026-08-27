@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.payment
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.form.PayInFormDraft
@@ -67,7 +68,7 @@ public class PayabliPayInPaymentFlow private constructor(
         session: PayabliSession,
         entryPoint: String,
         scope: CoroutineScope,
-    ) : this(session.transport, entryPoint, scope, IO_DISPATCHER)
+    ) : this(session.transport, entryPoint, scope, IO_DISPATCHER, telemetry = session.telemetry)
 
     /**
      * Against a transport directly, so this type is reachable from a test.
@@ -81,6 +82,7 @@ public class PayabliPayInPaymentFlow private constructor(
         scope: CoroutineScope,
         dispatcher: CoroutineDispatcher,
         logger: SdkLogger? = null,
+        telemetry: TelemetrySessionContext? = null,
     ) : this(
         entryPoint,
         scope,
@@ -90,6 +92,7 @@ public class PayabliPayInPaymentFlow private constructor(
             dispatcher = dispatcher,
             // Random per attempt, so two payments from one screen are never one request to the service.
             newIdempotencyKey = { UUID.randomUUID().toString() },
+            session = telemetry,
         ),
     )
 

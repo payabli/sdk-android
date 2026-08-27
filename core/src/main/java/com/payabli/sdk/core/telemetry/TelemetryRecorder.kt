@@ -29,3 +29,19 @@ public fun interface TelemetryRecorder {
         properties: Map<String, String>,
     )
 }
+
+/**
+ * A recorder that can be told which session an event belongs to, rather than assuming its own.
+ *
+ * Used through [TelemetryRecorders.recordFor]. A recorder that does not implement it is told nothing, which
+ * is what keeps a test double a two-argument lambda.
+ */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public interface SessionScopedRecorder {
+    /** Records [event] as belonging to [session], whichever session this recorder itself serves. */
+    public fun record(
+        event: String,
+        properties: Map<String, String>,
+        session: TelemetrySessionContext,
+    )
+}

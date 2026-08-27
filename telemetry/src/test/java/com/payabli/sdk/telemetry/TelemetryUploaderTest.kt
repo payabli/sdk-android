@@ -46,6 +46,7 @@ class TelemetryUploaderTest {
                         name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
                         properties = mapOf(TelemetryProperty.OUTCOME.key to "approved"),
                         occurredAtMillis = 1_755_000_000_000,
+                        session = context,
                     ),
                 ),
             )
@@ -98,11 +99,13 @@ class TelemetryUploaderTest {
                         name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
                         properties = mapOf(TelemetryProperty.OUTCOME.key to "approved"),
                         occurredAtMillis = 1_755_000_000_001,
+                        session = context,
                     ),
                     QueuedTelemetryEvent(
                         name = TelemetryEvents.TTP_DEVICE_ATTEST_COMPLETED,
                         properties = emptyMap(),
                         occurredAtMillis = 1_755_000_000_002,
+                        session = context,
                     ),
                 )
 
@@ -158,6 +161,7 @@ class TelemetryUploaderTest {
                     name = TelemetryEvents.SDK_INITIALIZED,
                     properties = mapOf(TelemetryProperty.STATE.key to "ready"),
                     occurredAtMillis = 1_755_000_000_000,
+                    session = context,
                 )
 
             TelemetryUploader(transport, context, logger).send(listOf(event, event))
@@ -245,6 +249,7 @@ class TelemetryUploaderTest {
             name = TelemetryEvents.SDK_INITIALIZED,
             properties = mapOf(TelemetryProperty.STATE.key to "ready"),
             occurredAtMillis = 1_755_000_000_000,
+            session = context,
         )
 
     /**
@@ -275,6 +280,7 @@ class TelemetryUploaderTest {
                             name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
                             properties = unencodable,
                             occurredAtMillis = 1_755_000_000_000,
+                            session = context,
                         ),
                     ),
                 )

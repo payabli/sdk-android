@@ -45,6 +45,29 @@ public object TelemetryRecorders {
     }
 
     /**
+     * Records [event] as belonging to [session] rather than to whatever is installed now.
+     *
+     * For an operation reported when it finishes, which can be after a re-initialize has replaced the session
+     * it began under. A recorder that is not [SessionScopedRecorder] is told nothing.
+     */
+    public inline fun recordFor(
+        session: TelemetrySessionContext,
+        event: String,
+        properties: () -> Map<String, String> = { emptyMap() },
+    ) {
+        val recorder = current() ?: return
+        try {
+            if (recorder is SessionScopedRecorder) {
+                recorder.record(event, properties(), session)
+            } else {
+                recorder.record(event, properties())
+            }
+        } catch (failure: RuntimeException) {
+            refused(failure)
+        }
+    }
+
+    /**
      * The installed recorder, read once per [record].
      *
      * Reachable because [record] is inlined into other modules. Nothing else should call it: a caller that
