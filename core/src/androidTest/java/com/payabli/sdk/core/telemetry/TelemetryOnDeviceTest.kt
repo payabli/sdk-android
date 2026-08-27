@@ -20,8 +20,8 @@ import org.junit.Test
  *
  * Every unit test here runs with no host bindings, so `TelemetryModule` takes its no-application branch and
  * the background flush is never registered. On a device the branch that runs is the other one: a real
- * `Context` resolved to a real `Application`, `registerActivityLifecycleCallbacks` accepted by the framework,
- * the flush coroutine on a real dispatcher, and the request over the device's own network stack.
+ * `Context` resolved to a real `Application`, an observer accepted by `ProcessLifecycleOwner` on the main
+ * thread, the flush coroutine on a real dispatcher, and the request over the device's own network stack.
  *
  * **No backend is involved.** The session points at a `LoopbackServer` on the device, so this proves the
  * client's path end to end without the endpoint existing anywhere. Nothing here needs the service deployed,
