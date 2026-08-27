@@ -48,7 +48,8 @@ public object TelemetryRecorders {
      * Records [event] as belonging to [session] rather than to whatever is installed now.
      *
      * For an operation reported when it finishes, which can be after a re-initialize has replaced the session
-     * it began under. A recorder that is not [SessionScopedRecorder] is told nothing.
+     * it began under. A recorder that is not [SessionScopedRecorder] still receives the event and its
+     * properties; only the session is dropped.
      */
     public inline fun recordFor(
         session: TelemetrySessionContext,

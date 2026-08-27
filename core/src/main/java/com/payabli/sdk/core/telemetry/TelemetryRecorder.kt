@@ -33,8 +33,9 @@ public fun interface TelemetryRecorder {
 /**
  * A recorder that can be told which session an event belongs to, rather than assuming its own.
  *
- * Used through [TelemetryRecorders.recordFor]. A recorder that does not implement it is told nothing, which
- * is what keeps a test double a two-argument lambda.
+ * Used through [TelemetryRecorders.recordFor], which falls back to [TelemetryRecorder.record] for a
+ * recorder that does not implement this: the event and its properties still arrive, and only the session
+ * does not. That fallback is what keeps a test double a two-argument lambda.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface SessionScopedRecorder {
