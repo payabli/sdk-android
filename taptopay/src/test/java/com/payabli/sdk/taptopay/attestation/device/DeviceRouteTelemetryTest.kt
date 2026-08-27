@@ -124,6 +124,40 @@ class DeviceRouteTelemetryTest {
             assertEquals("400", properties[TelemetryProperty.CODE.key])
         }
 
+    /**
+     * A 500 out of that route is the service breaking, not the payer being refused.
+     *
+     * The caller's mapper turns any code at or above 500 into `ServiceFailed`, and the other four routes call
+     * the equivalent `failed`. Reporting activation's as `refused` put a service outage into the decline rate
+     * of the one route whose decline rate is read.
+     */
+    @Test
+    fun `an activation that the service failed to answer is reported as failed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeDeviceTransport.answering(declineEnvelope(500, "Internal error"))
+
+            val raised =
+                runCatching {
+                    DeviceServiceClient(transport, logger).activate(
+                        entry = ENTRY_POINT,
+                        deviceId = "a-device-id",
+                        activationCode = "000000",
+                        assertion =
+                            DeviceAssertion(
+                                assertion = "an-assertion",
+                                keyId = "key-id-value",
+                                deviceId = "a-device-id",
+                                timestamp = "2026-08-27T00:00:00Z",
+                            ),
+                        failureMapper = DeviceActivationFailures(logger),
+                    )
+                }.exceptionOrNull()
+
+            assertTrue("the mapper did not classify it: $raised", raised is DeviceActivationException.ServiceFailed)
+            val properties = recorded.single().second
+            assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+        }
+
     private companion object {
         val TEST_TIMEOUT = 5.seconds
         const val ENTRY_POINT = "a-test-entrypoint"

@@ -359,7 +359,7 @@ internal class DeviceServiceClient(
             // `/activate` is the one route whose caller maps refusals to its own type, which extends neither
             // of the two below. Without this the only route that can refuse a payer's code reported nothing
             // when it did.
-            report(route, TelemetryProperties.Outcome.REFUSED, refusal.resultCode, startedAt)
+            report(route, outcomeOf(refusal), refusal.resultCode, startedAt)
             throw refusal
         } catch (failure: PayabliException) {
             report(route, TelemetryProperties.Outcome.FAILED, null, startedAt)
@@ -377,6 +377,13 @@ internal class DeviceServiceClient(
         when (refusal) {
             is DeviceServiceException.Undecodable, is DeviceServiceException.ServerFailure ->
                 TelemetryProperties.Outcome.FAILED
+            else -> TelemetryProperties.Outcome.REFUSED
+        }
+
+    /** The same division for the route with its own refusal type: `ServiceFailed` is a 500, so it failed. */
+    private fun outcomeOf(refusal: DeviceActivationException): String =
+        when (refusal) {
+            is DeviceActivationException.ServiceFailed -> TelemetryProperties.Outcome.FAILED
             else -> TelemetryProperties.Outcome.REFUSED
         }
 
