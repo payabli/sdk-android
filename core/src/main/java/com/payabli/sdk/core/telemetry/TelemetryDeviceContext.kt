@@ -34,7 +34,10 @@ public class TelemetryDeviceContext(
     /** Which app this is. One entry point serves several, so this is what tells them apart. */
     public val packageName: String = "",
 ) {
-    /** Withholds nothing: not one of these identifies a merchant, a payer or an account. */
+    /**
+     * Withholds [idHash] and [packageName], as `TelemetrySessionContext.toString` withholds the entry point:
+     * this string reaches exception messages and crash reports, and those two name a device and an app.
+     */
     override fun toString(): String =
         "TelemetryDeviceContext(type=$type, os=$os, osVersion=$osVersion, modelName=$modelName)"
 
