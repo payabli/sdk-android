@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
@@ -37,7 +36,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.payment.PayInSubmissionState
-import com.payabli.sdk.payin.telemetry.reportRefusedFields
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 
 /**
  * The form itself, which knows a submission state and nothing about where one comes from.
@@ -57,7 +56,7 @@ internal fun PayInFormContent(
     submission: PayInSubmissionState,
     draft: PayInFormDraft,
     configuration: PayInFormConfiguration,
-    telemetry: TelemetrySessionContext? = null,
+    reports: PayInFormReports,
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
@@ -117,7 +116,7 @@ internal fun PayInFormContent(
         val outcome = submission.takeIf { draft.submissionPending } ?: return@LaunchedEffect
         val rejected = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
 
-        reportRefusedFields(telemetry, rejected)
+        reports.refusedFields(rejected)
         draft.rejectedFields = rejected
         // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         draft.submissionPending = outcome.deliver(draft::clearInstrument, completed, failed)
@@ -395,5 +394,6 @@ private fun PayabliPayInFormPreview() {
         submission = PayInSubmissionState.Idle,
         draft = remember { PayInFormDraft() },
         configuration = PayInFormConfiguration(),
+        reports = PayInFormReports.None,
     )
 }

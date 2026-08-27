@@ -12,60 +12,57 @@ import com.payabli.sdk.payin.form.telemetryName
 /**
  * What the card-not-present form reports, away from what it draws.
  *
- * The two composables call these and hold no vocabulary of their own, as `PayInSubmission` does for the
- * outcome. Where each is called still matters: [reportFormPresented] and [reportFormSubmitted] need the
- * operation, which the drawing half does not have.
- *
- * **[session] is the flow's, not whichever is installed when the effect runs.** A form outlives a
- * re-initialize, so a form built under a session that had reporting off would otherwise report through the
- * successor that has it on.
+ * Built once, by the flow, from the session that created it, and handed down. The composables call methods
+ * on it and hold no telemetry type of their own: a form that outlives a re-initialize still reports under
+ * the session it belongs to, and the drawing half does not have to know that is a question.
  */
-internal fun reportFormPresented(
-    session: TelemetrySessionContext?,
-    step: String,
+internal class PayInFormReports(
+    private val session: TelemetrySessionContext?,
 ) {
-    record(session, TelemetryEvents.FORM_PRESENTED) {
-        mapOf(TelemetryProperty.STEP.key to step)
-    }
-}
-
-internal fun reportFormSubmitted(
-    session: TelemetrySessionContext?,
-    step: String,
-) {
-    record(session, TelemetryEvents.FORM_SUBMITTED) {
-        mapOf(TelemetryProperty.STEP.key to step)
-    }
-}
-
-/** Null where no session built the flow, which is a test driving a transport directly. */
-private inline fun record(
-    session: TelemetrySessionContext?,
-    event: String,
-    properties: () -> Map<String, String>,
-) {
-    if (session != null) {
-        TelemetryRecorders.recordFor(session, event, properties)
-    } else {
-        TelemetryRecorders.record(event, properties)
-    }
-}
-
-/**
- * One report per field the service refused.
- *
- * Not from the field boxes: a rule there answers on every keystroke and calls a half-typed number too short.
- */
-internal fun reportRefusedFields(
-    session: TelemetrySessionContext?,
-    refused: Map<PayInField, PayInFieldError>,
-) {
-    refused.forEach { (field, rejection) ->
-        record(session, TelemetryEvents.FORM_VALIDATION_ERROR) {
-            mapOf(
-                TelemetryProperty.FIELD.key to field.telemetryName,
-                TelemetryProperty.REASON.key to rejection.reason,
-            )
+    /** The form appeared. [step] is the operation it was drawn for. */
+    fun presented(step: String) {
+        record(TelemetryEvents.FORM_PRESENTED) {
+            mapOf(TelemetryProperty.STEP.key to step)
         }
+    }
+
+    /** The payer submitted it, before anything is sent. */
+    fun submitted(step: String) {
+        record(TelemetryEvents.FORM_SUBMITTED) {
+            mapOf(TelemetryProperty.STEP.key to step)
+        }
+    }
+
+    /**
+     * One report per field the service refused.
+     *
+     * Not from the field boxes: a rule there answers on every keystroke and calls a half-typed number too
+     * short.
+     */
+    fun refusedFields(refused: Map<PayInField, PayInFieldError>) {
+        refused.forEach { (field, rejection) ->
+            record(TelemetryEvents.FORM_VALIDATION_ERROR) {
+                mapOf(
+                    TelemetryProperty.FIELD.key to field.telemetryName,
+                    TelemetryProperty.REASON.key to rejection.reason,
+                )
+            }
+        }
+    }
+
+    private inline fun record(
+        event: String,
+        properties: () -> Map<String, String>,
+    ) {
+        if (session != null) {
+            TelemetryRecorders.recordFor(session, event, properties)
+        } else {
+            TelemetryRecorders.record(event, properties)
+        }
+    }
+
+    internal companion object {
+        /** For a form no session built, which is a test or a preview drawing the content directly. */
+        val None: PayInFormReports = PayInFormReports(null)
     }
 }

@@ -17,8 +17,6 @@ import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
 import com.payabli.sdk.payin.payment.step
-import com.payabli.sdk.payin.telemetry.reportFormPresented
-import com.payabli.sdk.payin.telemetry.reportFormSubmitted
 import com.payabli.sdk.payin.ui.PayInFormContent
 
 /**
@@ -92,20 +90,20 @@ public fun PayabliPayInForm(
     // the form on screen does. Not the operation itself: written inline it is a new instance on every
     // recomposition, which would count one opened form once per keystroke.
     val step = operation.step
-    LaunchedEffect(flow, step) { reportFormPresented(flow.telemetry, step) }
+    LaunchedEffect(flow, step) { flow.reports.presented(step) }
 
     PayInFormContent(
         submission = submission,
         draft = flow.draft,
         configuration = offered,
-        telemetry = flow.telemetry,
+        reports = flow.reports,
         modifier = modifier,
         labels = labels,
         style = style,
         initialValues = initialValues,
         onSubmit = { values ->
             // Before the send, so a submit that never reaches the service is still counted.
-            reportFormSubmitted(flow.telemetry, operation.step)
+            flow.reports.submitted(operation.step)
             flow.start(operation, values)
         },
         onCompleted = { outcome ->

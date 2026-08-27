@@ -14,6 +14,7 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -48,8 +49,8 @@ public class PayabliPayInPaymentFlow private constructor(
     private val entryPoint: String,
     private val scope: CoroutineScope,
     private val submission: PayInSubmission,
-    /** What the form reports under, attributed to this flow's entry point. Null when no session built it. */
-    internal val telemetry: TelemetrySessionContext?,
+    /** Built once here, from the session that created this flow, and handed to the form. */
+    internal val reports: PayInFormReports,
 ) {
     /**
      * What the payer has entered, which lives here rather than in the form's composition.
@@ -96,7 +97,7 @@ public class PayabliPayInPaymentFlow private constructor(
             newIdempotencyKey = { UUID.randomUUID().toString() },
             session = telemetry,
         ),
-        telemetry?.forEntryPoint(entryPoint),
+        PayInFormReports(telemetry?.forEntryPoint(entryPoint)),
     )
 
     /**
