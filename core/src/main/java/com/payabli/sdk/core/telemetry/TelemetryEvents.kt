@@ -86,19 +86,19 @@ public object TelemetryEvents {
     // Device-lifecycle routes. One name per route, because the route is what these are counted by, and a
     // label has to come from a fixed set where a property value does not.
 
-    /** The device challenge route answered. */
+    /** The device challenge route reached an outcome. */
     public const val TTP_DEVICE_CHALLENGE_COMPLETED: String = "ttp.device.challenge.completed"
 
-    /** The device registration route answered. */
+    /** The device registration route reached an outcome. */
     public const val TTP_DEVICE_REGISTER_COMPLETED: String = "ttp.device.register.completed"
 
-    /** The device attestation route answered. */
+    /** The device attestation route reached an outcome. */
     public const val TTP_DEVICE_ATTEST_COMPLETED: String = "ttp.device.attest.completed"
 
-    /** The device activation route answered. */
+    /** The device activation route reached an outcome. */
     public const val TTP_DEVICE_ACTIVATE_COMPLETED: String = "ttp.device.activate.completed"
 
-    /** The device configuration route answered. */
+    /** The device configuration route reached an outcome. */
     public const val TTP_DEVICE_CONFIG_COMPLETED: String = "ttp.device.config.completed"
 
     /**
