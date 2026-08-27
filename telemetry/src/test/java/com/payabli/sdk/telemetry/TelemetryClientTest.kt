@@ -233,6 +233,72 @@ class TelemetryClientTest {
             }
         }
 
+    /**
+     * What the queue evicted rides the next batch that leaves.
+     *
+     * A log line reaches the device and nothing else, so a stream that went quiet and a stream that
+     * overflowed read the same at the far end, which is the one question this count exists to answer. It
+     * travels on a request that is succeeding rather than in one of its own: a report of lost telemetry sent
+     * as telemetry would be queued by the queue that just overflowed.
+     */
+    @Test
+    fun whatTheQueueEvictedIsCarriedByTheNextBatch() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
+                repeat(10) { record(client) }
+
+                client.flush()
+
+                assertTrue(
+                    "the count did not reach the wire: ${transport.bodyAsText()}",
+                    transport.bodyAsText().contains(""""droppedSinceLastSend":6"""),
+                )
+            }
+        }
+
+    /** And a batch that lost nothing says nothing, rather than sending a zero on every request. */
+    @Test
+    fun aBatchThatLostNothingCarriesNoCount() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 2) { client ->
+                repeat(2) { record(client) }
+
+                assertTrue(transport.bodyAsText(), !transport.bodyAsText().contains("dropped"))
+            }
+        }
+
+    /**
+     * A count read with nothing to send is a count nobody ever sees.
+     *
+     * `takeDropCount` resets as it reads, so taking it before the batch was checked consumed the evictions
+     * and discarded them: the next real batch then reported none.
+     */
+    @Test
+    fun aFlushWithNothingToSendDoesNotConsumeTheCount() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 1_000, maxEventsPerRequest = 1_000, capacity = 4) { client ->
+                repeat(10) { record(client) }
+                client.flush()
+                transport.sent.clear()
+
+                // Nothing queued, so this sends nothing and must take nothing.
+                client.flush()
+
+                record(client)
+                client.flush()
+                assertTrue(
+                    "a later batch reported drops that were already reported",
+                    !transport.bodyAsText().contains("droppedSinceLastSend"),
+                )
+            }
+        }
+
     @Test
     fun stoppingSendsWhatIsStillQueued() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -306,6 +372,7 @@ class TelemetryClientTest {
         transport: FakeTransport,
         batchSize: Int,
         maxEventsPerRequest: Int = 100,
+        capacity: Int = 500,
         body: suspend (TelemetryClient) -> Unit,
     ) {
         val client =
@@ -314,6 +381,7 @@ class TelemetryClientTest {
                 transport = transport,
                 batchSize = batchSize,
                 maxEventsPerRequest = maxEventsPerRequest,
+                capacity = capacity,
             )
         try {
             body(client)
@@ -327,8 +395,9 @@ class TelemetryClientTest {
         transport: FakeTransport,
         batchSize: Int,
         maxEventsPerRequest: Int = 100,
+        capacity: Int = 500,
     ) = TelemetryClient(
-        queue = TelemetryQueue(capacity = 500),
+        queue = TelemetryQueue(capacity = capacity),
         uploader = TelemetryUploader(transport, context, logger),
         scope = scope,
         flushInterval = FLUSH_INTERVAL,

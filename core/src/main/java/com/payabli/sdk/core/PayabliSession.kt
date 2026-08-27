@@ -199,9 +199,9 @@ public class PayabliSession private constructor(
                 // replace a healthy session, which is the two-sessions state this type exists to prevent.
                 val live = current != null && !current.machine.isFinished
 
-                // A call that changes nothing reports nothing. It used to report a start, which then had no
-                // outcome after it, and the pattern that produces it is the ordinary one: an Application and
-                // an Activity both initializing.
+                // A call that changes nothing reports nothing: a start with no outcome after it is a funnel
+                // nobody can close, and an Application and an Activity both initializing is the ordinary way
+                // to produce one.
                 if (live && current!!.identity == identity) {
                     return@withLock Result.success(current)
                 }

@@ -136,6 +136,11 @@ internal class TelemetryClient(
     suspend fun flush(): Boolean =
         sending.withLock {
             val batch = queue.drain(maxEventsPerRequest)
+
+            // Taken only when something is going out: `takeDropCount` resets as it reads, so a count taken
+            // with nothing to send is a count nobody sees.
+            if (batch.isEmpty()) return@withLock false
+
             val dropped = queue.takeDropCount()
             if (dropped > 0) {
                 logger.warn(
@@ -143,8 +148,7 @@ internal class TelemetryClient(
                     LogField.safe("dropped", dropped),
                 ) { "queue was full; oldest events evicted" }
             }
-            if (batch.isEmpty()) return@withLock false
-            uploader.send(batch)
+            uploader.send(batch, dropped)
             true
         }
 }

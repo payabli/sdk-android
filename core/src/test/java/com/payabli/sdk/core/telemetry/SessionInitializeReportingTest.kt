@@ -19,10 +19,11 @@ import org.junit.Test
 /**
  * What `initialize` reports, and what it does not.
  *
- * A start with no outcome after it is a funnel nobody can close, and the pattern that produces one is the
- * ordinary Application-plus-Activity pair: the second call changes nothing and used to report that it had
- * begun. Nothing here is listening on a first install or after a reset, because the channel is what a
- * successful install creates, so what these cover is a repeat call against a live session.
+ * A start with no outcome after it is a funnel nobody can close, and the ordinary way to produce one is an
+ * Application and an Activity both initializing: the second call changes nothing.
+ *
+ * Nothing is listening on a first install or after a reset, because the channel is what a successful install
+ * creates, so what these cover is a repeat call against a live session.
  */
 class SessionInitializeReportingTest {
     private val recorded = mutableListOf<String>()

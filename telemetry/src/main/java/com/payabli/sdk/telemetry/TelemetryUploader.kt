@@ -35,13 +35,17 @@ internal class TelemetryUploader(
     private val context: TelemetrySessionContext,
     private val logger: SdkLogger,
 ) {
-    suspend fun send(batch: List<QueuedTelemetryEvent>) {
+    suspend fun send(
+        batch: List<QueuedTelemetryEvent>,
+        droppedSinceLastSend: Int = 0,
+    ) {
         if (batch.isEmpty()) return
 
         val body =
             TelemetryBatchBody(
                 entry = context.entryPoint,
                 events = batch.map { it.toBody() },
+                droppedSinceLastSend = droppedSinceLastSend.takeIf { it > 0 },
             )
         val request =
             PayabliRequest.json(

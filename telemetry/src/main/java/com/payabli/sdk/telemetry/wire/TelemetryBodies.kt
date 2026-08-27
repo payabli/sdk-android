@@ -14,6 +14,15 @@ import kotlinx.serialization.Serializable
 internal class TelemetryBatchBody(
     val entry: String,
     val events: List<TelemetryEventBody>,
+    /**
+     * How many events the queue evicted since the last batch left, omitted when none.
+     *
+     * On the batch rather than in an event, and on a request that is succeeding rather than in one of its
+     * own: a report of lost telemetry that travelled as telemetry would be queued by the queue that just
+     * overflowed, and would be sent by the channel whose failure caused it. This rides a request that
+     * worked, so it says what was lost while it was not working.
+     */
+    val droppedSinceLastSend: Int? = null,
 )
 
 /**
