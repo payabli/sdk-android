@@ -8,7 +8,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 
@@ -38,8 +37,11 @@ class TelemetryLiveTest {
     @Test
     fun theSdkAssemblesAndSendsABatchThroughItsOwnTransport() =
         runTest {
-            val record = File(System.getenv(RECORD) ?: "")
-            assumeTrue("set $RECORD to run this against a live endpoint", record.parentFile?.isDirectory == true)
+            // Required rather than assumed: this class is excluded by name when the variable is absent, so
+            // reaching here without it is a broken filter and has to say so instead of reporting a skip.
+            val configured = requireNotNull(System.getenv(RECORD)) { "$RECORD is not set" }
+            val record = File(configured)
+            require(record.parentFile?.isDirectory == true) { "$RECORD names no existing directory" }
             val baseUrl = System.getenv(BASE_URL) ?: "http://127.0.0.1:4099"
             record.delete()
 

@@ -92,3 +92,16 @@ dependencies {
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.kotlinx.coroutines.test)
 }
+
+/** The variable the live telemetry check reads its record path from. Named here and in `TelemetryLiveTest`. */
+val telemetryLiveRecord = "PAYABLI_TELEMETRY_LIVE_RECORD"
+
+// That check sends a real batch and reads a record file the endpoint writes, so it is excluded by name unless
+// the path is configured. An `Assume` reported a standing skip on every ordinary run, and a permanent skip
+// cannot be told apart from a regression that started skipping. Same discipline as `:payin`'s live tier,
+// which excludes by name when its properties are absent.
+tasks.withType<Test>().configureEach {
+    if (providers.environmentVariable(telemetryLiveRecord).orNull.isNullOrBlank()) {
+        filter.excludeTestsMatching("com.payabli.sdk.core.telemetry.TelemetryLiveTest")
+    }
+}
