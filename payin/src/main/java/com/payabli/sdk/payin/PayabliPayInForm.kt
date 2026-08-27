@@ -88,11 +88,11 @@ public fun PayabliPayInForm(
     val narrowingKey = operation.narrowingKey
     val offered = remember(narrowingKey, configuration) { operation.offering(configuration) }
 
-    // Keyed on the step for the same reason the narrowing is keyed on what it reads: an operation handed
-    // over inline is a new instance on every recomposition, and the step is a fixed word per flow. So a
-    // recomposition is not a second presentation, and a host that swaps the flow on screen is.
+    // One form per flow, and the step is a fixed word per operation, so together they change exactly when
+    // the form on screen does. Not the operation itself: written inline it is a new instance on every
+    // recomposition, which would count one opened form once per keystroke.
     val step = operation.step
-    LaunchedEffect(step) { reportFormPresented(step) }
+    LaunchedEffect(flow, step) { reportFormPresented(step) }
 
     PayInFormContent(
         submission = submission,

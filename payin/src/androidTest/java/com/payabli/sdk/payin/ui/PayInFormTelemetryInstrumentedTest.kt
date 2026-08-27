@@ -123,6 +123,25 @@ class PayInFormTelemetryInstrumentedTest {
         )
     }
 
+    /**
+     * A second flow is a second form, whatever the operation says.
+     *
+     * One form per flow is the contract this composable states: the typed values are the flow's, so a
+     * replaced flow is an emptied form in front of the payer. Keyed on the step alone, a host moving between
+     * two captures reported one presentation and two submissions.
+     */
+    @Test
+    fun replacingTheFlowReportsTheFormAgain() {
+        listen()
+
+        val flow = mutableStateOf(aFlow())
+        showForm(flow = flow)
+        rule.runOnUiThread { flow.value = aFlow() }
+        rule.waitForIdle()
+
+        assertEquals(2, recorded.count { it.first == TelemetryEvents.FORM_PRESENTED })
+    }
+
     /** And the same flow handed over as a fresh instance is the same presentation. */
     @Test
     fun aNewInstanceOfTheSameOperationDoesNotReportAgain() {
@@ -260,22 +279,24 @@ class PayInFormTelemetryInstrumentedTest {
             ),
         )
 
+    private fun aFlow(transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION)) =
+        PayabliPayInPaymentFlow(
+            transport = transport,
+            entryPoint = TEST_ENTRY_POINT,
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
+            dispatcher = Dispatchers.Main,
+            logger = RecordingSdkLogger(),
+        )
+
     private fun showForm(
         transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION),
         operation: State<PayabliPayInOperation> = mutableStateOf(PayabliPayInOperation.Capture(testOptions())),
+        flow: State<PayabliPayInPaymentFlow> = mutableStateOf(aFlow(transport)),
     ) {
-        val flow =
-            PayabliPayInPaymentFlow(
-                transport = transport,
-                entryPoint = TEST_ENTRY_POINT,
-                scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
-                dispatcher = Dispatchers.Main,
-                logger = RecordingSdkLogger(),
-            )
         rule.setContent {
             MaterialTheme {
                 PayabliPayInForm(
-                    flow = flow,
+                    flow = flow.value,
                     operation = operation.value,
                     configuration = bankForm(),
                     onCompleted = {},
