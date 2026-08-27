@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.device.CardPresentLinkage
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
+import com.payabli.sdk.core.telemetry.TelemetryDigest
 
 /**
  * Reads what the platform says about this handset, once, for every event to carry.
@@ -49,6 +50,7 @@ public object DeviceProfileFactory {
                 os = OS,
                 osVersion = Build.VERSION.RELEASE.orEmpty(),
                 modelName = Build.MODEL.orEmpty(),
+                packageHash = TelemetryDigest.of(context.applicationContext.packageName.orEmpty()),
             ).also { cached = it }
         }
 }

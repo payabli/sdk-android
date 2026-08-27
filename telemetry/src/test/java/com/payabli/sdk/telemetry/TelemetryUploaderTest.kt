@@ -4,6 +4,7 @@ import com.payabli.sdk.core.PayabliSdkVersion
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
+import com.payabli.sdk.core.telemetry.TelemetryDigest
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
@@ -59,7 +60,8 @@ class TelemetryUploaderTest {
                     """"environment":"sandbox","event":"payin.capture.completed",""" +
                     """"properties":{"outcome":"approved"},""" +
                     """"deviceIdHash":"9f2c4b7e1a05d38c6e4b90f7c2a1d5e3","deviceType":"Softpos",""" +
-                    """"deviceOs":"Android","osVersion":"14","modelName":"Pixel 7a"}]}""",
+                    """"deviceOs":"Android","osVersion":"14","modelName":"Pixel 7a",""" +
+                    """"entryHash":"2cdd1350178a0114c62f4a2eb59400ce"}]}""",
                 transport.bodyAsText(),
             )
         }
@@ -120,6 +122,41 @@ class TelemetryUploaderTest {
         }
 
     /**
+     * Which app, beside which merchant, since one entry point serves several of them.
+     *
+     * Both are digests, and the entry point rides the batch in the clear regardless, because that is what
+     * authorizes the request. What this keeps out of the event bodies is the raw name.
+     */
+    @Test
+    fun theEntryPointAndTheApplicationAreCarriedAsDigests() =
+        runTest {
+            val transport = FakeTransport()
+            val installed =
+                TelemetrySessionContext(
+                    entryPoint = "an-entry-point",
+                    environment = PayabliEnvironment.SANDBOX,
+                    telemetryEnabled = true,
+                    sessionId = "0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d",
+                    device =
+                        TelemetryDeviceContext(
+                            idHash = DEVICE,
+                            type = "Softpos",
+                            os = "Android",
+                            osVersion = "14",
+                            modelName = "Pixel 7a",
+                            packageHash = TelemetryDigest.of("com.payabli.example.app"),
+                        ),
+                )
+
+            TelemetryUploader(transport, installed, logger).send(listOf(anEvent(installed)))
+
+            val body = transport.bodyAsText()
+            assertTrue(body, body.contains(""""entryHash":"2cdd1350178a0114c62f4a2eb59400ce""""))
+            assertTrue(body, body.contains(""""packageHash":"837c57db307b1a3804b08e751641057f""""))
+            assertFalse("the raw package name reached an event: $body", body.contains("com.payabli.example.app"))
+        }
+
+    /**
      * A device that gave the platform nothing is absent from the field, not blank in it.
      *
      * Absent and empty are different statements and only one of them is true: the SDK does not have an
@@ -138,12 +175,13 @@ class TelemetryUploaderTest {
                     device = TelemetryDeviceContext.NONE,
                 )
 
-            TelemetryUploader(transport, unidentified, logger).send(listOf(anEvent()))
+            TelemetryUploader(transport, unidentified, logger).send(listOf(anEvent(unidentified)))
 
             val body = transport.bodyAsText()
-            listOf("deviceIdHash", "deviceType", "deviceOs", "osVersion", "modelName").forEach { field ->
-                assertFalse("$field was sent by a run with no device: $body", body.contains(field))
-            }
+            listOf("deviceIdHash", "deviceType", "deviceOs", "osVersion", "modelName", "packageHash")
+                .forEach { field ->
+                    assertFalse("$field was sent by a run with no device: $body", body.contains(field))
+                }
         }
 
     /**
@@ -244,12 +282,12 @@ class TelemetryUploaderTest {
             )
     }
 
-    private fun anEvent() =
+    private fun anEvent(session: TelemetrySessionContext = context) =
         QueuedTelemetryEvent(
             name = TelemetryEvents.SDK_INITIALIZED,
             properties = mapOf(TelemetryProperty.STATE.key to "ready"),
             occurredAtMillis = 1_755_000_000_000,
-            session = context,
+            session = session,
         )
 
     /**

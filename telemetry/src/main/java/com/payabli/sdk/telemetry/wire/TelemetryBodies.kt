@@ -51,6 +51,8 @@ internal class TelemetryEventBody(
     val deviceOs: String? = null,
     val osVersion: String? = null,
     val modelName: String? = null,
+    val entryHash: String? = null,
+    val packageHash: String? = null,
 ) {
     companion object {
         /** The only shape this client sends. */

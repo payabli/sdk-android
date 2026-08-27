@@ -109,11 +109,13 @@ internal class TelemetryUploader(
             environment = session.environment.wireName(),
             event = name,
             properties = properties,
-            deviceIdHash = context.device.idHash.ifBlank { null },
-            deviceType = context.device.type.ifBlank { null },
-            deviceOs = context.device.os.ifBlank { null },
-            osVersion = context.device.osVersion.ifBlank { null },
-            modelName = context.device.modelName.ifBlank { null },
+            deviceIdHash = session.device.idHash.ifBlank { null },
+            deviceType = session.device.type.ifBlank { null },
+            deviceOs = session.device.os.ifBlank { null },
+            osVersion = session.device.osVersion.ifBlank { null },
+            modelName = session.device.modelName.ifBlank { null },
+            entryHash = session.entryHash.ifBlank { null },
+            packageHash = session.device.packageHash.ifBlank { null },
         )
 
     internal companion object {
