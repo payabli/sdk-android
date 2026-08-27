@@ -4,7 +4,6 @@ import com.payabli.sdk.core.telemetry.TelemetryCatalog
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -58,7 +57,13 @@ class PayInFieldTelemetryNameTest {
         }
     }
 
-    /** Every refusal a form can show reports a word, and no two of them report the same one. */
+    /**
+     * The word every refusal reports, spelled out.
+     *
+     * A literal rather than a distinctness check: these are dimensions at the far end, so a renamed one is a
+     * new column beside the old one rather than an error, and distinct-and-nonblank stays green through any
+     * spelling.
+     */
     @Test
     fun everyRejectionReportsItsOwnReason() {
         val reasons =
@@ -77,7 +82,22 @@ class PayInFieldTelemetryNameTest {
                 PayInFieldError.NotAccepted,
             ).map { it.reason }
 
-        assertEquals("two rejections report the same word", reasons.size, reasons.toSet().size)
-        assertTrue(reasons.toString(), reasons.all { it.isNotBlank() })
+        assertEquals(
+            listOf(
+                "digitsOnly",
+                "shorterThan",
+                "longerThan",
+                "tooManyCharacters",
+                "notExactly",
+                "outsideRange",
+                "cardNumberNotValid",
+                "routingNumberNotValid",
+                "emailNotValid",
+                "expiryIncomplete",
+                "expiryPast",
+                "notAccepted",
+            ),
+            reasons,
+        )
     }
 }
