@@ -1,6 +1,8 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliFieldError
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -101,6 +103,30 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.REFUSED_LOCALLY, properties[TelemetryProperty.OUTCOME.key])
             assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
+        }
+
+    /**
+     * A field the service rejected is the service refusing, and it is not the same number.
+     *
+     * `PayabliValidationException` carries `VALIDATION_ERROR`, and so does the exception this module raises
+     * for a value it will not send, so a classification reading the code alone calls a spent request a local
+     * refusal. What that ruins is the one comparison the pair exists for: how often this SDK refuses before
+     * asking, against how often the service refuses when asked.
+     */
+    @Test
+    fun `a field the service rejects is reported as refused rather than refused locally`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val refusal =
+                PayabliValidationException(
+                    httpStatus = 400,
+                    fieldErrors = mapOf("accountNumber" to listOf(PayabliFieldError("refused"))),
+                )
+            val submission = submissionOver(FakePayInTransport.failingWith(refusal))
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val properties = recorded.single().second
+            assertEquals(TelemetryProperties.Outcome.REFUSED, properties[TelemetryProperty.OUTCOME.key])
         }
 
     /**

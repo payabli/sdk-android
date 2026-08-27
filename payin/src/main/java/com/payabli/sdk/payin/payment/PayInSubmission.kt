@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -234,23 +235,30 @@ internal class PayInSubmission(
     }
 
     /**
-     * The four things that can happen to a payment, told apart.
+     * The five things that can happen to a payment, told apart.
      *
-     * Keyed on the code rather than on the exception type, because that code is what the caller was told and
-     * a record that classified it differently would disagree with the screen the payer saw.
+     * Keyed on the code the caller was told, so a record cannot disagree with the screen the payer saw. One
+     * exception, and it is the type check below: a rejected field arrives as `VALIDATION_ERROR` whether this
+     * module refused it or the service answered 400 with it, and those are the two halves of the one number
+     * this value exists to give.
      */
     private fun outcomeOf(state: PayInSubmissionState): String =
         when (state) {
             is PayInSubmissionState.Succeeded -> TelemetryProperties.Outcome.APPROVED
-            is PayInSubmissionState.Failed ->
-                when (state.cause.code) {
-                    PayabliErrorCode.PAYMENT_DECLINED -> TelemetryProperties.Outcome.DECLINED
-                    PayabliErrorCode.USER_CANCELLED -> TelemetryProperties.Outcome.INTERRUPTED
-                    PayabliErrorCode.VALIDATION_ERROR,
-                    PayabliErrorCode.INVALID_CONFIGURATION,
-                    -> TelemetryProperties.Outcome.REFUSED_LOCALLY
-                    else -> TelemetryProperties.Outcome.FAILED
-                }
+            is PayInSubmissionState.Failed -> outcomeOf(state.cause)
+            else -> TelemetryProperties.Outcome.FAILED
+        }
+
+    private fun outcomeOf(cause: PayabliException): String =
+        when {
+            // A request was spent and the service answered it, so this is the service refusing rather than
+            // this module declining to ask.
+            cause is PayabliValidationException -> TelemetryProperties.Outcome.REFUSED
+            cause.code == PayabliErrorCode.PAYMENT_DECLINED -> TelemetryProperties.Outcome.DECLINED
+            cause.code == PayabliErrorCode.USER_CANCELLED -> TelemetryProperties.Outcome.INTERRUPTED
+            cause.code == PayabliErrorCode.VALIDATION_ERROR ||
+                cause.code == PayabliErrorCode.INVALID_CONFIGURATION
+            -> TelemetryProperties.Outcome.REFUSED_LOCALLY
             else -> TelemetryProperties.Outcome.FAILED
         }
 
