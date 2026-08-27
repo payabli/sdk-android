@@ -206,14 +206,13 @@ public class PayabliSession private constructor(
                     return@withLock Result.success(current)
                 }
 
-                // After that check, so every start has an outcome after it. Nothing is listening on a first
-                // install or after a reset — the channel is what this call creates — so what this reaches is
-                // a re-initialize against a session that is already live.
-                TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
-                    mapOf(TelemetryProperty.STATE.key to reportedState())
-                }
-
                 if (live) {
+                    // Both halves on the live session's own channel. Recorded anywhere else in this call they
+                    // would split: a replacement reports its start through the retired session's channel,
+                    // carrying that session's id and entry point, and its success through the new one.
+                    TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
+                        mapOf(TelemetryProperty.STATE.key to reportedState())
+                    }
                     val refusal =
                         PayabliGenericException(
                             PayabliErrorCode.INVALID_CONFIGURATION,

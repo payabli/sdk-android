@@ -1,12 +1,16 @@
 package com.payabli.sdk.core.telemetry
 
 import com.payabli.sdk.core.PayabliSession
+import com.payabli.sdk.core.SdkState
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import com.payabli.sdk.core.network.impl.AuthFailureListener
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
@@ -72,16 +76,47 @@ class SessionInitializeReportingTest {
             )
         }
 
+    /**
+     * A replacement reports no start, because the only channel it could reach is the wrong one.
+     *
+     * `ReinitializeRequired` is the documented recovery, and it retires the session while leaving that
+     * session's reporting channel installed: the new one is not created until the install succeeds. A start
+     * recorded on the way through therefore left with the retired session's id and entry point while
+     * `sdk.initialized` left with the new one, so the pair described two sessions and, where the entry point
+     * changed, two merchants.
+     */
+    @Test
+    fun aReplacementAfterTheSessionRetiredReportsNoStart() =
+        runTest {
+            var retire: AuthFailureListener? = null
+            PayabliSession
+                .initializeWith(configFor("an-entry-point")) { onAuthFailure ->
+                    retire = onAuthFailure
+                    UnusedTransport
+                }.getOrThrow()
+
+            retire!!.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "no longer valid"))
+            assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
+            recorded.clear()
+
+            install(entryPoint = "a-different-entry-point")
+
+            // The recorder standing here is the retired session's: the replacement's own channel is created
+            // by the install that has not finished yet, which is what made the start land in the wrong one.
+            assertEquals(emptyList<String>(), recorded)
+        }
+
     private suspend fun install(entryPoint: String): PayabliSession = initialize(entryPoint).getOrThrow()
 
     private suspend fun initialize(entryPoint: String): Result<PayabliSession> =
-        PayabliSession.initializeWith(
-            PayabliConfig(
-                accessToken = "a-token",
-                entryPoint = entryPoint,
-                environment = PayabliEnvironment.SANDBOX,
-            ),
-        ) { UnusedTransport }
+        PayabliSession.initializeWith(configFor(entryPoint)) { UnusedTransport }
+
+    private fun configFor(entryPoint: String) =
+        PayabliConfig(
+            accessToken = "a-token",
+            entryPoint = entryPoint,
+            environment = PayabliEnvironment.SANDBOX,
+        )
 
     private object UnusedTransport : PayabliTransport {
         override suspend fun execute(request: PayabliRequest): PayabliResponse =
