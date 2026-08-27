@@ -16,6 +16,7 @@ import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.attestation.AttestationToken
 import kotlinx.serialization.KSerializer
@@ -381,9 +382,9 @@ internal class DeviceServiceClient(
         val event = EVENTS[route] ?: return
         TelemetryRecorders.record(event) {
             buildMap {
-                put(TelemetryProperties.OUTCOME, outcome)
-                put(TelemetryProperties.DURATION_MS, elapsedMillis(startedAt).toString())
-                resultCode?.let { put(TelemetryProperties.CODE, it.toString()) }
+                put(TelemetryProperty.OUTCOME.key, outcome)
+                put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
+                resultCode?.let { put(TelemetryProperty.CODE.key, it.toString()) }
             }
         }
     }

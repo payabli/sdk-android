@@ -1,7 +1,10 @@
 package com.payabli.sdk.telemetry
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
 import androidx.annotation.RestrictTo
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.payabli.sdk.core.HostBindings
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.LogCategory
@@ -11,7 +14,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.telemetry.TelemetryBootstrap
 import com.payabli.sdk.core.telemetry.TelemetryEvents
-import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -21,22 +24,13 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * The whole of this artifact's surface, and no host ever names it.
+ * The whole of this artifact's surface, and no host ever names it. Linking the module is the integration.
  *
- * **Linking this module is the entire integration.** Adding the umbrella, or this artifact beside `:core`,
- * is what turns reporting on; the session finds this class when it starts and there is nothing to call,
- * configure or remember. An integrator who had to switch it on is one whose incidents are the ones with no
- * data.
+ * **Found by name from `:core`, so it needs its no-argument constructor and its type.**
+ * `keepRules/rules.keep` here holds both through an integrator's R8, and renaming or moving this class is a
+ * change to that file and to the name `:core` looks for.
  *
- * The host's control is `PayabliConfig.telemetryEnabled`. Off, this installs nothing at all: no queue, no
- * timer and no request, rather than a channel that collects and discards.
- *
- * What is reported is the SDK describing itself: which of its own flows ran, how long they took and how they
- * ended. No instrument, no payer, no amount, no credential.
- *
- * **Found by name from `:core`, so it needs its constructor and its type.** `keepRules/rules.keep` in this
- * module holds both through an integrator's R8. Renaming or moving this class is a change to that file and to
- * the name `:core` looks for.
+ * `PayabliConfig.telemetryEnabled` off installs nothing: no queue, no timer, no request.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class TelemetryModule : TelemetryBootstrap {
@@ -68,7 +62,7 @@ public class TelemetryModule : TelemetryBootstrap {
         InstalledTelemetry.install(client, watchBackground(host, client, logger))
         TelemetryRecorders.install(client)
         client.start()
-        client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperties.STATE to READY))
+        client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperty.STATE.key to READY))
     }
 
     override fun stop() {
@@ -81,9 +75,8 @@ public class TelemetryModule : TelemetryBootstrap {
         host: HostBindings?,
         client: TelemetryClient,
         logger: SdkLogger,
-    ): Pair<Application, AppBackgroundWatcher>? {
-        val application = host?.appContext?.applicationContext as? Application
-        if (application == null) {
+    ): AppBackgroundWatcher? {
+        if (host?.appContext?.applicationContext !is Application) {
             // Every ordinary app reaches this through an Application, so this is the SDK started without host
             // bindings. The timer still flushes; what is lost is the last moment before the process may be
             // killed.
@@ -94,8 +87,17 @@ public class TelemetryModule : TelemetryBootstrap {
         }
 
         val watcher = AppBackgroundWatcher { client.flushAsync() }
-        application.registerActivityLifecycleCallbacks(watcher)
-        return application to watcher
+        onMainThread { ProcessLifecycleOwner.get().lifecycle.addObserver(watcher) }
+        return watcher
+    }
+}
+
+/** Runs [block] on the main thread, inline when already there. `ProcessLifecycleOwner` requires it. */
+private fun onMainThread(block: () -> Unit) {
+    if (Looper.myLooper() == Looper.getMainLooper()) {
+        block()
+    } else {
+        Handler(Looper.getMainLooper()).post(block)
     }
 }
 
@@ -107,12 +109,12 @@ public class TelemetryModule : TelemetryBootstrap {
  */
 private object InstalledTelemetry {
     private var client: TelemetryClient? = null
-    private var watching: Pair<Application, AppBackgroundWatcher>? = null
+    private var watching: AppBackgroundWatcher? = null
 
     @Synchronized
     fun install(
         client: TelemetryClient,
-        watching: Pair<Application, AppBackgroundWatcher>?,
+        watching: AppBackgroundWatcher?,
     ) {
         stopLocked()
         this.client = client
@@ -125,7 +127,8 @@ private object InstalledTelemetry {
     }
 
     private fun stopLocked() {
-        watching?.let { (application, watcher) -> application.unregisterActivityLifecycleCallbacks(watcher) }
+        // Captured first: the field is cleared before the post runs.
+        watching?.let { watcher -> onMainThread { ProcessLifecycleOwner.get().lifecycle.removeObserver(watcher) } }
         watching = null
         client?.stop()
         client = null

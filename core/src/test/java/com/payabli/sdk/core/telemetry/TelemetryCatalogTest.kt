@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.telemetry
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,7 +46,7 @@ class TelemetryCatalogTest {
 
     @Test
     fun everyAllowedKeyIsOneOfTheDeclaredProperties() {
-        val declaredKeys = constantsOf(TelemetryProperties::class.java, TelemetryProperties).toSet()
+        val declaredKeys = TelemetryProperty.entries.map { it.key }.toSet()
 
         TelemetryCatalog.events.forEach { event ->
             TelemetryCatalog.allowedKeys(event).forEach { key ->
@@ -61,13 +62,13 @@ class TelemetryCatalogTest {
             TelemetryCatalog.scrub(
                 TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
                 mapOf(
-                    TelemetryProperties.OUTCOME to "approved",
+                    TelemetryProperty.OUTCOME.key to "approved",
                     "cardNumber" to "4111111111111111",
                     "amount" to "12.34",
                 ),
             )
 
-        assertEquals(mapOf(TelemetryProperties.OUTCOME to "approved"), scrubbed)
+        assertEquals(mapOf(TelemetryProperty.OUTCOME.key to "approved"), scrubbed)
     }
 
     @Test
@@ -75,7 +76,7 @@ class TelemetryCatalogTest {
         val scrubbed =
             TelemetryCatalog.scrub(
                 TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
-                mapOf(TelemetryProperties.OUTCOME to "a".repeat(TelemetryCatalog.MAX_VALUE_LENGTH + 1)),
+                mapOf(TelemetryProperty.OUTCOME.key to "a".repeat(TelemetryCatalog.MAX_VALUE_LENGTH + 1)),
             )
 
         assertEquals(emptyMap<String, String>(), scrubbed)
@@ -86,7 +87,7 @@ class TelemetryCatalogTest {
         val scrubbed =
             TelemetryCatalog.scrub(
                 TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
-                mapOf(TelemetryProperties.OUTCOME to ""),
+                mapOf(TelemetryProperty.OUTCOME.key to ""),
             )
 
         assertEquals(emptyMap<String, String>(), scrubbed)
@@ -98,13 +99,13 @@ class TelemetryCatalogTest {
             TelemetryCatalog.scrub(
                 TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
                 mapOf(
-                    TelemetryProperties.OUTCOME to "approved",
+                    TelemetryProperty.OUTCOME.key to "approved",
                     // A non-breaking space, which reads as an ordinary one and is not ASCII.
-                    TelemetryProperties.CODE to "declined\u00A0",
+                    TelemetryProperty.CODE.key to "declined\u00A0",
                 ),
             )
 
-        assertEquals(mapOf(TelemetryProperties.OUTCOME to "approved"), scrubbed)
+        assertEquals(mapOf(TelemetryProperty.OUTCOME.key to "approved"), scrubbed)
     }
 
     @Test
@@ -128,5 +129,118 @@ class TelemetryCatalogTest {
 
     private companion object {
         const val MAX_NAME_LENGTH = 64
+    }
+    // --- what leaves at once ---
+
+    /**
+     * The rule reads the outcome, so one event name is on both sides of it.
+     *
+     * This is the case a set of names cannot express: `payin.capture.completed` is the same event whether the
+     * payment was taken or declined, and only one of those is worth interrupting a batch for.
+     */
+    @Test
+    fun anOutcomeCarryingEventIsJudgedByItsOutcome() {
+        val waits = TelemetryProperties.Outcome.SUCCESSFUL
+        val leaves =
+            setOf(
+                TelemetryProperties.Outcome.DECLINED,
+                TelemetryProperties.Outcome.REFUSED,
+                TelemetryProperties.Outcome.FAILED,
+                TelemetryProperties.Outcome.REFUSED_LOCALLY,
+                TelemetryProperties.Outcome.INTERRUPTED,
+            )
+
+        waits.forEach { outcome ->
+            assertFalse(
+                outcome,
+                TelemetryCatalog.forcesSend(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to outcome),
+                ),
+            )
+        }
+        leaves.forEach { outcome ->
+            assertTrue(
+                outcome,
+                TelemetryCatalog.forcesSend(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to outcome),
+                ),
+            )
+        }
+    }
+
+    /** Every outcome is on one side or the other, so a new one cannot be silently unclassified. */
+    @Test
+    fun everyOutcomeIsAccountedFor() {
+        val all =
+            setOf(
+                TelemetryProperties.Outcome.SUCCEEDED,
+                TelemetryProperties.Outcome.APPROVED,
+                TelemetryProperties.Outcome.DECLINED,
+                TelemetryProperties.Outcome.REFUSED,
+                TelemetryProperties.Outcome.FAILED,
+                TelemetryProperties.Outcome.REFUSED_LOCALLY,
+                TelemetryProperties.Outcome.INTERRUPTED,
+            )
+
+        assertTrue(
+            "an outcome exists that is neither successful nor a reason to send",
+            all.containsAll(TelemetryProperties.Outcome.SUCCESSFUL),
+        )
+        all.forEach { outcome ->
+            val forced =
+                TelemetryCatalog.forcesSend(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to outcome),
+                )
+            assertEquals(outcome, outcome !in TelemetryProperties.Outcome.SUCCESSFUL, forced)
+        }
+    }
+
+    /**
+     * An unrecognised outcome forces a send.
+     *
+     * The safe direction, and the one a mistake should fall in: an outcome added and not classified is
+     * reported early rather than held for a batch that may never leave.
+     */
+    @Test
+    fun anOutcomeNobodyClassifiedIsSentRatherThanHeld() {
+        assertTrue(
+            TelemetryCatalog.forcesSend(
+                TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                mapOf(TelemetryProperty.OUTCOME.key to "somethingNobodyNamedYet"),
+            ),
+        )
+    }
+
+    /** The events whose name is the whole story. They carry no outcome to read. */
+    @Test
+    fun anEventWhoseNameMeansFailureAlwaysLeavesAtOnce() {
+        TelemetryCatalog.immediateEvents.forEach { event ->
+            assertTrue(event, TelemetryCatalog.forcesSend(event, emptyMap()))
+        }
+    }
+
+    /** And every one of them is an event this catalog will actually report. */
+    @Test
+    fun everyImmediateEventIsInTheCatalog() {
+        assertTrue(
+            TelemetryCatalog.immediateEvents.minus(TelemetryCatalog.events).toString(),
+            TelemetryCatalog.events.containsAll(TelemetryCatalog.immediateEvents),
+        )
+    }
+
+    /** A start, or a plain success, waits for its batch. Most of the stream is this. */
+    @Test
+    fun anEventThatReportsNothingWrongWaits() {
+        listOf(
+            TelemetryEvents.SDK_INITIALIZED to mapOf(TelemetryProperty.STATE.key to "ready"),
+            TelemetryEvents.SDK_INITIALIZE_STARTED to mapOf(TelemetryProperty.STATE.key to "ready"),
+            TelemetryEvents.AUTH_TOKEN_ACQUIRED to mapOf(TelemetryProperty.DURATION_MS.key to "12"),
+            TelemetryEvents.AUTH_TOKEN_ACQUIRED to mapOf(TelemetryProperty.DURATION_MS.key to "8"),
+        ).forEach { (event, properties) ->
+            assertFalse(event, TelemetryCatalog.forcesSend(event, properties))
+        }
     }
 }

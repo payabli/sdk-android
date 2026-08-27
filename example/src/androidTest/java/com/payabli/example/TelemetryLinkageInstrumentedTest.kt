@@ -10,6 +10,7 @@ import com.payabli.sdk.core.SdkState
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -95,8 +96,8 @@ class TelemetryLinkageInstrumentedTest {
         TelemetryRecorders.record(TelemetryEvents.PAYIN_CAPTURE_COMPLETED) {
             propertiesBuilt++
             mapOf(
-                TelemetryProperties.OUTCOME to TelemetryProperties.Outcome.APPROVED,
-                TelemetryProperties.DURATION_MS to "18",
+                TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.APPROVED,
+                TelemetryProperty.DURATION_MS.key to "18",
             )
         }
 

@@ -6,6 +6,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CoroutineScope
@@ -139,6 +140,99 @@ class TelemetryClientTest {
             }
         }
 
+    /**
+     * A failure does not wait for nineteen more events.
+     *
+     * The whole point of the tier: a process that dies takes the queue, and it usually dies just after
+     * something went wrong, so a batch that would have carried the failure is the batch least likely to leave.
+     */
+    @Test
+    fun anEventReportingAFailureShipsWithoutFillingABatch() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 20) { client ->
+                client.record(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.DECLINED),
+                )
+
+                assertEquals("a declined payment should not have waited", 1, transport.sent.size)
+            }
+        }
+
+    /** And a success does wait, or the tier would be a batch size of one. */
+    @Test
+    fun anEventReportingSuccessWaitsForItsBatch() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 20) { client ->
+                repeat(19) { record(client) }
+
+                assertTrue("a batch left before it was full", transport.sent.isEmpty())
+            }
+        }
+
+    /**
+     * The forced flush carries what was already queued, which is the reason it substitutes for storage.
+     *
+     * Sending the failure alone would leave the run-up to it in the queue for the crash that follows.
+     */
+    @Test
+    fun aForcedFlushTakesTheQueuedContextWithIt() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 100) { client ->
+                repeat(5) { record(client) }
+                client.record(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.FAILED),
+                )
+
+                assertEquals("one request, not one per event", 1, transport.sent.size)
+                assertEquals("the context should have left with the failure", 6, transport.eventsSent())
+            }
+        }
+
+    /**
+     * A flush asked for while one is running is taken, not dropped.
+     *
+     * Coalescing alone would discard it, and for a full batch that costs nothing because the running flush
+     * drains the same queue. For a failure it costs everything: the drain may already have happened, and the
+     * event would then wait out the timer it was trying to skip.
+     */
+    @Test
+    fun aFailureArrivingDuringAFlushIsNotLeftBehind() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+            transport.stall()
+
+            withClient(transport, batchSize = 100) { client ->
+                // One event, and a flush that reaches the transport and parks there holding it.
+                record(client)
+                client.flushAsync()
+
+                // Queued behind a drain that has already happened. Nothing else will send this: the batch is
+                // nowhere near full and the timer is 30 seconds away.
+                client.record(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.FAILED),
+                )
+
+                transport.release()
+
+                // Nothing flushes here. A rescue flush would satisfy the assertion whether or not the
+                // re-arm exists, which makes it a test of nothing.
+                assertEquals("the re-armed flush never ran", 2, transport.sent.size)
+                assertTrue(
+                    "the failure never reached the wire",
+                    transport.bodiesAsText().any { it.contains(TelemetryProperties.Outcome.FAILED) },
+                )
+            }
+        }
+
     @Test
     fun stoppingSendsWhatIsStillQueued() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -169,7 +263,7 @@ class TelemetryClientTest {
                 client.record(
                     TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
                     mapOf(
-                        TelemetryProperties.OUTCOME to "approved",
+                        TelemetryProperty.OUTCOME.key to "approved",
                         "cardNumber" to "4111111111111111",
                     ),
                 )
@@ -245,7 +339,7 @@ class TelemetryClientTest {
     )
 
     private fun record(client: TelemetryClient) {
-        client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperties.STATE to "ready"))
+        client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperty.STATE.key to "ready"))
     }
 
     private companion object {

@@ -45,6 +45,9 @@ internal class FakeTransport(
         gate = null
     }
 
+    /** Every request's body, for the assertions that do not care which request carried what. */
+    fun bodiesAsText(): List<String> = sent.indices.map { bodyAsText(it) }
+
     /** How many events reached the wire across every request, which is the only count that matters. */
     fun eventsSent(): Int = sent.indices.sumOf { bodyAsText(it).split("\"schemaVersion\"").size - 1 }
 

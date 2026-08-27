@@ -10,6 +10,7 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.PayInEnteredDetails
@@ -220,11 +221,11 @@ internal class PayInSubmission(
     ) {
         TelemetryRecorders.record(event) {
             buildMap {
-                put(TelemetryProperties.OUTCOME, outcome)
-                code?.let { put(TelemetryProperties.CODE, it) }
+                put(TelemetryProperty.OUTCOME.key, outcome)
+                code?.let { put(TelemetryProperty.CODE.key, it) }
                 startedAt?.let {
                     put(
-                        TelemetryProperties.DURATION_MS,
+                        TelemetryProperty.DURATION_MS.key,
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - it).toString(),
                     )
                 }

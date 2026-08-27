@@ -51,7 +51,8 @@ internal class TelemetryQueue(
             if (events.isEmpty()) {
                 emptyList()
             } else {
-                val taken = ArrayList<QueuedTelemetryEvent>(minOf(max, events.size))
+                // Coerced, because `ArrayList(-1)` throws and a caller asking for nothing means nothing.
+                val taken = ArrayList<QueuedTelemetryEvent>(minOf(max, events.size).coerceAtLeast(0))
                 while (taken.size < max && events.isNotEmpty()) {
                     taken.add(events.removeFirst())
                 }

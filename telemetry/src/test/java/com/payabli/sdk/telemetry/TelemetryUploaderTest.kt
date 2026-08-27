@@ -1,10 +1,11 @@
 package com.payabli.sdk.telemetry
 
+import com.payabli.sdk.core.PayabliSdkVersion
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
-import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.telemetry.wire.wireName
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -43,14 +44,15 @@ class TelemetryUploaderTest {
                 listOf(
                     QueuedTelemetryEvent(
                         name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
-                        properties = mapOf(TelemetryProperties.OUTCOME to "approved"),
+                        properties = mapOf(TelemetryProperty.OUTCOME.key to "approved"),
                         occurredAtMillis = 1_755_000_000_000,
                     ),
                 ),
             )
 
             assertEquals(
-                """{"entry":"an-entry-point","events":[{"schemaVersion":"1","sdkVersion":"0.1.0",""" +
+                """{"entry":"an-entry-point","events":[{"schemaVersion":"1",""" +
+                    """"sdkVersion":"${PayabliSdkVersion.VALUE}",""" +
                     """"timestamp":"2025-08-12T12:00:00.000Z","sessionId":""" +
                     """"0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d","entry":"an-entry-point",""" +
                     """"environment":"sandbox","event":"payin.capture.completed",""" +
@@ -94,7 +96,7 @@ class TelemetryUploaderTest {
                     anEvent(),
                     QueuedTelemetryEvent(
                         name = TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
-                        properties = mapOf(TelemetryProperties.OUTCOME to "approved"),
+                        properties = mapOf(TelemetryProperty.OUTCOME.key to "approved"),
                         occurredAtMillis = 1_755_000_000_001,
                     ),
                     QueuedTelemetryEvent(
@@ -154,7 +156,7 @@ class TelemetryUploaderTest {
             val event =
                 QueuedTelemetryEvent(
                     name = TelemetryEvents.SDK_INITIALIZED,
-                    properties = mapOf(TelemetryProperties.STATE to "ready"),
+                    properties = mapOf(TelemetryProperty.STATE.key to "ready"),
                     occurredAtMillis = 1_755_000_000_000,
                 )
 
@@ -241,7 +243,7 @@ class TelemetryUploaderTest {
     private fun anEvent() =
         QueuedTelemetryEvent(
             name = TelemetryEvents.SDK_INITIALIZED,
-            properties = mapOf(TelemetryProperties.STATE to "ready"),
+            properties = mapOf(TelemetryProperty.STATE.key to "ready"),
             occurredAtMillis = 1_755_000_000_000,
         )
 }

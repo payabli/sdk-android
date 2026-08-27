@@ -65,8 +65,8 @@ class TelemetryOnDeviceTest {
         repeat(BATCH_SIZE) {
             TelemetryRecorders.record(TelemetryEvents.PAYIN_CAPTURE_COMPLETED) {
                 mapOf(
-                    TelemetryProperties.OUTCOME to TelemetryProperties.Outcome.APPROVED,
-                    TelemetryProperties.DURATION_MS to "12",
+                    TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.APPROVED,
+                    TelemetryProperty.DURATION_MS.key to "12",
                 )
             }
         }

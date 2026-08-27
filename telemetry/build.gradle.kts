@@ -35,6 +35,9 @@ kotlin {
 dependencies {
     // Capability modules depend on :core only, never on a sibling capability.
     api(project(":core"))
+
+    // The process lifecycle, for the flush as the app goes away.
+    implementation(libs.androidx.lifecycle.process)
     testImplementation(project(":testutils"))
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

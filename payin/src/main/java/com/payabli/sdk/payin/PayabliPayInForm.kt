@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -15,6 +16,9 @@ import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
+import com.payabli.sdk.payin.payment.step
+import com.payabli.sdk.payin.telemetry.reportFormPresented
+import com.payabli.sdk.payin.telemetry.reportFormSubmitted
 import com.payabli.sdk.payin.ui.PayInFormContent
 
 /**
@@ -84,6 +88,9 @@ public fun PayabliPayInForm(
     val narrowingKey = operation.narrowingKey
     val offered = remember(narrowingKey, configuration) { operation.offering(configuration) }
 
+    // Keyed on nothing, so a recomposition is not a second presentation.
+    LaunchedEffect(Unit) { reportFormPresented(operation.step) }
+
     PayInFormContent(
         submission = submission,
         draft = flow.draft,
@@ -92,7 +99,11 @@ public fun PayabliPayInForm(
         labels = labels,
         style = style,
         initialValues = initialValues,
-        onSubmit = { values -> flow.start(operation, values) },
+        onSubmit = { values ->
+            // Before the send, so a submit that never reaches the service is still counted.
+            reportFormSubmitted(operation.step)
+            flow.start(operation, values)
+        },
         onCompleted = { outcome ->
             try {
                 onCompleted(outcome)

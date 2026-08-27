@@ -3,7 +3,7 @@ package com.payabli.sdk.taptopay.attestation.impl
 import com.google.android.play.core.integrity.model.IntegrityErrorCode
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.core.telemetry.TelemetryEvents
-import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
@@ -147,8 +147,8 @@ internal object PlayIntegrityErrorMapping {
     ): AttestationException {
         TelemetryRecorders.record(TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED) {
             mapOf(
-                TelemetryProperties.REASON to requestShape,
-                TelemetryProperties.CODE to code.toString(),
+                TelemetryProperty.REASON.key to requestShape,
+                TelemetryProperty.CODE.key to code.toString(),
             )
         }
         return AttestationException.Throttled(code, cause)

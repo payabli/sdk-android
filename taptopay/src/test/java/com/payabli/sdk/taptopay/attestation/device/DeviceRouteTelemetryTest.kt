@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay.attestation.device
 
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
@@ -42,9 +43,9 @@ class DeviceRouteTelemetryTest {
 
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.TTP_DEVICE_CHALLENGE_COMPLETED, event)
-            assertEquals(TelemetryProperties.Outcome.SUCCEEDED, properties[TelemetryProperties.OUTCOME])
-            assertNotNull(properties[TelemetryProperties.DURATION_MS]?.toLongOrNull())
-            assertNull(properties[TelemetryProperties.CODE])
+            assertEquals(TelemetryProperties.Outcome.SUCCEEDED, properties[TelemetryProperty.OUTCOME.key])
+            assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
+            assertNull(properties[TelemetryProperty.CODE.key])
         }
 
     /** Refused means the far side answered and said no, which on these routes arrives inside a 200. */
@@ -66,8 +67,8 @@ class DeviceRouteTelemetryTest {
 
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.TTP_DEVICE_REGISTER_COMPLETED, event)
-            assertEquals(TelemetryProperties.Outcome.REFUSED, properties[TelemetryProperties.OUTCOME])
-            assertEquals("400", properties[TelemetryProperties.CODE])
+            assertEquals(TelemetryProperties.Outcome.REFUSED, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals("400", properties[TelemetryProperty.CODE.key])
             assertTrue(properties.values.none { it.contains("echoed") })
         }
 
@@ -80,7 +81,7 @@ class DeviceRouteTelemetryTest {
 
             assertEquals(
                 TelemetryProperties.Outcome.FAILED,
-                recorded.single().second[TelemetryProperties.OUTCOME],
+                recorded.single().second[TelemetryProperty.OUTCOME.key],
             )
         }
 

@@ -135,7 +135,7 @@ class TelemetryBootstrapTest {
             install()
 
             TelemetryRecorders.record(TelemetryEvents.PAYIN_CAPTURE_COMPLETED) {
-                mapOf(TelemetryProperties.OUTCOME to TelemetryProperties.Outcome.APPROVED)
+                mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.APPROVED)
             }
         }
 

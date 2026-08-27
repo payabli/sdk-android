@@ -3,45 +3,62 @@ package com.payabli.sdk.core.telemetry
 import androidx.annotation.RestrictTo
 
 /**
- * The property keys an event may carry, and the fixed vocabularies their values come from.
+ * The property keys an event may carry.
  *
- * Narrow by design: a key here holds values from a small closed set or a number, which is what
- * makes a record readable in aggregate; anything needing a wide value space belongs in the event name
- * instead, and the device routes and the money path are both worked examples of that.
+ * Narrow by design: a key holds values from a small closed set or a number, and anything needing a wide
+ * value space belongs in the event name instead.
  *
- * Nothing here ever carries an instrument, a payer, a credential, a resolved request path or text supplied by
- * a server. [TelemetryCatalog] enforces the key half of that; the value half is the emitting site's, which is
- * why every value below comes from a constant rather than from a response.
+ * **An enum so a key cannot be misspelled into existence.** [key] is derived from the constant name, and
+ * Kotlin's convention for one is `SCREAMING_SNAKE_CASE`, so lowercasing it is snake_case by construction.
+ * The far side groups by key, and it accepts `^[a-z][A-Za-z0-9_]{0,31}$` — both spellings — so a `retryCount`
+ * beside a `retry_count` would be two columns for one thing and neither complete.
+ */
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public enum class TelemetryProperty {
+    /** How the operation the event names ended. Values come from [TelemetryProperties.Outcome]. */
+    OUTCOME,
+
+    /** A numeric service or platform code, as text. */
+    CODE,
+
+    /** Why, from a fixed vocabulary. Never free text and never text a server supplied. */
+    REASON,
+
+    /** Elapsed milliseconds for the operation the event names. */
+    DURATION_MS,
+
+    /** 1-based attempt number. */
+    ATTEMPT,
+
+    /** A lifecycle state name, from the emitting machine's own fixed set. */
+    STATE,
+
+    /** The state a transition left. */
+    FROM,
+
+    /** The state a transition reached. */
+    TO,
+
+    /** A named step within a multi-step flow. */
+    STEP,
+
+    /** Which input a form event is about, by name. Never what was typed into one. */
+    FIELD,
+    ;
+
+    /** The key as it goes on the wire. */
+    public val key: String get() = name.lowercase()
+}
+
+/**
+ * The fixed vocabularies a property value comes from.
+ *
+ * Values, not keys: [TelemetryProperty] is the key half. Nothing here ever carries an instrument, a payer, a
+ * credential, a resolved request path or text supplied by a server. `TelemetryCatalog` enforces the key half
+ * of that; the value half is the emitting site's, which is why every value below comes from a constant.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object TelemetryProperties {
-    /** How the operation the event names ended. Values come from [Outcome]. */
-    public const val OUTCOME: String = "outcome"
-
-    /** A numeric service or platform code, as text. */
-    public const val CODE: String = "code"
-
-    /** Why, from a fixed vocabulary. Never free text and never text a server supplied. */
-    public const val REASON: String = "reason"
-
-    /** Elapsed milliseconds for the operation the event names. */
-    public const val DURATION_MS: String = "duration_ms"
-
-    /** 1-based attempt number. */
-    public const val ATTEMPT: String = "attempt"
-
-    /** A lifecycle state name, from the emitting machine's own fixed set. */
-    public const val STATE: String = "state"
-
-    /** The state a transition left. */
-    public const val FROM: String = "from"
-
-    /** The state a transition reached. */
-    public const val TO: String = "to"
-
-    /** A named step within a multi-step flow. */
-    public const val STEP: String = "step"
-
     /** The values [OUTCOME] may take. Each family uses the subset its own KDoc names. */
     public object Outcome {
         /** The call answered as asked. Device routes and card-present lifecycle. */
@@ -60,9 +77,12 @@ public object TelemetryProperties {
         public const val APPROVED: String = "approved"
 
         /** Refused by the SDK without a request being sent. Money path. */
-        public const val REFUSED_LOCALLY: String = "refusedLocally"
+        public const val REFUSED_LOCALLY: String = "refused_locally"
 
         /** Cancelled, or the caller went away before an outcome arrived. Money path. */
         public const val INTERRUPTED: String = "interrupted"
+
+        /** The outcomes that mean the operation did what it was asked. Everything else forces a send. */
+        public val SUCCESSFUL: Set<String> = setOf(SUCCEEDED, APPROVED)
     }
 }

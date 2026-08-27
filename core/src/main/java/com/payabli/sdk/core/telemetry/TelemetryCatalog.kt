@@ -36,13 +36,13 @@ public object TelemetryCatalog {
      */
     private val NONE = emptySet<String>()
 
-    private val TIMED = setOf(TelemetryProperties.DURATION_MS)
+    private val TIMED = setOf(TelemetryProperty.DURATION_MS.key)
 
     private val TIMED_OUTCOME =
         setOf(
-            TelemetryProperties.OUTCOME,
-            TelemetryProperties.CODE,
-            TelemetryProperties.DURATION_MS,
+            TelemetryProperty.OUTCOME.key,
+            TelemetryProperty.CODE.key,
+            TelemetryProperty.DURATION_MS.key,
         )
 
     /**
@@ -63,13 +63,11 @@ public object TelemetryCatalog {
      */
     private val ALLOWED: Map<String, Set<String>> =
         mapOf(
-            TelemetryEvents.TOKENIZATION_STARTED to NONE,
-            TelemetryEvents.TOKENIZATION_SUCCEEDED to TIMED,
-            TelemetryEvents.TOKENIZATION_FAILED to TIMED_OUTCOME,
-            TelemetryEvents.TOKENIZATION_CANCELLED to TIMED,
-            TelemetryEvents.FORM_PRESENTED to setOf(TelemetryProperties.STEP),
+            TelemetryEvents.FORM_PRESENTED to setOf(TelemetryProperty.STEP.key),
+            TelemetryEvents.FORM_SUBMITTED to setOf(TelemetryProperty.STEP.key),
+            // No attempt: nothing counts one.
             TelemetryEvents.FORM_VALIDATION_ERROR to
-                setOf(TelemetryProperties.REASON, TelemetryProperties.ATTEMPT),
+                setOf(TelemetryProperty.REASON.key, TelemetryProperty.FIELD.key),
             TelemetryEvents.TTP_INITIALIZE_STARTED to NONE,
             TelemetryEvents.TTP_INITIALIZE_SUCCEEDED to TIMED,
             TelemetryEvents.TTP_INITIALIZE_FAILED to TIMED_OUTCOME,
@@ -83,47 +81,77 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_NFC_SUCCEEDED to TIMED,
             TelemetryEvents.TTP_NFC_FAILED to
                 setOf(
-                    TelemetryProperties.OUTCOME,
-                    TelemetryProperties.REASON,
-                    TelemetryProperties.DURATION_MS,
+                    TelemetryProperty.OUTCOME.key,
+                    TelemetryProperty.REASON.key,
+                    TelemetryProperty.DURATION_MS.key,
                 ),
             TelemetryEvents.TTP_REINITIALIZE_STARTED to NONE,
             TelemetryEvents.TTP_REINITIALIZE_SUCCEEDED to TIMED,
             TelemetryEvents.TTP_SESSION_STATE_CHANGED to
-                setOf(TelemetryProperties.FROM, TelemetryProperties.TO, TelemetryProperties.REASON),
+                setOf(TelemetryProperty.FROM.key, TelemetryProperty.TO.key, TelemetryProperty.REASON.key),
             TelemetryEvents.TTP_DEVICE_CHALLENGE_COMPLETED to ROUTE,
             TelemetryEvents.TTP_DEVICE_REGISTER_COMPLETED to ROUTE,
             TelemetryEvents.TTP_DEVICE_ATTEST_COMPLETED to ROUTE,
             TelemetryEvents.TTP_DEVICE_ACTIVATE_COMPLETED to ROUTE,
             TelemetryEvents.TTP_DEVICE_CONFIG_COMPLETED to ROUTE,
-            // No attempt here either: the mapping that emits this classifies one refusal and counts nothing.
+            // No attempt: nothing counts one.
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED to
-                setOf(TelemetryProperties.CODE, TelemetryProperties.REASON),
+                setOf(TelemetryProperty.CODE.key, TelemetryProperty.REASON.key),
             TelemetryEvents.PAYIN_CAPTURE_COMPLETED to TIMED_OUTCOME,
             TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED to TIMED_OUTCOME,
             TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED to TIMED_OUTCOME,
-            TelemetryEvents.SDK_INITIALIZE_STARTED to setOf(TelemetryProperties.STATE),
+            TelemetryEvents.SDK_INITIALIZE_STARTED to setOf(TelemetryProperty.STATE.key),
             TelemetryEvents.SDK_INITIALIZE_FAILED to
                 setOf(
-                    TelemetryProperties.OUTCOME,
-                    TelemetryProperties.CODE,
-                    TelemetryProperties.REASON,
-                    TelemetryProperties.DURATION_MS,
+                    TelemetryProperty.OUTCOME.key,
+                    TelemetryProperty.CODE.key,
+                    TelemetryProperty.REASON.key,
+                    TelemetryProperty.DURATION_MS.key,
                 ),
-            TelemetryEvents.SDK_INITIALIZED to setOf(TelemetryProperties.STATE),
-            TelemetryEvents.AUTH_TOKEN_ACQUIRED to setOf(TelemetryProperties.DURATION_MS),
+            TelemetryEvents.SDK_INITIALIZED to setOf(TelemetryProperty.STATE.key),
+            TelemetryEvents.AUTH_TOKEN_ACQUIRED to setOf(TelemetryProperty.DURATION_MS.key),
             TelemetryEvents.AUTH_TOKEN_FAILED to
                 setOf(
-                    TelemetryProperties.OUTCOME,
-                    TelemetryProperties.REASON,
-                    TelemetryProperties.DURATION_MS,
+                    TelemetryProperty.OUTCOME.key,
+                    TelemetryProperty.REASON.key,
+                    TelemetryProperty.DURATION_MS.key,
                 ),
             TelemetryEvents.AUTH_TOKEN_REFRESHED to
-                setOf(TelemetryProperties.DURATION_MS, TelemetryProperties.ATTEMPT),
+                setOf(TelemetryProperty.DURATION_MS.key, TelemetryProperty.ATTEMPT.key),
+        )
+
+    /** The events whose name already means a failure, and which carry no outcome for [forcesSend] to read. */
+    private val IMMEDIATE: Set<String> =
+        setOf(
+            TelemetryEvents.FORM_VALIDATION_ERROR,
+            TelemetryEvents.TTP_INITIALIZE_FAILED,
+            TelemetryEvents.TTP_ATTESTATION_FAILED,
+            TelemetryEvents.TTP_CHARGE_FAILED,
+            TelemetryEvents.TTP_NFC_FAILED,
+            TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED,
+            TelemetryEvents.SDK_INITIALIZE_FAILED,
+            TelemetryEvents.AUTH_TOKEN_FAILED,
         )
 
     /** Every event this catalog will report. Test-facing; the gate is [scrub]. */
     internal val events: Set<String> get() = ALLOWED.keys
+
+    /** Test-facing view of [IMMEDIATE]; the decision is [forcesSend]. */
+    internal val immediateEvents: Set<String> get() = IMMEDIATE
+
+    /**
+     * Whether [event] should leave now rather than wait for a full batch or the next tick.
+     *
+     * A name in [IMMEDIATE], or an outcome that is not successful. Call it on **scrubbed** properties.
+     */
+    public fun forcesSend(
+        event: String,
+        properties: Map<String, String>,
+    ): Boolean {
+        if (event in IMMEDIATE) return true
+        val outcome = properties[TelemetryProperty.OUTCOME.key] ?: return false
+        return outcome !in TelemetryProperties.Outcome.SUCCESSFUL
+    }
 
     /** The keys [event] may carry, empty when the event is not one this catalog reports. */
     internal fun allowedKeys(event: String): Set<String> = ALLOWED[event].orEmpty()

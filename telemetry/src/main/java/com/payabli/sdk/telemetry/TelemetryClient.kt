@@ -8,12 +8,12 @@ import com.payabli.sdk.core.telemetry.TelemetryRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 
 /**
@@ -49,15 +49,16 @@ internal class TelemetryClient(
 ) : TelemetryRecorder {
     private val sending = Mutex()
 
-    /**
-     * Whether a flush is already on its way, so a full queue schedules one rather than one per event.
-     *
-     * Without it every event past [batchSize] launched its own coroutine. The queue is bounded and those
-     * jobs were not: against a slow or offline upload they all park on [sending], and a busy app grows the
-     * process by event volume while the queue it is bounded by never moves. Coalescing is what makes the
-     * bound on the queue a bound on the client.
-     */
-    private val flushScheduled = AtomicBoolean(false)
+    /** Requests to flush. Conflated, so one made while a flush runs is kept rather than dropped. */
+    private val flushRequests = Channel<Unit>(Channel.CONFLATED)
+
+    /** In `init` rather than [start]: [record] can flush before the timer starts, and no consumer loses it. */
+    private val flushes: Job =
+        scope.launch {
+            for (request in flushRequests) {
+                flush()
+            }
+        }
 
     @Volatile
     private var timer: Job? = null
@@ -73,10 +74,12 @@ internal class TelemetryClient(
         }
 
         val queued = queue.offer(QueuedTelemetryEvent(event, scrubbed, now()))
-        if (queued >= batchSize) flushAsync()
+
+        if (queued >= batchSize || TelemetryCatalog.forcesSend(event, scrubbed)) flushAsync()
     }
 
     /** Starts the periodic flush. Idempotent: a second call leaves the running timer alone. */
+    @Synchronized
     fun start() {
         if (timer != null) return
         timer =
@@ -100,9 +103,11 @@ internal class TelemetryClient(
      * bound is there anyway: a caller that still holds the client could otherwise refill it forever, and a
      * shutdown that does not finish is worse than one that drops the tail it names.
      */
+    @Synchronized
     fun stop() {
         timer?.cancel()
         timer = null
+        flushRequests.close()
         scope
             .launch {
                 var requests = 0
@@ -112,21 +117,9 @@ internal class TelemetryClient(
             }.invokeOnCompletion { scope.cancel() }
     }
 
-    /**
-     * Flushes without waiting, for the callers that are not in a coroutine.
-     *
-     * At most one is in flight. Another arriving while one is scheduled is dropped rather than queued: the
-     * queue it would drain is the same queue, and whatever it would have carried the scheduled one carries.
-     */
+    /** Asks for a flush. The `Unit` is a signal: one of these drains a whole batch. */
     fun flushAsync() {
-        if (!flushScheduled.compareAndSet(false, true)) return
-        scope.launch {
-            try {
-                flush()
-            } finally {
-                flushScheduled.set(false)
-            }
-        }
+        flushRequests.trySend(Unit)
     }
 
     /**

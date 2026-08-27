@@ -59,3 +59,25 @@ public sealed interface PayInFieldError {
      */
     public data object NotAccepted : PayInFieldError
 }
+
+/**
+ * The rejection as a fixed word, for the report that counts it.
+ *
+ * The parameterised cases drop their number: a length is what the payer typed.
+ */
+internal val PayInFieldError.reason: String
+    get() =
+        when (this) {
+            PayInFieldError.DigitsOnly -> "digitsOnly"
+            is PayInFieldError.ShorterThan -> "shorterThan"
+            is PayInFieldError.LongerThan -> "longerThan"
+            is PayInFieldError.TooManyCharacters -> "tooManyCharacters"
+            is PayInFieldError.NotExactly -> "notExactly"
+            is PayInFieldError.OutsideRange -> "outsideRange"
+            PayInFieldError.CardNumberNotValid -> "cardNumberNotValid"
+            PayInFieldError.RoutingNumberNotValid -> "routingNumberNotValid"
+            PayInFieldError.EmailNotValid -> "emailNotValid"
+            PayInFieldError.ExpiryIncomplete -> "expiryIncomplete"
+            PayInFieldError.ExpiryPast -> "expiryPast"
+            PayInFieldError.NotAccepted -> "notAccepted"
+        }

@@ -61,6 +61,15 @@ internal val PayabliPayInOperation.event: String
             is PayabliPayInOperation.Authorize -> TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED
         }
 
+/** The operation as a fixed word, for the form events. Closed, as [event] is. */
+internal val PayabliPayInOperation.step: String
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> "store_method"
+            is PayabliPayInOperation.Capture -> "capture"
+            is PayabliPayInOperation.Authorize -> "authorize"
+        }
+
 /**
  * Everything [offering] reads about an operation, as a `remember` key.
  *

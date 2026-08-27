@@ -22,6 +22,7 @@ import com.payabli.sdk.core.telemetry.TelemetryBootstraps
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -192,7 +193,7 @@ public class PayabliSession private constructor(
             // the channel is what this call creates — so this lands only on a re-initialize, which is the
             // path where knowing that one was asked for at all is worth having.
             TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
-                mapOf(TelemetryProperties.STATE to reportedState())
+                mapOf(TelemetryProperty.STATE.key to reportedState())
             }
             val startedAt = System.nanoTime()
 
@@ -265,7 +266,7 @@ public class PayabliSession private constructor(
             when (state.value) {
                 SdkState.Uninitialized -> "uninitialized"
                 SdkState.Ready -> "ready"
-                SdkState.ReinitializeRequired -> "reinitializeRequired"
+                SdkState.ReinitializeRequired -> "reinitialize_required"
             }
 
         /**
@@ -282,10 +283,10 @@ public class PayabliSession private constructor(
         ) {
             TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_FAILED) {
                 mapOf(
-                    TelemetryProperties.OUTCOME to TelemetryProperties.Outcome.REFUSED,
-                    TelemetryProperties.CODE to failure.code.wireName,
-                    TelemetryProperties.REASON to failure.reason,
-                    TelemetryProperties.DURATION_MS to
+                    TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.REFUSED,
+                    TelemetryProperty.CODE.key to failure.code.wireName,
+                    TelemetryProperty.REASON.key to failure.reason,
+                    TelemetryProperty.DURATION_MS.key to
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
                 )
             }

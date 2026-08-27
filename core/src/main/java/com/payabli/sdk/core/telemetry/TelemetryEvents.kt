@@ -21,24 +21,19 @@ import androidx.annotation.RestrictTo
 public object TelemetryEvents {
     // Instrument storage.
 
-    /** An instrument was submitted for storage. */
-    public const val TOKENIZATION_STARTED: String = "tokenization.started"
-
-    /** Storage returned a stored method. */
-    public const val TOKENIZATION_SUCCEEDED: String = "tokenization.succeeded"
-
-    /** Storage refused the instrument. */
-    public const val TOKENIZATION_FAILED: String = "tokenization.failed"
-
-    /** The payer or the host abandoned storage. */
-    public const val TOKENIZATION_CANCELLED: String = "tokenization.cancelled"
+    // Storing an instrument is reported by the money path, under `payin.storeMethod.completed`. The four
+    // `tokenization.*` names the sibling SDK ships were retired on 2026-08-26: one name carrying an outcome
+    // and a duration says what a started-and-succeeded pair says, and two vocabularies for one act is drift.
 
     // Payment form.
 
     /** A payment form was drawn. */
     public const val FORM_PRESENTED: String = "form.presented"
 
-    /** Local validation refused a submission. Carries which rule refused, never which field held what. */
+    /** The payer asked to submit, before anything is sent. */
+    public const val FORM_SUBMITTED: String = "form.submitted"
+
+    /** A field was refused on a submission, one event per field. Carries which rule, never the value. */
     public const val FORM_VALIDATION_ERROR: String = "form.validationError"
 
     // Card-present lifecycle.

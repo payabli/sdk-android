@@ -4,7 +4,7 @@ import com.google.android.play.core.integrity.model.IntegrityErrorCode
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.core.telemetry.TelemetryCatalog
 import com.payabli.sdk.core.telemetry.TelemetryEvents
-import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.impl.PlayIntegrityErrorMapping
@@ -44,10 +44,10 @@ class AttestationQuotaTelemetryTest {
 
         val (event, properties) = recorded.single()
         assertEquals(TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED, event)
-        assertEquals("standard", properties[TelemetryProperties.REASON])
+        assertEquals("standard", properties[TelemetryProperty.REASON.key])
         assertEquals(
             StandardIntegrityErrorCode.TOO_MANY_REQUESTS.toString(),
-            properties[TelemetryProperties.CODE],
+            properties[TelemetryProperty.CODE.key],
         )
     }
 
@@ -61,13 +61,13 @@ class AttestationQuotaTelemetryTest {
     fun `the classic request shape is told apart from the standard one`() {
         PlayIntegrityErrorMapping.failureFor(IntegrityErrorCode.TOO_MANY_REQUESTS, VerdictClass.CLASSIC)
 
-        val classic = recorded.single().second[TelemetryProperties.REASON]
+        val classic = recorded.single().second[TelemetryProperty.REASON.key]
         recorded.clear()
 
         PlayIntegrityErrorMapping.failureFor(StandardIntegrityErrorCode.TOO_MANY_REQUESTS, VerdictClass.STANDARD)
 
         assertEquals("classic", classic)
-        assertTrue(classic != recorded.single().second[TelemetryProperties.REASON])
+        assertTrue(classic != recorded.single().second[TelemetryProperty.REASON.key])
     }
 
     /**

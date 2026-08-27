@@ -4,6 +4,7 @@ import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -49,8 +50,8 @@ class PayInSubmissionTelemetryTest {
 
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
-            assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperties.OUTCOME])
-            assertNotNull(properties[TelemetryProperties.DURATION_MS]?.toLongOrNull())
+            assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
+            assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
         }
 
     @Test
@@ -81,8 +82,8 @@ class PayInSubmissionTelemetryTest {
             submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
 
             val properties = recorded.single().second
-            assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperties.OUTCOME])
-            assertEquals("PAYMENT_DECLINED", properties[TelemetryProperties.CODE])
+            assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
+            assertEquals("PAYMENT_DECLINED", properties[TelemetryProperty.CODE.key])
         }
 
     /** A form nobody can submit is a real thing to count, and it is invisible to anything watching requests. */
@@ -98,8 +99,8 @@ class PayInSubmissionTelemetryTest {
 
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
-            assertEquals(TelemetryProperties.Outcome.REFUSED_LOCALLY, properties[TelemetryProperties.OUTCOME])
-            assertTrue(properties[TelemetryProperties.DURATION_MS] == null)
+            assertEquals(TelemetryProperties.Outcome.REFUSED_LOCALLY, properties[TelemetryProperty.OUTCOME.key])
+            assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
         }
 
     /**
@@ -128,15 +129,15 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(
                 TelemetryProperties.Outcome.INTERRUPTED,
-                properties[TelemetryProperties.OUTCOME],
+                properties[TelemetryProperty.OUTCOME.key],
             )
             assertEquals(
                 PayabliErrorCode.USER_CANCELLED.wireName,
-                properties[TelemetryProperties.CODE],
+                properties[TelemetryProperty.CODE.key],
             )
             assertTrue(
                 "an abandoned payment took some measurable time",
-                properties[TelemetryProperties.DURATION_MS] != null,
+                properties[TelemetryProperty.DURATION_MS.key] != null,
             )
         }
 
@@ -149,7 +150,7 @@ class PayInSubmissionTelemetryTest {
 
             val reported = recorded.single().second
             assertEquals(
-                setOf(TelemetryProperties.OUTCOME, TelemetryProperties.DURATION_MS),
+                setOf(TelemetryProperty.OUTCOME.key, TelemetryProperty.DURATION_MS.key),
                 reported.keys,
             )
         }
