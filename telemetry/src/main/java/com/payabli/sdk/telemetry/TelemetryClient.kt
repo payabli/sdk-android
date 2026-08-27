@@ -29,9 +29,10 @@ import kotlin.time.Duration
  * Everything after that is asynchronous and best-effort. Nothing here blocks the caller and nothing here
  * reaches the caller, whatever happens to the batch.
  *
- * Three things cause a flush, and they answer different failures: a full batch, so a busy app ships
- * continuously; a timer, so a quiet app ships at all; and the app going to the background, which is the last
- * moment before a process that may never run again.
+ * Four things cause a flush, and they answer different failures: a full batch, so a busy app ships
+ * continuously; a timer, so a quiet app ships at all; the app going to the background, which is the last
+ * moment before a process that may never run again; and an event the catalog says cannot wait, which is a
+ * name that already means failure or an outcome that is not a success.
  */
 internal class TelemetryClient(
     private val context: TelemetrySessionContext,
