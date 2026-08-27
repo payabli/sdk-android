@@ -23,7 +23,7 @@ class TelemetryQueueTest {
 
     /** Full means the oldest goes, because the newest events are the ones describing what is going wrong now. */
     @Test
-    fun afullQueueEvictsTheOldest() {
+    fun aFullQueueEvictsTheOldest() {
         val queue = TelemetryQueue(capacity = 3)
         (1..5).forEach { queue.offer(event(it)) }
 
