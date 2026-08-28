@@ -4,6 +4,7 @@ import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationFailures
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -48,6 +49,53 @@ class DeviceRouteTelemetryTest {
             assertEquals(TelemetryProperties.Outcome.SUCCEEDED, properties[TelemetryProperty.OUTCOME.key])
             assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
             assertNull(properties[TelemetryProperty.CODE.key])
+        }
+
+    /**
+     * The other two routes, so every one of the five is pinned to its own name.
+     *
+     * The mapping is a table keyed on the route template, and three of its rows were asserted. Swapping the
+     * two that were not would have put attestation and configuration into another route's series with the
+     * suite green, which is a rename nobody would see until a chart had already moved.
+     */
+    @Test
+    fun `attesting is reported under its own name`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport =
+                FakeDeviceTransport.answering(successEnvelope("""{"registered":true,"isSandbox":false}"""))
+
+            DeviceServiceClient(transport, logger).attest(
+                entry = ENTRY_POINT,
+                challengeId = "c-1",
+                identity = DeviceIdentity(deviceId = "a-device-id", keyId = "key-id-value", publicKey = "a-key"),
+                appId = "an-app-id",
+                token = AttestationToken("a-token"),
+            )
+
+            assertEquals(TelemetryEvents.TTP_DEVICE_ATTEST_COMPLETED, recorded.single().first)
+        }
+
+    @Test
+    fun `configuring is reported under its own name`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val credentials =
+                """{"platform":"a-platform","secretKey":"s","apiKey":"a","merchantId":"m",""" +
+                    """"environment":"sandbox","currencyCode":"USD","merchantName":"A Merchant",""" +
+                    """"merchantCategoryCode":"5999","terminalId":"t-1","ppId":"pp-1","hostPort":"h:1"}"""
+            val transport = FakeDeviceTransport.answering(successEnvelope("""{"credentials":$credentials}"""))
+
+            DeviceServiceClient(transport, logger).config(
+                entry = ENTRY_POINT,
+                assertion =
+                    DeviceAssertion(
+                        assertion = "an-assertion",
+                        keyId = "key-id-value",
+                        deviceId = "a-device-id",
+                        timestamp = "2026-08-27T00:00:00Z",
+                    ),
+            )
+
+            assertEquals(TelemetryEvents.TTP_DEVICE_CONFIG_COMPLETED, recorded.single().first)
         }
 
     /** Refused means the far side answered and said no, which on these routes arrives inside a 200. */
