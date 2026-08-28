@@ -12,9 +12,8 @@ import java.io.File
  * nobody notices. So it is read out of the source rather than agreed.
  *
  * **Two packages, for two different readers.** `sdk` is this app's integration layer, which four screens
- * share and which hands back types the app owns. `demo/simple` is the one screen that deliberately does not:
- * it calls the SDK directly so that the fewest calls a capture takes can be read in one file. Anywhere else
- * is still a drift.
+ * share and which hands back types the app owns. `demo/simple` calls the SDK directly, so the fewest calls a
+ * capture takes can be read in one file. Anywhere else is still a drift.
  *
  * `src/main` only. A test doubles the SDK's types to build a fixture, which is the same work by a different
  * name.
