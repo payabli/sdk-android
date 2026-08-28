@@ -142,6 +142,7 @@ UNIT_XML = "core/build/test-results/testDebugUnitTest/TEST-com.payabli.sdk.core.
 INST_XML = "core/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 PAYIN_INST_XML = "payin/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 COV_XML = "core/build/reports/coverage/test/debug/report.xml"
+EXAMPLE_COV_XML = "example/build/reports/coverage/test/withTelemetry/debug/report.xml"
 SRC = "core/src/test/java/com/payabli/sdk/core/RetryTest.kt"
 SUBJ = "core/src/main/java/com/payabli/sdk/core/Retry.kt"
 
@@ -419,6 +420,61 @@ def test_collector():
     b2 = {m["module"]: m for m in r2["facts"]["coverage"][0]["modules"]}
     check("C16 a real report is still 'measured'",
           b2["core"]["state"] == "measured" and b2["core"]["percent"] == 90.0, json.dumps(b2["core"]))
+
+    # C22 a module with product flavors is expected per variant. The nightly runs :example twice, and the
+    # absent-artifact build is the whole reason the flavors exist, so a variant that stops running has to be
+    # visible. Globbing the module covers one variant with the other: the count is never zero and the module
+    # never reads as silent.
+    example_inst = "example/build/outputs/androidTest-results/connected"
+    r = run_collector(
+        make_repo({
+            UNIT_XML: junit("S", [("a", None)]),
+            INST_XML: junit("I", [("b", None)]),
+            PAYIN_INST_XML: junit("P", [("c", None)]),
+            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
+            # withoutTelemetryDebug wrote nothing: the flavor that proves the absent-artifact path stopped
+            # running, and the module as a whole still has results.
+        }),
+        INSTRUMENTED_OUTCOME="success",
+        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+    )
+    check("C22 a silent variant is caught", "verdict=red" in r["output"], r["output"])
+
+    r = run_collector(
+        make_repo({
+            UNIT_XML: junit("S", [("a", None)]),
+            INST_XML: junit("I", [("b", None)]),
+            PAYIN_INST_XML: junit("P", [("c", None)]),
+            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
+            f"{example_inst}/withoutTelemetryDebug/TEST-emulator.xml": junit("E2", [("e", None)]),
+        }),
+        INSTRUMENTED_OUTCOME="success",
+        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+    )
+    check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
+
+    # C21 the one module whose report is not under `debug`. :example has product flavors, so its coverage is
+    # written under the flavored variant, and a collector looking for `debug` finds nothing and calls it
+    # missing -- which reads exactly like a module whose tests did not run. Nothing else here writes that
+    # path, so a typo in the variant name would leave every check in this file green.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("b", None)]),
+        EXAMPLE_COV_XML: COVERAGE.format(bm=20, bc=80, lm=10, lc=90),
+    }))
+    flavored = {m["module"]: m for m in r["facts"]["coverage"][0]["modules"]}
+    check("C21 the flavored report is measured", flavored["example"]["state"] == "measured",
+          json.dumps(flavored["example"]))
+    check("C21 and it is read, not guessed", flavored["example"]["percent"] == 80.0,
+          json.dumps(flavored["example"]))
+    unflavored = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("b", None)]),
+        "example/build/reports/coverage/test/debug/report.xml": COVERAGE.format(bm=20, bc=80, lm=10, lc=90),
+    }))
+    by_module = {m["module"]: m for m in unflavored["facts"]["coverage"][0]["modules"]}
+    check("C21 the same report under `debug` is not found", by_module["example"]["state"] == "missing",
+          json.dumps(by_module["example"]))
 
     # C17 an unparseable coverage report reads as unmeasured rather than being dropped
     r = run_collector(make_repo({

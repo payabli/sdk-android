@@ -149,7 +149,7 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
+          :example:createWithTelemetryDebugUnitTestCoverageReport
           :testutils:createDebugUnitTestCoverageReport
 
       # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
@@ -291,7 +291,9 @@ jobs:
           # the whole reason the two coexist. A -P `notClass` here would overwrite those lists and readmit all
           # three, sending real payments from this step, so nothing in this workflow passes one. What this step
           # runs is the annotation filter minus whatever each module excluded.
-          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest :example:connectedAndroidTest
+          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
+            :example:connectedWithTelemetryDebugAndroidTest
+            :example:connectedWithoutTelemetryDebugAndroidTest
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
@@ -322,7 +324,7 @@ jobs:
           # The modules the instrumented step above ran. The collector checks each one wrote results,
           # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
           # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
-          INSTRUMENTED_MODULES: core,payin,example
+          INSTRUMENTED_MODULES: core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than

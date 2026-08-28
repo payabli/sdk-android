@@ -281,8 +281,9 @@ MUTATIONS = [
      "          PAYABLI_LIVETEST_TOKEN_HOST_DISABLED: 10.0.2.2:8787"),
 
     ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
-     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true",
-     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true "
+     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true "
+     "-Ppayabli.demo.prefill=true",
+     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true "
      "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
 
     # The guard that keeps the run's verdict and the channel's from disagreeing. Dropping a module from it is
@@ -298,8 +299,9 @@ MUTATIONS = [
     # The action splits the script on newlines, so a continuation is not one. Both halves of the split are
     # broken and neither says so: the command loses its arguments and the arguments become a command.
     ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
-     "            ./gradlew :example:connectedAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true",
-     "            ./gradlew :example:connectedAndroidTest \\\n"
+     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true "
+     "-Ppayabli.demo.prefill=true",
+     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest \\\n"
      "              -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true"),
 
     ("The pay-in suite loses its class filter and runs the whole instrumented suite", LIVE_FLOWS, "workflows",

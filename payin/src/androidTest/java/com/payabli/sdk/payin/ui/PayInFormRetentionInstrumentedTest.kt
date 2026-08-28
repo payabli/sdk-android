@@ -26,6 +26,7 @@ import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.TEST_EXPIRY
 import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -141,6 +142,7 @@ class PayInFormRetentionInstrumentedTest {
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
                     configuration = configuration,
+                    reports = PayInFormReports.None,
                     initialValues = seed,
                 )
             }
