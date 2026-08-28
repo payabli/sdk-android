@@ -44,6 +44,7 @@ fun SetupScreen(
     onProbeHealth: () -> Unit,
     onRecheck: () -> Unit,
     onSuppliesDemoCustomerChange: (Boolean) -> Unit,
+    onShowSimpleCaptureChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     DemoScreen(title = "Configuration", modifier = modifier) {
@@ -61,6 +62,12 @@ fun SetupScreen(
                 label = "Environment",
                 value = "${state.configuration.environment.label} · ${state.configuration.environment.host}",
                 problem = state.configuration.environmentProblem,
+            )
+            SwitchRow(
+                label = "Show Simple Capture",
+                checked = state.showSimpleCapture,
+                note = "Adds a fifth tab: one screen, the fewest calls a card capture takes.",
+                onCheckedChange = onShowSimpleCaptureChange,
             )
         }
 
@@ -278,6 +285,7 @@ private fun SetupScreenPreview() {
             onProbeHealth = {},
             onRecheck = {},
             onSuppliesDemoCustomerChange = {},
+            onShowSimpleCaptureChange = {},
         )
     }
 }

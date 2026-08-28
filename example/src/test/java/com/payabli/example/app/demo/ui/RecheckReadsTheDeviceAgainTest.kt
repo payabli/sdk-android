@@ -2,6 +2,7 @@ package com.payabli.example.app.demo.ui
 
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.config.DemoEnvironment
+import com.payabli.example.app.demo.config.SimpleCaptureSetting
 import com.payabli.example.app.demo.config.TokenHostSource
 import com.payabli.example.app.demo.config.TokenServerTarget
 import com.payabli.example.app.demo.net.TokenServerClient
@@ -49,6 +50,7 @@ class RecheckReadsTheDeviceAgainTest {
             tokenClient = TokenServerClient(target),
             readDeviceFacts = read,
             demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
+            simpleCapture = SimpleCaptureSetting(),
             formSetup = PayInForms.storePaymentMethod(),
         )
 

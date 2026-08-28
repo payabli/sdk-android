@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.VisibleForTesting
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.config.DemoEnvironment
+import com.payabli.example.app.demo.config.SimpleCaptureSetting
 import com.payabli.example.app.demo.config.TokenHostDefaults
 import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.config.TokenServerTarget
@@ -106,7 +107,10 @@ class AppContainer(
      * above land before any screen asks for a session. Built eagerly it would hold what the process started
      * with, and an override would reach the Setup screen but not the SDK.
      */
-    private val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
+    val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
+
+    /** Whether the Simple Capture tab is shown. Off until the Config screen turns it on. */
+    val simpleCapture: SimpleCaptureSetting = SimpleCaptureSetting()
 
     /**
      * Step one for both payment screens: the token server, then the SDK.

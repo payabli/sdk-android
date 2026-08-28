@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.AppContainer
 import com.payabli.example.app.demo.config.DemoConfiguration
+import com.payabli.example.app.demo.config.SimpleCaptureSetting
 import com.payabli.example.app.demo.config.TokenServerTarget
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.net.TokenServerProbe
@@ -38,6 +39,8 @@ data class SetupUiState(
     val suppliesDemoCustomer: Boolean = true,
     /** What it would send, for the note under the switch. */
     val demoCustomerSummary: String = "",
+    /** Whether the fifth tab is in the bar. */
+    val showSimpleCapture: Boolean = false,
 )
 
 class SetupViewModel(
@@ -46,6 +49,7 @@ class SetupViewModel(
     private val tokenClient: TokenServerClient,
     private val readDeviceFacts: () -> DeviceFacts,
     private val demoCustomer: DemoCustomerSetting,
+    private val simpleCapture: SimpleCaptureSetting,
     formSetup: PayInFormSetup,
 ) : ViewModel() {
     private val _uiState =
@@ -57,6 +61,7 @@ class SetupViewModel(
                 formSetup = formSetup,
                 suppliesDemoCustomer = demoCustomer.suppliesDemoCustomer.value,
                 demoCustomerSummary = demoCustomer.summary,
+                showSimpleCapture = simpleCapture.shown.value,
             ),
         )
     val uiState: StateFlow<SetupUiState> = _uiState.asStateFlow()
@@ -68,9 +73,16 @@ class SetupViewModel(
                 _uiState.update { it.copy(suppliesDemoCustomer = supplies) }
             }
         }
+        viewModelScope.launch {
+            simpleCapture.shown.collect { shown ->
+                _uiState.update { it.copy(showSimpleCapture = shown) }
+            }
+        }
     }
 
     fun setSuppliesDemoCustomer(supplies: Boolean) = demoCustomer.setSuppliesDemoCustomer(supplies)
+
+    fun setShowSimpleCapture(shown: Boolean) = simpleCapture.setShown(shown)
 
     fun recheck() {
         val facts = readDeviceFacts()
@@ -121,6 +133,7 @@ class SetupViewModel(
                 tokenClient = container.tokenClient,
                 readDeviceFacts = container.readDeviceFacts,
                 demoCustomer = container.demoCustomer,
+                simpleCapture = container.simpleCapture,
                 // The stored-method form. The capture form differs in more than its summary section: the
                 // stored-method route needs a customer number and collects one, and capture does not.
                 formSetup = PayInForms.storePaymentMethod(),

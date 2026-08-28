@@ -32,15 +32,22 @@ data object TapToPayGraph
 data object TapToPayHome
 
 @Serializable
+data object SimpleCaptureGraph
+
+@Serializable
+data object SimpleCaptureHome
+
+@Serializable
 data object SetupGraph
 
 @Serializable
 data object SetupHome
 
 /**
- * The four capability areas, and the order they appear in.
+ * The capability areas, and the order they appear in.
  *
- * Saving a method first, as the simplest thing the SDK does. Setup last, being a readout.
+ * Saving a method first, as the simplest thing the SDK does. Setup last, being a readout. [SimpleCapture] is
+ * shown only when the setting for it is on, which is what keeps the ordinary bar at four.
  */
 enum class TopLevelDestination(
     val navLabel: String,
@@ -51,9 +58,13 @@ enum class TopLevelDestination(
     // its text under a centred icon.
     PaymentMethod("Save", DemoIcons.PaymentMethod),
     Capture("Capture", DemoIcons.Capture),
+    SimpleCapture("S-Capture", DemoIcons.Capture),
     TapToPay("TapToPay", DemoIcons.TapToPay),
     Setup("Config", DemoIcons.Setup),
     ;
+
+    /** Whether this item is always in the bar, or waits on a setting. */
+    val isOptional: Boolean get() = this == SimpleCapture
 
     /**
      * How a test finds this item.
@@ -68,6 +79,7 @@ enum class TopLevelDestination(
             when (this) {
                 PaymentMethod -> PaymentMethodGraph
                 Capture -> CaptureGraph
+                SimpleCapture -> SimpleCaptureGraph
                 TapToPay -> TapToPayGraph
                 Setup -> SetupGraph
             }
@@ -78,7 +90,17 @@ enum class TopLevelDestination(
             when (this) {
                 PaymentMethod -> PaymentMethodGraph::class.qualifiedName!!
                 Capture -> CaptureGraph::class.qualifiedName!!
+                SimpleCapture -> SimpleCaptureGraph::class.qualifiedName!!
                 TapToPay -> TapToPayGraph::class.qualifiedName!!
                 Setup -> SetupGraph::class.qualifiedName!!
             }
 }
+
+/**
+ * The items the bar draws, in order.
+ *
+ * One home for the rule, because the bar and the test that guards it have to be asking the same question. A
+ * filter written out at the call site is one the test can only imitate.
+ */
+fun shownDestinations(simpleCaptureShown: Boolean): List<TopLevelDestination> =
+    TopLevelDestination.entries.filter { !it.isOptional || simpleCaptureShown }
