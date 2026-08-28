@@ -27,6 +27,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import kotlinx.coroutines.launch
@@ -47,6 +48,24 @@ class SimpleCaptureViewModel(
 
     var failure by mutableStateOf<String?>(null)
         private set
+
+    /**
+     * The key the next attempt sends, so a retry after an unknown outcome settles the first charge instead
+     * of making a second one.
+     *
+     * Null until a failure leaves the outcome unknown, and null again once one is settled: the SDK mints a
+     * fresh key per attempt when none is given, which is what a new payment needs.
+     */
+    var retryKey by mutableStateOf<String?>(null)
+        private set
+
+    fun failed(outcome: PayInSubmissionState.Failed) {
+        retryKey = outcome.retryKey
+    }
+
+    fun succeeded() {
+        retryKey = null
+    }
 
     init {
         // 1. The app's own backend mints a token and the SDK is configured with it. Nothing can be sent
@@ -101,13 +120,18 @@ fun SimpleCaptureScreen(
                         flow = ready,
                         operation =
                             PayabliPayInOperation.Capture(
-                                PayInTransactionOptions(PayInPaymentDetails(totalAmount = amount)),
+                                PayInTransactionOptions(
+                                    PayInPaymentDetails(totalAmount = amount),
+                                    idempotencyKey = viewModel.retryKey,
+                                ),
                             ),
                         configuration = PayInFormConfiguration(allowedMethods = listOf(PayInMethodType.Card)),
                         onCompleted = {
+                            viewModel.succeeded()
                             Toast.makeText(context, "Payment approved", Toast.LENGTH_LONG).show()
                         },
                         onFailed = {
+                            viewModel.failed(it)
                             Toast.makeText(context, "Payment failed", Toast.LENGTH_LONG).show()
                         },
                         onMethodChanged = {},
