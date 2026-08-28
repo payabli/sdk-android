@@ -21,10 +21,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.payin.PayabliPayInForm
+import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -125,7 +129,23 @@ fun SimpleCaptureScreen(
                                     idempotencyKey = viewModel.retryKey,
                                 ),
                             ),
-                        configuration = PayInFormConfiguration(allowedMethods = listOf(PayInMethodType.Card)),
+                        configuration =
+                            PayInFormConfiguration(
+                                allowedMethods = listOf(PayInMethodType.Card),
+                                // The amount is set on the operation and never collected, so this row reads
+                                // back the figure the request carries and the two cannot disagree.
+                                cardSections =
+                                    PayInFormConfiguration.defaultCardSections() +
+                                        PayInFormSection(
+                                            fields = listOf(PayInField.Amount),
+                                            style = PayInSectionStyle.Summary,
+                                        ),
+                                summaryValues =
+                                    mapOf(
+                                        PayInField.Amount to
+                                            TransactionSummary.formatAmount(amount.toPlainString()),
+                                    ),
+                            ),
                         onCompleted = {
                             viewModel.succeeded()
                             Toast.makeText(context, "Payment approved", Toast.LENGTH_LONG).show()
