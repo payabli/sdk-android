@@ -332,6 +332,32 @@ class TelemetryClientTest {
         }
 
     /**
+     * A record reaching a stopped client is dropped out loud.
+     *
+     * A reporting thread reads the installed client and can be descheduled before it records; a replacement
+     * in that window stops this one first. The queue would still take the event and nothing would ever send
+     * it, which is the one drop here that had no line anywhere.
+     */
+    @Test
+    fun aRecordReachingAStoppedClientIsReported() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+
+            withClient(transport, batchSize = 1) { client ->
+                client.stop()
+                transport.sent.clear()
+
+                record(client)
+
+                assertEquals("a stopped client accepted and lost it", 0, transport.eventsSent())
+                assertTrue(
+                    "the drop was silent: ${logger.records}",
+                    logger.records.any { "this channel was replaced" in it.message },
+                )
+            }
+        }
+
+    /**
      * A padded entry point is the same entry point.
      *
      * `PayabliConfig` accepts anything non-blank, and every request writer trims before sending, so a
