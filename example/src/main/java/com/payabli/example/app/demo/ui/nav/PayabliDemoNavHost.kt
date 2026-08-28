@@ -29,6 +29,7 @@ import androidx.navigation.compose.rememberNavController
 import com.payabli.example.app.PayabliDemoApplication
 import com.payabli.example.app.demo.net.checkToken
 import com.payabli.example.app.demo.simple.SimpleCaptureScreen
+import com.payabli.example.app.demo.simple.SimpleCaptureViewModel
 import com.payabli.example.app.demo.ui.capture.CaptureResultScreen
 import com.payabli.example.app.demo.ui.capture.CaptureScreen
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
@@ -151,11 +152,12 @@ private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController)
 
 private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
     navigation<SimpleCaptureGraph>(startDestination = SimpleCaptureHome) {
-        composable<SimpleCaptureHome> {
-            val container = (LocalContext.current.applicationContext as PayabliDemoApplication).container
+        composable<SimpleCaptureHome> { entry ->
             SimpleCaptureScreen(
-                sessionSource = container.sessionSource,
-                entryPoint = container.configuration.entryPoint,
+                viewModel =
+                    navController.graphViewModel<SimpleCaptureGraph, SimpleCaptureViewModel>(entry) {
+                        SimpleCaptureViewModel(it.sessionSource, it.configuration.entryPoint)
+                    },
                 amount = SIMPLE_CAPTURE_AMOUNT,
             )
         }
