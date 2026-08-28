@@ -273,6 +273,39 @@ class TelemetryClientTest {
         }
 
     /**
+     * Shutting down while the timer's upload is in flight does not lose that batch.
+     *
+     * The timer used to call [TelemetryClient.flush] on its own coroutine, so cancelling it cancelled the
+     * upload. By then the events were drained and the drop count taken, and neither was anywhere the
+     * shutdown drain could find them: the batch was gone from the queue and the count read as zero.
+     */
+    @Test
+    fun stoppingDuringTheTimersUploadKeepsTheBatch() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+            val client =
+                clientOn(
+                    scope = CoroutineScope(UnconfinedTestDispatcher(testScheduler)),
+                    transport = transport,
+                    batchSize = 1_000,
+                )
+            client.start()
+            record(client)
+            transport.stall()
+
+            // The timer fires and the upload parks inside the transport.
+            advanceTimeBy(FLUSH_INTERVAL + 1.seconds)
+            assertEquals("the timer never reached the transport", 1, transport.sent.size)
+
+            client.stop()
+            transport.release()
+
+            // `sent` alone cannot answer this: the fake records a request before it parks, so a cancelled
+            // send counts there either way. What separates them is whether it got past the gate.
+            assertEquals("the batch the timer was sending was lost", 1, transport.completed.size)
+        }
+
+    /**
      * A record keeps the session it was made under, whichever channel ends up sending it.
      *
      * An operation that starts under one session and answers after a re-initialize is recorded on the

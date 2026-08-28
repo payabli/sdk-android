@@ -20,6 +20,9 @@ internal class FakeTransport(
 ) : PayabliTransport {
     val sent = mutableListOf<PayabliRequest>()
 
+    /** The requests that got past the gate, which a cancelled one does not. */
+    val completed = mutableListOf<PayabliRequest>()
+
     /**
      * Holds every call inside `execute` until it is completed.
      *
@@ -31,6 +34,9 @@ internal class FakeTransport(
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
         sent += request
         gate?.await()
+        // After the gate, so a send that was cancelled while parked is absent here while present in [sent].
+        // The two counts are what tell a delivered batch from one whose coroutine died holding it.
+        completed += request
         return answer(request)
     }
 

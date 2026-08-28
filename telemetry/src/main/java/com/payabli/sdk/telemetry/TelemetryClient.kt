@@ -108,11 +108,15 @@ internal class TelemetryClient(
     @Synchronized
     fun start() {
         if (timer != null) return
+        // Signals rather than flushes. Flushing here put the upload on the timer's own coroutine, so a
+        // `stop` that cancelled the timer mid-send cancelled the send: the batch was already drained and its
+        // drop count already taken, and the shutdown drain could not see either. Cancelling this now ends a
+        // delay loop, and the worker either finishes or serialises with that drain on the same lock.
         timer =
             scope.launch {
                 while (isActive) {
                     delay(flushInterval)
-                    flush()
+                    flushAsync()
                 }
             }
     }
