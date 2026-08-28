@@ -15,8 +15,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class TelemetrySessionContext(
-    /** The partner integration point every event is attributed to. */
-    public val entryPoint: String,
+    entryPoint: String,
     /** Selects the base URL, and is reported alongside every event. */
     public val environment: PayabliEnvironment,
     /** The host's opt-out. False means no recorder is installed at all. */
@@ -33,6 +32,15 @@ public class TelemetrySessionContext(
     public val device: TelemetryDeviceContext,
 ) {
     /**
+     * The partner integration point every event is attributed to.
+     *
+     * Trimmed, because the request writers send it trimmed. Untrimmed, a padded configuration reported under
+     * one spelling what the service recorded under another, and the check that keeps a record off a channel
+     * it does not belong to compared the two exactly, so a flow using the trimmed form dropped every event.
+     */
+    public val entryPoint: String = entryPoint.trim()
+
+    /**
      * This session, attributed to [entryPoint] instead of its own.
      *
      * A capability can be pointed at an entry point other than the one the session was configured with, and
@@ -40,7 +48,7 @@ public class TelemetrySessionContext(
      * the same run and the device is the same device.
      */
     public fun forEntryPoint(entryPoint: String): TelemetrySessionContext =
-        if (entryPoint == this.entryPoint) {
+        if (entryPoint.trim() == this.entryPoint) {
             this
         } else {
             TelemetrySessionContext(entryPoint, environment, telemetryEnabled, sessionId, device)

@@ -332,6 +332,35 @@ class TelemetryClientTest {
         }
 
     /**
+     * A padded entry point is the same entry point.
+     *
+     * `PayabliConfig` accepts anything non-blank, and every request writer trims before sending, so a
+     * configuration of `" an-entry-point "` reaches the service as `an-entry-point`. Compared untrimmed, the
+     * check below reads a flow using the trimmed form as a foreign entry point and drops all of its events,
+     * and what does reach the wire is attributed under a spelling the service never recorded.
+     */
+    @Test
+    fun aPaddedEntryPointIsNotAForeignOne() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport = FakeTransport()
+            val padded = aSession(entryPoint = "  an-entry-point  ", sessionId = "the-padded-session")
+
+            withClient(transport, batchSize = 1) { client ->
+                client.record(
+                    TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+                    mapOf(TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.APPROVED),
+                    padded,
+                )
+
+                assertEquals("the padded session read as another entry point", 1, transport.eventsSent())
+                assertTrue(
+                    "the padding reached the wire: ${transport.bodyAsText()}",
+                    transport.bodyAsText().contains(""""entry":"an-entry-point""""),
+                )
+            }
+        }
+
+    /**
      * A record from another entry point is dropped rather than rewritten.
      *
      * The batch's entry is what the request is authorized against and the service drops an event whose own
