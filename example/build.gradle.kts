@@ -93,7 +93,7 @@ android {
         // asking for it is a deliberate flag and not a default.
         //
         //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.qaWalkthrough=true \
-        //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
+        //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
         val walkthrough = "com.payabli.example.app.QaWalkthroughTest"
         val excluded = mutableListOf<String>()
 

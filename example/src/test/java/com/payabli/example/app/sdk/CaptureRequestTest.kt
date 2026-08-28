@@ -41,7 +41,7 @@ class CaptureRequestTest {
      * Every payment from one device names one customer.
      *
      * The capture form collects no customer number, so with none supplied here and `forceCustomerCreation` set
-     * the paypoint has nothing to match on and writes a new customer per payment. Measured on qa: three captures
+     * the paypoint has nothing to match on and writes a new customer per payment. Measured against a live paypoint: three captures
      * from one device produced three customers, each with no number at all.
      */
     @Test

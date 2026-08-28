@@ -34,7 +34,7 @@ class SampleIdentityTest {
 
     @Test
     fun `an account holder name carries nothing the store route refuses`() {
-        // Measured on qa: `Sample Samsung SM-S908U1` comes back "Bad Request: Account holder name cannot contain
+        // Measured against a live paypoint: `Sample Samsung SM-S908U1` comes back "Bad Request: Account holder name cannot contain
         // special characters", and the same name without the hyphen is stored. Every model code has
         // punctuation in it, so this is every device.
         RUN_MODELS.map(SampleIdentity::from).forEach { identity ->

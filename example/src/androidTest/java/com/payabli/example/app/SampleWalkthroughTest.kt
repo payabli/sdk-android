@@ -37,7 +37,7 @@ import org.junit.runner.RunWith
  * adb -s <serial> reverse tcp:8787 tcp:8787
  * ANDROID_SERIAL=<serial> ./gradlew :example:connectedDebugAndroidTest \
  *   -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true \
- *   -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
+ *   -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
  * ```
  *
  * Given the three `payabli.liveTest.*` values instead, the address, entry point and environment come from the

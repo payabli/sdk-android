@@ -21,13 +21,14 @@ class DemoEnvironmentTest {
 
     @Test
     fun `case and surrounding whitespace are ignored`() {
-        assertEquals(DemoEnvironment.QA, DemoEnvironment.named("QA"))
-        assertEquals(DemoEnvironment.QA, DemoEnvironment.named("  qa  "))
+        assertEquals(DemoEnvironment.SANDBOX, DemoEnvironment.named("SANDBOX"))
+        assertEquals(DemoEnvironment.SANDBOX, DemoEnvironment.named("  sandbox  "))
         assertEquals(DemoEnvironment.SANDBOX, DemoEnvironment.named("SandBox"))
     }
 
     @Test
     fun `an unrecognised label names nothing`() {
+        assertNull(DemoEnvironment.named("qa"))
         assertNull(DemoEnvironment.named("qua"))
         assertNull(DemoEnvironment.named("staging"))
     }
@@ -49,12 +50,6 @@ class DemoEnvironmentTest {
     }
 
     // --- the hosts each environment resolves to ---
-
-    @Test
-    fun `qa points at the qa api`() {
-        assertEquals("https://api-qa.payabli.com", DemoEnvironment.QA.baseUrl)
-        assertEquals("api-qa.payabli.com", DemoEnvironment.QA.host)
-    }
 
     @Test
     fun `no two environments share a host`() {
@@ -94,13 +89,13 @@ class DemoEnvironmentTest {
 
     @Test
     fun `the setting decides the environment`() {
-        assertEquals(DemoEnvironment.QA, configuredWith("qa").environment)
+        assertEquals(DemoEnvironment.SANDBOX, configuredWith("sandbox").environment)
         assertEquals(DemoEnvironment.PRODUCTION, configuredWith("production").environment)
     }
 
     @Test
     fun `a recognised setting is not a problem`() {
-        assertNull(configuredWith("qa").environmentProblem)
+        assertNull(configuredWith("sandbox").environmentProblem)
     }
 
     @Test
@@ -113,7 +108,7 @@ class DemoEnvironmentTest {
         // The value that was configured, so a reader is told what to go and fix.
         assertTrue(problem!!, problem.contains("qua"))
         assertTrue("the property is not named", problem.contains("payabli.demo.environment"))
-        assertTrue("the accepted values are not listed", problem.contains(DemoEnvironment.QA.label))
+        assertTrue("the accepted values are not listed", problem.contains(DemoEnvironment.SANDBOX.label))
     }
 
     @Test
@@ -147,7 +142,7 @@ class DemoEnvironmentTest {
     @Test
     fun `the build file's default is the fallback environment`() {
         // The literal and DEMO_ENVIRONMENT's fallback are in two files, and this is the only thing
-        // holding them equal. A default of "qa" resolves, reports no problem and reaches a device.
+        // holding them equal. A default naming no environment falls back silently and reaches a device.
         val configured = BuildFileDefaults.of("payabli.demo.environment")
         assertNotNull("no payabli.demo.environment default in ${BuildFileDefaults.location}", configured)
         assertEquals(DemoEnvironment.DEFAULT.label, configured)
