@@ -185,7 +185,7 @@ class PayInSubmissionTelemetryTest {
             )
         }
 
-    /** And an authorized capture, which takes no form and had been reporting the session's own instead. */
+    /** And an authorized capture, which reads no form and reaches the same report by the same route. */
     @Test
     fun `an authorized capture is reported under the entry point it ran against`() =
         runTest(timeout = TEST_TIMEOUT) {
