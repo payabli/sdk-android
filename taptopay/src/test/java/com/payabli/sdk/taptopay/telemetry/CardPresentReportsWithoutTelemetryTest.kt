@@ -64,8 +64,8 @@ class CardPresentReportsWithoutTelemetryTest {
                     DeviceServiceClient(transport, logger).challenge(ENTRY)
                 }.exceptionOrNull()
 
-            // The type, not merely that something was thrown: a failure telemetry introduced would satisfy
-            // "not null" while the refusal this exists to preserve had been replaced.
+            // The type, not merely that something was thrown: a failure telemetry introduces satisfies
+            // "not null" while the refusal this exists to preserve is gone.
             assertTrue("the route's own refusal did not survive: $failure", failure is DeviceServiceException)
         }
 
