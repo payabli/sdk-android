@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormConfiguration
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
@@ -91,7 +92,7 @@ fun SimpleCaptureScreen(
                             PayabliPayInOperation.Capture(
                                 PayInTransactionOptions(PayInPaymentDetails(totalAmount = amount)),
                             ),
-                        configuration = PayInFormConfiguration(),
+                        configuration = PayInFormConfiguration(allowedMethods = listOf(PayInMethodType.Card)),
                         onCompleted = {
                             Toast.makeText(context, "Payment approved", Toast.LENGTH_LONG).show()
                         },
