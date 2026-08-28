@@ -60,8 +60,12 @@ public class TelemetryModule : TelemetryBootstrap {
                 now = System::currentTimeMillis,
             )
 
-        InstalledTelemetry.install(client, watchBackground(host, client, logger))
+        // The recorder first, then retire the predecessor, which is the order `stop` already uses. Retiring
+        // first leaves a window where the installed recorder is a client that has been stopped and drained,
+        // and a completion landing in it is queued behind a closed channel and never sent. The new client
+        // takes records before `start`, because its flush worker exists from construction.
         TelemetryRecorders.install(client)
+        InstalledTelemetry.install(client, watchBackground(host, client, logger))
         client.start()
         client.record(TelemetryEvents.SDK_INITIALIZED, mapOf(TelemetryProperty.STATE.key to READY))
     }
