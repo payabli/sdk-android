@@ -47,7 +47,7 @@ private val TEST_TIMEOUT = 120.seconds
  *
  * ```
  * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.entryPointRefusalDeployed=true
+ *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa -Ppayabli.ttp.entryPointRefusalDeployed=true
  * ```
  *
  * A red with the property set is worth reading: either the environment does not have the change after all,
