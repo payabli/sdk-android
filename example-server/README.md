@@ -1,9 +1,9 @@
 # PayabliDemo Local Token Server
 
-Tiny development server for PayIn payment flow QA. It gives the Android sample a
+Tiny development server for exercising the PayIn payment flows. It gives the Android sample a
 backend-shaped endpoint without putting Payabli credentials in the APK.
 
-The server supports two local QA modes:
+The server supports two modes:
 
 - Direct token mode: return a sandbox API token that can call
   `/api/TokenStorage/add` and the v2 MoneyIn auth/capture endpoints.
@@ -241,18 +241,13 @@ curl --location 'https://api-sandbox.payabli.com/api/v2/token/serverside' \
   }'
 ```
 
-For QA, use:
+A bare host works too: the server accepts `api-sandbox.payabli.com/api` and adds `https://`.
+
+Token exchange is restricted to the hosts below, and a base URL pointing anywhere else is refused rather
+than ignored. Reaching a deployment that is not listed means naming it here for that run:
 
 ```bash
-PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api
-```
-
-The server also accepts `api-sandbox.payabli.com/api` or
-`api-qa.payabli.com/api` and will add `https://` automatically.
-Token exchange is restricted to Payabli hosts by default:
-
-```bash
-PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com,api-qa.payabli.com,api.payabli.com
+PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com,api.payabli.com
 ```
 
 Only add hosts for trusted local test infrastructure. Do not point credential

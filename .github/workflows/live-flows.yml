@@ -140,9 +140,18 @@ jobs:
           PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
           PAYABLI_ENTRY: ${{ secrets.entry-point }}
         run: |
+          # The allow-list moves with the base URL. The server's committed default names sandbox and
+          # production only, so a deployment outside that list is named by the run that needs it and is
+          # refused rather than ignored when it is not.
           case "$ENVIRONMENT" in
-            qa)      export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api ;;
-            sandbox) export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api ;;
+            qa)
+              export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api
+              export PAYABLI_ALLOWED_API_HOSTS=api-qa.payabli.com
+              ;;
+            sandbox)
+              export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
+              export PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com
+              ;;
             *) echo "::error::unknown environment $ENVIRONMENT"; exit 1 ;;
           esac
           nohup node example-server/server.mjs > "$RUNNER_TEMP/token-server.log" 2>&1 &
