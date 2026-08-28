@@ -22,6 +22,15 @@ Copy `secrets.properties.example` to `secrets.properties` and fill it in. It is 
 credential; the token is minted at runtime by `example-server/`. Any setting can be passed for a single
 run instead: `-Ppayabli.demo.entryPoint=entry0000`.
 
+**Three sources, most specific first:** the `-P` flag, then an environment variable, then
+`secrets.properties`. The variable is the setting uppercased with dots as underscores, so
+`payabli.demo.entryPoint` is `PAYABLI_DEMO_ENTRYPOINT`. That is the one to use from a shell you have already
+exported into, or from CI, where there is no file to edit:
+
+```bash
+PAYABLI_DEMO_ENTRYPOINT=entry0000 ./gradlew :example:installWithTelemetryDebug
+```
+
 The default is what the build falls back to when nothing is set. The template prefills two of them,
 and only `payabli.demo.appId` prefills something other than its build default.
 

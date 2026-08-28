@@ -21,7 +21,15 @@ val demoSecrets: Properties =
         .map { text -> Properties().apply { load(text.reader()) } }
         .getOrElse(Properties())
 
-// -Ppayabli.demo.* wins over the file, so a one-off run needs no edit.
+/**
+ * The environment variable a setting also answers to: `payabli.demo.entryPoint` is `PAYABLI_DEMO_ENTRYPOINT`.
+ *
+ * Derived rather than listed, so a setting added later has one without anybody remembering to add it.
+ */
+fun envVarFor(key: String): String = key.replace('.', '_').uppercase()
+
+// Three sources, most specific first: -Ppayabli.demo.* for a one-off run, the environment for a shell or a
+// CI job that has no file to edit, and secrets.properties for a developer's own machine.
 //
 // A `key=` line with nothing after it reads back as "", not as missing, and the template ships those
 // lines. Without isNotBlank the empty value would win over the default.
@@ -30,6 +38,7 @@ fun demoSetting(
     default: String,
 ): String =
     providers.gradleProperty(key).orNull?.takeIf { it.isNotBlank() }
+        ?: providers.environmentVariable(envVarFor(key)).orNull?.takeIf { it.isNotBlank() }
         ?: demoSecrets.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: default
 
