@@ -5,6 +5,7 @@ import com.payabli.sdk.core.telemetry.TelemetryBootstrap
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
+import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.FakeDeviceTransport
 import com.payabli.sdk.taptopay.attestation.device.declineEnvelope
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
@@ -63,7 +64,9 @@ class CardPresentReportsWithoutTelemetryTest {
                     DeviceServiceClient(transport, logger).challenge(ENTRY)
                 }.exceptionOrNull()
 
-            assertTrue("the refusal was swallowed: $failure", failure != null)
+            // The type, not merely that something was thrown: a failure telemetry introduced would satisfy
+            // "not null" while the refusal this exists to preserve had been replaced.
+            assertTrue("the route's own refusal did not survive: $failure", failure is DeviceServiceException)
         }
 
     /**
