@@ -36,7 +36,7 @@ from nightly_slack import mrkdwn, slack_post, warn
 # under its own name, because a new suite must not go missing from the message that announces failures.
 SUITES = {
     "PayInLiveFlowsInstrumentedTest": "SDK surface",
-    "QaWalkthroughTest": "sample app",
+    "SampleWalkthroughTest": "sample app",
 }
 
 # Under Slack's 3000-character block limit, leaving room for the notice that reports what was dropped.

@@ -103,7 +103,7 @@ android {
         //
         //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.qaWalkthrough=true \
         //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
-        val walkthrough = "com.payabli.example.app.QaWalkthroughTest"
+        val walkthrough = "com.payabli.example.app.SampleWalkthroughTest"
         val excluded = mutableListOf<String>()
 
         if (providers.gradleProperty("payabli.qaWalkthrough").orNull != "true") {

@@ -2049,7 +2049,7 @@ def test_live_summary(mod):
           all(line.startswith(("•", "_")) for line in body.splitlines()),
           body.splitlines()[-1])
 
-    few = [mod.Flow("QaWalkthroughTest", "one", "code=B")]
+    few = [mod.Flow("SampleWalkthroughTest", "one", "code=B")]
     check("L7 a list that fits carries no notice", "not listed here" not in mod.thread_body(few),
           mod.thread_body(few))
 
