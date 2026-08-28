@@ -20,7 +20,7 @@ import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.ResponseJson
 import com.payabli.example.app.demo.payment.Transaction
 import com.payabli.example.app.demo.payment.TransactionSummary
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.components.DemoIcons
 import com.payabli.example.app.demo.ui.components.DemoScreen
 import com.payabli.example.app.demo.ui.components.DetailRow
@@ -137,14 +137,14 @@ private fun CaptureScreenPreview() {
     // Fixed, where a run randomizes: a preview that renders a different figure each time is a preview that
     // cannot be compared to the last one.
     val amount = BigDecimal("1.10")
-    val identity = QaIdentity.from("Google Pixel 7a")
+    val identity = SampleIdentity.from("Google Pixel 7a")
     PreviewSurface {
         CaptureScreen(
             state =
                 CaptureUiState(
                     setup = PayInForms.capture(amount),
                     amount = amount,
-                    qaIdentity = identity,
+                    sampleIdentity = identity,
                     operation =
                         capturePayment(
                             idempotencyKey = "preview",

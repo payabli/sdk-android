@@ -1,7 +1,7 @@
 package com.payabli.example.app.sdk
 
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInStoreOptions
@@ -49,7 +49,7 @@ internal val DEMO_SERVICE_FEE: BigDecimal = BigDecimal("0.10")
 fun capturePayment(
     idempotencyKey: String,
     amount: BigDecimal,
-    identity: QaIdentity,
+    identity: SampleIdentity,
     atMillis: Long,
     suppliesDemoCustomer: Boolean,
 ): PayInOperation =

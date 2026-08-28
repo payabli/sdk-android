@@ -11,8 +11,8 @@ import com.payabli.example.app.demo.diagnostics.DiagnosticsRegistry
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.preflight.platform.DeviceFactsReader
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.terminal.DemoTerminalController
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.sdk.PayInSessionSource
@@ -66,12 +66,12 @@ class AppContainer(
     private val isEmulator: Boolean = factsAtLaunch.isEmulator
 
     /**
-     * Who this device says it is, so a QA run over several at once produces rows a dashboard can attribute.
+     * Who this device says it is, so a demo run over several at once produces rows a dashboard can attribute.
      *
      * Derived from the model, so one build installs on every device in the run and each one still names
      * itself.
      */
-    val qaIdentity: QaIdentity = QaIdentity.from(factsAtLaunch.model)
+    val sampleIdentity: SampleIdentity = SampleIdentity.from(factsAtLaunch.model)
 
     /**
      * Whether a capture names its customer, which the Configuration screen switches and the request reads.
@@ -79,7 +79,7 @@ class AppContainer(
      * The screen that switches it and the screen that reads it are two, and one instance serves both: a copy
      * per screen leaves the switch describing a payment it did not reach.
      */
-    val demoCustomer: DemoCustomerSetting = DemoCustomerSetting(qaIdentity)
+    val demoCustomer: DemoCustomerSetting = DemoCustomerSetting(sampleIdentity)
 
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
 

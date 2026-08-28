@@ -2,8 +2,8 @@ package com.payabli.example.app.demo.ui
 
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.demo.ui.method.PaymentMethodViewModel
 import com.payabli.example.app.sdk.PayInForms
@@ -52,7 +52,7 @@ class OutcomeNavigationTest {
     private fun methodModel() =
         PaymentMethodViewModel(
             setup = PayInForms.storePaymentMethod(),
-            identity = QaIdentity.from("Test Device"),
+            identity = SampleIdentity.from("Test Device"),
             startup = readyStartup(),
             diagnostics = DiagnosticsStore(),
             diagnosticsEnabled = true,
@@ -61,8 +61,8 @@ class OutcomeNavigationTest {
 
     private fun captureModel() =
         CaptureViewModel(
-            identity = QaIdentity.from("Test Device"),
-            demoCustomer = DemoCustomerSetting(QaIdentity.from("Test Device")),
+            identity = SampleIdentity.from("Test Device"),
+            demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
             startup = readyStartup(),
             diagnostics = DiagnosticsStore(),
             diagnosticsEnabled = true,

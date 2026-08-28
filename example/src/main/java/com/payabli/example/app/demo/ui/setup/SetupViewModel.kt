@@ -14,7 +14,7 @@ import com.payabli.example.app.demo.preflight.Readiness
 import com.payabli.example.app.demo.preflight.TapToPayPreflight
 import com.payabli.example.app.demo.preflight.problemsIn
 import com.payabli.example.app.demo.preflight.readinessFrom
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.sdk.PayInFormSetup
 import com.payabli.example.app.sdk.PayInForms
 import kotlinx.coroutines.flow.MutableStateFlow

@@ -1,11 +1,11 @@
-package com.payabli.example.app.demo.qa
+package com.payabli.example.app.demo.sample
 
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * What this device calls itself, for a QA run where several submit at once.
+ * What this device calls itself, for a demo run where several submit at once.
  *
  * Three phones and a simulator sending the sample's own test values produce rows nothing can tell apart: the
  * same customer, the same instrument, the same amount, minutes apart. Every value that distinguishes one
@@ -15,7 +15,7 @@ import java.util.Locale
  * The model is a parameter rather than a `Build` read, so the derivation runs on a host JVM against models no
  * machine here has.
  */
-data class QaIdentity(
+data class SampleIdentity(
     val label: String,
     val slug: String,
 ) {
@@ -28,20 +28,20 @@ data class QaIdentity(
      * name takes the same characters without complaint, which is why this only showed up on the bank account.
      */
     val holderName: String get() =
-        "QA ${label.map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("")}"
+        "Sample ${label.map { if (it.isLetterOrDigit()) it else ' ' }.joinToString("")}"
             .replace(SPACES, " ")
             .trim()
 
-    val firstName: String get() = "QA"
+    val firstName: String get() = "Sample"
 
     val lastName: String get() = label
 
-    val customerNumber: String get() = "qa-android-$slug"
+    val customerNumber: String get() = "sample-android-$slug"
 
-    val billingEmail: String get() = "qa+$slug@example.com"
+    val billingEmail: String get() = "sample+$slug@example.com"
 
     /** The order's description, which is the note a transaction list shows. */
-    fun note(flow: String): String = "QA $label - $flow"
+    fun note(flow: String): String = "Sample $label - $flow"
 
     /**
      * An order identifier naming this device and the moment the attempt was made.
@@ -61,15 +61,15 @@ data class QaIdentity(
          * @param model as [com.payabli.example.app.demo.preflight.DeviceFacts.model] reports it, manufacturer
          *   first: `samsung SM-S908U1`.
          */
-        fun from(model: String): QaIdentity {
+        fun from(model: String): SampleIdentity {
             val label = labelOf(model).ifBlank { UNKNOWN_LABEL }
             val slug = slugOf(label)
             // A label carrying no letter or digit is not blank, so the check above passes it through, and
             // sanitising is what empties it. The slug is what the customer number, the billing email and the
-            // order identifier are built from, so an empty one charges as `qa-android-` under
-            // `qa+@example.com` and orders under a name that starts with the timestamp.
-            if (slug.isEmpty()) return QaIdentity(label = UNKNOWN_LABEL, slug = slugOf(UNKNOWN_LABEL))
-            return QaIdentity(label = label, slug = slug)
+            // order identifier are built from, so an empty one charges as `sample-android-` under
+            // `sample+@example.com` and orders under a name that starts with the timestamp.
+            if (slug.isEmpty()) return SampleIdentity(label = UNKNOWN_LABEL, slug = slugOf(UNKNOWN_LABEL))
+            return SampleIdentity(label = label, slug = slug)
         }
 
         /**

@@ -49,7 +49,7 @@ import org.junit.runner.RunWith
  * which names Compose and not the lock. Dismiss the keyguard on every target before starting a run.
  */
 @RunWith(AndroidJUnit4::class)
-class QaWalkthroughTest {
+class SampleWalkthroughTest {
     @get:Rule
     val compose = createComposeRule()
 
@@ -208,7 +208,7 @@ class QaWalkthroughTest {
         // This device's own label, in a field, which is what makes the row it produces attributable. Read off
         // the form rather than off the identity, so a prefill that reached nothing fails here instead of at the
         // service. Not by field name: a filled box floats its label and drops the description a name matches.
-        awaitExists(container.qaIdentity.lastName, COMPOSES_WITHIN_MILLIS)
+        awaitExists(container.sampleIdentity.lastName, COMPOSES_WITHIN_MILLIS)
     }
 
     /** Scrolled to first: the button sits below the fold, so a bare click asserts against nothing. */
