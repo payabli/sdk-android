@@ -1,4 +1,4 @@
-package com.payabli.example.app.sdk
+package com.payabli.example.app.demo.simple
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.model.PayInPaymentDetails

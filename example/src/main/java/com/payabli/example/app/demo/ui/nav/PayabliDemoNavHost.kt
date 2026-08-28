@@ -28,6 +28,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.payabli.example.app.PayabliDemoApplication
 import com.payabli.example.app.demo.net.checkToken
+import com.payabli.example.app.demo.simple.SimpleCaptureScreen
 import com.payabli.example.app.demo.ui.capture.CaptureResultScreen
 import com.payabli.example.app.demo.ui.capture.CaptureScreen
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
@@ -40,7 +41,6 @@ import com.payabli.example.app.demo.ui.setup.SetupViewModel
 import com.payabli.example.app.demo.ui.taptopay.TapToPayActions
 import com.payabli.example.app.demo.ui.taptopay.TapToPayScreen
 import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
-import com.payabli.example.app.sdk.SimpleCaptureScreen
 import java.math.BigDecimal
 
 /**
