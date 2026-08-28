@@ -136,7 +136,9 @@ class PayInSubmissionTest {
             val transport = FakePayInTransport.answering(approved)
             val submission = submissionOver(transport)
 
-            assertNotNull(submission.captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails())))
+            assertNotNull(
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails())),
+            )
 
             assertEquals("/api/v2/MoneyIn/capture/101-abc", transport.request?.path)
             assertEquals("A0000", succeededPayment(submission).result.code)

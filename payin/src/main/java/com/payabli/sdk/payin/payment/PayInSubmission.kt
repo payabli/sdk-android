@@ -107,8 +107,11 @@ internal class PayInSubmission(
         }
 
     /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
-    suspend fun captureAuthorized(request: PayInAuthorizedRequest): PayInSubmissionState? =
-        perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED) { retry ->
+    suspend fun captureAuthorized(
+        entryPoint: String,
+        request: PayInAuthorizedRequest,
+    ): PayInSubmissionState? =
+        perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint) { retry ->
             val key = retry.reserve(request.idempotencyKey)
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
         }

@@ -167,7 +167,7 @@ public class PayabliPayInPaymentFlow private constructor(
 
     /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
     internal suspend fun captureAuthorized(request: PayInAuthorizedRequest): Result<PayInResult> =
-        submission.captureAuthorized(request).asPayment()
+        submission.captureAuthorized(entryPoint, request).asPayment()
 
     private suspend fun payment(
         operation: PayabliPayInOperation,

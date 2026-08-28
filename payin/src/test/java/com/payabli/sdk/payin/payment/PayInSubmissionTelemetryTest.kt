@@ -16,6 +16,8 @@ import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
+import com.payabli.sdk.payin.client.testDetails
+import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -181,6 +183,37 @@ class PayInSubmissionTelemetryTest {
                 "the-session-this-flow-was-built-for",
                 seen.single().sessionId,
             )
+        }
+
+    /** And an authorized capture, which takes no form and had been reporting the session's own instead. */
+    @Test
+    fun `an authorized capture is reported under the entry point it ran against`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val seen = mutableListOf<TelemetrySessionContext>()
+            TelemetryRecorders.install(
+                object : TelemetryRecorder, SessionScopedRecorder {
+                    override fun record(
+                        event: String,
+                        properties: Map<String, String>,
+                    ) = Unit
+
+                    override fun record(
+                        event: String,
+                        properties: Map<String, String>,
+                        session: TelemetrySessionContext,
+                    ) {
+                        seen += session
+                    }
+                },
+            )
+            val submission = submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION), aTestSession())
+
+            submission.captureAuthorized(
+                "another-entry-point",
+                PayInAuthorizedRequest("101-abc", testDetails()),
+            )
+
+            assertEquals("another-entry-point", seen.single().entryPoint)
         }
 
     /**
