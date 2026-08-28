@@ -10,8 +10,10 @@ import com.payabli.sdk.core.config.PayabliEnvironment
  * property, and a standing skip reads exactly like a test that has always been fine. The message names the
  * Gradle property so the fix is the next thing the reader does.
  *
- * All of them are passed per run and none belongs in `~/.gradle/gradle.properties`: two are bearer tokens
- * with short lives, and putting them in a file makes them outlive the run that needed them.
+ * All three are passed per run and none belongs in `~/.gradle/gradle.properties`: they name the paypoint,
+ * the deployment and the token endpoint a run is aimed at, and a file makes the next run inherit that aim
+ * without saying so. No bearer is among them. [accessToken] fetches one from the token server on each call,
+ * which is what keeps a long sequence off a single expiring token.
  */
 internal object LiveRunSettings {
     /** The paypoint every call is scoped to. */
