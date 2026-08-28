@@ -227,14 +227,18 @@ To have the local endpoint exchange sandbox credentials, leave
 ```bash
 PAYABLI_CLIENT_ID=<a sandbox client id>
 PAYABLI_CLIENT_SECRET=<a sandbox client secret>
-PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
+PAYABLI_API_BASE_URL=https://<api-host>/api
 PAYABLI_TOKEN_PATH=/v2/token/serverside
 ```
+
+`<api-host>` is the Payabli API host for the deployment the credentials belong to, which is
+`api.payabli.com` in production. Payabli provides the host for any other deployment along with the
+credentials for it.
 
 That maps to Payabli's server-side token call:
 
 ```bash
-curl --location 'https://api-sandbox.payabli.com/api/v2/token/serverside' \
+curl --location 'https://<api-host>/api/v2/token/serverside' \
   --header 'Content-Type: application/json' \
   --data '{
     "clientId": "{clientId}",
@@ -242,13 +246,13 @@ curl --location 'https://api-sandbox.payabli.com/api/v2/token/serverside' \
   }'
 ```
 
-A bare host works too: the server accepts `api-sandbox.payabli.com/api` and adds `https://`.
+A bare host works too: the server accepts `<api-host>/api` and adds `https://`.
 
 Token exchange is restricted to the hosts below, and a base URL pointing anywhere else is refused rather
 than ignored. Reaching a deployment that is not listed means naming it here for that run:
 
 ```bash
-PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com,api.payabli.com
+PAYABLI_ALLOWED_API_HOSTS=<api-host>,api.payabli.com
 ```
 
 Only add hosts for trusted local test infrastructure. Do not point credential
@@ -280,7 +284,7 @@ subject to the allowed-host guard:
 {
   "clientId": "...",
   "clientSecret": "...",
-  "apiBaseUrl": "https://api-sandbox.payabli.com/api",
+  "apiBaseUrl": "https://<api-host>/api",
   "tokenPath": "/v2/token/serverside",
   "responseTokenField": "access_token"
 }
