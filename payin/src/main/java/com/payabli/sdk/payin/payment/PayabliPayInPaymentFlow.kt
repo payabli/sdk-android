@@ -61,9 +61,6 @@ public class PayabliPayInPaymentFlow private constructor(
     internal val draft: PayInFormDraft = PayInFormDraft()
 
     init {
-        // The screen going for good, which is the one point this type is told about. Strings are immutable, so
-        // this drops the references at a defined moment rather than wiping them; what keeps a value out of the
-        // request path is `SensitiveDigits`, not this.
         scope.coroutineContext[Job]?.invokeOnCompletion { draft.clear() }
     }
 
@@ -73,12 +70,6 @@ public class PayabliPayInPaymentFlow private constructor(
         scope: CoroutineScope,
     ) : this(session.transport, entryPoint, scope, IO_DISPATCHER, telemetry = session.telemetry)
 
-    /**
-     * Against a transport directly, so this type is reachable from a test.
-     *
-     * `PayabliSession` cannot be built from outside `:core` — its test entry points are internal to that
-     * module — so a session-only constructor would make everything here untestable.
-     */
     internal constructor(
         transport: PayabliTransport,
         entryPoint: String,
