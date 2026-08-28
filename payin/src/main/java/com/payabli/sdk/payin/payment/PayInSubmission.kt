@@ -252,7 +252,7 @@ internal class PayInSubmission(
         }
 
     /**
-     * The five things that can happen to a payment, told apart.
+     * The six things that can happen to a payment, told apart.
      *
      * Keyed on the code the caller was told, so a record cannot disagree with the screen the payer saw. One
      * exception, and it is the type check below: a rejected field arrives as `VALIDATION_ERROR` whether this

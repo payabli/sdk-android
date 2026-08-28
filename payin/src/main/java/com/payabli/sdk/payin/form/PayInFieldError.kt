@@ -63,7 +63,8 @@ public sealed interface PayInFieldError {
 /**
  * The rejection as a fixed word, for the report that counts it.
  *
- * The parameterised cases drop their number: a length is what the payer typed.
+ * The parameterised cases drop their number, which is the rule's bound rather than anything typed. A
+ * report keyed on it would be open-ended where every other property value comes from a fixed set.
  */
 internal val PayInFieldError.reason: String
     get() =

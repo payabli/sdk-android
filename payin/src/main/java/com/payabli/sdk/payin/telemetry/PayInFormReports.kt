@@ -62,7 +62,6 @@ internal class PayInFormReports(
     }
 
     internal companion object {
-        /** For a form no session built, which is a test or a preview drawing the content directly. */
         val None: PayInFormReports = PayInFormReports(null)
     }
 }
