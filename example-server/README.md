@@ -16,8 +16,9 @@ The sample app calls this server. Its Setup and Tap to pay screens post to
 the app fetching its own token over `HttpURLConnection`, not an SDK call: no
 session exists yet to hold a token provider.
 
-No workflow in `.github/` runs this server, and none should. It is a local
-developer tool rather than a CI dependency, and no workflow installs Node.
+The live workflows run this server too, on the runner, so CI and the bench exercise one
+path rather than two. Nothing else in `.github/` starts it, and the ordinary per-pull-request
+jobs do not: they run no test that needs a token.
 
 ## Requirements
 

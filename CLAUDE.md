@@ -228,15 +228,16 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
 
   **A test that needs credentials is gated twice, and the second gate is the one that keeps the counts honest.**
   `PayInLiveFlowsInstrumentedTest` sends real requests, so `payin/build.gradle.kts` excludes it **by name**
-  unless four `payabli.liveTest.*` Gradle properties are set, and the annotation marks the tier. Credentials
-  belong in `~/.gradle/gradle.properties` and reach the test as instrumentation arguments; nothing about an
-  environment is committed. Follow that pattern for anything else needing a credential: a property, a named
-  exclusion when it is absent, and no skip.
+  unless three `payabli.liveTest.*` Gradle properties are set, and the annotation marks the tier. **None of
+  the three is a credential**: they are `environment`, `entryPoint` and `tokenHost`, and the client secret
+  belongs to the token server the test reaches rather than to the device. Nothing about an environment is
+  committed. Follow that pattern for anything else in this position: a property, a named exclusion when it is
+  absent, and no skip.
 
   ```bash
   ANDROID_SERIAL=<serial> ./gradlew :payin:connectedDebugAndroidTest \
     -Ppayabli.liveTest.environment=<name> -Ppayabli.liveTest.entryPoint=<entry> \
-    -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret> \
+    -Ppayabli.liveTest.tokenHost=<host:port> \
     -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.payin.ManualDeviceTest
   ```
 
