@@ -22,7 +22,9 @@ import com.payabli.sdk.core.device.DeviceIdentifier
  * [DeviceIdentifier] reachable from a unit test.
  *
  * `HardwareIds` is suppressed because reading the identifier is the requirement, and the mitigation the check
- * asks for is the digest: the raw value is never held, sent or logged.
+ * asks for is the digest. The raw value is read only to derive one: it is never persisted, sent or logged. It
+ * does exist in memory while that happens, as the `String` the platform returns, which nothing here can
+ * avoid and which a caller should not assume otherwise.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object DeviceIdentifierFactory {
