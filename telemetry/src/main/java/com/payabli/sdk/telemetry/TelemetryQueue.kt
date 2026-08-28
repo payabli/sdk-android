@@ -32,14 +32,22 @@ internal class TelemetryQueue(
     private val lock = Any()
     private val events = ArrayDeque<QueuedTelemetryEvent>()
     private var droppedSinceLastDrain = 0
+    private var closed = false
 
     init {
         require(capacity > 0) { "capacity must be positive" }
     }
 
-    /** Adds [event], evicting the oldest if the queue is full. Returns the size afterwards. */
-    fun offer(event: QueuedTelemetryEvent): Int =
+    /**
+     * Adds [event] and returns the size afterwards, or null once [close] has been called.
+     *
+     * The refusal is inside the lock with the append, because the two cannot be separated: a caller that
+     * tested a flag outside it could be overtaken by the shutdown drain and land afterwards, leaving the
+     * event in a queue nothing will read again. This lock is the one every enqueue already takes.
+     */
+    fun offer(event: QueuedTelemetryEvent): Int? =
         synchronized(lock) {
+            if (closed) return@synchronized null
             if (events.size >= capacity) {
                 events.removeFirst()
                 droppedSinceLastDrain++
@@ -62,6 +70,13 @@ internal class TelemetryQueue(
                 taken
             }
         }
+
+    /**
+     * Refuses everything offered from here on, so a shutdown drain is the last read of this queue.
+     *
+     * [drain] still works, because the drain runs after this.
+     */
+    fun close() = synchronized(lock) { closed = true }
 
     /** How many events are waiting. */
     fun size(): Int = synchronized(lock) { events.size }

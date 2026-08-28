@@ -1,6 +1,7 @@
 package com.payabli.sdk.telemetry
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class TelemetryQueueTest {
@@ -42,6 +43,24 @@ class TelemetryQueueTest {
     @Test
     fun drainingAnEmptyQueueIsNotAFailure() {
         assertEquals(emptyList<QueuedTelemetryEvent>(), TelemetryQueue(capacity = 2).drain(4))
+    }
+
+    /**
+     * A closed queue refuses, and refuses under the lock it appends with.
+     *
+     * The two cannot be separated. A caller that read a flag outside this lock could be overtaken by the
+     * shutdown drain and land afterwards, leaving its event in a queue nothing reads again, which is a loss
+     * with no drain left to catch it and no answer for the caller to report.
+     */
+    @Test
+    fun aClosedQueueRefusesRatherThanAccepting() {
+        val queue = TelemetryQueue(capacity = 8)
+        assertEquals(1, queue.offer(event(1)))
+
+        queue.close()
+
+        assertNull(queue.offer(event(2)))
+        assertEquals(listOf("e1"), queue.drain(8).map { it.name })
     }
 
     private fun event(index: Int) =

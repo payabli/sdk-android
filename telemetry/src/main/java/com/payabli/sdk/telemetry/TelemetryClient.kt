@@ -64,9 +64,6 @@ internal class TelemetryClient(
     @Volatile
     private var timer: Job? = null
 
-    @Volatile
-    private var stopped = false
-
     override fun record(
         event: String,
         properties: Map<String, String>,
@@ -96,24 +93,23 @@ internal class TelemetryClient(
         properties: Map<String, String>,
         session: TelemetrySessionContext,
     ) {
-        // A reporting thread can read this client from the registry and be descheduled before it gets here,
-        // and a replacement in that window stops this one first. The queue would still accept the event and
-        // nothing would ever send it. Said out loud instead, on the same terms as every other drop here.
-        if (stopped) {
-            logger.debug(
-                LogField.safe("event", "telemetry_event_after_stop"),
-                LogField.safe("name", event),
-            ) { "this channel was replaced while the event was being recorded; dropped" }
-            return
-        }
-
         val scrubbed = TelemetryCatalog.scrub(event, properties)
         if (scrubbed == null) {
             logger.warn(LogField.safe("event", "telemetry_event_unknown")) { "event not in the catalog; dropped" }
             return
         }
 
+        // A reporting thread can read this client from the registry and be descheduled before it gets here,
+        // and a replacement in that window stops this one first. The queue refuses under the same lock it
+        // appends with, so the answer cannot be overtaken by the drain that follows.
         val queued = queue.offer(QueuedTelemetryEvent(event, scrubbed, now(), session))
+        if (queued == null) {
+            logger.debug(
+                LogField.safe("event", "telemetry_event_after_stop"),
+                LogField.safe("name", event),
+            ) { "this channel was replaced while the event was being recorded; dropped" }
+            return
+        }
 
         if (queued >= batchSize || TelemetryCatalog.forcesSend(event, scrubbed)) flushAsync()
     }
@@ -144,7 +140,7 @@ internal class TelemetryClient(
      */
     @Synchronized
     fun stop() {
-        stopped = true
+        queue.close()
         timer?.cancel()
         timer = null
         flushRequests.close()
