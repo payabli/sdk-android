@@ -36,7 +36,7 @@ android {
         // **Changing this changes the identifier every device reports**, so every registered device
         // registers again as a stranger and owes a fresh activation code. It moved once, on 2026-08-25, when
         // the derivation was lifted out of the card-present module; card-present had not shipped, so the cost
-        // was qa and sandbox re-registering. It should not move again.
+        // was every already-registered device re-registering. It should not move again.
         buildConfigField("String", "SDK_IDENTIFIER", "\"com.payabli.sdk\"")
     }
 
