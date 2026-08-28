@@ -275,9 +275,9 @@ class TelemetryClientTest {
     /**
      * Shutting down while the timer's upload is in flight does not lose that batch.
      *
-     * The timer used to call [TelemetryClient.flush] on its own coroutine, so cancelling it cancelled the
-     * upload. By then the events were drained and the drop count taken, and neither was anywhere the
-     * shutdown drain could find them: the batch was gone from the queue and the count read as zero.
+     * A timer that uploads on its own coroutine is cancelled by [TelemetryClient.stop] mid-send, and by then
+     * the events are drained and the drop count taken: neither is anywhere the shutdown drain can find, since
+     * the queue is empty and the counter reads zero.
      */
     @Test
     fun stoppingDuringTheTimersUploadKeepsTheBatch() =
