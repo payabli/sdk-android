@@ -33,9 +33,10 @@ import com.payabli.example.app.sdk.PayInForms
 /**
  * Everything the SDK was configured with, read back.
  *
- * Read-only, with one switch. A session captures its configuration when it is created, so a control over any of
- * that would appear to change something already decided; each value says where it came from instead. The
- * customer switch is not part of it and is read when a request is built, so it can be flipped between payments.
+ * Read-only, with two switches that belong to the sample rather than to the SDK. A session captures its
+ * configuration when it is created, so a control over any of that would appear to change something already
+ * decided; each value says where it came from instead. The customer switch is read when a request is built, so
+ * it can be flipped between payments, and the Simple Capture switch only shows or hides a tab.
  */
 @Composable
 fun SetupScreen(
