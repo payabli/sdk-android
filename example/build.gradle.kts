@@ -101,12 +101,12 @@ android {
         // started skipping. It also needs a reachable token server and a configured paypoint, which is why
         // asking for it is a deliberate flag and not a default.
         //
-        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.qaWalkthrough=true \
+        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.sampleWalkthrough=true \
         //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
         val walkthrough = "com.payabli.example.app.SampleWalkthroughTest"
         val excluded = mutableListOf<String>()
 
-        if (providers.gradleProperty("payabli.qaWalkthrough").orNull != "true") {
+        if (providers.gradleProperty("payabli.sampleWalkthrough").orNull != "true") {
             excluded += walkthrough
         } else {
             // Asking for the walkthrough narrows the run to it, rather than adding it to the others.

@@ -26,7 +26,7 @@ import org.junit.runner.RunWith
  *
  * `NavigationSmokeTest` walks the same screens against a fake token endpoint and stops before submitting. This
  * one submits, so it needs a reachable token server and a configured paypoint, and it sends real requests. It
- * is excluded by name in `example/build.gradle.kts` unless `payabli.qaWalkthrough=true`, so an ordinary run
+ * is excluded by name in `example/build.gradle.kts` unless `payabli.sampleWalkthrough=true`, so an ordinary run
  * neither sends a payment nor reports a skip for one it did not send.
  *
  * Driving the form is what puts the flow on the screen, so several devices run it together and each shows
@@ -36,7 +36,7 @@ import org.junit.runner.RunWith
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
  * ANDROID_SERIAL=<serial> ./gradlew :example:connectedDebugAndroidTest \
- *   -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true \
+ *   -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true \
  *   -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
  * ```
  *
