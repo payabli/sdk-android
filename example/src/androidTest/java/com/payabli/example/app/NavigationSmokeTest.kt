@@ -34,7 +34,7 @@ import kotlin.concurrent.thread
  *
  * Run locally with `./gradlew :example:connectedAndroidTest`, and not on API 37: Espresso injects input
  * through `InputManager.getInstance`, which is gone there, so every test in this class fails on
- * `Espresso.onIdle` with `NoSuchMethodException` before reaching its own subject.
+ * `Espresso.onIdle` with `NoSuchMethodException` before reaching its own subject. Green on API 36.
  */
 @RunWith(AndroidJUnit4::class)
 class NavigationSmokeTest {
