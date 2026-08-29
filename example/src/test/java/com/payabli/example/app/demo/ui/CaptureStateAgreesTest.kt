@@ -2,8 +2,8 @@ package com.payabli.example.app.demo.ui
 
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureUiState
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.PayInFormSummary
@@ -31,7 +31,7 @@ import java.math.BigDecimal
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CaptureStateAgreesTest {
-    private val identity = QaIdentity.from("Test Device")
+    private val identity = SampleIdentity.from("Test Device")
 
     @Before
     fun installMainDispatcher() = Dispatchers.setMain(UnconfinedTestDispatcher())

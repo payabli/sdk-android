@@ -1,4 +1,4 @@
-package com.payabli.example.app.demo.qa
+package com.payabli.example.app.demo.sample
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * between environments.
  */
 class DemoCustomerSetting(
-    identity: QaIdentity,
+    identity: SampleIdentity,
 ) {
     private val _suppliesDemoCustomer = MutableStateFlow(true)
 

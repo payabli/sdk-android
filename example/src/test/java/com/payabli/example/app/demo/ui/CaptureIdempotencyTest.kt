@@ -3,8 +3,8 @@ package com.payabli.example.app.demo.ui
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.payment.PaymentError
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.capturedPaymentOutcome
@@ -40,8 +40,8 @@ class CaptureIdempotencyTest {
 
     private fun captureModel() =
         CaptureViewModel(
-            identity = QaIdentity.from("Test Device"),
-            demoCustomer = DemoCustomerSetting(QaIdentity.from("Test Device")),
+            identity = SampleIdentity.from("Test Device"),
+            demoCustomer = DemoCustomerSetting(SampleIdentity.from("Test Device")),
             startup = readyStartup(),
             diagnostics = DiagnosticsStore(),
             diagnosticsEnabled = true,

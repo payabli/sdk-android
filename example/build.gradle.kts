@@ -21,7 +21,15 @@ val demoSecrets: Properties =
         .map { text -> Properties().apply { load(text.reader()) } }
         .getOrElse(Properties())
 
-// -Ppayabli.demo.* wins over the file, so a one-off run needs no edit.
+/**
+ * The environment variable a setting also answers to: `payabli.demo.entryPoint` is `PAYABLI_DEMO_ENTRYPOINT`.
+ *
+ * Derived rather than listed, so a setting added later has one without anybody remembering to add it.
+ */
+fun envVarFor(key: String): String = key.replace('.', '_').uppercase()
+
+// Three sources, most specific first: -Ppayabli.demo.* for a one-off run, the environment for a shell or a
+// CI job that has no file to edit, and secrets.properties for a developer's own machine.
 //
 // A `key=` line with nothing after it reads back as "", not as missing, and the template ships those
 // lines. Without isNotBlank the empty value would win over the default.
@@ -30,6 +38,7 @@ fun demoSetting(
     default: String,
 ): String =
     providers.gradleProperty(key).orNull?.takeIf { it.isNotBlank() }
+        ?: providers.environmentVariable(envVarFor(key)).orNull?.takeIf { it.isNotBlank() }
         ?: demoSecrets.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: default
 
@@ -92,12 +101,12 @@ android {
         // started skipping. It also needs a reachable token server and a configured paypoint, which is why
         // asking for it is a deliberate flag and not a default.
         //
-        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.qaWalkthrough=true \
-        //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
-        val walkthrough = "com.payabli.example.app.QaWalkthroughTest"
+        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.sampleWalkthrough=true \
+        //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
+        val walkthrough = "com.payabli.example.app.SampleWalkthroughTest"
         val excluded = mutableListOf<String>()
 
-        if (providers.gradleProperty("payabli.qaWalkthrough").orNull != "true") {
+        if (providers.gradleProperty("payabli.sampleWalkthrough").orNull != "true") {
             excluded += walkthrough
         } else {
             // Asking for the walkthrough narrows the run to it, rather than adding it to the others.

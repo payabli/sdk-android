@@ -2049,7 +2049,7 @@ def test_live_summary(mod):
           all(line.startswith(("•", "_")) for line in body.splitlines()),
           body.splitlines()[-1])
 
-    few = [mod.Flow("QaWalkthroughTest", "one", "code=B")]
+    few = [mod.Flow("SampleWalkthroughTest", "one", "code=B")]
     check("L7 a list that fits carries no notice", "not listed here" not in mod.thread_body(few),
           mod.thread_body(few))
 
@@ -2074,6 +2074,17 @@ def test_workflows():
         check(f"W1 {name} does not mention a pull request trigger anywhere",
               "pull_request" not in text,
               next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
+
+    # The sample app offers sandbox and production, so a caller on any other environment has to say the
+    # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and
+    # the failure arrives on the next scheduled run, inside the sample's setup, naming an environment
+    # rather than the line that sent it.
+    for name, environment, sample in (("live-qa.yml", "qa", False), ("live-sandbox.yml", "sandbox", True)):
+        called = ((workflow_doc(name).get("jobs") or {}).get(environment) or {}).get("with") or {}
+        check(f"W1 {name} names the environment it is for", called.get("environment") == environment,
+              f"{called}")
+        check(f"W1 {name} asks for the sample walkthrough only where the sample offers that environment",
+              bool(called.get("sample-walkthrough", True)) is sample, f"{called}")
 
     # The one thing about parsing a workflow that is not obvious from reading one: YAML 1.1 reads a bare
     # `on` as the boolean true, so a lookup by the string finds nothing at all.
@@ -2138,8 +2149,15 @@ def test_workflows():
     check("W5 the live step was found", len(live) == 1, f"{len(live)}")
     commands = [line for step in live for line in script_lines(step)]
     check("W5 the live script runs two suites", len(commands) == 2, f"{commands}")
+    # `./gradlew` as the command, not as text on the line. Asserting only that the line contains it passes
+    # on `echo ./gradlew ...` and on `true # ./gradlew ...`, which run neither suite and leave this green
+    # with the behaviour removed. One suite is invoked behind a guard, so that one form is named here
+    # rather than admitting anything that mentions gradlew.
+    GUARD = 'if [ "$SAMPLE_WALKTHROUGH" = true ]; then ./gradlew '
     for line in commands:
-        check("W5 every line of the live script is a command", line.startswith("./"), line)
+        command = line.strip()
+        check("W5 every line of the live script executes gradlew",
+              command.startswith("./gradlew ") or command.startswith(GUARD), line)
 
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.

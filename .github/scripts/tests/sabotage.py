@@ -281,10 +281,12 @@ MUTATIONS = [
      "          PAYABLI_LIVETEST_TOKEN_HOST_DISABLED: 10.0.2.2:8787"),
 
     ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
-     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true "
-     "-Ppayabli.demo.prefill=true",
-     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true "
-     "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
+     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew "
+     ":example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true "
+     "-Ppayabli.demo.prefill=true; fi",
+     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew "
+     ":example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true "
+     "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\"; fi"),
 
     # The guard that keeps the run's verdict and the channel's from disagreeing. Dropping a module from it is
     # how one silent suite gets hidden by the other's results.
@@ -299,10 +301,29 @@ MUTATIONS = [
     # The action splits the script on newlines, so a continuation is not one. Both halves of the split are
     # broken and neither says so: the command loses its arguments and the arguments become a command.
     ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
-     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true "
-     "-Ppayabli.demo.prefill=true",
-     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest \\\n"
-     "              -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true"),
+     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew "
+     ":example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true "
+     "-Ppayabli.demo.prefill=true; fi",
+     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew \\\n"
+     "              :example:connectedWithTelemetryDebugAndroidTest "
+     "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true; fi"),
+
+    # The caller-specific guard. Flipping it sends qa into the sample's setup, where the failure names an
+    # environment rather than the line that chose it, and nothing else in either suite looks at this line.
+    ("The qa caller asks for a sample walkthrough its environment does not offer", LIVE_QA, "workflows",
+     "      sample-walkthrough: false", "      sample-walkthrough: true"),
+
+    ("The qa caller stops saying whether the sample runs, taking the default", LIVE_QA, "workflows",
+     "      sample-walkthrough: false", "      # sample-walkthrough: false"),
+
+    # Named as text on the line rather than run. A check that only looks for `./gradlew` somewhere in the
+    # line passes on this, and the step goes green having run no suite at all.
+    ("The live script prints its command instead of running it", LIVE_FLOWS, "workflows",
+     "            ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest",
+     "            echo ./gradlew :payin:connectedAndroidTest "
+     "-Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"),
 
     ("The pay-in suite loses its class filter and runs the whole instrumented suite", LIVE_FLOWS, "workflows",
      "            ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="

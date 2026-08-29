@@ -26,7 +26,7 @@ import org.junit.runner.RunWith
  *
  * `NavigationSmokeTest` walks the same screens against a fake token endpoint and stops before submitting. This
  * one submits, so it needs a reachable token server and a configured paypoint, and it sends real requests. It
- * is excluded by name in `example/build.gradle.kts` unless `payabli.qaWalkthrough=true`, so an ordinary run
+ * is excluded by name in `example/build.gradle.kts` unless `payabli.sampleWalkthrough=true`, so an ordinary run
  * neither sends a payment nor reports a skip for one it did not send.
  *
  * Driving the form is what puts the flow on the screen, so several devices run it together and each shows
@@ -36,8 +36,8 @@ import org.junit.runner.RunWith
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
  * ANDROID_SERIAL=<serial> ./gradlew :example:connectedDebugAndroidTest \
- *   -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true \
- *   -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
+ *   -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true \
+ *   -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
  * ```
  *
  * Given the three `payabli.liveTest.*` values instead, the address, entry point and environment come from the
@@ -49,7 +49,7 @@ import org.junit.runner.RunWith
  * which names Compose and not the lock. Dismiss the keyguard on every target before starting a run.
  */
 @RunWith(AndroidJUnit4::class)
-class QaWalkthroughTest {
+class SampleWalkthroughTest {
     @get:Rule
     val compose = createComposeRule()
 
@@ -208,7 +208,7 @@ class QaWalkthroughTest {
         // This device's own label, in a field, which is what makes the row it produces attributable. Read off
         // the form rather than off the identity, so a prefill that reached nothing fails here instead of at the
         // service. Not by field name: a filled box floats its label and drops the description a name matches.
-        awaitExists(container.qaIdentity.lastName, COMPOSES_WITHIN_MILLIS)
+        awaitExists(container.sampleIdentity.lastName, COMPOSES_WITHIN_MILLIS)
     }
 
     /** Scrolled to first: the button sits below the fold, so a bare click asserts against nothing. */

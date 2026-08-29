@@ -1,9 +1,9 @@
 # PayabliDemo Local Token Server
 
-Tiny development server for PayIn payment flow QA. It gives the Android sample a
+Tiny development server for exercising the PayIn payment flows. It gives the Android sample a
 backend-shaped endpoint without putting Payabli credentials in the APK.
 
-The server supports two local QA modes:
+The server supports two modes:
 
 - Direct token mode: return a sandbox API token that can call
   `/api/TokenStorage/add` and the v2 MoneyIn auth/capture endpoints.
@@ -16,8 +16,9 @@ The sample app calls this server. Its Setup and Tap to pay screens post to
 the app fetching its own token over `HttpURLConnection`, not an SDK call: no
 session exists yet to hold a token provider.
 
-No workflow in `.github/` runs this server, and none should. It is a local
-developer tool rather than a CI dependency, and no workflow installs Node.
+The live workflows run this server too, on the runner, so CI and the bench exercise one
+path rather than two. Nothing else in `.github/` starts it, and the ordinary per-pull-request
+jobs do not: they run no test that needs a token.
 
 ## Requirements
 
@@ -226,14 +227,18 @@ To have the local endpoint exchange sandbox credentials, leave
 ```bash
 PAYABLI_CLIENT_ID=<a sandbox client id>
 PAYABLI_CLIENT_SECRET=<a sandbox client secret>
-PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
+PAYABLI_API_BASE_URL=https://<api-host>/api
 PAYABLI_TOKEN_PATH=/v2/token/serverside
 ```
+
+`<api-host>` is the Payabli API host for the deployment the credentials belong to, which is
+`api.payabli.com` in production. Payabli provides the host for any other deployment along with the
+credentials for it.
 
 That maps to Payabli's server-side token call:
 
 ```bash
-curl --location 'https://api-sandbox.payabli.com/api/v2/token/serverside' \
+curl --location 'https://<api-host>/api/v2/token/serverside' \
   --header 'Content-Type: application/json' \
   --data '{
     "clientId": "{clientId}",
@@ -241,18 +246,13 @@ curl --location 'https://api-sandbox.payabli.com/api/v2/token/serverside' \
   }'
 ```
 
-For QA, use:
+A bare host works too: the server accepts `<api-host>/api` and adds `https://`.
+
+Token exchange is restricted to the hosts below, and a base URL pointing anywhere else is refused rather
+than ignored. Reaching a deployment that is not listed means naming it here for that run:
 
 ```bash
-PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api
-```
-
-The server also accepts `api-sandbox.payabli.com/api` or
-`api-qa.payabli.com/api` and will add `https://` automatically.
-Token exchange is restricted to Payabli hosts by default:
-
-```bash
-PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com,api-qa.payabli.com,api.payabli.com
+PAYABLI_ALLOWED_API_HOSTS=<api-host>,api.payabli.com
 ```
 
 Only add hosts for trusted local test infrastructure. Do not point credential
@@ -284,7 +284,7 @@ subject to the allowed-host guard:
 {
   "clientId": "...",
   "clientSecret": "...",
-  "apiBaseUrl": "https://api-sandbox.payabli.com/api",
+  "apiBaseUrl": "https://<api-host>/api",
   "tokenPath": "/v2/token/serverside",
   "responseTokenField": "access_token"
 }

@@ -27,12 +27,14 @@ import java.net.ServerSocket
 import kotlin.concurrent.thread
 
 /**
- * Two things, and no more.
+ * Three things, and no more.
  *
  * No job runs these: CI has no emulator, and the nightly covers `:core` only. Nothing added here
  * will be seen to go red.
  *
- * Run locally with `./gradlew :example:connectedAndroidTest`.
+ * Run locally with `./gradlew :example:connectedAndroidTest`, and not on API 37: Espresso injects input
+ * through `InputManager.getInstance`, which is gone there, so every test in this class fails on
+ * `Espresso.onIdle` with `NoSuchMethodException` before reaching its own subject. Green on API 36.
  */
 @RunWith(AndroidJUnit4::class)
 class NavigationSmokeTest {
@@ -61,7 +63,15 @@ class NavigationSmokeTest {
     }
 
     @After
-    fun stopTheTokenServer() = tokenServer.close()
+    fun stopTheTokenServer() {
+        tokenServer.close()
+        // The setting lives on the container, which outlives a test, so a run that turned it on would
+        // leave the tab showing for whatever runs next.
+        (
+            InstrumentationRegistry.getInstrumentation().targetContext.applicationContext
+                as PayabliDemoApplication
+        ).container.simpleCapture.setShown(false)
+    }
 
     private fun launch() {
         compose.setContent {
@@ -93,6 +103,30 @@ class NavigationSmokeTest {
 
         open(TopLevelDestination.PaymentMethod)
         assertReachable("3. Stored method")
+    }
+
+    @Test
+    fun theConfigurationSwitchAddsAndRemovesTheSimpleCaptureTab() {
+        // The unit tests cover `shownDestinations` and the setting on their own, so both stay green if the
+        // switch stops calling the setter or the bar stops collecting the value. This is the only thing that
+        // fails when that wiring breaks.
+        launch()
+        compose.onNodeWithTag(TopLevelDestination.SimpleCapture.testTag).assertDoesNotExist()
+
+        open(TopLevelDestination.Setup)
+        compose.onNodeWithText(SIMPLE_CAPTURE_SWITCH).performScrollTo().performClick()
+        compose.onNodeWithTag(TopLevelDestination.SimpleCapture.testTag).assertExists()
+
+        // Opened, not just offered. The item appearing says the bar filtered correctly and nothing about
+        // whether the destination builds, so this waits for the form: the session resolved, the flow was
+        // constructed and the screen drew past its spinner.
+        open(TopLevelDestination.SimpleCapture)
+        awaitExists(SIMPLE_CAPTURE_SUBMIT)
+        assertReachable(SIMPLE_CAPTURE_AMOUNT)
+
+        open(TopLevelDestination.Setup)
+        compose.onNodeWithText(SIMPLE_CAPTURE_SWITCH).performScrollTo().performClick()
+        compose.onNodeWithTag(TopLevelDestination.SimpleCapture.testTag).assertDoesNotExist()
     }
 
     @Test
@@ -197,6 +231,13 @@ class NavigationSmokeTest {
 
         /** The capture form's submit button, which exists only once the token step is done. */
         const val SUBMIT = "Submit payment"
+        const val SIMPLE_CAPTURE_SWITCH = "Show Simple Capture"
+
+        /** The form's own default label, since this screen passes no labels of its own. */
+        const val SIMPLE_CAPTURE_SUBMIT = "Submit"
+
+        /** Read back from the operation rather than typed, so it also proves the summary row. */
+        const val SIMPLE_CAPTURE_AMOUNT = "$ 12.34"
     }
 }
 

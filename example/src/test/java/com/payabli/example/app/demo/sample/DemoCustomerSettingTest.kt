@@ -1,11 +1,11 @@
-package com.payabli.example.app.demo.qa
+package com.payabli.example.app.demo.sample
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DemoCustomerSettingTest {
-    private val identity = QaIdentity.from("Google Pixel 7a")
+    private val identity = SampleIdentity.from("Google Pixel 7a")
 
     @Test
     fun `a capture names its customer unless someone says otherwise`() {

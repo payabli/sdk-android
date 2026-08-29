@@ -9,7 +9,7 @@ import com.payabli.example.app.demo.net.checkToken
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
 import com.payabli.example.app.demo.payment.StoredMethod
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.payment.PaymentFlowUiState
 import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInFormSetup
@@ -29,7 +29,7 @@ import kotlin.coroutines.cancellation.CancellationException
 
 data class PaymentMethodUiState(
     override val setup: PayInFormSetup,
-    override val qaIdentity: QaIdentity,
+    override val sampleIdentity: SampleIdentity,
     override val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
@@ -60,7 +60,7 @@ data class PaymentMethodUiState(
 
 class PaymentMethodViewModel(
     setup: PayInFormSetup,
-    identity: QaIdentity,
+    identity: SampleIdentity,
     private val startup: PayInStartup,
     private val diagnostics: DiagnosticsStore,
     private val diagnosticsEnabled: Boolean,
@@ -70,7 +70,7 @@ class PaymentMethodViewModel(
         MutableStateFlow(
             PaymentMethodUiState(
                 setup = setup,
-                qaIdentity = identity,
+                sampleIdentity = identity,
                 diagnosticsEnabled = diagnosticsEnabled,
                 prefillEnabled = configuration.prefillEnabled,
                 entryPoint = configuration.entryPoint,
@@ -213,7 +213,7 @@ class PaymentMethodViewModel(
         fun from(container: AppContainer): PaymentMethodViewModel =
             PaymentMethodViewModel(
                 setup = PayInForms.storePaymentMethod(),
-                identity = container.qaIdentity,
+                identity = container.sampleIdentity,
                 startup = container.payInStartup,
                 diagnostics = container.diagnostics.paymentMethod,
                 diagnosticsEnabled = container.configuration.diagnosticsEnabled,

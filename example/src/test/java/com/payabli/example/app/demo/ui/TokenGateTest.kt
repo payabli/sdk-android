@@ -6,8 +6,8 @@ import com.payabli.example.app.demo.config.TokenServerTarget
 import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.net.checkToken
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.demo.ui.method.PaymentMethodViewModel
 import com.payabli.example.app.sdk.PayInFlowGate
@@ -167,7 +167,7 @@ class TokenGateTest {
             val model =
                 PaymentMethodViewModel(
                     PayInForms.storePaymentMethod(),
-                    QaIdentity.from("Test Device"),
+                    SampleIdentity.from("Test Device"),
                     { error("the token server host is unparseable") },
                     DiagnosticsStore(),
                     diagnosticsEnabled = false,
@@ -202,7 +202,7 @@ class TokenGateTest {
     private fun methodModel(target: TokenServerTarget) =
         PaymentMethodViewModel(
             PayInForms.storePaymentMethod(),
-            QaIdentity.from("Test Device"),
+            SampleIdentity.from("Test Device"),
             startupAgainst(target),
             DiagnosticsStore(),
             diagnosticsEnabled = false,
@@ -211,8 +211,8 @@ class TokenGateTest {
 
     private fun captureModel(target: TokenServerTarget) =
         CaptureViewModel(
-            QaIdentity.from("Test Device"),
-            DemoCustomerSetting(QaIdentity.from("Test Device")),
+            SampleIdentity.from("Test Device"),
+            DemoCustomerSetting(SampleIdentity.from("Test Device")),
             startupAgainst(target),
             DiagnosticsStore(),
             diagnosticsEnabled = false,

@@ -23,7 +23,7 @@ internal object InstrumentedSession {
      *
      * `PayabliSession.ConfigIdentity` holds the entry point, the environment, the telemetry flag and
      * whether a token provider was supplied. Agreeing on the entry point alone leaves a build configured
-     * with `payabli.demo.environment=qa` installing one environment here and another there, which fails
+     * with `payabli.demo.environment` installing one environment here and another there, which fails
      * the same way and only on that build.
      */
     val ENVIRONMENT: DemoEnvironment = DemoEnvironment.SANDBOX
@@ -39,7 +39,6 @@ internal object InstrumentedSession {
     val SDK_ENVIRONMENT: PayabliEnvironment
         get() =
             when (ENVIRONMENT) {
-                DemoEnvironment.QA -> PayabliEnvironment.QA
                 DemoEnvironment.SANDBOX -> PayabliEnvironment.SANDBOX
                 DemoEnvironment.PRODUCTION -> PayabliEnvironment.PRODUCTION
             }

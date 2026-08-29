@@ -74,7 +74,7 @@ private fun SwitchRowPreview() {
         SwitchRow(
             label = "Send a customer number",
             checked = true,
-            note = "Charging sends QA Google Pixel 7a · qa-android-google-pixel-7a.",
+            note = "Charging sends Sample Google Pixel 7a · sample-android-google-pixel-7a.",
             onCheckedChange = {},
         )
         SwitchRow(

@@ -38,6 +38,14 @@ on:
         description: The environment to run against, as the SDK names it.
         required: true
         type: string
+      sample-walkthrough:
+        description: >-
+          Whether to drive the sample app's walkthrough as well as the pay-in tier. The sample offers
+          sandbox and production only, so a caller on any other environment sets this false and its
+          walkthrough is skipped rather than failing on an environment the sample does not name.
+        required: false
+        default: true
+        type: boolean
     secrets:
       client-id:
         required: true
@@ -140,9 +148,18 @@ jobs:
           PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
           PAYABLI_ENTRY: ${{ secrets.entry-point }}
         run: |
+          # The allow-list moves with the base URL. The server's committed default names sandbox and
+          # production only, so a deployment outside that list is named by the run that needs it and is
+          # refused rather than ignored when it is not.
           case "$ENVIRONMENT" in
-            qa)      export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api ;;
-            sandbox) export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api ;;
+            qa)
+              export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api
+              export PAYABLI_ALLOWED_API_HOSTS=api-qa.payabli.com
+              ;;
+            sandbox)
+              export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
+              export PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com
+              ;;
             *) echo "::error::unknown environment $ENVIRONMENT"; exit 1 ;;
           esac
           nohup node example-server/server.mjs > "$RUNNER_TEMP/token-server.log" 2>&1 &
@@ -179,6 +196,7 @@ jobs:
           PAYABLI_LIVETEST_ENVIRONMENT: ${{ inputs.environment }}
           PAYABLI_LIVETEST_ENTRY_POINT: ${{ secrets.entry-point }}
           PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787
+          SAMPLE_WALKTHROUGH: ${{ inputs.sample-walkthrough }}
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -195,7 +213,7 @@ jobs:
           # exit, so a refused pay-in flow stops here rather than being reported over by the sample app's run.
           script: |
             ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest
-            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.qaWalkthrough=true -Ppayabli.demo.prefill=true
+            if [ "$SAMPLE_WALKTHROUGH" = true ]; then ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true; fi
 
       # The run's own verdict, so it cannot disagree with the message the report job sends. A suite that
       # succeeded having discovered no tests writes no results, leaves the step green, and reaches Slack as
@@ -208,9 +226,14 @@ jobs:
       - name: Every suite wrote results
         env:
           INSTRUMENTED_MODULES: payin example
+          SAMPLE_WALKTHROUGH: ${{ inputs.sample-walkthrough }}
         run: |
+          # Narrowed here rather than in the list above, so the list keeps naming every suite this
+          # workflow can run and a caller that skipped one cannot quietly shrink what is checked.
+          modules=$INSTRUMENTED_MODULES
+          [ "$SAMPLE_WALKTHROUGH" = true ] || modules=payin
           missing=
-          for module in $INSTRUMENTED_MODULES; do
+          for module in $modules; do
             found=$(find "$module/build/outputs/androidTest-results" -name 'TEST-*.xml' 2>/dev/null | wc -l)
             [ "$found" -gt 0 ] || missing="$missing $module"
           done
