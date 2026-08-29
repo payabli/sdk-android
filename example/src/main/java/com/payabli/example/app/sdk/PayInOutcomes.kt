@@ -16,8 +16,8 @@ import kotlinx.serialization.json.buildJsonObject
  * The SDK's outcome in this app's own words.
  *
  * One direction only, and one place. The screens keep their own [PaymentResult] and [PaymentError] so the
- * demo's cards, summaries and navigation are unchanged by which SDK version produced them, and nothing in the
- * UI layer names an SDK type.
+ * demo's cards, summaries and navigation are unchanged by which SDK version produced them, and no screen
+ * reached through this boundary names an SDK type. `demo/simple` does not come through here.
  *
  * **No instrument crosses this boundary**, because none is in what the SDK returns.
  */
