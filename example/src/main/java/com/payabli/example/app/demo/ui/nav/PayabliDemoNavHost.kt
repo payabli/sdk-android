@@ -45,7 +45,8 @@ import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
 import java.math.BigDecimal
 
 /**
- * The whole navigation graph: four capability areas, each with its own back stack.
+ * The whole navigation graph: four capability areas, each with its own back stack, and an optional fifth for
+ * the Simple Capture example, which the Configuration switch shows and hides.
  *
  * [NavigationSuiteScaffold] is the bottom bar on a phone and the navigation rail on a tablet or an
  * unfolded foldable, from one layout.
