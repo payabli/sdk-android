@@ -117,6 +117,14 @@ class NavigationSmokeTest {
         compose.onNodeWithText(SIMPLE_CAPTURE_SWITCH).performScrollTo().performClick()
         compose.onNodeWithTag(TopLevelDestination.SimpleCapture.testTag).assertExists()
 
+        // Opened, not just offered. The item appearing says the bar filtered correctly and nothing about
+        // whether the destination builds, so this waits for the form: the session resolved, the flow was
+        // constructed and the screen drew past its spinner.
+        open(TopLevelDestination.SimpleCapture)
+        awaitExists(SIMPLE_CAPTURE_SUBMIT)
+        assertReachable(SIMPLE_CAPTURE_AMOUNT)
+
+        open(TopLevelDestination.Setup)
         compose.onNodeWithText(SIMPLE_CAPTURE_SWITCH).performScrollTo().performClick()
         compose.onNodeWithTag(TopLevelDestination.SimpleCapture.testTag).assertDoesNotExist()
     }
@@ -224,6 +232,12 @@ class NavigationSmokeTest {
         /** The capture form's submit button, which exists only once the token step is done. */
         const val SUBMIT = "Submit payment"
         const val SIMPLE_CAPTURE_SWITCH = "Show Simple Capture"
+
+        /** The form's own default label, since this screen passes no labels of its own. */
+        const val SIMPLE_CAPTURE_SUBMIT = "Submit"
+
+        /** Read back from the operation rather than typed, so it also proves the summary row. */
+        const val SIMPLE_CAPTURE_AMOUNT = "$ 12.34"
     }
 }
 
