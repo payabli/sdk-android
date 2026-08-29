@@ -23,6 +23,10 @@ jobs:
     uses: ./.github/workflows/live-flows.yml
     with:
       environment: qa
+      # The sample app offers sandbox and production only, so its walkthrough cannot configure itself
+      # for qa and would fail before a flow ran. The pay-in tier still runs here, which is what this
+      # workflow is for.
+      sample-walkthrough: false
     secrets:
       client-id: ${{ secrets.PAYABLI_CLIENT_ID_QA }}
       client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_QA }}
