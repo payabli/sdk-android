@@ -51,7 +51,7 @@ class SimpleCaptureTabTest {
     }
 
     @Test
-    fun `turning it on is what the screen reads`() {
+    fun `turning it on changes what the setting holds`() {
         val setting = SimpleCaptureSetting()
 
         setting.setShown(true)
