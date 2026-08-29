@@ -44,7 +44,7 @@ import java.math.BigDecimal
  * whenever it leaves it, and the key that makes a retry safe goes with it.
  *
  * A view model survives rotation and backgrounding, not the process ending, so [retryKey] is gone after a
- * kill and this screen cannot recover a payment interrupted that way. A host that needs to sets
+ * kill and this screen cannot recover a payment interrupted that way. A host that needs to survive it sets
  * `idempotencyKey` on the transaction options itself and persists it before submitting;
  * `payin/src/androidTest/PROCESS-DEATH.md` covers what is and is not recoverable.
  */
