@@ -45,6 +45,7 @@ and only `payabli.demo.appId` prefills something other than its build default.
 | `payabli.demo.deviceTokenHost` | `127.0.0.1` | |
 | `payabli.demo.tokenPort` | `8787` | |
 | `payabli.demo.diagnostics` | `true` | Redacted request and response logging on the payment screens. |
+| `payabli.demo.prefill` | `false` | Fills the payment form with the sample identity, for a walkthrough that is not about typing. |
 
 With nothing set, the Setup screen shows a dash and says what is missing.
 
@@ -69,20 +70,23 @@ falls back to the development machine's Bonjour name, where a device here gets `
 
 ## How it is put together
 
-**Every call into the SDK is in `sdk/`.** That is the package to read, and the rest of the app is scaffolding
-around it: `demo/` holds the screens, the step list, the token server client and the card-present stand-in,
-and none of it names an SDK type. `AppContainer.kt`, `MainActivity.kt` and `PayabliDemoApplication.kt` stay
-at the root, where the manifest expects them. `SdkCallsAreInOnePackageTest` reads `src/main` and fails naming
-any file outside `sdk/` whose source contains `com.payabli.sdk.`, so a fully qualified call is caught as an
-import is. What it cannot see is a `demo/` file reaching an SDK type through one of `sdk/`'s `internal`
-properties, which names no package: Kotlin has no package-private, and `PaymentFormHost.kt` needs those values
-from the files that hold them.
+**Every call into the SDK is in `sdk/` or `demo/simple/`.** `sdk/` is this app's integration layer, which
+four screens share and which hands back types the app owns; the rest of `demo/` is scaffolding around it and
+names no SDK type. `demo/simple/` is the exception: one screen that calls the SDK directly, so the fewest
+calls a capture takes can be read in one file. `AppContainer.kt`, `MainActivity.kt` and
+`PayabliDemoApplication.kt` stay at the root, where the manifest expects them.
+`SdkCallsAreInOnePackageTest` reads `src/main` and fails naming any file outside those two packages whose
+source contains `com.payabli.sdk.`, so a fully qualified call is caught as an import is. What it cannot see
+is a `demo/` file reaching an SDK type through one of `sdk/`'s `internal` properties, which names no
+package: Kotlin has no package-private, and `PaymentFormHost.kt` needs those values from the files that
+hold them.
 
 ```
 com/payabli/example/app/
   AppContainer.kt   MainActivity.kt   PayabliDemoApplication.kt
   sdk/     the integration
   demo/    ui/  flow/  payment/  net/  config/  terminal/  diagnostics/  preflight/
+    simple/  the one screen that calls the SDK directly
 ```
 
 Inside `sdk/`:
