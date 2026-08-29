@@ -2075,6 +2075,17 @@ def test_workflows():
               "pull_request" not in text,
               next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
 
+    # The sample app offers sandbox and production, so a caller on any other environment has to say the
+    # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and
+    # the failure arrives on the next scheduled run, inside the sample's setup, naming an environment
+    # rather than the line that sent it.
+    for name, environment, sample in (("live-qa.yml", "qa", False), ("live-sandbox.yml", "sandbox", True)):
+        called = ((workflow_doc(name).get("jobs") or {}).get(environment) or {}).get("with") or {}
+        check(f"W1 {name} names the environment it is for", called.get("environment") == environment,
+              f"{called}")
+        check(f"W1 {name} asks for the sample walkthrough only where the sample offers that environment",
+              bool(called.get("sample-walkthrough", True)) is sample, f"{called}")
+
     # The one thing about parsing a workflow that is not obvious from reading one: YAML 1.1 reads a bare
     # `on` as the boolean true, so a lookup by the string finds nothing at all.
     bare = trigger_keys(yaml.safe_load("on:\n  pull_request:\n    branches: [main]\n"))

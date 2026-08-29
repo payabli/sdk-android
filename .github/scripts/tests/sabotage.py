@@ -308,6 +308,14 @@ MUTATIONS = [
      "              :example:connectedWithTelemetryDebugAndroidTest "
      "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true; fi"),
 
+    # The caller-specific guard. Flipping it sends qa into the sample's setup, where the failure names an
+    # environment rather than the line that chose it, and nothing else in either suite looks at this line.
+    ("The qa caller asks for a sample walkthrough its environment does not offer", LIVE_QA, "workflows",
+     "      sample-walkthrough: false", "      sample-walkthrough: true"),
+
+    ("The qa caller stops saying whether the sample runs, taking the default", LIVE_QA, "workflows",
+     "      sample-walkthrough: false", "      # sample-walkthrough: false"),
+
     # Named as text on the line rather than run. A check that only looks for `./gradlew` somewhere in the
     # line passes on this, and the step goes green having run no suite at all.
     ("The live script prints its command instead of running it", LIVE_FLOWS, "workflows",
