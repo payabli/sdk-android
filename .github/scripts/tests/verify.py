@@ -2138,13 +2138,15 @@ def test_workflows():
     check("W5 the live step was found", len(live) == 1, f"{len(live)}")
     commands = [line for step in live for line in script_lines(step)]
     check("W5 the live script runs two suites", len(commands) == 2, f"{commands}")
-    # A command, not an argument. The failure this catches is the second half of a broken continuation,
-    # which arrives as a line of flags and runs as a command named `-Ppayabli...`. One suite is invoked
-    # behind a guard, so the test is that the line starts a command and names gradlew, not that it starts
-    # with `./`.
+    # `./gradlew` as the command, not as text on the line. Asserting only that the line contains it passes
+    # on `echo ./gradlew ...` and on `true # ./gradlew ...`, which run neither suite and leave this green
+    # with the behaviour removed. One suite is invoked behind a guard, so that one form is named here
+    # rather than admitting anything that mentions gradlew.
+    GUARD = 'if [ "$SAMPLE_WALKTHROUGH" = true ]; then ./gradlew '
     for line in commands:
-        check("W5 every line of the live script is a command",
-              not line.lstrip().startswith("-") and "./gradlew" in line, line)
+        command = line.strip()
+        check("W5 every line of the live script executes gradlew",
+              command.startswith("./gradlew ") or command.startswith(GUARD), line)
 
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.

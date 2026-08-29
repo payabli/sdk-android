@@ -308,6 +308,15 @@ MUTATIONS = [
      "              :example:connectedWithTelemetryDebugAndroidTest "
      "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true; fi"),
 
+    # Named as text on the line rather than run. A check that only looks for `./gradlew` somewhere in the
+    # line passes on this, and the step goes green having run no suite at all.
+    ("The live script prints its command instead of running it", LIVE_FLOWS, "workflows",
+     "            ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest",
+     "            echo ./gradlew :payin:connectedAndroidTest "
+     "-Pandroid.testInstrumentationRunnerArguments.class="
+     "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"),
+
     ("The pay-in suite loses its class filter and runs the whole instrumented suite", LIVE_FLOWS, "workflows",
      "            ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="
      "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest",
