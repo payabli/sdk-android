@@ -136,6 +136,16 @@ fun SimpleCaptureScreen(
                                 // back the figure the request carries and the two cannot disagree.
                                 cardSections =
                                     PayInFormConfiguration.defaultCardSections() +
+                                        // A capture with no customer is refused with 400 "Error in customer
+                                        // data", so the three the service needs are collected here.
+                                        PayInFormSection(
+                                            fields =
+                                                listOf(
+                                                    PayInField.FirstName,
+                                                    PayInField.LastName,
+                                                    PayInField.BillingEmail,
+                                                ),
+                                        ) +
                                         PayInFormSection(
                                             fields = listOf(PayInField.Amount),
                                             style = PayInSectionStyle.Summary,
