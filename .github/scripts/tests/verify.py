@@ -2208,15 +2208,29 @@ def test_workflows():
     # Going quiet on green is only safe while something watches the silence, and nothing in the reporter can
     # arm the alarm if the workflow never names an owner. That failure is invisible: the channel looks the
     # same either way until the day a schedule stops.
-    owner = ""
-    for job in (workflow_doc("live-flows.yml").get("jobs") or {}).values():
-        for step in job.get("steps") or []:
-            named = (step.get("env") or {}).get("LIVENESS_OWNER")
-            if named is not None:
-                owner = str(named)
-    check("W8 the live workflow names who owns the liveness alarm", bool(owner), str(owner))
-    check("W8 and only a scheduled run on the default branch owns it",
-          "schedule" in owner and "default_branch" in owner, owner)
+    def liveness_owner(name: str) -> str:
+        found = ""
+        for job in (workflow_doc(name).get("jobs") or {}).values():
+            for step in job.get("steps") or []:
+                named = (step.get("env") or {}).get("LIVENESS_OWNER")
+                if named is not None:
+                    found = str(named)
+        return found
+
+    # Both conditions, joined by `and`. Asserting only that the two words appear somewhere passes on
+    # `schedule || default_branch`, which makes every dispatch on the default branch an owner: a manual run
+    # would then push the alarm out over a schedule that had already stopped, which is the one thing this
+    # flag exists to prevent. Checked for the nightly too, whose identical expression had no assertion.
+    for name in ("live-flows.yml", "nightly.yml"):
+        owner = liveness_owner(name)
+        check(f"W8 {name} names who owns the liveness alarm", bool(owner), str(owner))
+        operands = [part.strip() for part in owner.replace("${{", "").replace("}}", "").split("&&")]
+        check(f"W8 {name} requires both conditions rather than either",
+              "||" not in owner and len(operands) == 2, owner)
+        check(f"W8 {name} owns it only on a scheduled run",
+              any("event_name" in part and "schedule" in part for part in operands), owner)
+        check(f"W8 {name} owns it only on the default branch",
+              any("default_branch" in part for part in operands), owner)
 
     # The sample app offers sandbox and production, so a caller on any other environment has to say the
     # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and

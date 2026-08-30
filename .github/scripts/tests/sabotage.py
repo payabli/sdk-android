@@ -58,6 +58,8 @@ WORKFLOW_DIR.mkdir(exist_ok=True)
 LIVE_FLOWS = WORKFLOW_DIR / "live-flows.yml"
 LIVE_QA = WORKFLOW_DIR / "live-qa.yml"
 LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
+# The nightly, for its liveness-owner expression alone. Nothing else here mutates it.
+NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -67,6 +69,7 @@ SOURCE = {
     LIVE_FLOWS: SDK / ".github/workflows/live-flows.yml",
     LIVE_QA: SDK / ".github/workflows/live-qa.yml",
     LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
+    NIGHTLY: SDK / ".github/workflows/nightly.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -363,6 +366,16 @@ MUTATIONS = [
     ("The live workflow stops naming the alarm's owner, so no run ever arms it", LIVE_FLOWS, "workflows",
      "          LIVENESS_OWNER: ${{ github.event_name == 'schedule'",
      "          LIVENESS_OWNER_DISABLED: ${{ github.event_name == 'schedule'"),
+
+    # Either condition rather than both. A dispatch on the default branch then owns the alarm and pushes it
+    # out, so a schedule that has already stopped stays masked for as long as anyone keeps dispatching.
+    ("Any default-branch run owns the live alarm, not only a scheduled one", LIVE_FLOWS, "workflows",
+     "github.event_name == 'schedule' && github.ref_name",
+     "github.event_name == 'schedule' || github.ref_name"),
+
+    ("Any default-branch run owns the nightly alarm, not only a scheduled one", NIGHTLY, "workflows",
+     "github.event_name == 'schedule' && github.ref_name",
+     "github.event_name == 'schedule' || github.ref_name"),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
