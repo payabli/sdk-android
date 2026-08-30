@@ -163,8 +163,11 @@ it:
 `LocalTokenServer` gets `/payabli/access-token`, and `:example`'s `SampleWalkthroughTest` fetches nothing
 itself and points the sample app at the server so the production path does it.
 
-`LiveTestSettings` is what keeps this true by construction: it can forward `environment`, `entryPoint` and
-`tokenHost` and nothing else, so a credential has no route into a test. `verify.py` enforces the CI half,
+Two paths keep this true by construction rather than by discipline, one per pair of tiers. `:payin` and
+`:example` share `LiveTestSettings`, which can forward `environment`, `entryPoint` and `tokenHost` and
+nothing else. `:taptopay` does not use it: `taptopay/build.gradle.kts:41` forwards `tokenEndpoint` alone, as
+a Gradle property with no environment fallback, and `LiveRunSettings` reads that plus an entry and an
+environment. Neither path has a slot a credential could travel in. `verify.py` enforces the CI half,
 refusing a workflow that hands a client credential to any step but the one running `server.mjs`, and
 `sabotage.py` proves those checks fail when someone does. What neither of them catches is a credential
 written into a Kotlin test by hand, which is why the rule is here.
