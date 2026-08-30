@@ -665,7 +665,7 @@ def arm_liveness_switch(token: str, channel: str, marker: str | None = None,
     # What survives is the three things that change what someone does next: what happened, that it is worse
     # than a red suite, and where to look.
     text = (
-        f":rotating_light: *{platform} · {mrkdwn(subject)} · no report in over {SWITCH_HOURS} hours*\n\n"
+        f":rotating_light: *{platform} · no {mrkdwn(subject)} report in over {SWITCH_HOURS} hours*\n\n"
         "It did not run, or could not reach Slack. This is not just a red suite.\n\n"
         "Check, in order:\n"
         "1. the workflow is still enabled, since a public repo silently disables schedules "

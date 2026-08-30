@@ -217,7 +217,7 @@ def main() -> int:
         })
 
     marker = switch_marker(platform, environment)
-    subject = f"live flows · {environment}"
+    subject = f"live flows ({environment})"
 
     if not red and not owns_liveness_switch():
         # A dispatch. Silent because it is green, and it does not vouch for a schedule it is not evidence of.

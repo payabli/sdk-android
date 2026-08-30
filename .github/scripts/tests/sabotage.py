@@ -390,6 +390,11 @@ MUTATIONS = [
     ("A green dispatch resets the live alarm, masking a schedule that has stopped", LIVE_POSTER, "live",
      "    if not red and not owns_liveness_switch():", "    if False:"),
 
+    # The alarm that fires is the only thing a responder sees, and it fires a day after anyone could have
+    # noticed. Naming the wrong suite in it sends them to a nightly that never stopped.
+    ("The live alarm keeps the default subject, so it announces the nightly instead", LIVE_POSTER, "live",
+     '    subject = f"live flows ({environment})"', '    subject = "nightly"'),
+
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
     ("The failure message is reported whole, allowlist bypassed", LIVE_POSTER, "live",

@@ -2089,6 +2089,12 @@ def test_live_reporting(mod, nightly):
     armed = [c for c in calls if c["method"] == "chat.scheduleMessage"]
     fallback = armed[0]["payload"].get("text", "") if armed else ""
     check("L12 the armed alarm carries its own environment's marker", qa in fallback, fallback)
+    # The marker is what the sweep matches; the subject is what a person reads at 3am. Dropping the subject
+    # leaves an alarm that names the nightly while the live flows are the thing that stopped.
+    heading = ((armed[0]["payload"].get("blocks") or [{}])[0].get("text", {}).get("text", "")) if armed else ""
+    check("L12 and names the live flows rather than the nightly", "live flows (qa)" in fallback, fallback)
+    check("L12 in the heading a responder reads, not only the fallback",
+          "live flows (qa)" in heading and "nightly" not in heading, heading)
 
     # L13 a reset that did not take is not a reset. Staying silent on the strength of an alarm that was
     # refused, or of a sweep that left an older one in flight, produces exactly the unmonitored silence this

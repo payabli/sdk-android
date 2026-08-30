@@ -100,8 +100,9 @@ green, and those two daily messages were their liveness signal; going quiet need
 The marker is `live-liveness:<platform>:<environment>`, which shares no substring with the nightly's
 `nightly-liveness:<platform>` — the sweep matches markers as substrings, so one containing another would let
 a run delete an alarm that is not its own. qa and sandbox arm separately on purpose: sandbox stopping while
-qa keeps running still raises something. `verify.py` L9 to L12 cover the reporter and W8 covers the workflow
-naming an owner.
+qa keeps running still raises something. `verify.py` L9 to L14 cover the reporter, including that a reset which did
+not take falls back to posting and that a refused post leaves the previous alarm standing, and W8 covers the
+workflow naming an owner.
 
 **A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
 missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
