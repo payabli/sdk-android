@@ -377,6 +377,19 @@ MUTATIONS = [
      "github.event_name == 'schedule' && github.ref_name",
      "github.event_name == 'schedule' || github.ref_name"),
 
+    # The operator carries the whole meaning, and inverting it reads as a typo rather than as a change of
+    # policy: every run that is not the scheduled one would then own the alarm.
+    ("The live alarm is owned by every run except the scheduled one", LIVE_FLOWS, "workflows",
+     "github.event_name == 'schedule' && github.ref_name ==",
+     "github.event_name != 'schedule' && github.ref_name !="),
+
+    ("The nightly alarm is owned by every run except the scheduled one", NIGHTLY, "workflows",
+     "github.event_name == 'schedule' && github.ref_name ==",
+     "github.event_name != 'schedule' && github.ref_name !="),
+
+    ("A green dispatch resets the live alarm, masking a schedule that has stopped", LIVE_POSTER, "live",
+     "    if not red and not owns_liveness_switch():", "    if False:"),
+
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
     ("The failure message is reported whole, allowlist bypassed", LIVE_POSTER, "live",

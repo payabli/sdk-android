@@ -2055,12 +2055,23 @@ def test_live_reporting(mod, nightly):
     check("L10 a red run posts", len(posts) >= 1, str(len(posts)))
     check("L10 and arms the alarm too, since the schedule did run", len(armed) == 1, str(len(armed)))
 
-    # A dispatch is not evidence of a schedule, so it must not vouch for one.
+    # A dispatch is not evidence of a schedule, so it must not vouch for one. Both colours: a red dispatch
+    # still reports, and a green one is the case that would otherwise reach the reset and push the alarm out
+    # over a schedule that had already stopped.
     _, _, calls = run_live_poster(mod, LIVE_XML_FAIL, LIVENESS_OWNER="false")
-    check("L11 a run that does not own the switch arms nothing",
+    check("L11 a red run that does not own the switch arms nothing",
           [c for c in calls if c["method"] == "chat.scheduleMessage"] == [], str(len(calls)))
     check("L11 but still reports the failure",
           len([c for c in calls if c["method"] == "chat.postMessage"]) >= 1, str(len(calls)))
+
+    _, out, calls = run_live_poster(mod, LIVE_XML_PASS, LIVENESS_OWNER="false")
+    check("L11 a green run that does not own the switch arms nothing",
+          [c for c in calls if c["method"] == "chat.scheduleMessage"] == [],
+          str([c["method"] for c in calls]))
+    check("L11 and posts nothing either", [c for c in calls if c["method"] == "chat.postMessage"] == [],
+          str([c["method"] for c in calls]))
+    check("L11 and says which of the two reasons it was quiet for",
+          "does not own the liveness alarm" in out, out)
 
     # The markers are matched as substrings when stale alarms are swept, so one containing another would let
     # the longer one's run delete the shorter one's alarm.
@@ -2228,9 +2239,12 @@ def test_workflows():
         check(f"W8 {name} requires both conditions rather than either",
               "||" not in owner and len(operands) == 2, owner)
         check(f"W8 {name} owns it only on a scheduled run",
-              any("event_name" in part and "schedule" in part for part in operands), owner)
+              any("github.event_name == 'schedule'" in part for part in operands), owner)
         check(f"W8 {name} owns it only on the default branch",
-              any("default_branch" in part for part in operands), owner)
+              any("github.ref_name ==" in part and "default_branch" in part for part in operands), owner)
+        # Spelled out because the operator is the whole meaning: `!=` on both sides passes every check above
+        # while making each non-scheduled run an owner, which is the inversion of what the flag is for.
+        check(f"W8 {name} compares for equality rather than inequality", "!=" not in owner, owner)
 
     # The sample app offers sandbox and production, so a caller on any other environment has to say the
     # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and
