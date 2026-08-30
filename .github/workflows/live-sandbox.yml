@@ -5,9 +5,10 @@ name: Live flows (sandbox)
 
 on:
   workflow_dispatch:
-  # The daily schedule is paused, and the cron it carried was 11:30 UTC, half an hour after the qa run so the
-  # two did not submit into both paypoints at once. A scheduled run cannot mint a token today, so it would
-  # fail every morning and say nothing about the client. Restoring the schedule is the revert of this comment.
+  schedule:
+    # 04:30 Pacific as 11:30 UTC, half an hour after the qa run so the two do not submit into both paypoints
+    # at once and a runner is free for the second.
+    - cron: '30 11 * * *'
 
 concurrency:
   group: live-sandbox-${{ github.ref }}

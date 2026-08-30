@@ -5,9 +5,11 @@ name: Live flows (qa)
 
 on:
   workflow_dispatch:
-  # The daily schedule is paused, and the cron it carried was 11:00 UTC, an hour behind the nightly. A
-  # scheduled run cannot mint a token today, so it would fail every morning and say nothing about the client.
-  # Restoring the schedule is the revert of this comment.
+  schedule:
+    # 04:00 Pacific as 11:00 UTC, an hour behind the nightly so the two are not competing for a runner and a
+    # red morning is read in order: the nightly says whether the client changed, this says what the service
+    # answered.
+    - cron: '0 11 * * *'
 
 concurrency:
   group: live-qa-${{ github.ref }}
