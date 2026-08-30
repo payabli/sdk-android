@@ -2079,6 +2079,43 @@ def test_live_reporting(mod, nightly):
     fallback = armed[0]["payload"].get("text", "") if armed else ""
     check("L12 the armed alarm carries its own environment's marker", qa in fallback, fallback)
 
+    # L13 a reset that did not take is not a reset. Staying silent on the strength of an alarm that was
+    # refused, or of a sweep that left an older one in flight, produces exactly the unmonitored silence this
+    # replaced: nothing in the channel and nothing watching for its absence. The nightly covers the same
+    # three shapes at P33.
+    ok_post = [{"ok": True, "ts": "1785408441.829119", "channel": "C0BLLFM863V"}]
+    for label, behaviour in (
+        ("a refused arm", {"chat.scheduleMessage": [{"ok": False, "error": "invalid_time"}]}),
+        ("a refused delete", {
+            "chat.scheduledMessages.list": {"ok": True, "scheduled_messages": [
+                {"id": "Q0STALE", "post_at": 1, "text": "[live-liveness:Android:sandbox] yesterday"}]},
+            "chat.deleteScheduledMessage": [{"ok": False, "error": "invalid_scheduled_message_id"}]}),
+        ("an unreadable list", {"chat.scheduledMessages.list": {"ok": False, "error": "ratelimited"}}),
+    ):
+        FakeSlack.behaviour = {"chat.postMessage": ok_post, **behaviour}
+        code, out, calls = run_live_poster(mod, LIVE_XML_PASS)
+        posted = [c for c in calls if c["method"] == "chat.postMessage"]
+        check(f"L13 {label} falls back to posting the green summary", len(posted) == 1,
+              str([c["method"] for c in calls]))
+        check(f"L13 {label} warns rather than claiming the alarm is armed",
+              "::warning::" in out and "the liveness alarm is armed" not in out, out)
+        check(f"L13 {label} still exits 0", code == 0, str(code))
+
+    # The clean case has to stay silent, or the three above have disabled silent-green rather than guarded it.
+    FakeSlack.behaviour = {"chat.postMessage": ok_post}
+    _, out, calls = run_live_poster(mod, LIVE_XML_PASS)
+    check("L13 and a clean reset is still silent",
+          [c for c in calls if c["method"] == "chat.postMessage"] == [] and "alarm is armed" in out, out)
+
+    # L14 the alarm asserts the channel heard from this run. A report that never landed must not push it out
+    # another day, because the pushed-out alarm is what would have said so.
+    FakeSlack.behaviour = {"chat.postMessage": [{"ok": False, "error": "channel_not_found"}]}
+    _, _, calls = run_live_poster(mod, LIVE_XML_FAIL)
+    check("L14 a red run whose report was refused does not reset the alarm",
+          [c for c in calls if c["method"] == "chat.scheduleMessage"] == [],
+          str([c["method"] for c in calls]))
+    FakeSlack.behaviour = {}
+
 
 def test_live_summary(mod):
     """`summarize` is the boundary between a failure message and a chat channel.

@@ -216,24 +216,39 @@ def main() -> int:
             "elements": [{"type": "mrkdwn", "text": f"<{link}|run>"}],
         })
 
-    # Armed whatever the colour, and before anything is posted. A red run is still evidence the schedule
-    # ran, which is the only question this alarm asks; and arming first means a Slack outage that loses the
-    # report does not also leave the silence unmonitored.
-    if owns_liveness_switch():
-        reset_liveness_switch(token, channel,
-                              marker=switch_marker(platform, environment),
-                              subject=f"live flows · {environment}")
+    marker = switch_marker(platform, environment)
+    subject = f"live flows · {environment}"
 
-    if not red:
-        # The whole point of the alarm above. Nothing is posted, and silence now means the run happened and
-        # passed rather than meaning nobody knows.
-        print(f"::notice::{headline}. Nothing posted; the liveness alarm is what reports silence.")
+    if not red and not owns_liveness_switch():
+        # A dispatch. Silent because it is green, and it does not vouch for a schedule it is not evidence of.
+        print(f"::notice::{headline}. Nothing posted; this run does not own the liveness alarm.")
         return 0
+    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):
+        # The whole point of the alarm. Silence now means the run happened and passed.
+        print(f"::notice::{headline}. Nothing posted; the liveness alarm is armed.")
+        return 0
+    if not red:
+        # Silence is only safe while exactly one alarm is pending, and it is not: either none could be armed
+        # or an older one survived the sweep and is due before the next run. Posting the green summary is
+        # worse to read and better than a quiet channel with nothing watching it, and where a stale alarm is
+        # in flight it is what stops that alarm being read as a schedule that stopped.
+        #
+        # Not retried below: the attempt has been made this run, and a second would arm an alarm sharing a
+        # `post_at` with the first, which the sweep retains by design rather than resolving.
+        warn("Posting the live summary because silence is not covered by exactly one pending alarm.")
 
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": text, "blocks": blocks})
     if parent is None or not parent.get("ok"):
         # The run's own verdict is the workflow's to decide. Losing the report must not change it.
+        #
+        # Deliberately not reset here. The alarm asserts that the channel heard from this run, and it did
+        # not: resetting would push it out another day while the report was lost, and leaving the existing
+        # alarm armed is what makes that visible.
         return 0
+    if red and owns_liveness_switch():
+        # After the post, for the reason above. A red run is still evidence the schedule ran, which is the
+        # only question this alarm asks.
+        reset_liveness_switch(token, channel, marker=marker, subject=subject)
 
     if failed:
         slack_post("chat.postMessage", token, {

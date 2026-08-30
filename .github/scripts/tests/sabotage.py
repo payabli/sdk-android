@@ -337,10 +337,19 @@ MUTATIONS = [
     # of these turns the quiet back into the unmonitored silence it replaced, and none of them is visible in
     # the channel until the day something stops running.
     ("The live reporter posts on green again, so the channel stops being read", LIVE_POSTER, "live",
-     "    if not red:", "    if red is None:"),
+     "    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):",
+     "    if False:"),
 
     ("The live reporter stops arming its alarm, leaving silence unmonitored", LIVE_POSTER, "live",
-     "    if owns_liveness_switch():", "    if False:"),
+     "    if red and owns_liveness_switch():", "    if False:"),
+
+    ("A refused arm counts as a reset, so green goes silent with nothing watching", LIVE_POSTER, "live",
+     "    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):",
+     "    if not red and (reset_liveness_switch(token, channel, marker=marker, subject=subject) or True):"),
+
+    ("The alarm is pushed out even though the report never reached the channel", LIVE_POSTER, "live",
+     "        return 0\n    if red and owns_liveness_switch():",
+     "        pass\n    if red and owns_liveness_switch():"),
 
     ("Every live run resets the alarm, so a dead schedule is masked by a dispatch", LIVE_POSTER, "live",
      '    return os.environ.get("LIVENESS_OWNER", "").strip().lower() == "true"', "    return True"),
