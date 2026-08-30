@@ -10,8 +10,9 @@ import org.gradle.api.provider.ProviderFactory
  * driving the real thing has to obey the same boundary, so what crosses is the address of a token server, the
  * entry point the app is configured with, and the environment.
  *
- * That boundary is a rule rather than a habit: no test mints its own token, and every token a test uses comes
- * from the local token server. Adding a fourth value here for a credential is the shape that breaks it.
+ * That boundary is a rule rather than a habit: no test mints its own token, and a token that reaches a real
+ * service comes from the local token server. A synthetic value in a test that authenticates with nothing is a
+ * different thing. Adding a fourth value here for a credential is the shape that breaks it.
  *
  * Shared by `:payin` and `:example`, which pass the same three and would otherwise drift on what counts as a
  * usable set, because one run configures both.

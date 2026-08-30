@@ -155,9 +155,10 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
 
 ## Testing
 
-**No test mints its own token. Every token a test uses comes from the local token server.** A client id and
-secret belong to `example-server`, which is the only thing in the repository that holds one, and nothing on a
-device or in a test process ever does. Three tiers reach a real service and all three obey it:
+**No test mints its own token, and a token that reaches a real service comes from the local token server.**
+A client id and secret belong to `example-server`, which is the only thing in the repository that holds one,
+and nothing on a device or in a test process ever does. Three tiers reach a real service and all three obey
+it:
 `PayInLiveFlowsInstrumentedTest` posts to the server's `/payabli/exchange-token`, `:taptopay`'s
 `LocalTokenServer` gets `/payabli/access-token`, and `:example`'s `SampleWalkthroughTest` fetches nothing
 itself and points the sample app at the server so the production path does it.
@@ -168,8 +169,11 @@ refusing a workflow that hands a client credential to any step but the one runni
 `sabotage.py` proves those checks fail when someone does. What neither of them catches is a credential
 written into a Kotlin test by hand, which is why the rule is here.
 
-Read it as written: *mints*. `ActivationCodeMinter` calls the real service with a bearer it is **given**,
-which is the boundary working rather than an exception to it.
+Read both halves as written. *Mints*: `ActivationCodeMinter` calls the real service with a bearer it is
+**given**, which is the boundary working rather than an exception to it. And *reaches a real service*: a unit
+test holding `accessToken = "initial-token"` is asserting on a value, not authenticating with one, and there
+are eighteen such literals. Widening this to every token any test holds would describe a rule the suite does
+not follow and never should.
 
 **Setup and teardown must not swallow their own failures.** A cleanup that catches and continues lets the
 suite run against state the previous run left behind, and the result is a green suite that proves nothing

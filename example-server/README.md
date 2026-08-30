@@ -3,8 +3,8 @@
 Tiny development server for exercising the PayIn payment flows. It gives the Android sample a
 backend-shaped endpoint without putting Payabli credentials in the APK.
 
-The instrumented tests hold no credential either. This server is the only thing in the repository that
-does, and every token a test uses comes from it.
+The tests hold no credential either. This server is the only thing in the repository that does, and a test
+reaching a real service gets its token from here rather than minting one.
 
 The server supports two modes:
 
