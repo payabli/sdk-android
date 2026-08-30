@@ -95,6 +95,14 @@ its absence produced a false pass. It is also the cheap place to check a change 
 scheduled run never fires from a feature branch, and while `nightly.yml` can be dispatched at one, that runs
 the whole emulator suite and posts to the channel.
 
+**The live flows post only on failure too, and each environment arms its own alarm.** They used to post on
+green, and those two daily messages were their liveness signal; going quiet needed the switch to replace it.
+The marker is `live-liveness:<platform>:<environment>`, which shares no substring with the nightly's
+`nightly-liveness:<platform>` — the sweep matches markers as substrings, so one containing another would let
+a run delete an alarm that is not its own. qa and sandbox arm separately on purpose: sandbox stopping while
+qa keeps running still raises something. `verify.py` L9 to L12 cover the reporter and W8 covers the workflow
+naming an owner.
+
 **A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
 missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
 stop reading a channel. Silence would be ambiguous on its own, because "green" and "the workflow stopped
