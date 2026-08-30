@@ -78,8 +78,9 @@ MUTATIONS = [
      "None if green else commits_since_last_green()", "commits_since_last_green()"),
 
     ("A failed sweep counted as a successful reset again", POSTER, "poster",
-     "    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1]):",
-     "    if cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1]) and False:"),
+     "    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1], marker=marker):",
+     "    if cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1], marker=marker) "
+     "and False:"),
 
     ("Green fallback re-arms after posting, duplicating the alarm", POSTER, "poster",
      "    if owns_liveness_switch() and not green:", "    if owns_liveness_switch():"),
@@ -331,6 +332,28 @@ MUTATIONS = [
      "            ./gradlew :payin:connectedAndroidTest\n"
      "            -Pandroid.testInstrumentationRunnerArguments.class="
      "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"),
+
+    # The live reporter's liveness alarm. Going quiet on green is only safe because the alarm exists, so each
+    # of these turns the quiet back into the unmonitored silence it replaced, and none of them is visible in
+    # the channel until the day something stops running.
+    ("The live reporter posts on green again, so the channel stops being read", LIVE_POSTER, "live",
+     "    if not red:", "    if red is None:"),
+
+    ("The live reporter stops arming its alarm, leaving silence unmonitored", LIVE_POSTER, "live",
+     "    if owns_liveness_switch():", "    if False:"),
+
+    ("Every live run resets the alarm, so a dead schedule is masked by a dispatch", LIVE_POSTER, "live",
+     '    return os.environ.get("LIVENESS_OWNER", "").strip().lower() == "true"', "    return True"),
+
+    ("The live alarm takes the nightly's marker, so each cancels the other's", LIVE_POSTER, "live",
+     '    return f"live-liveness:{platform}:{environment}"', '    return f"nightly-liveness:{platform}"'),
+
+    ("Both environments share one alarm, so sandbox going quiet is masked by qa", LIVE_POSTER, "live",
+     '    return f"live-liveness:{platform}:{environment}"', '    return f"live-liveness:{platform}"'),
+
+    ("The live workflow stops naming the alarm's owner, so no run ever arms it", LIVE_FLOWS, "workflows",
+     "          LIVENESS_OWNER: ${{ github.event_name == 'schedule'",
+     "          LIVENESS_OWNER_DISABLED: ${{ github.event_name == 'schedule'"),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.

@@ -1975,16 +1975,109 @@ def meaningful_lines(body) -> list[str]:
 LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
 
 
-def load_live_poster():
-    """`live_slack.py`, which imports `nightly_slack`, so its directory has to be importable."""
+def load_live_poster(base_url=None):
+    """`live_slack.py`, which imports `nightly_slack`, so its directory has to be importable.
+
+    `base_url` redirects Slack at the fake. It has to be set on `nightly_slack` rather than here: this module
+    imports `slack_post` by name, and that function reads `SLACK_API` out of the module it was defined in, so
+    rebinding a name in this one would leave the real host in use and the tests posting nowhere they can see.
+    """
     sys.path.insert(0, str(LIVE_POSTER.parent))
     try:
         spec = importlib.util.spec_from_file_location("live_slack", LIVE_POSTER)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        if base_url:
+            sys.modules["nightly_slack"].SLACK_API = base_url
         return mod
     finally:
         sys.path.pop(0)
+
+
+LIVE_XML_PASS = ('<testsuite name="s" tests="1"><testcase classname="a.b.PayInLiveFlowsInstrumentedTest" '
+                 'name="capturingACard"/></testsuite>')
+LIVE_XML_FAIL = ('<testsuite name="s" tests="1"><testcase classname="a.b.PayInLiveFlowsInstrumentedTest" '
+                 'name="capturingACard"><failure message="code=PAYMENT_DECLINED"/></testcase></testsuite>')
+
+
+def run_live_poster(mod, xml, **env_extra):
+    """Drive `live_slack.main()` against a results directory and report what reached Slack."""
+    FakeSlack.calls = []
+    tmp = Path(tempfile.mkdtemp(dir=SCRATCH))
+    if xml is not None:
+        (tmp / "TEST-live.xml").write_text(xml)
+    keys = ("SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "LIVE_ENVIRONMENT", "LIVE_JOB_RESULT", "PLATFORM",
+            "LIVENESS_OWNER", "GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID")
+    env = {"SLACK_BOT_TOKEN": "xoxb-not-a-real-token", "SLACK_CHANNEL_ID": "C0BLLFM863V",
+           "LIVE_ENVIRONMENT": "sandbox", "LIVE_JOB_RESULT": "success", "PLATFORM": "Android",
+           "LIVENESS_OWNER": "true", "GITHUB_SERVER_URL": "https://github.com",
+           "GITHUB_REPOSITORY": "payabli/sdk-android", "GITHUB_RUN_ID": "30609394288", **env_extra}
+    saved = {k: os.environ.get(k) for k in keys}
+    for k in keys:
+        os.environ.pop(k, None)
+    os.environ.update({k: v for k, v in env.items() if v is not None})
+    argv = sys.argv
+    sys.argv = ["live_slack.py", str(tmp)]
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            code = mod.main()
+    finally:
+        sys.argv = argv
+        for k in keys:
+            os.environ.pop(k, None)
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
+    return code, buf.getvalue(), list(FakeSlack.calls)
+
+
+def test_live_reporting(mod, nightly):
+    """Silent on green, and the alarm is what makes that silence safe to read.
+
+    Posting on green used to be this reporter's liveness signal: two messages a day, and their absence noticed
+    by a person. Going quiet without arming an alarm would have removed the signal and left nothing in its
+    place, which is the single failure the nightly's switch exists to prevent.
+    """
+    FakeSlack.behaviour = {}
+
+    code, out, calls = run_live_poster(mod, LIVE_XML_PASS)
+    posts = [c for c in calls if c["method"] == "chat.postMessage"]
+    armed = [c for c in calls if c["method"] == "chat.scheduleMessage"]
+    check("L9 a green run posts nothing", posts == [], str([p["payload"].get("text") for p in posts]))
+    check("L9 and still arms the alarm", len(armed) == 1, str(len(armed)))
+    check("L9 and says why the channel is quiet", "liveness alarm" in out, out)
+    check("L9 and does not fail the run", code == 0, str(code))
+
+    code, out, calls = run_live_poster(mod, LIVE_XML_FAIL)
+    posts = [c for c in calls if c["method"] == "chat.postMessage"]
+    armed = [c for c in calls if c["method"] == "chat.scheduleMessage"]
+    check("L10 a red run posts", len(posts) >= 1, str(len(posts)))
+    check("L10 and arms the alarm too, since the schedule did run", len(armed) == 1, str(len(armed)))
+
+    # A dispatch is not evidence of a schedule, so it must not vouch for one.
+    _, _, calls = run_live_poster(mod, LIVE_XML_FAIL, LIVENESS_OWNER="false")
+    check("L11 a run that does not own the switch arms nothing",
+          [c for c in calls if c["method"] == "chat.scheduleMessage"] == [], str(len(calls)))
+    check("L11 but still reports the failure",
+          len([c for c in calls if c["method"] == "chat.postMessage"]) >= 1, str(len(calls)))
+
+    # The markers are matched as substrings when stale alarms are swept, so one containing another would let
+    # the longer one's run delete the shorter one's alarm.
+    qa = mod.switch_marker("Android", "qa")
+    sandbox = mod.switch_marker("Android", "sandbox")
+    nightly_marker = nightly.switch_marker()
+    check("L12 the two environments have different markers", qa != sandbox, f"{qa} {sandbox}")
+    check("L12 and neither contains the other", qa not in sandbox and sandbox not in qa, f"{qa} {sandbox}")
+    check("L12 and neither contains the nightly's, nor it theirs",
+          nightly_marker not in qa and nightly_marker not in sandbox
+          and qa not in nightly_marker and sandbox not in nightly_marker,
+          f"{qa} {sandbox} {nightly_marker}")
+
+    _, _, calls = run_live_poster(mod, LIVE_XML_PASS, LIVE_ENVIRONMENT="qa")
+    armed = [c for c in calls if c["method"] == "chat.scheduleMessage"]
+    fallback = armed[0]["payload"].get("text", "") if armed else ""
+    check("L12 the armed alarm carries its own environment's marker", qa in fallback, fallback)
 
 
 def test_live_summary(mod):
@@ -2074,6 +2167,19 @@ def test_workflows():
         check(f"W1 {name} does not mention a pull request trigger anywhere",
               "pull_request" not in text,
               next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
+
+    # Going quiet on green is only safe while something watches the silence, and nothing in the reporter can
+    # arm the alarm if the workflow never names an owner. That failure is invisible: the channel looks the
+    # same either way until the day a schedule stops.
+    owner = ""
+    for job in (workflow_doc("live-flows.yml").get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            named = (step.get("env") or {}).get("LIVENESS_OWNER")
+            if named is not None:
+                owner = str(named)
+    check("W8 the live workflow names who owns the liveness alarm", bool(owner), str(owner))
+    check("W8 and only a scheduled run on the default branch owns it",
+          "schedule" in owner and "default_branch" in owner, owner)
 
     # The sample app offers sandbox and production, so a caller on any other environment has to say the
     # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and
@@ -2215,7 +2321,9 @@ def main():
         if ONLY in ("both", "workflows"):
             test_workflows()
         if ONLY in ("both", "live"):
-            test_live_summary(load_live_poster())
+            live = load_live_poster(base)
+            test_live_summary(live)
+            test_live_reporting(live, load_poster(base))
     finally:
         server.shutdown()
 

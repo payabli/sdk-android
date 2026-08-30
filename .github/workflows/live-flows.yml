@@ -296,4 +296,9 @@ jobs:
           # So a run with no results can say what became of the job instead of guessing.
           LIVE_JOB_RESULT: ${{ needs.live.result }}
           PLATFORM: Android
+          # Only a scheduled run on the default branch resets the liveness alarm. Anything else reports a
+          # failure normally and leaves the alarm alone: it answers whether the schedule is alive, and a
+          # dispatch is not evidence of a schedule. `github.event_name` here is the caller's, which is what
+          # this needs, since live-qa.yml and live-sandbox.yml are the scheduled entry points.
+          LIVENESS_OWNER: ${{ github.event_name == 'schedule' && github.ref_name == github.event.repository.default_branch }}
         run: python3 .github/scripts/live_slack.py "$RUNNER_TEMP/live-results"
