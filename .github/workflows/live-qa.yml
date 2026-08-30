@@ -6,9 +6,9 @@ name: Live flows (qa)
 on:
   workflow_dispatch:
   schedule:
-    # 04:00 Pacific as 11:00 UTC, an hour behind the nightly so the two are not competing for a runner and a
-    # red morning is read in order: the nightly says whether the client changed, this says what the service
-    # answered.
+    # 11:00 UTC, an hour behind the nightly so the two are not competing for a runner and a red morning is
+    # read in order: the nightly says whether the client changed, this says what the service answered.
+    # Cron is UTC only, so this is 4am during PDT and 3am during PST; nightly.yml says the same of its own.
     - cron: '0 11 * * *'
 
 concurrency:
