@@ -112,8 +112,9 @@ calls are numbered in it:
 1. **A session**, once per process. The app's own backend mints an access token and `PayabliSession` is
    configured with it. Nothing can be sent until this has answered, which is why the form is not drawn yet.
 2. **A flow**, once per screen. `PayabliPayInPaymentFlow(session, entryPoint, scope)` holds what the payer
-   types, so it is built on a `viewModelScope` rather than in the composition: held there, a rotation empties
-   the form and takes the key that makes a retry safe with it.
+   types, so the scope it is given has to outlive a configuration change. A `viewModelScope` does, and a
+   rotation keeps both the form's contents and a submission in flight. Built in the composition instead, the
+   flow is recreated on rotation and both are lost, along with the key that makes a retry safe.
 3. **The form.** `PayabliPayInForm` collects, validates and submits, and the outcome arrives on `onCompleted`
    or `onFailed`.
 
