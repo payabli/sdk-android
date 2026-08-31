@@ -89,6 +89,12 @@ abstract class GenerateExtraEnvironments : DefaultTask() {
                 "$EXTRA_ENVIRONMENTS_SETTING: '$origin' is not a payabli.com origin"
             }
             require(uri.userInfo == null) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries user info" }
+            // `URI` range-checks nothing: it reads `:65536` as a port and hands it over, and the value
+            // survives every other rule here. What refuses it is the socket, with `port out of range`, on
+            // the first request of a run that had already been configured and started.
+            require(uri.port == -1 || uri.port in 1..65535) {
+                "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries a port outside 1 to 65535"
+            }
             require(uri.path.isNullOrEmpty()) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries a path" }
             require(uri.query == null) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries a query" }
             require(uri.fragment == null) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries a fragment" }
