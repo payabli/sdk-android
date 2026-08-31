@@ -338,6 +338,11 @@ MUTATIONS = [
      "          PAYABLI_SDK_EXTRAENVIRONMENTS: >-",
      "          PAYABLI_SDK_EXTRAENVIRONMENTS_DISABLED: >-"),
 
+    ("The allow-list keeps the origin's port, which matches no hostname the server compares", LIVE_FLOWS,
+     "workflows",
+     '            export PAYABLI_ALLOWED_API_HOSTS="${authority%%:*}"',
+     '            export PAYABLI_ALLOWED_API_HOSTS="$authority"'),
+
     ("The sample app is not offered the run's environment", LIVE_FLOWS, "workflows",
      "          PAYABLI_DEMO_EXTRAENVIRONMENTS: ${{ inputs.environment }}",
      "          PAYABLI_DEMO_EXTRAENVIRONMENTS:"),

@@ -159,8 +159,12 @@ jobs:
           # case below refuses rather than falling back, so a run whose variable was never set says which
           # environment had no origin instead of authenticating against the wrong service.
           if [ -n "$API_ORIGIN" ]; then
+            # The base URL keeps the port and the allow-list must not. example-server checks a request
+            # against `URL.hostname`, which carries no port, so `host:port` in the list matches nothing and
+            # every upstream call is refused with a message naming the host rather than this line.
+            authority="${API_ORIGIN#https://}"
             export PAYABLI_API_BASE_URL="$API_ORIGIN/api"
-            export PAYABLI_ALLOWED_API_HOSTS="${API_ORIGIN#https://}"
+            export PAYABLI_ALLOWED_API_HOSTS="${authority%%:*}"
           else
             case "$ENVIRONMENT" in
               sandbox)

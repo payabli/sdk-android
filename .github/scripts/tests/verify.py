@@ -2388,6 +2388,18 @@ def test_workflows():
         check("W5 every line of the live script executes gradlew",
               line.strip().startswith("./gradlew "), line)
 
+    # An origin may carry a port, which `GenerateExtraEnvironments` accepts because an origin is a scheme, a
+    # host and a port. The two consumers want different halves of it: the base URL needs the port and the
+    # allow-list must not have it, because example-server checks a request against `URL.hostname`. A run that
+    # got this wrong would be green here and refuse every upstream call, naming the host rather than the line.
+    server = next((step for step in steps if "server.mjs" in str(step.get("run", ""))), None)
+    check("W2 the token server step was found", server is not None)
+    for step in [server] if server else []:
+        script = str(step.get("run", ""))
+        check("W2 the allowed host is taken without the port", "%%:*}" in script, "no port strip")
+        check("W2 and the base URL keeps the whole origin",
+              'PAYABLI_API_BASE_URL="$API_ORIGIN/api"' in script, "base url not taken from the origin")
+
     # Both suites run on every environment, and the same origin the token server got configures both. A run
     # that carried the environment for one and not the other would report a pay-in run against one service
     # beside a sample app that had silently fallen back to another.
