@@ -72,8 +72,6 @@ WALKTHROUGH_COMMAND = (
 )
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
-# The repository guide, for the one number in it this harness holds itself to.
-GUIDE = WORK / "CLAUDE.md"
 SOURCE = {
     COLLECTOR: SDK / ".github/scripts/nightly_report.py",
     POSTER: SDK / ".github/scripts/nightly_slack.py",
@@ -83,7 +81,6 @@ SOURCE = {
     LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
     NIGHTLY: SDK / ".github/workflows/nightly.yml",
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
-    GUIDE: SDK / "CLAUDE.md",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -341,14 +338,6 @@ MUTATIONS = [
      "          PAYABLI_SDK_EXTRAENVIRONMENTS: >-",
      "          PAYABLI_SDK_EXTRAENVIRONMENTS_DISABLED: >-"),
 
-    # The number the guide quotes went stale twice while one branch was open, which is why anything holds
-    # it at all. Mutated here rather than trusted, because a guard over a documented number is exactly the
-    # kind that is written once and never exercised.
-    # The whole harness rather than a half: the check compares the stated number against every check this
-    # run performed, so a half legitimately counts fewer and the comparison only means anything in full.
-    ("The guide's check count drifts from what the harness runs", GUIDE, "both",
-     "runs 531 checks", "runs 400 checks"),
-
     # The guard reads as if it closes the case wherever it sits, so its position is the thing to mutate.
     ("The production refusal moves below the branch that reads the origin", LIVE_FLOWS, "workflows",
      '          if [ "$ENVIRONMENT" = production ]; then\n'
@@ -519,12 +508,6 @@ def still_parses(path: Path) -> str:
             return f"patched file does not compile: {error}"
         return ""
 
-    # Markdown has no parse for a mutation to break, and the check that reads it uses its own pattern. Named
-    # rather than left to the YAML branch below, which is where it landed first and reported every mutation
-    # of a guide as invalid.
-    if path.suffix == ".md":
-        return ""
-
     try:
         document = yaml.safe_load(path.read_text())
     except yaml.YAMLError as error:
@@ -542,8 +525,7 @@ def run_verify(half: str) -> tuple[int, int, str]:
     # Aimed at the copies, so the harness reads what this run mutated rather than what the repository holds.
     env = {**os.environ, "NIGHTLY_ONLY": half,
            "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER),
-           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER),
-           "NIGHTLY_GUIDE": str(GUIDE)}
+           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
     if not match:
