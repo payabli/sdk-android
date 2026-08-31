@@ -21,7 +21,15 @@ val demoSecrets: Properties =
         .map { text -> Properties().apply { load(text.reader()) } }
         .getOrElse(Properties())
 
-// -Ppayabli.demo.* wins over the file, so a one-off run needs no edit.
+/**
+ * The environment variable a setting also answers to: `payabli.demo.entryPoint` is `PAYABLI_DEMO_ENTRYPOINT`.
+ *
+ * Derived rather than listed, so a setting added later has one without anybody remembering to add it.
+ */
+fun envVarFor(key: String): String = key.replace('.', '_').uppercase()
+
+// Three sources, most specific first: -Ppayabli.demo.* for a one-off run, the environment for a shell or a
+// CI job that has no file to edit, and secrets.properties for a developer's own machine.
 //
 // A `key=` line with nothing after it reads back as "", not as missing, and the template ships those
 // lines. Without isNotBlank the empty value would win over the default.
@@ -30,6 +38,7 @@ fun demoSetting(
     default: String,
 ): String =
     providers.gradleProperty(key).orNull?.takeIf { it.isNotBlank() }
+        ?: providers.environmentVariable(envVarFor(key)).orNull?.takeIf { it.isNotBlank() }
         ?: demoSecrets.getProperty(key)?.takeIf { it.isNotBlank() }
         ?: default
 
@@ -105,12 +114,12 @@ android {
         // started skipping. It also needs a reachable token server and a configured paypoint, which is why
         // asking for it is a deliberate flag and not a default.
         //
-        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.qaWalkthrough=true \
-        //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=qa -Ppayabli.demo.entryPoint=<entry>
-        val walkthrough = "com.payabli.example.app.QaWalkthroughTest"
+        //   ./gradlew :example:connectedDebugAndroidTest -Ppayabli.sampleWalkthrough=true \
+        //     -Ppayabli.demo.prefill=true -Ppayabli.demo.environment=sandbox -Ppayabli.demo.entryPoint=<entry>
+        val walkthrough = "com.payabli.example.app.SampleWalkthroughTest"
         val excluded = mutableListOf<String>()
 
-        if (providers.gradleProperty("payabli.qaWalkthrough").orNull != "true") {
+        if (providers.gradleProperty("payabli.sampleWalkthrough").orNull != "true") {
             excluded += walkthrough
         } else {
             // Asking for the walkthrough narrows the run to it, rather than adding it to the others.
@@ -142,11 +151,37 @@ android {
         }
     }
 
-    buildTypes {
-        release {
-            optimization {
-                enable = false
-            }
+    // Two builds of the sample app, differing in one dependency and nothing else.
+    //
+    // **Linking the telemetry artifact is the whole of the integration**, so the only honest test of an app
+    // that did not link it is an app that did not link it. Simulating the absence from inside a test can only
+    // reach the code path; it cannot show that the SDK initializes, runs and reports nothing when the class
+    // is genuinely not on the classpath, which is what every integrator who depends on `:core` alone gets.
+    //
+    // `withTelemetry` is what the umbrella gives an integrator and is the default for ordinary runs.
+    flavorDimensions += "reporting"
+    productFlavors {
+        create("withTelemetry") {
+            dimension = "reporting"
+        }
+        create("withoutTelemetry") {
+            dimension = "reporting"
+
+            // This build exists to answer one question — does the SDK work when the artifact is not linked —
+            // so it runs the one class that asks it. Running the whole instrumented suite twice would double
+            // a device run to re-prove things the other flavor already proved, and the walkthrough talks to
+            // real paypoints.
+            testInstrumentationRunnerArguments["class"] =
+                "com.payabli.example.TelemetryLinkageInstrumentedTest"
+        }
+    }
+
+    // **The demo app has no release build.** It is never published, never signed and never shipped, so a
+    // release variant is a thing CI could assemble and nobody could say why. The minified build worth
+    // checking is an integrator's, against the published artifacts and their own keep rules — not this.
+    androidComponents {
+        beforeVariants(selector().withBuildType("release")) { variant ->
+            variant.enable = false
         }
     }
     compileOptions {
@@ -171,6 +206,8 @@ dependencies {
     // The SDK's payment form. An integrator would take the umbrella; this app takes the module
     // directly because it is in the same build.
     implementation(project(":payin"))
+    // Only one flavor links it; `withoutTelemetry` is the build that proves the SDK works without it.
+    "withTelemetryImplementation"(project(":telemetry"))
 
     // The SDK's card-present module, which the Tap to pay screen drives. It resolves from a credentialed
     // repository, so every job that builds this app needs GPR_TOKEN; ci.yml puts it beside :taptopay for

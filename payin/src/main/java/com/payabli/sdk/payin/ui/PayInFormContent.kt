@@ -36,6 +36,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 
 /**
  * The form itself, which knows a submission state and nothing about where one comes from.
@@ -55,6 +56,7 @@ internal fun PayInFormContent(
     submission: PayInSubmissionState,
     draft: PayInFormDraft,
     configuration: PayInFormConfiguration,
+    reports: PayInFormReports,
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
@@ -110,12 +112,13 @@ internal fun PayInFormContent(
     // `Failed` are not data classes, so two identical consecutive rejections are two instances and the
     // StateFlow publishes both; `PayInSubmissionStateIdentityTest` pins that.
     LaunchedEffect(submission) {
-        // Only an outcome this form sent. A flow shared with another screen would otherwise empty the boxes a
-        // payer is filling in and report a success they never asked for.
+        // Only an outcome this form sent: a shared flow would clear a payer's boxes mid-typing.
         val outcome = submission.takeIf { draft.submissionPending } ?: return@LaunchedEffect
-        draft.rejectedFields = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
-        // Reported on the composition's dispatcher, which is where this effect runs; moving either call onto
-        // the flow's coroutine would need withContext(Main).
+        val rejected = (outcome as? PayInSubmissionState.Failed)?.fieldErrors.orEmpty()
+
+        reports.refusedFields(rejected)
+        draft.rejectedFields = rejected
+        // On the composition's dispatcher; moving either call to the flow's coroutine needs withContext(Main).
         draft.submissionPending = outcome.deliver(draft::clearInstrument, completed, failed)
     }
 
@@ -391,5 +394,6 @@ private fun PayabliPayInFormPreview() {
         submission = PayInSubmissionState.Idle,
         draft = remember { PayInFormDraft() },
         configuration = PayInFormConfiguration(),
+        reports = PayInFormReports.None,
     )
 }

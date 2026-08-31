@@ -5,11 +5,15 @@ import org.junit.Test
 import java.io.File
 
 /**
- * Every call into the Payabli SDK is in `sdk`, and nothing else names an SDK type.
+ * Every call into the Payabli SDK is in `sdk` or `demo/simple`, and nothing else names an SDK type.
  *
  * The point of this app is to be read, and the first question a reader has is which of it talks to the SDK.
  * A package answers that only while it stays true, and the `sdk` import that drifts into a screen is the one
  * nobody notices. So it is read out of the source rather than agreed.
+ *
+ * **Two packages, for two different readers.** `sdk` is this app's integration layer, which four screens
+ * share and which hands back types the app owns. `demo/simple` calls the SDK directly, so the fewest calls a
+ * capture takes can be read in one file. Anywhere else is still a drift.
  *
  * `src/main` only. A test doubles the SDK's types to build a fixture, which is the same work by a different
  * name.
@@ -29,7 +33,7 @@ class SdkCallsAreInOnePackageTest {
 
         val offenders =
             appSources
-                .filterNot { it.inSdkPackage() }
+                .filterNot { it.inACallingPackage() }
                 .filter { it.namesTheSdk() }
                 .map { it.invariantSeparatorsPath.substringAfter("/app/") }
                 .sorted()
@@ -47,15 +51,26 @@ class SdkCallsAreInOnePackageTest {
         // drained out of it.
         val callers =
             appSources
-                .filter { it.inSdkPackage() }
+                .filter { it.invariantSeparatorsPath.contains("/app/sdk/") }
                 .count { it.namesTheSdk() }
 
         assertEquals("sdk/ stopped calling the SDK", true, callers >= 5)
+    }
+
+    @Test
+    fun `the simple screen is one file and it calls the SDK`() {
+        // The second package exists for one screen. A reader sent there has to find the calls, and more than
+        // one file there means it has grown the layer it was written to avoid.
+        val simple = appSources.filter { it.invariantSeparatorsPath.contains("/app/demo/simple/") }
+
+        assertEquals(simple.map { it.name }.toString(), 1, simple.size)
+        assertEquals("the simple screen stopped calling the SDK", true, simple.all { it.namesTheSdk() })
     }
 
     // An import is not the only way to reach a type: a fully qualified name needs none.
     private fun File.namesTheSdk(): Boolean = readText().contains("com.payabli.sdk.")
 
     // `File.path` carries the platform's separator, so a Windows checkout matches no forward slash.
-    private fun File.inSdkPackage(): Boolean = invariantSeparatorsPath.contains("/app/sdk/")
+    private fun File.inACallingPackage(): Boolean =
+        invariantSeparatorsPath.contains("/app/sdk/") || invariantSeparatorsPath.contains("/app/demo/simple/")
 }

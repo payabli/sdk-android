@@ -24,7 +24,7 @@ import androidx.compose.ui.Modifier
 import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.demo.flow.FlowStep
 import com.payabli.example.app.demo.flow.StepStatus
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.components.BorderedButton
 import com.payabli.example.app.demo.ui.components.ContextLine
 import com.payabli.example.app.demo.ui.components.DemoIcons
@@ -73,7 +73,7 @@ interface PaymentFlowUiState {
     val prefillEnabled: Boolean
 
     /** The device the prefill fills the form as. */
-    val qaIdentity: QaIdentity
+    val sampleIdentity: SampleIdentity
 }
 
 /** What a payment screen can be asked to do. */
@@ -118,7 +118,7 @@ fun PaymentFlowScreen(
     // past the control it qualifies and a payer can submit without having scrolled to it.
     formHeader: @Composable () -> Unit = {},
 ) {
-    // The screen's own, not the app's: it exists to save typing during a QA run, and no screen below reads it.
+    // The screen's own, not the app's: it exists to save typing during a demo run, and no screen below reads it.
     var prefilled by remember { mutableStateOf<PayInFormSeed?>(null) }
 
     // Bumped on every tap and used as the form's `key`. `initialValues` is compared by value, so seeding the
@@ -163,7 +163,7 @@ fun PaymentFlowScreen(
                         text = "Prefill test data (Debug)",
                         icon = DemoIcons.Prefill,
                         onClick = {
-                            prefilled = PayInPrefill.valuesFor(method, state.qaIdentity)
+                            prefilled = PayInPrefill.valuesFor(method, state.sampleIdentity)
                             prefills++
                         },
                         enabled = !isSubmitting,

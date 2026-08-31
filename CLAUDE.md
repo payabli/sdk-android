@@ -44,6 +44,17 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - Dependencies come from `gradle/libs.versions.toml` only. Plugin versions used by `build-logic` are declared there too and pinned again in `build-logic/build.gradle.kts`; keep the two in sync.
 - ktlint style rules live in `.editorconfig`. `kotlin.code.style=official`; configuration cache is on, so avoid build logic that reads mutable state at execution time.
 - Never log a PAN, token, CVV, expiry, cardholder name or account number. Sensitive input uses a zeroizable buffer overwritten after encryption, never an immutable `String`.
+- **A `toString()` is a second route out for anything the logger redacts.** A `data class` synthesizes one over every property, and it reaches assertion failures, exception messages and crash reports without passing through the logger. A type holding an instrument value, an account number or an identifier declares its own. `copy()` is the same hole, since it hands out a second reference to a buffer the original still intends to overwrite.
+- **`internal` is a public, name-mangled method on the JVM.** A Java consumer can call an internal accessor that the public Kotlin surface does not offer, so an accessor returning sensitive digits needs `@JvmSynthetic` and not only `internal`.
+- **A decoder exception quotes what it rejected.** `SerializationException.message` carries an excerpt of the input, so attaching it as the `cause` of a redacted exception puts that excerpt in every crash report that walks the chain. Keep the code and drop the cause.
+- **Catch the narrowest type the surrounding layer already catches.** `runCatching` catches `Throwable`, so a linkage error or a programming mistake becomes whatever recoverable state the failure branch returns; there is no `catch` clause for a static analyzer to flag either. Catching `IllegalArgumentException` where `SerializationException` is meant turns an unrelated argument error into a store reset. And a platform failure outside the supertype being caught escapes the taxonomy entirely: `KeyGenerator.generateKey()` raises `ProviderException`, which is not a `GeneralSecurityException`.
+- **A lock is keyed by what it protects, not by the object holding it.** A `Mutex` held as a property serializes callers that share that instance, and a factory can hand out several instances over one backing file, so two of them read the old map and each writes its own. Key it by the resolved path. Separately, `get` under a lock followed by `set` under the same lock is two critical sections and another caller runs between them: a read whose value must still hold when the write lands is one critical section, and a delete carries the value it expects so a stale caller cannot remove a newer record.
+- **Cancellation must not leave shared state wedged.** `Mutex.withLock` honours an already-cancelled job, so a cancellation arriving while suspended behind the lock throws before the state is committed or the deferred completed, and every later reader awaits a claim with no owner. Commit and complete under `NonCancellable`. Release the claim for anything thrown, not only for `Exception`: an `Error` on a path that only releases for `Exception` leaves the deferred permanently incomplete.
+- **A blocking `HttpURLConnection` call is not interrupted by cancellation or `withTimeout`.** Neither `outputStream` nor `readBytes()` observes the coroutine, so a slow-drip response keeps resetting the socket read timeout and outlives the deadline. A test that asserts only the eventual exception after the server finally responds passes without exercising any of this.
+- **A public knob that nothing reads is a defect, not a placeholder.** An integrator sets it, nothing changes, and they cannot tell whether the fault is theirs. The same applies to a type whose only callers are tests: the build is green because the tests are the callers, and no host can reach the capability. Ask what call from a host app, against the published artifacts alone, reaches it.
+- **A value written by hand in two places drifts.** Prefer one definition the other sites read. Where a mirror is unavoidable, the commit that changes the source changes every mirror, and something fails when they disagree. Match a mirrored enum by name or an explicit map, never by indexing on the raw value, so an unknown value is a handled case instead of a read past the end.
+- **Compose:** `@Immutable` on a type holding a caller-supplied `List`, `Set` or `Map` is a promise Compose acts on, and it may skip the update entirely when the caller mutates the collection it passed in. A button disabled through state is not a single-flight guard, because a second tap lands before the recomposition; guard the submit synchronously. A `clickable` row sized to its text is below the 48dp touch target at normal font scale. `AnimatedVisibility` removes its content from the semantics tree while hidden, which takes a result message and its action away from a screen reader. A label that is a sibling of its control is announced as an unlabelled control; put it in the control's semantics.
+- **A money-moving request needs an idempotency key that outlives the process.** Rotate it only on a definitive accepted or refused response. A timeout, a decode failure or a cancellation after the request left may mean the charge landed, so reusing the key is what makes the retry safe. A key generated in state that is rebuilt after process death is a new key for the same attempt, and the retry charges again.
 
 ## CI
 
@@ -72,7 +83,7 @@ job because the build outputs and the git history the culprit lookup needs are b
 has to be decided there because that is where the gate reads it.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
-drives the collector as a subprocess inside a synthetic git repository, which is what
+runs 465 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
 `git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
 behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
 files in the tree, so it is safe to interrupt. No third-party Python package is involved.
@@ -83,6 +94,15 @@ Read the README there before adding a check, because each of the four discipline
 its absence produced a false pass. It is also the cheap place to check a change to either script: a
 scheduled run never fires from a feature branch, and while `nightly.yml` can be dispatched at one, that runs
 the whole emulator suite and posts to the channel.
+
+**The live flows post only on failure too, and each environment arms its own alarm.** They used to post on
+green, and those two daily messages were their liveness signal; going quiet needed the switch to replace it.
+The marker is `live-liveness:<platform>:<environment>`, which shares no substring with the nightly's
+`nightly-liveness:<platform>` — the sweep matches markers as substrings, so one containing another would let
+a run delete an alarm that is not its own. qa and sandbox arm separately on purpose: sandbox stopping while
+qa keeps running still raises something. `verify.py` L9 to L14 cover the reporter, including that a reset which did
+not take falls back to posting and that a refused post leaves the previous alarm standing, and W8 covers the
+workflow naming an owner.
 
 **A green nightly posts nothing, and that is safe only because of the liveness switch.** Do not "fix" the
 missing green message. Six of seven messages used to say `Nightly green`, which is what teaches people to
@@ -143,6 +163,40 @@ start warning and skipping. Nothing would go red, which is what makes it worth w
 a channel that quietly stops reporting. Enabling rotation means teaching the poster to refresh first.
 
 ## Testing
+
+**No test mints its own token, and a token that reaches a real service comes from the local token server.**
+A client id and secret belong to `example-server`, which is the only thing in the repository that holds one,
+and nothing on a device or in a test process ever does. Three tiers reach a real service and all three obey
+it:
+`PayInLiveFlowsInstrumentedTest` posts to the server's `/payabli/exchange-token`, `:taptopay`'s
+`LocalTokenServer` gets `/payabli/access-token`, and `:example`'s `SampleWalkthroughTest` fetches nothing
+itself and points the sample app at the server so the production path does it.
+
+Two paths keep this true by construction rather than by discipline, one per pair of tiers. `:payin` and
+`:example` share `LiveTestSettings`, which can forward `environment`, `entryPoint` and `tokenHost` and
+nothing else. `:taptopay` does not use it: `taptopay/build.gradle.kts:41` forwards `tokenEndpoint` alone, as
+a Gradle property with no environment fallback, and `LiveRunSettings` reads that plus an entry and an
+environment. Neither path has a slot a credential could travel in. `verify.py` enforces the CI half,
+refusing a workflow that hands a client credential to any step but the one running `server.mjs`, and
+`sabotage.py` proves those checks fail when someone does. What neither of them catches is a credential
+written into a Kotlin test by hand, which is why the rule is here.
+
+Read both halves as written. *Mints*: `ActivationCodeMinter` calls the real service with a bearer it is
+**given**, which is the boundary working rather than an exception to it. And *reaches a real service*: a unit
+test holding `accessToken = "initial-token"` is asserting on a value, not authenticating with one, and there
+are eighteen such literals. Widening this to every token any test holds would describe a rule the suite does
+not follow and never should.
+
+**Setup and teardown must not swallow their own failures.** A cleanup that catches and continues lets the
+suite run against state the previous run left behind, and the result is a green suite that proves nothing
+about a fresh device. Let cleanup failures fail the test.
+
+**A test is known to test something once it has been seen red.** Break the behaviour it names, watch it
+fail, revert. The shapes that pass without their subject: an assertion that only checks the line
+executed; a hand-maintained list asserted against itself, where adding an entry to neither side leaves
+the test green; an assertion that exercises only the success path when the guarantee lives in `finally`,
+which needs an injected throw; and an assertion that passes on the emulator's default answer and so never
+reaches the branch under test.
 
 - Unit tests in `src/test`, instrumented in `src/androidTest` (JUnit4, Espresso). `:core`'s network,
   error-mapping and logging layers are covered; the other modules are still template-only.
@@ -228,15 +282,16 @@ a channel that quietly stops reporting. Enabling rotation means teaching the pos
 
   **A test that needs credentials is gated twice, and the second gate is the one that keeps the counts honest.**
   `PayInLiveFlowsInstrumentedTest` sends real requests, so `payin/build.gradle.kts` excludes it **by name**
-  unless four `payabli.liveTest.*` Gradle properties are set, and the annotation marks the tier. Credentials
-  belong in `~/.gradle/gradle.properties` and reach the test as instrumentation arguments; nothing about an
-  environment is committed. Follow that pattern for anything else needing a credential: a property, a named
-  exclusion when it is absent, and no skip.
+  unless three `payabli.liveTest.*` Gradle properties are set, and the annotation marks the tier. **None of
+  the three is a credential**: they are `environment`, `entryPoint` and `tokenHost`, and the client secret
+  belongs to the token server the test reaches rather than to the device. Nothing about an environment is
+  committed. Follow that pattern for anything else in this position: a property, a named exclusion when it is
+  absent, and no skip.
 
   ```bash
   ANDROID_SERIAL=<serial> ./gradlew :payin:connectedDebugAndroidTest \
     -Ppayabli.liveTest.environment=<name> -Ppayabli.liveTest.entryPoint=<entry> \
-    -Ppayabli.liveTest.clientId=<id> -Ppayabli.liveTest.clientSecret=<secret> \
+    -Ppayabli.liveTest.tokenHost=<host:port> \
     -Pandroid.testInstrumentationRunnerArguments.annotation=com.payabli.sdk.payin.ManualDeviceTest
   ```
 

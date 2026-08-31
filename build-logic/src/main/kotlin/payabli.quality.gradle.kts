@@ -21,6 +21,19 @@ ktlint {
     }
 }
 
+// A module's consumer keep rules are an input to its unit tests.
+//
+// Two tests read `src/main/keepRules/rules.keep` from the source tree, because the rule is packaged into the
+// AAR for an integrator's R8 rather than put on any classpath. Gradle cannot see that, so deleting a rule
+// left the test task up to date and the suite green: the check that exists to catch a dropped keep rule was
+// the one thing a dropped keep rule did not fail. Measured — it went red only under `--rerun-tasks`.
+tasks.withType<Test>().configureEach {
+    val rules = layout.projectDirectory.file("src/main/keepRules/rules.keep")
+    if (rules.asFile.isFile) {
+        inputs.file(rules).withPropertyName("consumerKeepRules").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
+}
+
 // Coverage, enabled only where tests exist: the task fails outright if nothing ran.
 plugins.withId("com.android.library") {
     if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {

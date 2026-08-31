@@ -6,16 +6,25 @@ failure from git history and a commit range since the last green run. A live fai
 answer rather than a commit, so the same rendering would name whoever last touched a file for a connector
 outage, which is worse than saying nothing. This one names the environment and the flows and stops.
 
-It also posts on green, where the nightly stays silent behind a scheduled liveness alarm. Two runs a day at one
-line each is little enough to read, and it makes silence mean the workflow stopped rather than meaning
-everything passed, which is what the nightly needs its alarm to establish.
+**Silent on green, like the nightly, and for the same reason it is safe to be.** A channel where six of every
+seven messages say nothing happened is a channel people stop reading. So a passing run posts nothing and arms
+a scheduled alarm in Slack's own future instead, cancelling the one the previous run armed. If these runs stop
+for any reason, nobody cancels it and Slack posts it on its own clock.
 
-**It is not that alarm.** Nothing here arms anything, so a schedule that stops is noticed by somebody missing
-two daily messages and not by anything raising its hand. This repository is public, so scheduled workflows are
-disabled after 60 days without repository activity with no announcement, and queued scheduled jobs can be
-dropped under load; either of those goes unreported until a person reads the channel and finds the last message
-is old. Arming a switch per environment, as `nightly_slack.py` does for the nightly, is what would close that,
-and posting on green is a weaker thing that costs nothing.
+Silence alone would be ambiguous, which is why the alarm has to exist before the posting can stop: this
+repository is public, so scheduled workflows are disabled after 60 days without repository activity with no
+announcement, and queued scheduled jobs can be dropped under load. Neither produces an error for anything to
+report, so the absence has to be watched from outside GitHub.
+
+**One alarm per environment, and the marker is what keeps them apart.** qa and sandbox are separate workflows
+on separate schedules, so each arms its own: sandbox going quiet while qa keeps running still raises something.
+The marker is `live-liveness:<platform>:<environment>`, which shares no substring with the nightly's
+`nightly-liveness:<platform>`, so neither reporter can cancel the other's alarm and a second platform reporting
+into the same channel cannot cancel either.
+
+**Only a scheduled run on the default branch owns the alarm**, which `LIVENESS_OWNER` decides, exactly as the
+nightly does. A manual dispatch reports a failure normally and leaves the alarm alone: the switch answers
+whether the schedule is alive, and a dispatch is not evidence of a schedule.
 
 What reaches the channel from a failure is the classification, the HTTP status and the service's own code.
 `PayInLiveFlowsInstrumentedTest.orFail` builds that string and deliberately leaves out `reason` and `detail`,
@@ -30,13 +39,13 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from nightly_slack import mrkdwn, slack_post, warn
+from nightly_slack import mrkdwn, reset_liveness_switch, slack_post, warn
 
 # The two suites this workflow runs, mapped to what a reader calls them. A class not listed still reports,
 # under its own name, because a new suite must not go missing from the message that announces failures.
 SUITES = {
     "PayInLiveFlowsInstrumentedTest": "SDK surface",
-    "QaWalkthroughTest": "sample app",
+    "SampleWalkthroughTest": "sample app",
 }
 
 # Under Slack's 3000-character block limit, leaving room for the notice that reports what was dropped.
@@ -138,6 +147,26 @@ def run_url() -> str:
     return f"{server}/{repository}/actions/runs/{run_id}" if repository and run_id else ""
 
 
+def switch_marker(platform: str, environment: str) -> str:
+    """Scoped per platform and per environment, so no two alarms can cancel each other.
+
+    `cancel_stale_switches` matches this as a substring of a pending message's fallback text, so two markers
+    where one contains the other would let the longer one's run delete the shorter one's alarm. These share no
+    substring with `nightly_slack.switch_marker()`, which is `nightly-liveness:<platform>`.
+    """
+    return f"live-liveness:{platform}:{environment}"
+
+
+def owns_liveness_switch() -> bool:
+    """Whether this run is the one the alarm is about.
+
+    Set by the workflow to a scheduled run on the default branch, as the nightly does. Resetting on every run
+    would measure "somebody ran this at some point", which a dead schedule can satisfy indefinitely through
+    the occasional dispatch, and that is the failure the alarm exists to catch.
+    """
+    return os.environ.get("LIVENESS_OWNER", "").strip().lower() == "true"
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(f"usage: {Path(sys.argv[0]).name} <results-directory>", file=sys.stderr)
@@ -187,10 +216,39 @@ def main() -> int:
             "elements": [{"type": "mrkdwn", "text": f"<{link}|run>"}],
         })
 
+    marker = switch_marker(platform, environment)
+    subject = f"live flows ({environment})"
+
+    if not red and not owns_liveness_switch():
+        # A dispatch. Silent because it is green, and it does not vouch for a schedule it is not evidence of.
+        print(f"::notice::{headline}. Nothing posted; this run does not own the liveness alarm.")
+        return 0
+    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):
+        # The whole point of the alarm. Silence now means the run happened and passed.
+        print(f"::notice::{headline}. Nothing posted; the liveness alarm is armed.")
+        return 0
+    if not red:
+        # Silence is only safe while exactly one alarm is pending, and it is not: either none could be armed
+        # or an older one survived the sweep and is due before the next run. Posting the green summary is
+        # worse to read and better than a quiet channel with nothing watching it, and where a stale alarm is
+        # in flight it is what stops that alarm being read as a schedule that stopped.
+        #
+        # Not retried below: the attempt has been made this run, and a second would arm an alarm sharing a
+        # `post_at` with the first, which the sweep retains by design rather than resolving.
+        warn("Posting the live summary because silence is not covered by exactly one pending alarm.")
+
     parent = slack_post("chat.postMessage", token, {"channel": channel, "text": text, "blocks": blocks})
     if parent is None or not parent.get("ok"):
         # The run's own verdict is the workflow's to decide. Losing the report must not change it.
+        #
+        # Deliberately not reset here. The alarm asserts that the channel heard from this run, and it did
+        # not: resetting would push it out another day while the report was lost, and leaving the existing
+        # alarm armed is what makes that visible.
         return 0
+    if red and owns_liveness_switch():
+        # After the post, for the reason above. A red run is still evidence the schedule ran, which is the
+        # only question this alarm asks.
+        reset_liveness_switch(token, channel, marker=marker, subject=subject)
 
     if failed:
         slack_post("chat.postMessage", token, {

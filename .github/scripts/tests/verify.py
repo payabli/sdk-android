@@ -11,6 +11,7 @@ the four disciplines these checks are written under, and for how to prove a chec
 
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import io
 import json
@@ -142,6 +143,7 @@ UNIT_XML = "core/build/test-results/testDebugUnitTest/TEST-com.payabli.sdk.core.
 INST_XML = "core/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 PAYIN_INST_XML = "payin/build/outputs/androidTest-results/connected/debug/TEST-emulator.xml"
 COV_XML = "core/build/reports/coverage/test/debug/report.xml"
+EXAMPLE_COV_XML = "example/build/reports/coverage/test/withTelemetry/debug/report.xml"
 SRC = "core/src/test/java/com/payabli/sdk/core/RetryTest.kt"
 SUBJ = "core/src/main/java/com/payabli/sdk/core/Retry.kt"
 
@@ -419,6 +421,61 @@ def test_collector():
     b2 = {m["module"]: m for m in r2["facts"]["coverage"][0]["modules"]}
     check("C16 a real report is still 'measured'",
           b2["core"]["state"] == "measured" and b2["core"]["percent"] == 90.0, json.dumps(b2["core"]))
+
+    # C22 a module with product flavors is expected per variant. The nightly runs :example twice, and the
+    # absent-artifact build is the whole reason the flavors exist, so a variant that stops running has to be
+    # visible. Globbing the module covers one variant with the other: the count is never zero and the module
+    # never reads as silent.
+    example_inst = "example/build/outputs/androidTest-results/connected"
+    r = run_collector(
+        make_repo({
+            UNIT_XML: junit("S", [("a", None)]),
+            INST_XML: junit("I", [("b", None)]),
+            PAYIN_INST_XML: junit("P", [("c", None)]),
+            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
+            # withoutTelemetryDebug wrote nothing: the flavor that proves the absent-artifact path stopped
+            # running, and the module as a whole still has results.
+        }),
+        INSTRUMENTED_OUTCOME="success",
+        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+    )
+    check("C22 a silent variant is caught", "verdict=red" in r["output"], r["output"])
+
+    r = run_collector(
+        make_repo({
+            UNIT_XML: junit("S", [("a", None)]),
+            INST_XML: junit("I", [("b", None)]),
+            PAYIN_INST_XML: junit("P", [("c", None)]),
+            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
+            f"{example_inst}/withoutTelemetryDebug/TEST-emulator.xml": junit("E2", [("e", None)]),
+        }),
+        INSTRUMENTED_OUTCOME="success",
+        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+    )
+    check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
+
+    # C21 the one module whose report is not under `debug`. :example has product flavors, so its coverage is
+    # written under the flavored variant, and a collector looking for `debug` finds nothing and calls it
+    # missing -- which reads exactly like a module whose tests did not run. Nothing else here writes that
+    # path, so a typo in the variant name would leave every check in this file green.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("b", None)]),
+        EXAMPLE_COV_XML: COVERAGE.format(bm=20, bc=80, lm=10, lc=90),
+    }))
+    flavored = {m["module"]: m for m in r["facts"]["coverage"][0]["modules"]}
+    check("C21 the flavored report is measured", flavored["example"]["state"] == "measured",
+          json.dumps(flavored["example"]))
+    check("C21 and it is read, not guessed", flavored["example"]["percent"] == 80.0,
+          json.dumps(flavored["example"]))
+    unflavored = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("b", None)]),
+        "example/build/reports/coverage/test/debug/report.xml": COVERAGE.format(bm=20, bc=80, lm=10, lc=90),
+    }))
+    by_module = {m["module"]: m for m in unflavored["facts"]["coverage"][0]["modules"]}
+    check("C21 the same report under `debug` is not found", by_module["example"]["state"] == "missing",
+          json.dumps(by_module["example"]))
 
     # C17 an unparseable coverage report reads as unmeasured rather than being dropped
     r = run_collector(make_repo({
@@ -1919,16 +1976,178 @@ def meaningful_lines(body) -> list[str]:
 LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
 
 
-def load_live_poster():
-    """`live_slack.py`, which imports `nightly_slack`, so its directory has to be importable."""
+def load_live_poster(base_url=None):
+    """`live_slack.py`, which imports `nightly_slack`, so its directory has to be importable.
+
+    `base_url` redirects Slack at the fake. It has to be set on `nightly_slack` rather than here: this module
+    imports `slack_post` by name, and that function reads `SLACK_API` out of the module it was defined in, so
+    rebinding a name in this one would leave the real host in use and the tests posting nowhere they can see.
+    """
     sys.path.insert(0, str(LIVE_POSTER.parent))
     try:
         spec = importlib.util.spec_from_file_location("live_slack", LIVE_POSTER)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        if base_url:
+            sys.modules["nightly_slack"].SLACK_API = base_url
         return mod
     finally:
         sys.path.pop(0)
+
+
+LIVE_XML_PASS = ('<testsuite name="s" tests="1"><testcase classname="a.b.PayInLiveFlowsInstrumentedTest" '
+                 'name="capturingACard"/></testsuite>')
+LIVE_XML_FAIL = ('<testsuite name="s" tests="1"><testcase classname="a.b.PayInLiveFlowsInstrumentedTest" '
+                 'name="capturingACard"><failure message="code=PAYMENT_DECLINED"/></testcase></testsuite>')
+
+
+def run_live_poster(mod, xml, **env_extra):
+    """Drive `live_slack.main()` against a results directory and report what reached Slack."""
+    FakeSlack.calls = []
+    tmp = Path(tempfile.mkdtemp(dir=SCRATCH))
+    if xml is not None:
+        (tmp / "TEST-live.xml").write_text(xml)
+    keys = ("SLACK_BOT_TOKEN", "SLACK_CHANNEL_ID", "LIVE_ENVIRONMENT", "LIVE_JOB_RESULT", "PLATFORM",
+            "LIVENESS_OWNER", "GITHUB_SERVER_URL", "GITHUB_REPOSITORY", "GITHUB_RUN_ID")
+    env = {"SLACK_BOT_TOKEN": "xoxb-not-a-real-token", "SLACK_CHANNEL_ID": "C0BLLFM863V",
+           "LIVE_ENVIRONMENT": "sandbox", "LIVE_JOB_RESULT": "success", "PLATFORM": "Android",
+           "LIVENESS_OWNER": "true", "GITHUB_SERVER_URL": "https://github.com",
+           "GITHUB_REPOSITORY": "payabli/sdk-android", "GITHUB_RUN_ID": "30609394288", **env_extra}
+    saved = {k: os.environ.get(k) for k in keys}
+    for k in keys:
+        os.environ.pop(k, None)
+    os.environ.update({k: v for k, v in env.items() if v is not None})
+    argv = sys.argv
+    sys.argv = ["live_slack.py", str(tmp)]
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            code = mod.main()
+    finally:
+        sys.argv = argv
+        for k in keys:
+            os.environ.pop(k, None)
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
+    return code, buf.getvalue(), list(FakeSlack.calls)
+
+
+def test_live_reporting(mod, nightly):
+    """Silent on green, and the alarm is what makes that silence safe to read.
+
+    Posting on green used to be this reporter's liveness signal: two messages a day, and their absence noticed
+    by a person. Going quiet without arming an alarm would have removed the signal and left nothing in its
+    place, which is the single failure the nightly's switch exists to prevent.
+    """
+    FakeSlack.behaviour = {}
+
+    code, out, calls = run_live_poster(mod, LIVE_XML_PASS)
+    posts = [c for c in calls if c["method"] == "chat.postMessage"]
+    armed = [c for c in calls if c["method"] == "chat.scheduleMessage"]
+    check("L9 a green run posts nothing", posts == [], str([p["payload"].get("text") for p in posts]))
+    check("L9 and still arms the alarm", len(armed) == 1, str(len(armed)))
+    check("L9 and says why the channel is quiet", "liveness alarm" in out, out)
+    check("L9 and does not fail the run", code == 0, str(code))
+
+    code, out, calls = run_live_poster(mod, LIVE_XML_FAIL)
+    posts = [c for c in calls if c["method"] == "chat.postMessage"]
+    armed = [c for c in calls if c["method"] == "chat.scheduleMessage"]
+    check("L10 a red run posts", len(posts) >= 1, str(len(posts)))
+    check("L10 and arms the alarm too, since the schedule did run", len(armed) == 1, str(len(armed)))
+
+    # A dispatch is not evidence of a schedule, so it must not vouch for one. Both colours: a red dispatch
+    # still reports, and a green one is the case that would otherwise reach the reset and push the alarm out
+    # over a schedule that had already stopped.
+    _, _, calls = run_live_poster(mod, LIVE_XML_FAIL, LIVENESS_OWNER="false")
+    check("L11 a red run that does not own the switch arms nothing",
+          [c for c in calls if c["method"] == "chat.scheduleMessage"] == [], str(len(calls)))
+    check("L11 but still reports the failure",
+          len([c for c in calls if c["method"] == "chat.postMessage"]) >= 1, str(len(calls)))
+
+    _, out, calls = run_live_poster(mod, LIVE_XML_PASS, LIVENESS_OWNER="false")
+    check("L11 a green run that does not own the switch arms nothing",
+          [c for c in calls if c["method"] == "chat.scheduleMessage"] == [],
+          str([c["method"] for c in calls]))
+    check("L11 and posts nothing either", [c for c in calls if c["method"] == "chat.postMessage"] == [],
+          str([c["method"] for c in calls]))
+    check("L11 and says which of the two reasons it was quiet for",
+          "does not own the liveness alarm" in out, out)
+
+    # The markers are matched as substrings when stale alarms are swept, so one containing another would let
+    # the longer one's run delete the shorter one's alarm.
+    qa = mod.switch_marker("Android", "qa")
+    sandbox = mod.switch_marker("Android", "sandbox")
+    # Under the platform the nightly actually runs as. `platform_name()` falls back to the repository name
+    # when PLATFORM is unset, which this harness does not set, so reading it here compared the live markers
+    # against `nightly-liveness:sdk-android` while production arms `nightly-liveness:Android`. A live marker
+    # of `nightly-liveness:Android:qa` passed that comparison and would have deleted the nightly's alarm.
+    saved_platform = os.environ.get("PLATFORM")
+    os.environ["PLATFORM"] = "Android"
+    try:
+        nightly_marker = nightly.switch_marker()
+    finally:
+        os.environ.pop("PLATFORM", None)
+        if saved_platform is not None:
+            os.environ["PLATFORM"] = saved_platform
+    # Pinned rather than merely derived, so an identity that starts depending on the environment again fails
+    # here instead of quietly making the comparison below vacuous.
+    check("L12 the nightly marker is the one production arms",
+          nightly_marker == "nightly-liveness:Android", nightly_marker)
+    check("L12 the two environments have different markers", qa != sandbox, f"{qa} {sandbox}")
+    check("L12 and neither contains the other", qa not in sandbox and sandbox not in qa, f"{qa} {sandbox}")
+    check("L12 and neither contains the nightly's, nor it theirs",
+          nightly_marker not in qa and nightly_marker not in sandbox
+          and qa not in nightly_marker and sandbox not in nightly_marker,
+          f"{qa} {sandbox} {nightly_marker}")
+
+    _, _, calls = run_live_poster(mod, LIVE_XML_PASS, LIVE_ENVIRONMENT="qa")
+    armed = [c for c in calls if c["method"] == "chat.scheduleMessage"]
+    fallback = armed[0]["payload"].get("text", "") if armed else ""
+    check("L12 the armed alarm carries its own environment's marker", qa in fallback, fallback)
+    # The marker is what the sweep matches; the subject is what a person reads at 3am. Dropping the subject
+    # leaves an alarm that names the nightly while the live flows are the thing that stopped.
+    heading = ((armed[0]["payload"].get("blocks") or [{}])[0].get("text", {}).get("text", "")) if armed else ""
+    check("L12 and names the live flows rather than the nightly", "live flows (qa)" in fallback, fallback)
+    check("L12 in the heading a responder reads, not only the fallback",
+          "live flows (qa)" in heading and "nightly" not in heading, heading)
+
+    # L13 a reset that did not take is not a reset. Staying silent on the strength of an alarm that was
+    # refused, or of a sweep that left an older one in flight, produces exactly the unmonitored silence this
+    # replaced: nothing in the channel and nothing watching for its absence. The nightly covers the same
+    # three shapes at P33.
+    ok_post = [{"ok": True, "ts": "1785408441.829119", "channel": "C0BLLFM863V"}]
+    for label, behaviour in (
+        ("a refused arm", {"chat.scheduleMessage": [{"ok": False, "error": "invalid_time"}]}),
+        ("a refused delete", {
+            "chat.scheduledMessages.list": {"ok": True, "scheduled_messages": [
+                {"id": "Q0STALE", "post_at": 1, "text": "[live-liveness:Android:sandbox] yesterday"}]},
+            "chat.deleteScheduledMessage": [{"ok": False, "error": "invalid_scheduled_message_id"}]}),
+        ("an unreadable list", {"chat.scheduledMessages.list": {"ok": False, "error": "ratelimited"}}),
+    ):
+        FakeSlack.behaviour = {"chat.postMessage": ok_post, **behaviour}
+        code, out, calls = run_live_poster(mod, LIVE_XML_PASS)
+        posted = [c for c in calls if c["method"] == "chat.postMessage"]
+        check(f"L13 {label} falls back to posting the green summary", len(posted) == 1,
+              str([c["method"] for c in calls]))
+        check(f"L13 {label} warns rather than claiming the alarm is armed",
+              "::warning::" in out and "the liveness alarm is armed" not in out, out)
+        check(f"L13 {label} still exits 0", code == 0, str(code))
+
+    # The clean case has to stay silent, or the three above have disabled silent-green rather than guarded it.
+    FakeSlack.behaviour = {"chat.postMessage": ok_post}
+    _, out, calls = run_live_poster(mod, LIVE_XML_PASS)
+    check("L13 and a clean reset is still silent",
+          [c for c in calls if c["method"] == "chat.postMessage"] == [] and "alarm is armed" in out, out)
+
+    # L14 the alarm asserts the channel heard from this run. A report that never landed must not push it out
+    # another day, because the pushed-out alarm is what would have said so.
+    FakeSlack.behaviour = {"chat.postMessage": [{"ok": False, "error": "channel_not_found"}]}
+    _, _, calls = run_live_poster(mod, LIVE_XML_FAIL)
+    check("L14 a red run whose report was refused does not reset the alarm",
+          [c for c in calls if c["method"] == "chat.scheduleMessage"] == [],
+          str([c["method"] for c in calls]))
+    FakeSlack.behaviour = {}
 
 
 def test_live_summary(mod):
@@ -1993,7 +2212,7 @@ def test_live_summary(mod):
           all(line.startswith(("•", "_")) for line in body.splitlines()),
           body.splitlines()[-1])
 
-    few = [mod.Flow("QaWalkthroughTest", "one", "code=B")]
+    few = [mod.Flow("SampleWalkthroughTest", "one", "code=B")]
     check("L7 a list that fits carries no notice", "not listed here" not in mod.thread_body(few),
           mod.thread_body(few))
 
@@ -2018,6 +2237,62 @@ def test_workflows():
         check(f"W1 {name} does not mention a pull request trigger anywhere",
               "pull_request" not in text,
               next((line.strip() for line in text.splitlines() if "pull_request" in line), ""))
+
+    # Going quiet on green is only safe while something watches the silence, and nothing in the reporter can
+    # arm the alarm if the workflow never names an owner. That failure is invisible: the channel looks the
+    # same either way until the day a schedule stops.
+    def liveness_owner(name: str) -> str:
+        found = ""
+        for job in (workflow_doc(name).get("jobs") or {}).values():
+            for step in job.get("steps") or []:
+                named = (step.get("env") or {}).get("LIVENESS_OWNER")
+                if named is not None:
+                    found = str(named)
+        return found
+
+    # Both conditions, joined by `and`. Asserting only that the two words appear somewhere passes on
+    # `schedule || default_branch`, which makes every dispatch on the default branch an owner: a manual run
+    # would then push the alarm out over a schedule that had already stopped, which is the one thing this
+    # flag exists to prevent. Checked for the nightly too, whose identical expression had no assertion.
+    for name in ("live-flows.yml", "nightly.yml"):
+        owner = liveness_owner(name)
+        check(f"W8 {name} names who owns the liveness alarm", bool(owner), str(owner))
+        operands = [part.strip() for part in owner.replace("${{", "").replace("}}", "").split("&&")]
+        check(f"W8 {name} requires both conditions rather than either",
+              "||" not in owner and len(operands) == 2, owner)
+        check(f"W8 {name} owns it only on a scheduled run",
+              any("github.event_name == 'schedule'" in part for part in operands), owner)
+        check(f"W8 {name} owns it only on the default branch",
+              any("github.ref_name ==" in part and "default_branch" in part for part in operands), owner)
+        # Spelled out because the operator is the whole meaning: `!=` on both sides passes every check above
+        # while making each non-scheduled run an owner, which is the inversion of what the flag is for.
+        check(f"W8 {name} compares for equality rather than inequality", "!=" not in owner, owner)
+
+    # A check that never runs on the file it guards is not a check. `scripts.yml` is path-filtered, so
+    # every workflow asserted about above has to match one of those patterns, on both the pull request and
+    # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
+    # its two mutations could not have run on the change that broke them.
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml")
+    harness = workflow_doc("scripts.yml")
+    triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
+    for event in ("pull_request", "push"):
+        patterns = ((triggers.get(event) or {}).get("paths")) or []
+        check(f"W9 scripts.yml filters on paths for {event}", bool(patterns), str(patterns))
+        for name in guarded:
+            target = f".github/workflows/{name}"
+            check(f"W9 and runs for {name} on {event}",
+                  any(fnmatch.fnmatch(target, str(pattern)) for pattern in patterns), str(patterns))
+
+    # The sample app offers sandbox and production, so a caller on any other environment has to say the
+    # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and
+    # the failure arrives on the next scheduled run, inside the sample's setup, naming an environment
+    # rather than the line that sent it.
+    for name, environment, sample in (("live-qa.yml", "qa", False), ("live-sandbox.yml", "sandbox", True)):
+        called = ((workflow_doc(name).get("jobs") or {}).get(environment) or {}).get("with") or {}
+        check(f"W1 {name} names the environment it is for", called.get("environment") == environment,
+              f"{called}")
+        check(f"W1 {name} asks for the sample walkthrough only where the sample offers that environment",
+              bool(called.get("sample-walkthrough", True)) is sample, f"{called}")
 
     # The one thing about parsing a workflow that is not obvious from reading one: YAML 1.1 reads a bare
     # `on` as the boolean true, so a lookup by the string finds nothing at all.
@@ -2082,8 +2357,15 @@ def test_workflows():
     check("W5 the live step was found", len(live) == 1, f"{len(live)}")
     commands = [line for step in live for line in script_lines(step)]
     check("W5 the live script runs two suites", len(commands) == 2, f"{commands}")
+    # `./gradlew` as the command, not as text on the line. Asserting only that the line contains it passes
+    # on `echo ./gradlew ...` and on `true # ./gradlew ...`, which run neither suite and leave this green
+    # with the behaviour removed. One suite is invoked behind a guard, so that one form is named here
+    # rather than admitting anything that mentions gradlew.
+    GUARD = 'if [ "$SAMPLE_WALKTHROUGH" = true ]; then ./gradlew '
     for line in commands:
-        check("W5 every line of the live script is a command", line.startswith("./"), line)
+        command = line.strip()
+        check("W5 every line of the live script executes gradlew",
+              command.startswith("./gradlew ") or command.startswith(GUARD), line)
 
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.
@@ -2141,7 +2423,9 @@ def main():
         if ONLY in ("both", "workflows"):
             test_workflows()
         if ONLY in ("both", "live"):
-            test_live_summary(load_live_poster())
+            live = load_live_poster(base)
+            test_live_summary(live)
+            test_live_reporting(live, load_poster(base))
     finally:
         server.shutdown()
 

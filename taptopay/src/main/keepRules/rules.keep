@@ -10,3 +10,8 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# `:core` asks for this class by name to decide whether a device record can exist for this app, because it
+# cannot depend on this artifact to ask directly. Stripped or renamed, every event reports no device type,
+# silently, in exactly the release builds where the answer matters.
+-keep class com.payabli.sdk.taptopay.CardPresentModule

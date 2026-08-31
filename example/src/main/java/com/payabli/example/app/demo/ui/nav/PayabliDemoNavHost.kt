@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
@@ -25,7 +26,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
+import com.payabli.example.app.PayabliDemoApplication
 import com.payabli.example.app.demo.net.checkToken
+import com.payabli.example.app.demo.simple.SimpleCaptureScreen
+import com.payabli.example.app.demo.simple.SimpleCaptureViewModel
 import com.payabli.example.app.demo.ui.capture.CaptureResultScreen
 import com.payabli.example.app.demo.ui.capture.CaptureScreen
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
@@ -38,9 +42,11 @@ import com.payabli.example.app.demo.ui.setup.SetupViewModel
 import com.payabli.example.app.demo.ui.taptopay.TapToPayActions
 import com.payabli.example.app.demo.ui.taptopay.TapToPayScreen
 import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
+import java.math.BigDecimal
 
 /**
- * The whole navigation graph: four capability areas, each with its own back stack.
+ * The whole navigation graph: four capability areas, each with its own back stack, and an optional fifth for
+ * the Simple Capture example, which the Configuration switch shows and hides.
  *
  * [NavigationSuiteScaffold] is the bottom bar on a phone and the navigation rail on a tablet or an
  * unfolded foldable, from one layout.
@@ -53,6 +59,8 @@ fun PayabliDemoNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
 ) {
+    val container = (LocalContext.current.applicationContext as PayabliDemoApplication).container
+    val simpleCaptureShown by container.simpleCapture.shown.collectAsStateWithLifecycle()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
 
@@ -66,7 +74,7 @@ fun PayabliDemoNavHost(
         modifier = modifier,
         state = barState,
         navigationSuiteItems = {
-            TopLevelDestination.entries.forEach { destination ->
+            shownDestinations(simpleCaptureShown).forEach { destination ->
                 val selected =
                     currentDestination?.hierarchy?.any { it.route == destination.graphRoute } == true
                 item(
@@ -144,6 +152,18 @@ private fun NavGraphBuilder.paymentMethodGraph(navController: NavHostController)
 }
 
 private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
+    navigation<SimpleCaptureGraph>(startDestination = SimpleCaptureHome) {
+        composable<SimpleCaptureHome> { entry ->
+            SimpleCaptureScreen(
+                viewModel =
+                    navController.graphViewModel<SimpleCaptureGraph, SimpleCaptureViewModel>(entry) {
+                        SimpleCaptureViewModel(it.sessionSource, it.configuration.entryPoint)
+                    },
+                amount = SIMPLE_CAPTURE_AMOUNT,
+            )
+        }
+    }
+
     navigation<CaptureGraph>(startDestination = CaptureHome) {
         composable<CaptureHome> { entry ->
             val model =
@@ -217,6 +237,7 @@ private fun NavGraphBuilder.setupGraph() {
                 onProbeHealth = model::probeHealth,
                 onRecheck = model::recheck,
                 onSuppliesDemoCustomerChange = model::setSuppliesDemoCustomer,
+                onShowSimpleCaptureChange = model::setShowSimpleCapture,
             )
         }
     }
@@ -235,3 +256,6 @@ private fun NavHostController.switchTo(destination: TopLevelDestination) {
         restoreState = true
     }
 }
+
+/** What the Simple Capture screen charges. Fixed, because that screen collects nothing but a card. */
+private val SIMPLE_CAPTURE_AMOUNT: BigDecimal = BigDecimal("12.34")

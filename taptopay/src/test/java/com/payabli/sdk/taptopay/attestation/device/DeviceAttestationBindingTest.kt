@@ -57,7 +57,7 @@ class DeviceAttestationBindingTest {
 
     @Test
     fun `a challenge the live service issued derives the nonce the server expects`() {
-        // Captured from api-qa's POST /challenge and long since expired: a challenge is single-use with a
+        // Captured from the service's POST /challenge and long since expired: a challenge is single-use with a
         // five-minute life, so this value grants nothing. It is here because a recorded one pins two properties
         // the synthetic vector above cannot.
         //

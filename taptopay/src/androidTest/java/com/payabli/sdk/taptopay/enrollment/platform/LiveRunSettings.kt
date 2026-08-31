@@ -4,14 +4,18 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.config.PayabliEnvironment
 
 /**
- * The four values a live run needs, read from runner arguments.
+ * The values a live run needs, read from runner arguments.
  *
  * **Absent is a failure, never a skip.** A skip here would go quiet the moment someone stopped passing a
  * property, and a standing skip reads exactly like a test that has always been fine. The message names the
  * Gradle property so the fix is the next thing the reader does.
  *
- * All four are passed per run and none belongs in `~/.gradle/gradle.properties`: two are bearer tokens with
- * short lives, and putting them in a file makes them outlive the run that needed them.
+ * [entry] and [environment] are passed per run and neither belongs in `~/.gradle/gradle.properties`: they
+ * name the paypoint and the deployment a run is aimed at, and a file makes the next run inherit that aim
+ * without saying so. [tokenEndpoint] is an override with a default, so the ordinary invocation omits it.
+ *
+ * No bearer is among them. [accessToken] fetches one from the token server on each call, which is what keeps
+ * a long sequence off a single expiring token.
  */
 internal object LiveRunSettings {
     /** The paypoint every call is scoped to. */
@@ -38,17 +42,21 @@ internal object LiveRunSettings {
     fun accessToken(): String = LocalTokenServer.fetch(tokenEndpoint)
 
     /**
-     * Which deployment the run talks to. Defaults to the one the test paypoints live on.
+     * Which deployment the run talks to.
+     *
+     * Named per run like everything else here, rather than defaulted. A default sends a run that named no
+     * environment at a real paypoint on whichever one it happened to be, and the paypoints these tests use
+     * are not all on the same deployment, so the wrong one reads as a device the service has never heard of.
      *
      * The session and the code-minter both derive their host from this one value, so they cannot end up on
-     * different deployments. That mismatch surfaces as a device the service has never heard of.
+     * different deployments.
      */
     val environment: PayabliEnvironment
-        get() =
-            InstrumentationRegistry.getArguments().getString("environment")?.let { name ->
-                PayabliEnvironment.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
-                    ?: error("payabli.ttp.environment must be one of ${PayabliEnvironment.entries.joinToString()}")
-            } ?: PayabliEnvironment.QA
+        get() {
+            val name = required("environment", "payabli.ttp.environment")
+            return PayabliEnvironment.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                ?: error("payabli.ttp.environment must be one of ${PayabliEnvironment.entries.joinToString()}")
+        }
 
     /** The base URL, from [environment]. */
     val baseUrl: String get() = environment.baseUrl.trimEnd('/')

@@ -10,3 +10,7 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+# The session finds this module by name, because the dependency cannot run the other way: `:core` is what
+# starts reporting and it must not name this artifact. Stripped or renamed, the lookup misses and the SDK
+# reports nothing, silently, in exactly the release builds where reporting matters most.
+-keep class com.payabli.sdk.telemetry.TelemetryModule { <init>(); }

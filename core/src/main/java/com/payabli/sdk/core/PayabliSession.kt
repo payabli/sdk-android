@@ -3,6 +3,7 @@ package com.payabli.sdk.core
 import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
+import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LogLevel
@@ -17,6 +18,13 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportAssembly
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import com.payabli.sdk.core.telemetry.TelemetryBootstraps
+import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +32,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 private const val REASON_ALREADY_INITIALIZED = "a session is already initialized with a different configuration"
 
@@ -49,6 +59,13 @@ public class PayabliSession private constructor(
     /** The authenticated transport for this session: bearer injected, one 401 recovered, one replay. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val transport: PayabliTransport,
+    /**
+     * What a reporting channel is allowed to know about this session, including the id that identifies this
+     * SDK lifetime. Published because the configuration itself is not: a sibling artifact has no other way to
+     * learn which entry point and environment it is reporting for.
+     */
+    @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public val telemetry: TelemetrySessionContext,
 ) {
     public companion object {
         /** Serializes [initialize] so two callers racing at startup install one session rather than two. */
@@ -107,7 +124,7 @@ public class PayabliSession private constructor(
         ): Result<PayabliSession> {
             host.appContext.applicationContext.applyHostLogLevel()
 
-            return install(ConfigIdentity(config)) { onAuthFailure ->
+            return install(config, host) { onAuthFailure ->
                 TransportFactory.authenticated(config, IO_DISPATCHER, TransportAssembly(onAuthFailure = onAuthFailure))
             }
         }
@@ -123,8 +140,9 @@ public class PayabliSession private constructor(
         internal suspend fun initializeAgainst(
             baseUrl: String,
             config: PayabliConfig,
+            host: HostBindings? = null,
         ): Result<PayabliSession> =
-            install(ConfigIdentity(config)) { onAuthFailure ->
+            install(config, host) { onAuthFailure ->
                 TransportFactory.authenticatedAgainst(
                     baseUrl,
                     config,
@@ -146,6 +164,7 @@ public class PayabliSession private constructor(
             sink.value = SdkState.Uninitialized
 
             lock.withLock {
+                TelemetryBootstraps.stopInstalled()
                 installed?.machine?.finish()
                 installed = null
                 sink.value = SdkState.Uninitialized
@@ -163,28 +182,44 @@ public class PayabliSession private constructor(
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): Result<PayabliSession> = install(ConfigIdentity(config), buildTransport)
+        ): Result<PayabliSession> = install(config, host = null, buildTransport = buildTransport)
 
         private suspend fun install(
-            identity: ConfigIdentity,
+            config: PayabliConfig,
+            host: HostBindings?,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): Result<PayabliSession> =
-            lock.withLock {
+        ): Result<PayabliSession> {
+            val startedAt = System.nanoTime()
+
+            return lock.withLock {
+                val identity = ConfigIdentity(config)
                 val current = installed
                 // The machine rather than [state], because this is a question about the session install
                 // holds. The published value is process-wide, and reading it here would let one stray write
                 // replace a healthy session, which is the two-sessions state this type exists to prevent.
-                if (current != null && !current.machine.isFinished) {
-                    return@withLock if (current.identity == identity) {
-                        Result.success(current)
-                    } else {
-                        Result.failure(
-                            PayabliGenericException(
-                                PayabliErrorCode.INVALID_CONFIGURATION,
-                                REASON_ALREADY_INITIALIZED,
-                            ),
-                        )
+                val live = current != null && !current.machine.isFinished
+
+                // A call that changes nothing reports nothing: a start with no outcome after it is a funnel
+                // nobody can close, and an Application and an Activity both initializing is the ordinary way
+                // to produce one.
+                if (live && current!!.identity == identity) {
+                    return@withLock Result.success(current)
+                }
+
+                if (live) {
+                    // Both halves on the live session's own channel. Recorded anywhere else in this call they
+                    // would split: a replacement reports its start through the retired session's channel,
+                    // carrying that session's id and entry point, and its success through the new one.
+                    TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_STARTED) {
+                        mapOf(TelemetryProperty.STATE.key to reportedState())
                     }
+                    val refusal =
+                        PayabliGenericException(
+                            PayabliErrorCode.INVALID_CONFIGURATION,
+                            REASON_ALREADY_INITIALIZED,
+                        )
+                    reportFailure(refusal, startedAt)
+                    return@withLock Result.failure(refusal)
                 }
 
                 val machine = SessionStateMachine(sink)
@@ -195,6 +230,20 @@ public class PayabliSession private constructor(
                         identity = identity,
                         machine = machine,
                         transport = buildTransport { machine.markReinitializeRequired() },
+                        // Minted here rather than in the telemetry module, so every capability reporting for
+                        // this session quotes the same lifetime even when they are wired independently.
+                        telemetry =
+                            TelemetrySessionContext(
+                                entryPoint = config.entryPoint,
+                                environment = config.environment,
+                                telemetryEnabled = config.telemetryEnabled,
+                                sessionId = UUID.randomUUID().toString(),
+                                // Blank without host bindings, which is the SDK's own tests rather than an
+                                // app: the values need a device and there is none to read.
+                                device =
+                                    host?.appContext?.let { DeviceProfileFactory.of(it) }
+                                        ?: TelemetryDeviceContext.NONE,
+                            ),
                     )
                 machine.markReady()
                 installed = session
@@ -206,8 +255,47 @@ public class PayabliSession private constructor(
                 } else {
                     logger.info(LogField.safe("event", "session_initialized")) { "session initialized" }
                 }
+
+                // Inside the lock, so a session is never installed with the previous one's channel still
+                // reporting for it. Starting is an enqueue and a launch, which is why it can be here at all.
+                // Whatever the module does is absorbed there: this line runs after the session is published
+                // and marked ready, so anything escaping it would fail an initialize that had succeeded.
+                TelemetryBootstraps.startInstalled(session, host)
+
                 Result.success(session)
             }
+        }
+
+        /** The published state as a fixed word, so what is reported comes from a closed set. */
+        private fun reportedState(): String =
+            when (state.value) {
+                SdkState.Uninitialized -> "uninitialized"
+                SdkState.Ready -> "ready"
+                SdkState.ReinitializeRequired -> "reinitialize_required"
+            }
+
+        /**
+         * Reports a refused initialization.
+         *
+         * [PayabliException.reason] is carried here and nowhere else in this file: the only refusal this
+         * returns is built two lines above from a constant in this file, so it is the SDK's own words. A
+         * reason that came from a server would not be reportable, and a second failure mode added here has
+         * to be checked against that before it joins this call.
+         */
+        private fun reportFailure(
+            failure: PayabliGenericException,
+            startedAt: Long,
+        ) {
+            TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_FAILED) {
+                mapOf(
+                    TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.REFUSED,
+                    TelemetryProperty.CODE.key to failure.code.wireName,
+                    TelemetryProperty.REASON.key to failure.reason,
+                    TelemetryProperty.DURATION_MS.key to
+                        TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),
+                )
+            }
+        }
     }
 
     /**

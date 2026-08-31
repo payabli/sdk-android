@@ -1,6 +1,7 @@
 package com.payabli.example.app
 
 import com.payabli.example.app.demo.config.DemoEnvironment
+import com.payabli.sdk.core.config.PayabliEnvironment
 
 /**
  * What every instrumented test that installs an SDK session has to agree on.
@@ -22,8 +23,23 @@ internal object InstrumentedSession {
      *
      * `PayabliSession.ConfigIdentity` holds the entry point, the environment, the telemetry flag and
      * whether a token provider was supplied. Agreeing on the entry point alone leaves a build configured
-     * with `payabli.demo.environment=qa` installing one environment here and another there, which fails
+     * with `payabli.demo.environment` installing one environment here and another there, which fails
      * the same way and only on that build.
      */
     val ENVIRONMENT: DemoEnvironment = DemoEnvironment.SANDBOX
+
+    /**
+     * The same environment in the SDK's own vocabulary, for a test that configures the SDK directly rather
+     * than through the app's own configuration.
+     *
+     * Derived from [ENVIRONMENT] through an exhaustive `when` rather than restated as a second constant, so
+     * the two cannot drift and a renamed enum constant is a compile error. The app has a mapping of its own
+     * and it is private to the file that builds the config.
+     */
+    val SDK_ENVIRONMENT: PayabliEnvironment
+        get() =
+            when (ENVIRONMENT) {
+                DemoEnvironment.SANDBOX -> PayabliEnvironment.SANDBOX
+                DemoEnvironment.PRODUCTION -> PayabliEnvironment.PRODUCTION
+            }
 }
