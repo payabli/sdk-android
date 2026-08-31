@@ -15,10 +15,15 @@ import java.net.URI
  * defining it are one thing and a module script that carries both is where the rules stop being findable.
  *
  * Every value is refused here rather than where it is read. A bad one that reaches Kotlin is a compile error
- * naming a generated file, which says nothing about the setting that produced it. The origin rule is the one
- * `PayabliEnvironment`'s own doc states: a non-Payabli origin must not be reachable from configuration, and a
- * build setting is configuration. That rule is also what makes the generated string safe to write unquoted,
- * since an https `payabli.com` origin holds no quote and no backslash.
+ * naming a generated file, which says nothing about the setting that produced it.
+ *
+ * The origin rule is the one `PayabliEnvironment`'s own doc states: a non-Payabli origin must not be
+ * reachable from configuration, and a build setting is configuration. An origin is a scheme, a host and a
+ * port, so user info, a path, a query and a fragment are each refused as not being part of one.
+ *
+ * Refusing them is also what keeps the generated string safe to write unquoted. A dollar sign inside a Kotlin
+ * string literal is interpolation, so an origin carrying `?$name` in a query would reach the generated file
+ * as one and the promised setting error would arrive instead as a compile error in a file nobody wrote.
  */
 abstract class GenerateExtraEnvironments : DefaultTask() {
     @get:Input
@@ -74,7 +79,10 @@ abstract class GenerateExtraEnvironments : DefaultTask() {
             require(uri.host.orEmpty().endsWith(".payabli.com")) {
                 "$EXTRA_ENVIRONMENTS_SETTING: '$origin' is not a payabli.com origin"
             }
+            require(uri.userInfo == null) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries user info" }
             require(uri.path.isNullOrEmpty()) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries a path" }
+            require(uri.query == null) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries a query" }
+            require(uri.fragment == null) { "$EXTRA_ENVIRONMENTS_SETTING: '$origin' carries a fragment" }
         }
 
         val names = entries.map { it.first }
