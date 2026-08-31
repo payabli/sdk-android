@@ -12,6 +12,6 @@ enum class TerminalFailureReason(
     AttestationRequired("This device has to prove its identity again. Set up the terminal."),
     ConfigurationRejected("This paypoint or device is not set up for card-present payments."),
     ServiceUnavailable("The service could not be reached. Try again."),
-    DeviceIneligible("This device cannot take contactless payments."),
+    DeviceIneligible("This device cannot take contactless payments, or the card reader vendor has denied it."),
     SdkInternalError("The SDK reported a problem it cannot repair."),
 }

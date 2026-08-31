@@ -56,7 +56,11 @@ internal class FiservAndroidCardReader(
                 pending ?: error("prepareReader was called with no credentials; configure comes first")
             armWithin(arming)?.let { failure ->
                 record("arm", failure)
-                throw CardReaderException.ArmingFailed(failure)
+                throw if (failure.kind in DENIALS) {
+                    CardReaderException.DeviceDenied(failure)
+                } else {
+                    CardReaderException.ArmingFailed(failure)
+                }
             }
             pending = null
             logger.debug(
@@ -119,7 +123,16 @@ internal class FiservAndroidCardReader(
             ReaderFailureKind.CONTACTLESS_UNAVAILABLE -> CardReaderException.ReadFailed(this)
             ReaderFailureKind.TIMED_OUT -> CardReaderException.ReadFailed(this)
             ReaderFailureKind.UNCLASSIFIED -> CardReaderException.ReadFailed(this)
+            // Through the session, not a failed read: the repair re-arms and the refusal is reported.
+            ReaderFailureKind.DEVICE_DENIED -> CardReaderException.SessionUnusable(this)
+            ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED -> CardReaderException.SessionUnusable(this)
         }
+
+    private companion object {
+        /** Both refuse the handset; they differ in whether the vendor has said why. */
+        val DENIALS =
+            setOf(ReaderFailureKind.DEVICE_DENIED, ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED)
+    }
 
     /** The vendor's classification and its code. Its message is free text and is never a log field. */
     private fun record(

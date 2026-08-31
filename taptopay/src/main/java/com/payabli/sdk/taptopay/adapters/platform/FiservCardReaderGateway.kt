@@ -173,10 +173,52 @@ private suspend fun <T> mappingFailures(block: suspend () -> T): T =
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (vendor: FiservTTPCardReaderException) {
-        throw vendor.asFailure(ReaderFailureKind.UNCLASSIFIED)
+        throw vendor.asFailure(refusalKind(vendor.code))
     } catch (unexpected: Exception) {
         throw CardReaderFailure(ReaderFailureKind.UNCLASSIFIED, cause = unexpected)
     }
+
+/**
+ * What a vendor refusal code means for the session. One exception type covers every arming refusal, so the
+ * code is all that separates a denied device from a service that was briefly away.
+ *
+ * Anything unlisted stays unclassified: a terminal code filed as retryable costs a wasted retry, the
+ * reverse hides an outage.
+ */
+private fun refusalKind(code: String?): ReaderFailureKind =
+    when (code) {
+        in DEVICE_DENIED_CODES -> ReaderFailureKind.DEVICE_DENIED
+        in UNCONFIRMED_DENIAL_CODES -> ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED
+        else -> ReaderFailureKind.UNCLASSIFIED
+    }
+
+/** Refusals the vendor documents, or whose meaning its own error table states. */
+private val DEVICE_DENIED_CODES =
+    setOf(
+        // Device denied. The vendor's own text: suspended or deactivated.
+        "677",
+        // Suspected fraud, reported when the platform attestation behind the reader fails.
+        "018",
+        // Security violation.
+        "670",
+        // Invalid device ID or setup.
+        "202",
+        // This device or OS build is not one the vendor supports.
+        "745",
+    )
+
+/**
+ * Refusals treated as terminal on measurement alone.
+ *
+ * Move a code up to [DEVICE_DENIED_CODES] once the vendor states what it means, or out of both if it turns
+ * out to be transient.
+ */
+private val UNCONFIRMED_DENIAL_CODES =
+    setOf(
+        // Undocumented, and absent from the vendor's own error table. Seen only at arming, alternating with
+        // 677 on a handset the vendor denies. Raised with the vendor 2026-08-26; unanswered.
+        "705",
+    )
 
 private fun FiservTTPCardReaderException.asFailure(kind: ReaderFailureKind): CardReaderFailure =
     CardReaderFailure(

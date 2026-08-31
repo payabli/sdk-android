@@ -20,6 +20,14 @@ internal sealed class CardReaderException(
         cause: Throwable?,
     ) : CardReaderException(armingMessage(cause), cause)
 
+    /**
+     * The vendor refused this handset, and will refuse it again. [ArmingFailed] says try later; this says
+     * the device is denied until someone changes its state with the vendor.
+     */
+    class DeviceDenied(
+        cause: Throwable?,
+    ) : CardReaderException(armingMessage(cause), cause)
+
     /** The reader session is gone. Bringing the reader up again is the only repair. */
     class SessionUnusable(
         cause: Throwable?,

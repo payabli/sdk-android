@@ -32,6 +32,7 @@ object TerminalSteps {
         chargeFailed: Boolean = false,
         working: TerminalAction? = null,
         activated: Boolean = false,
+        readerDenied: Boolean = false,
     ): List<FlowStep> {
         val device =
             when (readiness) {
@@ -51,7 +52,13 @@ object TerminalSteps {
                 session == TerminalSessionState.Ready -> StepStatus.Done
                 // Activation is a separate step, so reaching it means this one finished.
                 session == TerminalSessionState.PendingActivation -> StepStatus.Done
+                // Activating chains an initialize, which walks back through this step's own states.
+                // Without this the spinner jumps back here while step 3 is the one running.
+                working == TerminalAction.Activate -> StepStatus.Done
                 session in WORKING -> StepStatus.InProgress
+                // Before BROKEN, which this session is: every call this step makes succeeded, and the
+                // refusal belongs to the step that cannot happen.
+                readerDenied -> StepStatus.Done
                 session in BROKEN -> StepStatus.Failed
                 else -> StepStatus.Current
             }
@@ -69,6 +76,9 @@ object TerminalSteps {
                 // reader, and only the caller knows which happened.
                 activated -> StepStatus.Done
                 session == TerminalSessionState.Ready -> StepStatus.NotNeeded
+                // Before the recorded failure: activating chains an initialize, so a denied reader
+                // surfaces as this call throwing after the code was accepted.
+                readerDenied -> StepStatus.Done
                 // The session cannot tell a refused activation from one that was never needed, so
                 // the outcome is recorded and read here.
                 activationFailed -> StepStatus.Failed
@@ -81,6 +91,8 @@ object TerminalSteps {
                 // From the step before. Checking only for a ready session let a device whose checks
                 // had not passed offer a charge alongside the check it was still asking for.
                 !activation.isFinished -> StepStatus.Blocked
+                // The session never reached Ready, so nothing below would report this at all.
+                readerDenied -> StepStatus.Failed
                 working == TerminalAction.Charge && session == TerminalSessionState.Ready -> StepStatus.InProgress
                 // The session stays Ready through a failed charge, so the outcome is recorded and
                 // read here or step 4 never reports one.
@@ -97,7 +109,7 @@ object TerminalSteps {
             ),
             FlowStep(
                 title = "Set up the terminal",
-                detail = "The SDK attests the device, fetches its configuration and starts the reader.",
+                detail = "The SDK attests the device and fetches its configuration.",
                 status = enable,
             ),
             FlowStep(
@@ -107,7 +119,7 @@ object TerminalSteps {
             ),
             FlowStep(
                 title = "Take a payment",
-                detail = "The reader waits for a card, and the SDK returns what it charged.",
+                detail = "The reader starts, waits for a card, and the SDK returns what it charged.",
                 status = charge,
             ),
         )

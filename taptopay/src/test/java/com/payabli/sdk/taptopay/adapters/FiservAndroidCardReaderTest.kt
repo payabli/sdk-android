@@ -111,6 +111,40 @@ class FiservAndroidCardReaderTest {
         }
 
     @Test
+    fun `a denied device is not reported as a refusal to retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // One vendor type covers every arming refusal, so only the kind separates a denied handset
+            // from a service that was briefly away.
+            val denial = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677")
+            val reader = readerFor(FakeCardReaderGateway(prepareFailure = denial))
+            reader.configure(readerCredentials())
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
+            assertSame(denial, failure?.cause)
+            assertTrue(failure?.message.orEmpty(), failure?.message.orEmpty().contains("677"))
+        }
+
+    @Test
+    fun `a refusal we cannot explain is still terminal, and says which it was`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Treated as a denial on measurement rather than on the vendor saying so. It has to stop the
+            // retry loop like a known denial, and stay tellable apart from one.
+            val refusal = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED, code = "705")
+            val reader = readerFor(FakeCardReaderGateway(prepareFailure = refusal))
+            reader.configure(readerCredentials())
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
+            assertEquals(
+                ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED,
+                (failure?.cause as? CardReaderFailure)?.kind,
+            )
+        }
+
+    @Test
     fun `everything the vendor reported survives to the caller`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Read off the cause by whoever reports the failure.

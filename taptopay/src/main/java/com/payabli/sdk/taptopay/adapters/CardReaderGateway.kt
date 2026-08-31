@@ -40,6 +40,17 @@ internal enum class ReaderFailureKind {
     /** The reader did not answer inside the time it was given. */
     TIMED_OUT,
 
+    /** The vendor refused this handset. The refusal is a state it holds, so repeating the call is not it. */
+    DEVICE_DENIED,
+
+    /**
+     * The vendor refused the handset with a code it has not published a meaning for.
+     *
+     * Terminal like [DEVICE_DENIED], on observation rather than on the vendor saying so. Separate so a
+     * refusal we cannot explain is legible as one, and so moving a code between the two is one edit.
+     */
+    DEVICE_DENIED_UNCONFIRMED,
+
     UNCLASSIFIED,
     ;
 

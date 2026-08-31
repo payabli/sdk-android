@@ -30,11 +30,12 @@ public enum class TapToPayFailureReason {
     SERVICE_UNAVAILABLE,
 
     /**
-     * This handset cannot take contactless payments, and no repair reaches that.
+     * This handset cannot take contactless payments, and no repair reaches that. Either it lacks the
+     * hardware or the OS version, or the card reader vendor refused it.
      *
-     * The only member where the remedy is a different device. It is separate from
-     * [CONFIGURATION_REJECTED], which is an account someone can change, and from [SDK_INTERNAL_ERROR], which
-     * asks a host to report a defect: the wrong hardware is neither a defect nor a setting.
+     * The only member where the remedy is a different device. Separate from [CONFIGURATION_REJECTED],
+     * which is an account someone can change, and from [SDK_INTERNAL_ERROR], which asks a host to report
+     * a defect.
      */
     DEVICE_INELIGIBLE,
 
