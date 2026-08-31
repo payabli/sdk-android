@@ -40,9 +40,8 @@ on:
         type: string
       api-origin:
         description: >-
-          The origin for an environment the checkout does not name, as `https://host`. Empty for one it
-          does: `sandbox` and `production` are in the SDK and in `example-server`'s allow-list, and any
-          other environment is carried by the caller so this repository names none of them. It reaches the
+          The origin for an environment the checkout does not name, as `https://host`. Empty only for
+          `sandbox`, which is the one environment this workflow runs without being given one. It reaches the
           build as `payabli.sdk.extraEnvironments`, the token server as its base URL and allowed host, and
           the sample app as the environment its picker offers, so one value configures all three and no two
           of them can disagree about where the run is pointed.
@@ -168,6 +167,12 @@ jobs:
                 export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
                 export PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com
                 ;;
+              # Named rather than left to the catch-all, because the answer is not "supply an origin". These
+              # runs send real transactions on a real paypoint, and the credential this workflow holds is
+              # deliberately not a production one, which is why there is no production caller and no mapping
+              # here to make one work.
+              production)
+                echo "::error::production is not run by this workflow"; exit 1 ;;
               *) echo "::error::$ENVIRONMENT was given no api-origin"; exit 1 ;;
             esac
           fi
