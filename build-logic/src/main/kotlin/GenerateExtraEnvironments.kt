@@ -7,6 +7,7 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import java.net.URI
+import java.net.URISyntaxException
 
 /**
  * Writes the list `PayabliEnvironment` appends to its two committed entries.
@@ -72,7 +73,15 @@ abstract class GenerateExtraEnvironments : DefaultTask() {
             require(name !in COMMITTED) {
                 "$EXTRA_ENVIRONMENTS_SETTING: '$name' is committed and cannot be added"
             }
-            val uri = runCatching { URI(origin) }.getOrNull()
+            // The one failure a malformed setting produces, and nothing else. A `runCatching` here would
+            // catch `Throwable`, so a linkage error or a programming mistake becomes a message blaming
+            // the setting.
+            val uri =
+                try {
+                    URI(origin)
+                } catch (invalid: URISyntaxException) {
+                    null
+                }
             require(uri != null && uri.scheme == "https") {
                 "$EXTRA_ENVIRONMENTS_SETTING: '$origin' is not an https origin"
             }
