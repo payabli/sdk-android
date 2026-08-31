@@ -123,7 +123,7 @@ class CardPresentReportsWithoutTelemetryTest {
         TapToPayReports.chargeFailed(failure, startedAt)
         TapToPayReports.nfcStarted()
         TapToPayReports.nfcSucceeded(startedAt)
-        TapToPayReports.nfcFailed(ReaderFailureKind.DEVICE_DENIED, startedAt)
+        TapToPayReports.nfcFailed(CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"), startedAt)
         TapToPayReports.sessionStateChanged(
             TapToPaySessionState.Idle,
             TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_INELIGIBLE),

@@ -87,7 +87,7 @@ internal class FiservAndroidCardReader(
                 )
             } catch (failure: CardReaderFailure) {
                 record("charge", failure)
-                TapToPayReports.nfcFailed(failure.kind, startedAt)
+                TapToPayReports.nfcFailed(failure, startedAt)
                 throw failure.asChargeFailure()
             }
         TapToPayReports.nfcSucceeded(startedAt)

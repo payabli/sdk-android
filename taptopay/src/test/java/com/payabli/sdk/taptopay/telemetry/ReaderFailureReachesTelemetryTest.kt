@@ -51,10 +51,11 @@ class ReaderFailureReachesTelemetryTest {
 
             val failure = runCatching { reader.startReading(request()) }.exceptionOrNull()
 
-            // What the reader itself reports: the kind, because the event declares no code.
+            // The reader's own event now answers both halves without a join.
             val (nfcEvent, nfcProperties) = recorded.last()
             assertEquals(TelemetryEvents.TTP_NFC_FAILED, nfcEvent)
             assertEquals("device_denied", nfcProperties[TelemetryProperty.REASON.key])
+            assertEquals("677", nfcProperties[TelemetryProperty.CODE.key])
 
             // And the code is still reachable from what the reader threw, which is how the enclosing
             // phase reports it. Without this the number would stop at the device.
@@ -77,6 +78,7 @@ class ReaderFailureReachesTelemetryTest {
 
             val (_, nfcProperties) = recorded.last()
             assertEquals("device_denied_unconfirmed", nfcProperties[TelemetryProperty.REASON.key])
+            assertEquals("705", nfcProperties[TelemetryProperty.CODE.key])
 
             recorded.clear()
             TapToPayReports.chargeFailed(requireNotNull(failure), System.nanoTime())
