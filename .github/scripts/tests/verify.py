@@ -2078,7 +2078,22 @@ def test_live_reporting(mod, nightly):
     # the longer one's run delete the shorter one's alarm.
     qa = mod.switch_marker("Android", "qa")
     sandbox = mod.switch_marker("Android", "sandbox")
-    nightly_marker = nightly.switch_marker()
+    # Under the platform the nightly actually runs as. `platform_name()` falls back to the repository name
+    # when PLATFORM is unset, which this harness does not set, so reading it here compared the live markers
+    # against `nightly-liveness:sdk-android` while production arms `nightly-liveness:Android`. A live marker
+    # of `nightly-liveness:Android:qa` passed that comparison and would have deleted the nightly's alarm.
+    saved_platform = os.environ.get("PLATFORM")
+    os.environ["PLATFORM"] = "Android"
+    try:
+        nightly_marker = nightly.switch_marker()
+    finally:
+        os.environ.pop("PLATFORM", None)
+        if saved_platform is not None:
+            os.environ["PLATFORM"] = saved_platform
+    # Pinned rather than merely derived, so an identity that starts depending on the environment again fails
+    # here instead of quietly making the comparison below vacuous.
+    check("L12 the nightly marker is the one production arms",
+          nightly_marker == "nightly-liveness:Android", nightly_marker)
     check("L12 the two environments have different markers", qa != sandbox, f"{qa} {sandbox}")
     check("L12 and neither contains the other", qa not in sandbox and sandbox not in qa, f"{qa} {sandbox}")
     check("L12 and neither contains the nightly's, nor it theirs",

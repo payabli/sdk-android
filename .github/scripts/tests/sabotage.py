@@ -367,6 +367,12 @@ MUTATIONS = [
     ("Both environments share one alarm, so sandbox going quiet is masked by qa", LIVE_POSTER, "live",
      '    return f"live-liveness:{platform}:{environment}"', '    return f"live-liveness:{platform}"'),
 
+    # Distinct per environment and still containing the nightly's marker, so only the cross-reporter check
+    # catches it. The sweep matches markers as substrings, so a live run would delete the nightly's alarm.
+    ("The live marker contains the nightly's, so a live run deletes its alarm", LIVE_POSTER, "live",
+     '    return f"live-liveness:{platform}:{environment}"',
+     '    return f"nightly-liveness:{platform}:{environment}"'),
+
     ("The live workflow stops naming the alarm's owner, so no run ever arms it", LIVE_FLOWS, "workflows",
      "          LIVENESS_OWNER: ${{ github.event_name == 'schedule'",
      "          LIVENESS_OWNER_DISABLED: ${{ github.event_name == 'schedule'"),
