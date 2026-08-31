@@ -47,7 +47,7 @@ internal enum class ReaderFailureKind {
      * The vendor refused the handset with a code it has not published a meaning for.
      *
      * Terminal like [DEVICE_DENIED], on observation rather than on the vendor saying so. Separate so a
-     * refusal we cannot explain is legible as one, and so moving a code between the two is one edit.
+     * refusal with no stated meaning is legible as one, and so moving a code between the two is one edit.
      */
     DEVICE_DENIED_UNCONFIRMED,
 
