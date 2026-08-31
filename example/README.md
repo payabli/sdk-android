@@ -104,6 +104,28 @@ Inside `sdk/`:
 Card-present has no SDK yet, so `demo/terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
 marks it with `⟵ swap point`.
 
+### The smallest capture there is
+
+`demo/simple/SimpleCaptureScreen.kt` is one file and three calls, and it is the thing to read first. The
+calls are numbered in it:
+
+1. **A session**, once per process. The app's own backend mints an access token and `PayabliSession` is
+   configured with it. Nothing can be sent until this has answered, which is why the form is not drawn yet.
+2. **A flow**, once per screen. `PayabliPayInPaymentFlow(session, entryPoint, scope)` holds what the payer
+   types, so it is built on a `viewModelScope` rather than in the composition: held there, a rotation empties
+   the form and takes the key that makes a retry safe with it.
+3. **The form.** `PayabliPayInForm` collects, validates and submits, and the outcome arrives on `onCompleted`
+   or `onFailed`.
+
+Not reproduced here. A fenced block is not compiled, so a signature change would leave this page describing
+an integration that no longer builds, and the file is short enough to open. What the file adds beyond the
+three calls is the part an integration also has to get right: the customer fields a capture is refused
+without, the amount read back from the operation rather than typed, and `Failed.retryKey` sent on a second
+attempt so a retry after an unknown outcome settles the first charge instead of making a second one.
+
+`SdkCallsAreInOnePackageTest` allows `demo/simple/` alongside `sdk/` precisely so this file can call the SDK
+directly. Everywhere else in `demo/` still may not.
+
 ## Things that will bite
 
 - `SdkState`, `PayabliSession.state` and `PayabliSession.transport` are `@RestrictTo(LIBRARY_GROUP)` and
