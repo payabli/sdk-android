@@ -11,10 +11,6 @@ name: Nightly
 # oversight. :telemetry holds only the generated ExampleInstrumentedTest and declares no androidx.test:runner,
 # so that task would die with ClassNotFoundException before running a thing.
 #
-# :example is out for the same reason :taptopay is, and it used to be in. It now links :taptopay for the Tap
-# to pay screen, so building it resolves the card reader from the Fiserv GitHub Packages repo, and running it
-# here would hand GPR_TOKEN to the third-party emulator action. Its navigation, form and component tests come
-# back with the separate credentialed instrumented job described below, which both modules need.
 #
 # Both tiers grow with each capability that binds to a platform API. No count is kept here, because the last
 # one went stale inside a single merge; what runs on the emulator is every @Test under core/src/androidTest
@@ -23,16 +19,14 @@ name: Nightly
 # annotation and so are invisible to the filter this step passes. A module can quiet its own tests without
 # touching this file, so the count here is an upper bound rather than a promise.
 #
-# :taptopay is out of reach for a different reason than it used to be, and the old one was wrong. It is not
-# that its instrumented paths need real hardware: attestation was measured returning a token on a
-# `google_apis_playstore` emulator, matching three phones exactly, so an emulator answers that question
-# perfectly well. What blocks it is the credential. Building :taptopay resolves the card reader from the
-# Fiserv GitHub Packages repo, so running its instrumented tests here would hand GPR_TOKEN to the
-# third-party emulator action, which is the exposure the job split below exists to prevent. Card-reader
-# paths do still need a physical device; attestation does not.
+# :taptopay and :example run here too, and both carry a cost worth stating. Each resolves the card reader
+# from the Fiserv GitHub Packages repo, so this job holds GPR_TOKEN where the third-party emulator action can
+# reach it; the exposure is accepted deliberately, and the reasoning is beside the emulator step.
 #
-# So the attestation instrumented tier runs locally only until :taptopay gets its own instrumented job with
-# results passed between jobs, the same change already queued for the card-present unit build below.
+# What they cover is attestation and the checks that read a platform API, not a tap. Attestation was measured
+# returning a token on a `google_apis_playstore` emulator, matching three phones exactly, so an emulator
+# answers that question perfectly well. Arming the card reader needs a physical handset and a paypoint, and
+# every test that reaches one is @ManualDeviceTest or excluded by taptopay/build.gradle.kts by name.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
@@ -166,7 +160,7 @@ jobs:
           GPR_USER: ${{ secrets.GPR_USER }}
           GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
-          :example:createDebugUnitTestCoverageReport
+          :example:createWithTelemetryDebugUnitTestCoverageReport
 
       # Required on ubuntu-latest, and the step most often left out. Without it the emulator runs
       # unaccelerated, which is the one condition that makes the call-budget assertion flaky.
@@ -216,10 +210,12 @@ jobs:
       # sentinel value leaves it in no file under .gradle, build or the Gradle home, so the configuration
       # cache is not serialising it. The exposure needs a live JVM, not a readable file.
       #
-      # The fix is to run card-present work in its own job, as ci.yml already does, which is a real change
-      # rather than a line here: the report collector globs taptopay's results out of this workspace, so
-      # moving the build means passing those results between jobs. Queued rather than smuggled into a
-      # reporting change.
+      # That exposure is now accepted rather than avoided. The card reader resolves from no repository this
+      # workflow controls, so the choice was between handing the action a token it could read out of a live
+      # daemon and shipping card-present with no nightly coverage. Splitting card-present into its own job,
+      # as ci.yml does, narrows the blast radius and remains the better shape; it is a real change rather
+      # than a line here, because the report collector globs results out of this workspace and moving the
+      # build means passing them between jobs.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
@@ -238,6 +234,11 @@ jobs:
         continue-on-error: true
         # The wedge this guards against. A step timeout fails the step; the job survives to report it.
         timeout-minutes: 20
+        env:
+          # Read by the card reader's repository declaration. The script below adds :taptopay and :example
+          # only when this is set, so a run without the credential still covers :core and :payin.
+          GPR_USER: ${{ secrets.GPR_USER }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -247,10 +248,14 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # Scoped to :core and :payin; see the header for why :taptopay and :example are not here. Short
-          # version: not hardware, a credential. Both builds need GPR_TOKEN, and this step runs the
-          # third-party emulator action. :payin resolves nothing outside the project, so it adds no
-          # credential to this step.
+          # All four modules. :taptopay and :example both resolve the card reader from the Fiserv GitHub
+          # Packages repo, so this step holds GPR_TOKEN and the third-party emulator action can see it.
+          # That exposure is accepted rather than overlooked: the dependency has no other route today, and
+          # the alternative was leaving card-present with no nightly coverage at all. Revisit if that
+          # dependency ever resolves from somewhere this workflow controls.
+          #
+          # The two card-present modules run only when the credential is present, so a run without it still
+          # covers :core and :payin instead of failing whole.
           #
           # --continue because the two tasks are independent and Gradle otherwise "aborts execution and fails
           # the build when any task fails", which leaves whether the second module ran at all down to how the
@@ -290,8 +295,15 @@ jobs:
           # the whole reason the two coexist. A -P `notClass` here would overwrite those lists and readmit all
           # three, sending real payments from this step, so nothing in this workflow passes one. What this step
           # runs is the annotation filter minus whatever each module excluded.
-          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest
+          script: |
+            MODULES=":core:connectedAndroidTest :payin:connectedAndroidTest"
+            if [ "$HAS_GPR_CREDENTIALS" = "true" ]; then
+              MODULES="$MODULES :taptopay:connectedAndroidTest"
+              MODULES="$MODULES :example:connectedWithTelemetryDebugAndroidTest"
+              MODULES="$MODULES :example:connectedWithoutTelemetryDebugAndroidTest"
+            fi
+            ./gradlew --continue $MODULES \
+              -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest,com.payabli.sdk.taptopay.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
       # failure count, only the tests that failed, and a probable culprit per failure from git history with
@@ -321,7 +333,7 @@ jobs:
           # The modules the instrumented step above ran. The collector checks each one wrote results,
           # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
           # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
-          INSTRUMENTED_MODULES: core,payin
+          INSTRUMENTED_MODULES: core,payin,taptopay,example
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than
