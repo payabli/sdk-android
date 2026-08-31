@@ -2,6 +2,7 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.BuildConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import java.util.Collections
 
 /**
  * A Payabli environment, as the rest of this app names it.
@@ -47,7 +48,7 @@ data class DemoEnvironment internal constructor(
                         .map(String::trim)
                         .filter(String::isNotEmpty)
                         .mapNotNull(PayabliEnvironment::named)
-            ).distinct().map(::DemoEnvironment)
+            ).distinct().map(::DemoEnvironment).let(Collections::unmodifiableList)
 
         /** The one configured by default, and what an unrecognised setting falls back to. */
         val DEFAULT: DemoEnvironment = offered.first()

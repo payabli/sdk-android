@@ -1,5 +1,7 @@
 package com.payabli.sdk.core.config
 
+import java.util.Collections
+
 /**
  * The Payabli API environment. Determines the base URL every SDK request resolves against.
  *
@@ -45,6 +47,11 @@ public class PayabliEnvironment private constructor(
          *
          * The two committed ones first, then whatever the build added. A build input appends and can do
          * nothing else: it cannot remove either of the two, and it cannot repoint one.
+         *
+         * Unmodifiable, and that is a runtime guarantee rather than a Kotlin one. `List` is read-only to a
+         * Kotlin caller and nothing more: the backing object is an `ArrayList`, `@JvmField` publishes it as a
+         * static field, and a Java caller or a Kotlin cast could empty it, after which [named] answers
+         * nothing and every session that resolves an environment by name fails.
          */
         @JvmField
         public val entries: List<PayabliEnvironment> = listedWith(EXTRA_ENVIRONMENTS)
@@ -58,7 +65,9 @@ public class PayabliEnvironment private constructor(
          */
         @JvmSynthetic
         internal fun listedWith(extra: List<Pair<String, String>>): List<PayabliEnvironment> =
-            listOf(SANDBOX, PRODUCTION) + extra.map { (name, baseUrl) -> PayabliEnvironment(name, baseUrl) }
+            Collections.unmodifiableList(
+                listOf(SANDBOX, PRODUCTION) + extra.map { (name, baseUrl) -> PayabliEnvironment(name, baseUrl) },
+            )
 
         /** The environment [name] names, trimmed and case-insensitive, or null when nothing does. */
         @JvmStatic

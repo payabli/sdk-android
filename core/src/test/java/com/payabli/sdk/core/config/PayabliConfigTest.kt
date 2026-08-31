@@ -7,6 +7,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.net.URI
@@ -72,6 +73,19 @@ class PayabliConfigTest {
         assertEquals(PayabliEnvironment.PRODUCTION, PayabliEnvironment.named("  PRODUCTION  "))
         assertNull(PayabliEnvironment.named("staging"))
         assertNull(PayabliEnvironment.named(""))
+    }
+
+    @Test
+    fun `the list an integrator is handed cannot be emptied`() {
+        // `List` is read-only to a Kotlin caller and nothing more. The backing object is an ArrayList and
+        // @JvmField publishes it as a static field, so without the wrapper a Java caller or a cast could
+        // clear it, and every later `named` call would answer nothing.
+        @Suppress("UNCHECKED_CAST")
+        val asMutable = PayabliEnvironment.entries as MutableList<PayabliEnvironment>
+
+        assertThrows(UnsupportedOperationException::class.java) { asMutable.clear() }
+        assertThrows(UnsupportedOperationException::class.java) { asMutable.add(PayabliEnvironment.SANDBOX) }
+        assertEquals(PayabliEnvironment.SANDBOX, PayabliEnvironment.named("sandbox"))
     }
 
     @Test
