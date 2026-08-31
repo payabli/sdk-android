@@ -11,6 +11,7 @@ the four disciplines these checks are written under, and for how to prove a chec
 
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import io
 import json
@@ -2251,6 +2252,21 @@ def test_workflows():
         # Spelled out because the operator is the whole meaning: `!=` on both sides passes every check above
         # while making each non-scheduled run an owner, which is the inversion of what the flag is for.
         check(f"W8 {name} compares for equality rather than inequality", "!=" not in owner, owner)
+
+    # A check that never runs on the file it guards is not a check. `scripts.yml` is path-filtered, so
+    # every workflow asserted about above has to match one of those patterns, on both the pull request and
+    # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
+    # its two mutations could not have run on the change that broke them.
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml")
+    harness = workflow_doc("scripts.yml")
+    triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
+    for event in ("pull_request", "push"):
+        patterns = ((triggers.get(event) or {}).get("paths")) or []
+        check(f"W9 scripts.yml filters on paths for {event}", bool(patterns), str(patterns))
+        for name in guarded:
+            target = f".github/workflows/{name}"
+            check(f"W9 and runs for {name} on {event}",
+                  any(fnmatch.fnmatch(target, str(pattern)) for pattern in patterns), str(patterns))
 
     # The sample app offers sandbox and production, so a caller on any other environment has to say the
     # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and

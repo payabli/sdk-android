@@ -58,6 +58,9 @@ WORKFLOW_DIR.mkdir(exist_ok=True)
 LIVE_FLOWS = WORKFLOW_DIR / "live-flows.yml"
 LIVE_QA = WORKFLOW_DIR / "live-qa.yml"
 LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
+# The harness workflow, for its path filter alone: a check that never runs on the file it guards is not
+# a check, and the filter is what decides.
+SCRIPTS = WORKFLOW_DIR / "scripts.yml"
 # The nightly, for its liveness-owner expression alone. Nothing else here mutates it.
 NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
@@ -70,6 +73,7 @@ SOURCE = {
     LIVE_QA: SDK / ".github/workflows/live-qa.yml",
     LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
     NIGHTLY: SDK / ".github/workflows/nightly.yml",
+    SCRIPTS: SDK / ".github/workflows/scripts.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -394,6 +398,18 @@ MUTATIONS = [
     # noticed. Naming the wrong suite in it sends them to a nightly that never stopped.
     ("The live alarm keeps the default subject, so it announces the nightly instead", LIVE_POSTER, "live",
      '    subject = f"live flows ({environment})"', '    subject = "nightly"'),
+
+    # The filter decides whether any of the above ever runs on the file it is about. Dropping a workflow from
+    # it leaves every assertion in place and none of them reachable by the change that breaks them.
+    # Anchored through the trailing `push:` because the two blocks are identical, and a mutation that
+    # matched both would be testing something else.
+    ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/nightly.yml'\n  push:",
+     "      - '.github/workflows/nightly-disabled.yml'\n  push:"),
+
+    ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n  push:",
+     "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n  push:"),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.

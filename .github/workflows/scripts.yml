@@ -34,14 +34,17 @@ on:
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
       # The harness reads the live workflows, so they have to be here or its assertions would not run on the
-      # change that broke them.
+      # change that broke them. The nightly is here for the same reason: W8 asserts on its liveness-owner
+      # expression, and a guard that does not run on the file it protects is not a guard.
       - '.github/workflows/live-*.yml'
+      - '.github/workflows/nightly.yml'
   push:
     branches: [main]
     paths:
       - '.github/scripts/**'
       - '.github/workflows/scripts.yml'
       - '.github/workflows/live-*.yml'
+      - '.github/workflows/nightly.yml'
 
 concurrency:
   group: scripts-${{ github.ref }}
