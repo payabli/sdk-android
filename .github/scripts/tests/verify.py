@@ -1880,6 +1880,9 @@ def test_poster(mod):
 # Overridable for the same reason the two scripts above are: the sabotage harness rewrites copies and points
 # this at them, so a mutation is never applied to the working tree.
 WORKFLOWS = Path(os.environ.get("NIGHTLY_WORKFLOWS", SDK / ".github/workflows"))
+# The repository guide, which quotes this harness's own check count. Overridable for the same reason the
+# workflows are: sabotage.py mutates copies and writes into the repository never.
+GUIDE = Path(os.environ.get("NIGHTLY_GUIDE", SDK / "CLAUDE.md"))
 
 LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 
@@ -2475,6 +2478,16 @@ def main():
             test_live_reporting(live, load_poster(base))
     finally:
         server.shutdown()
+
+    if ONLY == "both":
+        # CLAUDE.md quotes this number as evidence a reader can go and check, and a quoted number with
+        # nothing holding it drifts: it was wrong twice while this branch was open. Counting this check
+        # itself is what keeps the statement true rather than one short.
+        total = len(PASS) + len(FAIL) + 1
+        stated = re.search(r"runs (\d+) checks", GUIDE.read_text(encoding="utf-8"))
+        check("V1 CLAUDE.md states the number of checks this harness runs",
+              stated is not None and int(stated.group(1)) == total,
+              f"CLAUDE.md says {stated.group(1) if stated else 'nothing'}, this run has {total}")
 
     print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
     for name in FAIL:
