@@ -260,13 +260,32 @@ class TelemetryUploaderTest {
 
     @Test
     fun everyEnvironmentHasAReportableName() {
-        assertEquals(
-            listOf("sandbox", "production"),
-            PayabliEnvironment.entries.map { it.name },
+        // Every entry, not a fixed list of two. `entries` carries what the build added, so asserting the
+        // checkout's pair would turn this suite red on any machine that set payabli.sdk.extraEnvironments,
+        // which is the documented way to run against another environment.
+        //
+        // The pattern is the far side's rule for the reported value: lowercase, and no underscore, because an
+        // event name carrying one is refused and the event dropped in silence.
+        PayabliEnvironment.entries.forEach { environment ->
+            assertTrue(environment.name, REPORTABLE.matches(environment.name))
+        }
+    }
+
+    @Test
+    fun theCommittedEnvironmentsAreAlwaysReportable() {
+        // The two above are what a published build has, so they are named rather than derived: a run that
+        // added an environment must not be the only run in which this is checked at all.
+        assertEquals("sandbox", PayabliEnvironment.SANDBOX.name)
+        assertEquals("production", PayabliEnvironment.PRODUCTION.name)
+        assertTrue(
+            PayabliEnvironment.entries.containsAll(listOf(PayabliEnvironment.SANDBOX, PayabliEnvironment.PRODUCTION)),
         )
     }
 
     private companion object {
+        /** What the far side accepts as a reported environment. */
+        val REPORTABLE = Regex("^[a-z][a-z0-9]*$")
+
         const val DEVICE = "9f2c4b7e1a05d38c6e4b90f7c2a1d5e3"
 
         fun aDevice() =
