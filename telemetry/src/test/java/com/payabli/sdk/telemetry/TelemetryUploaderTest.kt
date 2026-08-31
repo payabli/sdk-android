@@ -7,7 +7,6 @@ import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
-import com.payabli.sdk.telemetry.wire.wireName
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -262,8 +261,8 @@ class TelemetryUploaderTest {
     @Test
     fun everyEnvironmentHasAReportableName() {
         assertEquals(
-            listOf("qa", "sandbox", "production"),
-            PayabliEnvironment.entries.map { it.wireName() },
+            listOf("sandbox", "production"),
+            PayabliEnvironment.entries.map { it.name },
         )
     }
 

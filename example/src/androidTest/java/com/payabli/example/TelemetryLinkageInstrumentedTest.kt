@@ -134,7 +134,7 @@ class TelemetryLinkageInstrumentedTest {
         PayabliConfig(
             accessToken = "a-token-for-this-test",
             entryPoint = InstrumentedSession.ENTRY_POINT,
-            environment = InstrumentedSession.SDK_ENVIRONMENT,
+            environment = InstrumentedSession.ENVIRONMENT.sdkEnvironment,
             tokenProvider = { "a-token-for-this-test" },
         )
 

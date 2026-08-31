@@ -47,7 +47,7 @@ class ConfigIdentityTest {
         // One assertion per field, so a field dropped from the comparison names itself rather than hiding
         // behind whichever other field a single combined case happened to also change.
         assertNotEquals(config(), config(entryPoint = "another-entry"))
-        assertNotEquals(config(), config(environment = PayabliEnvironment.QA))
+        assertNotEquals(config(), config(environment = PayabliEnvironment.PRODUCTION))
         assertNotEquals(config(), config(telemetryEnabled = false))
         assertNotEquals(config(), config(tokenProvider = PayabliTokenProvider { "t" }))
     }

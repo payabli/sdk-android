@@ -1,7 +1,6 @@
 package com.payabli.example.app.demo.ui
 
 import com.payabli.example.app.demo.config.DemoConfiguration
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.TokenHostSource
 import com.payabli.example.app.demo.config.TokenServerTarget
 import com.payabli.example.app.demo.net.TokenServerClient
@@ -9,6 +8,7 @@ import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.terminal.DemoTerminalController
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
+import com.payabli.example.app.sdk.DemoEnvironment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope

@@ -1,9 +1,22 @@
+import com.payabli.buildlogic.GenerateExtraEnvironments
+import com.payabli.buildlogic.extraEnvironmentsSetting
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
     id("payabli.publish")
     id("payabli.quality")
 }
+
+// Environments this build adds to the two committed in PayabliEnvironment.kt. The setting appends and can do
+// nothing else: the two committed entries are Kotlin, so no value here removes one or repoints one.
+val extraEnvironments: Provider<String> = extraEnvironmentsSetting(providers)
+
+val generateExtraEnvironments =
+    tasks.register<GenerateExtraEnvironments>("generateExtraEnvironments") {
+        setting.set(extraEnvironments)
+        outputDirectory.set(layout.buildDirectory.dir("generated/payabli/environments"))
+    }
 
 android {
     namespace = "com.payabli.sdk.core"
@@ -57,6 +70,17 @@ android {
     sourceSets {
         getByName("test").kotlin.srcDir("src/sharedTest/java")
         getByName("androidTest").kotlin.srcDir("src/sharedTest/java")
+    }
+}
+
+// The variant API rather than an `android.sourceSets` srcDir, because that one takes a directory and leaves
+// the compile task free to run before the generator has written into it. This carries the task dependency.
+androidComponents {
+    onVariants { variant ->
+        variant.sources.kotlin?.addGeneratedSourceDirectory(
+            generateExtraEnvironments,
+            GenerateExtraEnvironments::outputDirectory,
+        )
     }
 }
 

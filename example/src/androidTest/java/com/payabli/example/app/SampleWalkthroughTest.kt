@@ -11,10 +11,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
+import com.payabli.example.app.sdk.DemoEnvironment
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -108,7 +108,7 @@ class SampleWalkthroughTest {
         // nullability might arise.
         val settings = values.mapValues { (name, value) -> requireNotNull(value) { "liveTest.$name" } }
         val environment =
-            DemoEnvironment.entries.firstOrNull { it.label.equals(settings.getValue("environment"), true) }
+            DemoEnvironment.named(settings.getValue("environment"))
                 ?: error("liveTest.environment named no environment: ${settings.getValue("environment")}")
 
         container.applyLaunchOverride(settings.getValue("tokenHost"))
