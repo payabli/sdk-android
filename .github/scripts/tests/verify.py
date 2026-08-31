@@ -2400,6 +2400,17 @@ def test_workflows():
     for step in [server] if server else []:
         script = str(step.get("run", ""))
         check("W2 the allowed host is taken without the port", "%%:*}" in script, "no port strip")
+        # Position, because presence alone passes wherever the guard sits, including inside the origin
+        # branch, where a caller that supplied an origin never reaches it and runs both real-transaction
+        # suites. Over the code lines only: a comment naming API_ORIGIN is not a read of it, and comparing
+        # against the whole text made this fail on the comment that explains the guard.
+        code = "\n".join(line for line in script.splitlines() if not line.strip().startswith("#"))
+        refusal = "production is not run by this workflow"
+        check("W2 the token server refuses production", refusal in code, "no production refusal in code")
+        if refusal in code and "API_ORIGIN" in code:
+            check("W2 and refuses it before anything reads the origin",
+                  code.index(refusal) < code.index("API_ORIGIN"),
+                  "the refusal sits after the first read of API_ORIGIN")
         check("W2 and the base URL keeps the whole origin",
               'PAYABLI_API_BASE_URL="$API_ORIGIN/api"' in script, "base url not taken from the origin")
 

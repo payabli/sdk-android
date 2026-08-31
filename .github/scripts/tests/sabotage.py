@@ -347,7 +347,15 @@ MUTATIONS = [
     # The whole harness rather than a half: the check compares the stated number against every check this
     # run performed, so a half legitimately counts fewer and the comparison only means anything in full.
     ("The guide's check count drifts from what the harness runs", GUIDE, "both",
-     "runs 529 checks", "runs 400 checks"),
+     "runs 531 checks", "runs 400 checks"),
+
+    # The guard reads as if it closes the case wherever it sits, so its position is the thing to mutate.
+    ("The production refusal moves below the branch that reads the origin", LIVE_FLOWS, "workflows",
+     '          if [ "$ENVIRONMENT" = production ]; then\n'
+     "            echo \"::error::production is not run by this workflow\"\n"
+     "            exit 1\n"
+     "          fi\n",
+     ""),
 
     ("The allow-list keeps the origin's port, which matches no hostname the server compares", LIVE_FLOWS,
      "workflows",

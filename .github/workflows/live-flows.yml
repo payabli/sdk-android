@@ -158,6 +158,16 @@ jobs:
           # An environment this repository does not name arrives as an origin from the caller. Absent, the
           # case below refuses rather than falling back, so a run whose variable was never set says which
           # environment had no origin instead of authenticating against the wrong service.
+          #
+          # Production is refused first, before anything reads API_ORIGIN. These runs send real
+          # transactions on a real paypoint and the credential this workflow holds is deliberately not a
+          # production one, so no combination of inputs may reach a suite against it. A refusal inside the
+          # branch below answers only a caller that supplied no origin.
+          if [ "$ENVIRONMENT" = production ]; then
+            echo "::error::production is not run by this workflow"
+            exit 1
+          fi
+
           if [ -n "$API_ORIGIN" ]; then
             # The base URL keeps the port and the allow-list must not. example-server checks a request
             # against `URL.hostname`, which carries no port, so `host:port` in the list matches nothing and
@@ -171,12 +181,6 @@ jobs:
                 export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
                 export PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com
                 ;;
-              # Named rather than left to the catch-all, because the answer is not "supply an origin". These
-              # runs send real transactions on a real paypoint, and the credential this workflow holds is
-              # deliberately not a production one, which is why there is no production caller and no mapping
-              # here to make one work.
-              production)
-                echo "::error::production is not run by this workflow"; exit 1 ;;
               *) echo "::error::$ENVIRONMENT was given no api-origin"; exit 1 ;;
             esac
           fi
