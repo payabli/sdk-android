@@ -101,7 +101,7 @@ export async function requestActivationCode(options = {}) {
   // A serial number is the app's identifierForVendor and is shared by every
   // record a reinstall leaves behind, so it cannot pick one device out. Only a
   // deviceId does. Falling back to the newest pending device is a convenience
-  // for a single-device QA setup, and reports itself as such.
+  // for a single-device test setup, and reports itself as such.
   if (!deviceId) {
     const { devices } = await listTapToPayDevices(entry, options);
     const pending = devices.filter((device) => device.deviceStatus === DEVICE_STATUS_PENDING);

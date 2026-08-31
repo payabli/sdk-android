@@ -67,3 +67,11 @@ public enum class PayInField(
     /** The wire name, which is the enum name with its first letter lowered. */
     public val fieldName: String get() = name.replaceFirstChar { it.lowercase() }
 }
+
+/**
+ * The field as it is reported: its own name in snake_case.
+ *
+ * A rename changes what the far side counts, so `PayInFieldTelemetryNameTest` pins the whole set.
+ */
+internal val PayInField.telemetryName: String
+    get() = name.replace(Regex("(?<!^)([A-Z])"), "_$1").lowercase()

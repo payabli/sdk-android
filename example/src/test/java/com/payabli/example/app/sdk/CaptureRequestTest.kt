@@ -1,7 +1,7 @@
 package com.payabli.example.app.sdk
 
-import com.payabli.example.app.demo.qa.QaAmount
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.SampleAmount
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
@@ -12,7 +12,7 @@ import kotlin.random.Random
 
 /** What a capture actually sends, against what the screen showed and against who it says is paying. */
 class CaptureRequestTest {
-    private val identity = QaIdentity.from("Google Pixel 7a")
+    private val identity = SampleIdentity.from("Google Pixel 7a")
 
     /**
      * The figure the form reads back is the figure the request charges.
@@ -26,7 +26,7 @@ class CaptureRequestTest {
         val random = Random(seed = 3)
 
         repeat(500) {
-            val total = QaAmount.random(random)
+            val total = SampleAmount.random(random)
             val configuration = PayInForms.capture(total).configuration
 
             val shown = dollars(configuration.summaryValueFor(PayInField.Amount))
@@ -41,7 +41,7 @@ class CaptureRequestTest {
      * Every payment from one device names one customer.
      *
      * The capture form collects no customer number, so with none supplied here and `forceCustomerCreation` set
-     * the paypoint has nothing to match on and writes a new customer per payment. Measured on qa: three captures
+     * the paypoint has nothing to match on and writes a new customer per payment. Measured against a live paypoint: three captures
      * from one device produced three customers, each with no number at all.
      */
     @Test
@@ -64,7 +64,7 @@ class CaptureRequestTest {
     /**
      * The device is on the request, not only in the values the identity can produce.
      *
-     * `QaIdentityTest` covers what an order identifier and a note look like. What it cannot cover is whether
+     * `SampleIdentityTest` covers what an order identifier and a note look like. What it cannot cover is whether
      * either reaches `PayInTransactionOptions`, and those two fields are the whole of what a dashboard reads to
      * say which device sent a payment: dropping either assignment loses attribution and changes no test.
      */

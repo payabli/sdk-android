@@ -24,6 +24,7 @@ import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.schemeName
 import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -169,6 +170,7 @@ class PayInBrandBadgeInstrumentedTest {
                     submission = PayInSubmissionState.Idle,
                     draft = draft,
                     configuration = configuration,
+                    reports = PayInFormReports.None,
                 )
             }
         }

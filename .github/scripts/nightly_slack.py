@@ -645,7 +645,8 @@ def slack_get(method: str, token: str, params: dict) -> dict | None:
     return body
 
 
-def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
+def arm_liveness_switch(token: str, channel: str, marker: str | None = None,
+                        subject: str = "nightly") -> tuple[str, int] | None:
     """Schedule the alarm and return its id, or None if Slack would not take it.
 
     Armed before the previous one is cancelled, deliberately, and the earlier ordering was wrong. Cancelling
@@ -655,6 +656,7 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
     mechanism exists to prevent. Arming first means at least one alarm is pending at every instant, including
     if this job is superseded mid-sequence, which `cancel-in-progress` makes a live possibility.
     """
+    marker = marker or switch_marker()
     post_at = int(time.time()) + SWITCH_HOURS * 3600
     platform = mrkdwn(platform_name())
     run = trusted_run_links()
@@ -663,7 +665,7 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
     # What survives is the three things that change what someone does next: what happened, that it is worse
     # than a red suite, and where to look.
     text = (
-        f":rotating_light: *{platform} · no nightly report in over {SWITCH_HOURS} hours*\n\n"
+        f":rotating_light: *{platform} · no {mrkdwn(subject)} report in over {SWITCH_HOURS} hours*\n\n"
         "It did not run, or could not reach Slack. This is not just a red suite.\n\n"
         "Check, in order:\n"
         "1. the workflow is still enabled, since a public repo silently disables schedules "
@@ -681,7 +683,7 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
         # The marker rides in the fallback text because that is what chat.scheduledMessages.list returns, so
         # it is what the cancel step can filter on. Without it the cancel deletes every message this bot has
         # scheduled in the channel, which is not the same set.
-        "text": f"[{switch_marker()}] {platform_name()} nightly has not reported for over {SWITCH_HOURS} hours",
+        "text": f"[{marker}] {platform_name()} {subject} has not reported for over {SWITCH_HOURS} hours",
         "blocks": blocks,
         # Not metadata: Slack documents that a message scheduled with the metadata parameter will not post,
         # which would disarm the switch silently.
@@ -694,7 +696,8 @@ def arm_liveness_switch(token: str, channel: str) -> tuple[str, int] | None:
     return None
 
 
-def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int) -> bool:
+def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int,
+                          marker: str | None = None) -> bool:
     """Cancel this bot's alarms that are strictly older than the one just armed, reporting whether it worked.
 
     Filtered on the scoped marker rather than deleting everything the token has pending. The list is scoped to
@@ -718,6 +721,7 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
     was never reached, or a delete was refused. The caller needs that: yesterday's alarm is due about two hours
     from now, before the next nightly, so a failed sweep is a false alarm already in flight.
     """
+    marker = marker or switch_marker()
     swept = True
     cursor = ""
     for _ in range(MAX_SWITCH_PAGES):
@@ -732,7 +736,7 @@ def cancel_stale_switches(token: str, channel: str, keep: str, keep_post_at: int
             message_id = message.get("id")
             if not message_id or message_id == keep:
                 continue
-            if switch_marker() not in (message.get("text") or ""):
+            if marker not in (message.get("text") or ""):
                 continue
             post_at = message.get("post_at")
             if not isinstance(post_at, int) or post_at >= keep_post_at:
@@ -765,7 +769,8 @@ def owns_liveness_switch() -> bool:
     return os.environ.get("LIVENESS_OWNER", "").strip().lower() == "true"
 
 
-def reset_liveness_switch(token: str, channel: str) -> bool:
+def reset_liveness_switch(token: str, channel: str, marker: str | None = None,
+                          subject: str = "nightly") -> bool:
     """Arm a fresh alarm and clear the older ones. True only if *exactly one* alarm is now pending.
 
     The return value is the point. It used to return nothing while the caller printed that the switch had been
@@ -776,16 +781,17 @@ def reset_liveness_switch(token: str, channel: str) -> bool:
     succeeded while the sweep quietly failed still counted as success, and the alarm the sweep should have
     removed is due before the next nightly, so it fires and reports a stopped nightly that did not stop.
     """
-    armed = arm_liveness_switch(token, channel)
+    marker = marker or switch_marker()
+    armed = arm_liveness_switch(token, channel, marker, subject)
     if not armed:
-        warn(f"The liveness switch could not be armed, so silence would not be monitored ({switch_marker()}).")
+        warn(f"The liveness switch could not be armed, so silence would not be monitored ({marker}).")
         return False
-    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1]):
+    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1], marker=marker):
         # Not a smaller problem than failing to arm, just a noisier one. A false alarm is what teaches people to
         # stop believing the alarm, and an alarm nobody believes is the same as no alarm at all.
-        warn(f"An earlier alarm may still be pending and fire spuriously ({switch_marker()}).")
+        warn(f"An earlier alarm may still be pending and fire spuriously ({marker}).")
         return False
-    print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({switch_marker()}).")
+    print(f"::notice::Liveness switch armed for {SWITCH_HOURS}h ({marker}).")
     return True
 
 

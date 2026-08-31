@@ -1,6 +1,6 @@
 package com.payabli.example.app.sdk
 
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import org.junit.Assert.assertEquals
@@ -13,11 +13,11 @@ import java.time.format.DateTimeFormatter
 /**
  * The prefill has to fill the form the demo actually shows.
  *
- * A field added to a demo section with no value here leaves a gap the QA run fills by hand, which is the whole
+ * A field added to a demo section with no value here leaves a gap the demo run fills by hand, which is the whole
  * of what the button is for, and nothing on screen says which one was missed.
  */
 class PayInPrefillTest {
-    private val identity = QaIdentity.from("Google Pixel 7a")
+    private val identity = SampleIdentity.from("Google Pixel 7a")
 
     private val setups =
         mapOf(

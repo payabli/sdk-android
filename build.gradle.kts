@@ -120,17 +120,27 @@ subprojects {
                 ktlintTasks.joinToString(",") { "$reports/ktlint/$it/$it.xml" },
             )
 
+            // Which variant writes the reports. The sample app is the only module with product flavors, so
+            // every report it produces is variant-qualified and nothing it writes is called `debug`. One
+            // flavor is the source: the two differ by a dependency and by no code of the app's own, so
+            // reporting both would measure the same lines twice. Named here rather than derived, because a
+            // path that does not exist is not an error in Sonar. It is a warning, and the module reports as
+            // unmeasured.
+            val isFlavored = path == ":example"
+            val coveragePath = if (isFlavored) "withTelemetry/debug" else "debug"
+            val lintVariant = if (isFlavored) "withTelemetryDebug" else "debug"
+
             // Set only where the producing task exists.
             plugins.withId("com.android.library") {
-                property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
+                property("sonar.androidLint.reportPaths", "$reports/lint-results-$lintVariant.xml")
             }
             plugins.withId("com.android.application") {
-                property("sonar.androidLint.reportPaths", "$reports/lint-results-debug.xml")
+                property("sonar.androidLint.reportPaths", "$reports/lint-results-$lintVariant.xml")
             }
             if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
                 property(
                     "sonar.coverage.jacoco.xmlReportPaths",
-                    "$reports/coverage/test/debug/report.xml",
+                    "$reports/coverage/test/$coveragePath/report.xml",
                 )
             }
         }

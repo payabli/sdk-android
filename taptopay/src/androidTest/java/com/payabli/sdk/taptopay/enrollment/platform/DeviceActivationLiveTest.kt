@@ -44,7 +44,7 @@ private val TEST_TIMEOUT = 120.seconds
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
  * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> \
+ *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa \
  *   -Pandroid.testInstrumentationRunnerArguments.class=\
  * com.payabli.sdk.taptopay.enrollment.platform.DeviceActivationLiveTest
  * ```

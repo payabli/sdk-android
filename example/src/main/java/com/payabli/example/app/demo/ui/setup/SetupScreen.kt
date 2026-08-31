@@ -33,9 +33,10 @@ import com.payabli.example.app.sdk.PayInForms
 /**
  * Everything the SDK was configured with, read back.
  *
- * Read-only, with one switch. A session captures its configuration when it is created, so a control over any of
- * that would appear to change something already decided; each value says where it came from instead. The
- * customer switch is not part of it and is read when a request is built, so it can be flipped between payments.
+ * Read-only, with two switches that belong to the sample rather than to the SDK. A session captures its
+ * configuration when it is created, so a control over any of that would appear to change something already
+ * decided; each value says where it came from instead. The customer switch is read when a request is built, so
+ * it can be flipped between payments, and the Simple Capture switch only shows or hides a tab.
  */
 @Composable
 fun SetupScreen(
@@ -44,6 +45,7 @@ fun SetupScreen(
     onProbeHealth: () -> Unit,
     onRecheck: () -> Unit,
     onSuppliesDemoCustomerChange: (Boolean) -> Unit,
+    onShowSimpleCaptureChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     DemoScreen(title = "Configuration", modifier = modifier) {
@@ -61,6 +63,12 @@ fun SetupScreen(
                 label = "Environment",
                 value = "${state.configuration.environment.label} · ${state.configuration.environment.host}",
                 problem = state.configuration.environmentProblem,
+            )
+            SwitchRow(
+                label = "Show Simple Capture",
+                checked = state.showSimpleCapture,
+                note = "Adds a fifth tab: one screen, the fewest calls a card capture takes.",
+                onCheckedChange = onShowSimpleCaptureChange,
             )
         }
 
@@ -278,6 +286,7 @@ private fun SetupScreenPreview() {
             onProbeHealth = {},
             onRecheck = {},
             onSuppliesDemoCustomerChange = {},
+            onShowSimpleCaptureChange = {},
         )
     }
 }

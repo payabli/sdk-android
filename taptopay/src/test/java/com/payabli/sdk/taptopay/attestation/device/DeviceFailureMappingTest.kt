@@ -244,9 +244,9 @@ class DeviceFailureMappingTest {
         }
 
     @Test
-    fun `the decline QA actually returns is classified and read correctly`() =
+    fun `the decline the service actually returns is classified and read correctly`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Captured verbatim from api-qa: POST /register for a paypoint with no card gateway. Recorded
+            // Captured verbatim from the service: POST /register for a paypoint with no card gateway. Recorded
             // rather than composed, so this asserts against the service's own output including the keys it
             // sends that this SDK does not model — `responseCode` and `roomId` on the envelope, and the whole
             // ResponseApiData surface under `responseData`, which is typed `object` server-side.
@@ -268,7 +268,7 @@ class DeviceFailureMappingTest {
         }
 
     @Test
-    fun `the DTO validation 400 QA returns is a validation error, not a device one`() =
+    fun `the DTO validation 400 the service returns is a validation error, not a device one`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Also captured verbatim: POST /attest with the `platform` key absent. The service's DTO validation
             // refuses it before any controller runs, so there is no envelope in this body at all — a real 400

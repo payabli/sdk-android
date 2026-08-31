@@ -12,7 +12,7 @@ import org.junit.Test
  * What the payer typed has to reach the request.
  *
  * The form collects a customer and a description for the stored method, and neither is part of the instrument,
- * so nothing else carries them. Dropped, a capture goes out with no customer at all and the QA paypoint answers
+ * so nothing else carries them. Dropped, a capture goes out with no customer at all and the paypoint answers
  * `400 Error in customer data`, which is what these exist to prevent.
  */
 class PayInEnteredDetailsTest {

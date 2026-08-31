@@ -2,6 +2,9 @@ package com.payabli.sdk.taptopay.attestation.impl
 
 import com.google.android.play.core.integrity.model.IntegrityErrorCode
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperty
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 
@@ -16,17 +19,21 @@ import com.payabli.sdk.taptopay.attestation.VerdictClass
  * Both constant sets are Java annotation constants, so they inline at compile time and nothing here loads
  * an Android class. That is what keeps this file, and its test, on the JVM.
  *
- * TODO: emit telemetry for `TOO_MANY_REQUESTS`, in both tables below. It is the one code whose cause is
- *  not the device in front of you, and today it is visible only as an individual device failing to attest.
- *  The signal has to distinguish one device retrying from the budget being gone fleet-wide, which means it
- *  is a counter on the backend rather than a log line here.
+ * **`TOO_MANY_REQUESTS` is reported, and only from here.** It is the one code whose cause is not the device
+ * in front of you: the request budget belongs to the cloud project and is shared by every app embedding this
+ * SDK, so each device sees only its own failure while the cause is fleet-wide. Telling one device retrying
+ * from the budget being gone takes a count across devices, which is why it is reported rather than logged.
  *
- *  Count only what reaches this mapping. `ThrottleGate` refuses locally with the same disposition and the
- *  same code, without calling the platform, so counting those too turns one throttle plus twenty local
- *  refusals into twenty-one and makes the fleet look far worse than it is. The two look alike to a caller,
- *  whose action is identical either way; they are not interchangeable to a counter.
+ * `ThrottleGate` refuses locally with the same disposition and the same code without calling the platform,
+ * and those refusals do not reach this file. That is what keeps one platform throttle plus twenty local
+ * refusals from counting as twenty-one. The two look alike to a caller, whose action is identical either
+ * way; they are not interchangeable to a counter.
  */
 internal object PlayIntegrityErrorMapping {
+    /** Which request shape met the limit. The two have separate tables, so a count needs to say which. */
+    private const val SHAPE_STANDARD = "standard"
+    private const val SHAPE_CLASSIC = "classic"
+
     /**
      * The disposition for [errorCode] as reported by a [verdictClass] request.
      *
@@ -79,7 +86,7 @@ internal object PlayIntegrityErrorMapping {
             ->
                 AttestationException.Misconfigured(code, cause)
 
-            StandardIntegrityErrorCode.TOO_MANY_REQUESTS -> AttestationException.Throttled(code, cause)
+            StandardIntegrityErrorCode.TOO_MANY_REQUESTS -> throttled(code, cause, SHAPE_STANDARD)
 
             else -> unrecognised(code, cause)
         }
@@ -122,10 +129,30 @@ internal object PlayIntegrityErrorMapping {
             ->
                 AttestationException.Misconfigured(code, cause)
 
-            IntegrityErrorCode.TOO_MANY_REQUESTS -> AttestationException.Throttled(code, cause)
+            IntegrityErrorCode.TOO_MANY_REQUESTS -> throttled(code, cause, SHAPE_CLASSIC)
 
             else -> unrecognised(code, cause)
         }
+
+    /**
+     * The throttle disposition, reported on the way out.
+     *
+     * [requestShape] is carried because the two request shapes have separate tables and a reader needs to
+     * know which one met the limit.
+     */
+    private fun throttled(
+        code: Int,
+        cause: Throwable?,
+        requestShape: String,
+    ): AttestationException {
+        TelemetryRecorders.record(TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED) {
+            mapOf(
+                TelemetryProperty.REASON.key to requestShape,
+                TelemetryProperty.CODE.key to code.toString(),
+            )
+        }
+        return AttestationException.Throttled(code, cause)
+    }
 
     /**
      * A code neither table knows, a failure the platform reported without one, and the platform's own

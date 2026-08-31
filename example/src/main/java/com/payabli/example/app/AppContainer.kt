@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.VisibleForTesting
 import com.payabli.example.app.demo.config.DemoConfiguration
 import com.payabli.example.app.demo.config.DemoEnvironment
+import com.payabli.example.app.demo.config.SimpleCaptureSetting
 import com.payabli.example.app.demo.config.TokenHostDefaults
 import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.config.TokenServerTarget
@@ -11,8 +12,8 @@ import com.payabli.example.app.demo.diagnostics.DiagnosticsRegistry
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.preflight.platform.DeviceFactsReader
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.example.app.sdk.PayInStartup
@@ -67,12 +68,12 @@ class AppContainer(
     private val isEmulator: Boolean = factsAtLaunch.isEmulator
 
     /**
-     * Who this device says it is, so a QA run over several at once produces rows a dashboard can attribute.
+     * Who this device says it is, so a demo run over several at once produces rows a dashboard can attribute.
      *
      * Derived from the model, so one build installs on every device in the run and each one still names
      * itself.
      */
-    val qaIdentity: QaIdentity = QaIdentity.from(factsAtLaunch.model)
+    val sampleIdentity: SampleIdentity = SampleIdentity.from(factsAtLaunch.model)
 
     /**
      * Whether a capture names its customer, which the Configuration screen switches and the request reads.
@@ -80,7 +81,7 @@ class AppContainer(
      * The screen that switches it and the screen that reads it are two, and one instance serves both: a copy
      * per screen leaves the switch describing a payment it did not reach.
      */
-    val demoCustomer: DemoCustomerSetting = DemoCustomerSetting(qaIdentity)
+    val demoCustomer: DemoCustomerSetting = DemoCustomerSetting(sampleIdentity)
 
     val diagnostics: DiagnosticsRegistry = DiagnosticsRegistry()
 
@@ -122,7 +123,10 @@ class AppContainer(
      * above land before any screen asks for a session. Built eagerly it would hold what the process started
      * with, and an override would reach the Setup screen but not the SDK.
      */
-    private val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
+    val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
+
+    /** Whether the Simple Capture tab is shown. Off until the Config screen turns it on. */
+    val simpleCapture: SimpleCaptureSetting = SimpleCaptureSetting()
 
     /**
      * Step one for both payment screens: the token server, then the SDK.

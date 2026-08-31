@@ -6,8 +6,8 @@ name: Live flows (sandbox)
 on:
   workflow_dispatch:
   schedule:
-    # 04:30 Pacific as 11:30 UTC, half an hour after the qa run so the two do not submit into both paypoints
-    # at once and a runner is free for the second.
+    # 11:30 UTC, half an hour after the qa run so the two do not submit into both paypoints at once and a
+    # runner is free for the second. UTC only, so it shifts against Pacific twice a year, as nightly.yml notes.
     - cron: '30 11 * * *'
 
 concurrency:

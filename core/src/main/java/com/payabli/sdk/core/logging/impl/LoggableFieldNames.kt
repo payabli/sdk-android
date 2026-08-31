@@ -65,6 +65,9 @@ internal object LoggableFieldNames {
             "totaltimeoutms",
             "calltimeoutms",
             "contentlength",
+            // How many records a bounded buffer discarded. A count of things thrown away names none of them,
+            // and a buffer that drops in silence is how a gap in a chart reads as a quiet period.
+            "dropped",
             "errorcode",
             "errorkind",
             "sdkversion",

@@ -46,7 +46,7 @@ import java.util.UUID
  * Two gates rather than one: the annotation says which tier this belongs to, and the name check means a run
  * without them reports no skip instead of a standing one. The environment, the entry point and the address of a
  * token server arrive as runner arguments, so nothing here is committed. One environment per invocation, because
- * the SDK installs one session per process and refuses a second configuration: QA and sandbox are two runs.
+ * the SDK installs one session per process and refuses a second configuration: each environment is its own run.
  *
  * **No client credential reaches this device, and none of the three above is one.** A token comes from the app's
  * backend, which holds the client id and secret and exchanges them; `example-server` plays that part for a test
@@ -185,15 +185,15 @@ class PayInLiveFlowsInstrumentedTest {
         PayInFormValues(
             PayInMethodType.Card,
             mapOf(
-                PayInField.CardholderName to "QA Tester",
+                PayInField.CardholderName to "Sample Tester",
                 PayInField.CardNumber to number,
                 PayInField.CardExpiration to "09/30",
                 PayInField.CardSecurityCode to "999",
                 PayInField.CardPostalCode to "22039",
-                PayInField.FirstName to "QA",
+                PayInField.FirstName to "Sample",
                 PayInField.LastName to "Tester",
-                PayInField.CustomerNumber to "qa-tester-android",
-                PayInField.BillingEmail to "qa@example.com",
+                PayInField.CustomerNumber to "sample-tester-android",
+                PayInField.BillingEmail to "sample@example.com",
             ),
         )
 
@@ -201,14 +201,14 @@ class PayInLiveFlowsInstrumentedTest {
         PayInFormValues(
             PayInMethodType.BankAccount,
             mapOf(
-                PayInField.AccountHolder to "QA Tester",
+                PayInField.AccountHolder to "Sample Tester",
                 PayInField.RoutingNumber to "121000248",
                 PayInField.AccountNumber to "1234567890",
                 PayInField.AccountType to "Checking",
-                PayInField.FirstName to "QA",
+                PayInField.FirstName to "Sample",
                 PayInField.LastName to "Tester",
-                PayInField.CustomerNumber to "qa-tester-android",
-                PayInField.BillingEmail to "qa@example.com",
+                PayInField.CustomerNumber to "sample-tester-android",
+                PayInField.BillingEmail to "sample@example.com",
             ),
         )
 

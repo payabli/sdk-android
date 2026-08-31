@@ -4,6 +4,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -43,6 +44,21 @@ class DeviceDescriptionInstrumentedTest {
         // The digest has the same lifetime as the raw value and none of its joinability.
         assertNotEquals(raw, hardwareId)
         assertTrue(raw.isNotBlank())
+    }
+
+    /**
+     * One device is one identity everywhere.
+     *
+     * Registration names this device to the service, and reporting names it again from another artifact. If
+     * the two ever derive it separately they will disagree on the day one of them changes, and the disagreement
+     * shows up as a fleet of devices that each appear once.
+     */
+    @Test
+    fun registrationSendsTheIdentifierTheRestOfTheSdkUses() {
+        assertEquals(
+            DeviceIdentifierFactory.of(context),
+            DeviceDescriptionFactory.create(context).hardwareId,
+        )
     }
 
     @Test

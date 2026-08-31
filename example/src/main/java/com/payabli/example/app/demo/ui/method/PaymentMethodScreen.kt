@@ -15,7 +15,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.demo.flow.PaymentProgress
 import com.payabli.example.app.demo.flow.PaymentSteps
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.components.DemoIcons
 import com.payabli.example.app.demo.ui.components.EntersAfter
 import com.payabli.example.app.demo.ui.components.PreviewSurface
@@ -112,7 +112,7 @@ private fun PaymentMethodScreenPreview() {
             state =
                 PaymentMethodUiState(
                     setup = PayInForms.storePaymentMethod(),
-                    qaIdentity = QaIdentity.from("Google Pixel 7a"),
+                    sampleIdentity = SampleIdentity.from("Google Pixel 7a"),
                     resultText = "Stored method: demo-method-0001\nResponse: Payment method saved",
                     diagnostics = listOf("RESPONSE 1 paymentMethod\nreason=Success"),
                 ),

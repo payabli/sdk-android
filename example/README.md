@@ -22,13 +22,22 @@ Copy `secrets.properties.example` to `secrets.properties` and fill it in. It is 
 credential; the token is minted at runtime by `example-server/`. Any setting can be passed for a single
 run instead: `-Ppayabli.demo.entryPoint=entry0000`.
 
+**Three sources, most specific first:** the `-P` flag, then an environment variable, then
+`secrets.properties`. The variable is the setting uppercased with dots as underscores, so
+`payabli.demo.entryPoint` is `PAYABLI_DEMO_ENTRYPOINT`. That is the one to use from a shell you have already
+exported into, or from CI, where there is no file to edit:
+
+```bash
+PAYABLI_DEMO_ENTRYPOINT=entry0000 ./gradlew :example:installWithTelemetryDebug
+```
+
 The default is what the build falls back to when nothing is set. The template prefills two of them,
 and only `payabli.demo.appId` prefills something other than its build default.
 
 | Setting | Default | Notes |
 |---|---|---|
 | `payabli.demo.entryPoint` | | Partner identifier. Exists in one environment, so set it with the row below. |
-| `payabli.demo.environment` | `sandbox` | `qa`, `sandbox` or `production`. |
+| `payabli.demo.environment` | `sandbox` | `sandbox` or `production`. |
 | `payabli.demo.appId` | | `secrets.properties.example` prefills `com.payabli.example.app`; the build itself falls back to blank. Compared against the running package by the readiness check, so a `-P` run without the template fails that check. |
 | `payabli.demo.signingCertificate` | | SHA-256 as the Play Console shows it; case and punctuation ignored. Blank means the signing key is not verified. `keytool -printcert -jarfile <apk>` prints it for a file, and the Setup screen shows what is installed. |
 | `payabli.demo.tokenHost` | | Blank resolves per run; see below. |
@@ -36,6 +45,7 @@ and only `payabli.demo.appId` prefills something other than its build default.
 | `payabli.demo.deviceTokenHost` | `127.0.0.1` | |
 | `payabli.demo.tokenPort` | `8787` | |
 | `payabli.demo.diagnostics` | `true` | Redacted request and response logging on the payment screens. |
+| `payabli.demo.prefill` | `false` | Fills the payment form with the sample identity, for a walkthrough that is not about typing. |
 
 With nothing set, the Setup screen shows a dash and says what is missing.
 
@@ -60,20 +70,23 @@ falls back to the development machine's Bonjour name, where a device here gets `
 
 ## How it is put together
 
-**Every call into the SDK is in `sdk/`.** That is the package to read, and the rest of the app is scaffolding
-around it: `demo/` holds the screens, the step list, the token server client and the card-present stand-in,
-and none of it names an SDK type. `AppContainer.kt`, `MainActivity.kt` and `PayabliDemoApplication.kt` stay
-at the root, where the manifest expects them. `SdkCallsAreInOnePackageTest` reads `src/main` and fails naming
-any file outside `sdk/` whose source contains `com.payabli.sdk.`, so a fully qualified call is caught as an
-import is. What it cannot see is a `demo/` file reaching an SDK type through one of `sdk/`'s `internal`
-properties, which names no package: Kotlin has no package-private, and `PaymentFormHost.kt` needs those values
-from the files that hold them.
+**Every call into the SDK is in `sdk/` or `demo/simple/`.** `sdk/` is this app's integration layer, which
+four screens share and which hands back types the app owns; the rest of `demo/` is scaffolding around it and
+names no SDK type. `demo/simple/` is the exception: one screen that calls the SDK directly, so the fewest
+calls a capture takes can be read in one file. `AppContainer.kt`, `MainActivity.kt` and
+`PayabliDemoApplication.kt` stay at the root, where the manifest expects them.
+`SdkCallsAreInOnePackageTest` reads `src/main` and fails naming any file outside those two packages whose
+source contains `com.payabli.sdk.`, so a fully qualified call is caught as an import is. What it cannot see
+is a `demo/` file reaching an SDK type through one of `sdk/`'s `internal` properties, which names no
+package: Kotlin has no package-private, and `PaymentFormHost.kt` needs those values from the files that
+hold them.
 
 ```
 com/payabli/example/app/
   AppContainer.kt   MainActivity.kt   PayabliDemoApplication.kt
   sdk/     the integration
   demo/    ui/  flow/  payment/  net/  config/  terminal/  diagnostics/  preflight/
+    simple/  the one screen that calls the SDK directly
 ```
 
 Inside `sdk/`:
@@ -90,6 +103,29 @@ Inside `sdk/`:
 
 Card-present has no SDK yet, so `demo/terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
 marks it with `⟵ swap point`.
+
+### The smallest capture there is
+
+`demo/simple/SimpleCaptureScreen.kt` is one file and three calls, and it is the thing to read first. The
+calls are numbered in it:
+
+1. **A session**, once per process. The app's own backend mints an access token and `PayabliSession` is
+   configured with it. Nothing can be sent until this has answered, which is why the form is not drawn yet.
+2. **A flow**, once per screen. `PayabliPayInPaymentFlow(session, entryPoint, scope)` holds what the payer
+   types, so the scope it is given has to outlive a configuration change. A `viewModelScope` does, and a
+   rotation keeps both the form's contents and a submission in flight. Built in the composition instead, the
+   flow is recreated on rotation and both are lost, along with the key that makes a retry safe.
+3. **The form.** `PayabliPayInForm` collects, validates and submits, and the outcome arrives on `onCompleted`
+   or `onFailed`.
+
+Not reproduced here. A fenced block is not compiled, so a signature change would leave this page describing
+an integration that no longer builds, and the file is short enough to open. What the file adds beyond the
+three calls is the part an integration also has to get right: the customer fields a capture is refused
+without, the amount read back from the operation rather than typed, and `Failed.retryKey` sent on a second
+attempt so a retry after an unknown outcome settles the first charge instead of making a second one.
+
+`SdkCallsAreInOnePackageTest` allows `demo/simple/` alongside `sdk/` precisely so this file can call the SDK
+directly. Everywhere else in `demo/` still may not.
 
 ## Things that will bite
 

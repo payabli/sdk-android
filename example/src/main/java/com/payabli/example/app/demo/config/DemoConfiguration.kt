@@ -8,7 +8,6 @@ enum class DemoEnvironment(
     val label: String,
     val baseUrl: String,
 ) {
-    QA("qa", "https://api-qa.payabli.com"),
     SANDBOX("sandbox", "https://api-sandbox.payabli.com"),
     PRODUCTION("production", "https://api.payabli.com"),
     ;

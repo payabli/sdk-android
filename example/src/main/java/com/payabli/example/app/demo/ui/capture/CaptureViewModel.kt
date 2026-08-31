@@ -8,9 +8,9 @@ import com.payabli.example.app.demo.diagnostics.DiagnosticsStore
 import com.payabli.example.app.demo.net.checkToken
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.example.app.demo.payment.PaymentResult
-import com.payabli.example.app.demo.qa.DemoCustomerSetting
-import com.payabli.example.app.demo.qa.QaAmount
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.DemoCustomerSetting
+import com.payabli.example.app.demo.sample.SampleAmount
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.payment.PaymentFlowUiState
 import com.payabli.example.app.sdk.PayInFlowHandle
 import com.payabli.example.app.sdk.PayInFormSetup
@@ -39,7 +39,7 @@ data class CaptureUiState(
      * form reads it back, and a retry has to charge the same thing under a different key.
      */
     val amount: BigDecimal,
-    override val qaIdentity: QaIdentity,
+    override val sampleIdentity: SampleIdentity,
     override val resultText: String = "",
     /** Raised only when the completion carried the payload this screen exists to show. */
     val outcomeReady: Boolean = false,
@@ -71,7 +71,7 @@ data class CaptureUiState(
  * to. A route carries no arbitrary API response.
  */
 class CaptureViewModel(
-    private val identity: QaIdentity,
+    private val identity: SampleIdentity,
     private val demoCustomer: DemoCustomerSetting,
     private val startup: PayInStartup,
     private val diagnostics: DiagnosticsStore,
@@ -80,12 +80,12 @@ class CaptureViewModel(
 ) : ViewModel() {
     private val _uiState =
         MutableStateFlow(
-            attempt(QaAmount.random()).let { attempt ->
+            attempt(SampleAmount.random()).let { attempt ->
                 CaptureUiState(
                     setup = attempt.setup,
                     amount = attempt.amount,
                     operation = attempt.operation,
-                    qaIdentity = identity,
+                    sampleIdentity = identity,
                     diagnosticsEnabled = diagnosticsEnabled,
                     prefillEnabled = configuration.prefillEnabled,
                     entryPoint = configuration.entryPoint,
@@ -266,7 +266,7 @@ class CaptureViewModel(
      */
     fun startOver() =
         _uiState.update {
-            val attempt = attempt(QaAmount.random())
+            val attempt = attempt(SampleAmount.random())
             it.copy(
                 resultText = "",
                 submitFailed = false,
@@ -303,7 +303,7 @@ class CaptureViewModel(
     companion object {
         fun from(container: AppContainer): CaptureViewModel =
             CaptureViewModel(
-                identity = container.qaIdentity,
+                identity = container.sampleIdentity,
                 demoCustomer = container.demoCustomer,
                 startup = container.payInStartup,
                 diagnostics = container.diagnostics.capture,

@@ -33,6 +33,7 @@ import com.payabli.sdk.payin.form.schemeName
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -206,6 +207,7 @@ class PayInFormSeedInstrumentedTest {
                     submission = submission,
                     draft = draft,
                     configuration = configuration,
+                    reports = PayInFormReports.None,
                     initialValues = this.seed,
                     onSubmit = {
                         onSubmit(it)

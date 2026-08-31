@@ -35,9 +35,11 @@ export const defaultEntry = stringValue(process.env.PAYABLI_ENTRY);
 export const responseTokenField = (process.env.PAYABLI_RESPONSE_TOKEN_FIELD || "").trim();
 export const cacheTtlSeconds = integerSetting("PAYABLI_TOKEN_CACHE_TTL_SECONDS", 300);
 export const maxRequestBodyBytes = integerSetting("PAYABLI_MAX_REQUEST_BODY_BYTES", 32768);
+// Sandbox and production. Anything else is named by the run that needs it, through
+// PAYABLI_ALLOWED_API_HOSTS, which is how a deployment this file does not list is reached without this
+// file listing it.
 export const allowedApiHosts = parseCsvSet(
-  process.env.PAYABLI_ALLOWED_API_HOSTS ||
-    "api-sandbox.payabli.com,api-qa.payabli.com,api.payabli.com"
+  process.env.PAYABLI_ALLOWED_API_HOSTS || "api-sandbox.payabli.com,api.payabli.com"
 );
 export const allowInsecureUpstream = process.env.PAYABLI_ALLOW_INSECURE_UPSTREAM === "true";
 export const configuredCorsOrigins = parseCsvSet(process.env.PAYABLI_ALLOWED_CORS_ORIGINS || "");

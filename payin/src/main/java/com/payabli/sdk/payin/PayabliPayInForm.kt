@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -15,6 +16,7 @@ import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
+import com.payabli.sdk.payin.payment.step
 import com.payabli.sdk.payin.ui.PayInFormContent
 
 /**
@@ -84,15 +86,26 @@ public fun PayabliPayInForm(
     val narrowingKey = operation.narrowingKey
     val offered = remember(narrowingKey, configuration) { operation.offering(configuration) }
 
+    // One form per flow, and the step is a fixed word per operation, so together they change exactly when
+    // the form on screen does. Not the operation itself: written inline it is a new instance on every
+    // recomposition, which would count one opened form once per keystroke.
+    val step = operation.step
+    LaunchedEffect(flow, step) { flow.reports.presented(step) }
+
     PayInFormContent(
         submission = submission,
         draft = flow.draft,
         configuration = offered,
+        reports = flow.reports,
         modifier = modifier,
         labels = labels,
         style = style,
         initialValues = initialValues,
-        onSubmit = { values -> flow.start(operation, values) },
+        onSubmit = { values ->
+            // Before the send, so a submit that never reaches the service is still counted.
+            flow.reports.submitted(operation.step)
+            flow.start(operation, values)
+        },
         onCompleted = { outcome ->
             try {
                 onCompleted(outcome)

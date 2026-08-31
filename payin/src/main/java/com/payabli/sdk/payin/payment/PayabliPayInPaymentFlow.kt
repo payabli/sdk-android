@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.payment
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.form.PayInFormDraft
@@ -13,6 +14,7 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -47,6 +49,8 @@ public class PayabliPayInPaymentFlow private constructor(
     private val entryPoint: String,
     private val scope: CoroutineScope,
     private val submission: PayInSubmission,
+    /** Built once here, from the session that created this flow, and handed to the form. */
+    internal val reports: PayInFormReports,
 ) {
     /**
      * What the payer has entered, which lives here rather than in the form's composition.
@@ -57,9 +61,6 @@ public class PayabliPayInPaymentFlow private constructor(
     internal val draft: PayInFormDraft = PayInFormDraft()
 
     init {
-        // The screen going for good, which is the one point this type is told about. Strings are immutable, so
-        // this drops the references at a defined moment rather than wiping them; what keeps a value out of the
-        // request path is `SensitiveDigits`, not this.
         scope.coroutineContext[Job]?.invokeOnCompletion { draft.clear() }
     }
 
@@ -67,20 +68,15 @@ public class PayabliPayInPaymentFlow private constructor(
         session: PayabliSession,
         entryPoint: String,
         scope: CoroutineScope,
-    ) : this(session.transport, entryPoint, scope, IO_DISPATCHER)
+    ) : this(session.transport, entryPoint, scope, IO_DISPATCHER, telemetry = session.telemetry)
 
-    /**
-     * Against a transport directly, so this type is reachable from a test.
-     *
-     * `PayabliSession` cannot be built from outside `:core` — its test entry points are internal to that
-     * module — so a session-only constructor would make everything here untestable.
-     */
     internal constructor(
         transport: PayabliTransport,
         entryPoint: String,
         scope: CoroutineScope,
         dispatcher: CoroutineDispatcher,
         logger: SdkLogger? = null,
+        telemetry: TelemetrySessionContext? = null,
     ) : this(
         entryPoint,
         scope,
@@ -90,7 +86,9 @@ public class PayabliPayInPaymentFlow private constructor(
             dispatcher = dispatcher,
             // Random per attempt, so two payments from one screen are never one request to the service.
             newIdempotencyKey = { UUID.randomUUID().toString() },
+            session = telemetry,
         ),
+        PayInFormReports(telemetry?.forEntryPoint(entryPoint)),
     )
 
     /**
@@ -169,7 +167,7 @@ public class PayabliPayInPaymentFlow private constructor(
 
     /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
     internal suspend fun captureAuthorized(request: PayInAuthorizedRequest): Result<PayInResult> =
-        submission.captureAuthorized(request).asPayment()
+        submission.captureAuthorized(entryPoint, request).asPayment()
 
     private suspend fun payment(
         operation: PayabliPayInOperation,

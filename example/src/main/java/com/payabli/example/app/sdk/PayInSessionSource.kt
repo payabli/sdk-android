@@ -107,7 +107,6 @@ class PayInSessionSource(
 private val DemoEnvironment.sdkEnvironment: PayabliEnvironment
     get() =
         when (this) {
-            DemoEnvironment.QA -> PayabliEnvironment.QA
             DemoEnvironment.SANDBOX -> PayabliEnvironment.SANDBOX
             DemoEnvironment.PRODUCTION -> PayabliEnvironment.PRODUCTION
         }

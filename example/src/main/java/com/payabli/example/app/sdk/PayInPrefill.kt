@@ -1,12 +1,12 @@
 package com.payabli.example.app.sdk
 
-import com.payabli.example.app.demo.qa.QaIdentity
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 
 /**
- * Test values for the payment form, so a QA run is one tap instead of eight fields.
+ * Test values for the payment form, so a demo run is one tap instead of eight fields.
  *
  * Handed to the form as `initialValues`, which is the SDK's own way in: nothing here reaches around the form to
  * write its state.
@@ -18,13 +18,13 @@ import com.payabli.sdk.payin.form.PayInMethodType
  * month and a choice fill like a text box. The expiry is a fixed month, and the form refuses one that has
  * passed, so it is the one value here with a shelf life.
  *
- * The customer is [QaIdentity]'s, so several devices submitting at once produce rows a dashboard can
+ * The customer is [SampleIdentity]'s, so several devices submitting at once produce rows a dashboard can
  * attribute to the device that sent them.
  */
 object PayInPrefill {
     fun valuesFor(
         method: PayInMethod,
-        identity: QaIdentity,
+        identity: SampleIdentity,
     ): PayInFormSeed =
         PayInFormSeed(
             when (method) {
@@ -33,7 +33,7 @@ object PayInPrefill {
             },
         )
 
-    private fun card(identity: QaIdentity) =
+    private fun card(identity: SampleIdentity) =
         PayInFormValues(
             PayInMethodType.Card,
             mapOf(
@@ -49,7 +49,7 @@ object PayInPrefill {
             ),
         )
 
-    private fun bankAccount(identity: QaIdentity) =
+    private fun bankAccount(identity: SampleIdentity) =
         PayInFormValues(
             PayInMethodType.BankAccount,
             mapOf(

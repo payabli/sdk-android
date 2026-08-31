@@ -5,10 +5,8 @@ plugins {
     id("payabli.quality")
 }
 
-val sdkIdentifier = "com.payabli.sdk.taptopay"
-
 android {
-    namespace = sdkIdentifier
+    namespace = "com.payabli.sdk.taptopay"
     compileSdk {
         version =
             release(36) {
@@ -16,17 +14,9 @@ android {
             }
     }
 
-    // Off by default from AGP 8, and this module needs the one field below.
-    buildFeatures {
-        buildConfig = true
-    }
-
     defaultConfig {
         // Card-present floor, required by the card reader dependency.
         minSdk = 30
-
-        // Read by DeviceDescriptionFactory. A fixed literal, so no escaping applies.
-        buildConfigField("String", "SDK_IDENTIFIER", "\"$sdkIdentifier\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

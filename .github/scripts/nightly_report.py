@@ -62,6 +62,12 @@ MAX_SUMMARY_BYTES = 900_000
 # while that was not true.
 COVERAGE_MODULES = ("core", "example", "payin", "taptopay", "telemetry", "testutils")
 
+# Which variant's report to read, for the modules where it is not `debug`. The sample app is the only module
+# with product flavors, so its unit-test coverage is written under the flavored variant name and a reader
+# looking for `debug` finds nothing -- which this collector reports as `missing`, indistinguishable from a
+# module whose tests did not run.
+COVERAGE_VARIANTS = {"example": "withTelemetry/debug"}
+
 # Attribution stops here, because the report cannot show more than this and the work is not free: each
 # failure costs two recursive source globs and up to two `git log` subprocesses. Measured against this repo
 # one attribution is about 50 ms, so 335 failures is nearer 17 seconds than the collector's 300-second bound,
@@ -193,7 +199,8 @@ def coverage(counter_type: str) -> list[tuple[str, float | None, str]]:
     """
     out: list[tuple[str, float | None, str]] = []
     for module in COVERAGE_MODULES:
-        path = REPO_ROOT / module / "build/reports/coverage/test/debug/report.xml"
+        variant = COVERAGE_VARIANTS.get(module, "debug")
+        path = REPO_ROOT / module / f"build/reports/coverage/test/{variant}/report.xml"
         if not path.is_file():
             out.append((module, None, "missing"))
             continue
@@ -481,11 +488,16 @@ def main() -> int:
     # workflow names the modules its step ran in INSTRUMENTED_MODULES, because that is where the gradle
     # command lives and the two have to agree; absent, this degrades to the suite-level check above rather
     # than inventing a list, so a copy of this script run by hand keeps working.
-    inst_expected = [m for m in os.environ.get("INSTRUMENTED_MODULES", "").split(",") if m.strip()]
-    inst_silent = [
-        module for module in inst_expected
-        if parse_results([f"{module}/build/outputs/androidTest-results/connected/**/TEST-*.xml"])[0] == 0
-    ]
+    # An entry may name a variant as `module:variant`, because a module with product flavors writes one
+    # results directory per variant and `**` matches any of them: one variant that ran covers a sibling that
+    # did not, which is the same hiding one level further down.
+    inst_expected = [m.strip() for m in os.environ.get("INSTRUMENTED_MODULES", "").split(",") if m.strip()]
+    inst_silent = []
+    for entry in inst_expected:
+        module, _, variant = entry.partition(":")
+        results = f"{module}/build/outputs/androidTest-results/connected/{variant or '**'}/TEST-*.xml"
+        if parse_results([results])[0] == 0:
+            inst_silent.append(entry)
 
     unit_missing = unit_step == "success" and unit_total == 0
     inst_missing = inst_step == "success" and (inst_total == 0 or bool(inst_silent))

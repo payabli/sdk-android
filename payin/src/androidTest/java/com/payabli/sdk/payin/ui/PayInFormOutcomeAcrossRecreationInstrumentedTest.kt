@@ -30,6 +30,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.telemetry.PayInFormReports
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -149,6 +150,7 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
                     submission = submission,
                     draft = draft,
                     configuration = configuration,
+                    reports = PayInFormReports.None,
                     initialValues = seed,
                     onSubmit = { true },
                     onCompleted = { completed += it },
