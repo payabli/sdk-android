@@ -105,6 +105,8 @@ internal object TapToPaySessionFailures {
         when (failure) {
             is CardReaderException.CredentialsUnusable -> failed(CONFIGURATION_REJECTED)
             is CardReaderException.ArmingFailed -> failed(SERVICE_UNAVAILABLE)
+            // Calling again reaches nothing: the vendor refused the device, not the call.
+            is CardReaderException.DeviceDenied -> failed(DEVICE_INELIGIBLE)
             is CardReaderException.SessionUnusable -> TapToPaySessionState.SessionExpired
             // The tap failed and the session did not. Nothing about the session changed.
             is CardReaderException.ReadFailed -> null
