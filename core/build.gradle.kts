@@ -14,6 +14,8 @@ val extraEnvironments: Provider<String> = extraEnvironmentsSetting(providers)
 
 val generateExtraEnvironments =
     tasks.register<GenerateExtraEnvironments>("generateExtraEnvironments") {
+        group = "build"
+        description = "Writes the environments payabli.sdk.extraEnvironments adds to PayabliEnvironment."
         setting.set(extraEnvironments)
         outputDirectory.set(layout.buildDirectory.dir("generated/payabli/environments"))
     }
