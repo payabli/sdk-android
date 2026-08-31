@@ -10,6 +10,7 @@ import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
+import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
@@ -71,6 +72,10 @@ internal class FiservAndroidCardReader(
     }
 
     override suspend fun startReading(request: CardReadRequest): CardReadResult {
+        // The radio is what this measures, so the bracket is the tap and not the arming that preceded it.
+        // A reader that never came up is reported by the phase that could not bring it up.
+        val startedAt = System.nanoTime()
+        TapToPayReports.nfcStarted()
         val record =
             try {
                 gateway.startReading(
@@ -82,8 +87,10 @@ internal class FiservAndroidCardReader(
                 )
             } catch (failure: CardReaderFailure) {
                 record("charge", failure)
+                TapToPayReports.nfcFailed(failure.kind, startedAt)
                 throw failure.asChargeFailure()
             }
+        TapToPayReports.nfcSucceeded(startedAt)
         return CardReadResult(cardNetwork = record.cardNetwork, providerResponse = record.encoded())
     }
 

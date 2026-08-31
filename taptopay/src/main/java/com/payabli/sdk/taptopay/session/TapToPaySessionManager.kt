@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -158,6 +159,9 @@ internal class TapToPaySessionManager(
                 LogField.safe("state", to.diagnosticName),
                 LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
             ) { "session state changed" }
+            // Here rather than at the nine callers: this is the one place a move is decided, so a state
+            // added later reports without anyone remembering to add it.
+            TapToPayReports.sessionStateChanged(from, to)
         }
         return Written(from, permitted)
     }
