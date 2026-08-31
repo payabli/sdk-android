@@ -76,21 +76,34 @@ class TapToPayReportsTest {
     }
 
     @Test
-    fun `a reader that did not come up says which kind, so 677 and 705 stay apart`() {
-        TapToPayReports.nfcFailed(ReaderFailureKind.DEVICE_DENIED, System.nanoTime())
-        TapToPayReports.nfcFailed(ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED, System.nanoTime())
+    fun `a reader that did not come up says which kind and which code`() {
+        TapToPayReports.nfcFailed(refusal(ReaderFailureKind.DEVICE_DENIED, "677"), System.nanoTime())
+        TapToPayReports.nfcFailed(refusal(ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED, "705"), System.nanoTime())
 
-        val reasons = recorded.map { it.second[TelemetryProperty.REASON.key] }
-        assertEquals(listOf("device_denied", "device_denied_unconfirmed"), reasons)
+        assertEquals(
+            listOf("device_denied" to "677", "device_denied_unconfirmed" to "705"),
+            recorded.map { it.second[TelemetryProperty.REASON.key] to it.second[TelemetryProperty.CODE.key] },
+        )
     }
 
     @Test
-    fun `the failed reader event declares no code, so none is sent`() {
-        TapToPayReports.nfcFailed(ReaderFailureKind.DEVICE_DENIED, System.nanoTime())
+    fun `a refusal the mapping does not recognise still says which code it was`() {
+        // The case the reason alone cannot answer, and the reason this event carries a code at all.
+        TapToPayReports.nfcFailed(refusal(ReaderFailureKind.UNCLASSIFIED, "E-1"), System.nanoTime())
 
         val (event, properties) = recorded.single()
         assertEquals(TelemetryEvents.TTP_NFC_FAILED, event)
-        assertNull("the catalog declares no code for this event", properties[TelemetryProperty.CODE.key])
+        assertEquals("unclassified", properties[TelemetryProperty.REASON.key])
+        assertEquals("E-1", properties[TelemetryProperty.CODE.key])
+    }
+
+    @Test
+    fun `a reader that timed out locally has a kind and no code to send`() {
+        TapToPayReports.nfcFailed(CardReaderFailure(ReaderFailureKind.TIMED_OUT), System.nanoTime())
+
+        val (_, properties) = recorded.single()
+        assertEquals("timed_out", properties[TelemetryProperty.REASON.key])
+        assertNull("there is no vendor code for a local deadline", properties[TelemetryProperty.CODE.key])
     }
 
     @Test
@@ -128,7 +141,8 @@ class TapToPayReportsTest {
         TapToPayReports.chargeFailed(failure, startedAt)
         TapToPayReports.nfcStarted()
         TapToPayReports.nfcSucceeded(startedAt)
-        TapToPayReports.nfcFailed(ReaderFailureKind.TIMED_OUT, startedAt)
+        // Carries a code, so a catalog that stopped allowing one is caught here rather than in the wire.
+        TapToPayReports.nfcFailed(refusal(ReaderFailureKind.DEVICE_DENIED, "677"), startedAt)
         TapToPayReports.sessionStateChanged(
             TapToPaySessionState.Idle,
             TapToPaySessionState.Failed(TapToPayFailureReason.SERVICE_UNAVAILABLE),
@@ -152,6 +166,11 @@ class TapToPayReportsTest {
         val (event, properties) = recorded.single()
         assertTrue("a failed charge has to flush", TelemetryCatalog.forcesSend(event, properties))
     }
+
+    private fun refusal(
+        kind: ReaderFailureKind,
+        code: String,
+    ) = CardReaderFailure(kind, code = code)
 
     private fun deniedBy(
         code: String,

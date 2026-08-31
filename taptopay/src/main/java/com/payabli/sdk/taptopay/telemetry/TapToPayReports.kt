@@ -5,7 +5,6 @@ import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
-import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionFailures
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
@@ -63,20 +62,22 @@ internal object TapToPayReports {
     fun nfcSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_NFC_SUCCEEDED, startedAt)
 
     /**
-     * A reader refusal, by its kind and never by the vendor's words.
+     * A reader refusal, by its kind and its code, and never by the vendor's words.
      *
-     * `ttp.nfc.failed` declares no code, so the kind carries the distinction: a device the vendor denies
-     * outright and one it denies with a code it has not explained are different values here.
+     * Both, because they answer different questions. The kind is what this SDK decided to do about the
+     * refusal; the code is which refusal it was. A kind of `unclassified` is the case where only the code
+     * says anything, and a reader that timed out locally has a kind and no code at all.
      */
     fun nfcFailed(
-        kind: ReaderFailureKind,
+        failure: CardReaderFailure,
         startedAt: Long,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_FAILED) {
-        mapOf(
-            TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.FAILED,
-            TelemetryProperty.REASON.key to kind.diagnosticName,
-            TelemetryProperty.DURATION_MS.key to elapsedMillis(startedAt).toString(),
-        )
+        buildMap {
+            put(TelemetryProperty.OUTCOME.key, TelemetryProperties.Outcome.FAILED)
+            put(TelemetryProperty.REASON.key, failure.kind.diagnosticName)
+            put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
+            failure.code?.let { put(TelemetryProperty.CODE.key, it) }
+        }
     }
 
     /** [reason] only where the state carries one, so a move that failed says why and the rest do not. */
