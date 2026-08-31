@@ -58,6 +58,11 @@ WORKFLOW_DIR.mkdir(exist_ok=True)
 LIVE_FLOWS = WORKFLOW_DIR / "live-flows.yml"
 LIVE_QA = WORKFLOW_DIR / "live-qa.yml"
 LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
+# The harness workflow, for its path filter alone: a check that never runs on the file it guards is not
+# a check, and the filter is what decides.
+SCRIPTS = WORKFLOW_DIR / "scripts.yml"
+# The nightly, for its liveness-owner expression alone. Nothing else here mutates it.
+NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -67,6 +72,8 @@ SOURCE = {
     LIVE_FLOWS: SDK / ".github/workflows/live-flows.yml",
     LIVE_QA: SDK / ".github/workflows/live-qa.yml",
     LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
+    NIGHTLY: SDK / ".github/workflows/nightly.yml",
+    SCRIPTS: SDK / ".github/workflows/scripts.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -78,8 +85,9 @@ MUTATIONS = [
      "None if green else commits_since_last_green()", "commits_since_last_green()"),
 
     ("A failed sweep counted as a successful reset again", POSTER, "poster",
-     "    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1]):",
-     "    if cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1]) and False:"),
+     "    if not cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1], marker=marker):",
+     "    if cancel_stale_switches(token, channel, keep=armed[0], keep_post_at=armed[1], marker=marker) "
+     "and False:"),
 
     ("Green fallback re-arms after posting, duplicating the alarm", POSTER, "poster",
      "    if owns_liveness_switch() and not green:", "    if owns_liveness_switch():"),
@@ -331,6 +339,83 @@ MUTATIONS = [
      "            ./gradlew :payin:connectedAndroidTest\n"
      "            -Pandroid.testInstrumentationRunnerArguments.class="
      "com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest"),
+
+    # The live reporter's liveness alarm. Going quiet on green is only safe because the alarm exists, so each
+    # of these turns the quiet back into the unmonitored silence it replaced, and none of them is visible in
+    # the channel until the day something stops running.
+    ("The live reporter posts on green again, so the channel stops being read", LIVE_POSTER, "live",
+     "    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):",
+     "    if False:"),
+
+    ("The live reporter stops arming its alarm, leaving silence unmonitored", LIVE_POSTER, "live",
+     "    if red and owns_liveness_switch():", "    if False:"),
+
+    ("A refused arm counts as a reset, so green goes silent with nothing watching", LIVE_POSTER, "live",
+     "    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):",
+     "    if not red and (reset_liveness_switch(token, channel, marker=marker, subject=subject) or True):"),
+
+    ("The alarm is pushed out even though the report never reached the channel", LIVE_POSTER, "live",
+     "        return 0\n    if red and owns_liveness_switch():",
+     "        pass\n    if red and owns_liveness_switch():"),
+
+    ("Every live run resets the alarm, so a dead schedule is masked by a dispatch", LIVE_POSTER, "live",
+     '    return os.environ.get("LIVENESS_OWNER", "").strip().lower() == "true"', "    return True"),
+
+    ("The live alarm takes the nightly's marker, so each cancels the other's", LIVE_POSTER, "live",
+     '    return f"live-liveness:{platform}:{environment}"', '    return f"nightly-liveness:{platform}"'),
+
+    ("Both environments share one alarm, so sandbox going quiet is masked by qa", LIVE_POSTER, "live",
+     '    return f"live-liveness:{platform}:{environment}"', '    return f"live-liveness:{platform}"'),
+
+    # Distinct per environment and still containing the nightly's marker, so only the cross-reporter check
+    # catches it. The sweep matches markers as substrings, so a live run would delete the nightly's alarm.
+    ("The live marker contains the nightly's, so a live run deletes its alarm", LIVE_POSTER, "live",
+     '    return f"live-liveness:{platform}:{environment}"',
+     '    return f"nightly-liveness:{platform}:{environment}"'),
+
+    ("The live workflow stops naming the alarm's owner, so no run ever arms it", LIVE_FLOWS, "workflows",
+     "          LIVENESS_OWNER: ${{ github.event_name == 'schedule'",
+     "          LIVENESS_OWNER_DISABLED: ${{ github.event_name == 'schedule'"),
+
+    # Either condition rather than both. A dispatch on the default branch then owns the alarm and pushes it
+    # out, so a schedule that has already stopped stays masked for as long as anyone keeps dispatching.
+    ("Any default-branch run owns the live alarm, not only a scheduled one", LIVE_FLOWS, "workflows",
+     "github.event_name == 'schedule' && github.ref_name",
+     "github.event_name == 'schedule' || github.ref_name"),
+
+    ("Any default-branch run owns the nightly alarm, not only a scheduled one", NIGHTLY, "workflows",
+     "github.event_name == 'schedule' && github.ref_name",
+     "github.event_name == 'schedule' || github.ref_name"),
+
+    # The operator carries the whole meaning, and inverting it reads as a typo rather than as a change of
+    # policy: every run that is not the scheduled one would then own the alarm.
+    ("The live alarm is owned by every run except the scheduled one", LIVE_FLOWS, "workflows",
+     "github.event_name == 'schedule' && github.ref_name ==",
+     "github.event_name != 'schedule' && github.ref_name !="),
+
+    ("The nightly alarm is owned by every run except the scheduled one", NIGHTLY, "workflows",
+     "github.event_name == 'schedule' && github.ref_name ==",
+     "github.event_name != 'schedule' && github.ref_name !="),
+
+    ("A green dispatch resets the live alarm, masking a schedule that has stopped", LIVE_POSTER, "live",
+     "    if not red and not owns_liveness_switch():", "    if False:"),
+
+    # The alarm that fires is the only thing a responder sees, and it fires a day after anyone could have
+    # noticed. Naming the wrong suite in it sends them to a nightly that never stopped.
+    ("The live alarm keeps the default subject, so it announces the nightly instead", LIVE_POSTER, "live",
+     '    subject = f"live flows ({environment})"', '    subject = "nightly"'),
+
+    # The filter decides whether any of the above ever runs on the file it is about. Dropping a workflow from
+    # it leaves every assertion in place and none of them reachable by the change that breaks them.
+    # Anchored through the trailing `push:` because the two blocks are identical, and a mutation that
+    # matched both would be testing something else.
+    ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/nightly.yml'\n  push:",
+     "      - '.github/workflows/nightly-disabled.yml'\n  push:"),
+
+    ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n  push:",
+     "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n  push:"),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
