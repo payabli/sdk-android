@@ -95,20 +95,22 @@ class PayInFormDraftTest {
     }
 
     @Test
-    fun clearingTakesEverythingAndTheFormStillWorksAfterwards() {
+    fun clearingTakesEverythingAndStartsTheFormAgainAfterwards() {
         draft.seed(configuration)
-        draft.enter(PayInField.CardholderName, "Ada Lovelace")
+        draft.switchTo(PayInMethodType.BankAccount, configuration)
+        draft.enter(PayInField.AccountHolder, "Ada Lovelace")
         draft.submissionPending = true
 
         draft.clear()
         assertTrue(draft.typed.isEmpty())
         assertFalse(draft.submissionPending)
 
-        // The same configuration as before, so a draft that only compared it would treat this as the
-        // composition it was already showing and never start the emptied form again.
+        // The instrument, because it is the only thing here that separates a seed that ran from one that
+        // did not. The configuration is the one already seeded from, so a clear that kept what it was
+        // started from leaves the payer's bank tab standing; entering a value instead would work either
+        // way and prove nothing.
         draft.seed(configuration)
-        draft.enter(PayInField.CardholderName, "Grace Hopper")
-        assertEquals("Grace Hopper", draft.typed[PayInField.CardholderName])
+        assertEquals(PayInMethodType.Card, draft.method)
     }
 
     @Test
