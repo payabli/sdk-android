@@ -26,7 +26,6 @@ fun PaymentFormHost(
     onCompleted: (PayInOutcome.Approved) -> Unit,
     onFailed: (PayInOutcome.Refused) -> Unit,
     modifier: Modifier = Modifier,
-    initialValues: PayInFormSeed? = null,
     onMethodChanged: (PayInMethod) -> Unit = {},
 ) {
     PayabliPayInForm(
@@ -35,7 +34,6 @@ fun PaymentFormHost(
         configuration = setup.configuration,
         modifier = modifier,
         labels = setup.labels,
-        initialValues = initialValues?.values,
         onCompleted = { onCompleted(it.toOutcome()) },
         onFailed = { onFailed(it.toOutcome()) },
         onMethodChanged = { onMethodChanged(it.asMethod()) },
