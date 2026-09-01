@@ -2,6 +2,7 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -28,7 +29,7 @@ class PayInPrefillTest {
     @Test
     fun `every field the demo asks a payer to type has a value`() {
         setups.forEach { (screen, setup) ->
-            PayInMethod.entries.forEach { method ->
+            PayInMethodType.entries.forEach { method ->
                 typedFields(setup, method).filterNot { it in PICKED_BY_HAND }.forEach { field ->
                     assertTrue(
                         "$screen asks for $field as $method and the prefill leaves it empty",
@@ -63,11 +64,11 @@ class PayInPrefillTest {
     /** The fields a payer types into, which is every section that is not read back to them. */
     private fun typedFields(
         setup: PayInFormSetup,
-        method: PayInMethod,
+        method: PayInMethodType,
     ): List<PayInField> =
         when (method) {
-            PayInMethod.Card -> setup.configuration.cardSections
-            PayInMethod.BankAccount -> setup.configuration.bankSections
+            PayInMethodType.Card -> setup.configuration.cardSections
+            PayInMethodType.BankAccount -> setup.configuration.bankSections
         }.filter { it.style == PayInSectionStyle.Inputs }
             .flatMap { it.fields }
 

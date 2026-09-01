@@ -26,7 +26,6 @@ fun PaymentFormHost(
     onCompleted: (PayInOutcome.Approved) -> Unit,
     onFailed: (PayInOutcome.Refused) -> Unit,
     modifier: Modifier = Modifier,
-    onMethodChanged: (PayInMethod) -> Unit = {},
 ) {
     PayabliPayInForm(
         flow = flow.flow,
@@ -36,6 +35,8 @@ fun PaymentFormHost(
         labels = setup.labels,
         onCompleted = { onCompleted(it.toOutcome()) },
         onFailed = { onFailed(it.toOutcome()) },
-        onMethodChanged = { onMethodChanged(it.asMethod()) },
+        // Nothing here follows the instrument on screen: the form fills its own boxes and submits them, and
+        // no screen in this app asks which tab the payer is on.
+        onMethodChanged = {},
     )
 }
