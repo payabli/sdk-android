@@ -41,6 +41,18 @@ class PayInPrefillTest {
     }
 
     @Test
+    fun `every field the prefill carries has a label to find its box by`() {
+        // The values and the labels are two tables, and the fill needs both: a field in one and not the
+        // other compiles, and the tap is where it would otherwise be found.
+        values.keys.forEach { field ->
+            assertTrue(
+                "the prefill carries $field and no label to find its box by",
+                runCatching { field.labelResource }.isSuccess,
+            )
+        }
+    }
+
+    @Test
     fun `the two controls a payer picks from carry no value`() {
         // Not an omission. Neither is a text box, and a box is the only thing the prefill can write to, so a
         // value here would be one the button silently fails to apply.

@@ -66,7 +66,7 @@ private fun SemanticsNode.isNamed(label: String): Boolean {
  * names has to be what is on screen, which holds while the demo passes no field labels of its own.
  */
 @get:StringRes
-private val PayInField.labelResource: Int
+internal val PayInField.labelResource: Int
     get() =
         when (this) {
             PayInField.CardholderName -> PayInR.string.payabli_payin_field_cardholder_name
@@ -80,8 +80,9 @@ private val PayInField.labelResource: Int
             PayInField.LastName -> PayInR.string.payabli_payin_field_last_name
             PayInField.CustomerNumber -> PayInR.string.payabli_payin_field_customer_number
             PayInField.BillingEmail -> PayInR.string.payabli_payin_field_billing_email
-            // Picked rather than typed, or not a box this app fills. Exhaustive, so a field added to
-            // PayInPrefill with no label here fails to compile instead of filling nothing.
+            // Picked rather than typed, or not a box this app fills. The branch is exhaustive, so a field
+            // added to PayInField stops this compiling. A field added to PayInPrefill and left here does
+            // compile and throws at the tap, which is what PayInPrefillTest turns into a test failure.
             PayInField.CardExpiration,
             PayInField.AccountType,
             PayInField.AccountHolderType,
