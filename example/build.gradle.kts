@@ -184,6 +184,17 @@ android {
             variant.enable = false
         }
     }
+    // The card reader's kernel is refused when its native library is page-mapped from the APK rather
+    // than unpacked at install: Fiserv's signing step rejects the artifact outright. This is what sets
+    // `android:extractNativeLibs="true"` on the merged manifest, and it has to be set by the module that
+    // builds the APK. Declaring it in :taptopay's manifest does nothing, measured: AGP resolves the
+    // attribute at packaging time from this value and overwrote a library-supplied `true` with `false`.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
