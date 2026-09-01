@@ -1,7 +1,9 @@
 package com.payabli.example.app
 
-import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -17,6 +19,8 @@ import com.payabli.example.app.demo.ui.nav.PayabliDemoNavHost
 import com.payabli.example.app.demo.ui.nav.TopLevelDestination
 import com.payabli.example.app.demo.ui.theme.PayabliDemoTheme
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -76,16 +80,45 @@ class PrefillButtonTest {
     }
 
     @Test
-    fun theButtonFillsTheBoxesTheFormDraws() {
+    fun everyBoxTheCardFormDrawsIsFilled() {
+        // Every box rather than a sample of them. The fill matches each field by the label it is drawn with
+        // and skips a field it cannot find, so a mapping that loses an entry fills one box fewer and says
+        // nothing. Asserting two of them leaves the rest free to stop working.
         openTheForm()
 
         prefill()
 
-        // The card as the field writes it, so a value that reached the box without going through the field's
-        // own formatting fails here. And this device's own last name, which is what makes the rows a run
-        // produces attributable, read off the form rather than off the identity.
+        val identity = container.sampleIdentity
+        // The card as the field draws it. The box holds the digits and the grouping is drawn over them, so
+        // this is what says the value went through the field's own formatting rather than around it.
         awaitExists(GROUPED_PAN)
-        compose.onNodeWithText(container.sampleIdentity.lastName).performScrollTo().assertIsDisplayed()
+        assertFilledWith("Card number", "4111111111111111")
+        assertFilledWith("Name on card", identity.holderName)
+        assertFilledWith("Postal code", "22039")
+        assertFilledWith("First name", identity.firstName)
+        assertFilledWith("Last name", identity.lastName)
+        assertFilledWith("Billing email", identity.billingEmail)
+        // Obscured as it is typed, so what it holds is not readable off the screen and only that it holds
+        // something can be asserted.
+        assertFilled("CVV")
+    }
+
+    @Test
+    fun everyBoxTheBankFormDrawsIsFilled() {
+        // The other instrument. Its three own fields are filled by the same mapping and no card test reaches
+        // them, so without this half of the mapping is unasserted.
+        openTheForm()
+        chooseTheBankAccount()
+
+        prefill()
+
+        val identity = container.sampleIdentity
+        assertFilledWith("Account holder", identity.holderName)
+        assertFilledWith("Routing number", "121000248")
+        assertFilledWith("First name", identity.firstName)
+        assertFilledWith("Last name", identity.lastName)
+        assertFilledWith("Billing email", identity.billingEmail)
+        assertFilled("Account number")
     }
 
     @Test
@@ -139,6 +172,34 @@ class PrefillButtonTest {
         compose.onNodeWithText(PREFILL).performScrollTo().performClick()
         compose.waitForIdle()
     }
+
+    /**
+     * The bank tab, waited for by the section it draws.
+     *
+     * By the section title rather than by a field: the fill reads the boxes that are on screen, so running it
+     * before the bank form has composed finds the card's.
+     */
+    private fun chooseTheBankAccount() {
+        compose.onNodeWithText("Bank account").performScrollTo().performClick()
+        awaitExists("ACH Information")
+    }
+
+    /** What a box holds, read off the field rather than off the screen, so an obscured one still answers. */
+    private fun typedInto(label: String): String {
+        val node = compose.onNode(hasSetTextAction() and hasText(label)).fetchSemanticsNode()
+        // Two properties, because which one carries a text field's value has changed across Compose versions
+        // and a null read here would pass as an empty box.
+        return node.config.getOrNull(SemanticsProperties.InputText)?.text
+            ?: node.config.getOrNull(SemanticsProperties.EditableText)?.text
+            ?: error("$label carries neither InputText nor EditableText, so nothing here reads its value")
+    }
+
+    private fun assertFilled(label: String) = assertTrue("the prefill left $label empty", typedInto(label).isNotBlank())
+
+    private fun assertFilledWith(
+        label: String,
+        value: String,
+    ) = assertEquals("the prefill put the wrong value in $label", value, typedInto(label))
 
     private fun awaitExists(text: String) {
         compose.waitUntil(timeoutMillis = APPEARS_WITHIN_MILLIS) {
