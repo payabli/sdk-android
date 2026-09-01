@@ -5,6 +5,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -120,6 +121,7 @@ class SampleWalkthroughTest {
         openTheForm(TopLevelDestination.PaymentMethod, submit = SAVE)
 
         prefill()
+        pickTheExpiry()
         submit(SAVE)
 
         awaitOutcome("Payment method saved")
@@ -131,6 +133,7 @@ class SampleWalkthroughTest {
 
         chooseTheBankAccount()
         prefill()
+        pickTheAccountType()
         submit(SAVE)
 
         awaitOutcome("Payment method saved")
@@ -150,6 +153,7 @@ class SampleWalkthroughTest {
         compose.onNodeWithText("Total").performScrollTo().assertIsDisplayed()
 
         prefill()
+        pickTheExpiry()
         submit(CAPTURE)
 
         awaitOutcome("Payment submitted")
@@ -161,6 +165,7 @@ class SampleWalkthroughTest {
 
         chooseTheBankAccount()
         prefill()
+        pickTheAccountType()
         submit(CAPTURE)
 
         awaitOutcome("Payment submitted")
@@ -191,10 +196,8 @@ class SampleWalkthroughTest {
     /**
      * The instrument the form is on, which the prefill then fills.
      *
-     * Waited for by a bank-only field. The prefill fills the method the form last reported it was on, and that
-     * report arrives a frame after the tap: prefilled too early, the card values are seeded into a bank form,
-     * every bank field stays empty and the form refuses itself. Three of four devices lost that race and the
-     * fastest one won it, which is what a missing wait looks like.
+     * Waited for by a bank-only field, because the prefill fills the boxes that are on screen: run before the
+     * bank form has composed, it finds the card's boxes and the bank fields stay empty.
      */
     private fun chooseTheBankAccount() {
         compose.onNodeWithText("Bank account").performScrollTo().performClick()
@@ -209,6 +212,27 @@ class SampleWalkthroughTest {
         // the form rather than off the identity, so a prefill that reached nothing fails here instead of at the
         // service. Not by field name: a filled box floats its label and drops the description a name matches.
         awaitExists(container.sampleIdentity.lastName, COMPOSES_WITHIN_MILLIS)
+    }
+
+    /**
+     * The card expiry, which the prefill does not fill.
+     *
+     * It is chosen from a dialog and there is no text to set on it, so a payer picks it and so does this. The
+     * dialog opens on a month that has not passed, which is why confirming it without choosing a row is enough.
+     */
+    private fun pickTheExpiry() {
+        compose.onNodeWithContentDescription("Choose an expiry").performScrollTo().performClick()
+        compose.onNodeWithText("Done").performClick()
+        // The dialog's own title, gone once it closes. Waiting on the field instead would need the month it
+        // defaulted to, which is today's and belongs to the device rather than to this test.
+        compose.waitUntil(COMPOSES_WITHIN_MILLIS) { nodesWith("Choose an expiry").isEmpty() }
+    }
+
+    /** The account type, which the prefill does not fill either: a menu rather than a box. */
+    private fun pickTheAccountType() {
+        compose.onNodeWithText("Account type").performScrollTo().performClick()
+        compose.onNodeWithText("Checking").performClick()
+        awaitExists("Checking", COMPOSES_WITHIN_MILLIS)
     }
 
     /** Scrolled to first: the button sits below the fold, so a bare click asserts against nothing. */

@@ -13,14 +13,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.demo.flow.FlowStep
 import com.payabli.example.app.demo.flow.StepStatus
@@ -37,13 +33,11 @@ import com.payabli.example.app.demo.ui.components.StepRow
 import com.payabli.example.app.demo.ui.components.TokenCheckStep
 import com.payabli.example.app.demo.ui.theme.Dimens
 import com.payabli.example.app.sdk.PayInFlowHandle
-import com.payabli.example.app.sdk.PayInFormSeed
 import com.payabli.example.app.sdk.PayInFormSetup
-import com.payabli.example.app.sdk.PayInMethod
 import com.payabli.example.app.sdk.PayInOperation
 import com.payabli.example.app.sdk.PayInOutcome
-import com.payabli.example.app.sdk.PayInPrefill
 import com.payabli.example.app.sdk.PaymentFormHost
+import com.payabli.example.app.sdk.fillTestData
 
 /**
  * What the two card-not-present screens have in common, which is everything but their wording.
@@ -69,7 +63,7 @@ interface PaymentFlowUiState {
     val diagnosticsEnabled: Boolean
     val isSheetOpen: Boolean
 
-    /** Offers the button that fills the form with [PayInPrefill]'s values. */
+    /** Offers the button that fills the form with test values. */
     val prefillEnabled: Boolean
 
     /** The device the prefill fills the form as. */
@@ -118,17 +112,6 @@ fun PaymentFlowScreen(
     // past the control it qualifies and a payer can submit without having scrolled to it.
     formHeader: @Composable () -> Unit = {},
 ) {
-    // The screen's own, not the app's: it exists to save typing during a demo run, and no screen below reads it.
-    var prefilled by remember { mutableStateOf<PayInFormSeed?>(null) }
-
-    // Bumped on every tap and used as the form's `key`. `initialValues` is compared by value, so seeding the
-    // same set twice is not a change and the form keeps what the payer has since edited: the button then does
-    // nothing on its second tap. A new key composes a new form, which starts from the seed again.
-    var prefills by remember { mutableIntStateOf(0) }
-
-    // Which instrument the form is on, which the form reports whenever the payer switches tabs. The card and
-    // the bank account take different fields, so the button has to fill the one on screen.
-    var method by remember { mutableStateOf(state.setup.startingMethod) }
     val offersPrefill = BuildConfig.DEBUG && state.prefillEnabled
 
     DemoScreen(title = title, modifier = modifier) {
@@ -159,31 +142,21 @@ fun PaymentFlowScreen(
                     enabled = !isSubmitting,
                 )
                 if (offersPrefill) {
-                    BorderedButton(
-                        text = "Prefill test data (Debug)",
-                        icon = DemoIcons.Prefill,
-                        onClick = {
-                            prefilled = PayInPrefill.valuesFor(method, state.sampleIdentity)
-                            prefills++
-                        },
-                        enabled = !isSubmitting,
-                        contentColor = MaterialTheme.colorScheme.tertiary,
+                    PrefillButton(
+                        identity = state.sampleIdentity,
+                        enabled = !isSubmitting && flow != null,
                     )
                 }
                 // Only once the session exists. Until then the step above is what the screen offers.
                 flow?.let { payments ->
                     formHeader()
-                    key(prefills) {
-                        PaymentFormHost(
-                            setup = state.setup,
-                            flow = payments,
-                            operation = operation,
-                            initialValues = prefilled,
-                            onCompleted = actions.onCompleted,
-                            onFailed = actions.onFailed,
-                            onMethodChanged = { method = it },
-                        )
-                    }
+                    PaymentFormHost(
+                        setup = state.setup,
+                        flow = payments,
+                        operation = operation,
+                        onCompleted = actions.onCompleted,
+                        onFailed = actions.onFailed,
+                    )
                 }
             }
         }
@@ -210,10 +183,8 @@ fun PaymentFlowScreen(
             actions = actions,
             flow = flow,
             operation = operation,
-            initialValues = prefilled,
-            formKey = prefills,
             isSubmitting = isSubmitting,
-            onMethodChanged = { method = it },
+            offersPrefill = offersPrefill,
             formHeader = formHeader,
         )
     }
@@ -231,10 +202,8 @@ private fun FormSheet(
     actions: PaymentFlowActions,
     flow: PayInFlowHandle?,
     operation: PayInOperation,
-    initialValues: PayInFormSeed?,
-    formKey: Int,
     isSubmitting: Boolean,
-    onMethodChanged: (PayInMethod) -> Unit,
+    offersPrefill: Boolean,
     formHeader: @Composable () -> Unit,
 ) {
     // Both halves, because a swipe and a back press take different routes to the same place:
@@ -269,19 +238,42 @@ private fun FormSheet(
         ) {
             // Only once the session exists. Until then the step above is what the screen offers.
             flow?.let { payments ->
-                formHeader()
-                key(formKey) {
-                    PaymentFormHost(
-                        setup = state.setup,
-                        flow = payments,
-                        operation = operation,
-                        initialValues = initialValues,
-                        onCompleted = actions.onCompleted,
-                        onFailed = actions.onFailed,
-                        onMethodChanged = onMethodChanged,
-                    )
+                // Without this the sheet has no prefill at all: the screen's button is behind it, and the
+                // fill reaches the composition it is drawn in.
+                if (offersPrefill) {
+                    PrefillButton(identity = state.sampleIdentity, enabled = !isSubmitting)
                 }
+                formHeader()
+                PaymentFormHost(
+                    setup = state.setup,
+                    flow = payments,
+                    operation = operation,
+                    onCompleted = actions.onCompleted,
+                    onFailed = actions.onFailed,
+                )
             }
         }
     }
+}
+
+/**
+ * Fills the form's boxes, so a demo run is one tap instead of eight fields. Debug builds only.
+ *
+ * It fills the composition it is drawn in, which is why the sheet needs one of these of its own.
+ *
+ * The expiry and the account type are pickers rather than boxes and are chosen by hand afterwards.
+ */
+@Composable
+private fun PrefillButton(
+    identity: SampleIdentity,
+    enabled: Boolean,
+) {
+    val view = LocalView.current
+    BorderedButton(
+        text = "Prefill test data (Debug)",
+        icon = DemoIcons.Prefill,
+        onClick = { fillTestData(view, identity) },
+        enabled = enabled,
+        contentColor = MaterialTheme.colorScheme.tertiary,
+    )
 }

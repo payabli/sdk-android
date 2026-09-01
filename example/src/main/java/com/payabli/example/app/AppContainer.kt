@@ -145,13 +145,23 @@ class AppContainer(
      *
      * Neither value names anything real: they stand in for build settings so the sequence can be driven,
      * and the entry point is one no paypoint carries.
+     *
+     * The prefill is taken on the same terms, so a test of the button does not need the build property that
+     * offers it and does not report a skip on every ordinary run for want of one. It defaults to what the
+     * build configured, so a caller that does not name it changes nothing.
      */
     @VisibleForTesting
     fun applyTestConfiguration(
         entryPoint: String,
         environment: DemoEnvironment,
+        prefillEnabled: Boolean = configuration.prefillEnabled,
     ) {
-        configuration = configuration.copy(entryPoint = entryPoint, environmentSetting = environment.label)
+        configuration =
+            configuration.copy(
+                entryPoint = entryPoint,
+                environmentSetting = environment.label,
+                prefillEnabled = prefillEnabled,
+            )
     }
 
     private fun resolveTokenServer(launchOverride: String?): TokenServerTarget =
