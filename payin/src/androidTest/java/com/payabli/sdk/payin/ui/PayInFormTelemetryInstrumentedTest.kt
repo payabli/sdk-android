@@ -32,8 +32,8 @@ import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.APPROVED_TRANSACTION
+import com.payabli.sdk.payin.payment.PayInPaymentFlow
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import com.payabli.sdk.payin.payment.TEST_ENTRY_POINT
 import com.payabli.sdk.payin.payment.testOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -324,7 +324,7 @@ class PayInFormTelemetryInstrumentedTest {
     private fun aFlow(
         transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION),
         telemetry: TelemetrySessionContext? = null,
-    ) = PayabliPayInPaymentFlow(
+    ) = PayInPaymentFlow(
         transport = transport,
         entryPoint = TEST_ENTRY_POINT,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
@@ -337,12 +337,12 @@ class PayInFormTelemetryInstrumentedTest {
         transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION),
         operation: State<PayabliPayInOperation> = mutableStateOf(PayabliPayInOperation.Capture(testOptions())),
         telemetry: TelemetrySessionContext? = null,
-        flow: State<PayabliPayInPaymentFlow> = mutableStateOf(aFlow(transport, telemetry)),
+        flow: State<PayInPaymentFlow> = mutableStateOf(aFlow(transport, telemetry)),
     ) {
         rule.setContent {
             MaterialTheme {
                 PayabliPayInForm(
-                    flow = flow.value,
+                    payIn = flow.value,
                     operation = operation.value,
                     configuration = bankForm(),
                     onCompleted = {},

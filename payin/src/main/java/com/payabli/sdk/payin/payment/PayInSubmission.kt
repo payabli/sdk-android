@@ -111,9 +111,20 @@ internal class PayInSubmission(
         entryPoint: String,
         request: PayInAuthorizedRequest,
     ): PayInSubmissionState? =
-        perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint) { retry ->
+        perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint, publishes = false) { retry ->
             val key = retry.reserve(request.idempotencyKey)
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
+        }
+
+    /** Reverses a transaction. Reads no form, and takes only what identifies the transaction. */
+    suspend fun void(
+        entryPoint: String,
+        transId: String,
+        idempotencyKey: String?,
+    ): PayInSubmissionState? =
+        perform(TelemetryEvents.PAYIN_VOID_COMPLETED, entryPoint, publishes = false) { retry ->
+            val key = retry.reserve(idempotencyKey)
+            PayInSubmissionState.Succeeded.Payment(moneyIn.void(transId, key))
         }
 
     /**
@@ -135,11 +146,17 @@ internal class PayInSubmission(
      *
      * On [dispatcher], because building the body encodes JSON and walks buffers before the transport is reached,
      * and the caller's scope on a payment screen is the main thread.
+     *
+     * [publishes] is false for an operation nothing is drawing. [state] belongs to the form: it holds a terminal
+     * outcome until the form has delivered it, and an operation the form did not start has no one to deliver to,
+     * so publishing there would strand an outcome that only `consume` clears. Such a caller has the return value
+     * instead. The single flight is still shared, so a void cannot run beside a submission in either order.
      */
     private suspend fun perform(
         event: String,
         entryPoint: String? = null,
         onReserved: (Boolean) -> Unit = {},
+        publishes: Boolean = true,
         call: suspend (RetryKey) -> PayInSubmissionState,
     ): PayInSubmissionState? {
         // Answered before the first suspension, so a caller starting this undispatched learns whether the single
@@ -153,8 +170,10 @@ internal class PayInSubmission(
             return null
         }
         // Starting here would overwrite an outcome nothing has read yet, and a taken payment would leave no
-        // record of itself. `reset` is what clears the way.
-        if (sink.value != PayInSubmissionState.Idle) {
+        // record of itself. `reset` is what clears the way. Only for a caller that publishes: one that does
+        // not cannot overwrite anything, and gating it on the form's state is what would make two headless
+        // calls in a row impossible.
+        if (publishes && sink.value != PayInSubmissionState.Idle) {
             inFlight.unlock()
             onReserved(false)
             logger.debug(LogField.safe("event", "payin_submission_outcome_unacknowledged")) {
@@ -166,7 +185,7 @@ internal class PayInSubmission(
         onReserved(true)
         val retry = RetryKey()
         val startedAt = System.nanoTime()
-        sink.value = PayInSubmissionState.Submitting
+        if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
         try {
             outcome = withContext(dispatcher) { call(retry) }
@@ -181,7 +200,7 @@ internal class PayInSubmission(
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
             outcome?.let {
-                sink.value = it
+                if (publishes) sink.value = it
                 report(event, outcomeOf(it), codeOf(it), startedAt, entryPoint)
             }
             inFlight.unlock()

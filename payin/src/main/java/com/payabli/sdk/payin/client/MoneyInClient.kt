@@ -23,7 +23,7 @@ import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.serialization.SerializationException
 
 /**
- * The three MoneyIn transaction calls: capture, authorize, and capture an authorization.
+ * The MoneyIn transaction calls: capture, authorize, capture an authorization, and void.
  *
  * Takes a transport, so the bearer, the one 401 recovery and the replay rule all belong to the session's
  * authenticated transport. No access-token callback: one token path, and one place for a credential to be
@@ -123,6 +123,29 @@ internal class MoneyInClient(
                 headers = payInHeaders { idempotencyKey(idempotencyKey) },
             )
         return read(PayInRoutes.CAPTURE_AUTHORIZED, transport.execute(payabliRequest))
+    }
+
+    /**
+     * Reverses a transaction the service will still reverse.
+     *
+     * No body: the route carries the identifier in its path and takes nothing else, so there is no partial
+     * void. Which states can be reversed is the service's to decide and is not mirrored here; a state it
+     * refuses arrives as the refusal it sent.
+     */
+    suspend fun void(
+        transId: String,
+        idempotencyKey: String? = null,
+    ): PayInResult {
+        PayInValidation.transId(transId)
+
+        val payabliRequest =
+            PayabliRequest(
+                method = HttpMethod.POST,
+                path = PayInRoutes.void(transId.trim()),
+                route = PayInRoutes.VOID,
+                headers = payInHeaders { idempotencyKey(idempotencyKey) },
+            )
+        return read(PayInRoutes.VOID, transport.execute(payabliRequest))
     }
 
     private fun validate(
@@ -232,7 +255,13 @@ internal class MoneyInClient(
             LogField.safe("route", route),
             LogField.safe("statusCode", response.statusCode),
         ) { "the transaction call succeeded" }
-        return PayInResult(code = envelope.code, transaction = envelope.payload?.toTransaction())
+        return PayInResult(
+            code = envelope.code,
+            reason = envelope.reason,
+            explanation = envelope.explanation,
+            action = envelope.action,
+            transaction = envelope.payload?.toTransaction(),
+        )
     }
 
     private fun undecodable(

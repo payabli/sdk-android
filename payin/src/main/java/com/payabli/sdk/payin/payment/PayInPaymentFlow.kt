@@ -4,6 +4,7 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
+import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.form.PayInFormDraft
@@ -25,33 +26,25 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * A payment form's submissions, for one entry point.
+ * The one implementation of [PayabliPayIn], and the only type in this module that knows both a session and a
+ * form exist: the form knows this and nothing under it, and the layers under it know nothing about a screen.
  *
- * The type a host holds, and the only one in this module that knows both a session and a form exist: the form
- * knows this and nothing under it, and the layers under it know nothing about a screen.
- *
- * **Hold one per screen, in whatever survives that screen's configuration changes** — a `ViewModel`, a
- * Decompose component, a presenter. [state] replays its latest value, so a collector arriving after a
- * rotation sees `Submitting` or the outcome rather than nothing.
+ * `internal`, so what a host can call is [PayabliPayIn]'s members and nothing else. The four members below
+ * that the form reaches are the reason this type exists separately: they are how a composition drives a
+ * submission, and none of them is an operation a host performs.
  *
  * **[scope] is the host's**, and cancelling it cancels a submission in flight. Canceling does not un-charge a
  * card, so whether a payment dies with a screen is the host's decision rather than this SDK's.
  *
- * @param session an initialized session, whose transport carries the bearer, the one 401 recovery and the
- *   replay rule. This type holds no credential and no token path of its own.
- * @param entryPoint the partner integration point every request here is sent to.
- * @param scope where a submission started by the form runs. `viewModelScope` is the ordinary answer: it
- *   outlives a configuration change, so an outcome still arrives after a rotation, and it is cancelled when
- *   the screen goes for good. A scope tied to the composition — `rememberCoroutineScope` — cancels on
- *   rotation and loses the outcome of a request that has already reached the service.
+ * The constructor parameters are documented on [PayabliPayIn.invoke], which is how a host reaches this.
  */
-public class PayabliPayInPaymentFlow private constructor(
+internal class PayInPaymentFlow private constructor(
     private val entryPoint: String,
     private val scope: CoroutineScope,
     private val submission: PayInSubmission,
     /** Built once here, from the session that created this flow, and handed to the form. */
     internal val reports: PayInFormReports,
-) {
+) : PayabliPayIn {
     /**
      * What the payer has entered, which lives here rather than in the form's composition.
      *
@@ -64,7 +57,7 @@ public class PayabliPayInPaymentFlow private constructor(
         scope.coroutineContext[Job]?.invokeOnCompletion { draft.clear() }
     }
 
-    public constructor(
+    constructor(
         session: PayabliSession,
         entryPoint: String,
         scope: CoroutineScope,
@@ -98,7 +91,7 @@ public class PayabliPayInPaymentFlow private constructor(
      * deliver an outcome. The form consumes it immediately afterwards, so nothing here has to be cleared by
      * whoever reads it.
      */
-    public val state: StateFlow<PayInSubmissionState> get() = submission.state
+    override val state: StateFlow<PayInSubmissionState> get() = submission.state
 
     /**
      * Consumes a terminal state, returning to [PayInSubmissionState.Idle].
@@ -139,7 +132,7 @@ public class PayabliPayInPaymentFlow private constructor(
     /**
      * Takes the payment, returning what the service said.
      *
-     * `internal` with the shape it will keep. The caller for these four is a host that draws its own form,
+     * `internal` with the shape it will keep. The caller for these three is a host that draws its own form,
      * and that integration mode is not exposed yet. `Result` rather than a thrown exception, because a
      * decline is an outcome a caller acts on rather than a defect, and suspend-returning-`Result` is the
      * shape the SDK blueprint fixes for a one-shot call.
@@ -165,9 +158,13 @@ public class PayabliPayInPaymentFlow private constructor(
             else -> Result.failure(outcome.asFailure())
         }
 
-    /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
-    internal suspend fun captureAuthorized(request: PayInAuthorizedRequest): Result<PayInResult> =
+    override suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult> =
         submission.captureAuthorized(entryPoint, request).asPayment()
+
+    override suspend fun voidTransaction(
+        transId: String,
+        idempotencyKey: String?,
+    ): Result<PayInResult> = submission.void(entryPoint, transId, idempotencyKey).asPayment()
 
     private suspend fun payment(
         operation: PayabliPayInOperation,

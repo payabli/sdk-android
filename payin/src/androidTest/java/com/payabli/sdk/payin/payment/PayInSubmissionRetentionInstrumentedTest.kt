@@ -49,8 +49,8 @@ class PayInSubmissionRetentionInstrumentedTest {
     class FlowHost(
         transport: PayabliTransport,
     ) : ViewModel() {
-        val payments: PayabliPayInPaymentFlow =
-            PayabliPayInPaymentFlow(
+        internal val payments: PayInPaymentFlow =
+            PayInPaymentFlow(
                 transport = transport,
                 entryPoint = TEST_ENTRY_POINT,
                 scope = viewModelScope,

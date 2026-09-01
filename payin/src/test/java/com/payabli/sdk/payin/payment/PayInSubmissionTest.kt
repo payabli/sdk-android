@@ -131,17 +131,96 @@ class PayInSubmissionTest {
         }
 
     @Test
-    fun `capturing an authorization reads no form and reports the transaction`() =
+    fun `capturing an authorization reads no form and answers with the transaction`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
             val submission = submissionOver(transport)
 
-            assertNotNull(
-                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails())),
-            )
+            val outcome =
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
 
             assertEquals("/api/v2/MoneyIn/capture/101-abc", transport.request?.path)
-            assertEquals("A0000", succeededPayment(submission).result.code)
+            // The return value, not the state: nothing draws this call, so it publishes nowhere.
+            assertEquals("A0000", (outcome as PayInSubmissionState.Succeeded.Payment).result.code)
+        }
+
+    @Test
+    fun `voiding reads no form and answers with the transaction`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val outcome = submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+
+            assertEquals("/api/v2/MoneyIn/void/101-abc", transport.request?.path)
+            assertEquals("A0000", (outcome as PayInSubmissionState.Succeeded.Payment).result.code)
+        }
+
+    /**
+     * The form's state is the form's.
+     *
+     * A terminal state stands until the form consumes it, and `consume` is not a host's to call, so an
+     * outcome published by a call nothing is drawing would strand the state at the first of them.
+     */
+    @Test
+    fun `neither headless call publishes anything to the state`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
+            assertEquals(PayInSubmissionState.Idle, submission.state.value)
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+            assertEquals(PayInSubmissionState.Idle, submission.state.value)
+        }
+
+    /** Both go out, which is what publishing nowhere buys: neither is refused by the other's outcome. */
+    @Test
+    fun `a void after a capture of an authorization both reach the wire`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
+            val second = submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+
+            assertNotNull(second)
+            assertEquals(2, transport.count)
+        }
+
+    /** The single flight is still shared, so a void cannot slip past a submission the form started. */
+    @Test
+    fun `a void while a form submission is in flight is refused and sends nothing`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val first = launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+            transport.arrived.await()
+
+            assertNull(submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null))
+
+            assertEquals("a request reached the wire twice", 1, transport.sent.size)
+            transport.release()
+            first.join()
+        }
+
+    /** And a form submission cannot start while a void holds the lock, which is the same guard the other way. */
+    @Test
+    fun `a form submission while a void is in flight is refused`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val voiding = launch { submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null) }
+            transport.arrived.await()
+
+            assertNull(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
+
+            assertEquals("a request reached the wire twice", 1, transport.sent.size)
+            transport.release()
+            voiding.join()
         }
 
     // --- one at a time ---

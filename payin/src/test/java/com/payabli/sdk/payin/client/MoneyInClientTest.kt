@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInCustomerData
@@ -313,6 +314,83 @@ class MoneyInClientTest {
                     .orEmpty()
                     .containsKey("idempotencyKey"),
             )
+        }
+
+    @Test
+    fun `voiding resolves the path, logs the template and sends no body`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingSdkLogger()).void("101-abc")
+
+            assertEquals("/api/v2/MoneyIn/void/101-abc", transport.request?.path)
+            // The template, because a resolved path embeds an identifier and is never loggable.
+            assertEquals("/api/v2/MoneyIn/void/{transId}", transport.request?.route)
+            // The route takes nothing but the identifier, so a body would be a field the service never reads.
+            assertNull(transport.request?.body)
+        }
+
+    @Test
+    fun `voiding carries an idempotency key when one is given`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingSdkLogger()).void("101-abc", idempotencyKey = "key-3")
+
+            assertEquals("key-3", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    @Test
+    fun `voiding sends no key when none is given`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            MoneyInClient(transport, RecordingSdkLogger()).void("101-abc")
+
+            assertFalse(
+                transport.request
+                    ?.headers
+                    .orEmpty()
+                    .containsKey("idempotencyKey"),
+            )
+        }
+
+    @Test
+    fun `voiding refuses a blank transaction id before anything is sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).void("  ") }
+                    .exceptionOrNull() as? PayInException.InvalidInput
+
+            assertEquals("transId", failure?.field)
+            assertNull(transport.request)
+        }
+
+    /**
+     * The state the service will not reverse, which is the answer this SDK passes through rather than
+     * predicting. A 400 is a validation refusal whatever the route, so the caller reads the service's own
+     * words off the typed failure.
+     */
+    @Test
+    fun `a refused void arrives as a typed failure carrying what the service said`() =
+        runTest(timeout = timeout) {
+            val transport =
+                FakePayInTransport.answering(
+                    """{"title":"Invalid transaction status","detail":"The status of the transaction """ +
+                        """does not allow the action requested.","code":"E7002",""" +
+                        """"errors":{"transId":["Invalid transaction status"]}}""",
+                    statusCode = 400,
+                )
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).void("101-abc") }
+                    .exceptionOrNull() as? PayabliValidationException
+
+            assertEquals("Invalid transaction status", failure?.reason)
+            assertEquals("E7002", failure?.rawCode)
+            assertEquals(400, failure?.httpStatus)
         }
 
     @Test

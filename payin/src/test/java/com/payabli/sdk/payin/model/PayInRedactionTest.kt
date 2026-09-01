@@ -118,7 +118,18 @@ class PayInRedactionTest {
 
     @Test
     fun `a result and a failure carry the code and not the prose`() {
-        assertEquals("PayInResult(code=A0000)", PayInResult("A0000", null).toString())
+        // The service text on an approval is displayable and never loggable, exactly as a failure's is, and
+        // an approval can echo what was submitted just as a refusal can.
+        val approval =
+            PayInResult(
+                code = "A0000",
+                reason = "Card $pan was approved",
+                explanation = "Card $pan cleared",
+                action = "None",
+                transaction = null,
+            )
+        assertEquals("PayInResult(code=A0000)", approval.toString())
+        assertFalse(approval.toString().contains(pan))
 
         val echoing = "Card $pan was refused"
         val failure = PayInFailure("D0001", echoing, "Try another card", "r", 200)
