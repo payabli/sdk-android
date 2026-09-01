@@ -187,6 +187,7 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
                         onCompleted = model::onCompleted,
                         onFailed = model::onFailed,
                         onStartOver = model::startOver,
+                        onVoid = model::voidLastTransaction,
                     ),
             )
         }

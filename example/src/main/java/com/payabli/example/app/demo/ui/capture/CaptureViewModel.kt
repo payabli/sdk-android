@@ -62,8 +62,25 @@ data class CaptureUiState(
     val payments: PayInFlowHandle? = null,
     /** A capture of [amount], carrying the key that makes a repeat safe. */
     val operation: PayInOperation,
+    /**
+     * A void is in flight.
+     *
+     * Its own flag rather than the flow's state: the SDK publishes a void nowhere, because nothing is
+     * drawing it, so `payments.isSubmitting()` stays false throughout one.
+     */
+    override val isVoiding: Boolean = false,
+    /** The transaction this screen has already reversed, so the control cannot offer it twice. */
+    val voidedTransactionId: String? = null,
 ) : PaymentFlowUiState {
     override val finished: Boolean get() = lastResult != null
+
+    /** The transaction a void would name, once there is one and it has not already been reversed. */
+    override val voidableTransactionId: String?
+        get() =
+            lastResult
+                ?.transaction
+                ?.paymentTransactionId
+                ?.takeIf { it != voidedTransactionId }
 }
 
 /**
@@ -246,6 +263,59 @@ class CaptureViewModel(
         }
     }
 
+    /**
+     * Reverses the transaction the last capture returned.
+     *
+     * Reads the id off the state rather than taking one, so the control cannot name a transaction the screen
+     * is not showing. The result replaces the panel's text: a void is what the screen last did, and leaving
+     * the capture's text under a reversed transaction is the screen disagreeing with the service.
+     *
+     * [CaptureUiState.lastResult] is left standing on success, so the identifiers stay on screen and the
+     * result step keeps its shape. What stops a second void is [CaptureUiState.voidedTransactionId].
+     */
+    fun voidLastTransaction() {
+        if (_uiState.value.isVoiding) return
+        val payments = _uiState.value.payments ?: return
+        val transId = _uiState.value.voidableTransactionId ?: return
+        _uiState.update { it.copy(isVoiding = true) }
+        viewModelScope.launch {
+            val outcome =
+                try {
+                    payments.voidTransaction(transId)
+                } catch (cancellation: CancellationException) {
+                    // The flag is cleared on the way out, or the control never comes back.
+                    _uiState.update { it.copy(isVoiding = false) }
+                    throw cancellation
+                }
+            when (outcome) {
+                is PayInOutcome.Approved -> {
+                    record("RESPONSE void\ncode=${outcome.result.code}")
+                    _uiState.update {
+                        it.copy(
+                            isVoiding = false,
+                            voidedTransactionId = transId,
+                            resultText =
+                                listOfNotNull(
+                                    "✓ Voided: ${outcome.result.code}",
+                                    outcome.result.reason?.let { reason -> "Reason: $reason" },
+                                    "Payment transaction: $transId",
+                                ).joinToString("\n"),
+                        )
+                    }
+                }
+
+                is PayInOutcome.Refused -> {
+                    record("ERROR void\n${outcome.diagnostic}")
+                    // The transaction is not recorded as voided: the service refused, so it still stands and
+                    // the control stays available.
+                    _uiState.update {
+                        it.copy(isVoiding = false, resultText = "✗ ${outcome.error.displayMessage}")
+                    }
+                }
+            }
+        }
+    }
+
     /** Records only when diagnostics are on, so the setting governs what is kept and not only what is shown. */
     private fun record(line: String) {
         if (diagnosticsEnabled) diagnostics.record(line)
@@ -275,6 +345,8 @@ class CaptureViewModel(
                 setup = attempt.setup,
                 amount = attempt.amount,
                 operation = attempt.operation,
+                // The next payment is a different transaction, so what was reversed is no longer the question.
+                voidedTransactionId = null,
             )
         }
 

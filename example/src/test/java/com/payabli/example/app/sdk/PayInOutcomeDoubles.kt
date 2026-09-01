@@ -35,6 +35,9 @@ internal fun capturedPaymentOutcome() =
         .Payment(
             PayInResult(
                 code = "A0000",
+                reason = "Approved",
+                explanation = null,
+                action = null,
                 transaction =
                     PayInTransaction(
                         paymentTransId = "101-abc",
@@ -69,7 +72,7 @@ internal fun refusedOutcome() =
 /**
  * A step one that already succeeded, for tests about what a screen does afterwards.
  *
- * `payments` is null: a JVM test cannot build a `PayabliPayInPaymentFlow`, whose test constructor is internal
+ * `payments` is null: a JVM test cannot build a `PayabliPayIn`, whose implementation's test constructor is internal
  * to `:payin`. Nothing that uses this submits, so the outcomes are handed to the view model directly.
  */
 internal fun readyStartup() =

@@ -223,7 +223,7 @@ class TokenGateTest {
      * The real step one against [target], with the SDK half stubbed as unavailable.
      *
      * The token probe is what this file is about, and it still runs for real. The half after it cannot: a JVM
-     * test has no way to build a `PayabliPayInPaymentFlow`, whose test constructor is internal to `:payin`.
+     * test has no way to build a `PayabliPayIn`, whose implementation's test constructor is internal to `:payin`.
      * So `isReady` is false in every case here, and the assertions below read the text and the busy flag.
      * Readiness means "the token arrived **and** the SDK started", and only the on-device tier can produce the
      * second half.

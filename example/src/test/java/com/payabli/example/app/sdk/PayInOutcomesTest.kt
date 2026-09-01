@@ -66,7 +66,11 @@ class PayInOutcomesTest {
     fun `an approval with no transaction leaves the transaction empty and still carries the code`() {
         // What the capture screen reads to call an approval a failure. A fabricated empty transaction here
         // would have it announce a captured payment against a response that named none.
-        val result = PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", null)).toPaymentResult()
+        val result =
+            PayInSubmissionState.Succeeded
+                .Payment(
+                    PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+                ).toPaymentResult()
 
         assertNull(result.transaction)
         assertEquals("A0000", result.code)
@@ -188,6 +192,9 @@ class PayInOutcomesTest {
     ) = PayInSubmissionState.Succeeded.Payment(
         PayInResult(
             code = "A0000",
+            reason = "Approved",
+            explanation = null,
+            action = null,
             transaction =
                 PayInTransaction(
                     paymentTransId = "101-abc",

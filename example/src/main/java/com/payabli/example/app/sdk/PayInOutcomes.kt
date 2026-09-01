@@ -27,10 +27,10 @@ internal fun PayInSubmissionState.Succeeded.toPaymentResult(): PaymentResult =
         is PayInSubmissionState.Succeeded.Method -> storedMethod.toPaymentResult()
     }
 
-private fun PayInResult.toPaymentResult(): PaymentResult =
+internal fun PayInResult.toPaymentResult(): PaymentResult =
     PaymentResult(
         code = code,
-        reason = transaction?.transStatus?.let { "Status $it" },
+        reason = reason,
         transaction =
             transaction?.let {
                 Transaction(
@@ -99,5 +99,12 @@ private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(code: String): 
  * message happened to say. Anything that is not a `PayabliException` cannot come from the SDK's own paths and
  * reads as unexpected.
  */
-internal fun PayInSubmissionState.Failed.toPaymentError(): PaymentError =
-    PaymentError.Payabli(reason = cause.reason, detail = cause.detail)
+internal fun PayInSubmissionState.Failed.toPaymentError(): PaymentError = cause.toPaymentError()
+
+/** The same reading for a call that throws its failure rather than publishing it as a state. */
+internal fun Throwable.toPaymentError(): PaymentError =
+    when (this) {
+        is PayabliException -> PaymentError.Payabli(reason = reason, detail = detail)
+        // Not from the SDK's own paths, so its text is the only thing there is to say.
+        else -> PaymentError.Unexpected(this::class.java.name)
+    }
