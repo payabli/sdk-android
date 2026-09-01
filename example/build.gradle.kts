@@ -176,12 +176,22 @@ android {
         }
     }
 
-    // **The demo app has no release build.** It is never published, never signed and never shipped, so a
-    // release variant is a thing CI could assemble and nobody could say why. The minified build worth
-    // checking is an integrator's, against the published artifacts and their own keep rules — not this.
-    androidComponents {
-        beforeVariants(selector().withBuildType("release")) { variant ->
-            variant.enable = false
+    // **The release variant exists for one reason: the card reader vendor signs a release artifact.**
+    // It was disabled here, on the grounds that nothing publishes this app and so nobody could say why CI
+    // would assemble it. That reason has been overtaken: the vendor's signing and onboarding step is what
+    // an APK has to pass before the reader will arm on any device, and it expects a release build. No CI
+    // job assembles it, so the objection it was disabled under does not return.
+    //
+    // Signed with the debug keystore, deliberately and only until the vendor's process replaces that
+    // signature. A release variant with no signing config produces an unsigned APK, which cannot be
+    // installed and so cannot be retested against the very failure this is for. The certificate is the one
+    // already shared with the vendor, so what is submitted matches what they were told to expect.
+    //
+    // The minified build worth checking is still an integrator's, against the published artifacts and
+    // their own keep rules, and is not this.
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     // The card reader's kernel is refused when its native library is page-mapped from the APK rather
