@@ -3,7 +3,6 @@ package com.payabli.example.app
 import android.content.Context
 import androidx.annotation.VisibleForTesting
 import com.payabli.example.app.demo.config.DemoConfiguration
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.SimpleCaptureSetting
 import com.payabli.example.app.demo.config.TokenHostDefaults
 import com.payabli.example.app.demo.config.TokenHostResolver
@@ -16,6 +15,7 @@ import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.terminal.DemoTerminalController
 import com.payabli.example.app.demo.terminal.TerminalController
+import com.payabli.example.app.sdk.DemoEnvironment
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.payInFlowGate

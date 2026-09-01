@@ -1,7 +1,6 @@
 package com.payabli.example.app.demo.ui
 
 import com.payabli.example.app.demo.config.DemoConfiguration
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.SimpleCaptureSetting
 import com.payabli.example.app.demo.config.TokenHostSource
 import com.payabli.example.app.demo.config.TokenServerTarget
@@ -11,6 +10,7 @@ import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.setup.SetupViewModel
+import com.payabli.example.app.sdk.DemoEnvironment
 import com.payabli.example.app.sdk.PayInForms
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

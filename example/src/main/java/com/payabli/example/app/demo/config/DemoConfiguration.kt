@@ -2,37 +2,7 @@ package com.payabli.example.app.demo.config
 
 import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.demo.ui.components.DetailRow
-
-/** Which Payabli environment this build talks to. */
-enum class DemoEnvironment(
-    val label: String,
-    val baseUrl: String,
-) {
-    SANDBOX("sandbox", "https://api-sandbox.payabli.com"),
-    PRODUCTION("production", "https://api.payabli.com"),
-    ;
-
-    val host: String get() = baseUrl.removePrefix("https://")
-
-    companion object {
-        /** The one configured by default, and what an unrecognised setting falls back to. */
-        val DEFAULT: DemoEnvironment = SANDBOX
-
-        /** Every [label], for a message that has to list them. */
-        val labels: String get() = entries.joinToString(", ") { it.label }
-
-        /**
-         * The environment a [label] names, or null when nothing does.
-         *
-         * Trimmed and case-insensitive, for a value typed by hand into a properties file or a
-         * `-P` flag.
-         */
-        fun named(label: String): DemoEnvironment? {
-            val wanted = label.trim()
-            return entries.firstOrNull { it.label.equals(wanted, ignoreCase = true) }
-        }
-    }
-}
+import com.payabli.example.app.sdk.DemoEnvironment
 
 /**
  * The values the SDK is configured from, read once.

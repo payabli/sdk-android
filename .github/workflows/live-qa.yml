@@ -23,10 +23,10 @@ jobs:
     uses: ./.github/workflows/live-flows.yml
     with:
       environment: qa
-      # The sample app offers sandbox and production only, so its walkthrough cannot configure itself
-      # for qa and would fail before a flow ran. The pay-in tier still runs here, which is what this
-      # workflow is for.
-      sample-walkthrough: false
+      # The origin, because the checkout names no environment beyond sandbox and production. A repository
+      # variable rather than a secret: it is not a credential, it is an address this public repository does
+      # not carry. Unset, the token server step refuses and says which environment had no origin.
+      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}
     secrets:
       client-id: ${{ secrets.PAYABLI_CLIENT_ID_QA }}
       client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_QA }}

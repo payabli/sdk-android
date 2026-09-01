@@ -44,10 +44,15 @@ private val TEST_TIMEOUT = 120.seconds
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
  * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa \
+ *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=<name> \
  *   -Pandroid.testInstrumentationRunnerArguments.class=\
  * com.payabli.sdk.taptopay.enrollment.platform.DeviceActivationLiveTest
  * ```
+ *
+ * An environment beyond `sandbox` and `production` is not in this checkout. Add it to the build first,
+ * with `payabli.sdk.extraEnvironments=<name>=https://<host>.payabli.com` in
+ * `~/.gradle/gradle.properties`, or `payabli.ttp.environment` names one the SDK does not carry and the
+ * run stops at configuration.
  *
  * `payabli.cloudProjectNumber` comes from `~/.gradle/gradle.properties`. No token is passed: they are
  * fetched per call and expire quickly.
