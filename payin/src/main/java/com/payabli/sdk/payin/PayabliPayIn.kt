@@ -48,7 +48,12 @@ public sealed class PayabliPayIn {
      * Captures a transaction authorized earlier, in full or in part.
      *
      * `Result` rather than a thrown exception, because a decline is an outcome a caller acts on rather than a
-     * defect. The failure is a `PayInException` carrying what the service said.
+     * defect.
+     *
+     * **The failure is a `PayabliException`, and only some of them are a `PayInException`.** A refusal the
+     * service described arrives as `PayInException.Refused` or `.ServiceError`; a rejected field, a rejected
+     * credential, a 5xx, a rate limit and a transport failure arrive as the `:core` types this SDK raises
+     * everywhere else. Catch the supertype, or branch on `PayabliException.code`, which both cover.
      *
      * **This call moves money, so set [PayInAuthorizedRequest.idempotencyKey] to retry it safely.** A read
      * timeout, a cancellation or a response that could not be decoded all leave it unknown whether the
