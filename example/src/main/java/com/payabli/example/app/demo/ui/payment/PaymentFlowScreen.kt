@@ -200,6 +200,10 @@ fun PaymentFlowScreen(
                     text = startOverText,
                     icon = DemoIcons.StartOver,
                     onClick = actions.onStartOver,
+                    // A reversal in flight is about the transaction this step is describing, and starting over
+                    // clears it. The model refuses it too: a button disabled through state is not a guard,
+                    // because a second tap lands before the recomposition.
+                    enabled = !state.isVoiding,
                 )
             }
         }

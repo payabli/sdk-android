@@ -334,7 +334,11 @@ class CaptureViewModel(
      * A second payment draws its own amount. The draw has no memory, so it can land on the previous figure
      * again: what tells two rows from one device apart is the order identifier, which carries the second.
      */
-    fun startOver() =
+    fun startOver() {
+        // Synchronously, before anything is replaced. A void in flight is about the transaction this screen is
+        // showing, and clearing it here would leave that coroutine writing its outcome over the next attempt:
+        // a reversal reported against a payment that had not been taken yet.
+        if (_uiState.value.isVoiding) return
         _uiState.update {
             val attempt = attempt(SampleAmount.random())
             it.copy(
@@ -349,6 +353,7 @@ class CaptureViewModel(
                 voidedTransactionId = null,
             )
         }
+    }
 
     /**
      * A new key for the next attempt, once this one has an answer.

@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.FakePayInTransport
@@ -23,7 +24,6 @@ import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.APPROVED_TRANSACTION
 import com.payabli.sdk.payin.payment.GatedPayInTransport
-import com.payabli.sdk.payin.payment.PayInPaymentFlow
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.TEST_ENTRY_POINT

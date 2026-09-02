@@ -142,6 +142,6 @@ class TelemetryLinkageInstrumentedTest {
 
     private companion object {
         const val TELEMETRY_MODULE = "com.payabli.sdk.telemetry.TelemetryModule"
-        const val PAY_IN_FLOW = "com.payabli.sdk.payin.payment.PayInPaymentFlow"
+        const val PAY_IN_FLOW = "com.payabli.sdk.payin.PayInPaymentFlow"
     }
 }

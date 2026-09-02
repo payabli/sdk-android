@@ -19,6 +19,7 @@ import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
+import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.FakePayInTransport
@@ -32,7 +33,6 @@ import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.APPROVED_TRANSACTION
-import com.payabli.sdk.payin.payment.PayInPaymentFlow
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.TEST_ENTRY_POINT
 import com.payabli.sdk.payin.payment.testOptions

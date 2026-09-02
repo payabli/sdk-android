@@ -1,10 +1,9 @@
-package com.payabli.sdk.payin.payment
+package com.payabli.sdk.payin
 
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
-import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.TokenStorageClient
 import com.payabli.sdk.payin.form.PayInFormDraft
@@ -15,6 +14,9 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.payment.PayInSubmission
+import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.telemetry.PayInFormReports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +31,9 @@ import java.util.UUID
  * The one implementation of [PayabliPayIn], and the only type in this module that knows both a session and a
  * form exist: the form knows this and nothing under it, and the layers under it know nothing about a screen.
  *
- * `internal`, so what a host can call is [PayabliPayIn]'s members and nothing else. The four members below
+ * `internal`, so what a host can call is [PayabliPayIn]'s members and nothing else. It sits in this
+ * package rather than beside the submission machinery because [PayabliPayIn] is sealed, and Kotlin
+ * requires a sealed type's implementations to share its package. The four members below
  * that the form reaches are the reason this type exists separately: they are how a composition drives a
  * submission, and none of them is an operation a host performs.
  *

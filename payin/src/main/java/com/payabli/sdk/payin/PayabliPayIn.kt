@@ -3,7 +3,6 @@ package com.payabli.sdk.payin
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInResult
-import com.payabli.sdk.payin.payment.PayInPaymentFlow
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
@@ -21,8 +20,13 @@ import kotlinx.coroutines.flow.StateFlow
  * Taking a payment, authorizing one and storing a method are reached by drawing [PayabliPayInForm], because
  * each of them needs an instrument the payer enters. The two members here need no instrument and no form,
  * which is why they are callable directly.
+ *
+ * **Sealed, so this SDK is the only thing that implements it.** [PayabliPayInForm] draws the implementation
+ * built here and reaches members that are not on this contract, so an implementation from anywhere else
+ * could not drive a form. Sealed makes that a compile error at the declaration rather than a failure when
+ * the form is first composed. Build one with [invoke].
  */
-public interface PayabliPayIn {
+public sealed interface PayabliPayIn {
     /**
      * Where the form's current submission has got to: what the form renders, and what a host reads for its
      * own chrome.

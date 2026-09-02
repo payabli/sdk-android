@@ -10,7 +10,6 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.payment.PayInPaymentFlow
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.narrowingKey
@@ -74,10 +73,9 @@ public fun PayabliPayInForm(
 ) {
     // The typed values, the reports and the submission the tap starts are this module's, not the contract's:
     // driving a form is not something a host does to a `PayabliPayIn`, so none of it is on the interface.
-    // Build it with `PayabliPayIn(session, entryPoint, scope)` and this holds for any instance.
-    val impl =
-        payIn as? PayInPaymentFlow
-            ?: error("PayabliPayInForm draws a PayabliPayIn built by PayabliPayIn(session, entryPoint, scope)")
+    // Total rather than a checked cast: `PayabliPayIn` is sealed and this is its one implementation, so there
+    // is no instance a host could pass that this would not accept.
+    val impl = payIn as PayInPaymentFlow
     val submission by payIn.state.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
@@ -89,7 +87,7 @@ public fun PayabliPayInForm(
     val offered = remember(narrowingKey, configuration) { operation.offering(configuration) }
 
     // One form per PayabliPayIn, and the step is a fixed word per operation, so together they change exactly
-    // the form on screen does. Not the operation itself: written inline it is a new instance on every
+    // when the form on screen does. Not the operation itself: written inline it is a new instance on every
     // recomposition, which would count one opened form once per keystroke.
     val step = operation.step
     LaunchedEffect(impl, step) { impl.reports.presented(step) }
