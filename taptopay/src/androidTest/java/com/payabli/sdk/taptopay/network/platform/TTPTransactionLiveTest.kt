@@ -33,17 +33,22 @@ private val TEST_TIMEOUT = 120.seconds
  * only thing that can show the request bodies are the ones the service accepts. Everything the unit tier
  * asserts about them is asserted against this SDK's own idea of the wire.
  *
- * **Run it against qa.** A card-present opening cannot send `forceCustomerCreation`, and the sandbox
- * paypoint refuses a body that names no identifiable customer, so the same request is accepted on one and
- * refused on the other. The refusal there is the paypoint's rule, not a defect here.
+ * **Not against sandbox.** A card-present opening cannot send `forceCustomerCreation`, and the sandbox
+ * paypoint refuses a body that names no identifiable customer, so the same request is accepted on another
+ * environment and refused there. The refusal is the paypoint's rule, not a defect here.
  *
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
  * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa \
+ *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=<name> \
  *   -Pandroid.testInstrumentationRunnerArguments.class=\
  * com.payabli.sdk.taptopay.network.platform.TTPTransactionLiveTest
  * ```
+ *
+ * An environment beyond `sandbox` and `production` is not in this checkout. Add it to the build first,
+ * with `payabli.sdk.extraEnvironments=<name>=https://<host>.payabli.com` in
+ * `~/.gradle/gradle.properties`, or `payabli.ttp.environment` names one the SDK does not carry and the
+ * run stops at configuration.
  *
  * **Every run costs something real.** Opening is not repeatable, so each run leaves one more transaction
  * behind on the paypoint and nothing here removes them. The first run on a handset also enrols and spends

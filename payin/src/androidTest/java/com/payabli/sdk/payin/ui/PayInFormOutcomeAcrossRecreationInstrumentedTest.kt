@@ -22,7 +22,6 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormSection
-import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.TEST_EXPIRY
@@ -58,9 +57,6 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
     private val draft = PayInFormDraft()
 
     private var submission by mutableStateOf<PayInSubmissionState>(PayInSubmissionState.Idle)
-
-    /** The expiry is picked from a dialog, so the form is completed by typing only with it seeded. */
-    private val seed = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardExpiration to TEST_EXPIRY))
 
     private val completed = mutableListOf<PayInSubmissionState.Succeeded>()
     private val failed = mutableListOf<PayInSubmissionState.Failed>()
@@ -127,6 +123,9 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
     }
 
     private fun fillAndSubmit() {
+        // The expiry is picked from a dialog and cannot be typed, and this is not a test of the picker, so it
+        // goes into the draft directly: the same state a pick writes, on the test's own object.
+        rule.runOnIdle { draft.enter(PayInField.CardExpiration, TEST_EXPIRY) }
         type(R.string.payabli_payin_field_cardholder_name, "Ada Lovelace")
         type(R.string.payabli_payin_field_card_number, TEST_PAN)
         type(R.string.payabli_payin_field_card_security_code, TEST_SECURITY_CODE)
@@ -151,7 +150,6 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
-                    initialValues = seed,
                     onSubmit = { true },
                     onCompleted = { completed += it },
                     onFailed = { failed += it },

@@ -2,12 +2,10 @@ package com.payabli.example.app.sdk
 
 import android.content.Context
 import com.payabli.example.app.demo.config.DemoConfiguration
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.net.TokenServerClient
 import com.payabli.sdk.core.HostBindings
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
-import com.payabli.sdk.core.config.PayabliEnvironment
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.cancellation.CancellationException
@@ -102,11 +100,3 @@ class PayInSessionSource(
         const val NO_TOKEN = "The token server returned no access token."
     }
 }
-
-/** The SDK's name for the environment this demo is pointed at. */
-private val DemoEnvironment.sdkEnvironment: PayabliEnvironment
-    get() =
-        when (this) {
-            DemoEnvironment.SANDBOX -> PayabliEnvironment.SANDBOX
-            DemoEnvironment.PRODUCTION -> PayabliEnvironment.PRODUCTION
-        }

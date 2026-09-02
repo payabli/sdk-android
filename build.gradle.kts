@@ -59,11 +59,9 @@ sonar {
             "**/sdk/payin/form/PayInFormConfiguration.kt",
         )
 
-        // A composable's parameters are how a caller configures it, and all but the required few carry
-        // defaults: `PayabliPayInForm` takes a flow, an operation and a configuration, then seven optional
-        // ones, and Material3's own `TextField` takes over twenty. A parameter object in their place costs a
-        // caller the defaults and the trailing-lambda syntax. Both paths hold the composables and
-        // nothing else, so a long parameter list outside a composable is still reported.
+        // A composable's parameters are how a caller configures it, and a parameter object in their place
+        // costs the caller the defaults and the trailing-lambda syntax. Both paths hold composables and
+        // nothing else, so a long parameter list outside one is still reported.
         property("sonar.issue.ignore.multicriteria.formEntryComposable.ruleKey", "kotlin:S107")
         property(
             "sonar.issue.ignore.multicriteria.formEntryComposable.resourceKey",

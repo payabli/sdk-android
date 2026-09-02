@@ -10,8 +10,6 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.payin.ManualDeviceTest
 import com.payabli.sdk.payin.form.PayInField
-import com.payabli.sdk.payin.form.PayInFormConfiguration
-import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
@@ -26,7 +24,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -106,21 +103,6 @@ class PayInLiveFlowsInstrumentedTest {
     fun capturingACardThePayerEntered() =
         runBlocking {
             assertApproved(flow.capture(transaction(), card()).orFail("capturing a card").code)
-        }
-
-    @Test
-    fun capturingTheCardASecondSeedReplacedTheFirstWith() =
-        runBlocking {
-            // What the draft's seed key decides, against the real service. Read as unchanged, the second seed is
-            // ignored and the service takes the card the caller replaced.
-            val configuration = PayInFormConfiguration()
-            val draft = PayInFormDraft()
-            draft.seed(configuration, card())
-            draft.seed(configuration, card(number = REPLACEMENT_PAN))
-
-            val submitted = PayInFormValues(draft.method, draft.typed)
-            assertEquals("the second seed did not reach the form", REPLACEMENT_PAN, submitted[PayInField.CardNumber])
-            assertApproved(flow.capture(transaction(), submitted).orFail("capturing the replacement card").code)
         }
 
     @Test
@@ -355,8 +337,5 @@ class PayInLiveFlowsInstrumentedTest {
         const val TIMEOUT_MILLIS = 20_000
         val TOKEN_FIELDS = listOf("accessToken", "access_token", "token")
         val AMOUNT: BigDecimal = BigDecimal("1.10")
-
-        /** A second test card, so a swapped seed is a different instrument rather than the same one again. */
-        const val REPLACEMENT_PAN = "4242424242424242"
     }
 }

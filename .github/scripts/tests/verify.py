@@ -16,6 +16,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -2283,16 +2284,39 @@ def test_workflows():
             check(f"W9 and runs for {name} on {event}",
                   any(fnmatch.fnmatch(target, str(pattern)) for pattern in patterns), str(patterns))
 
-    # The sample app offers sandbox and production, so a caller on any other environment has to say the
-    # walkthrough is not for it. Nothing else catches this: flipping the flag leaves both suites green and
-    # the failure arrives on the next scheduled run, inside the sample's setup, naming an environment
-    # rather than the line that sent it.
-    for name, environment, sample in (("live-qa.yml", "qa", False), ("live-sandbox.yml", "sandbox", True)):
+    # This repository names sandbox and production and no other environment, in the SDK, in the sample app
+    # and in the token server's allow-list. A caller for any other environment carries its origin, and it
+    # carries it as a repository variable: an origin is an address rather than a credential, and a literal
+    # here would put back exactly what leaving it out is for.
+    #
+    # Nothing else catches a literal. The run goes green against the right service and the address sits in
+    # the file, which is the state this whole arrangement exists to prevent.
+    for name, environment, carried in (("live-qa.yml", "qa", True), ("live-sandbox.yml", "sandbox", False)):
         called = ((workflow_doc(name).get("jobs") or {}).get(environment) or {}).get("with") or {}
         check(f"W1 {name} names the environment it is for", called.get("environment") == environment,
               f"{called}")
-        check(f"W1 {name} asks for the sample walkthrough only where the sample offers that environment",
-              bool(called.get("sample-walkthrough", True)) is sample, f"{called}")
+        origin = str(called.get("api-origin", ""))
+        check(f"W1 {name} carries an origin exactly when the checkout does not name its environment",
+              bool(origin) is carried, f"{called}")
+        if carried:
+            check(f"W1 {name} takes that origin from a repository variable",
+                  "vars." in origin and "secrets." not in origin, origin)
+            check(f"W1 {name} writes no origin of its own", "http" not in origin, origin)
+
+    # The origins this repository may carry, anywhere in a live workflow. An environment the checkout does
+    # not name arrives as a variable, so its host appearing in the text is the leak, whichever line holds it.
+    #
+    # A hostname, not the bare domain: prose says "a payabli.com origin" and means the rule rather than an
+    # address. What is being looked for is a labelled host, which is what a request can be sent to.
+    CARRIED_HOSTS = ("api-sandbox.payabli.com", "api.payabli.com")
+    for name in LIVE_WORKFLOWS:
+        hosts = [
+            host for host in re.findall(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.payabli\.com",
+                                        workflow_text(name))
+            if host not in CARRIED_HOSTS
+        ]
+        check(f"W1 {name} names no Payabli origin beyond the two the checkout carries",
+              not hosts, " | ".join(sorted(set(hosts))))
 
     # The one thing about parsing a workflow that is not obvious from reading one: YAML 1.1 reads a bare
     # `on` as the boolean true, so a lookup by the string finds nothing at all.
@@ -2359,13 +2383,47 @@ def test_workflows():
     check("W5 the live script runs two suites", len(commands) == 2, f"{commands}")
     # `./gradlew` as the command, not as text on the line. Asserting only that the line contains it passes
     # on `echo ./gradlew ...` and on `true # ./gradlew ...`, which run neither suite and leave this green
-    # with the behaviour removed. One suite is invoked behind a guard, so that one form is named here
-    # rather than admitting anything that mentions gradlew.
-    GUARD = 'if [ "$SAMPLE_WALKTHROUGH" = true ]; then ./gradlew '
+    # with the behaviour removed.
     for line in commands:
-        command = line.strip()
         check("W5 every line of the live script executes gradlew",
-              command.startswith("./gradlew ") or command.startswith(GUARD), line)
+              line.strip().startswith("./gradlew "), line)
+
+    # An origin may carry a port, which `GenerateExtraEnvironments` accepts because an origin is a scheme, a
+    # host and a port. The two consumers want different halves of it: the base URL needs the port and the
+    # allow-list must not have it, because example-server checks a request against `URL.hostname`. A run that
+    # got this wrong would be green here and refuse every upstream call, naming the host rather than the line.
+    server = next((step for step in steps if "server.mjs" in str(step.get("run", ""))), None)
+    check("W2 the token server step was found", server is not None)
+    for step in [server] if server else []:
+        script = str(step.get("run", ""))
+        check("W2 the allowed host is taken without the port", "%%:*}" in script, "no port strip")
+        # Position, because presence alone passes wherever the guard sits, including inside the origin
+        # branch, where a caller that supplied an origin never reaches it and runs both real-transaction
+        # suites. Over the code lines only: a comment naming API_ORIGIN is not a read of it, and comparing
+        # against the whole text made this fail on the comment that explains the guard.
+        code = "\n".join(line for line in script.splitlines() if not line.strip().startswith("#"))
+        refusal = "production is not run by this workflow"
+        check("W2 the token server refuses production", refusal in code, "no production refusal in code")
+        if refusal in code and "API_ORIGIN" in code:
+            check("W2 and refuses it before anything reads the origin",
+                  code.index(refusal) < code.index("API_ORIGIN"),
+                  "the refusal sits after the first read of API_ORIGIN")
+        check("W2 and the base URL keeps the whole origin",
+              'PAYABLI_API_BASE_URL="$API_ORIGIN/api"' in script, "base url not taken from the origin")
+
+    # Both suites run on every environment, and the same origin the token server got configures both. A run
+    # that carried the environment for one and not the other would report a pay-in run against one service
+    # beside a sample app that had silently fallen back to another.
+    #
+    # Guarded on the step having been found. Indexing an empty list raises, and a harness that raises prints
+    # no failure line at all, which reads exactly like a pass.
+    for step in live:
+        live_env = step.get("env") or {}
+        extras = str(live_env.get("PAYABLI_SDK_EXTRAENVIRONMENTS", ""))
+        check("W5 the live step adds the run's environment to the SDK",
+              "inputs.api-origin" in extras and "inputs.environment" in extras, extras)
+        offered = str(live_env.get("PAYABLI_DEMO_EXTRAENVIRONMENTS", ""))
+        check("W5 and offers it in the sample app as well", "inputs.environment" in offered, offered)
 
     # An expression is substituted into a script before any of it runs, so a value that closes its own quote
     # runs as a command with this job's secrets in the environment. Values reach a script as variables.

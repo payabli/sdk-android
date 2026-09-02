@@ -24,8 +24,8 @@ import java.io.File
  * one a real app hits rather than a door opened for the test.
  *
  * Skipped unless the [RECORD] environment variable names a writable path, so an ordinary run and CI
- * are unaffected. Standing the dependencies
- * up is `reference/environments.md`'s to describe; nothing here invents a value.
+ * are unaffected. The endpoint it records against is stood up outside this repository, and nothing here
+ * invents a value for it.
  */
 class TelemetryLiveTest {
     @After
@@ -52,7 +52,7 @@ class TelemetryLiveTest {
                         PayabliConfig(
                             accessToken = "a-local-token",
                             entryPoint = ENTRY,
-                            environment = PayabliEnvironment.QA,
+                            environment = PayabliEnvironment.SANDBOX,
                         ),
                     ).getOrThrow()
 
