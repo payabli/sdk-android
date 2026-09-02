@@ -244,11 +244,21 @@ reaches the branch under test.
 - **A `platform` package is the instrumented tier, and the boundary is structural rather than a list.** A file
   belongs there when it calls an Android API with no JVM implementation — Keystore, `android.util.*`, a
   `Context`. Nothing else does: "hard to test" is not a reason to move a file, and moving one to quiet a
-  coverage number is how the boundary stops meaning anything. `sonar.coverage.exclusions` is `**/platform/**`,
-  coverage only, so those files still get issue detection; their tests live in the mirroring package under
-  `src/androidTest`. This exists because Sonar gates **introduced** code: `:core`'s module total read 81.5%
-  line while the same commit measured 41% on its new lines, because `KeystoreValueCipher` was 121 of 261
-  measured units and unreachable from any unit test. Read both numbers, not one.
+  coverage number is how the boundary stops meaning anything. `**/platform/**` is in
+  `sonar.coverage.exclusions`, coverage only, so those files still get issue detection; their tests live in
+  the mirroring package under `src/androidTest`. This exists because Sonar gates **introduced** code:
+  `:core`'s module total read 81.5% line while the same commit measured 41% on its new lines, because
+  `KeystoreValueCipher` was 121 of 261 measured units and unreachable from any unit test. Read both numbers,
+  not one.
+  - **The reason it stays excluded is now narrower than "no unit test reaches it".** The analysis reads the
+    instrumented tier, so that alone would argue for including it. What keeps it out is that part of what
+    covers `platform` is hardware the emulator job does not have: the two secure-element tests carry
+    `@ManualDeviceTest` and no automated run executes them. Measured on a handset with that tier excluded,
+    exactly as the job runs it, `:core`'s `platform` packages read 72.0% line. Revisit against a measurement.
+  - **`**/sdk/payin/ui/**` was on that list and is not any more.** A composable needs a device, and the
+    emulator is one, so nothing in the form needs hardware the job lacks. The rule also never covered what it
+    claimed to: `PayabliPayInForm` sits outside `ui`, so 11 of its lines counted against the gate while the
+    exclusion said the UI was handled.
 - **Three test tiers, and the third is excluded from CI rather than skipped.** JVM unit tests; instrumented
   tests the nightly runs on an emulator; and `@ManualDeviceTest`, which that job cannot answer. The bar is what
   the nightly provisions, not what an emulator can do in principle, so the tier holds several reasons rather
@@ -327,9 +337,19 @@ reaches the branch under test.
   `127.0.0.1` rather than `InetAddress.getLoopbackAddress()`, which answers `::1` on an emulator: an
   unbracketed IPv6 literal is not a URL authority, so the base URL parses to no host and every instrumented
   test fails as invalid configuration while every unit test still passes.
-- **CI runs no instrumented test.** All jobs are `ubuntu-latest` with no emulator, so `connectedAndroidTest`
-  is a deliberate local step and a regression in the three device-only behaviours will not turn a pull
-  request red. A manual and nightly emulator job is planned, and it is not a required per-PR check.
+- **Per-PR CI runs `:core`'s and `:payin`'s instrumented tests on an emulator, and no others.** The
+  `instrumented` job in `ci.yml` runs their `createDebugAndroidTestCoverageReport`, which runs the connected
+  tests itself, and hands the coverage to the `sonar` job as an artifact. That job holds no secret, which is
+  what allows the third-party emulator action in it; `sonar` holds `GPR_TOKEN` and `SONAR_TOKEN`, so the
+  emulator cannot run there and the coverage cannot be produced in place. It runs for forks too, since it
+  needs nothing they cannot have.
+  - **`:taptopay` and `:example` are absent, for two different reasons.** Building `:taptopay` resolves the
+    card reader from a private registry, so including it would hand `GPR_TOKEN` to that action; its
+    instrumented tier waits on a job of its own, and `enableAndroidTestCoverage` is turned off at its own
+    declaration to say so. `:example` is `isSkipProject` in the analysis, so its coverage is read by nothing.
+    The nightly still runs both modules' instrumented tests.
+  - A regression in the manual tier's device-only behaviours still will not turn a pull request red: that
+    tier is excluded by `notAnnotation`, naming both modules' annotations.
 - Card-present paths need a physical device or mocks rather than an emulator.
 - **Attestation runs on an emulator and has no manual tier, both of which were measured.** Attestation lives
   in `:taptopay`, not `:core`: the platform verdict gates arming the card reader, and keeping it there is
