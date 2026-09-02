@@ -40,10 +40,15 @@ private val TEST_TIMEOUT = 180.seconds
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
  * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa \
+ *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=<name> \
  *   -Pandroid.testInstrumentationRunnerArguments.class=\
  * com.payabli.sdk.taptopay.session.platform.TapToPaySessionLiveTest
  * ```
+ *
+ * An environment beyond `sandbox` and `production` is not in this checkout. Add it to the build first,
+ * with `payabli.sdk.extraEnvironments=<name>=https://<host>.payabli.com` in
+ * `~/.gradle/gradle.properties`, or `payabli.ttp.environment` names one the SDK does not carry and the
+ * run stops at configuration.
  *
  * **The credentials are live vendor secrets.** Nothing here prints one: what is asserted is that the fields
  * arrived and are not blank, which is the whole of what a reader would need to be handed.

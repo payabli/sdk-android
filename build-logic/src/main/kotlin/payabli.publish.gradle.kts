@@ -1,4 +1,6 @@
 import com.android.build.api.dsl.LibraryExtension
+import com.payabli.buildlogic.extraEnvironmentsSetting
+import com.payabli.buildlogic.refusePublishingWithExtraEnvironments
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 
@@ -63,6 +65,10 @@ publishing {
         }
     }
 }
+
+// A published artifact carries only the environments committed in PayabliEnvironment; the guard and its
+// reasoning are in ExtraEnvironments.kt.
+tasks.refusePublishingWithExtraEnvironments(extraEnvironmentsSetting(providers))
 
 // Android library modules -> "release" component.
 pluginManager.withPlugin("com.android.library") {

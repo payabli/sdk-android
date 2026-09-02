@@ -2,16 +2,15 @@ package com.payabli.sdk.payin.form
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * When the draft refills itself, which is the whole of whether a payer keeps what they typed.
+ * When the draft empties itself, which is the whole of whether a payer keeps what they typed.
  *
  * A composition calls [PayInFormDraft.seed] every time it runs, so the question each of these asks is which
- * calls are the same call. Too eager and a rotation empties the form; too lazy and a caller handing over new
- * values is ignored.
+ * calls are the same call. Too eager and a rotation empties the form; too lazy and a caller handing over a
+ * different form draws the one before it.
  */
 class PayInFormDraftTest {
     private val configuration =
@@ -22,17 +21,13 @@ class PayInFormDraftTest {
 
     private val draft = PayInFormDraft()
 
-    private companion object {
-        const val SEEDED_PAN = "4111111111111111"
-    }
-
     @Test
-    fun seedingTwiceFromTheSameValuesKeepsWhatWasTypedInBetween() {
-        // The rotation. The second call is the new composition, and the caller has handed over the same pair.
-        draft.seed(configuration, null)
+    fun seedingTwiceWithTheSameConfigurationKeepsWhatWasTypedInBetween() {
+        // The rotation. The second call is the new composition, and the caller has handed over the same one.
+        draft.seed(configuration)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
 
-        draft.seed(configuration, null)
+        draft.seed(configuration)
 
         assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
     }
@@ -40,66 +35,34 @@ class PayInFormDraftTest {
     @Test
     fun anEqualConfigurationRebuiltByTheCallerIsNotANewOne() {
         // A host that builds its configuration inline hands over a different instance on every composition.
-        draft.seed(configuration, null)
+        draft.seed(configuration)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
 
-        draft.seed(configuration.copy(), null)
+        draft.seed(configuration.copy())
 
         assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
     }
 
     @Test
-    fun newValuesStartTheFormAgain() {
-        draft.seed(configuration, null)
-        draft.enter(PayInField.CardholderName, "Ada Lovelace")
-
-        draft.seed(configuration, PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardPostalCode to "22039")))
-
-        assertNull(
-            "what the payer typed outlived the values it was replaced by",
-            draft.typed[PayInField.CardholderName],
-        )
-        assertEquals("22039", draft.typed[PayInField.CardPostalCode])
-    }
-
-    @Test
     fun aChangedConfigurationStartsTheFormAgain() {
-        draft.seed(configuration, null)
+        draft.seed(configuration)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
 
-        draft.seed(configuration.copy(allowedMethods = listOf(PayInMethodType.Card)), null)
-
-        assertNull(draft.typed[PayInField.CardholderName])
-    }
-
-    @Test
-    fun theSeedDecidesTheInstrumentWhenTheConfigurationOffersIt() {
-        draft.seed(configuration, PayInFormValues(PayInMethodType.BankAccount, emptyMap()))
-
-        assertEquals(PayInMethodType.BankAccount, draft.method)
-    }
-
-    @Test
-    fun aSeededInstrumentTheConfigurationDoesNotOfferIsIgnored() {
-        val cardOnly = configuration.copy(allowedMethods = listOf(PayInMethodType.Card))
-
-        cardOnly.let { draft.seed(it, PayInFormValues(PayInMethodType.BankAccount, emptyMap())) }
-
-        assertEquals(PayInMethodType.Card, draft.method)
-    }
-
-    @Test
-    fun anEmptySeededValueIsNotAValue() {
-        // Otherwise a caller seeding a blank field fills the box with nothing and the payer cannot tell it apart
-        // from one they typed a space into.
-        draft.seed(configuration, PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardholderName to "")))
+        draft.seed(configuration.copy(allowedMethods = listOf(PayInMethodType.Card)))
 
         assertFalse(PayInField.CardholderName in draft.typed)
     }
 
     @Test
+    fun theConfigurationDecidesTheInstrumentTheFormOpensOn() {
+        draft.seed(configuration.copy(defaultMethod = PayInMethodType.BankAccount))
+
+        assertEquals(PayInMethodType.BankAccount, draft.method)
+    }
+
+    @Test
     fun typingClearsTheRejectionThatBoxWasCarrying() {
-        draft.seed(configuration, null)
+        draft.seed(configuration)
         draft.rejectedFields = mapOf(PayInField.CardholderName to PayInFieldError.NotAccepted)
 
         draft.enter(PayInField.CardholderName, "Grace Hopper")
@@ -109,7 +72,7 @@ class PayInFormDraftTest {
 
     @Test
     fun switchingInstrumentDropsWhatTheNewOneHasNoBoxFor() {
-        draft.seed(configuration, null)
+        draft.seed(configuration)
         draft.enter(PayInField.CardNumber, "4111111111111111")
         draft.enter(PayInField.BillingEmail, "ada@example.com")
 
@@ -121,7 +84,7 @@ class PayInFormDraftTest {
 
     @Test
     fun anOutcomeEmptiesTheInstrumentAndKeepsTheRest() {
-        draft.seed(configuration, null)
+        draft.seed(configuration)
         draft.enter(PayInField.CardNumber, "4111111111111111")
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
 
@@ -132,92 +95,33 @@ class PayInFormDraftTest {
     }
 
     @Test
-    fun clearingTakesEverythingAndSeedsAgainAfterwards() {
-        val seed = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardPostalCode to "22039"))
-        draft.seed(configuration, seed)
-        draft.enter(PayInField.CardholderName, "Ada Lovelace")
+    fun clearingTakesEverythingAndStartsTheFormAgainAfterwards() {
+        draft.seed(configuration)
+        draft.switchTo(PayInMethodType.BankAccount, configuration)
+        draft.enter(PayInField.AccountHolder, "Ada Lovelace")
         draft.submissionPending = true
 
         draft.clear()
         assertTrue(draft.typed.isEmpty())
         assertFalse(draft.submissionPending)
 
-        // The same pair as before, so a draft that remembered what it was seeded from would stay empty.
-        draft.seed(configuration, seed)
-        assertEquals("22039", draft.typed[PayInField.CardPostalCode])
-        assertNull(draft.typed[PayInField.CardholderName])
-    }
-
-    @Test
-    fun swappingOneStoredCardForAnotherFillsInTheNewOne() {
-        // The case a seed key has to get right. Reading it as unchanged submits the card the payer replaced.
-        draft.seed(configuration, cardSeededWith("4111111111111111"))
-
-        draft.seed(configuration, cardSeededWith("4111111111111112"))
-
-        assertEquals("4111111111111112", draft.typed[PayInField.CardNumber])
-    }
-
-    @Test
-    fun theOrderACallerBuiltItsValuesInIsNotAChange() {
-        // A host assembling the same values in a different order has handed over the same seed, so a form that
-        // refilled here would empty itself on a recomposition.
-        draft.seed(
-            configuration,
-            PayInFormValues(
-                PayInMethodType.Card,
-                linkedMapOf(PayInField.CardNumber to SEEDED_PAN, PayInField.CardPostalCode to "22039"),
-            ),
-        )
-        draft.enter(PayInField.CardholderName, "Ada Lovelace")
-
-        draft.seed(
-            configuration,
-            PayInFormValues(
-                PayInMethodType.Card,
-                linkedMapOf(PayInField.CardPostalCode to "22039", PayInField.CardNumber to SEEDED_PAN),
-            ),
-        )
-
-        assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
+        // The instrument, because it is the only thing here that separates a seed that ran from one that
+        // did not. The configuration is the one already seeded from, so a clear that kept what it was
+        // started from leaves the payer's bank tab standing; entering a value instead would work either
+        // way and prove nothing.
+        draft.seed(configuration)
+        assertEquals(PayInMethodType.Card, draft.method)
     }
 
     @Test
     fun aClearedDraftStillAnswersWhichInstrumentIsOnScreen() {
         // The clear runs on whichever thread completed the host's scope, and a reader that has already passed
         // seed's check goes straight on to read the instrument. Clearing that under it fails the read.
-        draft.seed(configuration, null)
+        draft.seed(configuration)
 
         draft.clear()
 
         assertEquals(PayInMethodType.Card, draft.method)
-    }
-
-    @Test
-    fun theCallersValuesAreNotHeldOnceTheyHaveBeenRead() {
-        // A PayInFormValues can carry a card number, and the draft outlives the composition, so holding one to
-        // compare against would keep the caller's copy for the life of the screen.
-        val values =
-            PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardNumber to SEEDED_PAN))
-
-        draft.seed(configuration, values)
-
-        // Every field rather than one by name, so any field holding a seed is caught.
-        val holding =
-            PayInFormDraft::class
-                .java
-                .declaredFields
-                .filterNot { it.isSynthetic }
-                .flatMap { field ->
-                    field.isAccessible = true
-                    when (val held = field.get(draft)) {
-                        is Pair<*, *> -> listOf(field.name to held.first, field.name to held.second)
-                        else -> listOf(field.name to held)
-                    }
-                }.filter { (_, held) -> held is PayInFormValues }
-                .map { (name, _) -> name }
-
-        assertEquals("the draft holds the caller's values in $holding", emptyList<String>(), holding)
     }
 
     @Test
@@ -229,8 +133,6 @@ class PayInFormDraftTest {
 
         assertTrue("an unseeded draft answered $thrown", thrown is IllegalStateException)
     }
-
-    private fun cardSeededWith(pan: String) = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardNumber to pan))
 
     private fun withBillingEmail(): List<PayInFormSection> =
         listOf(

@@ -4,7 +4,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import kotlin.random.Random
 
 /**
  * What a payer has entered, held outside the composition that draws it.
@@ -18,28 +17,9 @@ import kotlin.random.Random
  * the card. A form reopened after process death is an empty form.
  */
 internal class PayInFormDraft {
-    /**
-     * Mixed into every digest below, and different for each draft.
-     *
-     * A digest of a card number is a card number that can be looked up, if the same digest can be computed
-     * elsewhere. Salted per instance it matches nothing precomputed, and it still compares with itself, which
-     * is all this needs.
-     */
-    private val salt: Long = Random.nextLong()
-
-    /**
-     * What this was last filled from, so re-entering a composition does not refill it.
-     *
-     * A digest rather than the object: a caller's [PayInFormValues] can carry a card number, and keeping one
-     * would hold the caller's copy for the life of the screen, past the point where an outcome empties the
-     * boxes drawn from it. The configuration is held as itself, carrying no payer input.
-     *
-     * Two seeds sharing a digest are read as one, and a form that skips a refill submits the instrument it was
-     * seeded with before rather than the one the caller has just supplied. The digest reads the characters
-     * rather than [String.hashCode], so that turns on a 64-bit coincidence instead of a 32-bit one.
-     */
+    /** What this was last started from, so re-entering a composition does not empty it. */
     @Volatile
-    private var seededFrom: Pair<PayInFormConfiguration, Long?>? = null
+    private var seededFrom: PayInFormConfiguration? = null
 
     private val entered = mutableStateMapOf<PayInField, String>()
 
@@ -71,30 +51,22 @@ internal class PayInFormDraft {
     var submissionPending: Boolean by mutableStateOf(false)
 
     /**
-     * Fills from [initialValues] the first time, and again whenever the caller hands over a different
-     * configuration or a different set of values.
+     * Starts the form the first time, and again whenever the caller hands over a different configuration.
      *
-     * Called on every composition and compares what it was last filled from, so a form that leaves the
-     * composition and comes back keeps what the payer typed. Both types compare by value, so a caller rebuilding
-     * an equal configuration after a rotation is not handing over a new one.
+     * Called on every composition and compares what it was last started from, so a form that leaves the
+     * composition and comes back keeps what the payer typed. [PayInFormConfiguration] compares by value, so a
+     * caller rebuilding an equal one after a rotation is not handing over a new one.
      *
      * The comparison has to be here rather than at the call site: a `remember` key belongs to a composition and
-     * is gone with it, and refilling on every composition writes state that the same composition then reads, so
+     * is gone with it, and emptying on every composition writes state that the same composition then reads, so
      * the form recomposes without ever settling.
-     *
-     * A seeded instrument the configuration does not offer is ignored, as a seeded value with no box is.
      */
-    fun seed(
-        configuration: PayInFormConfiguration,
-        initialValues: PayInFormValues?,
-    ) {
-        val key = configuration to initialValues?.digest()
-        if (seededFrom == key) return
-        seededFrom = key
+    fun seed(configuration: PayInFormConfiguration) {
+        if (seededFrom == configuration) return
+        seededFrom = configuration
 
-        chosen = initialValues?.method?.takeIf { it in configuration.methodsOffered } ?: configuration.startingMethod
+        chosen = configuration.startingMethod
         entered.clear()
-        initialValues?.values?.forEach { (field, value) -> if (value.isNotEmpty()) entered[field] = value }
         rejectedFields = emptyMap()
     }
 
@@ -123,7 +95,7 @@ internal class PayInFormDraft {
     fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { entered.remove(it) }
 
     /**
-     * Everything the payer entered goes, and the next composition fills from the caller's values again.
+     * Everything the payer entered goes, and the next composition starts the form again.
      *
      * Called when the host's scope is cancelled, which runs on whatever thread completed it while a composition
      * may be reading. [chosen] is left alone for that reason: a reader that has already passed [seed]'s check
@@ -135,30 +107,5 @@ internal class PayInFormDraft {
         entered.clear()
         rejectedFields = emptyMap()
         submissionPending = false
-    }
-
-    /**
-     * What the caller handed over, as one salted 64-bit value.
-     *
-     * Walked in [PayInField]'s own declaration order rather than the map's, so the order a caller assembled its
-     * values in is not a change and every field still folds into the one before it. Summing them instead would
-     * let two fields changing at once cancel, which a fold cannot do.
-     *
-     * Equal values digest equally, which is what a host rebuilding its seed on every composition needs.
-     */
-    private fun PayInFormValues.digest(): Long =
-        PayInField.entries.fold(mix(salt, method.ordinal.toLong())) { running, field ->
-            val value = values[field] ?: return@fold running
-            value.fold(mix(running, field.ordinal.toLong())) { carried, char -> mix(carried, char.code.toLong()) }
-        }
-
-    private fun mix(
-        accumulated: Long,
-        next: Long,
-    ): Long = (accumulated xor next) * DIGEST_PRIME
-
-    private companion object {
-        /** FNV-1a's 64-bit prime, which is what makes one changed character reach every bit of the result. */
-        const val DIGEST_PRIME = 1099511628211L
     }
 }

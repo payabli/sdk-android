@@ -1,6 +1,5 @@
 package com.payabli.sdk.telemetry.wire
 
-import com.payabli.sdk.core.config.PayabliEnvironment
 import kotlinx.serialization.Serializable
 
 /**
@@ -58,11 +57,3 @@ internal class TelemetryEventBody(
         const val SCHEMA_VERSION: String = "1"
     }
 }
-
-/** The reported form of an environment. Exhaustive, so a new one cannot be silently unreportable. */
-internal fun PayabliEnvironment.wireName(): String =
-    when (this) {
-        PayabliEnvironment.QA -> "qa"
-        PayabliEnvironment.SANDBOX -> "sandbox"
-        PayabliEnvironment.PRODUCTION -> "production"
-    }

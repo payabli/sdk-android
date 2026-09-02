@@ -39,6 +39,19 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - `minSdk` is **per module, not global**: `:taptopay` is **30**, required by the card reader dependency, and an app linking it must also be 30 or higher. Every published module is **23**. Do not raise the card-not-present modules to match card-present. `:example` is **24**, and publishes nothing: its debug build reaches the local token server over cleartext, and a network security config, which is the only way to permit that for two addresses instead of for everything, is ignored below 24.
 - **`:taptopay` is 64-bit only, and nothing declares it.** The card reader pulls `magiccube`, whose AAR carries exactly one native library — `jni/arm64-v8a/libmc3.so`, with no 32-bit build. So an APK linking `:taptopay` will not install on an `armeabi-v7a`-only handset: the install fails with `INSTALL_FAILED_NO_MATCHING_ABIS` before any code runs, which names the ABI but not the dependency that caused it. Measured on an SM-A136U1 (`ro.product.cpu.abilist=armeabi-v7a,armeabi`). This is a vendor constraint like the API 30 floor, it is not expressed in any manifest or Gradle setting, and it means such a device cannot run this module's instrumented tests at all — a stated skip on the bench, not a failure to chase.
 - **An app linking `:taptopay` has to unpack the card reader's native library, and this module cannot do it for the app.** The vendor's signing and onboarding step refuses an APK whose `libmc3.so` is page-mapped from the archive rather than extracted at install. AGP has defaulted `android:extractNativeLibs` to `false` since 4.2, so a build that sets nothing is refused. The application module sets `packaging { jniLibs { useLegacyPackaging = true } }`, which is what puts the attribute on the merged manifest; `:example` does. **Declaring it in this module's manifest does nothing** — measured on the built APK: AGP resolves the attribute at packaging time from the application module's value, and overwrote a library-supplied `true` with `false`. So it is an integrator requirement rather than something the AAR can carry, and an app that omits it builds and installs perfectly well: the only symptom is the artifact being rejected when it is submitted for signing.
+- **The SDK carries two environments, and a build adds the rest.** `PayabliEnvironment` is a class with a
+  private constructor holding `SANDBOX` and `PRODUCTION`; `entries` is those two plus a list generated from
+  `payabli.sdk.extraEnvironments`, empty in a checkout. The setting **appends** and can do nothing else, the
+  generator refuses anything that is not an https `payabli.com` origin with no path, and `payabli.publish`
+  fails every publish task while it is set, so no released artifact can carry one. A machine that needs
+  another environment puts the setting in `~/.gradle/gradle.properties`, beside `gpr.*` and
+  `payabli.cloudProjectNumber`, which reaches every worktree and leaves nothing modified in any of them;
+  `scripts/toolchain.sh` reports it as an advisory row. `:example` appends to its own two the same way,
+  through `payabli.demo.extraEnvironments`, and a name the SDK was not built with is dropped rather than
+  shown resolving to nothing. **This is why an origin is never written into a workflow**:
+  `live-flows.yml` takes an `api-origin` input, `live-qa.yml` supplies it from a repository variable, and one
+  value configures the SDK, the sample app and the token server's allow-list so no two of them can disagree
+  about where a run is pointed.
 - Kotlin compiles through AGP's built-in Kotlin support (AGP 9.2.1, Kotlin 2.2.10, Gradle 9.4.1, daemon JVM 21). There is no `org.jetbrains.kotlin.android` plugin and none should be added.
 - Platform-native only: `HttpURLConnection`, Keystore and `javax.crypto`, `kotlinx.serialization`, `kotlinx.coroutines`, Compose. No third-party HTTP client, crypto engine, DI framework, reflection-based JSON mapper or logging framework.
 - Convention plugins in `build-logic` carry shared config: `payabli.publish` for publishing, `payabli.quality` for formatting and coverage. Prefer extending those over per-module blocks.
@@ -84,7 +97,7 @@ job because the build outputs and the git history the culprit lookup needs are b
 has to be decided there because that is where the gate reads it.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
-runs 465 checks, driving the collector as a subprocess inside a synthetic git repository, which is what
+drives the collector as a subprocess inside a synthetic git repository, which is what
 `git` is for, and the poster in-process against a fake Slack on loopback; `sabotage.py` breaks each claimed
 behaviour in turn and confirms a check goes red, rewriting copies in a scratch directory rather than the
 files in the tree, so it is safe to interrupt. No third-party Python package is involved.

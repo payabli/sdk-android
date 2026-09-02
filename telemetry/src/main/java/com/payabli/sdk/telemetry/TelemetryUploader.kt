@@ -12,7 +12,6 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.telemetry.wire.TelemetryBatchBody
 import com.payabli.sdk.telemetry.wire.TelemetryEventBody
-import com.payabli.sdk.telemetry.wire.wireName
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -106,7 +105,7 @@ internal class TelemetryUploader(
             timestamp = formatTimestamp(occurredAtMillis),
             sessionId = session.sessionId,
             entry = session.entryPoint,
-            environment = session.environment.wireName(),
+            environment = session.environment.name,
             event = name,
             properties = properties,
             deviceIdHash = session.device.idHash.ifBlank { null },

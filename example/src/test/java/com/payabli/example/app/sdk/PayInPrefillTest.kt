@@ -2,13 +2,12 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
-import java.time.YearMonth
-import java.time.format.DateTimeFormatter
 
 /**
  * The prefill has to fill the form the demo actually shows.
@@ -19,6 +18,8 @@ import java.time.format.DateTimeFormatter
 class PayInPrefillTest {
     private val identity = SampleIdentity.from("Google Pixel 7a")
 
+    private val values = PayInPrefill.valuesFor(identity)
+
     private val setups =
         mapOf(
             "stored method" to PayInForms.storePaymentMethod(),
@@ -28,12 +29,11 @@ class PayInPrefillTest {
     @Test
     fun `every field the demo asks a payer to type has a value`() {
         setups.forEach { (screen, setup) ->
-            PayInMethod.entries.forEach { method ->
-                val values = PayInPrefill.valuesFor(method, identity).values
-                typedFields(setup, method).forEach { field ->
+            PayInMethodType.entries.forEach { method ->
+                typedFields(setup, method).filterNot { it in PICKED_BY_HAND }.forEach { field ->
                     assertTrue(
                         "$screen asks for $field as $method and the prefill leaves it empty",
-                        values[field].isNotBlank(),
+                        values[field].orEmpty().isNotBlank(),
                     )
                 }
             }
@@ -41,54 +41,51 @@ class PayInPrefillTest {
     }
 
     @Test
-    fun `the prefill carries the method it was asked for`() {
-        PayInMethod.entries.forEach { method ->
-            assertEquals(
-                method,
-                PayInPrefill
-                    .valuesFor(method, identity)
-                    .values.method
-                    .asMethod(),
+    fun `every field the prefill carries has a label to find its box by`() {
+        // The values and the labels are two tables, and the fill needs both: a field in one and not the
+        // other compiles, and the tap is where it would otherwise be found.
+        values.keys.forEach { field ->
+            assertTrue(
+                "the prefill carries $field and no label to find its box by",
+                runCatching { field.labelResource }.isSuccess,
             )
         }
     }
 
     @Test
-    fun `the card expiry is still ahead`() {
-        // The one value with a shelf life. The form refuses a month that has passed, so the prefill starts
-        // failing validation on its own at some point and the button looks broken.
-        val expiry = PayInPrefill.valuesFor(PayInMethod.Card, identity).values[PayInField.CardExpiration]
-        val month = YearMonth.parse(expiry, DateTimeFormatter.ofPattern("MM/uu"))
-
-        assertTrue(
-            "the prefilled expiry $expiry has passed: give PayInPrefill a later month",
-            !month.isBefore(YearMonth.now()),
-        )
+    fun `the two controls a payer picks from carry no value`() {
+        // Not an omission. Neither is a text box, and a box is the only thing the prefill can write to, so a
+        // value here would be one the button silently fails to apply.
+        PICKED_BY_HAND.forEach { field ->
+            assertTrue("$field is picked rather than typed and the prefill carries it", field !in values)
+        }
     }
 
     @Test
     fun `every field naming the payer names this device`() {
         // The whole point of the identity: three phones and a simulator submitting at once produce rows a
         // dashboard can attribute. A field that kept a constant is a row that cannot be told from the others.
-        PayInMethod.entries.forEach { method ->
-            val values = PayInPrefill.valuesFor(method, identity).values
-            val holder = if (method == PayInMethod.Card) PayInField.CardholderName else PayInField.AccountHolder
-
+        listOf(PayInField.CardholderName, PayInField.AccountHolder).forEach { holder ->
             assertEquals(identity.holderName, values[holder])
-            assertEquals(identity.lastName, values[PayInField.LastName])
-            assertEquals(identity.customerNumber, values[PayInField.CustomerNumber])
-            assertEquals(identity.billingEmail, values[PayInField.BillingEmail])
         }
+        assertEquals(identity.lastName, values[PayInField.LastName])
+        assertEquals(identity.customerNumber, values[PayInField.CustomerNumber])
+        assertEquals(identity.billingEmail, values[PayInField.BillingEmail])
     }
 
     /** The fields a payer types into, which is every section that is not read back to them. */
     private fun typedFields(
         setup: PayInFormSetup,
-        method: PayInMethod,
+        method: PayInMethodType,
     ): List<PayInField> =
         when (method) {
-            PayInMethod.Card -> setup.configuration.cardSections
-            PayInMethod.BankAccount -> setup.configuration.bankSections
+            PayInMethodType.Card -> setup.configuration.cardSections
+            PayInMethodType.BankAccount -> setup.configuration.bankSections
         }.filter { it.style == PayInSectionStyle.Inputs }
             .flatMap { it.fields }
+
+    private companion object {
+        /** The expiry's dialog and the account type's menu, neither of which takes text. */
+        val PICKED_BY_HAND = setOf(PayInField.CardExpiration, PayInField.AccountType)
+    }
 }

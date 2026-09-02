@@ -19,7 +19,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.demo.config.DemoConfiguration
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.TokenHostDefaults
 import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.flow.FlowStep
@@ -47,6 +46,7 @@ import com.payabli.example.app.demo.ui.components.StateChip
 import com.payabli.example.app.demo.ui.components.StepRow
 import com.payabli.example.app.demo.ui.components.TokenCheckStep
 import com.payabli.example.app.demo.ui.theme.Dimens
+import com.payabli.example.app.sdk.DemoEnvironment
 
 /**
  * Take a contactless payment on this device.

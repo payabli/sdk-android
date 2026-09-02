@@ -63,6 +63,13 @@ LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
 SCRIPTS = WORKFLOW_DIR / "scripts.yml"
 # The nightly, for its liveness-owner expression alone. Nothing else here mutates it.
 NIGHTLY = WORKFLOW_DIR / "nightly.yml"
+
+# The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
+# no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
+WALKTHROUGH_COMMAND = (
+    "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest "
+    "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"
+)
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -289,12 +296,10 @@ MUTATIONS = [
      "          PAYABLI_LIVETEST_TOKEN_HOST_DISABLED: 10.0.2.2:8787"),
 
     ("A live setting is passed as a gradle argument, putting it in a command line", LIVE_FLOWS, "workflows",
-     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew "
-     ":example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true "
-     "-Ppayabli.demo.prefill=true; fi",
-     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew "
-     ":example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true "
-     "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\"; fi"),
+     WALKTHROUGH_COMMAND,
+     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest "
+     "-Ppayabli.sampleWalkthrough=true "
+     "-Ppayabli.liveTest.entryPoint=\"$PAYABLI_LIVETEST_ENTRY_POINT\""),
 
     # The guard that keeps the run's verdict and the channel's from disagreeing. Dropping a module from it is
     # how one silent suite gets hidden by the other's results.
@@ -309,20 +314,46 @@ MUTATIONS = [
     # The action splits the script on newlines, so a continuation is not one. Both halves of the split are
     # broken and neither says so: the command loses its arguments and the arguments become a command.
     ("The emulator script is written with a line continuation again", LIVE_FLOWS, "workflows",
-     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew "
-     ":example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true "
-     "-Ppayabli.demo.prefill=true; fi",
-     "            if [ \"$SAMPLE_WALKTHROUGH\" = true ]; then ./gradlew \\\n"
+     WALKTHROUGH_COMMAND,
+     "            ./gradlew \\\n"
      "              :example:connectedWithTelemetryDebugAndroidTest "
-     "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true; fi"),
+     "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"),
 
-    # The caller-specific guard. Flipping it sends qa into the sample's setup, where the failure names an
-    # environment rather than the line that chose it, and nothing else in either suite looks at this line.
-    ("The qa caller asks for a sample walkthrough its environment does not offer", LIVE_QA, "workflows",
-     "      sample-walkthrough: false", "      sample-walkthrough: true"),
+    # The origin an environment outside the checkout arrives by. Written in the file it is the address this
+    # repository exists not to carry; dropped, the run authenticates against whatever the fallback names.
+    ("The qa caller writes its origin into the public repository", LIVE_QA, "workflows",
+     "      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}",
+     "      api-origin: https://api-qa.payabli.com"),
 
-    ("The qa caller stops saying whether the sample runs, taking the default", LIVE_QA, "workflows",
-     "      sample-walkthrough: false", "      # sample-walkthrough: false"),
+    ("The qa caller takes its origin from a secret, where an address cannot be reviewed", LIVE_QA,
+     "workflows", "      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}",
+     "      api-origin: ${{ secrets.PAYABLI_QA_BASE_URL }}"),
+
+    ("The qa caller stops carrying an origin, so its environment falls back", LIVE_QA, "workflows",
+     "      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}",
+     "      # api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}"),
+
+    ("The run's environment is not added to the SDK, so the sample and the token server disagree",
+     LIVE_FLOWS, "workflows",
+     "          PAYABLI_SDK_EXTRAENVIRONMENTS: >-",
+     "          PAYABLI_SDK_EXTRAENVIRONMENTS_DISABLED: >-"),
+
+    # The guard reads as if it closes the case wherever it sits, so its position is the thing to mutate.
+    ("The production refusal moves below the branch that reads the origin", LIVE_FLOWS, "workflows",
+     '          if [ "$ENVIRONMENT" = production ]; then\n'
+     "            echo \"::error::production is not run by this workflow\"\n"
+     "            exit 1\n"
+     "          fi\n",
+     ""),
+
+    ("The allow-list keeps the origin's port, which matches no hostname the server compares", LIVE_FLOWS,
+     "workflows",
+     '            export PAYABLI_ALLOWED_API_HOSTS="${authority%%:*}"',
+     '            export PAYABLI_ALLOWED_API_HOSTS="$authority"'),
+
+    ("The sample app is not offered the run's environment", LIVE_FLOWS, "workflows",
+     "          PAYABLI_DEMO_EXTRAENVIRONMENTS: ${{ inputs.environment }}",
+     "          PAYABLI_DEMO_EXTRAENVIRONMENTS:"),
 
     # Named as text on the line rather than run. A check that only looks for `./gradlew` somewhere in the
     # line passes on this, and the step goes green having run no suite at all.

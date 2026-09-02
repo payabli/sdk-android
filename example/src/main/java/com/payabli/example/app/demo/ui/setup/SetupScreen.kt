@@ -11,7 +11,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import com.payabli.example.app.BuildConfig
 import com.payabli.example.app.demo.config.DemoConfiguration
-import com.payabli.example.app.demo.config.DemoEnvironment
 import com.payabli.example.app.demo.config.TokenHostDefaults
 import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.preflight.CheckStatus
@@ -28,6 +27,7 @@ import com.payabli.example.app.demo.ui.components.RecheckWhenFocused
 import com.payabli.example.app.demo.ui.components.SectionHeader
 import com.payabli.example.app.demo.ui.components.SwitchRow
 import com.payabli.example.app.demo.ui.theme.Dimens
+import com.payabli.example.app.sdk.DemoEnvironment
 import com.payabli.example.app.sdk.PayInForms
 
 /**

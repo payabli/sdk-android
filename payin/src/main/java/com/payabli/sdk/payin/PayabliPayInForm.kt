@@ -9,7 +9,6 @@ import androidx.compose.ui.Modifier
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
-import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
@@ -56,8 +55,6 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * @param configuration what to collect and how to arrange it.
  * @param labels wording decided at runtime; anything left out or blank comes from string resources.
  * @param style null takes `LocalPayInFormStyle`, then the host's theme.
- * @param initialValues what the boxes start with, for a payer whose details the caller already holds. Held
- *   exactly as typed input is, and replacing it starts the form again from the new values.
  * @param onCompleted the service accepted it.
  * @param onFailed it did not go through, with the typed cause and the fields the service rejected.
  * @param onMethodChanged the payer switched instrument. The values themselves stay in the form: a card
@@ -71,7 +68,6 @@ public fun PayabliPayInForm(
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
-    initialValues: PayInFormValues? = null,
     onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
     onFailed: (PayInSubmissionState.Failed) -> Unit,
     onMethodChanged: (PayInMethodType) -> Unit,
@@ -100,7 +96,6 @@ public fun PayabliPayInForm(
         modifier = modifier,
         labels = labels,
         style = style,
-        initialValues = initialValues,
         onSubmit = { values ->
             // Before the send, so a submit that never reaches the service is still counted.
             flow.reports.submitted(operation.step)

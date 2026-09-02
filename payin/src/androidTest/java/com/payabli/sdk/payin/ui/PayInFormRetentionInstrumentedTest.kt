@@ -17,14 +17,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
-import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormSection
-import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.form.TEST_EXPIRY
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
 import org.junit.Rule
@@ -39,8 +36,8 @@ import org.junit.runner.RunWith
  * separate is the draft surviving from the composition surviving.
  *
  * The last one is the other half. Retention that reached saved instance state would pass everything above and
- * put a card number somewhere the system can write to disk, so a form whose draft is new opens empty however the
- * composition was restored.
+ * put a card number somewhere the system can write to disk, so a form whose draft is new opens empty however
+ * the composition was restored, and its boxes are still drawn.
  */
 @RunWith(AndroidJUnit4::class)
 class PayInFormRetentionInstrumentedTest {
@@ -51,9 +48,6 @@ class PayInFormRetentionInstrumentedTest {
     private var draft by mutableStateOf(PayInFormDraft())
 
     private var onScreen by mutableStateOf(true)
-
-    /** The expiry is picked from a dialog, so it is seeded rather than typed. */
-    private val seed = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardExpiration to TEST_EXPIRY))
 
     @Test
     fun whatThePayerTypedSurvivesARecreation() {
@@ -93,18 +87,8 @@ class PayInFormRetentionInstrumentedTest {
 
         rule.onNodeWithText("Ada Lovelace").assertDoesNotExist()
         rule.onNodeWithText(GROUPED_PAN).assertDoesNotExist()
-    }
-
-    @Test
-    fun aNewDraftIsStillSeededFromTheValuesTheCallerGave() {
-        // The other half of the test above: an empty form and a form that lost its seed look the same from the
-        // card fields alone.
-        rule.setContent { Form() }
-        fillIn()
-
-        rule.runOnIdle { draft = PayInFormDraft() }
-
-        rule.onNodeWithText(TEST_EXPIRY).assertExists()
+        // The other half: a form that was never drawn again looks the same from the values alone.
+        rule.onNodeWithText(string(R.string.payabli_payin_field_card_number)).assertExists()
     }
 
     @Test
@@ -143,7 +127,6 @@ class PayInFormRetentionInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
-                    initialValues = seed,
                 )
             }
         }

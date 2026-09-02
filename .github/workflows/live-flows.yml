@@ -38,14 +38,16 @@ on:
         description: The environment to run against, as the SDK names it.
         required: true
         type: string
-      sample-walkthrough:
+      api-origin:
         description: >-
-          Whether to drive the sample app's walkthrough as well as the pay-in tier. The sample offers
-          sandbox and production only, so a caller on any other environment sets this false and its
-          walkthrough is skipped rather than failing on an environment the sample does not name.
+          The origin for an environment the checkout does not name, as `https://host`. Empty only for
+          `sandbox`, which is the one environment this workflow runs without being given one. It reaches the
+          build as `payabli.sdk.extraEnvironments`, the token server as its base URL and allowed host, and
+          the sample app as the environment its picker offers, so one value configures all three and no two
+          of them can disagree about where the run is pointed.
         required: false
-        default: true
-        type: boolean
+        default: ''
+        type: string
     secrets:
       client-id:
         required: true
@@ -147,21 +149,41 @@ jobs:
           PAYABLI_CLIENT_ID: ${{ secrets.client-id }}
           PAYABLI_CLIENT_SECRET: ${{ secrets.client-secret }}
           PAYABLI_ENTRY: ${{ secrets.entry-point }}
+          API_ORIGIN: ${{ inputs.api-origin }}
         run: |
           # The allow-list moves with the base URL. The server's committed default names sandbox and
           # production only, so a deployment outside that list is named by the run that needs it and is
           # refused rather than ignored when it is not.
-          case "$ENVIRONMENT" in
-            qa)
-              export PAYABLI_API_BASE_URL=https://api-qa.payabli.com/api
-              export PAYABLI_ALLOWED_API_HOSTS=api-qa.payabli.com
-              ;;
-            sandbox)
-              export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
-              export PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com
-              ;;
-            *) echo "::error::unknown environment $ENVIRONMENT"; exit 1 ;;
-          esac
+          #
+          # An environment this repository does not name arrives as an origin from the caller. Absent, the
+          # case below refuses rather than falling back, so a run whose variable was never set says which
+          # environment had no origin instead of authenticating against the wrong service.
+          #
+          # Production is refused first, before anything reads API_ORIGIN. These runs send real
+          # transactions on a real paypoint and the credential this workflow holds is deliberately not a
+          # production one, so no combination of inputs may reach a suite against it. A refusal inside the
+          # branch below answers only a caller that supplied no origin.
+          if [ "$ENVIRONMENT" = production ]; then
+            echo "::error::production is not run by this workflow"
+            exit 1
+          fi
+
+          if [ -n "$API_ORIGIN" ]; then
+            # The base URL keeps the port and the allow-list must not. example-server checks a request
+            # against `URL.hostname`, which carries no port, so `host:port` in the list matches nothing and
+            # every upstream call is refused with a message naming the host rather than this line.
+            authority="${API_ORIGIN#https://}"
+            export PAYABLI_API_BASE_URL="$API_ORIGIN/api"
+            export PAYABLI_ALLOWED_API_HOSTS="${authority%%:*}"
+          else
+            case "$ENVIRONMENT" in
+              sandbox)
+                export PAYABLI_API_BASE_URL=https://api-sandbox.payabli.com/api
+                export PAYABLI_ALLOWED_API_HOSTS=api-sandbox.payabli.com
+                ;;
+              *) echo "::error::$ENVIRONMENT was given no api-origin"; exit 1 ;;
+            esac
+          fi
           nohup node example-server/server.mjs > "$RUNNER_TEMP/token-server.log" 2>&1 &
           # Waited on rather than assumed: the tests fail as an unlocked-form timeout if it is not up yet,
           # which names the form and not the server.
@@ -196,7 +218,14 @@ jobs:
           PAYABLI_LIVETEST_ENVIRONMENT: ${{ inputs.environment }}
           PAYABLI_LIVETEST_ENTRY_POINT: ${{ secrets.entry-point }}
           PAYABLI_LIVETEST_TOKEN_HOST: 10.0.2.2:8787
-          SAMPLE_WALKTHROUGH: ${{ inputs.sample-walkthrough }}
+          # The environment the run is for, added to the two the checkout carries. Empty for one it already
+          # names, and `:core`'s generator refuses anything that is not an https payabli.com origin.
+          PAYABLI_SDK_EXTRAENVIRONMENTS: >-
+            ${{ inputs.api-origin && format('{0}={1}', inputs.environment, inputs.api-origin) || '' }}
+          # The same environment offered in the sample app's picker, which appends to the two it always has.
+          # Passed unconditionally: the app drops a duplicate, and drops a name the SDK was not built with, so
+          # one value serves both callers and neither restates what the checkout already carries.
+          PAYABLI_DEMO_EXTRAENVIRONMENTS: ${{ inputs.environment }}
         with:
           api-level: ${{ env.API_LEVEL }}
           target: ${{ env.EMULATOR_TARGET }}
@@ -213,7 +242,7 @@ jobs:
           # exit, so a refused pay-in flow stops here rather than being reported over by the sample app's run.
           script: |
             ./gradlew :payin:connectedAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.payabli.sdk.payin.payment.PayInLiveFlowsInstrumentedTest
-            if [ "$SAMPLE_WALKTHROUGH" = true ]; then ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true; fi
+            ./gradlew :example:connectedWithTelemetryDebugAndroidTest -Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true
 
       # The run's own verdict, so it cannot disagree with the message the report job sends. A suite that
       # succeeded having discovered no tests writes no results, leaves the step green, and reaches Slack as
@@ -226,12 +255,8 @@ jobs:
       - name: Every suite wrote results
         env:
           INSTRUMENTED_MODULES: payin example
-          SAMPLE_WALKTHROUGH: ${{ inputs.sample-walkthrough }}
         run: |
-          # Narrowed here rather than in the list above, so the list keeps naming every suite this
-          # workflow can run and a caller that skipped one cannot quietly shrink what is checked.
           modules=$INSTRUMENTED_MODULES
-          [ "$SAMPLE_WALKTHROUGH" = true ] || modules=payin
           missing=
           for module in $modules; do
             found=$(find "$module/build/outputs/androidTest-results" -name 'TEST-*.xml' 2>/dev/null | wc -l)

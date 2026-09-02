@@ -26,7 +26,6 @@ import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormSection
-import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInLabelLayout
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.TEST_EXPIRY
@@ -48,10 +47,11 @@ import org.junit.runner.RunWith
  * The fields are found by their label, which sits inside the box under [PayInLabelLayout.Placeholder]: that is
  * the layout whose label Material puts in the field's own semantics, so a query finds the node that takes text.
  *
- * **The expiry is seeded and the account type is left out**, because those are the two values a payer picks from
- * a dialog and a menu instead of typing. Everything else is typed, so the submit button enables and these tests
- * go through the real tap. What each box holds is read from the screen, which is the only copy there is now that
- * the form reports no values. The cleared set itself is pinned by `PayInSensitiveFieldsTest`.
+ * **The expiry is written into the draft and the account type is left out**, because those are the two values a
+ * payer picks from a dialog and a menu instead of typing. Everything else is typed, so the submit button
+ * enables and these tests go through the real tap. What each box holds is read from the screen, which is the
+ * only copy there is now that the form reports no values. The cleared set itself is pinned by
+ * `PayInSensitiveFieldsTest`.
  */
 @RunWith(AndroidJUnit4::class)
 class PayInFormSubmissionInstrumentedTest {
@@ -221,11 +221,13 @@ class PayInFormSubmissionInstrumentedTest {
         type(R.string.payabli_payin_field_account_number, TEST_ACCOUNT)
     }
 
-    private fun showCardForm() =
+    private fun showCardForm() {
         showForm(
             PayInMethodType.Card,
             PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
         )
+        pickTheExpiry()
+    }
 
     private fun showBankForm() =
         showForm(
@@ -233,8 +235,13 @@ class PayInFormSubmissionInstrumentedTest {
             PayInFormSection(fields = BANK_INSTRUMENT_FIELDS + PayInField.FirstName),
         )
 
-    /** The expiry is picked from a dialog, so the form is completed by typing only with it seeded. */
-    private val seed = PayInFormValues(PayInMethodType.Card, mapOf(PayInField.CardExpiration to TEST_EXPIRY))
+    /**
+     * The expiry, written into the draft rather than picked from its dialog.
+     *
+     * A payer picks it and cannot type it, and none of these tests is about the picker: they need a card form
+     * complete enough to submit. The draft is the test's own object and this is the state a pick writes.
+     */
+    private fun pickTheExpiry() = rule.runOnIdle { draft.enter(PayInField.CardExpiration, TEST_EXPIRY) }
 
     private fun showForm(
         method: PayInMethodType,
@@ -255,7 +262,6 @@ class PayInFormSubmissionInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
-                    initialValues = seed,
                     onSubmit = { true },
                 )
             }

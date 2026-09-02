@@ -246,8 +246,11 @@ class NavigationSmokeTest {
  *
  * A real socket, so the app runs its own check. `java.net.ServerSocket`, since `com.sun.*` is
  * absent on Android.
+ *
+ * `PrefillButtonTest` needs the same thing for the same reason, which is what took this out of the file it
+ * was private to.
  */
-private class FakeTokenServer : Closeable {
+internal class FakeTokenServer : Closeable {
     private val socket = ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))
 
     val port: Int get() = socket.localPort

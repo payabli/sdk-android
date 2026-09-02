@@ -37,7 +37,8 @@ and only `payabli.demo.appId` prefills something other than its build default.
 | Setting | Default | Notes |
 |---|---|---|
 | `payabli.demo.entryPoint` | | Partner identifier. Exists in one environment, so set it with the row below. |
-| `payabli.demo.environment` | `sandbox` | `sandbox` or `production`. |
+| `payabli.demo.environment` | `sandbox` | Which environment this build talks to, from the row below. |
+| `payabli.demo.extraEnvironments` | | Environments the picker offers beyond sandbox and production. A name the SDK was not built with is dropped; adding one to the SDK is `payabli.sdk.extraEnvironments`. |
 | `payabli.demo.appId` | | `secrets.properties.example` prefills `com.payabli.example.app`; the build itself falls back to blank. Compared against the running package by the readiness check, so a `-P` run without the template fails that check. |
 | `payabli.demo.signingCertificate` | | SHA-256 as the Play Console shows it; case and punctuation ignored. Blank means the signing key is not verified. `keytool -printcert -jarfile <apk>` prints it for a file, and the Setup screen shows what is installed. |
 | `payabli.demo.tokenHost` | | Blank resolves per run; see below. |

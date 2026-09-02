@@ -77,6 +77,16 @@ android {
         // Unvalidated. Which labels exist is DemoEnvironment's to say, and a copy of the list here
         // would be a second place to change and the one nothing compiles against.
         buildConfigField("String", "DEMO_ENVIRONMENT", quoted(demoSetting("payabli.demo.environment", "sandbox")))
+
+        // Environments the picker offers beyond sandbox and production, comma separated. Empty by default,
+        // and it appends: the two are in Kotlin, so nothing here removes one. The SDK's own list is what
+        // these names resolve against, so a name :core was not built with is dropped rather than offered
+        // resolving to no origin.
+        buildConfigField(
+            "String",
+            "DEMO_EXTRA_ENVIRONMENTS",
+            quoted(demoSetting("payabli.demo.extraEnvironments", "")),
+        )
         buildConfigField(
             "String",
             "DEMO_SIGNING_CERTIFICATE",

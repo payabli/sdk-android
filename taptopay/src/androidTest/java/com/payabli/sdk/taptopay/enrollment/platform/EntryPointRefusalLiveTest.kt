@@ -47,8 +47,13 @@ private val TEST_TIMEOUT = 120.seconds
  *
  * ```
  * ANDROID_SERIAL=<serial> ./gradlew :taptopay:connectedAndroidTest \
- *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=qa -Ppayabli.ttp.entryPointRefusalDeployed=true
+ *   -Ppayabli.ttp.entry=<entry> -Ppayabli.ttp.environment=<name> -Ppayabli.ttp.entryPointRefusalDeployed=true
  * ```
+ *
+ * An environment beyond `sandbox` and `production` is not in this checkout. Add it to the build first,
+ * with `payabli.sdk.extraEnvironments=<name>=https://<host>.payabli.com` in
+ * `~/.gradle/gradle.properties`, or `payabli.ttp.environment` names one the SDK does not carry and the
+ * run stops at configuration.
  *
  * A red with the property set is worth reading: either the environment does not have the change after all,
  * or the wording moved and the mapper's literal is now wrong, which is the whole reason this test exists.

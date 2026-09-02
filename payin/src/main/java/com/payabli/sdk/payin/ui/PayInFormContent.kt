@@ -60,7 +60,6 @@ internal fun PayInFormContent(
     modifier: Modifier = Modifier,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
-    initialValues: PayInFormValues? = null,
     onSubmit: (PayInFormValues) -> Boolean = { false },
     onCompleted: (PayInSubmissionState.Succeeded) -> Unit = {},
     onFailed: (PayInSubmissionState.Failed) -> Unit = {},
@@ -78,10 +77,9 @@ internal fun PayInFormContent(
     // showed nothing, and only the click knew better, so tapping did nothing and said nothing.
     var today by remember { mutableStateOf(ExpiryValue.today()) }
 
-    // Before anything below reads the draft, and on every composition: a caller replacing the configuration or
-    // the values starts the form again from what they handed over, and re-entering a composition with the same
-    // pair keeps what the payer typed.
-    draft.seed(configuration, initialValues)
+    // Before anything below reads the draft, and on every composition: a caller replacing the configuration
+    // starts the form again, and re-entering a composition with the same one keeps what the payer typed.
+    draft.seed(configuration)
 
     val method = draft.method
     val typed = draft.typed
