@@ -28,7 +28,10 @@ fun PaymentFormHost(
     modifier: Modifier = Modifier,
 ) {
     PayabliPayInForm(
-        payIn = payments.payIn,
+        payIn =
+            requireNotNull(payments.formTarget) {
+                "PaymentFormHost draws a handle the SDK produced, and this one has no pay-in behind it"
+            },
         operation = operation.operation,
         configuration = setup.configuration,
         modifier = modifier,

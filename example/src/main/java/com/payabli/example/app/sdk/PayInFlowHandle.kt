@@ -9,13 +9,15 @@ import com.payabli.sdk.payin.payment.PayInSubmissionState
 /**
  * A screen's grip on the pay-in it submits through.
  *
- * The `PayabliPayIn` itself stays in here. A screen needs two answers about it and the form needs it, so this
- * hands out the answers and keeps the type: outside this package nothing names one, which is what makes the
- * package the whole of the integration rather than most of it.
+ * The `PayabliPayIn` stays behind this. A screen needs two answers about it and the form needs the object
+ * itself, so this hands out the answers and keeps the type: outside this package nothing names one, which is
+ * what makes the package the whole of the integration rather than most of it.
+ *
+ * **An interface, because `PayabliPayIn` is sealed.** Only the SDK implements that type, so a JVM test can
+ * neither build one nor stand in for one, and a view model that reverses a payment is reachable from a
+ * device alone unless the seam is here.
  */
-class PayInFlowHandle internal constructor(
-    internal val payIn: PayabliPayIn,
-) {
+interface PayInFlowHandle {
     /**
      * Whether it is holding anything: a submission in flight, or an outcome nobody has taken yet.
      *
@@ -24,14 +26,19 @@ class PayInFlowHandle internal constructor(
      * replaced while it holds a terminal state the form has not consumed, the outcome reaches neither
      * callback. Either way the form observes a new idle one and the screen offers Submit again.
      */
-    val isBusy: Boolean get() = payIn.state.value != PayInSubmissionState.Idle
+    val isBusy: Boolean
+
+    /**
+     * What [PaymentFormHost] draws, or null for a handle that is not backed by the SDK.
+     *
+     * Only a test double is unbacked, and no test draws a form over one, so the form asks for this and says
+     * so rather than carrying a nullable through the screens.
+     */
+    val formTarget: PayabliPayIn?
 
     /** Whether a submission is in flight, recomposing the caller when that changes. */
     @Composable
-    fun isSubmitting(): Boolean {
-        val submission by payIn.state.collectAsState()
-        return submission is PayInSubmissionState.Submitting
-    }
+    fun isSubmitting(): Boolean
 
     /**
      * Reverses [transId], under [idempotencyKey].
@@ -44,6 +51,26 @@ class PayInFlowHandle internal constructor(
      * meets a transaction the service has already reversed and reports a failure over a success.
      */
     suspend fun voidTransaction(
+        transId: String,
+        idempotencyKey: String,
+    ): PayInOutcome
+}
+
+/** The one a session produces, which is every handle outside a test. */
+internal class SdkPayInFlowHandle(
+    private val payIn: PayabliPayIn,
+) : PayInFlowHandle {
+    override val isBusy: Boolean get() = payIn.state.value != PayInSubmissionState.Idle
+
+    override val formTarget: PayabliPayIn get() = payIn
+
+    @Composable
+    override fun isSubmitting(): Boolean {
+        val submission by payIn.state.collectAsState()
+        return submission is PayInSubmissionState.Submitting
+    }
+
+    override suspend fun voidTransaction(
         transId: String,
         idempotencyKey: String,
     ): PayInOutcome = payIn.voidTransaction(transId, idempotencyKey).toOutcome()

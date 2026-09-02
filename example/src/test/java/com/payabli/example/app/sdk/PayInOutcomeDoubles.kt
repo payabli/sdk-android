@@ -100,7 +100,7 @@ internal fun refusedOutcome() =
  * `payments` is null: a JVM test cannot build a `PayabliPayIn`, whose implementation's test constructor is internal
  * to `:payin`. Nothing that uses this submits, so the outcomes are handed to the view model directly.
  */
-internal fun readyStartup() =
+internal fun readyStartup(handle: PayInFlowHandle? = null) =
     PayInStartup {
-        PayInStartup.Started(text = "returned a token", isReady = true, payments = null)
+        PayInStartup.Started(text = "returned a token", isReady = true, payments = handle)
     }
