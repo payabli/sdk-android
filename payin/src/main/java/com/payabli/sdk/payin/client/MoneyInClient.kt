@@ -101,8 +101,8 @@ internal class MoneyInClient(
     /**
      * Captures a transaction that was authorized earlier, in full or in part.
      *
-     * The only call in this module whose path differs from its route: the identifier is in the path, so the
-     * template is what a log may carry.
+     * One of the two whose path differs from its route, [void] being the other: the identifier is in the
+     * path, so the template is what a log may carry.
      */
     suspend fun captureAuthorized(
         request: PayInAuthorizedRequest,
