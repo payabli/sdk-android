@@ -81,6 +81,16 @@ data class CaptureUiState(
      */
     val voidIdempotencyKey: String? = null,
 ) : PaymentFlowUiState {
+    /**
+     * Its own, because `data class` would synthesize one over the transaction identifier and the key beside it.
+     *
+     * The readout types this holds each declare theirs for the same reason, and a state that carries them
+     * would put back what those took out: this reaches an assertion failure or a crash report whole.
+     */
+    override fun toString(): String =
+        "CaptureUiState(finished=$finished, isVoiding=$isVoiding, hasVoidableTransaction=" +
+            "${voidableTransactionId != null})"
+
     override val finished: Boolean get() = lastResult != null
 
     /** The transaction a void would name, once there is one and it has not already been reversed. */

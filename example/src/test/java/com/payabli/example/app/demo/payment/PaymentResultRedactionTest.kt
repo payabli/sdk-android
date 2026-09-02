@@ -1,5 +1,8 @@
 package com.payabli.example.app.demo.payment
 
+import com.payabli.example.app.demo.sample.SampleIdentity
+import com.payabli.example.app.demo.ui.method.PaymentMethodUiState
+import com.payabli.example.app.sdk.PayInForms
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -40,6 +43,27 @@ class PaymentResultRedactionTest {
         assertEquals("StoredMethod", stored.toString())
         assertFalse(stored.toString().contains("tok-77"))
         assertFalse(stored.toString().contains(pan))
+    }
+
+    /**
+     * The stored-method screen's state, which quotes the identifier a later transaction charges.
+     *
+     * `resultText` is built as "Stored method: <id>", so a synthesized `toString` over this class would carry
+     * the token that `StoredMethod` above declares its own `toString` to keep out.
+     */
+    @Test
+    fun `the stored-method screen state names nothing it charges`() {
+        val state =
+            PaymentMethodUiState(
+                setup = PayInForms.storePaymentMethod(),
+                sampleIdentity = SampleIdentity.from("Test Device"),
+                resultText = "✓ Stored method: tok-77",
+                storedMethod = StoredMethod("tok-77", "Approved", "Approved"),
+            )
+
+        val rendered = state.toString()
+        assertEquals("PaymentMethodUiState(finished=true)", rendered)
+        assertFalse(rendered, rendered.contains("tok-77"))
     }
 
     @Test

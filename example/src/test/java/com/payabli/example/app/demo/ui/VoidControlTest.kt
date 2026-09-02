@@ -198,6 +198,26 @@ class VoidControlTest {
         assertNull(model.uiState.value.voidIdempotencyKey)
     }
 
+    /**
+     * The screen state carries what the readout types redact, so it declares its own `toString` too.
+     *
+     * `CaptureUiState` holds the transaction identifier and the key that reverses it. As a `data class` it
+     * would synthesize one over both, which reaches an assertion failure or a crash report whole and undoes
+     * the redaction one level down.
+     */
+    @Test
+    fun `the screen state names no transaction and no key`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val state = model.uiState.value
+
+        val rendered = state.toString()
+        assertFalse(rendered, rendered.contains("101-abc"))
+        assertFalse(rendered, rendered.contains(requireNotNull(state.voidIdempotencyKey)))
+        // What a reader does need: whether there is something to reverse, without naming it.
+        assertTrue(rendered, rendered.contains("hasVoidableTransaction=true"))
+    }
+
     private fun captureModel() =
         CaptureViewModel(
             identity = SampleIdentity.from("Test Device"),
