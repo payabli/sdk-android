@@ -80,6 +80,11 @@ class MoneyInClientTest {
             assertTrue(body, body.contains(""""totalAmount":10.00"""))
 
             assertEquals("A0000", result.code)
+            // The three words beside the code, which the envelope carries on every approval and this client
+            // decoded and discarded until they were published.
+            assertEquals("Approved", result.reason)
+            assertEquals("Transaction approved", result.explanation)
+            assertEquals("none", result.action)
             assertEquals("101-abc", result.transaction?.paymentTransId)
             assertEquals(BigDecimal("10.00"), result.transaction?.totalAmount)
             assertEquals(42L, result.transaction?.paypointId)
