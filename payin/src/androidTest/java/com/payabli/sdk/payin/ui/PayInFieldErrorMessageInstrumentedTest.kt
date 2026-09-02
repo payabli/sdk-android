@@ -46,6 +46,13 @@ class PayInFieldErrorMessageInstrumentedTest {
             PayInFieldError.NotAccepted,
         )
 
+    /**
+     * Names each subtype through an exhaustive `when`, which is what makes the fixture above honest.
+     *
+     * A list checked against its own size passes when a new error is added to neither, and the message that
+     * new error renders would go undrawn here while this stayed green. [name] is exhaustive over the sealed
+     * type, so a thirteenth subtype stops this file compiling until somebody puts it in both places.
+     */
     @Test
     fun everyErrorRendersAMessage() {
         val rendered = mutableListOf<String>()
@@ -60,7 +67,34 @@ class PayInFieldErrorMessageInstrumentedTest {
         rendered.forEachIndexed { index, message ->
             assertTrue("${everyError[index]} rendered nothing", message.isNotBlank())
         }
+        assertEquals(
+            "the fixture names one subtype twice and another not at all",
+            everyError.size,
+            everyError.map { name(it) }.toSet().size,
+        )
     }
+
+    /**
+     * Exhaustive over `PayInFieldError`, and that is its whole job.
+     *
+     * It returns a name only so the test can check the fixture holds each subtype once. What catches a new
+     * subtype is the compiler refusing this `when`, not any assertion.
+     */
+    private fun name(error: PayInFieldError): String =
+        when (error) {
+            PayInFieldError.DigitsOnly -> "DigitsOnly"
+            is PayInFieldError.ShorterThan -> "ShorterThan"
+            is PayInFieldError.LongerThan -> "LongerThan"
+            is PayInFieldError.TooManyCharacters -> "TooManyCharacters"
+            is PayInFieldError.NotExactly -> "NotExactly"
+            is PayInFieldError.OutsideRange -> "OutsideRange"
+            PayInFieldError.CardNumberNotValid -> "CardNumberNotValid"
+            PayInFieldError.RoutingNumberNotValid -> "RoutingNumberNotValid"
+            PayInFieldError.EmailNotValid -> "EmailNotValid"
+            PayInFieldError.ExpiryIncomplete -> "ExpiryIncomplete"
+            PayInFieldError.ExpiryPast -> "ExpiryPast"
+            PayInFieldError.NotAccepted -> "NotAccepted"
+        }
 
     /**
      * The five counted messages say their number, which is the argument a plural resource can silently drop.
@@ -91,7 +125,17 @@ class PayInFieldErrorMessageInstrumentedTest {
         assertTrue(messages.getValue("range"), messages.getValue("range").contains("8"))
     }
 
-    /** A singular and a plural of the same rule differ, which is the whole reason these are plurals. */
+    /**
+     * A singular and a plural of the same rule differ, which is the whole reason these are plurals.
+     *
+     * Compared with the digits removed. The two messages carry 1 and 5, so comparing them whole says only
+     * that the count was interpolated: both counts landing on the same plural branch would still read as
+     * different strings, which is the defect this is here to catch. What is left after stripping is the
+     * template, and "At least digit" against "At least digits" is the difference that matters.
+     *
+     * English, which distinguishes one from other. A locale that does not would make this fail honestly
+     * rather than silently, and the runner's locale is the one being asserted about.
+     */
     @Test
     fun aCountOfOneReadsDifferentlyFromACountOfMany() {
         var one = ""
@@ -105,7 +149,12 @@ class PayInFieldErrorMessageInstrumentedTest {
         rule.waitForIdle()
 
         assertTrue(one, one.isNotBlank())
-        assertTrue("a count of one read exactly as a count of five: $one", one != many)
+        val oneTemplate = one.filterNot { it.isDigit() }
+        val manyTemplate = many.filterNot { it.isDigit() }
+        assertTrue(
+            "both counts used the same plural template: \"$one\" and \"$many\"",
+            oneTemplate != manyTemplate,
+        )
     }
 
     /** Both method names, which name the tab a payer chooses between. */

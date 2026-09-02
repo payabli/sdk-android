@@ -2,6 +2,10 @@ package com.payabli.sdk.payin.ui
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -154,6 +158,22 @@ class ExpiryPickerDialogInstrumentedTest {
         rule.onNodeWithText("08").assertIsNotSelected()
     }
 
+    /**
+     * And announced as a radio button, which the selected state alone does not carry.
+     *
+     * Asserted separately because `selectable` sets the selected state with or without a role: dropping the
+     * role leaves every assertion above green while a screen reader stops saying what kind of control this
+     * is.
+     */
+    @Test
+    fun aMonthCarriesTheRoleAScreenReaderReads() {
+        show(initial = null)
+
+        rule
+            .onNodeWithText("08")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
+    }
+
     /** Android's minimum touch target, which a row sized to its own text would be under. */
     @Test
     fun aRowIsBigEnoughToTap() {
@@ -180,8 +200,8 @@ class ExpiryPickerDialogInstrumentedTest {
      * The two lists, told apart by their order in the row: month first, then year.
      *
      * Both are bounded to four rows, so anything further down has to be scrolled to before it exists to
-     * assert on at all. Indexing the scrollables is the only handle either column offers; neither carries a
-     * test tag, and adding one to production code to suit a test is what the styling rule forbids.
+     * assert on at all. Indexing the scrollables is the handle used because neither column carries a test
+     * tag today; a tag on each would be a steadier selector than position if this grows a third column.
      */
     private fun monthColumn() = rule.onAllNodes(hasScrollAction())[0]
 

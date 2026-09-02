@@ -351,7 +351,8 @@ reaches the branch under test.
     card reader from a private registry, so including it would hand `GPR_TOKEN` to that action; its
     instrumented tier waits on a job of its own, and `enableAndroidTestCoverage` is turned off at its own
     declaration to say so. `:example` is `isSkipProject` in the analysis, so its coverage is read by nothing.
-    The nightly still runs both modules' instrumented tests.
+    `:example`'s tests still run in the nightly. `:taptopay`'s run in no automated job at all, which is what
+    the job of its own is for.
   - A regression in the manual tier's device-only behaviours still will not turn a pull request red: that
     tier is excluded by `notAnnotation`, naming both modules' annotations.
 - Card-present paths need a physical device or mocks rather than an emulator.

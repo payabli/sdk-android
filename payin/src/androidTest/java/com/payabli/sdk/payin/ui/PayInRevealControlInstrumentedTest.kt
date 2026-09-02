@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.ui
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -99,12 +100,24 @@ class PayInRevealControlInstrumentedTest {
         rule.onNodeWithContentDescription(hideLabel(), substring = true).assertDoesNotExist()
     }
 
-    /** The control follows the form's enabled state, so a submission in flight does not leave it live. */
+    /**
+     * The control follows the form's enabled state, so a submission in flight does not leave it live.
+     *
+     * Both states, because the idle half alone passes over a control that ignores `enabled` outright. The
+     * submitting half is the one that says anything.
+     */
     @Test
-    fun theControlIsLiveWhileTheFormIs() {
-        showBankForm(masksAccountNumber = true)
+    fun theControlIsLiveOnlyWhileTheFormIs() {
+        showBankForm(masksAccountNumber = true, submission = PayInSubmissionState.Idle)
 
         rule.onNodeWithContentDescription(revealLabel(), substring = true).assertIsEnabled()
+    }
+
+    @Test
+    fun aSubmissionInFlightTakesTheControlDown() {
+        showBankForm(masksAccountNumber = true, submission = PayInSubmissionState.Submitting)
+
+        rule.onNodeWithContentDescription(revealLabel(), substring = true).assertIsNotEnabled()
     }
 
     private fun accountNumberField() =
@@ -119,7 +132,10 @@ class PayInRevealControlInstrumentedTest {
 
     private fun hideLabel() = string(R.string.payabli_payin_hide).substringBefore(" %")
 
-    private fun showBankForm(masksAccountNumber: Boolean) {
+    private fun showBankForm(
+        masksAccountNumber: Boolean,
+        submission: PayInSubmissionState = PayInSubmissionState.Idle,
+    ) {
         val configuration =
             PayInFormConfiguration(
                 allowedMethods = listOf(PayInMethodType.BankAccount),
@@ -131,7 +147,7 @@ class PayInRevealControlInstrumentedTest {
         rule.setContent {
             MaterialTheme {
                 PayInFormContent(
-                    submission = PayInSubmissionState.Idle,
+                    submission = submission,
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
