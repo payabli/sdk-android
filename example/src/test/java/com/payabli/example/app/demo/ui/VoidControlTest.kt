@@ -6,6 +6,7 @@ import com.payabli.example.app.demo.sample.DemoCustomerSetting
 import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.capturedPaymentOutcome
+import com.payabli.example.app.sdk.interruptedOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
 import com.payabli.example.app.sdk.voidedOutcome
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -142,6 +144,58 @@ class VoidControlTest {
         assertNull("a refused void recorded the transaction as reversed", after.voidedTransactionId)
         assertEquals("101-abc", after.voidableTransactionId)
         assertTrue(after.resultText, after.resultText.startsWith("✗"))
+    }
+
+    /**
+     * A payment gets one key, and every reversal of it sends that one.
+     *
+     * The service recognizes a repeat by the key, so a second attempt under a fresh key asks it to reverse a
+     * transaction it has already reversed. What that returns is a failure, over a reversal that worked.
+     */
+    @Test
+    fun `a completed payment carries one key for reversing it`() {
+        val model = captureModel()
+
+        model.onCompleted(capturedPaymentOutcome())
+
+        val key = model.uiState.value.voidIdempotencyKey
+        assertNotNull("a transaction to reverse with no key to reverse it under", key)
+        // Still the same one after a rebuild of the state, since it belongs to the transaction.
+        assertEquals(key, model.uiState.value.voidIdempotencyKey)
+    }
+
+    /**
+     * No refusal replaces the key, whichever kind it was.
+     *
+     * A reversal takes only the transaction, so a second attempt is the same request and belongs under the
+     * same key. That holds for a refusal the service answered as much as for one that left the outcome
+     * unknown, and it is why nothing here mints a second time.
+     */
+    @Test
+    fun `a refusal leaves the key alone`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val taken = model.uiState.value
+        val key = requireNotNull(taken.voidIdempotencyKey)
+
+        val unknown = with(model) { taken.afterVoiding(interruptedOutcome(), "101-abc") }
+        val answered = with(model) { taken.afterVoiding(refusedOutcome(), "101-abc") }
+
+        assertEquals("a retry could no longer be recognized as the same attempt", key, unknown.voidIdempotencyKey)
+        assertEquals("a retry could no longer be recognized as the same attempt", key, answered.voidIdempotencyKey)
+    }
+
+    /** Once reversed there is nothing left to identify, and the screen moving on drops it too. */
+    @Test
+    fun `the key goes when the transaction does`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val taken = model.uiState.value
+
+        assertNull(with(model) { taken.afterVoiding(voidedOutcome(), "101-abc") }.voidIdempotencyKey)
+
+        model.startOver()
+        assertNull(model.uiState.value.voidIdempotencyKey)
     }
 
     private fun captureModel() =

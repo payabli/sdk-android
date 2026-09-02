@@ -72,6 +72,13 @@ internal fun voidedOutcome() =
             ),
         ).toOutcome()
 
+/**
+ * A failure that leaves it unknown whether the request was carried out, which is what keeps a key alive.
+ *
+ * A cancellation rather than a network failure only because it is the one shape with no wire text at all.
+ */
+internal fun interruptedOutcome() = Result.failure<PayInResult>(PayInException.Interrupted()).toOutcome()
+
 /** A decline, which is the failure a payer meets most and the one whose wording reaches the screen. */
 internal fun refusedOutcome() =
     PayInSubmissionState

@@ -20,6 +20,7 @@ import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturePayment
 import com.payabli.example.app.sdk.isBusy
+import com.payabli.example.app.sdk.newIdempotencyKey
 import com.payabli.example.app.sdk.payInStartup
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +28,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
-import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
 data class CaptureUiState(
@@ -71,6 +71,15 @@ data class CaptureUiState(
     override val isVoiding: Boolean = false,
     /** The transaction this screen has already reversed, so the control cannot offer it twice. */
     val voidedTransactionId: String? = null,
+    /**
+     * The key every reversal of the current transaction sends.
+     *
+     * One per transaction rather than one per tap. A reversal whose response is lost may have been applied,
+     * and only a repeat carrying this key is recognized as that same attempt; a fresh key would ask the
+     * service to reverse a transaction it has already reversed, which comes back as a failure over a success.
+     * Minted when a payment completes and dropped when the screen moves on.
+     */
+    val voidIdempotencyKey: String? = null,
 ) : PaymentFlowUiState {
     override val finished: Boolean get() = lastResult != null
 
@@ -129,7 +138,7 @@ class CaptureViewModel(
             setup = PayInForms.capture(amount),
             operation =
                 capturePayment(
-                    idempotencyKey = UUID.randomUUID().toString(),
+                    idempotencyKey = newIdempotencyKey(),
                     amount = amount,
                     identity = identity,
                     atMillis = System.currentTimeMillis(),
@@ -238,6 +247,8 @@ class CaptureViewModel(
                 submitFailed = false,
                 isSheetOpen = false,
                 outcomeReady = transaction != null,
+                // One per transaction, minted here so every reversal of it is the same attempt.
+                voidIdempotencyKey = transaction?.let { newIdempotencyKey() },
             )
         }
     }
@@ -259,6 +270,7 @@ class CaptureViewModel(
                 outcomeReady = false,
                 lastResult = null,
                 submitFailed = true,
+                voidIdempotencyKey = null,
             )
         }
     }
@@ -277,11 +289,12 @@ class CaptureViewModel(
         if (_uiState.value.isVoiding) return
         val payments = _uiState.value.payments ?: return
         val transId = _uiState.value.voidableTransactionId ?: return
+        val key = _uiState.value.voidIdempotencyKey ?: return
         _uiState.update { it.copy(isVoiding = true) }
         viewModelScope.launch {
             val outcome =
                 try {
-                    payments.voidTransaction(transId)
+                    payments.voidTransaction(transId, key)
                 } catch (cancellation: CancellationException) {
                     // The flag is cleared on the way out, or the control never comes back.
                     _uiState.update { it.copy(isVoiding = false) }
@@ -316,6 +329,8 @@ class CaptureViewModel(
                 copy(
                     isVoiding = false,
                     voidedTransactionId = transId,
+                    // Reversed, so the control goes and the key has nothing left to identify.
+                    voidIdempotencyKey = null,
                     resultText =
                         listOfNotNull(
                             "✓ Voided: ${outcome.result.code}",
@@ -325,6 +340,11 @@ class CaptureViewModel(
                 )
 
             is PayInOutcome.Refused ->
+                // The key is left alone, whatever the refusal was. A reversal takes only the transaction, so a
+                // second attempt is the same request byte for byte and belongs under the same key: it may have
+                // been applied and gone unreported, and a fresh key would ask the service to reverse a
+                // transaction it has already reversed. The capture above rotates because correcting a rejected
+                // field genuinely sends something else. Starting over is what ends this attempt.
                 copy(isVoiding = false, resultText = "✗ ${outcome.error.displayMessage}")
         }
 
@@ -361,8 +381,10 @@ class CaptureViewModel(
                 setup = attempt.setup,
                 amount = attempt.amount,
                 operation = attempt.operation,
-                // The next payment is a different transaction, so what was reversed is no longer the question.
+                // The next payment is a different transaction, so neither what was reversed nor the key that
+                // identified a reversal of it carries over.
                 voidedTransactionId = null,
+                voidIdempotencyKey = null,
             )
         }
     }
