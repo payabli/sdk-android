@@ -48,7 +48,7 @@ internal class PayInPaymentFlow private constructor(
     private val submission: PayInSubmission,
     /** Built once here, from the session that created this flow, and handed to the form. */
     internal val reports: PayInFormReports,
-) : PayabliPayIn {
+) : PayabliPayIn() {
     /**
      * What the payer has entered, which lives here rather than in the form's composition.
      *

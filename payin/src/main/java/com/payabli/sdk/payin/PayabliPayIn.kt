@@ -23,10 +23,17 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * **Sealed, so this SDK is the only thing that implements it.** [PayabliPayInForm] draws the implementation
  * built here and reaches members that are not on this contract, so an implementation from anywhere else
- * could not drive a form. Sealed makes that a compile error at the declaration rather than a failure when
- * the form is first composed. Build one with [invoke].
+ * could not drive a form. Build one with [invoke].
+ *
+ * **A class rather than an interface, so the restriction does not rest on how a member happens to be
+ * spelled.** A sealed interface is enforced by the Kotlin compiler and, in bytecode, by a
+ * `PermittedSubclasses` attribute that exists only from class-file version 61; this module targets Java 11,
+ * which is 55, so that attribute is absent. What still stopped a Java implementation was incidental: two
+ * members return `Result`, a value class, so their JVM names carry a `-` suffix that Java cannot declare,
+ * leaving any Java class abstract. A member returning a plain type would remove that by accident. A sealed
+ * class has a private constructor instead, which holds whatever the members return.
  */
-public sealed interface PayabliPayIn {
+public sealed class PayabliPayIn {
     /**
      * Where the form's current submission has got to: what the form renders, and what a host reads for its
      * own chrome.
@@ -35,7 +42,7 @@ public sealed interface PayabliPayIn {
      * stands until the form has delivered it, so an outcome published by a call the form did not start would
      * wait for a reader that never comes. Those calls answer with their return value instead.
      */
-    public val state: StateFlow<PayInSubmissionState>
+    public abstract val state: StateFlow<PayInSubmissionState>
 
     /**
      * Captures a transaction authorized earlier, in full or in part.
@@ -46,10 +53,10 @@ public sealed interface PayabliPayIn {
      * **This call moves money, so set [PayInAuthorizedRequest.idempotencyKey] to retry it safely.** A read
      * timeout, a cancellation or a response that could not be decoded all leave it unknown whether the
      * capture was applied, and only a repeat carrying the same key is recognized as the same attempt. Nothing
-     * is minted here: a key this SDK invented would not reach a caller holding a `Result`, and an unreadable
-     * key is worse than none, because the attempt looks retryable and is not.
+     * is minted here: a key this SDK invented would not reach a caller holding a `Result`, so it could not be
+     * resent, and the attempt would read as retryable while it is not.
      */
-    public suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
+    public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
     /**
      * Reverses a transaction, releasing an authorization's hold or undoing a capture that has not settled.
@@ -62,7 +69,7 @@ public sealed interface PayabliPayIn {
      *   retry safely after a failure that leaves the outcome unknown; absent, none is sent and a retry is a
      *   new attempt. Nothing is minted, for the reason given on [captureAuthorizedTransaction].
      */
-    public suspend fun voidTransaction(
+    public abstract suspend fun voidTransaction(
         transId: String,
         idempotencyKey: String? = null,
     ): Result<PayInResult>
