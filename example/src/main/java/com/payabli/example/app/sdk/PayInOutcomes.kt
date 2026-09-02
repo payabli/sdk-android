@@ -51,7 +51,7 @@ internal fun PayInResult.toPaymentResult(): PaymentResult =
                     source = it.connectorName,
                 )
             },
-        apiResponse = transaction.asJson(code),
+        apiResponse = transaction.asJson(code, reason, explanation, action),
     )
 
 private fun PayInStoredMethod.toPaymentResult(): PaymentResult =
@@ -79,9 +79,19 @@ private fun PayInStoredMethod.toPaymentResult(): PaymentResult =
  * The SDK decodes the body and does not keep it, so this is a rendering of what came back rather than the
  * bytes that came back. The demo says so on the screen.
  */
-private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(code: String): JsonObject =
+private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(
+    code: String,
+    reason: String?,
+    explanation: String?,
+    action: String?,
+): JsonObject =
     buildJsonObject {
         put("code", JsonPrimitive(code))
+        // The three beside the code. The card is headed "Exactly what came back", so a field the SDK exposes
+        // and this omits is the screen contradicting its own heading.
+        reason?.let { put("reason", JsonPrimitive(it)) }
+        explanation?.let { put("explanation", JsonPrimitive(it)) }
+        action?.let { put("action", JsonPrimitive(it)) }
         this@asJson?.let { transaction ->
             transaction.paymentTransId?.let { put("paymentTransId", JsonPrimitive(it)) }
             transaction.gatewayTransId?.let { put("gatewayTransId", JsonPrimitive(it)) }

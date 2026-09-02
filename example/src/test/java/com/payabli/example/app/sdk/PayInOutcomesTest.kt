@@ -115,6 +115,8 @@ class PayInOutcomesTest {
         val rendered = requireNotNull(capturedPaymentOutcome().result.apiResponse)
 
         assertEquals("A0000", rendered["code"]?.jsonPrimitive?.content)
+        // Headed "Exactly what came back", so the three words beside the code belong in it.
+        assertEquals("Approved", rendered["reason"]?.jsonPrimitive?.content)
         assertEquals("101-abc", rendered["paymentTransId"]?.jsonPrimitive?.content)
         assertEquals("gtw-9", rendered["gatewayTransId"]?.jsonPrimitive?.content)
         assertEquals("order-1", rendered["orderId"]?.jsonPrimitive?.content)
@@ -259,6 +261,13 @@ class PayInOutcomesTest {
         assertEquals("Canceled", result.result.reason)
         assertEquals("Transaction Canceled", result.result.explanation)
         assertEquals("No action required", result.result.action)
+
+        val rendered = requireNotNull(result.result.apiResponse)
+        assertEquals("Canceled", rendered["reason"]?.jsonPrimitive?.content)
+        assertEquals("Transaction Canceled", rendered["explanation"]?.jsonPrimitive?.content)
+        assertEquals("No action required", rendered["action"]?.jsonPrimitive?.content)
+        // A void names no transaction of its own, so the card carries the words and the code alone.
+        assertFalse(rendered.containsKey("paymentTransId"))
     }
 
     /** A failure the SDK described, which is what a screen shows. */
