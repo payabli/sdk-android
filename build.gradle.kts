@@ -28,30 +28,41 @@ sonar {
         )
         // Coverage only, so these files still get issue detection. A `platform` package binds directly to an
         // Android API with no JVM implementation, Keystore and `android.util.*`, so no unit test can reach a
-        // line of it and the instrumented tier is what covers it. Kept as a package rule rather than a list
-        // of files, so the boundary is something the code states rather than something this file remembers.
-        // See CLAUDE.md "Testing" for what belongs there. A `ui` package is the same case for the same
-        // reason: a composable needs a composition, and therefore a device. `:payin` puts every composable
-        // under `ui` and every testable type outside it, so this stays a package rule too.
-        // A third case, and a different one from the two above: these lines are executed, just not by the
+        // line of it. Kept as a package rule rather than a list of files, so the boundary is something the
+        // code states rather than something this file remembers. See CLAUDE.md "Testing" for what belongs
+        // there.
+        //
+        // The analysis now reads the instrumented tier too, so "a unit test cannot reach it" stopped being a
+        // reason on its own. What keeps `platform` excluded is narrower and specific to it: part of what
+        // covers it is hardware the emulator job does not have. Two of :core's platform tests assert the
+        // storage and device keys are in secure hardware at the device's best level, which an emulator fails
+        // outright with SECURITY_LEVEL_SOFTWARE, so they carry @ManualDeviceTest and no automated run
+        // executes them. Measured on a handset with that tier excluded, exactly as the job runs it, the
+        // `platform` packages read 72.0% line. Including them would gate new code on a number no automated
+        // run can complete. Revisit this against a measurement, not against the shape of the rule.
+        //
+        // `ui` is not that case and is no longer excluded. A composable needs a composition and therefore a
+        // device, and the emulator is a device: nothing in :payin's form needs hardware the job lacks. The
+        // rule also never covered what it claimed to, which is how it was found — PayabliPayInForm sits
+        // outside `ui`, so 11 of its lines counted against the gate while the exclusion said the UI was
+        // handled.
+        //
+        // A second case, and a different one from the above: these lines are executed, just not by the
         // module that owns them. The fixtures run from every other module's test task, and JaCoCo runs per
         // module and instruments only that module's own classes, so none of that execution is attributable
         // here. They were test sources before they had a module of their own, which counts toward no
         // module's coverage at all; giving them a `main` source set is what makes them look uncovered.
         // Coverage only, so the fixtures are still analysed for issues and duplication like any other code.
         //
-        // A fourth, and the only one that is about what a file is rather than what can reach it: the sample
+        // A third, and the only one that is about what a file is rather than what can reach it: the sample
         // app and its token server are not shipped. Nothing an integrator installs contains a line of them,
         // so a coverage figure over them measures how thoroughly the demonstration is tested and reports it
-        // as though it were the product. Every module that IS the product stays measured, composables
-        // included, and the `ui` rule above is the one place that needs revisiting rather than widening: a
-        // composable in the SDK is covered on a device, and this analysis reads only the unit tier.
-        // Coverage only, again, so the sample is still analysed for issues and duplication.
+        // as though it were the product. Every module that IS the product stays measured, composables now
+        // included. Coverage only, again, so the sample is still analysed for issues and duplication.
         property(
             "sonar.coverage.exclusions",
             listOf(
                 "**/platform/**",
-                "**/sdk/payin/ui/**",
                 "**/sdk/testutils/**",
                 "**/com/payabli/example/**",
                 "example-server/**",
@@ -152,11 +163,30 @@ subprojects {
             plugins.withId("com.android.application") {
                 property("sonar.androidLint.reportPaths", "$reports/lint-results-$lintVariant.xml")
             }
-            if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
-                property(
-                    "sonar.coverage.jacoco.xmlReportPaths",
-                    "$reports/coverage/test/$coveragePath/report.xml",
-                )
+            // Both tiers, comma-separated, and Sonar unions them: a line covered on the device counts
+            // whether or not a unit test also reaches it. Without the second path an instrumented test
+            // contributes nothing to coverage on new code however much it exercises, which measured SDK
+            // code that only a device can reach as untested and failed the gate on it.
+            //
+            // Listed per source set that exists rather than unconditionally, for the reason the comment
+            // above `coveragePath` gives: a path that is not there is a warning and an unmeasured module,
+            // not an error. That is also why the instrumented job's own artifact step fails on an empty
+            // upload, and why the sonar job checks these two files before analysing. Locally, a module
+            // whose instrumented tier has not been run reports the same warning, which is correct.
+            val coverageReports =
+                buildList {
+                    if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
+                        add("$reports/coverage/test/$coveragePath/report.xml")
+                    }
+                    if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
+                        // `connected` is a real directory AGP writes, not a typo for the unit path above:
+                        // the device the report came from is part of where it lands. Confirmed by running
+                        // the task rather than read off the task name.
+                        add("$reports/coverage/androidTest/$coveragePath/connected/report.xml")
+                    }
+                }
+            if (coverageReports.isNotEmpty()) {
+                property("sonar.coverage.jacoco.xmlReportPaths", coverageReports.joinToString(","))
             }
         }
     }
