@@ -235,6 +235,32 @@ class PayInOutcomesTest {
         assertNull("a void names no transaction of its own", approved.result.transaction)
     }
 
+    /**
+     * All four fields the envelope carries, not just the code and the reason.
+     *
+     * The transaction screen shows explanation and action in their own rows, so dropping them here leaves two
+     * rows reading as though the service sent nothing.
+     */
+    @Test
+    fun `an approval keeps every word the service sent`() {
+        val result =
+            Result
+                .success(
+                    PayInResult(
+                        code = "A0003",
+                        reason = "Canceled",
+                        explanation = "Transaction Canceled",
+                        action = "No action required",
+                        transaction = null,
+                    ),
+                ).toOutcome() as PayInOutcome.Approved
+
+        assertEquals("A0003", result.result.code)
+        assertEquals("Canceled", result.result.reason)
+        assertEquals("Transaction Canceled", result.result.explanation)
+        assertEquals("No action required", result.result.action)
+    }
+
     /** A failure the SDK described, which is what a screen shows. */
     @Test
     fun `a returned failure reads as the platform failure it is`() {

@@ -44,8 +44,8 @@ internal fun PayInSubmissionState.Succeeded.toOutcome(): PayInOutcome.Approved =
 /**
  * The same two shapes for a call that returns rather than publishing to the form's state.
  *
- * A void carries no idempotency key back to the screen: the key belongs to the attempt the SDK minted, and
- * the screen has no way to resend that same one, so a retry here is a new request either way.
+ * `keepsItsIdempotencyKey` is false for every outcome here. These calls mint no key, so the only one that
+ * can exist is the caller's own, and this screen sends none: a retry is a new request.
  */
 internal fun Result<PayInResult>.toOutcome(): PayInOutcome =
     fold(

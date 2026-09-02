@@ -31,6 +31,8 @@ internal fun PayInResult.toPaymentResult(): PaymentResult =
     PaymentResult(
         code = code,
         reason = reason,
+        explanation = explanation,
+        action = action,
         transaction =
             transaction?.let {
                 Transaction(
