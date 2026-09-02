@@ -73,9 +73,13 @@ public fun PayabliPayInForm(
 ) {
     // The typed values, the reports and the submission the tap starts are this module's, not the contract's:
     // driving a form is not something a host does to a `PayabliPayIn`, so none of it is on the interface.
-    // Total rather than a checked cast: `PayabliPayIn` is sealed and this is its one implementation, so there
-    // is no instance a host could pass that this would not accept.
-    val impl = payIn as PayInPaymentFlow
+    // A `when` rather than a cast, so this is the compiler's problem rather than a payer's. `PayabliPayIn` is
+    // sealed and has one implementation today; a second added beside it would make this branch non-exhaustive
+    // and fail the build, where a cast would compile and throw the first time the form was drawn.
+    val impl =
+        when (payIn) {
+            is PayInPaymentFlow -> payIn
+        }
     val submission by payIn.state.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
