@@ -35,11 +35,23 @@ tasks.withType<Test>().configureEach {
 }
 
 // Coverage, enabled only where tests exist: the task fails outright if nothing ran.
+//
+// The instrumented half is library-only, and that is the rule rather than an omission. The analysis skips
+// :example outright, so instrumenting the sample would measure lines nothing reads and slow every
+// connected run that touches it. A module that needs it off despite having the source set turns it off at
+// its own declaration, where the reason lives; :taptopay does.
 plugins.withId("com.android.library") {
     if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
         extensions.configure<LibraryExtension> {
             buildTypes.named("debug") {
                 enableUnitTestCoverage = true
+            }
+        }
+    }
+    if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
+        extensions.configure<LibraryExtension> {
+            buildTypes.named("debug") {
+                enableAndroidTestCoverage = true
             }
         }
     }
