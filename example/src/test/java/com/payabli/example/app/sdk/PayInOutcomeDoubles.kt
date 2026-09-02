@@ -54,6 +54,24 @@ internal fun capturedPaymentOutcome() =
             ),
         ).toOutcome()
 
+/**
+ * A reversal the service accepted, which answers under its own code and calls itself canceled.
+ *
+ * It carries no transaction: what a void names is the transaction it reversed, which the screen already
+ * holds, and the route answers about that one rather than creating another.
+ */
+internal fun voidedOutcome() =
+    Result
+        .success(
+            PayInResult(
+                code = "A0003",
+                reason = "Canceled",
+                explanation = "Transaction Canceled",
+                action = "No action required",
+                transaction = null,
+            ),
+        ).toOutcome()
+
 /** A decline, which is the failure a payer meets most and the one whose wording reaches the screen. */
 internal fun refusedOutcome() =
     PayInSubmissionState

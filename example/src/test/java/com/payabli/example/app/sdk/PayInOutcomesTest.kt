@@ -2,6 +2,7 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransaction
@@ -210,4 +211,61 @@ class PayInOutcomesTest {
                 ),
         ),
     )
+
+    // --- the calls that return rather than publishing ---
+
+    /** An approval reached through a `Result`, which is how the two headless calls answer. */
+    @Test
+    fun `a returned approval carries the service's own words`() {
+        val outcome =
+            Result
+                .success(
+                    PayInResult(
+                        code = "A0003",
+                        reason = "Canceled",
+                        explanation = "Transaction Canceled",
+                        action = "No action required",
+                        transaction = null,
+                    ),
+                ).toOutcome()
+
+        val approved = outcome as PayInOutcome.Approved
+        assertEquals("A0003", approved.result.code)
+        assertEquals("Canceled", approved.result.reason)
+        assertNull("a void names no transaction of its own", approved.result.transaction)
+    }
+
+    /** A failure the SDK described, which is what a screen shows. */
+    @Test
+    fun `a returned failure reads as the platform failure it is`() {
+        val refusal =
+            PayInException.Refused(
+                PayInFailure(
+                    code = "E7002",
+                    reason = "Invalid transaction status",
+                    explanation = "The status of the transaction does not allow the action requested",
+                    action = "r",
+                    httpStatus = 400,
+                ),
+            )
+
+        val refused = Result.failure<PayInResult>(refusal).toOutcome() as PayInOutcome.Refused
+
+        val error = refused.error as PaymentError.Payabli
+        assertEquals("Invalid transaction status", error.reason)
+        // A returned failure carries no key: the caller's own is the only one, and it already holds it.
+        assertFalse(refused.keepsItsIdempotencyKey)
+    }
+
+    /** Anything that is not a `PayabliException` cannot come from the SDK's own paths. */
+    @Test
+    fun `a failure from nowhere in the SDK reads as unexpected, without its message`() {
+        val refused =
+            Result.failure<PayInResult>(IllegalStateException("card 4111111111111111 exploded")).toOutcome()
+                as PayInOutcome.Refused
+
+        val error = refused.error as PaymentError.Unexpected
+        assertEquals("java.lang.IllegalStateException", error.text)
+        assertFalse(error.text.contains("4111111111111111"))
+    }
 }

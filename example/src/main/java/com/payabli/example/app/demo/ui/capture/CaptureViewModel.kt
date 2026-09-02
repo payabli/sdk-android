@@ -287,34 +287,46 @@ class CaptureViewModel(
                     _uiState.update { it.copy(isVoiding = false) }
                     throw cancellation
                 }
-            when (outcome) {
-                is PayInOutcome.Approved -> {
-                    record("RESPONSE void\ncode=${outcome.result.code}")
-                    _uiState.update {
-                        it.copy(
-                            isVoiding = false,
-                            voidedTransactionId = transId,
-                            resultText =
-                                listOfNotNull(
-                                    "✓ Voided: ${outcome.result.code}",
-                                    outcome.result.reason?.let { reason -> "Reason: $reason" },
-                                    "Payment transaction: $transId",
-                                ).joinToString("\n"),
-                        )
-                    }
-                }
-
-                is PayInOutcome.Refused -> {
-                    record("ERROR void\n${outcome.diagnostic}")
-                    // The transaction is not recorded as voided: the service refused, so it still stands and
-                    // the control stays available.
-                    _uiState.update {
-                        it.copy(isVoiding = false, resultText = "✗ ${outcome.error.displayMessage}")
-                    }
-                }
-            }
+            record(
+                when (outcome) {
+                    is PayInOutcome.Approved -> "RESPONSE void\ncode=${outcome.result.code}"
+                    is PayInOutcome.Refused -> "ERROR void\n${outcome.diagnostic}"
+                },
+            )
+            _uiState.update { it.afterVoiding(outcome, transId) }
         }
     }
+
+    /**
+     * The screen a reversal leaves behind.
+     *
+     * Separate from the call so the branch is a value a test can ask for. Reaching it through
+     * [voidLastTransaction] needs a flow answering a real service, which a JVM test cannot build, and the two
+     * outcomes differ in more than their wording: only an approval records the transaction as reversed.
+     *
+     * A refusal leaves [CaptureUiState.voidedTransactionId] alone, because the transaction still stands and
+     * the control has to stay available for another try.
+     */
+    internal fun CaptureUiState.afterVoiding(
+        outcome: PayInOutcome,
+        transId: String,
+    ): CaptureUiState =
+        when (outcome) {
+            is PayInOutcome.Approved ->
+                copy(
+                    isVoiding = false,
+                    voidedTransactionId = transId,
+                    resultText =
+                        listOfNotNull(
+                            "✓ Voided: ${outcome.result.code}",
+                            outcome.result.reason?.let { "Reason: $it" },
+                            "Payment transaction: $transId",
+                        ).joinToString("\n"),
+                )
+
+            is PayInOutcome.Refused ->
+                copy(isVoiding = false, resultText = "✗ ${outcome.error.displayMessage}")
+        }
 
     /** Records only when diagnostics are on, so the setting governs what is kept and not only what is shown. */
     private fun record(line: String) {

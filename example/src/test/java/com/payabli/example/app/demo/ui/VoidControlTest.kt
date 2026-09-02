@@ -8,6 +8,7 @@ import com.payabli.example.app.demo.ui.capture.CaptureViewModel
 import com.payabli.example.app.sdk.capturedPaymentOutcome
 import com.payabli.example.app.sdk.readyStartup
 import com.payabli.example.app.sdk.refusedOutcome
+import com.payabli.example.app.sdk.voidedOutcome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -17,6 +18,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -24,7 +26,8 @@ import org.junit.Test
  * When the capture screen offers to void, and when it stops.
  *
  * The control is drawn from `voidableTransactionId` alone, so these are the whole of its visibility rule.
- * What a void does when tapped needs a flow, which a JVM test cannot build, so that half is the manual tier.
+ * What the two outcomes leave behind is asserted through `afterVoiding`, which is the branch the call takes;
+ * reaching it through the call itself needs a flow answering a real service, which is the instrumented tier.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoidControlTest {
@@ -102,6 +105,43 @@ class VoidControlTest {
         assertNull(afterCapture.copy(voidedTransactionId = "101-abc").voidableTransactionId)
         // A different transaction having been voided does not withdraw this one.
         assertEquals("101-abc", afterCapture.copy(voidedTransactionId = "202-xyz").voidableTransactionId)
+    }
+
+    /**
+     * The screen an approved reversal leaves: the outcome in the service's words, and the control withdrawn.
+     *
+     * `voidedTransactionId` is what withdraws it, so this is the same rule the visibility tests above read,
+     * arrived at through the branch the call actually takes.
+     */
+    @Test
+    fun `an approved void names the outcome and withdraws the control`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val taken = model.uiState.value
+
+        val after = with(model) { taken.copy(isVoiding = true).afterVoiding(voidedOutcome(), "101-abc") }
+
+        assertFalse(after.isVoiding)
+        assertEquals("101-abc", after.voidedTransactionId)
+        assertNull("the control was still offered", after.voidableTransactionId)
+        assertTrue(after.resultText, after.resultText.startsWith("✓ Voided: A0003"))
+        assertTrue(after.resultText, after.resultText.contains("Reason: Canceled"))
+        assertTrue(after.resultText, after.resultText.contains("Payment transaction: 101-abc"))
+    }
+
+    /** A refusal leaves the transaction standing, so the control comes back rather than disappearing. */
+    @Test
+    fun `a refused void keeps the transaction and offers the control again`() {
+        val model = captureModel()
+        model.onCompleted(capturedPaymentOutcome())
+        val taken = model.uiState.value
+
+        val after = with(model) { taken.copy(isVoiding = true).afterVoiding(refusedOutcome(), "101-abc") }
+
+        assertFalse(after.isVoiding)
+        assertNull("a refused void recorded the transaction as reversed", after.voidedTransactionId)
+        assertEquals("101-abc", after.voidableTransactionId)
+        assertTrue(after.resultText, after.resultText.startsWith("✗"))
     }
 
     private fun captureModel() =
