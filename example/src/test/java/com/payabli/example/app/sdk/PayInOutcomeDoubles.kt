@@ -97,8 +97,8 @@ internal fun refusedOutcome() =
 /**
  * A step one that already succeeded, for tests about what a screen does afterwards.
  *
- * `payments` is null: a JVM test cannot build a `PayabliPayIn`, whose implementation's test constructor is internal
- * to `:payin`. Nothing that uses this submits, so the outcomes are handed to the view model directly.
+ * [handle] is what a screen submits through, and defaults to none: a test about the state a screen lands in
+ * hands its outcomes to the view model directly. A test that drives a call passes `FakePayInFlowHandle`.
  */
 internal fun readyStartup(handle: PayInFlowHandle? = null) =
     PayInStartup {

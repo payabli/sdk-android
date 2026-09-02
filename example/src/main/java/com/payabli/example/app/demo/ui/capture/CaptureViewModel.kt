@@ -323,9 +323,8 @@ class CaptureViewModel(
     /**
      * The screen a reversal leaves behind.
      *
-     * Separate from the call so the branch is a value a test can ask for. Reaching it through
-     * [voidLastTransaction] needs a flow answering a real service, which a JVM test cannot build, and the two
-     * outcomes differ in more than their wording: only an approval records the transaction as reversed.
+     * Separate from the call so the branch is a value a test can ask for, and the two outcomes differ in more
+     * than their wording: only an approval records the transaction as reversed.
      *
      * A refusal leaves [CaptureUiState.voidedTransactionId] alone, because the transaction still stands and
      * the control has to stay available for another try.

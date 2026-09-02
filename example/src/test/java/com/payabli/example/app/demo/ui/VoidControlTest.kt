@@ -28,8 +28,8 @@ import org.junit.Test
  * When the capture screen offers to void, and when it stops.
  *
  * The control is drawn from `voidableTransactionId` alone, so these are the whole of its visibility rule.
- * What the two outcomes leave behind is asserted through `afterVoiding`, which is the branch the call takes;
- * reaching it through the call itself needs a flow answering a real service, which is the instrumented tier.
+ * What the two outcomes leave behind is asserted through `afterVoiding`, which is the branch the call takes.
+ * `VoidingTest` drives the call itself, over a fake handle.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoidControlTest {
@@ -76,9 +76,9 @@ class VoidControlTest {
     /**
      * The screen offers nothing without a flow, and says so by not drawing rather than by failing.
      *
-     * A JVM test cannot build one, so this is the state every test in this file is in: the call returns
-     * having done nothing, and in particular does not strand `isVoiding` at true, which would leave a
-     * control the payer can see and cannot press.
+     * `captureModel` is handed no handle, so this is the state every test in this file is in: the call
+     * returns having done nothing, and in particular does not strand `isVoiding` at true, which would leave
+     * a control the payer can see and cannot press.
      */
     @Test
     fun `a void with no flow behind it changes nothing`() {
@@ -94,8 +94,8 @@ class VoidControlTest {
     /**
      * The rule a successful void relies on, asserted on the state directly.
      *
-     * Reaching it through [CaptureViewModel.voidLastTransaction] needs a flow answering a real service, which
-     * is the manual tier. The rule itself is this comparison and is worth holding here.
+     * `VoidingTest` reaches it through [CaptureViewModel.voidLastTransaction]. Held here as the comparison
+     * itself, which covers a case that call cannot produce: a different transaction having been reversed.
      */
     @Test
     fun `a transaction already voided is no longer offered`() {
