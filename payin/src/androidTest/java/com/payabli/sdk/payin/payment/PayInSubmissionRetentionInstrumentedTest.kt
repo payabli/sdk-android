@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
