@@ -71,7 +71,7 @@ class PayInLiveFlowsInstrumentedTest {
         // environment whatever token is presented, so a mint per test would spend a live call on a token
         // nothing reads.
         flow =
-            PayInPaymentFlow(
+            PayInPaymentFlow.over(
                 installedSession(),
                 entryPoint,
                 CoroutineScope(SupervisorJob() + Dispatchers.IO),

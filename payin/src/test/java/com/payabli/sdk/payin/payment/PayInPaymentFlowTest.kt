@@ -254,7 +254,7 @@ class PayInPaymentFlowTest {
         }
 
     private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
-        PayInPaymentFlow(
+        PayInPaymentFlow.over(
             transport = transport,
             entryPoint = TEST_ENTRY_POINT,
             scope = this,

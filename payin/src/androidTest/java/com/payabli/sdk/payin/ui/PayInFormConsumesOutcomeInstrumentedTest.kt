@@ -110,7 +110,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
     private fun flowAnswering(): PayInPaymentFlow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
     private fun flowOver(transport: PayabliTransport): PayInPaymentFlow =
-        PayInPaymentFlow(
+        PayInPaymentFlow.over(
             transport = transport,
             entryPoint = TEST_ENTRY_POINT,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),

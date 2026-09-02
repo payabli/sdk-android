@@ -91,6 +91,6 @@ public sealed class PayabliPayIn {
             session: PayabliSession,
             entryPoint: String,
             scope: CoroutineScope,
-        ): PayabliPayIn = PayInPaymentFlow(session, entryPoint, scope)
+        ): PayabliPayIn = PayInPaymentFlow.over(session, entryPoint, scope)
     }
 }

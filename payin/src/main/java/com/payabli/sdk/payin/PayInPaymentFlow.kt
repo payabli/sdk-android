@@ -47,6 +47,7 @@ internal class PayInPaymentFlow private constructor(
     private val scope: CoroutineScope,
     private val submission: PayInSubmission,
     /** Built once here, from the session that created this flow, and handed to the form. */
+    @get:JvmSynthetic
     internal val reports: PayInFormReports,
 ) : PayabliPayIn() {
     /**
@@ -55,19 +56,20 @@ internal class PayInPaymentFlow private constructor(
      * A rotation, a switch to another tab and a return from a pushed screen all end that composition. Held
      * there, a card number entered before a rotation is a card number entered again afterwards.
      */
+    @get:JvmSynthetic
     internal val draft: PayInFormDraft = PayInFormDraft()
 
     init {
         scope.coroutineContext[Job]?.invokeOnCompletion { draft.clear() }
     }
 
-    constructor(
+    private constructor(
         session: PayabliSession,
         entryPoint: String,
         scope: CoroutineScope,
     ) : this(session.transport, entryPoint, scope, IO_DISPATCHER, telemetry = session.telemetry)
 
-    internal constructor(
+    private constructor(
         transport: PayabliTransport,
         entryPoint: String,
         scope: CoroutineScope,
@@ -106,6 +108,7 @@ internal class PayInPaymentFlow private constructor(
      *
      * Returns false while a submission is in flight, so nothing can clear the state out from under one.
      */
+    @JvmSynthetic
     internal fun consume(): Boolean = submission.reset()
 
     /**
@@ -116,6 +119,7 @@ internal class PayInPaymentFlow private constructor(
      *
      * Returns false when a submission is already in flight, having sent nothing.
      */
+    @JvmSynthetic
     internal fun start(
         operation: PayabliPayInOperation,
         values: PayInFormValues,
@@ -195,7 +199,7 @@ internal class PayInPaymentFlow private constructor(
             else -> IllegalStateException("a submission returned while its state read $this")
         }
 
-    private companion object {
+    internal companion object {
         /**
          * The one dispatcher pick in this module, at the layer a host calls, as `PayabliSession` is for `:core`.
          *
@@ -204,6 +208,32 @@ internal class PayInPaymentFlow private constructor(
          * narrowing reaches the whole module; today the session hardcodes its own and there is nothing to
          * inherit.
          */
-        val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
+        private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
+
+        /**
+         * Builds one, and is the only way to.
+         *
+         * A factory rather than a constructor because `internal` is a Kotlin boundary and not a JVM one: an
+         * internal constructor compiles to a public one, so Java could build this type directly and reach the
+         * form-only members below it. A constructor cannot be marked `@JvmSynthetic` and a function can, so
+         * construction goes through here and the constructors are private.
+         */
+        @JvmSynthetic
+        internal fun over(
+            session: PayabliSession,
+            entryPoint: String,
+            scope: CoroutineScope,
+        ): PayInPaymentFlow = PayInPaymentFlow(session, entryPoint, scope)
+
+        /** The seam a test builds over, which takes a transport rather than a session. */
+        @JvmSynthetic
+        internal fun over(
+            transport: PayabliTransport,
+            entryPoint: String,
+            scope: CoroutineScope,
+            dispatcher: CoroutineDispatcher,
+            logger: SdkLogger? = null,
+            telemetry: TelemetrySessionContext? = null,
+        ): PayInPaymentFlow = PayInPaymentFlow(transport, entryPoint, scope, dispatcher, logger, telemetry)
     }
 }

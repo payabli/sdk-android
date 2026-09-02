@@ -324,7 +324,7 @@ class PayInFormTelemetryInstrumentedTest {
     private fun aFlow(
         transport: PayabliTransport = FakePayInTransport.answering(APPROVED_TRANSACTION),
         telemetry: TelemetrySessionContext? = null,
-    ) = PayInPaymentFlow(
+    ) = PayInPaymentFlow.over(
         transport = transport,
         entryPoint = TEST_ENTRY_POINT,
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
