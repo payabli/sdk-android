@@ -6,11 +6,15 @@
 - `./gradlew :MODULE:assembleRelease` - Single module (e.g. `:core`, `:taptopay`)
 - `./gradlew test` - All unit tests
 - `./gradlew :MODULE:testDebugUnitTest` - Single module unit tests
-- `./gradlew connectedAndroidTest` - Instrumentation tests (requires device). **The per-PR CI runs none of
-  these**; only the nightly workflow does, and it appends
+- `./gradlew connectedAndroidTest` - Instrumentation tests (requires device). **Per-PR CI runs `:core`'s and
+  `:payin`'s**, through their coverage task rather than this one; the nightly runs those plus `:example`'s.
+  Both append
   `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest`.
-  Both are named because there is one annotation per module; a command naming one leaves the other module's
+  Both annotations are named because there is one per module; a command naming one leaves the other module's
   manual tier running. See **Testing** for why, and for the command that runs the excluded tier
+- `./gradlew :MODULE:createDebugAndroidTestCoverageReport` - Instrumented coverage, and it runs the connected
+  tests itself. `build/reports/coverage/androidTest/debug/connected/report.xml`; the analysis reads it beside
+  the unit report
 - `./gradlew ktlintCheck` - Formatting
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
 - `./gradlew lint` - Android Lint
