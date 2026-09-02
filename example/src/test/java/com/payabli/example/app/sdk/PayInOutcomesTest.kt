@@ -2,6 +2,7 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.payment.PaymentError
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransaction
@@ -66,7 +67,11 @@ class PayInOutcomesTest {
     fun `an approval with no transaction leaves the transaction empty and still carries the code`() {
         // What the capture screen reads to call an approval a failure. A fabricated empty transaction here
         // would have it announce a captured payment against a response that named none.
-        val result = PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", null)).toPaymentResult()
+        val result =
+            PayInSubmissionState.Succeeded
+                .Payment(
+                    PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+                ).toPaymentResult()
 
         assertNull(result.transaction)
         assertEquals("A0000", result.code)
@@ -110,6 +115,8 @@ class PayInOutcomesTest {
         val rendered = requireNotNull(capturedPaymentOutcome().result.apiResponse)
 
         assertEquals("A0000", rendered["code"]?.jsonPrimitive?.content)
+        // Headed "Exactly what came back", so the three words beside the code belong in it.
+        assertEquals("Approved", rendered["reason"]?.jsonPrimitive?.content)
         assertEquals("101-abc", rendered["paymentTransId"]?.jsonPrimitive?.content)
         assertEquals("gtw-9", rendered["gatewayTransId"]?.jsonPrimitive?.content)
         assertEquals("order-1", rendered["orderId"]?.jsonPrimitive?.content)
@@ -188,6 +195,9 @@ class PayInOutcomesTest {
     ) = PayInSubmissionState.Succeeded.Payment(
         PayInResult(
             code = "A0000",
+            reason = "Approved",
+            explanation = null,
+            action = null,
             transaction =
                 PayInTransaction(
                     paymentTransId = "101-abc",
@@ -203,4 +213,94 @@ class PayInOutcomesTest {
                 ),
         ),
     )
+
+    // --- the calls that return rather than publishing ---
+
+    /** An approval reached through a `Result`, which is how the two headless calls answer. */
+    @Test
+    fun `a returned approval carries the service's own words`() {
+        val outcome =
+            Result
+                .success(
+                    PayInResult(
+                        code = "A0003",
+                        reason = "Canceled",
+                        explanation = "Transaction Canceled",
+                        action = "No action required",
+                        transaction = null,
+                    ),
+                ).toOutcome()
+
+        val approved = outcome as PayInOutcome.Approved
+        assertEquals("A0003", approved.result.code)
+        assertEquals("Canceled", approved.result.reason)
+        assertNull("a void names no transaction of its own", approved.result.transaction)
+    }
+
+    /**
+     * All four fields the envelope carries, not just the code and the reason.
+     *
+     * The transaction screen shows explanation and action in their own rows, so dropping them here leaves two
+     * rows reading as though the service sent nothing.
+     */
+    @Test
+    fun `an approval keeps every word the service sent`() {
+        val result =
+            Result
+                .success(
+                    PayInResult(
+                        code = "A0003",
+                        reason = "Canceled",
+                        explanation = "Transaction Canceled",
+                        action = "No action required",
+                        transaction = null,
+                    ),
+                ).toOutcome() as PayInOutcome.Approved
+
+        assertEquals("A0003", result.result.code)
+        assertEquals("Canceled", result.result.reason)
+        assertEquals("Transaction Canceled", result.result.explanation)
+        assertEquals("No action required", result.result.action)
+
+        val rendered = requireNotNull(result.result.apiResponse)
+        assertEquals("Canceled", rendered["reason"]?.jsonPrimitive?.content)
+        assertEquals("Transaction Canceled", rendered["explanation"]?.jsonPrimitive?.content)
+        assertEquals("No action required", rendered["action"]?.jsonPrimitive?.content)
+        // A void names no transaction of its own, so the card carries the words and the code alone.
+        assertFalse(rendered.containsKey("paymentTransId"))
+    }
+
+    /** A failure the SDK described, which is what a screen shows. */
+    @Test
+    fun `a returned failure reads as the platform failure it is`() {
+        val refusal =
+            PayInException.Refused(
+                PayInFailure(
+                    code = "E7002",
+                    reason = "Invalid transaction status",
+                    explanation = "The status of the transaction does not allow the action requested",
+                    action = "r",
+                    httpStatus = 400,
+                ),
+            )
+
+        val refused = Result.failure<PayInResult>(refusal).toOutcome() as PayInOutcome.Refused
+
+        val error = refused.error as PaymentError.Payabli
+        assertEquals("Invalid transaction status", error.reason)
+        // A returned failure carries no key: the caller's own is the only one, and it already holds it.
+        assertFalse(refused.keepsItsIdempotencyKey)
+    }
+
+    /** Anything that is not a `PayabliException` cannot come from the SDK's own paths. */
+    @Test
+    fun `a failure from nowhere in the SDK reads as unexpected, without its message`() {
+        val refused =
+            Result.failure<PayInResult>(IllegalStateException("card 4111111111111111 exploded")).toOutcome()
+                as PayInOutcome.Refused
+
+        val error = refused.error as PaymentError.Unexpected
+        assertEquals("java.lang.IllegalStateException", error.text)
+        assertFalse(error.text.contains("4111111111111111"))
+    }
 }

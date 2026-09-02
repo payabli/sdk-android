@@ -55,6 +55,12 @@ data class PaymentMethodUiState(
     val operation: PayInOperation =
         storePaymentMethod(),
 ) : PaymentFlowUiState {
+    /**
+     * Its own, for the reason `StoredMethod` declares one: `resultText` quotes the identifier a later
+     * transaction charges, so a synthesized `toString` would carry it into anything that stringifies this.
+     */
+    override fun toString(): String = "PaymentMethodUiState(finished=$finished)"
+
     override val finished: Boolean get() = storedMethod != null
 }
 

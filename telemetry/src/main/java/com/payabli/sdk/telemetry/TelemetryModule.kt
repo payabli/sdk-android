@@ -158,7 +158,7 @@ private const val MAX_EVENTS_PER_REQUEST = 100
 private val FLUSH_INTERVAL: Duration = 30.seconds
 
 /**
- * The one dispatcher pick in this module, at the layer the session reaches, as `PayabliPayInPaymentFlow` is
+ * The one dispatcher pick in this module, at the layer the session reaches, as `PayInPaymentFlow` is
  * for `:payin` and `PayabliSession` is for `:core`.
  *
  * Everything below takes it as a required parameter, so no layer can quietly run somewhere else.

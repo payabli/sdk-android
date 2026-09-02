@@ -164,6 +164,17 @@ class PayInWireFormatTest {
     }
 
     @Test
+    fun `a void encodes its identifier the same way`() {
+        // The same escaping as the capture route, because the same thing goes wrong without it.
+        assertEquals("/api/v2/MoneyIn/void/101-abc%3Fx%3D1", PayInRoutes.void("101-abc?x=1"))
+        assertEquals("/api/v2/MoneyIn/void/101%2Fcapture", PayInRoutes.void("101/capture"))
+        assertEquals("/api/v2/MoneyIn/void/101%23top", PayInRoutes.void("101#top"))
+        assertEquals("/api/v2/MoneyIn/void/101-abc_9.7~x", PayInRoutes.void("101-abc_9.7~x"))
+        assertEquals("/api/v2/MoneyIn/void/a%20b", PayInRoutes.void("a b"))
+        assertEquals("/api/v2/MoneyIn/void/%C3%A9", PayInRoutes.void("\u00e9"))
+    }
+
+    @Test
     fun `an absent field is null rather than a decode failure`() {
         val decoded = transaction("{}")
 

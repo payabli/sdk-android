@@ -159,6 +159,39 @@ class SampleWalkthroughTest {
         awaitOutcome("Payment submitted")
     }
 
+    /**
+     * Taking a payment and then reversing it, through the control the capture screen offers for it.
+     *
+     * The walk goes out to the transaction screen and back, because that is the route a payer takes: the
+     * control lives on the step that describes the result, and the result screen is pushed on top of it.
+     *
+     * Reversing needs a permission the taking credential does not imply, so a refusal here reads as that
+     * rather than as a broken control, and `awaitOutcome` prints what the service said.
+     */
+    @Test
+    fun capturingACardAndThenVoidingIt() {
+        openTheForm(TopLevelDestination.Capture, submit = CAPTURE)
+
+        prefill()
+        pickTheExpiry()
+        submit(CAPTURE)
+        awaitOutcome("Payment submitted")
+
+        // Back to the step that describes the transaction, which is where the control is.
+        // Scrolled to first: the transaction screen lists a summary and the whole response above it, so Done
+        // is off the viewport and a click at its coordinates lands on nothing.
+        compose.onNodeWithText("Done").performScrollTo().performClick()
+        awaitExists(VOID, COMPOSES_WITHIN_MILLIS)
+
+        compose.onNodeWithText(VOID).performClick()
+        // Substring, unlike the outcomes above: those are headings and a node of their own, while this is the
+        // first line of the result card's text, which carries the code and the transaction after it.
+        awaitOutcomeContaining(VOIDED)
+
+        // Offered once. The transaction is reversed, so the control goes rather than sitting there inert.
+        compose.waitUntil(COMPOSES_WITHIN_MILLIS) { nodesWith(VOID).isEmpty() }
+    }
+
     @Test
     fun capturingABankAccountThePayerEntered() {
         openTheForm(TopLevelDestination.Capture, submit = CAPTURE)
@@ -267,6 +300,22 @@ class SampleWalkthroughTest {
         compose.onNodeWithText(success).assertIsDisplayed()
     }
 
+    /**
+     * The same wait as [awaitOutcome] for a result that is part of a longer line rather than a node of its own.
+     *
+     * Kept beside it rather than folded in: the exact match is what makes the two outcome headings assertable
+     * as the whole of what a node says, and widening those would let a heading match a card that quotes it.
+     */
+    private fun awaitOutcomeContaining(success: String) {
+        compose.waitUntil(ANSWERS_WITHIN_MILLIS) {
+            compose.onAllNodesWithText(success, substring = true).fetchSemanticsNodes().isNotEmpty() ||
+                refusals().isNotEmpty()
+        }
+
+        val refused = refusals()
+        assertTrue("it was refused: ${refused.joinToString(" | ")}", refused.isEmpty())
+    }
+
     /** Whatever the screen is showing under the mark it uses for a failure. */
     private fun refusals(): List<String> =
         compose
@@ -288,6 +337,10 @@ class SampleWalkthroughTest {
 
         const val SAVE = "Save payment method"
         const val CAPTURE = "Submit payment"
+        const val VOID = "Void this transaction"
+
+        /** What the capture step shows once the service has reversed the transaction. */
+        const val VOIDED = "✓ Voided"
 
         /** What the screens put in front of a failure, form and step alike. */
         const val REFUSED = "✗"

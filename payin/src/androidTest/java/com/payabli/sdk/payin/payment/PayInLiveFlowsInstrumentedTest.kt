@@ -9,6 +9,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.payin.ManualDeviceTest
+import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -61,7 +62,7 @@ import java.util.UUID
 @RunWith(AndroidJUnit4::class)
 @ManualDeviceTest
 class PayInLiveFlowsInstrumentedTest {
-    private lateinit var flow: PayabliPayInPaymentFlow
+    private lateinit var flow: PayInPaymentFlow
 
     @Before
     fun setUp() {
@@ -70,7 +71,7 @@ class PayInLiveFlowsInstrumentedTest {
         // environment whatever token is presented, so a mint per test would spend a live call on a token
         // nothing reads.
         flow =
-            PayabliPayInPaymentFlow(
+            PayInPaymentFlow.over(
                 installedSession(),
                 entryPoint,
                 CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -123,7 +124,7 @@ class PayInLiveFlowsInstrumentedTest {
             assertTrue(flow.consume())
             val captured =
                 flow
-                    .captureAuthorized(
+                    .captureAuthorizedTransaction(
                         PayInAuthorizedRequest(
                             transId = transId!!,
                             paymentDetails = PayInPaymentDetails(totalAmount = AMOUNT),
@@ -132,6 +133,62 @@ class PayInLiveFlowsInstrumentedTest {
                     ).orFail("capturing an authorization")
 
             assertApproved(captured.code)
+        }
+
+    /**
+     * The hold this places is released by the void, so the run leaves nothing standing against the paypoint.
+     *
+     * The transaction identifier is the authorization's own, which is the whole input the route takes. A
+     * paypoint whose credential cannot void answers a refusal here rather than an approval, and `orFail`
+     * prints the status and the wire code so that reads as the permission it is.
+     */
+    @Test
+    fun authorizingACardAndThenVoidingIt() =
+        runBlocking {
+            val authorized = flow.authorize(transaction(), card()).orFail("authorizing a card")
+
+            assertApproved(authorized.code)
+            val transId = authorized.transaction?.paymentTransId
+            assertNotNull("an approval with no transaction to void: $authorized", transId)
+
+            assertTrue(flow.consume())
+            val voided = flow.voidTransaction(transId!!).orFail("voiding an authorization")
+
+            assertApproved(voided.code)
+        }
+
+    /**
+     * Two calls the form did not start, one after the other, against the real service.
+     *
+     * Neither publishes to the form's state, so neither is refused by the other's outcome. On the JVM this is
+     * asserted against a fake transport; here it is asserted against the service that has to accept both.
+     */
+    @Test
+    fun capturingAnAuthorizationAndThenVoidingTheCapture() =
+        runBlocking {
+            val authorized = flow.authorize(transaction(), card()).orFail("authorizing a card")
+            val transId = authorized.transaction?.paymentTransId
+            assertNotNull("an approval with no transaction to capture: $authorized", transId)
+
+            assertTrue(flow.consume())
+            val captured =
+                flow
+                    .captureAuthorizedTransaction(
+                        PayInAuthorizedRequest(
+                            transId = transId!!,
+                            paymentDetails = PayInPaymentDetails(totalAmount = AMOUNT),
+                            idempotencyKey = UUID.randomUUID().toString(),
+                        ),
+                    ).orFail("capturing an authorization")
+            assertApproved(captured.code)
+
+            // No `consume` between the two: that is the point. Nothing was published for it to clear.
+            val voided =
+                flow
+                    .voidTransaction(captured.transaction?.paymentTransId ?: transId)
+                    .orFail("voiding a captured authorization")
+
+            assertApproved(voided.code)
         }
 
     /**
