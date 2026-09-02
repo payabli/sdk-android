@@ -12,9 +12,12 @@
   `-Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest`.
   Both annotations are named because there is one per module; a command naming one leaves the other module's
   manual tier running. See **Testing** for why, and for the command that runs the excluded tier
-- `./gradlew :MODULE:createDebugAndroidTestCoverageReport` - Instrumented coverage, and it runs the connected
-  tests itself. `build/reports/coverage/androidTest/debug/connected/report.xml`; the analysis reads it beside
-  the unit report
+- `./gradlew :MODULE:createDebugAndroidTestCoverageReport -Ppayabli.instrumentedCoverage=true` - Instrumented
+  coverage, and it runs the connected tests itself.
+  `build/reports/coverage/androidTest/debug/connected/report.xml`; the analysis reads it beside the unit
+  report. **The property is required and the task does not exist without it**: it instruments the `debug`
+  build type, which is the variant `:example` links, so leaving it on put JaCoCo through the sample's dex
+  merge until that ran out of heap in CI. `build-logic` carries the reasoning
 - `./gradlew ktlintCheck` - Formatting
 - `./gradlew ktlintFormat --no-configuration-cache` - Fix formatting (the flag is required)
 - `./gradlew lint` - Android Lint
@@ -342,8 +345,10 @@ reaches the branch under test.
   unbracketed IPv6 literal is not a URL authority, so the base URL parses to no host and every instrumented
   test fails as invalid configuration while every unit test still passes.
 - **Per-PR CI runs `:core`'s and `:payin`'s instrumented tests on an emulator, and no others.** The
-  `instrumented` job in `ci.yml` runs their `createDebugAndroidTestCoverageReport`, which runs the connected
-  tests itself, and hands the coverage to the `sonar` job as an artifact. That job holds no secret, which is
+  `instrumented` job in `ci.yml` runs their `createDebugAndroidTestCoverageReport` behind
+  `-Ppayabli.instrumentedCoverage=true`, which runs the connected tests itself, and hands the coverage to the
+  `sonar` job as an artifact. That property is off everywhere else on purpose: the instrumentation lands in
+  the `debug` variant `:example` links, and it cost that module's dex merge more heap than CI's daemon has. That job holds no secret, which is
   what allows the third-party emulator action in it; `sonar` holds `GPR_TOKEN` and `SONAR_TOKEN`, so the
   emulator cannot run there and the coverage cannot be produced in place. It runs for forks too, since it
   needs nothing they cannot have.

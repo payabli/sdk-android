@@ -63,13 +63,14 @@ android {
     }
     buildTypes {
         debug {
-            // Off, against the convention plugin's rule for a library with an instrumented source set.
+            // Off even when `payabli.instrumentedCoverage` asks for it, which the convention plugin honours
+            // for every other library with an instrumented source set.
             //
             // Nothing runs this module's instrumented tier in CI, and nothing can until it has a job of its
             // own: building it resolves the card reader from a private registry, so the job would hand
             // GPR_TOKEN to the third-party emulator action, which is the exposure the nightly's job split
-            // exists to prevent. Instrumenting a tier no automated run executes buys no coverage and costs
-            // every local connected run that touches this module. Turn it back on with that job.
+            // exists to prevent. So a build that passes that property for :core and :payin gets no
+            // instrumentation it could ever read here. Turn it back on with that job.
             enableAndroidTestCoverage = false
         }
     }

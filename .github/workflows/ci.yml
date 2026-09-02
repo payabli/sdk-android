@@ -225,7 +225,12 @@ jobs:
           #
           # --continue because the two modules are independent, and Gradle otherwise stops at the first
           # failure, leaving whether the second ran down to how the two happened to be scheduled.
-          script: ./gradlew --continue --max-workers=1
+          #
+          # payabli.instrumentedCoverage is what turns the instrumentation on at all; it is off by default
+          # because AGP instruments the debug build type, which is the variant :example links, and that put
+          # JaCoCo through the sample's dex merge until it ran out of heap. This job builds no application
+          # module, so it is the one place the cost is paid. build-logic carries the full reasoning.
+          script: ./gradlew --continue --max-workers=1 -Ppayabli.instrumentedCoverage=true
             :core:createDebugAndroidTestCoverageReport
             :payin:createDebugAndroidTestCoverageReport
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest

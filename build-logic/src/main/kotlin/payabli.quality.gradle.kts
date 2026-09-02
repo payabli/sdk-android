@@ -36,10 +36,19 @@ tasks.withType<Test>().configureEach {
 
 // Coverage, enabled only where tests exist: the task fails outright if nothing ran.
 //
-// The instrumented half is library-only, and that is the rule rather than an omission. The analysis skips
-// :example outright, so instrumenting the sample would measure lines nothing reads and slow every
-// connected run that touches it. A module that needs it off despite having the source set turns it off at
-// its own declaration, where the reason lives; :taptopay does.
+// **The instrumented half is off unless asked for, and that is not a default worth flipping.** AGP
+// instruments the `debug` build type, and a library's `debug` variant is exactly what `:example` links, so
+// leaving it on puts JaCoCo's classes into the sample's APK and through its dex merge. That merge ran out of
+// heap in CI against the 2048m daemon `gradle.properties` sets: intermittently, twice green before it went
+// red on a commit that touched only test sources. Only the job that reads the report needs the
+// instrumentation, and that job builds no application module, so the cost belongs to it rather than to every
+// build on every machine. `ci.yml`'s instrumented job passes the property.
+//
+// It is library-only for a second reason: the analysis skips `:example`, so instrumenting the sample would
+// measure lines nothing reads.
+val wantsInstrumentedCoverage: Boolean =
+    providers.gradleProperty("payabli.instrumentedCoverage").orNull == "true"
+
 plugins.withId("com.android.library") {
     if (layout.projectDirectory.dir("src/test").asFile.isDirectory) {
         extensions.configure<LibraryExtension> {
@@ -48,7 +57,7 @@ plugins.withId("com.android.library") {
             }
         }
     }
-    if (layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
+    if (wantsInstrumentedCoverage && layout.projectDirectory.dir("src/androidTest").asFile.isDirectory) {
         extensions.configure<LibraryExtension> {
             buildTypes.named("debug") {
                 enableAndroidTestCoverage = true
