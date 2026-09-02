@@ -38,6 +38,12 @@ public interface PayabliPayIn {
      *
      * `Result` rather than a thrown exception, because a decline is an outcome a caller acts on rather than a
      * defect. The failure is a `PayInException` carrying what the service said.
+     *
+     * **This call moves money, so set [PayInAuthorizedRequest.idempotencyKey] to retry it safely.** A read
+     * timeout, a cancellation or a response that could not be decoded all leave it unknown whether the
+     * capture was applied, and only a repeat carrying the same key is recognized as the same attempt. Nothing
+     * is minted here: a key this SDK invented would not reach a caller holding a `Result`, and an unreadable
+     * key is worse than none, because the attempt looks retryable and is not.
      */
     public suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
@@ -48,8 +54,9 @@ public interface PayabliPayIn {
      * it will not reverse comes back as the refusal it sent, carrying its own reason.
      *
      * @param transId the transaction to reverse, as [PayInTransaction.paymentTransId] reported it.
-     * @param idempotencyKey makes a repeated send the same attempt rather than a second one. Minted per
-     *   attempt when absent.
+     * @param idempotencyKey makes a repeated send the same attempt rather than a second one. Supply it to
+     *   retry safely after a failure that leaves the outcome unknown; absent, none is sent and a retry is a
+     *   new attempt. Nothing is minted, for the reason given on [captureAuthorizedTransaction].
      */
     public suspend fun voidTransaction(
         transId: String,

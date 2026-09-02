@@ -189,6 +189,49 @@ class PayInSubmissionTest {
             assertEquals(2, transport.count)
         }
 
+    /**
+     * A key nothing can read is worse than no key.
+     *
+     * These two publish no state, so a minted key would reach neither the caller's `Result` nor
+     * [PayInSubmissionState.Failed.retryKey] that a form reads. The caller's own key is sent unchanged,
+     * because that one they already hold.
+     */
+    @Test
+    fun `a headless call mints no idempotency key of its own`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+            assertFalse(
+                "a key was minted that no caller can read",
+                transport.request
+                    ?.headers
+                    .orEmpty()
+                    .containsKey("idempotencyKey"),
+            )
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
+            assertFalse(
+                "a key was minted that no caller can read",
+                transport.request
+                    ?.headers
+                    .orEmpty()
+                    .containsKey("idempotencyKey"),
+            )
+        }
+
+    @Test
+    fun `a headless call sends the caller's own key unchanged`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = "caller-key")
+
+            assertEquals("caller-key", transport.request?.headers?.get("idempotencyKey"))
+        }
+
     /** The single flight is still shared, so a void cannot slip past a submission the form started. */
     @Test
     fun `a void while a form submission is in flight is refused and sends nothing`() =

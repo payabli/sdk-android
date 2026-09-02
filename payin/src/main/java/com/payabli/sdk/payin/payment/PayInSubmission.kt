@@ -112,7 +112,7 @@ internal class PayInSubmission(
         request: PayInAuthorizedRequest,
     ): PayInSubmissionState? =
         perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint, publishes = false) { retry ->
-            val key = retry.reserve(request.idempotencyKey)
+            val key = retry.hold(request.idempotencyKey)
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
         }
 
@@ -123,7 +123,7 @@ internal class PayInSubmission(
         idempotencyKey: String?,
     ): PayInSubmissionState? =
         perform(TelemetryEvents.PAYIN_VOID_COMPLETED, entryPoint, publishes = false) { retry ->
-            val key = retry.reserve(idempotencyKey)
+            val key = retry.hold(idempotencyKey)
             PayInSubmissionState.Succeeded.Payment(moneyIn.void(transId, key))
         }
 
@@ -322,6 +322,18 @@ internal class PayInSubmission(
          * a retry the caller decides to make is the same request and a second payment is a second key.
          */
         fun reserve(supplied: String?): String = (supplied ?: newIdempotencyKey()).also { key = it }
+
+        /**
+         * The caller's own key, recorded without minting one in its place.
+         *
+         * For an operation that publishes nothing: a minted key reaches the caller through
+         * [PayInSubmissionState.Failed.retryKey] on the state, and a caller reading a returned `Result` never
+         * sees that state. Minting there would produce a key that makes the attempt retryable in principle and
+         * is unreadable in practice, so an ambiguous failure would look recoverable and would not be. Absent,
+         * the caller supplies one or accepts that a retry is a new attempt, which is what its own request type
+         * already documents.
+         */
+        fun hold(supplied: String?): String? = supplied.also { key = it }
     }
 
     private companion object {
