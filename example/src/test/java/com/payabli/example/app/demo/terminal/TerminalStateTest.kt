@@ -1,6 +1,7 @@
 package com.payabli.example.app.demo.terminal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,6 +104,22 @@ class TerminalStateTest {
     @Test
     fun `a success without detail still names the action`() {
         assertEquals("✓ Set up the terminal succeeded", TerminalActionOutcome.success(TerminalAction.Initialize))
+    }
+
+    @Test
+    fun `a refused reader names the reader, not the step that met it`() {
+        // The step list leaves setup done and fails the payment step, because every call Payabli owns
+        // succeeded and the refusal is the vendor's. A line saying setup failed contradicted the list
+        // beside it.
+        val line =
+            TerminalActionOutcome.failure(
+                TerminalAction.Initialize,
+                IllegalStateException("677"),
+                readerDenied = true,
+            )
+
+        assertTrue(line, line.contains("card reader was refused"))
+        assertFalse(line, line.contains("Set up the terminal failed"))
     }
 
     @Test
