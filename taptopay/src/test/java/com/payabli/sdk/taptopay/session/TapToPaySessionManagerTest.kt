@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -26,6 +27,36 @@ class TapToPaySessionManagerTest {
     fun `a session starts at the beginning`() {
         assertEquals(TapToPaySessionState.Idle, manager.state.value)
     }
+
+    @Test
+    fun `a move a collector makes is reported after the move that woke it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            manager.advance(TapToPaySessionState.FetchingConfig)
+            manager.advance(TapToPaySessionState.InitializingReader)
+
+            val reported = mutableListOf<String>()
+            TelemetryRecorders.install { _, properties ->
+                reported += "${properties["from"]}->${properties["to"]}"
+            }
+            try {
+                val collector =
+                    launch(UnconfinedTestDispatcher(testScheduler)) {
+                        manager.state.collect { state ->
+                            if (state == TapToPaySessionState.Ready) manager.invalidate()
+                        }
+                    }
+
+                manager.advance(TapToPaySessionState.Ready)
+                collector.cancelAndJoin()
+
+                assertEquals(
+                    listOf("initializing_reader->ready", "ready->session_expired"),
+                    reported,
+                )
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
 
     @Test
     fun `a collector handed a state finds readiness already agreeing with it`() =
