@@ -96,7 +96,17 @@ internal class TapToPayChargeRunner(
                         // A spent reader session is repaired by re-initializing. `invalidate` drops the move when
                         // the state has already left ready, so a failure arriving after a replacement is built
                         // does not kill the healthy session.
-                        if (failure is CardReaderException.SessionUnusable) manager.invalidate()
+                        //
+                        // A denial expires the session too, and cannot do better: Ready may only move to
+                        // SessionExpired, so the DEVICE_INELIGIBLE landing a denial otherwise gets is
+                        // unreachable from here. The repair meets the same refusal at arming and lands it
+                        // there. Leaving the session ready would be worse - the next charge would open a
+                        // transaction before finding out.
+                        if (failure is CardReaderException.SessionUnusable ||
+                            failure is CardReaderException.DeviceDenied
+                        ) {
+                            manager.invalidate()
+                        }
                         closeAfterFailedRead(paymentTransId, failure)
                         throw failure
                     }
