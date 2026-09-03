@@ -26,7 +26,7 @@ internal sealed class CardReaderException(
      */
     class DeviceDenied(
         cause: Throwable?,
-    ) : CardReaderException(armingMessage(cause), cause)
+    ) : CardReaderException(denialMessage(cause), cause)
 
     /** The reader session is gone. Bringing the reader up again is the only repair. */
     class SessionUnusable(
@@ -39,7 +39,15 @@ internal sealed class CardReaderException(
     ) : CardReaderException("the tap did not complete", cause)
 }
 
-private fun armingMessage(cause: Throwable?): String {
+private fun armingMessage(cause: Throwable?): String = withCode("the reader did not come up", cause)
+
+/** Reached from arming and from a tap, so it names neither. */
+private fun denialMessage(cause: Throwable?): String = withCode("the reader vendor refused this device", cause)
+
+private fun withCode(
+    text: String,
+    cause: Throwable?,
+): String {
     val code = (cause as? CardReaderFailure)?.code
-    return if (code == null) "the reader did not come up" else "the reader did not come up (code $code)"
+    return if (code == null) text else "$text (code $code)"
 }

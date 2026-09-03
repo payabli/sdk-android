@@ -23,8 +23,8 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * That a vendor refusal reaches telemetry by its code, driven through the reader rather than posed.
  *
- * The catalog declares no code on `ttp.nfc.failed`, so a reader failure has to carry its code out on the
- * phase that encloses it or the number never leaves the handset. Asserting that on a hand-built exception
+ * The code reaches telemetry twice: on `ttp.nfc.failed`, which the catalog now allows it on, and on the
+ * phase that encloses the failure, which reads it off the cause. Asserting either on a hand-built exception
  * proves the mapping and not the path, which is the half that can rot: a call site that stops passing the
  * cause, or a `codeOf` that stops walking to it, leaves every assertion about the mapping green.
  */

@@ -192,8 +192,8 @@ class TapToPayViewModel(
         _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
             val result = block()
-            // Read from the terminal rather than from this state, which is updated by a collector that
             // A device the preflight passed is capable, so an ineligible verdict on it is the vendor's.
+            // Read from the terminal, whose republished flow a collector may not have updated yet.
             val outcome =
                 TerminalActionOutcome.from(
                     action,

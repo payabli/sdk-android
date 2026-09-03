@@ -19,9 +19,12 @@ import org.junit.Assert.assertFalse
 /**
  * The setup every live class needs: a session, an enrolled device, and the two run-wide constants.
  *
- * **Nothing clears the stored device record, and no live class may.** Recognition is local, so a run
- * starting without it registers another device for the same handset. Clearing the app's data is what
- * exercises the cold path.
+ * **A live class keeps the stored device record.** Recognition is local, so a run starting without it
+ * registers another device for the same handset.
+ *
+ * One exception, and it is the reason the rule is stated rather than assumed: `DeviceActivationLiveTest`
+ * drives the cold sequence, so it clears the record in `@After` and accepts a new device per run. A class
+ * that is not exercising that path clears nothing.
  */
 internal object LiveTapToPay {
     /** One tag for this tier, so a live run's output is one logcat filter. */
