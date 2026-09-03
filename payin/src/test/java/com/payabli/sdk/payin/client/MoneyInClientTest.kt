@@ -435,6 +435,47 @@ class MoneyInClientTest {
         }
 
     @Test
+    fun `a decline names the transaction the service made`() =
+        runTest(timeout = timeout) {
+            // A refused transaction still exists at the paypoint, and this is the only handle a caller has
+            // for reconciling, voiding or logging it.
+            val declined =
+                """{"code":"D0329","reason":"Insufficient funds","data":{"paymentTransId":"101-abc"}}"""
+            val transport = FakePayInTransport.answering(declined)
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull()
+
+            assertEquals("101-abc", (failure as PayInException.Refused).failure.paymentTransId)
+        }
+
+    @Test
+    fun `a service error names it too`() =
+        runTest(timeout = timeout) {
+            val body = """{"code":"E4001","reason":"Processor unavailable","data":{"paymentTransId":"101-def"}}"""
+            val transport = FakePayInTransport.answering(body)
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull()
+
+            assertEquals("101-def", (failure as PayInException.ServiceError).failure.paymentTransId)
+        }
+
+    @Test
+    fun `a refusal that named no transaction invents none`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering("""{"code":"D0329","reason":"Insufficient funds"}""")
+
+            val failure =
+                runCatching { MoneyInClient(transport, RecordingSdkLogger()).capture("e", cardRequest()) }
+                    .exceptionOrNull()
+
+            assertNull((failure as PayInException.Refused).failure.paymentTransId)
+        }
+
+    @Test
     fun `a code family this SDK does not know is not a decline either`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering("""{"code":"X9999","reason":"Something else"}""")
