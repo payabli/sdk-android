@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.RouteScript
@@ -14,6 +16,7 @@ import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.approved
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -59,6 +62,40 @@ class TapToPayChargeRunnerTest {
         SessionFixture(script(updates)).also { it.coordinator.initialize() }
 
     private fun details(amount: String = "12.34") = TapToPayPaymentDetails(BigDecimal(amount))
+
+    @Test
+    fun `a withdrawn charge is not reported as a failed one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Driven through the real runner rather than by calling the reporter, because what is asserted
+            // is that this path does not emit: a test that invoked the reporter directly would stay green
+            // however the runner behaved.
+            //
+            // The read raises the cancellation rather than the job being cancelled from outside. Same
+            // branch, and it keeps the uncancellable close - which runs either way - out of the test's
+            // own completion, where it otherwise deadlocks against `cancelAndJoin`.
+            val recorded = mutableListOf<String>()
+            TelemetryRecorders.install { event, _ -> recorded += event }
+            try {
+                val fixture = readyFixture(updates = 2)
+                fixture.reader.failNextRead(CancellationException("the host withdrew"))
+
+                val outcome =
+                    runCatching {
+                        runnerOver(fixture)
+                            .charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    }.exceptionOrNull()
+
+                assertTrue(outcome.toString(), outcome is CancellationException)
+                assertFalse(
+                    "a withdrawn charge was recorded as a failure: $recorded",
+                    TelemetryEvents.TTP_CHARGE_FAILED in recorded,
+                )
+                // Withdrawing does not leave the payment open, which is the other half of the contract.
+                assertTrue(UPDATE in fixture.routes)
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
 
     @Test
     fun `a payment is opened, tapped and closed, in that order`() =
