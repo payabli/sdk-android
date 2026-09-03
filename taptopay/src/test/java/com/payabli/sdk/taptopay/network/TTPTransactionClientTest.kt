@@ -139,11 +139,10 @@ class TTPTransactionClientTest {
     @Test
     fun `the body it could not read is not carried out on the cause chain`() =
         runTest(timeout = timeout) {
-            // Malformed on purpose, and that is what makes this test the one it claims to be: a
-            // well-formed body of the wrong shape is refused without a decoder ever throwing, so the
-            // cause is null and nothing is carried out whether this is fixed or not. kotlinx appends the
-            // input it choked on to its message, and a real body here holds a paymentTransId and the
-            // processor's own fields.
+            // A well-formed body of the wrong shape is refused without a decoder throwing, so its cause is
+            // null and there is nothing to carry out. This one is malformed, which is what reaches the
+            // decoder: kotlinx appends the input it choked on to its message, and a real body here holds a
+            // paymentTransId and the processor's own fields.
             val body = """{"responseData":"tell-tale-payment-identifier","""
             val (_, client) = client(answer(body))
 
