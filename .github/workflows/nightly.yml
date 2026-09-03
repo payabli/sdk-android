@@ -151,6 +151,10 @@ jobs:
       # read:packages into the environment of every other step, including two invocations of a third-party
       # action on a mutable @v2 tag that have no use for it. Least privilege matters more here than symmetry
       # with ci.yml, whose card-present work is a separate job with no third-party action in it.
+      #
+      # `--no-daemon` is part of that, not a performance note. A daemon started here would hold the token in
+      # its environment and outlive the step, where the emulator action runs as the same user and can read
+      # `/proc/<pid>/environ`. Step-scoped `env` does not reach a process that is still running.
       - name: Unit tests and coverage (card-present)
         id: unit_card_present
         continue-on-error: true
@@ -159,7 +163,7 @@ jobs:
         env:
           GPR_USER: ${{ secrets.GPR_USER }}
           GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
-        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
+        run: ./gradlew --no-daemon --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
           :example:createWithTelemetryDebugUnitTestCoverageReport
 
       # Required on ubuntu-latest, and the step most often left out. Without it the emulator runs
