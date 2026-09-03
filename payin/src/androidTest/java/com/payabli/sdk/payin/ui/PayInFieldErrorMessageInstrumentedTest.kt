@@ -52,26 +52,31 @@ class PayInFieldErrorMessageInstrumentedTest {
      * A list checked against its own size passes when a new error is added to neither, and the message that
      * new error renders would go undrawn here while this stayed green. [name] is exhaustive over the sealed
      * type, so a thirteenth subtype stops this file compiling until somebody puts it in both places.
+     *
+     * Keying the results by that name catches the other half in the same assertion: a fixture naming one
+     * subtype twice collapses to fewer entries than it has, so the count fails.
      */
     @Test
     fun everyErrorRendersAMessage() {
-        val rendered = mutableListOf<String>()
+        // Keyed and assigned rather than appended. A composition body can run more than once, and appending
+        // from one grows the collection on every recomposition, which would fail this on a count that has
+        // nothing to do with the messages. Assignment is idempotent however many times it runs.
+        val rendered = mutableMapOf<String, String>()
         rule.setContent {
             MaterialTheme {
-                everyError.forEach { rendered += PayInStrings.error(it) }
+                everyError.forEach { rendered[name(it)] = PayInStrings.error(it) }
             }
         }
         rule.waitForIdle()
 
-        assertEquals("an error stopped producing a message", everyError.size, rendered.size)
-        rendered.forEachIndexed { index, message ->
-            assertTrue("${everyError[index]} rendered nothing", message.isNotBlank())
-        }
         assertEquals(
-            "the fixture names one subtype twice and another not at all",
+            "an error stopped producing a message, or the fixture names one subtype twice",
             everyError.size,
-            everyError.map { name(it) }.toSet().size,
+            rendered.size,
         )
+        rendered.forEach { (error, message) ->
+            assertTrue("$error rendered nothing", message.isNotBlank())
+        }
     }
 
     /**

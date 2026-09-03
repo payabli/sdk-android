@@ -2,6 +2,9 @@ package com.payabli.sdk.payin.ui
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
@@ -74,7 +77,17 @@ class PayInRevealControlInstrumentedTest {
         rule.onNodeWithContentDescription(hideLabel(), substring = true).assertDoesNotExist()
     }
 
-    /** What the payer typed reads back in clear once revealed, which is what the control is for. */
+    /**
+     * What the payer typed reads back in clear once revealed, which is what the control is for.
+     *
+     * Asserted on `EditableText`, which carries the transformed value, and never with `hasText`: that matcher
+     * also reads `InputText`, which is the raw input and bypasses the visual transformation by design. A
+     * `hasText("123456789")` here matches a field still showing bullets, so it passes with the control doing
+     * nothing at all.
+     *
+     * Both sides asserted, because only the pair distinguishes a transformation that lifted from one that was
+     * never applied.
+     */
     @Test
     fun theDigitsReadBackOnceRevealed() {
         showBankForm(masksAccountNumber = true)
@@ -82,9 +95,11 @@ class PayInRevealControlInstrumentedTest {
         accountNumberField().performTextInput("123456789")
         rule.waitForIdle()
 
+        rule.onNode(hasSetTextAction() and showsExactly("123456789")).assertDoesNotExist()
+
         rule.onNodeWithContentDescription(revealLabel(), substring = true).performClick()
 
-        rule.onNode(hasSetTextAction() and hasText("123456789")).assertExists()
+        rule.onNode(hasSetTextAction() and showsExactly("123456789")).assertExists()
     }
 
     /**
@@ -119,6 +134,17 @@ class PayInRevealControlInstrumentedTest {
 
         rule.onNodeWithContentDescription(revealLabel(), substring = true).assertIsNotEnabled()
     }
+
+    /**
+     * Matches the value a sighted payer can read, which is the transformed one.
+     *
+     * `EditableText` is what the visual transformation writes; `InputText`, which `hasText` also searches,
+     * holds what was typed whatever is drawn over it.
+     */
+    private fun showsExactly(text: String) =
+        SemanticsMatcher("EditableText is '$text'") { node ->
+            node.config.getOrNull(SemanticsProperties.EditableText)?.text == text
+        }
 
     private fun accountNumberField() =
         rule.onNode(hasSetTextAction() and hasText(string(R.string.payabli_payin_field_account_number)))
