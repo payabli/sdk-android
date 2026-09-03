@@ -63,11 +63,14 @@ class TapToPayTerminal(
     override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> =
         attempt {
             val ttp = terminal()
+            // No NFC events here. `charge` is one call covering the open, the tap and the close, so a
+            // pair emitted around it would name the radio and time the whole payment: NfcStarted before
+            // the transaction is even opened, NfcCompleted after the closing call returns. The two events
+            // below are true of that span. `DemoTerminalController` emits the NFC pair because it stands
+            // in for the reader and does know where the tap begins.
             emit(TerminalEventCode.ChargeInitiated, "amount=$amount")
-            emit(TerminalEventCode.NfcStarted)
             val receipt = ttp.charge(TapToPayPaymentDetails(amount))
-            emit(TerminalEventCode.NfcCompleted, receipt.cardNetwork.orEmpty())
-            emit(TerminalEventCode.UpdateCompleted)
+            emit(TerminalEventCode.UpdateCompleted, receipt.cardNetwork.orEmpty())
             ChargeReceipt(receipt.paymentTransId)
         }
 
