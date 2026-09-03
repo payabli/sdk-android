@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
+import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -77,6 +78,13 @@ class PayInFieldErrorMessageInstrumentedTest {
         rendered.forEach { (error, message) ->
             assertTrue("$error rendered nothing", message.isNotBlank())
         }
+        // Distinct, which is the half a non-blank check misses: two branches naming the same resource render
+        // a payer the wrong reason for their input being refused, and every message is still non-blank.
+        assertEquals(
+            "two errors render the same message: $rendered",
+            rendered.size,
+            rendered.values.toSet().size,
+        )
     }
 
     /**
@@ -185,18 +193,31 @@ class PayInFieldErrorMessageInstrumentedTest {
      *
      * The wording is translatable and the value is not, so the values are asserted exactly: changing one is a
      * wire change dressed as a copy edit.
+     *
+     * **Which fields those are comes from the enum, not from a list here.** `PayInStrings.choices` ends in
+     * `else -> emptyList()`, so a field added as a `Choice` without a branch there renders a picker with
+     * nothing in it, and a hand-written list in this test would not have named it either. Taking
+     * `PayInFieldInput.Choice` from the entries means a new one is asserted the day it is declared.
      */
     @Test
     fun eachChoiceFieldOffersItsApiValues() {
+        val choiceFields = PayInField.entries.filter { it.input == PayInFieldInput.Choice }
         val choices = mutableMapOf<PayInField, List<Pair<String, String>>>()
         rule.setContent {
             MaterialTheme {
-                listOf(PayInField.AccountType, PayInField.AccountHolderType, PayInField.SecCode)
-                    .forEach { choices[it] = PayInStrings.choices(it) }
+                choiceFields.forEach { choices[it] = PayInStrings.choices(it) }
                 choices[PayInField.CardNumber] = PayInStrings.choices(PayInField.CardNumber)
             }
         }
         rule.waitForIdle()
+
+        assertTrue("no field declares itself a choice", choiceFields.isNotEmpty())
+        choiceFields.forEach {
+            assertTrue(
+                "$it is a choice field with nothing to choose, so its picker draws empty",
+                choices.getValue(it).isNotEmpty(),
+            )
+        }
 
         assertEquals(
             listOf("Checking", "Savings"),
