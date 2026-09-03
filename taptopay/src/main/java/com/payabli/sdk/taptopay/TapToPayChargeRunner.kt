@@ -105,11 +105,8 @@ internal class TapToPayChargeRunner(
                         // the state has already left ready, so a failure arriving after a replacement is built
                         // does not kill the healthy session.
                         //
-                        // A denial expires the session too, and cannot do better: Ready may only move to
-                        // SessionExpired, so the DEVICE_INELIGIBLE landing a denial otherwise gets is
-                        // unreachable from here. The repair meets the same refusal at arming and lands it
-                        // there. Leaving the session ready would be worse - the next charge would open a
-                        // transaction before finding out.
+                        // A denial expires it too: Ready may only move to SessionExpired, so the
+                        // DEVICE_INELIGIBLE landing is unreachable here and the repair lands it.
                         if (failure is CardReaderException.SessionUnusable ||
                             failure is CardReaderException.DeviceDenied
                         ) {
@@ -123,9 +120,8 @@ internal class TapToPayChargeRunner(
                 TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                     .also { TapToPayReports.chargeSucceeded(startedAt) }
             } catch (withdrawn: CancellationException) {
-                // The facade states that a withdrawn caller is not a failure and must not be reported as
-                // one. `Throwable` covers CancellationException, so without this a cancelled charge was
-                // counted as a failed one and the funnel it force-flushes carried a payment nobody lost.
+                // `Throwable` covers CancellationException, and the facade states a withdrawn caller is
+                // not a failure.
                 throw withdrawn
             } catch (failure: Throwable) {
                 TapToPayReports.chargeFailed(failure, startedAt)

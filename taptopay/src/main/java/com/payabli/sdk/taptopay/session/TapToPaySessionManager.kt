@@ -141,10 +141,8 @@ internal class TapToPaySessionManager(
             permitted = TapToPaySessionTransitions.permits(from, to)
             published = permitted && from != to
             if (published) {
-                // Readiness first, and both in the one critical section. `sink.value = to` resumes an
-                // unconfined collector inside this block, so a collector reading [isReady] on the state it
-                // was just handed has to find the two agreeing. Written after, it finds the previous
-                // readiness; written outside the monitor, two writers interleave and it stays wrong.
+                // Readiness first: `sink.value = to` resumes an unconfined collector, which reads
+                // [isReady] on the state it was just handed.
                 readySink.value = to == TapToPaySessionState.Ready
                 sink.value = to
             }
