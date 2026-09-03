@@ -55,6 +55,11 @@ internal class FiservAndroidCardReader(
         setup.withLock {
             val arming =
                 pending ?: error("prepareReader was called with no credentials; configure comes first")
+            // Dropped before the attempt, not after it. The local keeps them available for this arming,
+            // and every way out of the call below - a refusal, a timeout, a cancellation - then leaves
+            // nothing holding the vendor's key and secret. Clearing on the success path alone meant a
+            // denied handset retained them for the life of the reader, against what this class states.
+            pending = null
             armWithin(arming)?.let { failure ->
                 record("arm", failure)
                 throw if (failure.kind in DENIALS) {
@@ -63,7 +68,6 @@ internal class FiservAndroidCardReader(
                     CardReaderException.ArmingFailed(failure)
                 }
             }
-            pending = null
             logger.debug(
                 LogField.safe("event", "ttp_reader_armed"),
                 LogField.safe("phase", "arm"),
