@@ -4,6 +4,7 @@
 
 package com.payabli.sdk.payin.client
 
+import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PercentEncoding
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
@@ -43,8 +44,8 @@ internal object PayInRoutes {
     /** The resolved path for [VOID], encoded as [captureAuthorized] is and for the same reason. */
     fun void(transId: String): String = "/api/v2/MoneyIn/void/" + PercentEncoding.segment(transId)
 
-    /** This spelling, not `Idempotency-Key`, and it is read on the transaction routes only. */
-    const val HEADER_IDEMPOTENCY_KEY: String = "idempotencyKey"
+    /** Spelled once in `:core`, since card-present sends the same header. Read on the transaction routes only. */
+    const val HEADER_IDEMPOTENCY_KEY: String = PayabliRequest.IDEMPOTENCY_KEY_HEADER
 
     /** A header rather than a query flag, for a paypoint that requires one. */
     const val HEADER_VALIDATION_CODE: String = "validationCode"

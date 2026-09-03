@@ -44,3 +44,34 @@ public enum class PayabliErrorCode(
     VALIDATION_ERROR("VALIDATION_ERROR"),
     UNKNOWN("UNKNOWN"),
 }
+
+/**
+ * Whether this failure leaves it unknown whether the request was carried out.
+ *
+ * The question is not how bad the failure was but whether the request may have been carried out, because
+ * that is what decides between resending the same attempt and making a new one. A money-moving request
+ * keeps its idempotency key while this is true and takes a fresh one once it is false.
+ *
+ * Unknown, so the attempt is kept: a cancellation and a network failure can both land after the bytes were
+ * written; a 5xx can follow work already done; a body that would not decode came from a service that
+ * answered; and an unexpected error is unexamined by definition.
+ *
+ * Known, so it is not: a decline and a validation refusal are answers, a rate limit is a refusal to act,
+ * and a rejected credential never reached the operation. Keeping an attempt across any of those would
+ * claim a repeat that the next request is not.
+ *
+ * Here rather than in a capability module because both card-not-present and card-present decide this, and
+ * the two answering differently is a difference nothing would report.
+ */
+public val PayabliErrorCode.leavesOutcomeUnknown: Boolean
+    get() =
+        when (this) {
+            PayabliErrorCode.USER_CANCELLED,
+            PayabliErrorCode.NETWORK_ERROR,
+            PayabliErrorCode.SERVER_ERROR,
+            PayabliErrorCode.DECODING_ERROR,
+            PayabliErrorCode.UNKNOWN,
+            -> true
+
+            else -> false
+        }

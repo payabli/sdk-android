@@ -9,6 +9,7 @@ import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
+import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -340,30 +341,3 @@ internal class PayInSubmission(
         const val REASON_UNEXPECTED = "The payment could not be submitted"
     }
 }
-
-/**
- * Whether this failure leaves it unknown whether the request was carried out.
- *
- * The question is not how bad the failure was but whether the request may have been carried out, because that
- * is what decides between resending the same attempt and making a new one.
- *
- * Unknown, so the key travels: a cancellation or a network failure can both happen after the bytes were
- * written; a 5xx can follow work already done; a body that would not decode came from a service that answered;
- * and an unexpected error is unexamined by definition.
- *
- * Known, so it does not: a decline and a validation refusal are answers, a rate limit is a refusal to act, and
- * a rejected credential never reached the operation. Sending a key with any of those would suggest a repeat
- * that a second attempt is not.
- */
-private val PayabliErrorCode.leavesOutcomeUnknown: Boolean
-    get() =
-        when (this) {
-            PayabliErrorCode.USER_CANCELLED,
-            PayabliErrorCode.NETWORK_ERROR,
-            PayabliErrorCode.SERVER_ERROR,
-            PayabliErrorCode.DECODING_ERROR,
-            PayabliErrorCode.UNKNOWN,
-            -> true
-
-            else -> false
-        }
