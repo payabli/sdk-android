@@ -3,6 +3,8 @@ package com.payabli.sdk.taptopay
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
+import com.payabli.sdk.taptopay.adapters.CardReaderFailure
+import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.attestBody
@@ -165,6 +167,30 @@ class TapToPayChargeRunnerTest {
 
             assertTrue(failure.toString(), failure is IllegalArgumentException)
             assertFalse(INITIATE in fixture.routes)
+        }
+
+    @Test
+    fun `a denial during the tap is reported as a denial, not as a spent session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The two mean different things to a caller. A spent session invites the retry that a repair
+            // makes work; a denial is the vendor refusing the handset, and no retry reaches it.
+            val fixture = readyFixture(updates = 2)
+            fixture.reader.failNextRead(
+                CardReaderException.DeviceDenied(
+                    CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"),
+                ),
+            )
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
+            // Expired rather than left ready, so the next charge does not open a transaction before
+            // finding out. DEVICE_INELIGIBLE is unreachable from Ready and is landed at the repair.
+            assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
+            assertTrue(UPDATE in fixture.routes)
         }
 
     @Test

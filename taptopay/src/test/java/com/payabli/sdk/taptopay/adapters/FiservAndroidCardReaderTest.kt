@@ -80,6 +80,25 @@ class FiservAndroidCardReaderTest {
         }
 
     @Test
+    fun `a denial met during the tap is a denial, not a spent session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The vendor can refuse the handset at the tap as well as at arming, and the two exceptions mean
+            // different things to a caller: a spent session invites the retry a repair makes work, where a
+            // denial is refused again however many times it is asked.
+            val gateway =
+                FakeCardReaderGateway(
+                    readFailure = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"),
+                )
+            val reader = readerFor(gateway)
+            reader.configure(readerCredentials())
+            reader.prepareReader()
+
+            val failure = runCatching { reader.startReading(readRequest()) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
+        }
+
+    @Test
     fun `an arming that was refused keeps nothing either`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The same guarantee on the path that does not succeed, which is the one that held the vendor's
