@@ -1,7 +1,7 @@
 package com.payabli.example.app.sdk
 
 import com.payabli.sdk.core.PayabliSession
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
+import com.payabli.sdk.payin.PayabliPayIn
 import kotlinx.coroutines.CoroutineScope
 
 /**
@@ -20,7 +20,7 @@ fun interface PayInFlowGate {
      * [scope] is the caller's, and the flow cancels with it. A ViewModel passes `viewModelScope`, so a
      * submission survives a rotation and stops when the screen is finished with.
      */
-    suspend fun open(scope: CoroutineScope): Result<PayabliPayInPaymentFlow>
+    suspend fun open(scope: CoroutineScope): Result<PayabliPayIn>
 }
 
 /** The real one: mint a token, configure the session, build the flow for this entry point. */
@@ -30,6 +30,6 @@ fun payInFlowGate(
 ): PayInFlowGate =
     PayInFlowGate { scope ->
         sessionSource.session().map { session: PayabliSession ->
-            PayabliPayInPaymentFlow(session, entryPoint, scope)
+            PayabliPayIn(session, entryPoint, scope)
         }
     }

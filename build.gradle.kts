@@ -39,7 +39,24 @@ sonar {
         // here. They were test sources before they had a module of their own, which counts toward no
         // module's coverage at all; giving them a `main` source set is what makes them look uncovered.
         // Coverage only, so the fixtures are still analysed for issues and duplication like any other code.
-        property("sonar.coverage.exclusions", "**/platform/**,**/sdk/payin/ui/**,**/sdk/testutils/**")
+        //
+        // A fourth, and the only one that is about what a file is rather than what can reach it: the sample
+        // app and its token server are not shipped. Nothing an integrator installs contains a line of them,
+        // so a coverage figure over them measures how thoroughly the demonstration is tested and reports it
+        // as though it were the product. Every module that IS the product stays measured, composables
+        // included, and the `ui` rule above is the one place that needs revisiting rather than widening: a
+        // composable in the SDK is covered on a device, and this analysis reads only the unit tier.
+        // Coverage only, again, so the sample is still analysed for issues and duplication.
+        property(
+            "sonar.coverage.exclusions",
+            listOf(
+                "**/platform/**",
+                "**/sdk/payin/ui/**",
+                "**/sdk/testutils/**",
+                "**/com/payabli/example/**",
+                "example-server/**",
+            ).joinToString(","),
+        )
 
         // Every entry below is one rule over one path. `@Suppress("LongParameterList")` was tried first and
         // the analyser does not honour it: the issue was still reported on the commit carrying it, so the

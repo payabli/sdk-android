@@ -35,6 +35,9 @@ internal fun capturedPaymentOutcome() =
         .Payment(
             PayInResult(
                 code = "A0000",
+                reason = "Approved",
+                explanation = null,
+                action = null,
                 transaction =
                     PayInTransaction(
                         paymentTransId = "101-abc",
@@ -50,6 +53,31 @@ internal fun capturedPaymentOutcome() =
                     ),
             ),
         ).toOutcome()
+
+/**
+ * A reversal the service accepted, which answers under its own code and calls itself canceled.
+ *
+ * It carries no transaction: what a void names is the transaction it reversed, which the screen already
+ * holds, and the route answers about that one rather than creating another.
+ */
+internal fun voidedOutcome() =
+    Result
+        .success(
+            PayInResult(
+                code = "A0003",
+                reason = "Canceled",
+                explanation = "Transaction Canceled",
+                action = "No action required",
+                transaction = null,
+            ),
+        ).toOutcome()
+
+/**
+ * A failure that leaves it unknown whether the request was carried out, which is what keeps a key alive.
+ *
+ * A cancellation rather than a network failure only because it is the one shape with no wire text at all.
+ */
+internal fun interruptedOutcome() = Result.failure<PayInResult>(PayInException.Interrupted()).toOutcome()
 
 /** A decline, which is the failure a payer meets most and the one whose wording reaches the screen. */
 internal fun refusedOutcome() =
@@ -69,10 +97,10 @@ internal fun refusedOutcome() =
 /**
  * A step one that already succeeded, for tests about what a screen does afterwards.
  *
- * `payments` is null: a JVM test cannot build a `PayabliPayInPaymentFlow`, whose test constructor is internal
- * to `:payin`. Nothing that uses this submits, so the outcomes are handed to the view model directly.
+ * [handle] is what a screen submits through, and defaults to none: a test about the state a screen lands in
+ * hands its outcomes to the view model directly. A test that drives a call passes `FakePayInFlowHandle`.
  */
-internal fun readyStartup() =
+internal fun readyStartup(handle: PayInFlowHandle? = null) =
     PayInStartup {
-        PayInStartup.Started(text = "returned a token", isReady = true, payments = null)
+        PayInStartup.Started(text = "returned a token", isReady = true, payments = handle)
     }

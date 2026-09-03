@@ -2,6 +2,8 @@ package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.payin.PayInPaymentFlow
+import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.testDetails
@@ -26,7 +28,7 @@ import kotlin.time.Duration.Companion.seconds
  * Built against a transport rather than a session, which is what the internal constructor is for: a
  * `PayabliSession` cannot be created from outside `:core`.
  */
-class PayabliPayInPaymentFlowTest {
+class PayInPaymentFlowTest {
     private val timeout = 5.seconds
 
     @Test
@@ -66,12 +68,57 @@ class PayabliPayInPaymentFlowTest {
     fun `capturing an authorization answers with the transaction and reads no form`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
-            val flow = flowOver(transport)
+            val flow: PayabliPayIn = flowOver(transport)
 
-            val outcome = flow.captureAuthorized(PayInAuthorizedRequest("101-abc", testDetails()))
+            val outcome = flow.captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
 
             assertEquals("A0000", outcome.getOrNull()?.code)
             assertEquals("/api/v2/MoneyIn/capture/101-abc", transport.request?.path)
+        }
+
+    @Test
+    fun `voiding answers with the transaction and reads no form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val outcome = flow.voidTransaction("101-abc")
+
+            assertEquals("A0000", outcome.getOrNull()?.code)
+            assertEquals("/api/v2/MoneyIn/void/101-abc", transport.request?.path)
+        }
+
+    /**
+     * The reason the two calls above publish nothing to [PayabliPayIn.state].
+     *
+     * A terminal state stands until the form consumes it, and nothing draws these, so a first call that
+     * published would leave the second refused with no public way to clear it. Asserted through the
+     * interface, because that is the surface a host holds.
+     */
+    @Test
+    fun `two calls in a row both reach the wire`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val first = flow.captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+            val second = flow.voidTransaction("101-abc")
+
+            assertEquals("A0000", first.getOrNull()?.code)
+            assertEquals("A0000", second.getOrNull()?.code)
+            assertEquals(2, transport.count)
+            assertEquals("/api/v2/MoneyIn/void/101-abc", transport.request?.path)
+        }
+
+    /** Neither call is the form's, so neither moves the state the form renders. */
+    @Test
+    fun `a void leaves the form's state alone`() =
+        runTest(timeout = timeout) {
+            val flow: PayabliPayIn = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+
+            flow.voidTransaction("101-abc")
+
+            assertEquals(PayInSubmissionState.Idle, flow.state.value)
         }
 
     @Test
@@ -206,8 +253,8 @@ class PayabliPayInPaymentFlowTest {
             collector.cancel()
         }
 
-    private fun TestScope.flowOver(transport: PayabliTransport): PayabliPayInPaymentFlow =
-        PayabliPayInPaymentFlow(
+    private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
+        PayInPaymentFlow.over(
             transport = transport,
             entryPoint = TEST_ENTRY_POINT,
             scope = this,

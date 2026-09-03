@@ -270,6 +270,10 @@ dependencies {
     // dies with ClassNotFoundException before any test runs.
     androidTestImplementation(libs.androidx.test.runner)
 
+    // Named here or the catalog's version does nothing: ui-test-junit4 asks for Espresso 3.5.0, which
+    // resolves `InputManager.getInstance` eagerly and fails every test in this module above API 36.
+    androidTestImplementation(libs.androidx.espresso.core)
+
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

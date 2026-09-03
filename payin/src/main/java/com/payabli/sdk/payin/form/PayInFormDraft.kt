@@ -10,7 +10,7 @@ import androidx.compose.runtime.setValue
  *
  * A rotation, a fold, a switch to another tab and a return from a pushed screen all end the form's composition,
  * so state kept in `remember` goes with it and the payer types the card again. This is held by
- * `PayabliPayInPaymentFlow`, which a host keeps for the life of the screen.
+ * `PayabliPayIn`, which a host keeps for the life of the screen.
  *
  * **Nothing here reaches saved instance state.** A `Bundle` is serialized by the system and can be written to
  * disk, and what recovers a submission interrupted by process death is the idempotency key rather than a copy of

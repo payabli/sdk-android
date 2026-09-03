@@ -68,6 +68,17 @@ interface PaymentFlowUiState {
 
     /** The device the prefill fills the form as. */
     val sampleIdentity: SampleIdentity
+
+    /**
+     * The transaction a void would name, or null where there is none to reverse.
+     *
+     * Defaulted, because storing a payment method produces no transaction and that screen has nothing to
+     * answer here.
+     */
+    val voidableTransactionId: String? get() = null
+
+    /** A void is in flight. Never true on a screen that offers none. */
+    val isVoiding: Boolean get() = false
 }
 
 /** What a payment screen can be asked to do. */
@@ -79,6 +90,13 @@ data class PaymentFlowActions(
     val onFailed: (PayInOutcome.Refused) -> Unit,
     /** Hands the screen back to the form step for another one. */
     val onStartOver: () -> Unit,
+    /**
+     * Reverses what the last result names, for a screen that has something to reverse.
+     *
+     * Null on a screen where the question does not arise: storing a payment method produces no transaction,
+     * so that screen supplies none and draws no control.
+     */
+    val onVoid: (() -> Unit)? = null,
 ) {
     companion object {
         /** For a preview, which renders the screen and drives nothing. */
@@ -98,7 +116,7 @@ data class PaymentFlowActions(
 fun PaymentFlowScreen(
     title: String,
     state: PaymentFlowUiState,
-    flow: PayInFlowHandle?,
+    payments: PayInFlowHandle?,
     operation: PayInOperation,
     isSubmitting: Boolean,
     steps: List<FlowStep>,
@@ -144,15 +162,15 @@ fun PaymentFlowScreen(
                 if (offersPrefill) {
                     PrefillButton(
                         identity = state.sampleIdentity,
-                        enabled = !isSubmitting && flow != null,
+                        enabled = !isSubmitting && payments != null,
                     )
                 }
                 // Only once the session exists. Until then the step above is what the screen offers.
-                flow?.let { payments ->
+                payments?.let { handle ->
                     formHeader()
                     PaymentFormHost(
                         setup = state.setup,
-                        flow = payments,
+                        payments = handle,
                         operation = operation,
                         onCompleted = actions.onCompleted,
                         onFailed = actions.onFailed,
@@ -163,6 +181,18 @@ fun PaymentFlowScreen(
 
         StepRow(index = 3, step = steps[2]) {
             ResultCard(text = state.resultText, emptyText = resultEmptyText)
+            // Above Take another payment, because it acts on the transaction this step is describing while
+            // that one leaves it behind. Drawn only where there is something to reverse: a screen that stores
+            // a method supplies no action, and a reversed transaction stops offering it.
+            val onVoid = actions.onVoid
+            if (onVoid != null && state.voidableTransactionId != null) {
+                BorderedButton(
+                    text = if (state.isVoiding) "Voiding…" else "Void this transaction",
+                    icon = DemoIcons.Void,
+                    onClick = onVoid,
+                    enabled = !state.isVoiding,
+                )
+            }
             // A finished step draws no controls, so a completed submit takes the form off the screen. This is
             // the way back to it.
             if (state.finished) {
@@ -170,6 +200,10 @@ fun PaymentFlowScreen(
                     text = startOverText,
                     icon = DemoIcons.StartOver,
                     onClick = actions.onStartOver,
+                    // A reversal in flight is about the transaction this step is describing, and starting over
+                    // clears it. The model refuses it too: a button disabled through state is not a guard,
+                    // because a second tap lands before the recomposition.
+                    enabled = !state.isVoiding,
                 )
             }
         }
@@ -181,7 +215,7 @@ fun PaymentFlowScreen(
         FormSheet(
             state = state,
             actions = actions,
-            flow = flow,
+            payments = payments,
             operation = operation,
             isSubmitting = isSubmitting,
             offersPrefill = offersPrefill,
@@ -193,14 +227,15 @@ fun PaymentFlowScreen(
 /**
  * The same form, over the screen.
  *
- * A host mounts one of these beside the inline form, and both submit through the one flow the screen holds.
+ * A host mounts one of these beside the inline form, and both submit through the one `PayabliPayIn` the
+ * screen holds.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FormSheet(
     state: PaymentFlowUiState,
     actions: PaymentFlowActions,
-    flow: PayInFlowHandle?,
+    payments: PayInFlowHandle?,
     operation: PayInOperation,
     isSubmitting: Boolean,
     offersPrefill: Boolean,
@@ -237,7 +272,7 @@ private fun FormSheet(
                     .padding(Dimens.ScreenPadding),
         ) {
             // Only once the session exists. Until then the step above is what the screen offers.
-            flow?.let { payments ->
+            payments?.let { handle ->
                 // Without this the sheet has no prefill at all: the screen's button is behind it, and the
                 // fill reaches the composition it is drawn in.
                 if (offersPrefill) {
@@ -246,7 +281,7 @@ private fun FormSheet(
                 formHeader()
                 PaymentFormHost(
                     setup = state.setup,
-                    flow = payments,
+                    payments = handle,
                     operation = operation,
                     onCompleted = actions.onCompleted,
                     onFailed = actions.onFailed,

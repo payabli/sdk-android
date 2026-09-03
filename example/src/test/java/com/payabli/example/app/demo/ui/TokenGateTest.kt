@@ -29,6 +29,7 @@ import org.junit.Before
 import org.junit.Test
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -147,11 +148,14 @@ class TokenGateTest {
     @Test
     fun `a check in flight is not started twice`() =
         runTest {
-            AnsweringServer().use { server ->
+            // Held, so the first check is still in flight when the second is made. Without that the first can
+            // finish in the gap between the two calls, and the second is then a legitimate new check.
+            AnsweringServer(holdsAnswers = true).use { server ->
                 val model = methodModel(server.target)
 
                 model.checkToken()
                 model.checkToken()
+                server.release()
                 awaitCheck { model.uiState.value.isCheckingToken }
 
                 assertEquals("the endpoint was asked twice", 1, server.requests)
@@ -223,7 +227,7 @@ class TokenGateTest {
      * The real step one against [target], with the SDK half stubbed as unavailable.
      *
      * The token probe is what this file is about, and it still runs for real. The half after it cannot: a JVM
-     * test has no way to build a `PayabliPayInPaymentFlow`, whose test constructor is internal to `:payin`.
+     * test has no way to build a `PayabliPayIn`, whose implementation's test constructor is internal to `:payin`.
      * So `isReady` is false in every case here, and the assertions below read the text and the busy flag.
      * Readiness means "the token arrived **and** the SDK started", and only the on-device tier can produce the
      * second half.
@@ -245,17 +249,33 @@ class TokenGateTest {
      */
     private class AnsweringServer(
         private val refuseFirst: Boolean = false,
+        /**
+         * Holds every answer until [release], so a check cannot finish while the test is still setting up.
+         *
+         * A test that starts one check and then asserts a second was refused depends on the first still being
+         * in flight, and two adjacent statements do not guarantee that: the thread can be descheduled between
+         * them, the round trip complete, and the flag the guard reads clear before the second call. Held here,
+         * the first check is in flight until the test says otherwise.
+         */
+        private val holdsAnswers: Boolean = false,
     ) : AutoCloseable {
         // Counted atomically because the increment happens on the server's thread and the assertion reads it
         // from the test's. A plain field orders neither, so the read is free to see a stale value.
         private val counted = AtomicInteger()
 
+        private val released = CountDownLatch(if (holdsAnswers) 1 else 0)
+
         val requests: Int get() = counted.get()
+
+        /** Lets the held answers through. Safe to call when nothing is held. */
+        fun release() = released.countDown()
 
         private val server =
             HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0).apply {
                 createContext("/") { exchange ->
                     val seen = counted.incrementAndGet()
+                    // Bounded, so a test that forgets to release fails on its own assertion rather than hanging.
+                    released.await(5, TimeUnit.SECONDS)
                     if (refuseFirst && seen == 1) {
                         exchange.sendResponseHeaders(503, -1)
                         exchange.close()

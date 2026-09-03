@@ -27,10 +27,12 @@ internal fun PayInSubmissionState.Succeeded.toPaymentResult(): PaymentResult =
         is PayInSubmissionState.Succeeded.Method -> storedMethod.toPaymentResult()
     }
 
-private fun PayInResult.toPaymentResult(): PaymentResult =
+internal fun PayInResult.toPaymentResult(): PaymentResult =
     PaymentResult(
         code = code,
-        reason = transaction?.transStatus?.let { "Status $it" },
+        reason = reason,
+        explanation = explanation,
+        action = action,
         transaction =
             transaction?.let {
                 Transaction(
@@ -49,7 +51,7 @@ private fun PayInResult.toPaymentResult(): PaymentResult =
                     source = it.connectorName,
                 )
             },
-        apiResponse = transaction.asJson(code),
+        apiResponse = transaction.asJson(code, reason, explanation, action),
     )
 
 private fun PayInStoredMethod.toPaymentResult(): PaymentResult =
@@ -77,9 +79,19 @@ private fun PayInStoredMethod.toPaymentResult(): PaymentResult =
  * The SDK decodes the body and does not keep it, so this is a rendering of what came back rather than the
  * bytes that came back. The demo says so on the screen.
  */
-private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(code: String): JsonObject =
+private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(
+    code: String,
+    reason: String?,
+    explanation: String?,
+    action: String?,
+): JsonObject =
     buildJsonObject {
         put("code", JsonPrimitive(code))
+        // The three beside the code. The card is headed "Exactly what came back", so a field the SDK exposes
+        // and this omits is the screen contradicting its own heading.
+        reason?.let { put("reason", JsonPrimitive(it)) }
+        explanation?.let { put("explanation", JsonPrimitive(it)) }
+        action?.let { put("action", JsonPrimitive(it)) }
         this@asJson?.let { transaction ->
             transaction.paymentTransId?.let { put("paymentTransId", JsonPrimitive(it)) }
             transaction.gatewayTransId?.let { put("gatewayTransId", JsonPrimitive(it)) }
@@ -99,5 +111,12 @@ private fun com.payabli.sdk.payin.model.PayInTransaction?.asJson(code: String): 
  * message happened to say. Anything that is not a `PayabliException` cannot come from the SDK's own paths and
  * reads as unexpected.
  */
-internal fun PayInSubmissionState.Failed.toPaymentError(): PaymentError =
-    PaymentError.Payabli(reason = cause.reason, detail = cause.detail)
+internal fun PayInSubmissionState.Failed.toPaymentError(): PaymentError = cause.toPaymentError()
+
+/** The same reading for a call that throws its failure rather than publishing it as a state. */
+internal fun Throwable.toPaymentError(): PaymentError =
+    when (this) {
+        is PayabliException -> PaymentError.Payabli(reason = reason, detail = detail)
+        // Not from the SDK's own paths, so its text is the only thing there is to say.
+        else -> PaymentError.Unexpected(this::class.java.name)
+    }

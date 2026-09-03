@@ -14,21 +14,24 @@ import com.payabli.sdk.payin.PayabliPayInForm
  * **Nothing is passed about how it looks.** The form reads this app's `MaterialTheme`, so it arrives
  * in the Payabli palette here and in an integrator's palette there.
  *
- * **The SDK submits.** The payer's tap runs [operation] through [flow], and the outcome arrives on one of the
+ * **The SDK submits.** The payer's tap runs [operation] through [payments], and the outcome arrives on one of the
  * two callbacks. This app translates it into its own result and error types one layer up, so no screen below
  * holds an SDK outcome.
  */
 @Composable
 fun PaymentFormHost(
     setup: PayInFormSetup,
-    flow: PayInFlowHandle,
+    payments: PayInFlowHandle,
     operation: PayInOperation,
     onCompleted: (PayInOutcome.Approved) -> Unit,
     onFailed: (PayInOutcome.Refused) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     PayabliPayInForm(
-        flow = flow.flow,
+        payIn =
+            requireNotNull(payments.formTarget) {
+                "PaymentFormHost draws a handle the SDK produced, and this one has no pay-in behind it"
+            },
         operation = operation.operation,
         configuration = setup.configuration,
         modifier = modifier,

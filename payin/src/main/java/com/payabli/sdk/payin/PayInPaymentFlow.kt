@@ -1,4 +1,4 @@
-package com.payabli.sdk.payin.payment
+package com.payabli.sdk.payin
 
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
@@ -14,6 +14,9 @@ import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.payment.PayInSubmission
+import com.payabli.sdk.payin.payment.PayInSubmissionState
+import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.telemetry.PayInFormReports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -25,52 +28,48 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * A payment form's submissions, for one entry point.
+ * The one implementation of [PayabliPayIn], and the only type in this module that knows both a session and a
+ * form exist: the form knows this and nothing under it, and the layers under it know nothing about a screen.
  *
- * The type a host holds, and the only one in this module that knows both a session and a form exist: the form
- * knows this and nothing under it, and the layers under it know nothing about a screen.
- *
- * **Hold one per screen, in whatever survives that screen's configuration changes** — a `ViewModel`, a
- * Decompose component, a presenter. [state] replays its latest value, so a collector arriving after a
- * rotation sees `Submitting` or the outcome rather than nothing.
+ * `internal`, so what a host can call is [PayabliPayIn]'s members and nothing else. It sits in this
+ * package rather than beside the submission machinery because [PayabliPayIn] is sealed, and Kotlin
+ * requires a sealed type's implementations to share its package. The four members below
+ * that the form reaches are the reason this type exists separately: they are how a composition drives a
+ * submission, and none of them is an operation a host performs.
  *
  * **[scope] is the host's**, and cancelling it cancels a submission in flight. Canceling does not un-charge a
  * card, so whether a payment dies with a screen is the host's decision rather than this SDK's.
  *
- * @param session an initialized session, whose transport carries the bearer, the one 401 recovery and the
- *   replay rule. This type holds no credential and no token path of its own.
- * @param entryPoint the partner integration point every request here is sent to.
- * @param scope where a submission started by the form runs. `viewModelScope` is the ordinary answer: it
- *   outlives a configuration change, so an outcome still arrives after a rotation, and it is cancelled when
- *   the screen goes for good. A scope tied to the composition — `rememberCoroutineScope` — cancels on
- *   rotation and loses the outcome of a request that has already reached the service.
+ * The constructor parameters are documented on [PayabliPayIn.invoke], which is how a host reaches this.
  */
-public class PayabliPayInPaymentFlow private constructor(
+internal class PayInPaymentFlow private constructor(
     private val entryPoint: String,
     private val scope: CoroutineScope,
     private val submission: PayInSubmission,
     /** Built once here, from the session that created this flow, and handed to the form. */
+    @get:JvmSynthetic
     internal val reports: PayInFormReports,
-) {
+) : PayabliPayIn() {
     /**
      * What the payer has entered, which lives here rather than in the form's composition.
      *
      * A rotation, a switch to another tab and a return from a pushed screen all end that composition. Held
      * there, a card number entered before a rotation is a card number entered again afterwards.
      */
+    @get:JvmSynthetic
     internal val draft: PayInFormDraft = PayInFormDraft()
 
     init {
         scope.coroutineContext[Job]?.invokeOnCompletion { draft.clear() }
     }
 
-    public constructor(
+    private constructor(
         session: PayabliSession,
         entryPoint: String,
         scope: CoroutineScope,
     ) : this(session.transport, entryPoint, scope, IO_DISPATCHER, telemetry = session.telemetry)
 
-    internal constructor(
+    private constructor(
         transport: PayabliTransport,
         entryPoint: String,
         scope: CoroutineScope,
@@ -98,7 +97,7 @@ public class PayabliPayInPaymentFlow private constructor(
      * deliver an outcome. The form consumes it immediately afterwards, so nothing here has to be cleared by
      * whoever reads it.
      */
-    public val state: StateFlow<PayInSubmissionState> get() = submission.state
+    override val state: StateFlow<PayInSubmissionState> get() = submission.state
 
     /**
      * Consumes a terminal state, returning to [PayInSubmissionState.Idle].
@@ -109,6 +108,7 @@ public class PayabliPayInPaymentFlow private constructor(
      *
      * Returns false while a submission is in flight, so nothing can clear the state out from under one.
      */
+    @JvmSynthetic
     internal fun consume(): Boolean = submission.reset()
 
     /**
@@ -119,6 +119,7 @@ public class PayabliPayInPaymentFlow private constructor(
      *
      * Returns false when a submission is already in flight, having sent nothing.
      */
+    @JvmSynthetic
     internal fun start(
         operation: PayabliPayInOperation,
         values: PayInFormValues,
@@ -139,7 +140,7 @@ public class PayabliPayInPaymentFlow private constructor(
     /**
      * Takes the payment, returning what the service said.
      *
-     * `internal` with the shape it will keep. The caller for these four is a host that draws its own form,
+     * `internal` with the shape it will keep. The caller for these three is a host that draws its own form,
      * and that integration mode is not exposed yet. `Result` rather than a thrown exception, because a
      * decline is an outcome a caller acts on rather than a defect, and suspend-returning-`Result` is the
      * shape the SDK blueprint fixes for a one-shot call.
@@ -165,9 +166,13 @@ public class PayabliPayInPaymentFlow private constructor(
             else -> Result.failure(outcome.asFailure())
         }
 
-    /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
-    internal suspend fun captureAuthorized(request: PayInAuthorizedRequest): Result<PayInResult> =
+    override suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult> =
         submission.captureAuthorized(entryPoint, request).asPayment()
+
+    override suspend fun voidTransaction(
+        transId: String,
+        idempotencyKey: String?,
+    ): Result<PayInResult> = submission.void(entryPoint, transId, idempotencyKey).asPayment()
 
     private suspend fun payment(
         operation: PayabliPayInOperation,
@@ -194,7 +199,7 @@ public class PayabliPayInPaymentFlow private constructor(
             else -> IllegalStateException("a submission returned while its state read $this")
         }
 
-    private companion object {
+    internal companion object {
         /**
          * The one dispatcher pick in this module, at the layer a host calls, as `PayabliSession` is for `:core`.
          *
@@ -203,6 +208,32 @@ public class PayabliPayInPaymentFlow private constructor(
          * narrowing reaches the whole module; today the session hardcodes its own and there is nothing to
          * inherit.
          */
-        val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
+        private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
+
+        /**
+         * Builds one, and is the only way to.
+         *
+         * A factory rather than a constructor because `internal` is a Kotlin boundary and not a JVM one: an
+         * internal constructor compiles to a public one, so Java could build this type directly and reach the
+         * form-only members below it. A constructor cannot be marked `@JvmSynthetic` and a function can, so
+         * construction goes through here and the constructors are private.
+         */
+        @JvmSynthetic
+        internal fun over(
+            session: PayabliSession,
+            entryPoint: String,
+            scope: CoroutineScope,
+        ): PayInPaymentFlow = PayInPaymentFlow(session, entryPoint, scope)
+
+        /** The seam a test builds over, which takes a transport rather than a session. */
+        @JvmSynthetic
+        internal fun over(
+            transport: PayabliTransport,
+            entryPoint: String,
+            scope: CoroutineScope,
+            dispatcher: CoroutineDispatcher,
+            logger: SdkLogger? = null,
+            telemetry: TelemetrySessionContext? = null,
+        ): PayInPaymentFlow = PayInPaymentFlow(transport, entryPoint, scope, dispatcher, logger, telemetry)
     }
 }

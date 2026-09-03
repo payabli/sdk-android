@@ -287,5 +287,8 @@ class OutcomeNavigationTest {
     }
 
     private fun approvalWithoutTransaction() =
-        PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", transaction = null)).toOutcome()
+        PayInSubmissionState.Succeeded
+            .Payment(
+                PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+            ).toOutcome()
 }

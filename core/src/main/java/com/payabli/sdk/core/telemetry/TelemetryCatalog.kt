@@ -105,6 +105,7 @@ public object TelemetryCatalog {
             TelemetryEvents.PAYIN_CAPTURE_COMPLETED to TIMED_OUTCOME,
             TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED to TIMED_OUTCOME,
             TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED to TIMED_OUTCOME,
+            TelemetryEvents.PAYIN_VOID_COMPLETED to TIMED_OUTCOME,
             TelemetryEvents.SDK_INITIALIZE_STARTED to setOf(TelemetryProperty.STATE.key),
             TelemetryEvents.SDK_INITIALIZE_FAILED to
                 setOf(

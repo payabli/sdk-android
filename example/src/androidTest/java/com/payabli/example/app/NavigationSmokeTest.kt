@@ -32,9 +32,7 @@ import kotlin.concurrent.thread
  * No job runs these: CI has no emulator, and the nightly covers `:core` only. Nothing added here
  * will be seen to go red.
  *
- * Run locally with `./gradlew :example:connectedAndroidTest`, and not on API 37: Espresso injects input
- * through `InputManager.getInstance`, which is gone there, so every test in this class fails on
- * `Espresso.onIdle` with `NoSuchMethodException` before reaching its own subject. Green on API 36.
+ * Run locally with `./gradlew :example:connectedAndroidTest`. Green on API 33, 36 and 37.
  */
 @RunWith(AndroidJUnit4::class)
 class NavigationSmokeTest {

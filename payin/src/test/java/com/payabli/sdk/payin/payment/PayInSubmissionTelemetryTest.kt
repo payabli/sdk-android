@@ -83,6 +83,32 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED, recorded.single().first)
         }
 
+    /** Publishing to no state does not mean counting nothing: the boundary is still measured. */
+    @Test
+    fun `a void is reported under its own name, timed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
+            assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
+        }
+
+    @Test
+    fun `a refused void carries the classification the caller was told`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(DECLINED_TRANSACTION))
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
+        }
+
     @Test
     fun `a decline is told apart from a failure, and carries no wording from the wire`() =
         runTest(timeout = TEST_TIMEOUT) {

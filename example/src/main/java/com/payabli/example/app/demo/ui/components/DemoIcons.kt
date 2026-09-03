@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TapAndPlay
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Warning
@@ -46,6 +47,7 @@ object DemoIcons {
     val Activate: ImageVector get() = Icons.Filled.GppGood
     val Reinitialize: ImageVector get() = Icons.Filled.Refresh
     val StartOver: ImageVector get() = Icons.Filled.RestartAlt
+    val Void: ImageVector get() = Icons.Filled.Undo
 
     // Status.
     // Steps. Pass and Fail are reused at either end, keeping the readiness card's vocabulary.

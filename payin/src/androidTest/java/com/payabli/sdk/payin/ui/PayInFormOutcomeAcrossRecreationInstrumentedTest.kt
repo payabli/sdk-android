@@ -68,7 +68,12 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
 
         rule.runOnIdle { submission = PayInSubmissionState.Submitting }
         restorer.emulateSavedInstanceStateRestore()
-        rule.runOnIdle { submission = PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", null)) }
+        rule.runOnIdle {
+            submission =
+                PayInSubmissionState.Succeeded.Payment(
+                    PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+                )
+        }
         rule.waitForIdle()
 
         assertEquals("the success did not reach the form's caller", 1, completed.size)
@@ -99,7 +104,12 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
         val restorer = showFormWithRestoration()
 
         restorer.emulateSavedInstanceStateRestore()
-        rule.runOnIdle { submission = PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", null)) }
+        rule.runOnIdle {
+            submission =
+                PayInSubmissionState.Succeeded.Payment(
+                    PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+                )
+        }
         rule.waitForIdle()
 
         assertEquals("an outcome this form did not send was delivered", 0, completed.size)
@@ -116,7 +126,12 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
 
         restorer.emulateSavedInstanceStateRestore()
         rule.runOnIdle { submission = PayInSubmissionState.Idle }
-        rule.runOnIdle { submission = PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", null)) }
+        rule.runOnIdle {
+            submission =
+                PayInSubmissionState.Succeeded.Payment(
+                    PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+                )
+        }
         rule.waitForIdle()
 
         assertEquals("another screen's outcome was delivered here", 0, completed.size)

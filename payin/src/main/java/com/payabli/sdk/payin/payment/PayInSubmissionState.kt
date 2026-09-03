@@ -61,10 +61,14 @@ public sealed class PayInSubmissionState {
         /**
          * The key to resend, when this failure leaves the outcome unknown.
          *
-         * Present on the operations that move money — a capture, an authorization, the capture of an earlier
-         * authorization — for a cancellation, a network failure, a 5xx, a response that could not be decoded,
-         * and an unexpected error. In each of those the payment may already have been taken, and a retry
-         * carrying this key is recognized as the repeat it is instead of acting twice.
+         * Present on the two operations a form submits that move money — a capture and an authorization — for
+         * a cancellation, a network failure, a 5xx, a response that could not be decoded, and an unexpected
+         * error. In each of those the payment may already have been taken, and a retry carrying this key is
+         * recognized as the repeat it is instead of acting twice.
+         *
+         * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
+         * Reversing a transaction and capturing an earlier authorization publish nothing here, so neither
+         * reaches this field; each answers with its own result, and the key each sends is the caller's own.
          *
          * Null when the outcome is known, as a decline, a local refusal or a rejected credential is, where a
          * retry is a new attempt.

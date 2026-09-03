@@ -25,11 +25,12 @@ import java.math.BigDecimal
  * [JsonNames], so a re-spelled field costs nothing instead of silently reading null.
  */
 internal object PayInRoutes {
-    /** Templates, and for three of the four also the paths. Only [CAPTURE_AUTHORIZED] embeds an identifier. */
+    /** Templates, and for three of the five also the paths. [CAPTURE_AUTHORIZED] and [VOID] embed an identifier. */
     const val STORE_METHOD: String = "/api/TokenStorage/add"
     const val CAPTURE: String = "/api/v2/MoneyIn/getpaid"
     const val AUTHORIZE: String = "/api/v2/MoneyIn/authorize"
     const val CAPTURE_AUTHORIZED: String = "/api/v2/MoneyIn/capture/{transId}"
+    const val VOID: String = "/api/v2/MoneyIn/void/{transId}"
 
     /**
      * The resolved path for [CAPTURE_AUTHORIZED]. The template is what a log may carry.
@@ -38,6 +39,9 @@ internal object PayInRoutes {
      * identifier instead of becoming a query, a fragment or another route.
      */
     fun captureAuthorized(transId: String): String = "/api/v2/MoneyIn/capture/" + PercentEncoding.segment(transId)
+
+    /** The resolved path for [VOID], encoded as [captureAuthorized] is and for the same reason. */
+    fun void(transId: String): String = "/api/v2/MoneyIn/void/" + PercentEncoding.segment(transId)
 
     /** This spelling, not `Idempotency-Key`, and it is read on the transaction routes only. */
     const val HEADER_IDEMPOTENCY_KEY: String = "idempotencyKey"

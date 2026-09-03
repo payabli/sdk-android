@@ -23,6 +23,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.example.app.sdk.PayInSessionSource
+import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -33,7 +34,6 @@ import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
@@ -52,7 +52,7 @@ class SimpleCaptureViewModel(
     sessionSource: PayInSessionSource,
     entryPoint: String,
 ) : ViewModel() {
-    var flow by mutableStateOf<PayabliPayInPaymentFlow?>(null)
+    var payInFlow by mutableStateOf<PayabliPayIn?>(null)
         private set
 
     var failure by mutableStateOf<String?>(null)
@@ -84,7 +84,7 @@ class SimpleCaptureViewModel(
                 .session()
                 .onSuccess {
                     // 2. One flow per screen, for this entry point.
-                    flow = PayabliPayInPaymentFlow(it, entryPoint, viewModelScope)
+                    payInFlow = PayabliPayIn(it, entryPoint, viewModelScope)
                 }.onFailure { failure = it.message ?: "The session could not be configured." }
         }
     }
@@ -106,7 +106,7 @@ fun SimpleCaptureScreen(
     val context = LocalContext.current
     val failure = viewModel.failure
 
-    val ready = viewModel.flow
+    val payInFlow = viewModel.payInFlow
     Box(modifier = modifier.fillMaxSize()) {
         when {
             failure != null ->
@@ -117,7 +117,7 @@ fun SimpleCaptureScreen(
                     modifier = Modifier.align(Alignment.Center).padding(24.dp),
                 )
 
-            ready == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+            payInFlow == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
 
             else ->
                 Column(
@@ -126,7 +126,7 @@ fun SimpleCaptureScreen(
                 ) {
                     // 3. The form. It collects, validates and submits; the outcome arrives here.
                     PayabliPayInForm(
-                        flow = ready,
+                        payIn = payInFlow,
                         operation =
                             PayabliPayInOperation.Capture(
                                 PayInTransactionOptions(

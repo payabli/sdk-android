@@ -50,7 +50,7 @@ fun CaptureScreen(
     PaymentFlowScreen(
         title = "Capture a payment",
         state = state,
-        flow = state.payments,
+        payments = state.payments,
         operation = state.operation,
         isSubmitting = isSubmitting,
         steps =

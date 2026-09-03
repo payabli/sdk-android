@@ -47,7 +47,7 @@ class PayInSubmissionStateIdentityTest {
 
     @Test
     fun `two successes carrying the same result are not equal either`() {
-        val result = PayInResult(code = "A0000", transaction = null)
+        val result = PayInResult(code = "A0000", reason = null, explanation = null, action = null, transaction = null)
         assertNotEquals(
             PayInSubmissionState.Succeeded.Payment(result),
             PayInSubmissionState.Succeeded.Payment(result),

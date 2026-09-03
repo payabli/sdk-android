@@ -6,12 +6,16 @@ junitVersion = "1.3.0"
 # it the test APK has no AndroidJUnitRunner and every instrumented test fails to start. Same release
 # train as junitVersion above; keep the two moving together.
 androidxTestRunner = "1.7.0"
-# 3.7.0 is a floor for the whole train above. Up to 3.6.1 Espresso resolves
-# `android.hardware.input.InputManager.getInstance` while it builds its event injector, and that method is
-# absent on API 37, so `Espresso.onIdle` throws NoSuchMethodException — and every Compose UI test waits
-# through `Espresso.onIdle`. 3.7.0 resolves the method on use. Declared here because
-# androidx.compose.ui:ui-test-junit4 asks for 3.5.0 and nothing else raises it. Every artifact in this
-# train declares kotlin-stdlib 1.9.21, inside the ceiling the block further down describes.
+# Up to 3.6.1 Espresso resolves `android.hardware.input.InputManager.getInstance` while it builds its
+# event injector, and that method is absent on API 37, so `Espresso.onIdle` throws NoSuchMethodException,
+# and every Compose UI test waits through `Espresso.onIdle`. 3.7.0 resolves it on use and only below
+# API 23, where the method still exists; above that it asks the context for the service.
+#
+# androidx.compose.ui:ui-test-junit4 asks for 3.5.0, so every module running Compose UI tests has to
+# name this alias itself. A catalog is a table of aliases rather than a set of constraints: a version
+# declared here and depended on by nothing raises nothing, and `:example` resolved 3.5.0 while this
+# entry read as a floor. Every artifact in this train declares kotlin-stdlib 1.9.21, inside the ceiling
+# the block further down describes.
 espressoCore = "3.7.0"
 # 1.8.2 rather than 1.8.0 because navigation-compose depends on 1.8.0 and the graph resolves it up
 # anyway; declaring the resolved value keeps this file describing what the build actually uses.

@@ -7,7 +7,16 @@ data class StoredMethod(
     val storedMethodId: String,
     val responseText: String,
     val resultText: String,
-)
+) {
+    /**
+     * Its own, because `data class` would synthesize one over the identifier and both service strings.
+     *
+     * The identifier charges a card, so it is a credential rather than a label, and the two strings are the
+     * service's own words. A synthesized `toString` reaches assertion failures, exception messages and crash
+     * reports without passing through anything that redacts.
+     */
+    override fun toString(): String = "StoredMethod"
+}
 
 /**
  * A completed transaction.
@@ -25,7 +34,10 @@ data class Transaction(
     val totalAmount: String?,
     val feeAmount: String?,
     val source: String?,
-)
+) {
+    /** An identifier is enough to correlate a row with a run. The amounts and the rest are data. */
+    override fun toString(): String = "Transaction(hasTransactionId=${paymentTransactionId != null})"
+}
 
 /**
  * What the payment form produced.
@@ -41,7 +53,17 @@ data class PaymentResult(
     val storedMethod: StoredMethod? = null,
     val transaction: Transaction? = null,
     val apiResponse: JsonObject? = null,
-)
+) {
+    /**
+     * The code alone, for the reason the SDK's own result type gives.
+     *
+     * [reason], [explanation] and [action] are the service's words, and the SDK documents them as displayable
+     * and never loggable because an approval can quote what was submitted. They now arrive from the service
+     * rather than being built here, so a synthesized `toString` over this class would carry them into every
+     * message that stringifies it.
+     */
+    override fun toString(): String = "PaymentResult(code=$code)"
+}
 
 /**
  * What the payment form reported instead.

@@ -10,6 +10,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.client.FakePayInTransport
@@ -25,7 +26,6 @@ import com.payabli.sdk.payin.payment.APPROVED_TRANSACTION
 import com.payabli.sdk.payin.payment.GatedPayInTransport
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import com.payabli.sdk.payin.payment.TEST_ENTRY_POINT
 import com.payabli.sdk.payin.payment.testOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -107,10 +107,10 @@ class PayInFormConsumesOutcomeInstrumentedTest {
     private fun code(state: PayInSubmissionState.Succeeded): String? =
         (state as? PayInSubmissionState.Succeeded.Payment)?.result?.code
 
-    private fun flowAnswering(): PayabliPayInPaymentFlow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+    private fun flowAnswering(): PayInPaymentFlow = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
 
-    private fun flowOver(transport: PayabliTransport): PayabliPayInPaymentFlow =
-        PayabliPayInPaymentFlow(
+    private fun flowOver(transport: PayabliTransport): PayInPaymentFlow =
+        PayInPaymentFlow.over(
             transport = transport,
             entryPoint = TEST_ENTRY_POINT,
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
@@ -129,14 +129,14 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         )
 
     private fun showForm(
-        flow: PayabliPayInPaymentFlow,
+        flow: PayInPaymentFlow,
         configuration: State<PayInFormConfiguration> = mutableStateOf(bankForm()),
         onCompleted: (PayInSubmissionState.Succeeded) -> Unit,
     ) {
         rule.setContent {
             MaterialTheme {
                 PayabliPayInForm(
-                    flow = flow,
+                    payIn = flow,
                     operation = PayabliPayInOperation.Capture(testOptions()),
                     configuration = configuration.value,
                     onCompleted = onCompleted,

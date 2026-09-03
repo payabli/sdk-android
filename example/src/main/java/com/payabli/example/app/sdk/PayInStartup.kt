@@ -42,7 +42,7 @@ fun payInStartup(
         } else {
             gate.open(scope).fold(
                 onSuccess = { flow ->
-                    PayInStartup.Started(probe.text, isReady = true, payments = PayInFlowHandle(flow))
+                    PayInStartup.Started(probe.text, isReady = true, payments = SdkPayInFlowHandle(flow))
                 },
                 // The token server answered and the SDK still did not start, so the line says which half
                 // failed. A screen showing only the probe's verdict would offer a form that cannot submit.
