@@ -24,6 +24,7 @@ import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.flow.FlowStep
 import com.payabli.example.app.demo.flow.StepStatus
 import com.payabli.example.app.demo.flow.TerminalSteps
+import com.payabli.example.app.demo.preflight.Readiness
 import com.payabli.example.app.demo.terminal.EventBuffer
 import com.payabli.example.app.demo.terminal.TerminalEvent
 import com.payabli.example.app.demo.terminal.TerminalEventCode
@@ -69,7 +70,10 @@ fun TapToPayScreen(
             chargeFailed = state.chargeFailure != null,
             working = state.workingAction,
             activated = state.activated,
-            readerDenied = state.failureReason == TerminalFailureReason.DeviceIneligible,
+            // A device the preflight passed is capable, so an ineligible verdict on it is the vendor's.
+            readerDenied =
+                state.failureReason == TerminalFailureReason.DeviceIneligible &&
+                    state.readiness != Readiness.NotAvailable,
         )
 
     DemoScreen(
