@@ -19,14 +19,14 @@ name: Nightly
 # annotation and so are invisible to the filter this step passes. A module can quiet its own tests without
 # touching this file, so the count here is an upper bound rather than a promise.
 #
-# :taptopay and :example run here too, and both carry a cost worth stating. Each resolves the card reader
-# from the Fiserv GitHub Packages repo, so this job holds GPR_TOKEN where the third-party emulator action can
-# reach it; the exposure is accepted deliberately, and the reasoning is beside the emulator step.
+# :taptopay and :example run their **unit** tests here, in a step of their own that holds the card reader
+# credential, and no instrumented test of either runs at all. The emulator is x86_64 and the card reader's
+# AAR carries one native library, `jni/arm64-v8a/libmc3.so`, so a test APK linking it cannot install on this
+# image: it fails with INSTALL_FAILED_NO_MATCHING_ABIS before a test runs. Card-present instrumented
+# coverage needs an arm64 runner or a wired handset, and it is waiting on a job of its own.
 #
-# What they cover is attestation and the checks that read a platform API, not a tap. Attestation was measured
-# returning a token on a `google_apis_playstore` emulator, matching three phones exactly, so an emulator
-# answers that question perfectly well. Arming the card reader needs a physical handset and a paypoint, and
-# every test that reaches one is @ManualDeviceTest or excluded by taptopay/build.gradle.kts by name.
+# That is also why GPR_TOKEN reaches no third-party action here. It lives on one plain `run:` step, which
+# is the least privilege the split can offer while :taptopay resolves from a private registry.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
@@ -234,20 +234,14 @@ jobs:
         continue-on-error: true
         # The wedge this guards against. A step timeout fails the step; the job survives to report it.
         timeout-minutes: 20
-        env:
-          # Read by the card reader's repository declaration.
-          GPR_USER: ${{ secrets.GPR_USER }}
-          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
-          # The card-present tasks, or empty when the credential is absent, so a run without it still covers
-          # :core and :payin instead of failing whole.
-          #
-          # Decided here rather than in the script, and that is not a style choice. The emulator action runs
-          # each line of `script` as its own `sh -c`, so a shell variable assigned on one line is gone by the
-          # next and an `if`/`fi` is split across two shells. GitHub renders this before the action starts,
-          # which leaves the script a single command with nothing to carry between lines.
-          CARD_PRESENT_TASKS: ${{ secrets.GPR_TOKEN != '' && ':taptopay:connectedAndroidTest
-            :example:connectedWithTelemetryDebugAndroidTest
-            :example:connectedWithoutTelemetryDebugAndroidTest' || '' }}
+        # **No card reader credential here, because no card-present task runs here.** This emulator is
+        # x86_64 and the card reader's AAR carries one native library, `jni/arm64-v8a/libmc3.so`, with no
+        # 32-bit and no x86 build. So `:taptopay`'s test APK - and `:example`'s, which links it - fail to
+        # install with INSTALL_FAILED_NO_MATCHING_ABIS before a test runs. Adding those tasks bought no
+        # coverage and handed GPR_TOKEN to the third-party emulator action for nothing.
+        #
+        # Card-present instrumented coverage needs an arm64 runner or a wired handset, which is the job it
+        # is waiting on rather than something this one can be talked into.
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -305,10 +299,9 @@ jobs:
           # three, sending real payments from this step, so nothing in this workflow passes one. What this step
           # runs is the annotation filter minus whatever each module excluded.
           # One physical line. A plain scalar folds these into spaces, where a literal block would hand the
-          # action three lines and it would run each as its own `sh -c`. CARD_PRESENT_TASKS is empty when the
-          # card reader credential is absent, and an empty variable expands to nothing here.
+          # action several lines and it would run each as its own `sh -c`, so the first would run without its
+          # arguments and the arguments would run as a command.
           script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
-            $CARD_PRESENT_TASKS
             -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest,com.payabli.sdk.taptopay.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
@@ -338,8 +331,13 @@ jobs:
           CARD_PRESENT_OUTCOME: ${{ steps.unit_card_present.outcome }}
           # The modules the instrumented step above ran. The collector checks each one wrote results,
           # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
-          # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
-          INSTRUMENTED_MODULES: core,payin,taptopay,example
+          # plenty, and the run stays green having lost a whole tier.
+          #
+          # **This list and that step's task list are one fact in two places, and they must agree.** Naming a
+          # module the step does not run turns every green nightly red for a tier that was never asked to
+          # produce anything; dropping one the step does run loses that tier silently, which is the failure
+          # this check exists to catch. Card-present is absent from both, per the note at the top of the file.
+          INSTRUMENTED_MODULES: core,payin
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than
