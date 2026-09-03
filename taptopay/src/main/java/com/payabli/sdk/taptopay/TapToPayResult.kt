@@ -10,5 +10,13 @@ public class TapToPayResult(
     public val paymentTransId: String,
     public val cardNetwork: String?,
 ) {
-    override fun toString(): String = "TapToPayResult(paymentTransId=$paymentTransId)"
+    /**
+     * Presence, never the identifier itself, matching [com.payabli.sdk.payin.model.PayInTransaction] on the
+     * card-not-present side.
+     *
+     * A `toString` reaches assertion failures, exception messages and crash reports without passing through
+     * the logger, where a resolved transaction id is not a field the SDK records. Printing it here would be
+     * a second way out for the value the logging rule keeps in.
+     */
+    override fun toString(): String = "TapToPayResult(hasPaymentTransId=${paymentTransId.isNotEmpty()})"
 }
