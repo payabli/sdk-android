@@ -27,9 +27,9 @@ private val TEST_TIMEOUT = 300.seconds
 /**
  * Everything the card reader vendor reports when arming fails, printed for a support ticket.
  *
- * The shipped path keeps a failure's code and drops the rest, because the other four fields are free text
- * that no caller branches on. This tier keeps all five, and drains the vendor's own progress channel, which
- * nothing in the SDK subscribes to.
+ * The shipped path carries all five fields on the failure and logs only the code, because the other four
+ * are free text that no caller branches on. This tier prints them, and drains the vendor's own progress
+ * channel, which nothing in the SDK subscribes to.
  *
  * Arms through the same mapping the SDK ships, so what it reports is what the SDK would meet.
  *
