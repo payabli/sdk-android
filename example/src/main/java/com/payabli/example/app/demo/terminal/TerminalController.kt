@@ -53,4 +53,7 @@ interface TerminalController {
 /** What a successful charge produced. Carries no card data of any kind. */
 data class ChargeReceipt(
     val paymentTransactionId: String,
-)
+) {
+    /** Presence, matching `TapToPayResult`: a data class prints every property it holds. */
+    override fun toString(): String = "ChargeReceipt(hasPaymentTransactionId=${paymentTransactionId.isNotEmpty()})"
+}

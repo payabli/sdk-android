@@ -16,8 +16,6 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionException
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
-import java.math.BigDecimal
-import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.runTest
@@ -27,6 +25,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.math.BigDecimal
+import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 300.seconds
 

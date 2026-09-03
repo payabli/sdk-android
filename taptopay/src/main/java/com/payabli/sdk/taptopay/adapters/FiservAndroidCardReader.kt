@@ -11,10 +11,12 @@ import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -52,25 +54,25 @@ internal class FiservAndroidCardReader(
     }
 
     override suspend fun prepareReader() {
-        setup.withLock {
-            val arming =
-                pending ?: error("prepareReader was called with no credentials; configure comes first")
-            // Dropped before the attempt. The local keeps them for this arming, so every way out of the
-            // call below leaves nothing holding the vendor's key and secret.
-            pending = null
-            armWithin(arming)?.let { failure ->
-                record("arm", failure)
-                throw if (failure.kind in DENIALS) {
-                    CardReaderException.DeviceDenied(failure)
-                } else {
-                    CardReaderException.ArmingFailed(failure)
-                }
+        // Taken and cleared uncancellably, and outside the arming. `withLock` honours a job that is
+        // already cancelled, so a cancellation arriving between `configure` and this body would skip the
+        // clear and leave the vendor's key and secret held for the life of the reader.
+        val arming =
+            withContext(NonCancellable) { setup.withLock { pending.also { pending = null } } }
+                ?: error("prepareReader was called with no credentials; configure comes first")
+
+        armWithin(arming)?.let { failure ->
+            record("arm", failure)
+            throw if (failure.kind in DENIALS) {
+                CardReaderException.DeviceDenied(failure)
+            } else {
+                CardReaderException.ArmingFailed(failure)
             }
-            logger.debug(
-                LogField.safe("event", "ttp_reader_armed"),
-                LogField.safe("phase", "arm"),
-            ) { "the reader came up" }
         }
+        logger.debug(
+            LogField.safe("event", "ttp_reader_armed"),
+            LogField.safe("phase", "arm"),
+        ) { "the reader came up" }
     }
 
     override suspend fun startReading(request: CardReadRequest): CardReadResult {
