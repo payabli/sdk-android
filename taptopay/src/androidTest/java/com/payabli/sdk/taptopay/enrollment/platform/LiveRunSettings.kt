@@ -54,8 +54,16 @@ internal object LiveRunSettings {
     val environment: PayabliEnvironment
         get() {
             val name = required("environment", "payabli.ttp.environment")
-            return PayabliEnvironment.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
-                ?: error("payabli.ttp.environment must be one of ${PayabliEnvironment.entries.joinToString()}")
+            val named =
+                PayabliEnvironment.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                    ?: error("payabli.ttp.environment must be one of ${PayabliEnvironment.entries.joinToString()}")
+            // This tier opens and closes real transactions, and one of its readers is a stub that answers a
+            // tap with a captured response nobody presented a card for. Refused here rather than in each
+            // test, so a class added later cannot reach production by not thinking about it.
+            check(named != PayabliEnvironment.PRODUCTION) {
+                "the live tier moves money and must not be pointed at production"
+            }
+            return named
         }
 
     /** The base URL, from [environment]. */
