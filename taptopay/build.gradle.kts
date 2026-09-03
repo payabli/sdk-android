@@ -1,7 +1,21 @@
+// **This module does not publish, and that is deliberate rather than an oversight.**
+//
+// Card-present has never completed a tap. The vendor refuses every handset it has been offered: the
+// application had to be signed and onboarded by them before the reader would arm, that has now been
+// done, and the device is still denied because the instance they hold for it is deactivated. Until a
+// charge runs end to end on a real handset, an integrator resolving this artifact would get a module
+// whose happy path has never once executed.
+//
+// Not publishing rather than refusing at runtime, because an artifact that cannot be resolved says
+// what is true, where a public facade that throws by design is a surface that exists only to fail.
+// The umbrella already omits this module for a different reason - keeping the card reader dependency
+// opt-in - so nothing else changes here.
+//
+// Restore `id("payabli.publish")` when a tap has been taken and settled. Nothing else in this file
+// needs to change with it.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
-    id("payabli.publish")
     id("payabli.quality")
 }
 
