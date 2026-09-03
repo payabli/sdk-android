@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.activateBody
@@ -118,6 +119,25 @@ class PayabliTapToPayTest {
                 runCatching { terminal.charge(TapToPayPaymentDetails(BigDecimal.ZERO)) }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
+        }
+
+    @Test
+    fun `a failure reaching a host still names the payment`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The facade builds the failure a host sees, so a payment named underneath it has to survive
+            // that step. Rebuilding the failure here is what would drop the name.
+            val fixture = SessionFixture(script())
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            val failure =
+                runCatching {
+                    terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")))
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(TRANS_ID, (failure as TapToPayException).paymentTransId)
         }
 
     @Test

@@ -20,4 +20,17 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
 public class TapToPayException internal constructor(
     message: String,
     cause: Throwable?,
+    /**
+     * The payment this failure belongs to, or null when no payment was opened.
+     *
+     * It is the only handle to a payment that exists, so a caller that means to reconcile one holds this.
+     */
+    public val paymentTransId: String? = null,
+    /**
+     * True when the card was charged and the payment was left open.
+     *
+     * The money has moved, so charging again takes it a second time. Finish this payment with
+     * [PayabliTTP.closeCapturedCharge] instead, which needs no second tap.
+     */
+    public val captured: Boolean = false,
 ) : Exception(message, cause)

@@ -14,15 +14,16 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Card-present acceptance, for one paypoint.
  *
- * Four calls and two observables, [sessionState] and [isReady]. Every call that fails fails with
- * [TapToPayException], with two exceptions a caller has to know about: a cancellation unwinds as
- * `CancellationException`, because withdrawing is not a failure, and a JVM `Error` is not caught at
- * all.
+ * Every call that fails fails with [TapToPayException], with two exceptions a caller has to know about:
+ * a cancellation unwinds as `CancellationException`, because withdrawing is not a failure, and a JVM
+ * `Error` is not caught at all.
  *
  * **A withdrawn charge is the one place that is not the whole story.** Once the card has been taken, the
  * call that tells the service is uncancellable, so a cancellation arriving after that point can still end
  * in a completed payment and [charge] returns its result. A host that treats a cancelled charge as one that
- * did not happen will be wrong exactly when money moved. A failure that changed the session is published on [sessionState]: as
+ * did not happen will be wrong exactly when money moved.
+ *
+ * A failure that changed the session is published on [sessionState]: as
  * [TapToPaySessionState.Failed] carrying a reason, or as [TapToPaySessionState.SessionExpired] where the
  * reader session is spent and a repair is what comes next. A failure that changed nothing leaves it alone.
  * Read the state rather than assuming which of the two a failure produced.
@@ -59,12 +60,31 @@ public class PayabliTTP internal constructor(
         orderDescription: String? = null,
     ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription) }
 
-    /** A withdrawn caller passes through: it is not a failure and must not be reported as one. */
+    /**
+     * Closes the payment named by [paymentTransId], where the card was charged and the payment was left open.
+     *
+     * That is the case a [TapToPayException] reports with [TapToPayException.captured]. The card is not read
+     * again, so the person who paid does not tap twice, and no second payment is opened.
+     *
+     * Only the payment this terminal last took is closeable: nothing is kept once the close lands, once a
+     * later payment is opened, or across process death.
+     */
+    public suspend fun closeCapturedCharge(paymentTransId: String): Unit =
+        wrapping { runner.closeCaptured(paymentTransId) }
+
+    /**
+     * A withdrawn caller passes through: it is not a failure and must not be reported as one.
+     *
+     * A failure that already names its payment passes through too, since rebuilding it would drop what it
+     * names.
+     */
     private suspend fun <T> wrapping(block: suspend () -> T): T =
         try {
             block()
         } catch (withdrawn: CancellationException) {
             throw withdrawn
+        } catch (named: TapToPayException) {
+            throw named
         } catch (failure: Exception) {
             throw TapToPayException(failure.message ?: failure.javaClass.simpleName, failure)
         }
