@@ -141,19 +141,12 @@ internal class TapToPaySessionManager(
             permitted = TapToPaySessionTransitions.permits(from, to)
             published = permitted && from != to
             if (published) {
+                // Readiness first, and both in the one critical section. `sink.value = to` resumes an
+                // unconfined collector inside this block, so a collector reading [isReady] on the state it
+                // was just handed has to find the two agreeing. Written after, it finds the previous
+                // readiness; written outside the monitor, two writers interleave and it stays wrong.
+                readySink.value = to == TapToPaySessionState.Ready
                 sink.value = to
-                // Derived from the state that is actually current, not from [to], and committed in the
-                // same critical section. Two ways these come apart otherwise, and the second is why
-                // reading [to] here is not enough:
-                //
-                // Written after the monitor is released, two writers interleave - A publishes Ready, B
-                // moves to SessionExpired and writes false, then A writes true - and nothing corrects it.
-                //
-                // `synchronized` is also reentrant, and `sink.value = to` resumes an unconfined collector
-                // inside this block. A collector that invalidates from there re-enters, completes, and
-                // leaves this call holding a [to] that is no longer the state. Reading the sink back makes
-                // the last write win whichever path got here.
-                readySink.value = sink.value == TapToPaySessionState.Ready
             }
         }
 

@@ -28,6 +28,31 @@ class TapToPaySessionManagerTest {
     }
 
     @Test
+    fun `a collector handed a state finds readiness already agreeing with it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            manager.advance(TapToPaySessionState.FetchingConfig)
+            manager.advance(TapToPaySessionState.InitializingReader)
+
+            // An unconfined collector resumes inside the state write, so this reads the pair at the one
+            // moment they can disagree.
+            val disagreements = mutableListOf<String>()
+            val collector =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    manager.state.collect { state ->
+                        val ready = manager.isReady.value
+                        if (ready != (state == TapToPaySessionState.Ready)) {
+                            disagreements += "$state with isReady=$ready"
+                        }
+                    }
+                }
+
+            manager.advance(TapToPaySessionState.Ready)
+            collector.cancelAndJoin()
+
+            assertEquals(emptyList<String>(), disagreements)
+        }
+
+    @Test
     fun `readiness cannot be left disagreeing with the state that set it`() =
         runTest(timeout = TEST_TIMEOUT) {
             manager.advance(TapToPaySessionState.FetchingConfig)
