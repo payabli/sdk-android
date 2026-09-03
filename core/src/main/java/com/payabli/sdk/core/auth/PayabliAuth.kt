@@ -27,6 +27,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.lang.ref.WeakReference
+import java.util.UUID
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
@@ -90,7 +92,7 @@ public class PayabliAuth(
     @VisibleForTesting
     internal val mutex = Mutex()
     private var currentToken: String = config.accessToken
-    private var inFlight: CompletableDeferred<String>? = null
+    private var inFlight: Refresh? = null
 
     // A stalled collector must not stall a refresh, so this buffers and drops rather than suspending
     // the emitter, which a rendezvous SharedFlow would do.
@@ -165,7 +167,7 @@ public class PayabliAuth(
             mutex.withLock {
                 val refresh = inFlight
                 if (refresh != null) {
-                    TokenRead.Refreshing(refresh)
+                    TokenRead.Refreshing(refresh.claim)
                 } else {
                     TokenRead.Ready(currentToken)
                 }
@@ -203,16 +205,16 @@ public class PayabliAuth(
                     terminated != null -> RefreshPlan.Refused(terminated)
                     // Before AlreadyRotated: the current token may itself be the one under refresh, and
                     // handing it back would return a credential already known to be rejected.
-                    existing != null -> RefreshPlan.Join(existing)
+                    existing != null -> RefreshPlan.Join(existing.claim)
                     currentToken != rejectedToken -> RefreshPlan.AlreadyRotated(currentToken)
-                    else -> RefreshPlan.Own(CompletableDeferred<String>().also { inFlight = it })
+                    else -> RefreshPlan.Own(Refresh().also { inFlight = it })
                 }
             }
         return when (plan) {
             is RefreshPlan.Refused -> throw plan.failure
             is RefreshPlan.AlreadyRotated -> plan.token
             is RefreshPlan.Join -> plan.claim.await()
-            is RefreshPlan.Own -> runRefresh(plan.claim, rejectedToken)
+            is RefreshPlan.Own -> runRefresh(plan.refresh, rejectedToken)
         }
     }
 
@@ -229,21 +231,26 @@ public class PayabliAuth(
     }
 
     private suspend fun runRefresh(
-        shared: CompletableDeferred<String>,
+        refresh: Refresh,
         rejectedToken: String,
     ): String {
+        val shared = refresh.claim
         val provider =
             config.tokenProvider
                 ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER))
 
+        // Appended rather than replaced: an element is keyed by its companion, so installing a fresh one
+        // hides every enclosing refresh, and a call back into one of those joins the refresh awaiting it.
+        val marks = currentCoroutineContext()[RefreshInProgress]?.marks.orEmpty() + Mark(this, refresh.id)
+
         val minted: String? =
             try {
                 withTimeoutOrNull(providerTimeoutMillis.milliseconds) {
-                    withContext(RefreshInProgress(this@PayabliAuth)) { provider.freshToken() }
+                    withContext(RefreshInProgress(marks)) { provider.freshToken() }
                 }
             } catch (cancellation: CancellationException) {
                 // A provider can raise cancellation of its own, from a nested timeout for instance, while
-                // this coroutine is still active. That is a provider failure, not our caller withdrawing.
+                // this coroutine is still active. That is a provider failure, not the caller withdrawing.
                 if (currentCoroutineContext().isActive) {
                     fail(shared, providerFailure(cancellation))
                 }
@@ -261,8 +268,8 @@ public class PayabliAuth(
                 throw fatal
             }
 
-        // Outside the try on purpose: raised inside it, this was caught below and re-wrapped, so the
-        // initiator saw a different reason from the waiters.
+        // Raised inside the try, this is caught below and re-wrapped, so the initiator would see a
+        // different reason from the waiters.
         val fresh =
             minted ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT))
 
@@ -335,20 +342,69 @@ public class PayabliAuth(
         shared.completeExceptionally(outcome)
     }
 
-    /** Non-null only when this coroutine is already inside this instance's provider call. */
-    private suspend fun reentrantToken(): String? =
-        if (currentCoroutineContext()[RefreshInProgress]?.auth === this) mutex.withLock { currentToken } else null
+    /**
+     * Non-null only when this coroutine is inside this instance's provider call for the refresh it still
+     * has in flight.
+     *
+     * The refresh is named as well as the holder: a mark reaches a coroutine that outlived the refresh
+     * that set it only through a scope built from the calling context, and answering on such a mark would
+     * hand a caller the very token it had just reported rejected.
+     */
+    private suspend fun reentrantToken(): String? {
+        val marks = currentCoroutineContext()[RefreshInProgress]?.marks ?: return null
+        return mutex.withLock {
+            val live = inFlight
+            if (live != null && marks.any { it.heldBy(this@PayabliAuth) && it.id == live.id }) {
+                currentToken
+            } else {
+                null
+            }
+        }
+    }
 
     /**
-     * Marks the provider call so a re-entrant read or refresh returns the last known token instead of
-     * awaiting the claim its own caller has to complete. Follows `withContext` and child coroutines; a
-     * provider that hops to an unrelated scope escapes it, and is then bounded by
-     * [providerTimeoutMillis] only as far as that deadline reaches, which is cooperative code.
+     * Every refresh whose provider call this coroutine is inside, outermost first, so a re-entrant read or
+     * refresh returns the last known token instead of awaiting the claim its own caller has to complete.
+     *
+     * A chain rather than one entry. A provider may call a second session whose provider calls back into
+     * the first, and an entry that replaced its predecessor leaves that first session unmarked, so the
+     * call back into it joins the refresh that is waiting on it.
+     *
+     * Follows `withContext` and child coroutines; a provider that hops to an unrelated scope escapes it,
+     * and is then bounded by [providerTimeoutMillis] only as far as that deadline reaches, which is
+     * cooperative code.
      */
     private class RefreshInProgress(
-        val auth: PayabliAuth,
+        val marks: List<Mark>,
     ) : AbstractCoroutineContextElement(Key) {
         companion object Key : CoroutineContext.Key<RefreshInProgress>
+    }
+
+    /**
+     * One entry in [RefreshInProgress]: which holder, and which of its refreshes.
+     *
+     * The holder is held weakly. A mark can reach a coroutine that outlives the refresh that set it, and a
+     * strong reference there would keep the session, and the token it holds, alive after the host had
+     * released both. Nothing is lost by it: while a refresh runs its own holder is on the calling stack,
+     * so a live refresh can never see its holder cleared, and a cleared one matches nothing.
+     */
+    private class Mark(
+        holder: PayabliAuth,
+        val id: UUID,
+    ) {
+        private val holderRef = WeakReference(holder)
+
+        fun heldBy(candidate: PayabliAuth): Boolean = holderRef.get() === candidate
+    }
+
+    /**
+     * One refresh: the claim its waiters await, and the identity a mark names it by.
+     *
+     * One value rather than two fields, so releasing the claim cannot leave the identity behind.
+     */
+    private class Refresh {
+        val claim = CompletableDeferred<String>()
+        val id: UUID = UUID.randomUUID()
     }
 
     private sealed interface RefreshPlan {
@@ -365,7 +421,7 @@ public class PayabliAuth(
         ) : RefreshPlan
 
         data class Own(
-            val claim: CompletableDeferred<String>,
+            val refresh: Refresh,
         ) : RefreshPlan
     }
 

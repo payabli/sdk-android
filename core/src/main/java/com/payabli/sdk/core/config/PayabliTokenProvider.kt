@@ -17,8 +17,12 @@ package com.payabli.sdk.core.config
  * blocked thread runs to completion regardless, so a hung request leaks a thread with nothing to report it.
  * An interruptible client avoids both.
  *
- * Must not call back into the SDK. A re-entrant call is served the last known token rather than
- * waiting for this one to finish.
+ * May issue its own requests. While this call runs, a request against the session being refreshed carries
+ * the token being replaced rather than the one about to be returned, and that holds through a chain of
+ * sessions whose providers call one another.
+ *
+ * Must not wait on work that itself needs this refresh to finish. Such work cannot complete until the
+ * refresh does, and the refresh cannot complete until this call returns.
  *
  * A `fun interface` rather than a lambda type alias, so it names the type in a stack frame and stays
  * implementable from Java.

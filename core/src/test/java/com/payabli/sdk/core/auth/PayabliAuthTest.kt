@@ -13,9 +13,12 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
@@ -36,6 +39,12 @@ private val COMPLETION_TIMEOUT = 2.seconds
 private const val TERMINAL_REASON = "the refreshed token was rejected as well"
 private const val THREE_CALLERS = 3
 
+/**
+ * Scheduler turns given to a coroutine that must **not** produce an answer. Bounded, since the assertion
+ * is that nothing happens and an unbounded wait for nothing is a hang.
+ */
+private const val SCHEDULER_TURNS = 20
+
 /** The 2.2 auth holder: refresh de-duplication, the change flow, and how a provider failure surfaces. */
 class PayabliAuthTest {
     private val sink = RecordingLogSink()
@@ -43,16 +52,18 @@ class PayabliAuthTest {
     /** The failure the choke-point hands in when a refreshed token is refused again. */
     private fun terminal() = PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, TERMINAL_REASON)
 
-    private fun auth(tokenProvider: PayabliTokenProvider? = null) =
-        PayabliAuth(
-            PayabliConfig(
-                accessToken = "initial-token",
-                entryPoint = "entry",
-                environment = PayabliEnvironment.SANDBOX,
-                tokenProvider = tokenProvider,
-            ),
-            DefaultSdkLogger(LogCategory.AUTH, sink),
-        )
+    private fun auth(
+        accessToken: String = "initial-token",
+        tokenProvider: PayabliTokenProvider? = null,
+    ) = PayabliAuth(
+        PayabliConfig(
+            accessToken = accessToken,
+            entryPoint = "entry",
+            environment = PayabliEnvironment.SANDBOX,
+            tokenProvider = tokenProvider,
+        ),
+        DefaultSdkLogger(LogCategory.AUTH, sink),
+    )
 
     /**
      * Bounded so a stranded claim fails with what went wrong, rather than hanging until the test
@@ -292,6 +303,100 @@ class PayabliAuthTest {
         }
 
     @Test
+    fun `two holders whose providers call each other both complete`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var outer: PayabliAuth? = null
+            var backIntoTheOuter: String? = null
+            val inner =
+                auth("second-old") {
+                    backIntoTheOuter = outer!!.invalidateAndRefresh("first-old")
+                    "second-fresh"
+                }
+            val subject =
+                auth("first-old") {
+                    inner.invalidateAndRefresh("second-old")
+                    "first-fresh"
+                }
+            outer = subject
+
+            assertEquals("first-fresh", completing("the refresh") { subject.invalidateAndRefresh("first-old") })
+            // Answered rather than joined: the refresh this call would have awaited is the one waiting on it.
+            assertEquals("first-old", backIntoTheOuter)
+            assertEquals("first-fresh", subject.accessToken())
+        }
+
+    @Test
+    fun `a provider calling an unrelated holder refreshes that holder`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var fromTheOtherHolder: String? = null
+            val other = auth("other-old") { "other-fresh" }
+            val subject =
+                auth {
+                    fromTheOtherHolder = other.invalidateAndRefresh("other-old")
+                    "fresh-token"
+                }
+
+            assertEquals("fresh-token", completing("the refresh") { subject.invalidateAndRefresh("initial-token") })
+            // A mark belongs to the holder that set it, so an unrelated holder rotates instead of
+            // answering with what it already had.
+            assertEquals("other-fresh", fromTheOtherHolder)
+        }
+
+    /**
+     * A scope built from the calling context carries the mark, and the new `Job` severs it from the
+     * refresh that set it, so the mark can outlive that refresh. It must not answer for a later one.
+     */
+    @Test
+    fun `a mark carried past its own refresh joins the refresh in flight`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var holder: PayabliAuth? = null
+            val calls = AtomicInteger()
+            val escapedIsAtTheCall = CompletableDeferred<Unit>()
+            val releaseEscaped = CompletableDeferred<Unit>()
+            val secondProviderCall = CompletableDeferred<Unit>()
+            var escaped: Job? = null
+            var escapedAnswer: String? = null
+
+            val releaseSecond = CompletableDeferred<Unit>()
+            val subject =
+                auth {
+                    when (calls.incrementAndGet()) {
+                        1 -> {
+                            escaped =
+                                CoroutineScope(currentCoroutineContext() + Job()).launch {
+                                    escapedIsAtTheCall.complete(Unit)
+                                    releaseEscaped.await()
+                                    escapedAnswer = holder!!.invalidateAndRefresh("token-1")
+                                }
+                            escapedIsAtTheCall.await()
+                            "token-1"
+                        }
+                        else -> {
+                            secondProviderCall.complete(Unit)
+                            releaseSecond.await()
+                            "token-2"
+                        }
+                    }
+                }
+            holder = subject
+
+            assertEquals("token-1", completing("the first refresh") { subject.invalidateAndRefresh("initial-token") })
+
+            // The window this case is about: a later refresh is in flight and parked in the provider, so a
+            // mark left over from the finished one would be taken for a live mark.
+            val later = async { subject.invalidateAndRefresh("token-1") }
+            secondProviderCall.await()
+            releaseEscaped.complete(Unit)
+            repeat(SCHEDULER_TURNS) { yield() }
+            assertNull("a mark from a finished refresh answered a later rejection", escapedAnswer)
+
+            releaseSecond.complete(Unit)
+            escaped!!.join()
+            assertEquals("token-2", later.await())
+            assertEquals("token-2", escapedAnswer)
+        }
+
+    @Test
     fun `a provider that never returns fails on the deadline and frees the claim`() =
         runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
@@ -502,7 +607,7 @@ class PayabliAuthTest {
         runTest(timeout = TEST_TIMEOUT) {
             val subject = auth { throw CancellationException("the provider's own nested timeout") }
 
-            // Our caller was never cancelled, so this must not masquerade as caller cancellation.
+            // The caller was never cancelled, so this must not masquerade as caller cancellation.
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
             assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
