@@ -28,6 +28,33 @@ class TapToPaySessionManagerTest {
     }
 
     @Test
+    fun `readiness cannot be left disagreeing with the state that set it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            manager.advance(TapToPaySessionState.FetchingConfig)
+            manager.advance(TapToPaySessionState.InitializingReader)
+
+            // A second writer landing between the state write and the readiness write. An unconfined
+            // collector resumes inside the state write, which is that window exactly and reaches it
+            // without threads or timing: the reader invalidates from in there, so the two writes to
+            // readiness are ordered the wrong way round unless they were committed together.
+            val collector =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    manager.state.collect { state ->
+                        if (state == TapToPaySessionState.Ready) manager.invalidate()
+                    }
+                }
+
+            manager.advance(TapToPaySessionState.Ready)
+            collector.cancelAndJoin()
+
+            assertEquals(TapToPaySessionState.SessionExpired, manager.state.value)
+            assertFalse(
+                "state is ${manager.state.value} and isReady is ${manager.isReady.value}",
+                manager.isReady.value,
+            )
+        }
+
+    @Test
     fun `a refused move throws before the work under it runs`() =
         runTest(timeout = TEST_TIMEOUT) {
             manager.advance(TapToPaySessionState.FetchingConfig)
