@@ -31,7 +31,9 @@ private val TEST_TIMEOUT = 300.seconds
  * are free text that no caller branches on. This tier prints them, and drains the vendor's own progress
  * channel, which nothing in the SDK subscribes to.
  *
- * Arms through the same mapping the SDK ships, so what it reports is what the SDK would meet.
+ * Arms with the same `toVendorConfig` the SDK ships, so the vendor is handed what it would be handed. It
+ * calls `initializeSession` directly rather than through the gateway, so the classification the SDK applies
+ * to a refusal is not exercised here: what this reports is the vendor's own answer, before that mapping.
  *
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787

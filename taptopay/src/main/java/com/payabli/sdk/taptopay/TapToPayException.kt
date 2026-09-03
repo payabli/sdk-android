@@ -6,8 +6,10 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
 /**
  * A card-present call that did not succeed.
  *
- * What to do next is on [PayabliTTP.sessionState], where a failure that changed the session appears as
- * [TapToPaySessionState.Failed] carrying a [TapToPayFailureReason].
+ * What to do next is on [PayabliTTP.sessionState]. A failure that changed the session appears there as
+ * [TapToPaySessionState.Failed] carrying a [TapToPayFailureReason], or as
+ * [TapToPaySessionState.SessionExpired] when the reader session is spent, which a reader failure during a
+ * tap produces.
  */
 public class TapToPayException internal constructor(
     message: String,

@@ -15,8 +15,10 @@ import kotlinx.coroutines.flow.StateFlow
  * Card-present acceptance, for one paypoint.
  *
  * Four calls and two observables, [sessionState] and [isReady]. Every call fails with
- * [TapToPayException]; a failure that changed the session is published on [sessionState] as
- * [TapToPaySessionState.Failed], and one that did not leaves it alone.
+ * [TapToPayException], and a failure that changed the session is published on [sessionState]: as
+ * [TapToPaySessionState.Failed] carrying a reason, or as [TapToPaySessionState.SessionExpired] where the
+ * reader session is spent and a repair is what comes next. A failure that changed nothing leaves it alone.
+ * Read the state rather than assuming which of the two a failure produced.
  */
 public class PayabliTTP internal constructor(
     private val coordinator: TapToPaySessionCoordinator,
