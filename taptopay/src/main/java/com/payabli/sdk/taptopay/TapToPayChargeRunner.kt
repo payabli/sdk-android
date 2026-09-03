@@ -12,6 +12,7 @@ import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
+import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
@@ -45,8 +46,12 @@ internal class TapToPayChargeRunner(
         orderDescription: String?,
     ): TapToPayResult =
         region.withLock {
+            // At the scale it will be sent at, not as supplied. `0.001` is more than zero and reaches the
+            // wire as `0.00`, so checking the raw value opened a payment for nothing.
             val amount = paymentDetails.amount
-            require(amount > BigDecimal.ZERO) { "an amount has to be greater than zero" }
+            val sendable =
+                requireNotNull(amount.sendableAmountOrNull()) { "an amount has to be one this SDK can send" }
+            require(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
 
             // After the precondition, so a caller's own bad argument is not counted as a charge that
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
