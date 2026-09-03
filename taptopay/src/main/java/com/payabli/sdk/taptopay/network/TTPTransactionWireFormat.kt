@@ -75,6 +75,33 @@ internal const val NFC_FAILURE_TITLE: String = "NFC Tap Failed"
 internal const val NFC_FAILURE_REASON: String = "nfc_read"
 
 /**
+ * The amount as it would reach the wire, or null when it cannot be sent.
+ *
+ * **Checked at the scale it will be sent at, because that is the value the service acts on.** `0.001` is more
+ * than zero and [TTPAmountSerializer] rounds it to `0.00`, so a caller checking the value as supplied opens a
+ * payment the service is asked to take as nothing.
+ *
+ * The two guards exist only so the rounding cannot throw: `setScale` raises `ArithmeticException` at both
+ * extremes of the exponent. Both read `precision` and `scale` rather than the expanded value, so an absurd
+ * one costs nothing to refuse. Zero is answered first, because it rescales at any scale without expanding
+ * and would otherwise be refused for a scale it does not really carry.
+ *
+ * `:payin` holds an equivalent in `PayInValidation`, with the same bounds and the same measurements behind
+ * them. Two copies rather than one because a capability module never depends on a sibling, and neither
+ * belongs to `:core` yet. Whichever moves first should take the other with it.
+ */
+internal fun BigDecimal.sendableAmountOrNull(): BigDecimal? {
+    if (signum() == 0) return setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
+    if (scale().toLong() > MAX_ROUNDABLE_SCALE) return null
+    if (precision().toLong() - scale().toLong() > MAX_INTEGER_DIGITS) return null
+    return setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
+}
+
+private const val MAX_ROUNDABLE_SCALE = 1_000L
+
+private const val MAX_INTEGER_DIGITS = 1_000L
+
+/**
  * Money on the wire: an unquoted JSON number with exactly two decimal places.
  *
  * `10` is sent as `10.00` and `10.005` as `10.01`. The service's own request payloads write these fields as

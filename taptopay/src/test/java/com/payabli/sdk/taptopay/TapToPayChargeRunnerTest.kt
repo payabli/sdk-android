@@ -168,6 +168,44 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `an amount that rounds away to nothing opens nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // More than zero as supplied and `0.00` on the wire, so checking the raw value opened a payment
+            // the service is asked to take as nothing.
+            val fixture = readyFixture()
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture)
+                        .charge(details("0.001"), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is IllegalArgumentException)
+            assertFalse(INITIATE in fixture.routes)
+        }
+
+    @Test
+    fun `an amount the SDK cannot send opens nothing, rather than throwing while encoding`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // `setScale` raises ArithmeticException at the extremes of the exponent, so without the guard
+            // this failed inside the request encoder instead of as a refused argument.
+            val fixture = readyFixture()
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(
+                        TapToPayPaymentDetails(BigDecimal("1E-2147483647")),
+                        TapToPayCustomerData(),
+                        TapToPayInvoiceData(),
+                        null,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is IllegalArgumentException)
+            assertFalse(INITIATE in fixture.routes)
+        }
+
+    @Test
     fun `a terminal that was never set up opens nothing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = SessionFixture(script())
