@@ -11,8 +11,10 @@
 // The umbrella already omits this module for a different reason - keeping the card reader dependency
 // opt-in - so nothing else changes here.
 //
-// Restore `id("payabli.publish")` when a tap has been taken and settled. Nothing else in this file
-// needs to change with it.
+// Restore `id("payabli.publish")` when a tap has been taken and settled, and restore the
+// `sdk-android-taptopay` constraint in payabli-bom/build.gradle.kts in the same change. The BOM
+// advertises a coordinate, so leaving it pinned while nothing publishes it offers integrators a
+// version that resolves to nothing. The two decisions travel together in both directions.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
