@@ -61,6 +61,19 @@ android {
             testInstrumentationRunnerArguments["notClass"] = excluded.joinToString(",")
         }
     }
+    buildTypes {
+        debug {
+            // Off even when `payabli.instrumentedCoverage` asks for it, which the convention plugin honours
+            // for every other library with an instrumented source set.
+            //
+            // Nothing runs this module's instrumented tier in CI, and nothing can until it has a job of its
+            // own: building it resolves the card reader from a private registry, so the job would hand
+            // GPR_TOKEN to the third-party emulator action, which is the exposure the nightly's job split
+            // exists to prevent. So a build that passes that property for :core and :payin gets no
+            // instrumentation it could ever read here. Turn it back on with that job.
+            enableAndroidTestCoverage = false
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
