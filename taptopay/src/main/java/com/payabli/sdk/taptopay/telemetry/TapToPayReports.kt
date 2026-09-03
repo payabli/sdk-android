@@ -5,8 +5,7 @@ import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
-import com.payabli.sdk.taptopay.session.TapToPayFailureReason
-import com.payabli.sdk.taptopay.session.TapToPaySessionFailures
+import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import com.payabli.sdk.taptopay.session.diagnosticName
 import java.util.concurrent.TimeUnit
@@ -114,16 +113,27 @@ internal object TapToPayReports {
     }
 
     /**
-     * The same division the device routes draw: answered and said no, against no usable answer at all.
+     * `declined` means what the catalog says it means: **the payment was declined.** Everything else failed.
      *
-     * Read from the landing this SDK already computes, so the two cannot disagree about what a failure was.
+     * The property is shared with the money path, so a value that means one thing in `:payin` and another
+     * here makes any count of declines a mixture of two populations. A handset with no contactless radio and
+     * a paypoint that is not set up for card-present are not declines: no payment was refused and usually
+     * none was attempted.
+     *
+     * Read from the failure rather than from the session landing, which was the previous source and inverted
+     * the two cases that matter. Landings answer "what should the session do now", and a service refusing a
+     * card and a device that cannot take payments both end a session. `TTPTransactionException` is not a
+     * `PayabliException`, so a real refusal fell to the landing map's else branch and was reported as failed,
+     * while `DEVICE_INELIGIBLE` was reported as declined.
+     *
+     * Nothing is lost by the change: `reason` still names the kind where the event carries one, and `code`
+     * still carries the vendor's.
      */
     private fun outcomeOf(failure: Throwable): String =
-        when (TapToPaySessionFailures.landingFor(failure).failureReason()) {
-            TapToPayFailureReason.SERVICE_UNAVAILABLE -> TelemetryProperties.Outcome.FAILED
-            TapToPayFailureReason.SDK_INTERNAL_ERROR -> TelemetryProperties.Outcome.FAILED
-            null -> TelemetryProperties.Outcome.FAILED
-            else -> TelemetryProperties.Outcome.DECLINED
+        if (generateSequence(failure) { it.cause }.any { it is TTPTransactionException.Refused }) {
+            TelemetryProperties.Outcome.DECLINED
+        } else {
+            TelemetryProperties.Outcome.FAILED
         }
 
     /** The vendor's code where a refusal carries one. Its message and additionalInfo are free text. */
@@ -134,7 +144,4 @@ internal object TapToPayReports {
             ?.code
 
     private fun elapsedMillis(startedAt: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
-
-    private fun TapToPaySessionState?.failureReason(): TapToPayFailureReason? =
-        (this as? TapToPaySessionState.Failed)?.reason
 }

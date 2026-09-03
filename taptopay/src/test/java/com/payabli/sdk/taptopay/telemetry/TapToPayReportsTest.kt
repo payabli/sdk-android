@@ -8,6 +8,7 @@ import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
+import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import org.junit.After
@@ -67,11 +68,26 @@ class TapToPayReportsTest {
     }
 
     @Test
-    fun `a denied device is declined rather than failed, because the vendor answered`() {
+    fun `a denied device failed, because no payment was declined`() {
+        // `declined` is the money path's word for a payment the service refused, and the property is shared
+        // with it. A handset the vendor will not arm is a failure; the vendor code says which.
         TapToPayReports.initializeFailed(deniedBy("677"), System.nanoTime())
 
         val (event, properties) = recorded.single()
         assertEquals(TelemetryEvents.TTP_INITIALIZE_FAILED, event)
+        assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+        assertEquals("677", properties[TelemetryProperty.CODE.key])
+    }
+
+    @Test
+    fun `a payment the service refused is the one thing that is declined`() {
+        TapToPayReports.chargeFailed(
+            TTPTransactionException.Refused(code = "D0001", reason = null),
+            System.nanoTime(),
+        )
+
+        val (event, properties) = recorded.single()
+        assertEquals(TelemetryEvents.TTP_CHARGE_FAILED, event)
         assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
     }
 
