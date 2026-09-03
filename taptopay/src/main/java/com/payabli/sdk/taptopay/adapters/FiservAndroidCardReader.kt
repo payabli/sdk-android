@@ -134,14 +134,13 @@ internal class FiservAndroidCardReader(
             ReaderFailureKind.CONTACTLESS_UNAVAILABLE -> CardReaderException.ReadFailed(this)
             ReaderFailureKind.TIMED_OUT -> CardReaderException.ReadFailed(this)
             ReaderFailureKind.UNCLASSIFIED -> CardReaderException.ReadFailed(this)
-            // The caller is told what the vendor said. A denial met during a tap used to arrive as
-            // SessionUnusable, which is the exception that means "repairable" and invites a retry the vendor
-            // will refuse again.
+            // A denial is terminal: the vendor refuses the handset, not the call, so the caller is told
+            // that and not that the session is spent and worth repairing.
             //
-            // The session still expires rather than landing on DEVICE_INELIGIBLE, and that is the transition
-            // matrix rather than a second opinion: Ready may only move to SessionExpired, so the landing
-            // `TapToPaySessionFailures` gives a denial is unreachable from here and would be refused and
-            // dropped. The repair re-arms, meets the same refusal at arming, and lands it there.
+            // The session still expires rather than landing on DEVICE_INELIGIBLE, and the transition matrix
+            // is what decides it: Ready may only move to SessionExpired, so the landing
+            // `TapToPaySessionFailures` gives a denial is unreachable from a charge. The repair re-arms,
+            // meets the same refusal at arming, and lands it there.
             ReaderFailureKind.DEVICE_DENIED -> CardReaderException.DeviceDenied(this)
             ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED -> CardReaderException.DeviceDenied(this)
         }
