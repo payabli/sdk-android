@@ -137,6 +137,30 @@ class TTPTransactionClientTest {
         }
 
     @Test
+    fun `the body it could not read is not carried out on the cause chain`() =
+        runTest(timeout = timeout) {
+            // Malformed on purpose, and that is what makes this test the one it claims to be: a
+            // well-formed body of the wrong shape is refused without a decoder ever throwing, so the
+            // cause is null and nothing is carried out whether this is fixed or not. kotlinx appends the
+            // input it choked on to its message, and a real body here holds a paymentTransId and the
+            // processor's own fields.
+            val body = """{"responseData":"tell-tale-payment-identifier","""
+            val (_, client) = client(answer(body))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is TTPTransactionException.Undecodable)
+            // The whole chain, because a crash reporter renders all of it and the host's reporter is
+            // outside anything this SDK scrubs.
+            generateSequence(failure) { it.cause }.forEach { link ->
+                assertFalse(
+                    "the rejected body reached ${link.javaClass.name}: ${link.message}",
+                    link.message.orEmpty().contains("tell-tale-payment-identifier"),
+                )
+            }
+        }
+
+    @Test
     fun `opening is never retried, because a second attempt is a second transaction`() =
         runTest(timeout = timeout) {
             val (transport, client) = client(answer("", 500))

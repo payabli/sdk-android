@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay.network
 
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
+
 /**
  * A refusal from one of the two MoneyIn routes a card-present charge uses.
  *
@@ -57,5 +59,16 @@ internal sealed class TTPTransactionException(
     /** An approval carrying none of the fields it is an approval for. */
     class Undecodable(
         cause: Throwable? = null,
-    ) : TTPTransactionException("the transaction response could not be read", code = null, reason = null, cause = cause)
+    ) : TTPTransactionException(
+            "the transaction response could not be read",
+            code = null,
+            reason = null,
+            // Wrapped here rather than at the call sites, so no caller can forget, and matching
+            // DeviceServiceException.Undecodable which does the same for the same reason. A decoder's own
+            // message quotes the input it choked on - kotlinx appends the offending JSON - and a transaction
+            // response body holds a paymentTransId and the processor's own fields. Redacting this class's
+            // message buys nothing while a cause underneath it carries the body, because a crash reporter
+            // renders the whole chain and the host's reporter is outside anything this SDK scrubs.
+            cause = cause?.let { RedactedCause(it) },
+        )
 }
