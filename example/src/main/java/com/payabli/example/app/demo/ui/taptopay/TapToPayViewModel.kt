@@ -193,13 +193,14 @@ class TapToPayViewModel(
         viewModelScope.launch {
             val result = block()
             // Read from the terminal rather than from this state, which is updated by a collector that
-            // may not have run yet. A denial is the card reader's refusal and the step list says so; the
-            // line has to agree with it.
+            // A device the preflight passed is capable, so an ineligible verdict on it is the vendor's.
             val outcome =
                 TerminalActionOutcome.from(
                     action,
                     result,
-                    readerDenied = terminal.failureReason.value == TerminalFailureReason.DeviceIneligible,
+                    readerDenied =
+                        terminal.currentFailureReason() == TerminalFailureReason.DeviceIneligible &&
+                            _uiState.value.readiness != Readiness.NotAvailable,
                 )
             val reason = outcome.takeIf { result.isFailure }
             _uiState.update {

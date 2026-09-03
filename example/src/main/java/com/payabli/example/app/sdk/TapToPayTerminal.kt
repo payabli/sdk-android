@@ -103,6 +103,9 @@ class TapToPayTerminal(
         )
     }
 
+    override fun currentFailureReason(): TerminalFailureReason? =
+        (terminal?.sessionState?.value as? TapToPaySessionState.Failed)?.reason?.asTerminalReason()
+
     private suspend fun publish(state: TapToPaySessionState) {
         val shown = state.asTerminalState()
         _sessionState.value = shown

@@ -28,6 +28,15 @@ interface TerminalController {
      */
     val failureReason: StateFlow<TerminalFailureReason?>
 
+    /**
+     * The reason as the SDK holds it now, read rather than collected.
+     *
+     * [failureReason] is republished by a collector, which has not necessarily run by the time a call
+     * that failed returns. A caller wording the outcome of that call needs the reason the SDK already
+     * has.
+     */
+    fun currentFailureReason(): TerminalFailureReason?
+
     /** Attest, fetch configuration, prepare the reader. */
     suspend fun initialize(): Result<Unit>
 
