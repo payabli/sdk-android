@@ -53,6 +53,13 @@ internal class TapToPayChargeRunner(
                 requireNotNull(amount.sendableAmountOrNull()) { "an amount has to be one this SDK can send" }
             require(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
 
+            // Same checks, same serializer. Zero is allowed; below zero is not.
+            val sendableFee =
+                requireNotNull(paymentDetails.serviceFee.sendableAmountOrNull()) {
+                    "a service fee has to be one this SDK can send"
+                }
+            require(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
+
             // After the precondition, so a caller's own bad argument is not counted as a charge that
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
             // measures is what a merchant waits through.
@@ -83,7 +90,8 @@ internal class TapToPayChargeRunner(
                     try {
                         reader.startReading(
                             CardReadRequest(
-                                amount = amount,
+                                // The rounded value, so the card is asked for what the paypoint recorded.
+                                amount = sendable,
                                 merchantTransactionId = paymentTransId,
                                 merchantOrderId = paymentTransId,
                                 merchantInvoiceNumber = invoice.invoiceNumber,
