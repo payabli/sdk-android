@@ -235,10 +235,19 @@ jobs:
         # The wedge this guards against. A step timeout fails the step; the job survives to report it.
         timeout-minutes: 20
         env:
-          # Read by the card reader's repository declaration. The script below adds :taptopay and :example
-          # only when this is set, so a run without the credential still covers :core and :payin.
+          # Read by the card reader's repository declaration.
           GPR_USER: ${{ secrets.GPR_USER }}
           GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+          # The card-present tasks, or empty when the credential is absent, so a run without it still covers
+          # :core and :payin instead of failing whole.
+          #
+          # Decided here rather than in the script, and that is not a style choice. The emulator action runs
+          # each line of `script` as its own `sh -c`, so a shell variable assigned on one line is gone by the
+          # next and an `if`/`fi` is split across two shells. GitHub renders this before the action starts,
+          # which leaves the script a single command with nothing to carry between lines.
+          CARD_PRESENT_TASKS: ${{ secrets.GPR_TOKEN != '' && ':taptopay:connectedAndroidTest
+            :example:connectedWithTelemetryDebugAndroidTest
+            :example:connectedWithoutTelemetryDebugAndroidTest' || '' }}
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ env.API_LEVEL }}
@@ -295,15 +304,12 @@ jobs:
           # the whole reason the two coexist. A -P `notClass` here would overwrite those lists and readmit all
           # three, sending real payments from this step, so nothing in this workflow passes one. What this step
           # runs is the annotation filter minus whatever each module excluded.
-          script: |
-            MODULES=":core:connectedAndroidTest :payin:connectedAndroidTest"
-            if [ "$HAS_GPR_CREDENTIALS" = "true" ]; then
-              MODULES="$MODULES :taptopay:connectedAndroidTest"
-              MODULES="$MODULES :example:connectedWithTelemetryDebugAndroidTest"
-              MODULES="$MODULES :example:connectedWithoutTelemetryDebugAndroidTest"
-            fi
-            ./gradlew --continue $MODULES \
-              -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest,com.payabli.sdk.taptopay.ManualDeviceTest
+          # One physical line. A plain scalar folds these into spaces, where a literal block would hand the
+          # action three lines and it would run each as its own `sh -c`. CARD_PRESENT_TASKS is empty when the
+          # card reader credential is absent, and an empty variable expands to nothing here.
+          script: ./gradlew --continue :core:connectedAndroidTest :payin:connectedAndroidTest
+            $CARD_PRESENT_TASKS
+            -Pandroid.testInstrumentationRunnerArguments.notAnnotation=com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest,com.payabli.sdk.taptopay.ManualDeviceTest
 
       # Reads the reports Gradle already wrote and decides the verdict: coverage, green or red with the exact
       # failure count, only the tests that failed, and a probable culprit per failure from git history with
