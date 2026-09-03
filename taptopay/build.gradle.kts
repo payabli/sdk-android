@@ -19,6 +19,18 @@ plugins {
     id("payabli.quality")
 }
 
+// `payabli.publish` set this, and dropping the plugin dropped it with them.
+//
+// The group is not only a publishing coordinate. `@RestrictTo(LIBRARY_GROUP)` is enforced by Lint
+// against the Maven group of the two modules, so a module outside `io.github.payabli` cannot reach
+// `:core`'s internal surface: `AttestedDeviceStore` reads `PayabliSecureStorage`, and without this the
+// build fails with RestrictedApi. `payabli.publish.gradle.kts:16` says so where it sets them.
+//
+// So they stay while the publication does not, and they go back to being the plugin's the moment it
+// returns.
+group = providers.gradleProperty("payabli.group").get()
+version = providers.gradleProperty("payabli.version").get()
+
 android {
     namespace = "com.payabli.sdk.taptopay"
     compileSdk {
