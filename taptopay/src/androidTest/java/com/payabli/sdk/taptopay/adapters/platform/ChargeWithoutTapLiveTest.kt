@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.ManualDeviceTest
 import com.payabli.sdk.taptopay.TapToPayChargeRunner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
@@ -115,6 +116,7 @@ class ChargeWithoutTapLiveTest {
                         reader = StubReader(),
                         client = TTPTransactionClient(transport),
                         store = AttestedDeviceStore(DeviceTrust.open(context).store),
+                        keys = ChargeKeyStore(DeviceTrust.open(context).store),
                     ).charge(
                         TapToPayPaymentDetails(AMOUNT),
                         TapToPayCustomerData(),

@@ -26,6 +26,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.math.BigDecimal
+import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 300.seconds
@@ -92,6 +93,9 @@ class TapToPayChargeLiveTest {
                         entryPoint = LiveRunSettings.entry,
                         deviceId = deviceId,
                         paymentDetails = TapToPayPaymentDetails(AMOUNT),
+                        // Its own, because this walk drives the two calls by hand rather than through the
+                        // runner that would reserve one.
+                        idempotencyKey = UUID.randomUUID().toString(),
                     )
                 Log.i(LiveTapToPay.LIVE_TAG, "opened; present a card now")
 

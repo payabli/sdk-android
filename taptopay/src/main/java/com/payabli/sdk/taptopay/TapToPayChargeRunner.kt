@@ -6,12 +6,15 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
+import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
@@ -34,6 +37,7 @@ internal class TapToPayChargeRunner(
     private val reader: TapToPayProvider,
     private val client: TTPTransactionClient,
     private val store: AttestedDeviceStore,
+    private val keys: ChargeKeyStore,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /** One payment at a time. A second caller waits; the reader takes one card. */
@@ -78,11 +82,15 @@ internal class TapToPayChargeRunner(
                         manager.invalidate()
                         error("the session is ready with no device to charge as")
                     }
+                // Reserved after the checks above, so a charge that never reaches the wire leaves no key
+                // behind, and held across a failure that leaves it unknown whether this opened anything.
+                val idempotencyKey = keys.reserve(entry)
                 val paymentTransId =
                     client.initiate(
                         entryPoint = entry,
                         deviceId = deviceId,
                         paymentDetails = paymentDetails,
+                        idempotencyKey = idempotencyKey,
                         customer = customer,
                         invoice = invoice,
                         orderDescription = orderDescription,
@@ -123,6 +131,7 @@ internal class TapToPayChargeRunner(
                     }
 
                 client.update(paymentTransId, result)
+                keys.settle(entry)
                 TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                     .also { TapToPayReports.chargeSucceeded(startedAt) }
             } catch (withdrawn: CancellationException) {
@@ -130,16 +139,23 @@ internal class TapToPayChargeRunner(
                 // not a failure.
                 throw withdrawn
             } catch (failure: Throwable) {
+                if (isAnswered(failure)) keys.settle(entry)
                 TapToPayReports.chargeFailed(failure, startedAt)
                 throw failure
             }
         }
 
     /**
-     * Closes a transaction whose tap never completed, best effort.
+     * Closes a transaction whose tap never completed, best effort, and lets its key go.
      *
      * Uncancellable: a withdrawn caller is one of the ways a tap does not complete, and the transaction is
-     * open either way.
+     * open either way. That also makes it the one place a cancelled charge can still reach storage, which is
+     * why the key is released here rather than beside the caller's own failure handling.
+     *
+     * **The key is released whether or not the close lands.** No card was read, so nothing was captured and
+     * the payer has not paid; what comes next is a new sale needing its own transaction, and holding the key
+     * would suppress it. An opened transaction left standing is the separate cost, and closing it is what
+     * this call already attempts.
      */
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,
@@ -154,5 +170,29 @@ internal class TapToPayChargeRunner(
                 LogField.safe("errorKind", failedClose.javaClass.simpleName),
             ) { "an opened payment could not be closed after a failed tap" }
         }
+        keys.settle(entry)
     }
+
+    /**
+     * Whether [failure] says what became of the charge, so its key can be let go.
+     *
+     * A key is held while a repeat might be a repeat. The service refusing, declining or reporting the
+     * paypoint unequipped are all answers: nothing was opened, so what comes next is a new attempt and a
+     * held key would refuse it. Anything else is kept, including a failure of the closing call, where the
+     * reader has already captured the sale and a fresh key is what turns the obvious retry into a second
+     * charge.
+     *
+     * Kept rather than released is the safe direction, so this answers true only for what it recognises.
+     */
+    private fun isAnswered(failure: Throwable): Boolean =
+        when (failure) {
+            is CancellationException -> false
+            is TTPTransactionException.Refused,
+            is TTPTransactionException.ServiceRejected,
+            is TTPTransactionException.NotEnabled,
+            -> true
+
+            is PayabliException -> !failure.code.leavesOutcomeUnknown
+            else -> false
+        }
 }

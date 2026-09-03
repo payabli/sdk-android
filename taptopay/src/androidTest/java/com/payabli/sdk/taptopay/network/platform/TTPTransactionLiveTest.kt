@@ -21,6 +21,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.math.BigDecimal
+import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 120.seconds
@@ -85,6 +86,45 @@ class TTPTransactionLiveTest {
         }
 
     /**
+     * A second opening under one key does not open a second transaction.
+     *
+     * The whole of what the key is for. Without it the two calls are two sales, and a caller that lost the
+     * first answer and asked again has charged the payer twice.
+     *
+     * **Asserted as a difference, not against any wording**, for the reason the closing test is: matching
+     * the text would put a decode table for someone else's messages in a public repository. The first call
+     * answers with an identifier and the second does not answer at all, which is the difference that
+     * matters, and the day the second one succeeds is the day the suppression stopped.
+     *
+     * One transaction is left behind rather than two, so this costs the paypoint less than the tests above.
+     */
+    @Test
+    fun openingTwiceUnderOneKeyOpensOneTransaction() =
+        runTest(timeout = TEST_TIMEOUT) {
+            withContext(Dispatchers.IO) {
+                val key = UUID.randomUUID().toString()
+
+                val first = open(idempotencyKey = key)
+                val repeat = runCatching { open(idempotencyKey = key) }
+
+                Log.i(
+                    LiveTapToPay.LIVE_TAG,
+                    "opened $first; the repeat under the same key answered ${repeat.exceptionOrNull() ?: repeat.getOrNull()}",
+                )
+                assertTrue("the first opening minted no identifier", first.isNotBlank())
+                assertNotEquals(
+                    "a repeat under one key opened a second transaction",
+                    first,
+                    repeat.getOrNull(),
+                )
+                assertTrue(
+                    "a repeat under one key was carried out instead of being refused",
+                    repeat.isFailure,
+                )
+            }
+        }
+
+    /**
      * The transaction the opening minted is one the service recognises, and an invented one is not.
      *
      * With no tap there is no outcome anywhere, so a close here fails either way — once because the
@@ -143,12 +183,18 @@ class TTPTransactionLiveTest {
         }
     }
 
-    /** Opens one transaction against the live paypoint and answers with its identifier. */
-    private suspend fun open(): String =
+    /**
+     * Opens one transaction against the live paypoint and answers with its identifier.
+     *
+     * A fresh key per call unless [idempotencyKey] names one, so every test here opens its own transaction
+     * except the one asserting that a repeat under one key does not.
+     */
+    private suspend fun open(idempotencyKey: String = UUID.randomUUID().toString()): String =
         client().initiate(
             entryPoint = LiveRunSettings.entry,
             deviceId = LiveTapToPay.activatedDeviceId(context),
             paymentDetails = TapToPayPaymentDetails(BigDecimal("1.00")),
+            idempotencyKey = idempotencyKey,
         )
 
     private suspend fun client(): TTPTransactionClient = TTPTransactionClient(LiveTapToPay.session(context).transport)
