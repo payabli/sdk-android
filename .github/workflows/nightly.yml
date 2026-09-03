@@ -203,12 +203,12 @@ jobs:
       # with runner state and read the Slack webhook when the reporting step ran. The Slack half of that is
       # closed structurally: reporting is a separate job, so no Slack credential exists here at all.
       #
-      # GPR_TOKEN is still exposed to this action, and declaring it on an earlier step does not change that.
-      # settings.gradle.kts reads it from the environment during configuration into the Fiserv repository's
-      # credentials, which are held by the Gradle daemon, and the daemon outlives the step that started it:
-      # measured locally, `./gradlew --status` reports an IDLE daemon after the build returns. This action
-      # then runs as the same user in the same job and can inspect a JVM it owns. Step scoping bounds which
-      # step the variable is *set* in, not how long the value lives.
+      # GPR_TOKEN used to reach this action the same way, and step scoping was not what stopped it. It bounds
+      # which step the variable is set in, not how long the value lives: settings.gradle.kts reads it during
+      # configuration into the Fiserv repository's credentials, the Gradle daemon holds those, and the daemon
+      # outlives its step - measured locally, `./gradlew --status` reports an IDLE daemon after the build
+      # returns. The card-present step runs `--no-daemon` for that reason, and no card-present task runs on
+      # this action at all, so there is no such JVM for it to inspect.
       #
       # What is not true, checked rather than assumed: the token does not reach disk. A build run with a
       # sentinel value leaves it in no file under .gradle, build or the Gradle home, so the configuration
@@ -255,14 +255,8 @@ jobs:
           # -no-snapshot-save so this run reuses the cached snapshot and does not rewrite it.
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          # All four modules. :taptopay and :example both resolve the card reader from the Fiserv GitHub
-          # Packages repo, so this step holds GPR_TOKEN and the third-party emulator action can see it.
-          # That exposure is accepted rather than overlooked: the dependency has no other route today, and
-          # the alternative was leaving card-present with no nightly coverage at all. Revisit if that
-          # dependency ever resolves from somewhere this workflow controls.
-          #
-          # The two card-present modules run only when the credential is present, so a run without it still
-          # covers :core and :payin instead of failing whole.
+          # :core and :payin, which is every module whose test APK can install on this image. The note at
+          # the top of the file has why card-present is not here and what it would need.
           #
           # --continue because the two tasks are independent and Gradle otherwise "aborts execution and fails
           # the build when any task fails", which leaves whether the second module ran at all down to how the
