@@ -99,6 +99,11 @@ internal class TapToPayChargeRunner(
                 client.update(paymentTransId, result)
                 TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                     .also { TapToPayReports.chargeSucceeded(startedAt) }
+            } catch (withdrawn: CancellationException) {
+                // The facade states that a withdrawn caller is not a failure and must not be reported as
+                // one. `Throwable` covers CancellationException, so without this a cancelled charge was
+                // counted as a failed one and the funnel it force-flushes carried a payment nobody lost.
+                throw withdrawn
             } catch (failure: Throwable) {
                 TapToPayReports.chargeFailed(failure, startedAt)
                 throw failure

@@ -202,6 +202,10 @@ internal class TapToPaySessionCoordinator(
                 throw TapToPaySessionException.PendingActivation()
             }
             bringReaderUp()
+        } catch (withdrawn: CancellationException) {
+            // Withdrawing is not an initialize result. `Throwable` covers CancellationException, so a
+            // caller that cancelled was recorded as one whose setup failed.
+            throw withdrawn
         } catch (failure: Throwable) {
             TapToPayReports.initializeFailed(failure, startedAt)
             throw failure
@@ -216,6 +220,10 @@ internal class TapToPaySessionCoordinator(
         val outcome =
             try {
                 manager.advance(TapToPaySessionState.AttestingDevice) { enrollment.enroll() }
+            } catch (withdrawn: CancellationException) {
+                // A caller cancellation is not an attestation result, and this event is on the force-send
+                // list, so recording one flushed the batch over a withdrawal.
+                throw withdrawn
             } catch (failure: Throwable) {
                 TapToPayReports.attestationFailed(failure, startedAt)
                 throw failure
