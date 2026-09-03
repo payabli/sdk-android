@@ -80,7 +80,7 @@ class TTPTransactionLiveTest {
                 val paymentTransId = open()
 
                 assertTrue("no identifier came back", paymentTransId.isNotBlank())
-                Log.i(LiveTapToPay.LIVE_TAG, "opened paymentTransId=$paymentTransId entry=${LiveRunSettings.entry}")
+                Log.i(LiveTapToPay.LIVE_TAG, "opened on entry=${LiveRunSettings.entry}")
             }
         }
 
@@ -112,7 +112,9 @@ class TTPTransactionLiveTest {
                 // identity of the transaction separates this call from the one above.
                 val invented = closing(paymentTransId.dropLast(1) + if (paymentTransId.last() == '0') '1' else '0')
 
-                Log.i(LiveTapToPay.LIVE_TAG, "closed $paymentTransId with $real; the invented one answered $invented")
+                // Neither the identifier nor either answer: `closing` returns what the service said, which
+                // carries a reason and a detail. The assertions below hold both values.
+                Log.i(LiveTapToPay.LIVE_TAG, "closed the real transaction and the invented one")
                 assertFalse("the paypoint is not enabled for card-present payments", real.startsWith(NOT_ENABLED))
                 assertFalse("the paypoint is not enabled for card-present payments", invented.startsWith(NOT_ENABLED))
                 assertNotEquals(

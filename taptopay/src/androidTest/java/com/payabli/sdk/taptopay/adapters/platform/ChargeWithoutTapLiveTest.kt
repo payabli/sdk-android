@@ -123,7 +123,7 @@ class ChargeWithoutTapLiveTest {
                     )
 
                 assertTrue("no identifier came back", receipt.paymentTransId.isNotBlank())
-                Log.i(LiveTapToPay.LIVE_TAG, "opened and closed ${receipt.paymentTransId}")
+                Log.i(LiveTapToPay.LIVE_TAG, "opened and closed one transaction")
             }
         }
 }

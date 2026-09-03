@@ -16,7 +16,10 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionException
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
+import java.math.BigDecimal
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
@@ -24,8 +27,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.math.BigDecimal
-import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 300.seconds
 
@@ -92,7 +93,7 @@ class TapToPayChargeLiveTest {
                         deviceId = deviceId,
                         paymentDetails = TapToPayPaymentDetails(AMOUNT),
                     )
-                Log.i(LiveTapToPay.LIVE_TAG, "opened paymentTransId=$paymentTransId; present a card now")
+                Log.i(LiveTapToPay.LIVE_TAG, "opened; present a card now")
 
                 val read =
                     runCatching {
@@ -107,8 +108,12 @@ class TapToPayChargeLiveTest {
                     }
                 val failure = read.exceptionOrNull()
                 if (failure != null) {
-                    // Sent so the opened transaction is not left standing. The run still fails.
-                    client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
+                    // Uncancellable, because the timeout that ends the read cancels this scope with it, and
+                    // the close would be cancelled before the PATCH lands. The shipping runner closes the
+                    // same way and for the same reason. The run still fails.
+                    withContext(NonCancellable) {
+                        client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
+                    }
                     throw failure
                 }
 
@@ -116,7 +121,7 @@ class TapToPayChargeLiveTest {
                 client.update(paymentTransId, result)
                 Log.i(
                     LiveTapToPay.LIVE_TAG,
-                    "closed $paymentTransId on ${result.cardNetwork ?: "an unnamed network"}",
+                    "closed on ${result.cardNetwork ?: "an unnamed network"}",
                 )
 
                 assertTrue(
