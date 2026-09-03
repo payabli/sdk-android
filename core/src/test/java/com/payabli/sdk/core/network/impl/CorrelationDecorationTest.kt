@@ -20,6 +20,7 @@ private const val HEADER = "X-Correlation-ID"
 private const val OK_BODY = "{}"
 private const val UNAUTHORIZED = 401
 private const val OK = 200
+private const val VERSION_7 = 7
 
 /**
  * Read off the wire rather than off the request object, because what a decoration returns and what the
@@ -41,7 +42,19 @@ class CorrelationDecorationTest {
     private fun get(headers: Map<String, String> = emptyMap()) =
         PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping", headers = headers)
 
-    private fun LoopbackServer.correlationIds(): List<String?> = recorded.map { it.header(HEADER) }
+    /**
+     * Every wire read goes through this, so an absent header fails here.
+     *
+     * Reading it as a nullable and comparing two of them would let a regression that drops the header from
+     * one request of two stay green, because a null and a UUID are unequal.
+     */
+    private fun LoopbackServer.Recorded.correlationId(): String {
+        val value = header(HEADER)
+        assertNotNull("no correlation header reached the wire", value)
+        return requireNotNull(value)
+    }
+
+    private fun LoopbackServer.correlationIds(): List<String> = recorded.map { it.correlationId() }
 
     @Test
     fun `every request carries a version 7 correlation id`() =
@@ -51,9 +64,8 @@ class CorrelationDecorationTest {
 
                 service(server).execute(get())
 
-                val sent = server.onlyRequest.header(HEADER)
-                assertNotNull("no correlation header reached the wire", sent)
-                assertEquals(7, UUID.fromString(sent).version())
+                val sent = server.onlyRequest.correlationId()
+                assertEquals(VERSION_7, UUID.fromString(sent).version())
             }
         }
 
@@ -107,7 +119,7 @@ class CorrelationDecorationTest {
 
                 service(server).execute(get(mapOf(HEADER to "caller-supplied")))
 
-                assertNotEquals("caller-supplied", server.onlyRequest.header(HEADER))
+                assertNotEquals("caller-supplied", server.onlyRequest.correlationId())
             }
         }
 }
