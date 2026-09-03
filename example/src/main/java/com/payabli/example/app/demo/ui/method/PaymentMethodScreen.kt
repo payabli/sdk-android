@@ -41,7 +41,7 @@ fun PaymentMethodScreen(
     PaymentFlowScreen(
         title = "Save a method",
         state = state,
-        flow = state.payments,
+        payments = state.payments,
         operation = state.operation,
         isSubmitting = isSubmitting,
         steps =

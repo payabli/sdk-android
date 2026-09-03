@@ -20,6 +20,7 @@ import com.payabli.example.app.sdk.PayInOutcome
 import com.payabli.example.app.sdk.PayInStartup
 import com.payabli.example.app.sdk.capturePayment
 import com.payabli.example.app.sdk.isBusy
+import com.payabli.example.app.sdk.newIdempotencyKey
 import com.payabli.example.app.sdk.payInStartup
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,7 +28,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
-import java.util.UUID
 import kotlin.coroutines.cancellation.CancellationException
 
 data class CaptureUiState(
@@ -62,8 +62,44 @@ data class CaptureUiState(
     val payments: PayInFlowHandle? = null,
     /** A capture of [amount], carrying the key that makes a repeat safe. */
     val operation: PayInOperation,
+    /**
+     * A void is in flight.
+     *
+     * Its own flag rather than the flow's state: the SDK publishes a void nowhere, because nothing is
+     * drawing it, so `payments.isSubmitting()` stays false throughout one.
+     */
+    override val isVoiding: Boolean = false,
+    /** The transaction this screen has already reversed, so the control cannot offer it twice. */
+    val voidedTransactionId: String? = null,
+    /**
+     * The key every reversal of the current transaction sends.
+     *
+     * One per transaction rather than one per tap. A reversal whose response is lost may have been applied,
+     * and only a repeat carrying this key is recognized as that same attempt; a fresh key would ask the
+     * service to reverse a transaction it has already reversed, which comes back as a failure over a success.
+     * Minted when a payment completes and dropped when the screen moves on.
+     */
+    val voidIdempotencyKey: String? = null,
 ) : PaymentFlowUiState {
+    /**
+     * Its own, because `data class` would synthesize one over the transaction identifier and the key beside it.
+     *
+     * The readout types this holds each declare theirs for the same reason, and a state that carries them
+     * would put back what those took out: this reaches an assertion failure or a crash report whole.
+     */
+    override fun toString(): String =
+        "CaptureUiState(finished=$finished, isVoiding=$isVoiding, hasVoidableTransaction=" +
+            "${voidableTransactionId != null})"
+
     override val finished: Boolean get() = lastResult != null
+
+    /** The transaction a void would name, once there is one and it has not already been reversed. */
+    override val voidableTransactionId: String?
+        get() =
+            lastResult
+                ?.transaction
+                ?.paymentTransactionId
+                ?.takeIf { it != voidedTransactionId }
 }
 
 /**
@@ -112,7 +148,7 @@ class CaptureViewModel(
             setup = PayInForms.capture(amount),
             operation =
                 capturePayment(
-                    idempotencyKey = UUID.randomUUID().toString(),
+                    idempotencyKey = newIdempotencyKey(),
                     amount = amount,
                     identity = identity,
                     atMillis = System.currentTimeMillis(),
@@ -221,6 +257,8 @@ class CaptureViewModel(
                 submitFailed = false,
                 isSheetOpen = false,
                 outcomeReady = transaction != null,
+                // One per transaction, minted here so every reversal of it is the same attempt.
+                voidIdempotencyKey = transaction?.let { newIdempotencyKey() },
             )
         }
     }
@@ -242,9 +280,82 @@ class CaptureViewModel(
                 outcomeReady = false,
                 lastResult = null,
                 submitFailed = true,
+                voidIdempotencyKey = null,
             )
         }
     }
+
+    /**
+     * Reverses the transaction the last capture returned.
+     *
+     * Reads the id off the state rather than taking one, so the control cannot name a transaction the screen
+     * is not showing. The result replaces the panel's text: a void is what the screen last did, and leaving
+     * the capture's text under a reversed transaction is the screen disagreeing with the service.
+     *
+     * [CaptureUiState.lastResult] is left standing on success, so the identifiers stay on screen and the
+     * result step keeps its shape. What stops a second void is [CaptureUiState.voidedTransactionId].
+     */
+    fun voidLastTransaction() {
+        if (_uiState.value.isVoiding) return
+        val payments = _uiState.value.payments ?: return
+        val transId = _uiState.value.voidableTransactionId ?: return
+        val key = _uiState.value.voidIdempotencyKey ?: return
+        _uiState.update { it.copy(isVoiding = true) }
+        viewModelScope.launch {
+            val outcome =
+                try {
+                    payments.voidTransaction(transId, key)
+                } catch (cancellation: CancellationException) {
+                    // The flag is cleared on the way out, or the control never comes back.
+                    _uiState.update { it.copy(isVoiding = false) }
+                    throw cancellation
+                }
+            record(
+                when (outcome) {
+                    is PayInOutcome.Approved -> "RESPONSE void\ncode=${outcome.result.code}"
+                    is PayInOutcome.Refused -> "ERROR void\n${outcome.diagnostic}"
+                },
+            )
+            _uiState.update { it.afterVoiding(outcome, transId) }
+        }
+    }
+
+    /**
+     * The screen a reversal leaves behind.
+     *
+     * Separate from the call so the branch is a value a test can ask for, and the two outcomes differ in more
+     * than their wording: only an approval records the transaction as reversed.
+     *
+     * A refusal leaves [CaptureUiState.voidedTransactionId] alone, because the transaction still stands and
+     * the control has to stay available for another try.
+     */
+    internal fun CaptureUiState.afterVoiding(
+        outcome: PayInOutcome,
+        transId: String,
+    ): CaptureUiState =
+        when (outcome) {
+            is PayInOutcome.Approved ->
+                copy(
+                    isVoiding = false,
+                    voidedTransactionId = transId,
+                    // Reversed, so the control goes and the key has nothing left to identify.
+                    voidIdempotencyKey = null,
+                    resultText =
+                        listOfNotNull(
+                            "✓ Voided: ${outcome.result.code}",
+                            outcome.result.reason?.let { "Reason: $it" },
+                            "Payment transaction: $transId",
+                        ).joinToString("\n"),
+                )
+
+            is PayInOutcome.Refused ->
+                // The key is left alone, whatever the refusal was. A reversal takes only the transaction, so a
+                // second attempt is the same request byte for byte and belongs under the same key: it may have
+                // been applied and gone unreported, and a fresh key would ask the service to reverse a
+                // transaction it has already reversed. The capture above rotates because correcting a rejected
+                // field genuinely sends something else. Starting over is what ends this attempt.
+                copy(isVoiding = false, resultText = "✗ ${outcome.error.displayMessage}")
+        }
 
     /** Records only when diagnostics are on, so the setting governs what is kept and not only what is shown. */
     private fun record(line: String) {
@@ -264,7 +375,11 @@ class CaptureViewModel(
      * A second payment draws its own amount. The draw has no memory, so it can land on the previous figure
      * again: what tells two rows from one device apart is the order identifier, which carries the second.
      */
-    fun startOver() =
+    fun startOver() {
+        // Synchronously, before anything is replaced. A void in flight is about the transaction this screen is
+        // showing, and clearing it here would leave that coroutine writing its outcome over the next attempt:
+        // a reversal reported against a payment that had not been taken yet.
+        if (_uiState.value.isVoiding) return
         _uiState.update {
             val attempt = attempt(SampleAmount.random())
             it.copy(
@@ -275,8 +390,13 @@ class CaptureViewModel(
                 setup = attempt.setup,
                 amount = attempt.amount,
                 operation = attempt.operation,
+                // The next payment is a different transaction, so neither what was reversed nor the key that
+                // identified a reversal of it carries over.
+                voidedTransactionId = null,
+                voidIdempotencyKey = null,
             )
         }
+    }
 
     /**
      * A new key for the next attempt, once this one has an answer.

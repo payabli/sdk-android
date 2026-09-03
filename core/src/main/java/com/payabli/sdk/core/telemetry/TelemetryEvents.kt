@@ -123,6 +123,9 @@ public object TelemetryEvents {
     /** A store-method submission reached a terminal outcome. */
     public const val PAYIN_STORE_METHOD_COMPLETED: String = "payin.storeMethod.completed"
 
+    /** A void reached a terminal outcome. Its own name, because the operation is what these are counted by. */
+    public const val PAYIN_VOID_COMPLETED: String = "payin.void.completed"
+
     // System.
 
     /** Initialization was asked for. Emitted before a session exists, so the first one has no listener. */

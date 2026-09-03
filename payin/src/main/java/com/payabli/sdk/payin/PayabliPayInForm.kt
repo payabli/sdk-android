@@ -12,7 +12,6 @@ import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
-import com.payabli.sdk.payin.payment.PayabliPayInPaymentFlow
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
 import com.payabli.sdk.payin.payment.step
@@ -21,7 +20,7 @@ import com.payabli.sdk.payin.ui.PayInFormContent
 /**
  * The Payabli payment form.
  *
- * Collects a card or a bank account and submits it. The payer's tap runs [operation] through [flow], and one
+ * Collects a card or a bank account and submits it. The payer's tap runs [operation] through [payIn], and one
  * of [onCompleted] or [onFailed] fires with the outcome.
  *
  * **It looks like the app it is in.** With no [style] it takes its colors, type and shapes from the host's
@@ -39,18 +38,18 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  *
  * **Consumes no window insets.** Give it a scrolling viewport that accounts for the keyboard.
  *
- * **Retention is [flow]'s, not this composable's.** Hold the flow in something that survives a configuration
+ * **Retention is [payIn]'s, not this composable's.** Hold it in something that survives a configuration
  * change, and a rotation keeps both the outcome of a submission in flight and everything the payer has typed.
  * Held anywhere else, the form empties whenever it leaves the composition.
  *
  * **Nothing typed reaches saved instance state**, so a form reopened after process death is an empty form. What
  * recovers a payment interrupted there is `PayInSubmissionState.Failed.retryKey`.
  *
- * **One form per [flow].** The typed values are the flow's, so two forms given the same one draw the same
+ * **One form per [payIn].** The typed values are its own, so two forms given the same one draw the same
  * boxes, and two given the same one with different configurations refill each other on every frame. A second
- * form on a screen takes a second flow.
+ * form on a screen takes a second one.
  *
- * @param flow where a submission runs, and whose state this renders.
+ * @param payIn where a submission runs, and whose state this renders.
  * @param operation what the tap does: store the method, capture, or authorize.
  * @param configuration what to collect and how to arrange it.
  * @param labels wording decided at runtime; anything left out or blank comes from string resources.
@@ -62,7 +61,7 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  */
 @Composable
 public fun PayabliPayInForm(
-    flow: PayabliPayInPaymentFlow,
+    payIn: PayabliPayIn,
     operation: PayabliPayInOperation,
     configuration: PayInFormConfiguration,
     modifier: Modifier = Modifier,
@@ -72,7 +71,16 @@ public fun PayabliPayInForm(
     onFailed: (PayInSubmissionState.Failed) -> Unit,
     onMethodChanged: (PayInMethodType) -> Unit,
 ) {
-    val submission by flow.state.collectAsState()
+    // The typed values, the reports and the submission the tap starts are this module's, not the contract's:
+    // driving a form is not something a host does to a `PayabliPayIn`, so none of it is on the interface.
+    // A `when` rather than a cast, so this is the compiler's problem rather than a payer's. `PayabliPayIn` is
+    // sealed and has one implementation today; a second added beside it would make this branch non-exhaustive
+    // and fail the build, where a cast would compile and throw the first time the form was drawn.
+    val impl =
+        when (payIn) {
+            is PayInPaymentFlow -> payIn
+        }
+    val submission by payIn.state.collectAsState()
 
     // An authorization takes entered card data only, so a bank tab beside it is a form no request can be
     // made from.
@@ -82,37 +90,37 @@ public fun PayabliPayInForm(
     val narrowingKey = operation.narrowingKey
     val offered = remember(narrowingKey, configuration) { operation.offering(configuration) }
 
-    // One form per flow, and the step is a fixed word per operation, so together they change exactly when
-    // the form on screen does. Not the operation itself: written inline it is a new instance on every
+    // One form per PayabliPayIn, and the step is a fixed word per operation, so together they change exactly
+    // when the form on screen does. Not the operation itself: written inline it is a new instance on every
     // recomposition, which would count one opened form once per keystroke.
     val step = operation.step
-    LaunchedEffect(flow, step) { flow.reports.presented(step) }
+    LaunchedEffect(impl, step) { impl.reports.presented(step) }
 
     PayInFormContent(
         submission = submission,
-        draft = flow.draft,
+        draft = impl.draft,
         configuration = offered,
-        reports = flow.reports,
+        reports = impl.reports,
         modifier = modifier,
         labels = labels,
         style = style,
         onSubmit = { values ->
             // Before the send, so a submit that never reaches the service is still counted.
-            flow.reports.submitted(operation.step)
-            flow.start(operation, values)
+            impl.reports.submitted(operation.step)
+            impl.start(operation, values)
         },
         onCompleted = { outcome ->
             try {
                 onCompleted(outcome)
             } finally {
-                flow.consume()
+                impl.consume()
             }
         },
         onFailed = { outcome ->
             try {
                 onFailed(outcome)
             } finally {
-                flow.consume()
+                impl.consume()
             }
         },
         onMethodChanged = onMethodChanged,

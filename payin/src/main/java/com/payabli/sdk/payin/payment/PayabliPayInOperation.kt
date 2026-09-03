@@ -11,7 +11,7 @@ import com.payabli.sdk.payin.model.PayInTransactionOptions
  * What to do with what a payer entered.
  *
  * The three operations that read a form. Capturing a transaction authorized earlier carries no instrument, so
- * it is a function on [PayabliPayInPaymentFlow] instead of a case here.
+ * it is a function on [com.payabli.sdk.payin.PayabliPayIn] instead of a case here.
  *
  * Each case carries everything except the instrument, which is what makes a screen configurable before a payer
  * has typed anything.

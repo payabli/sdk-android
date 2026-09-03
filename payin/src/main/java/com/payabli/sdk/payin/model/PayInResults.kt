@@ -55,11 +55,20 @@ public class PayInTransaction(
  *
  * [code] is the unified response code, which begins with `A` for the approved family. It is kept rather than
  * reduced to a boolean because the specific code is what a caller reconciles against.
+ *
+ * [reason], [explanation] and [action] are the words beside it. An approval is not always the same act: a
+ * void answers `A0003` and calls itself canceled, where a capture answers `A0000`. A caller showing the
+ * outcome needs what the service called it, and reducing every approval to its code throws that away.
  */
 public class PayInResult(
     public val code: String,
+    /** Displayable, and never loggable: the same rule [PayInFailure.reason] carries, for the same reason. */
+    public val reason: String?,
+    public val explanation: String?,
+    public val action: String?,
     public val transaction: PayInTransaction?,
 ) {
+    /** The code alone. The three fields above are service text and do not belong in a message or a log. */
     override fun toString(): String = "PayInResult(code=$code)"
 }
 

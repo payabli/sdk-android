@@ -63,7 +63,10 @@ class PayInFormSubmissionInstrumentedTest {
 
     private var submission by mutableStateOf<PayInSubmissionState>(PayInSubmissionState.Idle)
 
-    private val succeeded = PayInSubmissionState.Succeeded.Payment(PayInResult("A0000", null))
+    private val succeeded =
+        PayInSubmissionState.Succeeded.Payment(
+            PayInResult("A0000", reason = null, explanation = null, action = null, transaction = null),
+        )
 
     /** The test card as the field draws it, which is how a query finds what a box is holding. */
     private val groupedPan = "4111 1111 1111 1111"

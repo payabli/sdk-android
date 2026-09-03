@@ -156,8 +156,8 @@ public class PayInRequest(
 /**
  * An authorization to capture, in full or in part.
  *
- * [transId] identifies the authorization and goes in the path, which is what makes this the one call in the
- * module whose resolved path differs from its route template.
+ * [transId] identifies the authorization and goes in the path, so the resolved path differs from the route
+ * template this call is recorded under. Reversing a transaction is the other one shaped that way.
  */
 public class PayInAuthorizedRequest(
     public val transId: String,
