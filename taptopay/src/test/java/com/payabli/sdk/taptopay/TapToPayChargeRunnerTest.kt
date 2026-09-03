@@ -232,6 +232,48 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `the reader is asked for the amount the paypoint recorded`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The serializer rounds what initiate sent, so a caller's own scale asks the card for one
+            // amount and the paypoint to record another.
+            val fixture = readyFixture()
+
+            runnerOver(fixture)
+                .charge(details("12.345"), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+
+            assertEquals(BigDecimal("12.35"), fixture.reader.lastReadRequest?.amount)
+        }
+
+    @Test
+    fun `a service fee gets the checks the amount gets`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+
+            val negative =
+                runCatching {
+                    runnerOver(fixture).charge(
+                        TapToPayPaymentDetails(BigDecimal("10.00"), serviceFee = BigDecimal("-0.01")),
+                        TapToPayCustomerData(),
+                        TapToPayInvoiceData(),
+                        null,
+                    )
+                }.exceptionOrNull()
+            val unsendable =
+                runCatching {
+                    runnerOver(fixture).charge(
+                        TapToPayPaymentDetails(BigDecimal("10.00"), serviceFee = BigDecimal("1E+2147483647")),
+                        TapToPayCustomerData(),
+                        TapToPayInvoiceData(),
+                        null,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(negative.toString(), negative is IllegalArgumentException)
+            assertTrue(unsendable.toString(), unsendable is IllegalArgumentException)
+            assertFalse(INITIATE in fixture.routes)
+        }
+
+    @Test
     fun `a terminal that was never set up opens nothing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = SessionFixture(script())
