@@ -80,6 +80,27 @@ class FiservAndroidCardReaderTest {
         }
 
     @Test
+    fun `an arming that was refused keeps nothing either`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The same guarantee on the path that does not succeed, which is the one that held the vendor's
+            // key and secret for the life of the reader. Asserted through the public surface: a second
+            // arming has nothing to arm with, so the credentials are gone.
+            val gateway =
+                FakeCardReaderGateway(
+                    prepareFailure = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"),
+                )
+            val reader = readerFor(gateway)
+            reader.configure(readerCredentials())
+
+            val denied = runCatching { reader.prepareReader() }.exceptionOrNull()
+            val second = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(denied.toString(), denied is CardReaderException.DeviceDenied)
+            assertTrue(second.toString(), second is IllegalStateException)
+            assertEquals(1, gateway.prepareCount)
+        }
+
+    @Test
     fun `credentials that were refused leave nothing to arm with`() =
         runTest(timeout = TEST_TIMEOUT) {
             val gateway = FakeCardReaderGateway()
