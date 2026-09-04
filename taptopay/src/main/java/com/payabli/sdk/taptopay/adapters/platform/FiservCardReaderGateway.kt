@@ -154,8 +154,16 @@ private fun ChargesResponse.toRecord(): ChargeRecord =
 /**
  * Runs [block], converting every failure the vendor raises into a [CardReaderFailure].
  *
- * A cancellation passes through: a caller withdrawing is not a device problem. `Exception`, not
- * `Throwable`, so an `OutOfMemoryError` is not reported as a reader failure.
+ * A cancellation passes through: a caller withdrawing is not a device problem.
+ *
+ * The last clause catches the vendor's whole hierarchy rather than one of its members. Read off the AAR:
+ * `FiservTTPCardReaderException` is the root, `FSSDKException` extends it, and every other type the vendor
+ * declares descends from one of those. So nothing it raises escapes, and there is no clause here for
+ * anything it does not.
+ *
+ * **A defect in this SDK is not a reader failure.** A `NullPointerException` filed as `UNCLASSIFIED` reports as
+ * a service that was briefly away and invites a retry that cannot work. Unhandled, it lands on
+ * `SDK_INTERNAL_ERROR`, which is the reason for a failure whose remedy is unknown.
  */
 private suspend fun <T> mappingFailures(block: suspend () -> T): T =
     try {
@@ -174,8 +182,6 @@ private suspend fun <T> mappingFailures(block: suspend () -> T): T =
         throw cancellation
     } catch (vendor: FiservTTPCardReaderException) {
         throw vendor.asFailure(refusalKind(vendor.code))
-    } catch (unexpected: Exception) {
-        throw CardReaderFailure(ReaderFailureKind.UNCLASSIFIED, cause = unexpected)
     }
 
 /**
@@ -222,7 +228,18 @@ private val UNCONFIRMED_DENIAL_CODES =
         "705",
     )
 
-private fun FiservTTPCardReaderException.asFailure(kind: ReaderFailureKind): CardReaderFailure =
+/**
+ * The vendor's exception as a [CardReaderFailure], with its stack trace and without the exception itself.
+ *
+ * The failure reaches a host as `TapToPayException.cause.cause`, so a vendor exception attached here is a
+ * vendor type on the public chain and its free text is in every crash report that walks it. The five fields
+ * copied above are the diagnostics; what is dropped is the type a caller could catch and the words nothing
+ * here controls. The trace is kept, since it names where inside the vendor library the failure arose and
+ * carries no message.
+ *
+ * Internal so a test can hold the result, which is where a vendor type would reappear.
+ */
+internal fun FiservTTPCardReaderException.asFailure(kind: ReaderFailureKind): CardReaderFailure =
     CardReaderFailure(
         kind = kind,
         code = code,
@@ -230,5 +247,4 @@ private fun FiservTTPCardReaderException.asFailure(kind: ReaderFailureKind): Car
         field = field,
         detail = message,
         additionalInfo = additionalInfo,
-        cause = this,
-    )
+    ).also { it.stackTrace = stackTrace }
