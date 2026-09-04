@@ -52,7 +52,6 @@ class TelemetryOnDeviceTest {
                     .initializeAgainst(
                         server.baseUrl,
                         PayabliConfig(
-                            accessToken = "a-device-token",
                             entryPoint = ENTRY,
                             environment = PayabliEnvironment.SANDBOX,
                         ),

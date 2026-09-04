@@ -135,7 +135,6 @@ class TapToPaySessionLiveTest {
                     coordinator.confirmActivation(
                         ActivationCodeMinter.mint(
                             baseUrl = LiveRunSettings.baseUrl,
-                            accessToken = LiveRunSettings.accessToken(),
                             entry = LiveRunSettings.entry,
                             deviceId = record.deviceId,
                         ),
@@ -168,7 +167,6 @@ class TapToPaySessionLiveTest {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = LiveRunSettings.accessToken(),
                     entryPoint = LiveRunSettings.entry,
                     environment = LiveRunSettings.environment,
                     tokenProvider = { LiveRunSettings.accessToken() },

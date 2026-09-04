@@ -263,10 +263,10 @@ class PayInLiveFlowsInstrumentedTest {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = mintToken(),
                     entryPoint = entryPoint,
                     environment = environment,
-                    // Minted again on demand, which is what the SDK asks of a provider.
+                    // The only way a token reaches the SDK: minted on demand, before the first
+                    // request and again whenever one is rejected.
                     tokenProvider = { mintToken() },
                 ),
                 HostBindings(InstrumentationRegistry.getInstrumentation().targetContext.applicationContext),

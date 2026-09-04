@@ -65,15 +65,10 @@ class PayInSessionSource(
         if (configuration.entryPoint.isBlank()) {
             return Result.failure(IllegalStateException("No entry point is configured, so nothing can be sent."))
         }
-        val token = tokenClient().mintAccessToken() ?: return Result.failure(IllegalStateException(NO_TOKEN))
-
-        // Building the configuration is inside this too: it validates what the token server returned, and a
-        // token carrying a newline is refused there rather than at the call below.
-        //
         // Not runCatching: that catches CancellationException as well, and turning cancellation into an
         // ordinary startup failure reports an error for a screen that simply went away.
         return try {
-            start(configFor(token))
+            start(config())
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Exception) {
@@ -81,14 +76,13 @@ class PayInSessionSource(
         }
     }
 
-    private fun configFor(token: String): PayabliConfig =
+    private fun config(): PayabliConfig =
         PayabliConfig(
-            accessToken = token,
             entryPoint = configuration.entryPoint,
             environment = configuration.environment.sdkEnvironment,
-            // Called again whenever a token is rejected, which is the whole point of minting per call.
-            // Throwing is the honest answer when the server has nothing: the SDK treats a provider
-            // failure as a terminal credential rejection, which is what a dead token server is.
+            // The only way a token reaches the SDK: called before the first request and again whenever one
+            // is rejected. Throwing is the honest answer when the server has nothing, since the SDK reads a
+            // provider failure as a credential failure, which is what a dead token server is.
             tokenProvider = {
                 tokenClient().mintAccessToken() ?: throw IllegalStateException(NO_TOKEN)
             },

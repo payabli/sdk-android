@@ -29,7 +29,6 @@ class PayabliSessionInstrumentedTest {
 
     private fun config() =
         PayabliConfig(
-            accessToken = "instrumented-token",
             entryPoint = "entry",
             environment = PayabliEnvironment.SANDBOX,
         )

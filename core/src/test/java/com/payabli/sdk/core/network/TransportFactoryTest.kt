@@ -8,6 +8,7 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.testutils.auth.mintingThen
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -39,12 +40,11 @@ class TransportFactoryTest {
     private val sink = RecordingLogSink()
     private val authSink = RecordingLogSink()
 
-    private fun config(provider: PayabliTokenProvider? = null) =
+    private fun config(provider: PayabliTokenProvider = PayabliTokenProvider { "initial-token" }) =
         PayabliConfig(
-            accessToken = "initial-token",
             entryPoint = "entry",
             environment = PayabliEnvironment.SANDBOX,
-            tokenProvider = provider,
+            tokenProvider = mintingThen("initial-token", provider),
         )
 
     private fun logger() = DefaultSdkLogger(LogCategory.NETWORK, sink)
@@ -76,9 +76,9 @@ class TransportFactoryTest {
         PayabliEnvironment.entries.forEach { environment ->
             val config =
                 PayabliConfig(
-                    accessToken = "initial-token",
                     entryPoint = "entry",
                     environment = environment,
+                    tokenProvider = PayabliTokenProvider { "a-minted-token" },
                 )
 
             val first = TransportFactory.authenticated(config, Dispatchers.IO)
@@ -195,7 +195,15 @@ class TransportFactoryTest {
             LoopbackServer().use { server ->
                 server.respondInOrder(401 to "", 200 to "", 401 to "", 200 to "")
                 val calls = AtomicInteger()
-                val cfg = config { REFRESHED.also { calls.incrementAndGet() } }
+                // Its own configuration rather than the shared helper: that helper answers a stale token
+                // first from one counter, and two holders built from one configuration would share it. Here
+                // every answer differs, so neither holder can be refused for returning what was rejected.
+                val cfg =
+                    PayabliConfig(
+                        entryPoint = "entry",
+                        environment = PayabliEnvironment.SANDBOX,
+                        tokenProvider = { "token-${calls.incrementAndGet()}" },
+                    )
 
                 val first =
                     TransportFactory.authenticatedAgainst(
@@ -220,9 +228,11 @@ class TransportFactoryTest {
                 completing("first") { first.execute(ping()) }
                 completing("second") { second.execute(ping()) }
 
-                // Two holders, so the same rejection is refreshed twice. Pinned so the KDoc's warning is a
-                // measured fact rather than a caution, and so the session inherits a tested reason to exist.
-                assertEquals("two independent refresh domains", 2, calls.get())
+                // Two holders, so each one mints its own first token and refreshes its own rejection: four
+                // calls to the host's broker for what one holder would have done in two. Pinned so the
+                // KDoc's warning is a measured fact rather than a caution, and so the session inherits a
+                // tested reason to exist.
+                assertEquals("two independent refresh domains", 4, calls.get())
             }
         }
 

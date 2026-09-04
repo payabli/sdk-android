@@ -33,13 +33,13 @@ import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
 
-private const val REASON_NO_TOKEN_PROVIDER = "no tokenProvider was supplied"
 private const val REASON_REFRESH_FAILED = "token refresh failed"
 private const val REASON_PROVIDER_TIMEOUT = "the tokenProvider did not return in time"
 private const val REASON_REFRESH_CANCELLED = "the refresh was cancelled"
 private const val REASON_BLANK_TOKEN = "the tokenProvider returned a blank token"
 private const val REASON_UNUSABLE_TOKEN = "the tokenProvider returned a token that cannot be a header value"
 private const val REASON_UNCHANGED_TOKEN = "the tokenProvider returned the rejected token"
+private const val REASON_PROVIDER_READ_UNMINTED = "the tokenProvider read the token it was called to mint"
 
 /**
  * The ceiling on one call to the host's token provider.
@@ -91,7 +91,9 @@ public class PayabliAuth(
     // NonCancellable precisely for that case, and an uncontended lock cannot demonstrate it.
     @VisibleForTesting
     internal val mutex = Mutex()
-    private var currentToken: String = config.accessToken
+
+    // Null until the first mint. Nothing is passed in, so the first read is what obtains a token.
+    private var currentToken: String? = null
     private var inFlight: Refresh? = null
 
     // A stalled collector must not stall a refresh, so this buffers and drops rather than suspending
@@ -104,19 +106,6 @@ public class PayabliAuth(
 
     /** Emits once per successful refresh. Carries the token, so it is internal like the rest of this type. */
     public val tokenChanges: SharedFlow<String> = tokenChangeSink.asSharedFlow()
-
-    /**
-     * Whether a rejected token can be replaced at all.
-     *
-     * False means no provider was supplied, so every refresh from now on fails the same way and the session
-     * is beyond recovery from inside the SDK. `AuthenticatedTransport` reads this to tell that apart from a
-     * provider that merely failed this once, which is transient and must not finish the session.
-     *
-     * `internal` rather than `@RestrictTo`: it is a fact about this holder that only `:core`'s own choke-point
-     * acts on, and a capability that could read it would be reading how auth is configured.
-     */
-    internal val canRefresh: Boolean
-        get() = config.tokenProvider != null
 
     /**
      * Why this instance is finished, or null while it still works.
@@ -160,22 +149,37 @@ public class PayabliAuth(
         mutex.withLock { finished = failure }
     }
 
-    /** The token to send now. Never refreshes on its own; call [invalidateAndRefresh] after a rejection. */
+    /**
+     * The token to send now, minting one if this instance holds none yet.
+     *
+     * Mints rather than refreshes: a first read has nothing to replace, so a rejection still goes through
+     * [invalidateAndRefresh]. It takes the same claim a refresh does, which is what makes concurrent first
+     * readers share one provider call instead of one each.
+     *
+     * **A held token is returned before a terminal failure is consulted**, which is the opposite order from
+     * [invalidateAndRefresh] and is deliberate. Reading is not what reaches the provider, so an instance
+     * that has given up still answers with the credential it holds, and refusal is for the case where there
+     * is nothing to answer with.
+     */
     public suspend fun accessToken(): String {
         reentrantToken()?.let { return it }
-        val read =
+        val plan =
             mutex.withLock {
-                val refresh = inFlight
-                if (refresh != null) {
-                    TokenRead.Refreshing(refresh.claim)
-                } else {
-                    TokenRead.Ready(currentToken)
+                val existing = inFlight
+                val held = currentToken
+                val terminated = finished
+                when {
+                    existing != null -> RefreshPlan.Join(existing.claim)
+                    held != null -> RefreshPlan.Held(held)
+                    terminated != null -> RefreshPlan.Refused(terminated)
+                    else -> RefreshPlan.Own(Refresh().also { inFlight = it })
                 }
             }
-
-        return when (read) {
-            is TokenRead.Ready -> read.token
-            is TokenRead.Refreshing -> read.refresh.await()
+        return when (plan) {
+            is RefreshPlan.Refused -> throw plan.failure
+            is RefreshPlan.Held -> plan.token
+            is RefreshPlan.Join -> plan.claim.await()
+            is RefreshPlan.Own -> runRefresh(plan.refresh, rejectedToken = null)
         }
     }
 
@@ -203,26 +207,28 @@ public class PayabliAuth(
                 when {
                     // First, so nothing below can take a claim on an instance that is already finished.
                     terminated != null -> RefreshPlan.Refused(terminated)
-                    // Before AlreadyRotated: the current token may itself be the one under refresh, and
+                    // Before Held: the current token may itself be the one under refresh, and
                     // handing it back would return a credential already known to be rejected.
                     existing != null -> RefreshPlan.Join(existing.claim)
-                    currentToken != rejectedToken -> RefreshPlan.AlreadyRotated(currentToken)
+                    // A held token that is not the rejected one has already rotated. Null means this
+                    // instance never minted, so there is nothing to have rotated and the provider runs.
+                    currentToken != null && currentToken != rejectedToken -> RefreshPlan.Held(currentToken!!)
                     else -> RefreshPlan.Own(Refresh().also { inFlight = it })
                 }
             }
         return when (plan) {
             is RefreshPlan.Refused -> throw plan.failure
-            is RefreshPlan.AlreadyRotated -> plan.token
+            is RefreshPlan.Held -> plan.token
             is RefreshPlan.Join -> plan.claim.await()
             is RefreshPlan.Own -> runRefresh(plan.refresh, rejectedToken)
         }
     }
 
-    /** Restores the token from [PayabliConfig], drops any in-flight claim, and revives a finished instance. */
+    /** Drops the held token and any in-flight claim, and revives a finished instance. */
     @VisibleForTesting
     internal suspend fun reset() {
         mutex.withLock {
-            currentToken = config.accessToken
+            currentToken = null
             inFlight = null
             // Without this a test that finishes the instance leaves it dead for every later one, and the
             // failure lands somewhere unrelated.
@@ -230,14 +236,13 @@ public class PayabliAuth(
         }
     }
 
+    /** [rejectedToken] is null for a first mint, which has nothing to have been refused. */
     private suspend fun runRefresh(
         refresh: Refresh,
-        rejectedToken: String,
+        rejectedToken: String?,
     ): String {
         val shared = refresh.claim
-        val provider =
-            config.tokenProvider
-                ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_NO_TOKEN_PROVIDER))
+        val provider = config.tokenProvider
 
         // Appended rather than replaced: an element is keyed by its companion, so installing a fresh one
         // hides every enclosing refresh, and a call back into one of those joins the refresh awaiting it.
@@ -354,10 +359,15 @@ public class PayabliAuth(
         val marks = currentCoroutineContext()[RefreshInProgress]?.marks ?: return null
         return mutex.withLock {
             val live = inFlight
-            if (live != null && marks.any { it.heldBy(this@PayabliAuth) && it.id == live.id }) {
-                currentToken
-            } else {
+            if (live == null || marks.none { it.heldBy(this@PayabliAuth) && it.id == live.id }) {
                 null
+            } else {
+                // Inside this instance's own provider call, so there is a token to answer with unless this
+                // is the first mint. Then the value being asked for is the one the provider running above
+                // was called to produce, and joining the claim would be joining itself, so it fails here
+                // rather than waiting for a token only this caller can supply.
+                currentToken
+                    ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_READ_UNMINTED)
             }
         }
     }
@@ -412,7 +422,8 @@ public class PayabliAuth(
             val failure: PayabliException,
         ) : RefreshPlan
 
-        data class AlreadyRotated(
+        /** A token this instance already holds, whether it was never rejected or has since rotated. */
+        data class Held(
             val token: String,
         ) : RefreshPlan
 
@@ -423,15 +434,5 @@ public class PayabliAuth(
         data class Own(
             val refresh: Refresh,
         ) : RefreshPlan
-    }
-
-    private sealed interface TokenRead {
-        data class Ready(
-            val token: String,
-        ) : TokenRead
-
-        data class Refreshing(
-            val refresh: CompletableDeferred<String>,
-        ) : TokenRead
     }
 }

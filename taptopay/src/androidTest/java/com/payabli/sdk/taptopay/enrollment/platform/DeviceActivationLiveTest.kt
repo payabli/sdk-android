@@ -185,7 +185,6 @@ class DeviceActivationLiveTest {
                 val code =
                     ActivationCodeMinter.mint(
                         baseUrl = LiveRunSettings.baseUrl,
-                        accessToken = LiveRunSettings.accessToken(),
                         entry = LiveRunSettings.entry,
                         deviceId = registration.deviceId,
                     )
@@ -229,7 +228,6 @@ class DeviceActivationLiveTest {
                 val code =
                     ActivationCodeMinter.mint(
                         baseUrl = LiveRunSettings.baseUrl,
-                        accessToken = LiveRunSettings.accessToken(),
                         entry = LiveRunSettings.entry,
                         deviceId = record.deviceId,
                     )
@@ -263,7 +261,6 @@ class DeviceActivationLiveTest {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = LiveRunSettings.accessToken(),
                     entryPoint = LiveRunSettings.entry,
                     environment = LiveRunSettings.environment,
                     // What an integrator supplies: the SDK calls this when the service rejects the bearer.

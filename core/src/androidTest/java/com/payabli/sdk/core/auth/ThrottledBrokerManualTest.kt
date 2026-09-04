@@ -167,7 +167,6 @@ class ThrottledBrokerManualTest {
     private fun auth(providerMillis: AtomicLong) =
         PayabliAuth(
             PayabliConfig(
-                accessToken = "initial-token",
                 entryPoint = "entry",
                 environment = PayabliEnvironment.SANDBOX,
                 // Hopped to IO because the alternative wedges the caller's dispatcher, and the deadline could

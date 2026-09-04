@@ -4,6 +4,7 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.SdkState
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -82,9 +83,9 @@ class SessionTelemetryContextTest {
         PayabliSession
             .initializeWith(
                 PayabliConfig(
-                    accessToken = "a-token",
                     entryPoint = entryPoint,
                     environment = PayabliEnvironment.SANDBOX,
+                    tokenProvider = PayabliTokenProvider { "a-minted-token" },
                     telemetryEnabled = telemetryEnabled,
                 ),
             ) { UnusedTransport }
