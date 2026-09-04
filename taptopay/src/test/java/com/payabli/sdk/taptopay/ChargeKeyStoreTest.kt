@@ -20,9 +20,9 @@ private const val CHARGE_KEY_ENTRY = "com.payabli.sdk.taptopay.chargekeys.v1"
 /**
  * What the store answers when it can and cannot read what it holds.
  *
- * A charge not taken can be taken again; a charge taken twice cannot be untaken. So a failure that says the
- * key is *gone* mints a fresh one, and a failure that says the store could not be reached *this time* stops
- * the charge.
+ * A charge not taken can be taken again; a charge taken twice cannot be untaken. So only an entry that is
+ * genuinely absent answers "nothing held"; every other outcome stops the charge instead of letting a fresh
+ * key be minted over an attempt whose fate is unknown.
  */
 class ChargeKeyStoreTest {
     private val logger = RecordingSdkLogger()
@@ -44,11 +44,28 @@ class ChargeKeyStoreTest {
     fun `a settled charge leaves the next one to reserve its own`() =
         runTest(timeout = TEST_TIMEOUT) {
             val store = storeOver(FakeSecureStore())
-            store.reserve(ENTRY)
+            val first = store.reserve(ENTRY)
 
-            store.settle(ENTRY)
+            store.settle(ENTRY, first)
 
             assertEquals("key-2", store.reserve(ENTRY))
+        }
+
+    @Test
+    fun `settling a key that has been superseded removes nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Two terminals for one entry point hold separate charge locks, so a charge can finish after
+            // another has reserved in its place. Removing whatever is held would drop an attempt that is
+            // still in flight, and its retry would name a new one.
+            val storage = FakeSecureStore()
+            val store = storeOver(storage)
+            val stale = store.reserve(ENTRY)
+            store.settle(ENTRY, stale)
+            val current = store.reserve(ENTRY)
+
+            store.settle(ENTRY, stale)
+
+            assertEquals("the in-flight attempt was dropped by a stale settle", current, store.reserve(ENTRY))
         }
 
     @Test
@@ -74,7 +91,7 @@ class ChargeKeyStoreTest {
             val other = store.reserve(OTHER_ENTRY)
 
             assertNotEquals(one, other)
-            assertEquals("settling one dropped the other", one, store.reserve(ENTRY))
+            assertEquals(one, store.reserve(ENTRY))
         }
 
     @Test
@@ -84,7 +101,7 @@ class ChargeKeyStoreTest {
             val one = store.reserve(ENTRY)
             val other = store.reserve(OTHER_ENTRY)
 
-            store.settle(ENTRY)
+            store.settle(ENTRY, one)
 
             assertEquals(other, store.reserve(OTHER_ENTRY))
             assertNotEquals(one, store.reserve(ENTRY))
@@ -93,8 +110,8 @@ class ChargeKeyStoreTest {
     @Test
     fun `a store that cannot be reached stops the charge rather than reserving a second key`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The one that matters. Reading this as "nothing held" would mint a fresh key for an attempt
-            // that may already have opened a transaction, and the payer is charged twice.
+            // Reading this as "nothing held" would mint a fresh key for an attempt that may already have
+            // opened a transaction, and the payer is charged twice.
             val storage =
                 FakeSecureStore(
                     failWith = { operation, key ->
@@ -112,34 +129,63 @@ class ChargeKeyStoreTest {
         }
 
     @Test
-    fun `a key the store says is gone is replaced rather than stopping the charge`() =
+    fun `a key the store says is gone stops the charge, because gone is not the same as never held`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Gone is an answer: nothing is held, so there is no attempt to repeat and a fresh key is right.
-            var failing = true
+            // A key lost after a captured sale whose close failed looks exactly like a device that has
+            // never charged. Only an absent entry is evidence of the second.
             val storage =
                 FakeSecureStore(
                     failWith = { operation, key ->
                         SecureStorageException
                             .KeyInvalidated()
-                            .takeIf { failing && operation == "get" && key == CHARGE_KEY_ENTRY }
+                            .takeIf { operation == "get" && key == CHARGE_KEY_ENTRY }
                     },
                 )
             val store = storeOver(storage)
 
-            val reserved = store.reserve(ENTRY)
-            failing = false
+            val failure = runCatching { store.reserve(ENTRY) }.exceptionOrNull()
 
-            assertEquals("key-1", reserved)
+            assertTrue("$failure", failure is SecureStorageException.KeyInvalidated)
+            assertEquals(0, minted.get())
         }
 
     @Test
-    fun `a record that will not decode is replaced, and the entry holding it is dropped`() =
+    fun `a record that will not decode stops the charge, and is left where it is`() =
         runTest(timeout = TEST_TIMEOUT) {
+            // Removing it would make the loss permanent and hand the next charge the empty answer this
+            // refuses to give.
             val storage = FakeSecureStore()
             storage.set(CHARGE_KEY_ENTRY, "not json".toByteArray(Charsets.UTF_8))
             val store = storeOver(storage)
 
+            val failure = runCatching { store.reserve(ENTRY) }.exceptionOrNull()
+
+            assertTrue("$failure", failure is ChargeKeyUnreadableException)
+            assertEquals(0, minted.get())
+            assertTrue("the unreadable record was removed", storage.get(CHARGE_KEY_ENTRY) != null)
+        }
+
+    @Test
+    fun `an absent entry is the one thing that means nothing is held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = storeOver(FakeSecureStore())
+
             assertEquals("key-1", store.reserve(ENTRY))
+        }
+
+    @Test
+    fun `a full store refuses a new entry point rather than evicting an unresolved one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Every record names a charge whose outcome is still in doubt, so dropping the coldest to admit
+            // a new one loses the only thing that would recognise its repeat.
+            val store = storeOver(FakeSecureStore())
+            val first = store.reserve("entry-1")
+            repeat(ChargeAttempts.MAX - 1) { store.reserve("entry-${it + 2}") }
+
+            val failure = runCatching { store.reserve("one-too-many") }.exceptionOrNull()
+
+            assertTrue("$failure", failure is ChargeKeyStoreFullException)
+            assertEquals("the oldest unresolved attempt was evicted", first, store.reserve("entry-1"))
         }
 
     @Test
@@ -148,8 +194,8 @@ class ChargeKeyStoreTest {
             // The charge already has an outcome the caller is entitled to. A key left behind costs the next
             // charge a suppressed opening; raising here would report a settled payment as a failed one.
             //
-            // Reserved before the store starts refusing, because `settle` returns early when nothing is
-            // held and would then never reach the failure this asserts on.
+            // Reserved before the store starts refusing, because `settle` returns early when the key does
+            // not match and would then never reach the failure this asserts on.
             var refusing = false
             val storage =
                 FakeSecureStore(
@@ -160,10 +206,10 @@ class ChargeKeyStoreTest {
                     },
                 )
             val store = storeOver(storage)
-            store.reserve(ENTRY)
+            val reserved = store.reserve(ENTRY)
             refusing = true
 
-            store.settle(ENTRY)
+            store.settle(ENTRY, reserved)
 
             // Still held, since the removal was refused, and the caller was told nothing.
             refusing = false

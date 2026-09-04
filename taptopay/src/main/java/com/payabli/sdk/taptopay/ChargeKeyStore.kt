@@ -4,7 +4,6 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
-import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.storage.PayabliSecureStorage
@@ -59,27 +58,40 @@ internal class ChargeKeyStore(
         lock.withLock {
             val held = load()
             held.forEntry(entry)?.let { return@withLock it.key }
+            // Nothing is evicted to make room. Every record here names a charge whose outcome is still in
+            // doubt, so dropping the coldest to admit a new one loses the only thing that would recognise
+            // its repeat. Refusing is the recoverable direction: this needs more unsettled entry points at
+            // once than a device has, and each one clears as its charge is closed.
+            if (held.isFull) throw ChargeKeyStoreFullException(held.attempts.size)
             val minted = newKey()
             store(held.with(ChargeAttempt(entry = entry, key = minted)))
             minted
         }
 
     /**
-     * Forgets [entry]'s key, because its charge reached an outcome that is not in doubt.
+     * Forgets [entry]'s key when it is still [key], because that charge reached an outcome not in doubt.
      *
      * Called only where the answer is definite. A failure that leaves it unknown whether money moved keeps
      * the key, which is the whole point of holding one.
+     *
+     * **[key] is checked, not assumed.** Two terminals for one entry point hold separate charge locks, so a
+     * charge can finish after another has reserved in its place. Removing whatever is held would then drop
+     * an attempt that is still in flight, and its retry would name a new one. A key that no longer matches
+     * has already been superseded, and the charge that owns it is the one entitled to settle it.
      *
      * **Never fails the caller.** By the time this runs the charge has an outcome the caller is entitled to,
      * and raising here would report a settled payment as a failed one. What a key left behind costs is that
      * the next charge for this entry point reuses it and is suppressed; that is visible, recoverable, and
      * cheaper than turning an approval into an error.
      */
-    suspend fun settle(entry: String) {
+    suspend fun settle(
+        entry: String,
+        key: String,
+    ) {
         try {
             lock.withLock {
                 val held = load()
-                if (held.forEntry(entry) == null) return@withLock
+                if (held.forEntry(entry)?.key != key) return@withLock
                 val remaining = held.without(entry)
                 if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
             }
@@ -91,35 +103,28 @@ internal class ChargeKeyStore(
     }
 
     /**
-     * Everything held, or an empty collection when there is nothing readable.
+     * Everything held. Empty only when the entry is genuinely absent.
      *
-     * **A store that cannot be read this time is raised rather than read as empty.** Empty means no attempt
-     * is outstanding, and acting on that when a key may be sitting there is what mints a second key for one
-     * attempt and charges the payer twice. So only the two failures that say the data is *gone* answer
-     * empty; a cipher or a file that was unavailable for a moment stops the charge instead, because a
-     * charge not taken is recoverable and a charge taken twice is not.
+     * **Nothing readable and nothing held are different answers, and only the second one is empty.** Empty
+     * says no attempt is outstanding, so a caller acting on it mints a fresh key. Reaching that conclusion
+     * from a record that exists and cannot be read is what charges a payer twice: a key lost after a
+     * captured sale whose close failed looks exactly like a device that has never charged.
+     *
+     * So an absent entry answers empty, and every other outcome raises. A charge that cannot start is
+     * recoverable; a charge taken twice is not. The entry is left where it is, because removing an
+     * unreadable record makes the loss permanent and hands the next charge the empty answer this refuses
+     * to give.
      */
     private suspend fun load(): ChargeAttempts {
-        val bytes =
-            try {
-                storage.get(ENTRY)
-            } catch (lost: SecureStorageException.KeyInvalidated) {
-                reportGone(lost, "key_invalidated")
-                return ChargeAttempts.EMPTY
-            } catch (unreadable: SecureStorageException.ValueUnreadable) {
-                reportGone(unreadable, "value_unreadable")
-                return ChargeAttempts.EMPTY
-            }
-                ?: return ChargeAttempts.EMPTY
+        val bytes = storage.get(ENTRY) ?: return ChargeAttempts.EMPTY
 
         return try {
             PayabliJson.format.decodeFromString(ChargeAttempts.serializer(), bytes.decodeToString())
         } catch (malformed: SerializationException) {
-            // Narrowed to the serializer's own failure, so a storage failure raised above is not swallowed
-            // on its way past. A record that will not decode is gone, and the entry holding it is dropped.
-            reportGone(malformed, "undecodable")
-            removeQuietly()
-            ChargeAttempts.EMPTY
+            // Narrowed to the serializer's own failure, so a storage failure raised by the read is not
+            // swallowed here on its way past.
+            reportUnreadable(malformed)
+            throw ChargeKeyUnreadableException(malformed)
         } finally {
             bytes.fill(0)
         }
@@ -137,35 +142,15 @@ internal class ChargeKeyStore(
     }
 
     /**
-     * Drops an entry already known to be unusable, and never fails the caller for it.
-     *
-     * The record would not decode, so it is gone whether or not the entry can be removed. Raising here
-     * would report that as a store which could not be read, and would strand the entry as well: the next
-     * read decodes the same bytes and never reaches the removal either.
-     */
-    private suspend fun removeQuietly() {
-        try {
-            storage.remove(ENTRY)
-        } catch (unremovable: SecureStorageException) {
-            logger.debug(RedactedCause(unremovable), LogField.safe("event", EVENT_UNREADABLE_KEPT)) {
-                "could not remove an unreadable charge key entry"
-            }
-        }
-    }
-
-    /**
-     * One record for each way a held key turns out not to be there, naming which.
+     * The one record for a held key that cannot be read.
      *
      * The cause is redacted to its type and frames. `kotlinx.serialization` quotes the input it could not
-     * parse, so an unredacted cause would put every entry point held into the platform log, and [state]
-     * already carries the whole diagnostic value.
+     * parse, so an unredacted cause would put every entry point held into the platform log.
      */
-    private fun reportGone(
-        cause: Throwable,
-        state: String,
-    ) = logger.warn(RedactedCause(cause), LogField.safe("event", EVENT_GONE), LogField.safe("state", state)) {
-        "a held charge key is gone"
-    }
+    private fun reportUnreadable(cause: Throwable) =
+        logger.warn(RedactedCause(cause), LogField.safe("event", EVENT_UNREADABLE)) {
+            "a held charge key could not be read, so no charge can be named"
+        }
 
     private companion object {
         /**
@@ -174,14 +159,35 @@ internal class ChargeKeyStore(
          */
         const val ENTRY = "com.payabli.sdk.taptopay.chargekeys.v1"
 
-        const val EVENT_GONE = "ttp_charge_key_gone"
+        const val EVENT_UNREADABLE = "ttp_charge_key_unreadable"
         const val EVENT_NOT_SETTLED = "ttp_charge_key_not_settled"
-        const val EVENT_UNREADABLE_KEPT = "ttp_charge_key_undecodable_kept"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
         val SHARED_LOCK = Mutex()
     }
 }
+
+/**
+ * A held key exists and cannot be read, so no charge can be named.
+ *
+ * Distinct from the store's own failures because it is not transient: the bytes will not decode on the next
+ * attempt either. What clears it is resolving the transactions it named, outside the app.
+ *
+ * The message carries no entry point and no key: this reaches a host's crash reporter through the facade.
+ */
+internal class ChargeKeyUnreadableException(
+    cause: Throwable,
+) : IllegalStateException("a held charge key could not be read, so no charge can be named", cause)
+
+/**
+ * Every slot holds a charge whose outcome is still in doubt, so there is no room to name another.
+ *
+ * Reached only by more entry points charging at once than a device is expected to serve, each of them left
+ * unresolved. Each clears as its charge is closed.
+ */
+internal class ChargeKeyStoreFullException(
+    held: Int,
+) : IllegalStateException("$held unresolved charges are held, so another cannot be named")
 
 /**
  * One entry point's unsettled charge, and the key its repeat has to carry.
@@ -220,9 +226,10 @@ internal class ChargeAttempts(
      * the same one would make which key is read depend on where the scan started.
      */
     fun with(attempt: ChargeAttempt): ChargeAttempts =
-        ChargeAttempts(
-            (listOf(attempt) + attempts.filterNot { it.entry == attempt.entry }).take(MAX),
-        )
+        ChargeAttempts(listOf(attempt) + attempts.filterNot { it.entry == attempt.entry })
+
+    /** No room for an entry point that is not already held. Nothing here may be evicted to make room. */
+    val isFull: Boolean get() = attempts.size >= MAX
 
     /** Without [entry]'s. Every other entry point's is left exactly where it was. */
     fun without(entry: String): ChargeAttempts = ChargeAttempts(attempts.filterNot { it.entry == entry })
@@ -234,11 +241,14 @@ internal class ChargeAttempts(
 
     companion object {
         /**
-         * How many unsettled charges are kept.
+         * How many unresolved charges can be held at once.
          *
-         * A key outlives its charge only until that charge settles, so this bounds a pathological case
-         * rather than ordinary use: keys left behind by charges whose outcome never arrived. Matched to the
-         * device bindings, since a device that charges for several entry points holds a binding for each.
+         * A ceiling on how many entry points may be mid-charge, not a retention policy: nothing here is
+         * evicted, because every record is the only thing that would recognise its charge's repeat. The
+         * device bindings cap for the opposite reason, to stop a record of which merchants a device has
+         * served accumulating, and that reasoning does not transfer to a key whose loss costs money.
+         *
+         * Above the deployment that exists, which is one entry point at a time.
          */
         const val MAX: Int = 4
 
