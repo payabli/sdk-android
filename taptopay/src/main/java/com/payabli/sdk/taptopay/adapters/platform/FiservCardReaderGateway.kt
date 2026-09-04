@@ -184,8 +184,10 @@ private suspend fun <T> mappingFailures(block: suspend () -> T): T =
  *
  * Anything unlisted stays unclassified: a terminal code filed as retryable costs a wasted retry, the
  * reverse hides an outage.
+ *
+ * Internal so a test can name a code, which is the half of this that rots.
  */
-private fun refusalKind(code: String?): ReaderFailureKind =
+internal fun refusalKind(code: String?): ReaderFailureKind =
     when (code) {
         in DEVICE_DENIED_CODES -> ReaderFailureKind.DEVICE_DENIED
         in UNCONFIRMED_DENIAL_CODES -> ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED
