@@ -70,8 +70,14 @@ internal class TapToPayChargeRunner(
                 coordinator.reinitializeIfNeeded()
                 check(manager.state.value == TapToPaySessionState.Ready) { "the terminal is not ready" }
 
+                // A ready session with no stored device means the record was lost after it came up, which
+                // `AttestedDeviceStore.read` reports by answering null. Expire the session before throwing,
+                // or `isReady` stays true and every retry reaches this same line.
                 val deviceId =
-                    store.read(entry)?.deviceId ?: error("the session is ready with no device to charge as")
+                    store.read(entry)?.deviceId ?: run {
+                        manager.invalidate()
+                        error("the session is ready with no device to charge as")
+                    }
                 val paymentTransId =
                     client.initiate(
                         entryPoint = entry,
