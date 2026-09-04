@@ -77,6 +77,9 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_CHARGE_STARTED to NONE,
             TelemetryEvents.TTP_CHARGE_SUCCEEDED to TIMED,
             TelemetryEvents.TTP_CHARGE_FAILED to TIMED_OUTCOME,
+            TelemetryEvents.TTP_CLOSE_STARTED to NONE,
+            TelemetryEvents.TTP_CLOSE_SUCCEEDED to TIMED,
+            TelemetryEvents.TTP_CLOSE_FAILED to TIMED_OUTCOME,
             TelemetryEvents.TTP_NFC_STARTED to NONE,
             TelemetryEvents.TTP_NFC_SUCCEEDED to TIMED,
             // Carries both, and the code is the half that earns its place. [TelemetryProperty.REASON] is the
@@ -133,6 +136,8 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_INITIALIZE_FAILED,
             TelemetryEvents.TTP_ATTESTATION_FAILED,
             TelemetryEvents.TTP_CHARGE_FAILED,
+            // A payment left open with the card charged, which is the one an operator has to see now.
+            TelemetryEvents.TTP_CLOSE_FAILED,
             TelemetryEvents.TTP_NFC_FAILED,
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED,
             TelemetryEvents.SDK_INITIALIZE_FAILED,
