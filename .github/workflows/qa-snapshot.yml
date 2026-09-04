@@ -23,6 +23,11 @@ on:
     # appear until this file is on the default branch, so a push trigger is the only way to reach the job
     # beforehand. The probe-branch pattern nightly.yml documents. Delete the branch when it has answered.
     branches: [main, qa-snapshot-probe]
+    # A tag as well, to tell two failures apart. A branch push was refused
+    # sts:AssumeRoleWithWebIdentity; if a tag is accepted the role works and only its condition is too
+    # narrow, and if a tag is refused too the problem is the provider or the subject format rather than
+    # the ref. The ask differs in each case.
+    tags: ['qa-probe-*']
   # The on-demand case: a fresh build of what is already there with no new commit, or a branch build
   # ahead of a merge. `ref` is what makes the second possible.
   workflow_dispatch:
