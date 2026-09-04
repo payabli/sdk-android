@@ -134,6 +134,7 @@ class TapToPaySessionLiveTest {
                     Log.i(LIVE_TAG, "device owes a code; minting one out of band")
                     coordinator.confirmActivation(
                         ActivationCodeMinter.mint(
+                            accessToken = LiveRunSettings.accessToken(),
                             baseUrl = LiveRunSettings.baseUrl,
                             entry = LiveRunSettings.entry,
                             deviceId = record.deviceId,

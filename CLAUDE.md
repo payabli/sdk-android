@@ -33,7 +33,12 @@
 |---|---|
 | after an edit | `./gradlew test` — the whole unit suite, every module |
 | before a commit | add `ktlintCheck` |
-| before a push | add `lint`, and add `.github/scripts/tests/verify.py` and `sabotage.py` **only if `.github/` changed** |
+| before a push | add `lint` and `assembleAndroidTest`, and add `.github/scripts/tests/verify.py` and `sabotage.py` **only if `.github/` changed** |
+
+**`test` does not compile `src/androidTest`, and neither does `lint`.** So a change to a shared type can
+leave every instrumented source set uncompilable while all three of those pass, and the first thing to say so
+is CI. `assembleAndroidTest` is the cheap check: it compiles every instrumented variant, including
+`:example`'s two flavours, which `assembleDebugAndroidTest` does not reach. It needs no device.
 
 The unit suite is not the expensive part: every module's tests run in about 25 seconds and a fix that broke a
 sibling module is exactly what they catch, so run them freely. `lint` is roughly four times that and belongs

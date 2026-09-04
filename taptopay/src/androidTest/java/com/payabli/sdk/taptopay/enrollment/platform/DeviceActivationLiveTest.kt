@@ -184,6 +184,7 @@ class DeviceActivationLiveTest {
                 // before the attestation lookup is reached. Idempotent inside its own window.
                 val code =
                     ActivationCodeMinter.mint(
+                        accessToken = LiveRunSettings.accessToken(),
                         baseUrl = LiveRunSettings.baseUrl,
                         entry = LiveRunSettings.entry,
                         deviceId = registration.deviceId,
@@ -227,6 +228,7 @@ class DeviceActivationLiveTest {
                 // only exists once the device has registered.
                 val code =
                     ActivationCodeMinter.mint(
+                        accessToken = LiveRunSettings.accessToken(),
                         baseUrl = LiveRunSettings.baseUrl,
                         entry = LiveRunSettings.entry,
                         deviceId = record.deviceId,

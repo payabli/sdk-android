@@ -30,6 +30,7 @@ class PayabliSessionInstrumentedTest {
         PayabliConfig(
             entryPoint = "entry",
             environment = PayabliEnvironment.SANDBOX,
+            tokenProvider = { "instrumented-token" },
         )
 
     @After

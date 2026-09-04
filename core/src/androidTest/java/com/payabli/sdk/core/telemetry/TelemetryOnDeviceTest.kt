@@ -54,6 +54,7 @@ class TelemetryOnDeviceTest {
                         PayabliConfig(
                             entryPoint = ENTRY,
                             environment = PayabliEnvironment.SANDBOX,
+                            tokenProvider = { "a-device-token" },
                         ),
                         host,
                     ).getOrThrow()

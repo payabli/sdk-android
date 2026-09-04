@@ -193,6 +193,7 @@ class TTPTransactionLiveTest {
             // and the route needs a device handle that exists only once it has registered.
             enrollment.confirmActivation(
                 ActivationCodeMinter.mint(
+                    accessToken = LiveRunSettings.accessToken(),
                     baseUrl = LiveRunSettings.baseUrl,
                     entry = LiveRunSettings.entry,
                     deviceId = record.deviceId,
