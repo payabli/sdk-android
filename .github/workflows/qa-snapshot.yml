@@ -1,0 +1,101 @@
+name: QA snapshot
+
+# Internal QA builds, published as snapshots to the private bucket.
+#
+# **Inert until that bucket exists.** `s3://sdk-artifacts-qa` is provisioned by the artifact-storage
+# ticket, and until then every run of this fails at the upload. It is written now so the capability is
+# there the day the bucket is, and so the version scheme is decided once rather than twice.
+#
+# Snapshots are mutable, and that is the point of this channel: QA asks for "the current build" and gets
+# it under a stable coordinate. Nothing mutable goes to Maven Central, which is why releases are tagged
+# versions and never snapshots.
+#
+# A developer needs none of this to produce the same artifact:
+#
+#     ./gradlew publishToMavenLocal -Ppayabli.snapshot=true
+#
+# The version is resolved in `payabli.publish`, not here, so a local build and this job produce identical
+# coordinates. This workflow only chooses where the bytes go.
+on:
+  push:
+    branches: [main]
+  # The on-demand case: a fresh build of what is already there with no new commit, or a branch build
+  # ahead of a merge. `ref` is what makes the second possible.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag or SHA to build. Defaults to main.'
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  # For the OIDC role that authenticates to the bucket. No long-lived AWS key is stored anywhere, which
+  # is the reason this channel needs no credential in the repository at all.
+  id-token: write
+
+concurrency:
+  # One snapshot per ref at a time. Two runs of the same ref would race to overwrite the same mutable
+  # coordinate, and the loser's bytes would be what QA downloads.
+  group: qa-snapshot-${{ github.event.inputs.ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.console=plain
+
+jobs:
+  snapshot:
+    name: Publish snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      # Skipped rather than failed while the channel is not wired, so a push to main does not turn this
+      # repository red for infrastructure that is somebody else's ticket. Remove the guard once both
+      # variables are set and have been seen working.
+      #
+      # Variables rather than secrets, deliberately: a role ARN is not a credential, it is an identifier
+      # that only works alongside this repository's OIDC identity. Masking it as a secret would make every
+      # AccessDenied message unreadable, which is exactly the message worth reading here.
+      - name: Check the QA channel is provisioned
+        id: channel
+        run: |
+          if [ -z "${{ vars.QA_ARTIFACTS_ROLE_ARN }}" ] || [ -z "${{ vars.QA_ARTIFACTS_REGION }}" ]; then
+            echo "::warning::QA_ARTIFACTS_ROLE_ARN or QA_ARTIFACTS_REGION is unset; the QA channel is not wired yet."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Authenticate to AWS
+        if: steps.channel.outputs.ready == 'true'
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.QA_ARTIFACTS_ROLE_ARN }}
+          aws-region: ${{ vars.QA_ARTIFACTS_REGION }}
+
+      # The same published set as a release, and the same omission: :taptopay is withheld while its
+      # third-party notice carries a placeholder, and `payabli.publish` refuses it to a remote repository
+      # either way.
+      - name: Publish the snapshot
+        if: steps.channel.outputs.ready == 'true'
+        run: ./gradlew --no-configuration-cache -Ppayabli.snapshot=true
+          :core:publishReleasePublicationToQaSnapshotsRepository
+          :payin:publishReleasePublicationToQaSnapshotsRepository
+          :telemetry:publishReleasePublicationToQaSnapshotsRepository
+          :payabli-android:publishReleasePublicationToQaSnapshotsRepository
+          :payabli-bom:publishBomPublicationToQaSnapshotsRepository

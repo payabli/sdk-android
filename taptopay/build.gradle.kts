@@ -83,7 +83,18 @@ android {
 dependencies {
     // Capability modules depend on :core only, never on a sibling capability.
     api(project(":core"))
-    implementation(libs.fiserv.ttp)
+    // Strict, and it is the published metadata that matters rather than this build.
+    //
+    // `implementation` publishes an ordinary POM dependency, and Gradle resolves a version conflict by
+    // taking the highest. So an integrator whose graph reaches a newer reader through anything else would
+    // silently run a version the card-present path was never certified against, and nothing would say so.
+    // A strict constraint fails that build instead, naming the conflict.
+    //
+    // The certified pairing is the reader with the kernel it loads, so this moves when card-present is
+    // re-certified against a new reader and not when a newer one merely exists.
+    implementation(libs.fiserv.ttp) {
+        version { strictly(libs.versions.fiservTtp.get()) }
+    }
     implementation(libs.play.integrity)
     implementation(libs.kotlinx.coroutines.play.services)
     testImplementation(project(":testutils"))

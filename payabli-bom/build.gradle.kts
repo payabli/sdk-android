@@ -12,12 +12,14 @@ extra["payabliArtifactId"] = "sdk-android-bom"
 // only — depending on the BOM pulls no code. taptopay IS pinned here (safe: a BOM
 // never forces resolution), even though the umbrella AAR deliberately omits it.
 // Coordinates are the published sdk-android-* family.
+// The group is read rather than written, so a change to `payabli.group` reaches these five without this
+// file being touched. It was spelled out here once and went stale the first time that property moved.
 dependencies {
     constraints {
-        api("io.github.payabli:sdk-android-core:${project.version}")
-        api("io.github.payabli:sdk-android-payin:${project.version}")
-        api("io.github.payabli:sdk-android-taptopay:${project.version}")
-        api("io.github.payabli:sdk-android-telemetry:${project.version}")
-        api("io.github.payabli:sdk-android:${project.version}")
+        api("${project.group}:sdk-android-core:${project.version}")
+        api("${project.group}:sdk-android-payin:${project.version}")
+        api("${project.group}:sdk-android-taptopay:${project.version}")
+        api("${project.group}:sdk-android-telemetry:${project.version}")
+        api("${project.group}:sdk-android:${project.version}")
     }
 }

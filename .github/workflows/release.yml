@@ -1,0 +1,146 @@
+name: Release
+
+# Started from Actions, and the tag is this workflow's output rather than its trigger.
+#
+# That ordering is the whole design. Maven Central is immutable: a version published there cannot be
+# replaced or withdrawn. So every check has to run while a refusal still costs nothing, and a refusal has
+# to leave no tag behind. With a tag-push trigger the tag exists before any check reports, and cleaning it
+# up afterwards is a second thing to remember at exactly the wrong moment.
+#
+# What this cannot do yet, stated because a green run is not proof of anything here: no Sonatype account
+# exists, `com.payabli` is unclaimed, and there is no signing key. Until those land this workflow is
+# written and unrunnable. See the ticket's prerequisites.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release: 1.2.3 for a release, 1.2.3-rc.1 for a candidate'
+        required: true
+        type: string
+
+# Read by default. The publish job widens this for itself, and nothing else gets it.
+permissions:
+  contents: read
+
+env:
+  # Never --info or --debug here: verbose Gradle logs can print repository credentials.
+  GRADLE_OPTS: -Dorg.gradle.console=plain
+
+jobs:
+  # Everything that can refuse, before anything irreversible exists. Holds no credential.
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # The dispatch ref is what the operator chose in the Actions UI, so this is where "must come from
+      # main" is enforced. A tag trigger could not check this before the tag existed.
+      - name: Refuse a ref that is not main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::A release is cut from main. This run was dispatched against ${{ github.ref }}."
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # Shape first, because a malformed version reaches the registry as a permanent mistake.
+      # Deliberately narrow: MAJOR.MINOR.PATCH, optionally -rc.N. Anything else is refused rather than
+      # normalised, so what the operator typed is what ships.
+      - name: Validate the version
+        id: version
+        run: |
+          version='${{ inputs.version }}'
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'; then
+            echo "::error::'$version' is not MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.N."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # A tag that already exists means this version was released, whatever the registry says.
+      - name: Refuse a version already tagged
+        run: |
+          if git rev-parse -q --verify "refs/tags/v${{ steps.version.outputs.version }}" >/dev/null; then
+            echo "::error::v${{ steps.version.outputs.version }} is already tagged."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      # The published set, and no :taptopay. Card-present is withheld until its third-party notice carries
+      # the vendor's text; `payabli.publish` refuses it anyway, and this list says so out loud.
+      - name: Build and test the published set
+        run: ./gradlew :core:assembleRelease :payin:assembleRelease :telemetry:assembleRelease
+          :payabli-android:assembleRelease
+          :core:test :payin:test :telemetry:test
+
+      # The POMs the registry will validate, read before a human is asked to approve.
+      - name: Generate the publication metadata
+        run: ./gradlew publishToMavenLocal -Ppayabli.publishVersion=${{ steps.version.outputs.version }}
+
+  publish:
+    name: Publish to Maven Central
+    runs-on: ubuntu-latest
+    needs: [verify]
+    # The gate. A required reviewer on this environment is what puts a human between the checks above and
+    # the first irreversible step below; without one configured this job proceeds unattended.
+    environment: maven-central
+    permissions:
+      # To push the tag this run creates. The one privilege a dispatch-driven release costs that a
+      # tag-driven one does not, and it is scoped to this job.
+      contents: write
+    env:
+      CENTRAL_PORTAL_USERNAME: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+      CENTRAL_PORTAL_PASSWORD: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+      PAYABLI_SIGNING_KEY: ${{ secrets.PAYABLI_SIGNING_KEY }}
+      PAYABLI_SIGNING_PASSWORD: ${{ secrets.PAYABLI_SIGNING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Pinned by commit, unlike the verify job's: this one holds four credentials.
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          cache-provider: basic
+
+      # The tag is created before the publish and not after, so the commit that produced a released
+      # version is recorded even if the upload then fails. A failed upload leaves a tag and no artifact,
+      # which is recoverable; a successful upload with no tag is not.
+      - name: Tag the release
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "v${{ needs.verify.outputs.version }}" \
+            -m "Payabli Android SDK ${{ needs.verify.outputs.version }}"
+          git push origin "v${{ needs.verify.outputs.version }}"
+
+      - name: Publish
+        run: ./gradlew --no-configuration-cache
+          -Ppayabli.publishVersion=${{ needs.verify.outputs.version }}
+          :core:publishReleasePublicationToMavenCentralRepository
+          :payin:publishReleasePublicationToMavenCentralRepository
+          :telemetry:publishReleasePublicationToMavenCentralRepository
+          :payabli-android:publishReleasePublicationToMavenCentralRepository
+          :payabli-bom:publishBomPublicationToMavenCentralRepository
+
+      - name: Create the GitHub release
+        run: gh release create "v${{ needs.verify.outputs.version }}" --generate-notes
+          ${{ contains(needs.verify.outputs.version, '-rc.') && '--prerelease' || '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
