@@ -13,20 +13,21 @@ import kotlin.coroutines.cancellation.CancellationException
 /**
  * Where this app's SDK session comes from.
  *
- * Two steps, in this order, because neither can be skipped: the app's own backend mints a token, and the
- * session is configured with it. `PayabliConfig` refuses a blank one, so there is no session to hand a
- * capability until the token server has answered.
+ * One step: the session is configured with a provider, and the SDK calls it when it first needs a token.
+ * Nothing is minted here, so a session exists as soon as an entry point is configured and the token server
+ * is not consulted until something sends a request.
  *
- * **This is the piece an integrator copies.** The token is minted by their backend, reaches
- * [PayabliConfig.accessToken] and the provider, and goes nowhere else — not into screen state, not into
- * diagnostics, not into a log line.
+ * **This is the piece an integrator copies.** The token is minted by their backend inside the provider, is
+ * held by the SDK, and goes nowhere else — not into screen state, not into diagnostics, not into a log line.
+ * Nothing hands one over, so there is no copy of it here to leak.
  *
  * **One session for the process, and the SDK is what holds it.** It installs one and refuses a second
- * configuration with `INVALID_CONFIGURATION`. A token is a credential rather than an identity and is not
- * compared, so a freshly minted one still names the session already installed for that entry point and
- * environment. Nothing is kept here: asking again is what gets the right answer.
+ * configuration with `INVALID_CONFIGURATION`. The configuration carries no credential, so nothing about a
+ * token can make a second one look different: the same entry point and environment name the session already
+ * installed. Nothing is kept here: asking again is what gets the right answer.
  *
- * Keeping the token current is the provider's job, and it is called for every request that needs one.
+ * Keeping the token current is the provider's job. It is called for the first token and again whenever one
+ * is rejected, not for every request.
  */
 class PayInSessionSource(
     private val appContext: Context,
@@ -53,8 +54,8 @@ class PayInSessionSource(
     /**
      * An initialized session, or the reason there is none.
      *
-     * A token is minted and `initialize` is called every time, and no session is held here: the SDK owns which
-     * session a call means, so asking it is always current and caching it here never is.
+     * `initialize` is called every time and no session is held here: the SDK owns which session a call means,
+     * so asking it is always current and caching it here never is. No token is minted by asking.
      *
      * The failure is a `String` because it goes to a demo screen beside the step it belongs to. A real
      * integration reads `PayabliException.code` instead.

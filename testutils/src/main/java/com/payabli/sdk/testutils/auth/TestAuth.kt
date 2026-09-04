@@ -41,7 +41,8 @@ public fun mintingThen(
  * that split, a provider answering a fresh token would put that token on the first request and there
  * would be no rejection to recover from.
  *
- * A test that counts provider calls counts the mint, because obtaining the first token is a call.
+ * A counter inside [tokenProvider] therefore counts refreshes and not the mint, which is what keeps a
+ * "refreshed once" assertion reading the way it always did.
  */
 public fun testAuth(
     tokenProvider: PayabliTokenProvider = PayabliTokenProvider { TEST_TOKEN },
