@@ -1,5 +1,7 @@
 package com.payabli.sdk.core.model
 
+import androidx.annotation.RestrictTo
+
 /**
  * The cross-platform error vocabulary. [wireName] is what telemetry and support tooling match on, and
  * the sibling SDK holds the same strings: never change one without the sibling changing with it.
@@ -62,7 +64,12 @@ public enum class PayabliErrorCode(
  *
  * Here rather than in a capability module because both card-not-present and card-present decide this, and
  * the two answering differently is a difference nothing would report.
+ *
+ * **Restricted, unlike [PayabliErrorCode] itself.** The vocabulary is a host's to catch; which member keeps
+ * an attempt alive is this SDK's own retry policy, and publishing it would commit a consumer to a rule that
+ * exists to be changed as the services do.
  */
+@get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public val PayabliErrorCode.leavesOutcomeUnknown: Boolean
     get() =
         when (this) {
