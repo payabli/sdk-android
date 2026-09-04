@@ -56,6 +56,15 @@ internal object TapToPayReports {
         startedAt: Long,
     ) = failed(TelemetryEvents.TTP_CHARGE_FAILED, failure, startedAt)
 
+    fun closeStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_STARTED)
+
+    fun closeSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_CLOSE_SUCCEEDED, startedAt)
+
+    fun closeFailed(
+        failure: Throwable,
+        startedAt: Long,
+    ) = failed(TelemetryEvents.TTP_CLOSE_FAILED, failure, startedAt)
+
     fun nfcStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_STARTED)
 
     fun nfcSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_NFC_SUCCEEDED, startedAt)

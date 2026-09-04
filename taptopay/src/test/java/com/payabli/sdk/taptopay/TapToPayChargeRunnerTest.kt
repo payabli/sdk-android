@@ -693,6 +693,33 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a recovery that failed leaves the payment held for another attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Three for the charge's own close, three for the recovery that also gives up, one for the
+            // recovery that lands. Clearing the held payment anywhere but after a close that succeeded
+            // would make recovery one-shot and leave this the only test that says so.
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 7) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            val firstRetry = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+            assertTrue(firstRetry.toString(), firstRetry is TapToPayException)
+            assertTrue(
+                "a failed recovery stopped saying the card was charged",
+                (firstRetry as TapToPayException).captured,
+            )
+
+            closeFails = false
+            runner.closeCaptured(TRANS_ID)
+
+            assertEquals("the card was read again", 1, fixture.enrollment.trace.count { it == READ })
+            assertEquals("a second payment was opened", 1, fixture.routes.count { it == INITIATE })
+        }
+
+    @Test
     fun `a payment that closed is no longer held`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Nothing is kept once the close lands: the reader's answer carries the card's expiry and the
