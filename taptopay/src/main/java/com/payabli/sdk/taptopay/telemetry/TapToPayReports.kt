@@ -136,12 +136,22 @@ internal object TapToPayReports {
             TelemetryProperties.Outcome.FAILED
         }
 
-    /** The vendor's code where a refusal carries one. Its message and additionalInfo are free text. */
+    /**
+     * The code a refusal carries, from either party that issues one.
+     *
+     * The reader's, and the service's from the v2 envelope. Both are fixed vocabularies; the words beside
+     * them are not, and are never sent. Reading only the reader's left a decline reported as `declined`
+     * with nothing saying which decline it was.
+     */
     private fun codeOf(failure: Throwable): String? =
         generateSequence(failure) { it.cause }
-            .filterIsInstance<CardReaderFailure>()
-            .firstOrNull()
-            ?.code
+            .firstNotNullOfOrNull {
+                when (it) {
+                    is CardReaderFailure -> it.code
+                    is TTPTransactionException -> it.code
+                    else -> null
+                }
+            }
 
     private fun elapsedMillis(startedAt: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 }

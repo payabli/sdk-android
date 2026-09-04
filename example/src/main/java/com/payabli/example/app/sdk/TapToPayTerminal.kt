@@ -74,15 +74,26 @@ class TapToPayTerminal(
             ChargeReceipt(receipt.paymentTransId)
         }
 
-    /** Activation leaves the session idle, so this sets the terminal up as well. */
-    override suspend fun activateDevice(activationCode: String): Result<Unit> =
-        attempt {
-            val ttp = terminal()
-            emit(TerminalEventCode.ActivationStarted)
-            ttp.activateDevice(activationCode)
-            emit(TerminalEventCode.ActivationCompleted)
-            ttp.initialize()
-        }
+    /**
+     * Activation leaves the session idle, so this sets the terminal up as well.
+     *
+     * The setup runs in its own attempt and its failure is not returned. The code is single use and is
+     * spent the moment activation succeeds, so folding a later setup failure into this result would
+     * report the activation as refused and send someone to spend a code that no longer exists. A setup
+     * that fails is on the session state, where the setup step reads it.
+     */
+    override suspend fun activateDevice(activationCode: String): Result<Unit> {
+        val activated =
+            attempt {
+                val ttp = terminal()
+                emit(TerminalEventCode.ActivationStarted)
+                ttp.activateDevice(activationCode)
+                emit(TerminalEventCode.ActivationCompleted)
+            }
+        if (activated.isFailure) return activated
+        attempt { terminal().initialize() }
+        return activated
+    }
 
     /** The SDK, built once. The state collector starts with it, so the screen sees each phase. */
     private suspend fun terminal(): PayabliTTP =

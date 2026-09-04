@@ -294,9 +294,12 @@ jobs:
           # See the note on the first setup-gradle in this file.
           cache-provider: basic
 
+      # Release as well as debug, because the release variant is the artifact the card reader vendor
+      # signs and it resolves a source set debug never compiles. A break there is invisible to every
+      # other job: main has no release variant at all, and this branch found one the day it enabled it.
       - name: Build
         run: ./gradlew :taptopay:assembleDebug :example:assembleWithTelemetryDebug
-          :example:assembleWithoutTelemetryDebug
+          :example:assembleWithoutTelemetryDebug :example:assembleWithTelemetryRelease
 
       - name: Unit tests
         run: ./gradlew :taptopay:test :example:test
