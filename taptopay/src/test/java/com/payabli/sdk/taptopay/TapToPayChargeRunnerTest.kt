@@ -204,10 +204,42 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a tap that never happened lets its attempt go, because the payer has not paid`() =
+    fun `a close the service refused keeps the attempt, because the reader already captured`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // No card was read, so nothing was captured and what comes next is a new sale. Holding the key
-            // would refuse it.
+            // The service answering 400 says the close was rejected, not that the sale was not taken: the
+            // reader captured before `update` was ever sent. Releasing the key on an answer that arrives
+            // after the capture is what lets the next charge take the money again.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                        UPDATE to List(2) { "" },
+                        statusFor = { if (it == UPDATE) 400 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals(
+                "the retry named a second attempt after the sale was captured",
+                "$MINTED_KEY-1",
+                fixture.keySent(1),
+            )
+        }
+
+    @Test
+    fun `a tap that failed lets its attempt go once the close is recorded`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Not because the read failed — that is no proof the sale was not captured — but because the
+            // service has recorded this transaction as failed. Its outcome is no longer in doubt, so the
+            // next sale needs its own attempt and holding the key would refuse it.
             val fixture = readyFixture(updates = 2, opens = 2)
             fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
             val runner = runnerOver(fixture)
@@ -216,6 +248,33 @@ class TapToPayChargeRunnerTest {
             runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
 
             assertEquals("$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a tap that failed and could not be closed keeps its attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The transaction is open and nothing recorded what became of it, so the sale may have been
+            // captured. A fresh key on the next charge would take the money again.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                        UPDATE to List(6) { "" },
+                        statusFor = { if (it == UPDATE) 500 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
     @Test
