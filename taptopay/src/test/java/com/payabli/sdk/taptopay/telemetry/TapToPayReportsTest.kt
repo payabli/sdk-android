@@ -89,6 +89,8 @@ class TapToPayReportsTest {
         val (event, properties) = recorded.single()
         assertEquals(TelemetryEvents.TTP_CHARGE_FAILED, event)
         assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
+        // Which decline. Without it the event says a payment was refused and nothing says by what.
+        assertEquals("D0001", properties[TelemetryProperty.CODE.key])
     }
 
     @Test

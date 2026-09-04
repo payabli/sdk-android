@@ -14,8 +14,10 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * Card-present acceptance, for one paypoint.
  *
- * Four calls and two observables, [sessionState] and [isReady]. Every call fails with
- * [TapToPayException], and a failure that changed the session is published on [sessionState]: as
+ * Four calls and two observables, [sessionState] and [isReady]. Every call that fails fails with
+ * [TapToPayException], with two exceptions a caller has to know about: a cancellation unwinds as
+ * `CancellationException`, because withdrawing is not a failure, and a JVM `Error` is not caught at
+ * all. A failure that changed the session is published on [sessionState]: as
  * [TapToPaySessionState.Failed] carrying a reason, or as [TapToPaySessionState.SessionExpired] where the
  * reader session is spent and a repair is what comes next. A failure that changed nothing leaves it alone.
  * Read the state rather than assuming which of the two a failure produced.
