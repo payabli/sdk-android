@@ -236,9 +236,6 @@ internal class MoneyInClient(
                     explanation = envelope.explanation,
                     action = envelope.action,
                     httpStatus = response.statusCode,
-                    // Read from the same envelope the approval reads it from. A refusal that named a
-                    // transaction is the case a caller has to be able to reconcile, and dropping the payload
-                    // here left that caller with nothing to name it by.
                     paymentTransId = envelope.payload?.paymentTransId,
                 )
             logger.warn(
