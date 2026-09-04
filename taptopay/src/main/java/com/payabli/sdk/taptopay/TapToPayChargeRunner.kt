@@ -83,8 +83,7 @@ internal class TapToPayChargeRunner(
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
             // measures is what a merchant waits through.
             val startedAt = System.nanoTime()
-            // What the failure will be able to say. Held out here because only this scope knows both, and a
-            // caller catching the failure has no other route to either.
+            // What the failure will be able to say, which only this scope knows.
             var openedAs: String? = null
             var captured = false
             TapToPayReports.chargeStarted()
@@ -124,8 +123,8 @@ internal class TapToPayChargeRunner(
                         orderDescription = orderDescription,
                     )
                 openedAs = paymentTransId
-                // A second payment now exists, so the one held from a failed close can no longer be the one
-                // the caller means. Dropping it here also bounds how long the reader's answer is held.
+                // A second payment now exists, so the one held from a failed close is no longer the one a
+                // caller means.
                 pendingClose = null
                 logger.debug(
                     LogField.safe("event", "ttp_charge_opened"),
@@ -218,17 +217,21 @@ internal class TapToPayChargeRunner(
             require(pending != null && pending.paymentTransId == paymentTransId) {
                 "no captured payment is waiting to be closed under that identifier"
             }
+            val startedAt = System.nanoTime()
+            TapToPayReports.closeStarted()
             try {
                 settle(pending.paymentTransId, pending.read)
             } catch (withdrawn: CancellationException) {
-                // Withdrawing is not a failure, and the facade says a cancellation unwinds as itself.
-                // Converting it here would also hide it from the facade, which reads the type.
+                // Converting it would hide it from the facade, which reads the type to decide what to
+                // rethrow.
                 throw withdrawn
             } catch (failure: Exception) {
+                TapToPayReports.closeFailed(failure, startedAt)
                 // Still held, so this can be tried again.
                 throw failed(failure, pending.paymentTransId, captured = true)
             }
             pendingClose = null
+            TapToPayReports.closeSucceeded(startedAt)
         }
 
     /**
