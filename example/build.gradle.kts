@@ -189,8 +189,9 @@ android {
     // **The release variant exists for one reason: the card reader vendor signs a release artifact.**
     // It was disabled here, on the grounds that nothing publishes this app and so nobody could say why CI
     // would assemble it. That reason has been overtaken: the vendor's signing and onboarding step is what
-    // an APK has to pass before the reader will arm on any device, and it expects a release build. No CI
-    // job assembles it, so the objection it was disabled under does not return.
+    // an APK has to pass before the reader will arm on any device, and it expects a release build. The
+    // build job assembles it for that reason, so a break in the variant the vendor signs turns a pull
+    // request red rather than surfacing at the next signing round.
     //
     // Signed with the debug keystore, deliberately and only until the vendor's process replaces that
     // signature. A release variant with no signing config produces an unsigned APK, which cannot be
