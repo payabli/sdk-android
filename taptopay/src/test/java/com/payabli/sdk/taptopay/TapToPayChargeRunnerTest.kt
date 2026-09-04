@@ -274,6 +274,24 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a ready session whose device record is gone does not stay ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The store answers null when the record is lost after the session came up. Left ready, isReady
+            // stays true and every retry reaches the same line.
+            val fixture = readyFixture()
+            fixture.enrollment.store.clear(ENTRY)
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is IllegalStateException)
+            assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
+            assertFalse(INITIATE in fixture.routes)
+        }
+
+    @Test
     fun `a terminal that was never set up opens nothing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = SessionFixture(script())
