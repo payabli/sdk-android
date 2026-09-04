@@ -8,6 +8,7 @@ private const val VERSION_SHIFT = 12
 private const val TIMESTAMP_SHIFT = 16
 private const val TIMESTAMP_MASK = 0xFFFF_FFFF_FFFFL
 private const val RAND_A_BOUND = 1 shl 12
+private const val RAND_A_MASK = 0xFFFL
 private const val VARIANT_RFC4122 = 2L
 private const val VARIANT_SHIFT = 62
 private const val RAND_B_MASK = 0x3FFF_FFFF_FFFF_FFFFL
@@ -40,4 +41,15 @@ internal object UuidV7 {
 
     /** The millisecond a value was minted at, for a test that has to read the field back. */
     fun timestampMillisOf(uuid: UUID): Long = uuid.mostSignificantBits ushr TIMESTAMP_SHIFT
+
+    /**
+     * The two random fields, for a test that has to tell values apart without depending on their
+     * timestamps.
+     *
+     * Read back rather than injected. What has to be proven is that these fields vary, and comparing them
+     * directly proves it whatever the clock did, where forcing two values into one millisecond would need a
+     * clock seam on this object and would still be proving the same thing.
+     */
+    fun randomFieldsOf(uuid: UUID): Pair<Long, Long> =
+        (uuid.mostSignificantBits and RAND_A_MASK) to (uuid.leastSignificantBits and RAND_B_MASK)
 }

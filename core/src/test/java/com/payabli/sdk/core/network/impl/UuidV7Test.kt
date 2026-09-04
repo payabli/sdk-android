@@ -39,15 +39,16 @@ class UuidV7Test {
         assertTrue("$stamped is outside $before..$after", stamped in before..after)
     }
 
+    /**
+     * What separates two values minted in one millisecond is the random fields, so they are compared
+     * directly. Grouping a sample by timestamp and requiring a shared one instead reads as the same
+     * assertion and is not: whether any two of a sample land in one millisecond is the scheduler's to
+     * decide, so that shape fails on correct code on a loaded machine.
+     */
     @Test
-    fun `values sharing a millisecond are still distinct`() {
-        val values = List(SAMPLE_COUNT) { UuidV7.next() }
-        val sharing = values.groupBy { UuidV7.timestampMillisOf(it) }.values.filter { it.size > 1 }
-
-        // Asserted first, because without it the run proves nothing: if every mint landed in its own
-        // millisecond, the timestamp alone would separate the values and a fixed random field would pass.
-        assertTrue("no two of $SAMPLE_COUNT values shared a millisecond", sharing.isNotEmpty())
-        sharing.forEach { group -> assertEquals(group.size, group.toSet().size) }
+    fun `the random fields differ between values, whatever their timestamps`() {
+        val fields = List(SAMPLE_COUNT) { UuidV7.randomFieldsOf(UuidV7.next()) }
+        assertEquals(SAMPLE_COUNT, fields.toSet().size)
     }
 
     @Test
