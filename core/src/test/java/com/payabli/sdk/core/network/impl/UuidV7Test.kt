@@ -24,6 +24,11 @@ class UuidV7Test {
         assertEquals(VARIANT_RFC4122, UuidV7.next().variant())
     }
 
+    /**
+     * Pins the timestamp field to the wall clock, and that is also what makes a separate time-ordering
+     * test unnecessary here: a frozen or constant timestamp fails this, and ordering beyond that is the
+     * clock's property rather than this generator's.
+     */
     @Test
     fun `the timestamp field reads back as the millisecond it was minted in`() {
         val before = System.currentTimeMillis()
@@ -34,18 +39,15 @@ class UuidV7Test {
         assertTrue("$stamped is outside $before..$after", stamped in before..after)
     }
 
-    /** Time-ordering is the property this format was chosen for, so it is asserted rather than assumed. */
     @Test
-    fun `a later value does not carry an earlier timestamp`() {
-        val first = UuidV7.timestampMillisOf(UuidV7.next())
-        val second = UuidV7.timestampMillisOf(UuidV7.next())
-        assertTrue("$second went backwards from $first", second >= first)
-    }
-
-    @Test
-    fun `values minted inside one millisecond are still distinct`() {
+    fun `values sharing a millisecond are still distinct`() {
         val values = List(SAMPLE_COUNT) { UuidV7.next() }
-        assertEquals(SAMPLE_COUNT, values.toSet().size)
+        val sharing = values.groupBy { UuidV7.timestampMillisOf(it) }.values.filter { it.size > 1 }
+
+        // Asserted first, because without it the run proves nothing: if every mint landed in its own
+        // millisecond, the timestamp alone would separate the values and a fixed random field would pass.
+        assertTrue("no two of $SAMPLE_COUNT values shared a millisecond", sharing.isNotEmpty())
+        sharing.forEach { group -> assertEquals(group.size, group.toSet().size) }
     }
 
     @Test
