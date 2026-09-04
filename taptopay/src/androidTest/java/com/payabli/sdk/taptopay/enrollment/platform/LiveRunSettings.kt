@@ -60,7 +60,12 @@ internal object LiveRunSettings {
             // This tier opens and closes real transactions, and one of its readers is a stub that answers a
             // tap with a captured response nobody presented a card for. Refused here rather than in each
             // test, so a class added later cannot reach production by not thinking about it.
-            check(named != PayabliEnvironment.PRODUCTION) {
+            //
+            // By host, not by identity. A build adds environments through `payabli.sdk.extraEnvironments`,
+            // which refuses a name the SDK already carries but not an origin it already carries, so
+            // `qa=https://api.payabli.com` is a distinct instance pointing at the same place. The port is
+            // dropped as well, since `:443` names the same host.
+            check(named.host() != PayabliEnvironment.PRODUCTION.host()) {
                 "the live tier moves money and must not be pointed at production"
             }
             return named
@@ -68,6 +73,14 @@ internal object LiveRunSettings {
 
     /** The base URL, from [environment]. */
     val baseUrl: String get() = environment.baseUrl.trimEnd('/')
+
+    /** The origin's host, with any scheme, port and path removed. */
+    private fun PayabliEnvironment.host(): String =
+        baseUrl
+            .substringAfter("://")
+            .substringBefore('/')
+            .substringBefore(':')
+            .lowercase()
 
     private fun required(
         argument: String,
