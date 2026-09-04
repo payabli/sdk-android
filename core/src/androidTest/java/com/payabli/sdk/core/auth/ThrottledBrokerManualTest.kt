@@ -50,8 +50,7 @@ import java.util.concurrent.atomic.AtomicLong
  * server instead is enforced by a process that cannot silently ignore it, and it is reproducible, which
  * emulator shaping was not. Setting a profile does no harm and buys nothing.
  *
- * **`lte` would be the wrong profile even if shaping worked**, which is worth stating because it is the
- * intuitive choice. The emulator documents `-netspeed lte` as up 58,000 and down 173,000 kbps with
+ * **`lte` would be the wrong profile even if shaping worked**, and it is the intuitive choice. The emulator documents `-netspeed lte` as up 58,000 and down 173,000 kbps with
  * `-netdelay lte` at 0, so it is faster than most real links and adds no latency. `edge` (473.6 kbps) is the
  * figure this borrows for its default rate.
  *
@@ -111,7 +110,7 @@ class ThrottledBrokerManualTest {
     /**
      * Fetches a token the way a host's provider would, reading the body to EOF.
      *
-     * To EOF on purpose. On a constrained link the transfer is the cost, so a caller that took the first line
+     * On a constrained link the transfer is the cost, so a caller that took the first line
      * and dropped the connection would pay the latency and none of the bandwidth, and the measurement would
      * describe a round trip nobody makes.
      */
@@ -134,12 +133,11 @@ class ThrottledBrokerManualTest {
      * Whether anything answers at the configured address, whatever it answers.
      *
      * **Any status counts as reachable, including an error status.** This decides between skipping and
-     * running, so it must only ever answer "nothing is there", never "something is there but unhappy". An
-     * earlier version read `inputStream` and required 200, which fails on both counts: measured,
-     * `HttpURLConnection.getInputStream` throws `IOException` on a 400 while `getResponseCode` returns 400
-     * without throwing, so a reachable endpoint answering an error was reported as absent and the test
-     * skipped with a message telling the operator to start a broker already running. A bad response is the
-     * real fetch's business, where it fails and names itself.
+     * running, so it must only ever answer "nothing is there", never "something is there but unhappy".
+     * `HttpURLConnection.getInputStream` throws `IOException` on a 400 while `getResponseCode` returns
+     * 400 without throwing, so reading the stream and requiring 200 reports a reachable endpoint
+     * answering an error as absent, and skips with a message telling the operator to start a broker that is
+     * already running. A bad response is the real fetch's business, where it fails and names itself.
      *
      * Unpaced and tiny, because this asks whether anything is listening and must not itself be slow.
      */
