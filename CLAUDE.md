@@ -27,6 +27,26 @@
 
 **Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `gpr.user` and `gpr.token` in `~/.gradle/gradle.properties` (never in this repo) for the card reader registry that `:taptopay` resolves from; it needs a classic PAT with `read:packages`. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
 
+**When to run which**, because running everything at every step costs more than it catches:
+
+| Moment | Run |
+|---|---|
+| after an edit | `./gradlew test` — the whole unit suite, every module |
+| before a commit | add `ktlintCheck` |
+| before a push | add `lint`, and add `.github/scripts/tests/verify.py` and `sabotage.py` **only if `.github/` changed** |
+
+The unit suite is not the expensive part: every module's tests run in about 25 seconds and a fix that broke a
+sibling module is exactly what they catch, so run them freely. `lint` is roughly four times that and belongs
+once, before a push — not droppable, though, since it has caught a `NoSuchMethodError` no emulator surfaced.
+The Python harness takes two minutes and reads `.github/**` and the workflows only, which is the same
+condition `scripts.yml`'s path filter already encodes, so a Kotlin-only change buys nothing by running it.
+
+Two things not to reach for. `--rerun-tasks` to force a re-run discards every task's state including
+compilation; `--rerun` on the one test task does the same job, and changed inputs invalidate without either.
+And `org.gradle.parallel` stays unset deliberately — `ci.yml` records the coverage worker race that made it
+unsafe — so each invocation pays its own configuration cost and fewer, larger commands beat more, cheaper
+ones.
+
 **Work tracking**: Linear, Platform team, project `Android SDK`, `Android -` title prefix.
 
 ## Architecture
