@@ -160,6 +160,18 @@ class TTPTransactionClientTest {
         }
 
     @Test
+    fun `an approval whose identifier is blank cannot be read either`() =
+        runTest(timeout = timeout) {
+            // The field is required, so kotlinx accepts an empty string for it. A blank identifier reaches
+            // the reader, takes a card, and then fails the closing call's own nonblank check.
+            val (_, client) = client(answer(approved("""{"paymentTransId":""}""")))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is TTPTransactionException.Undecodable)
+        }
+
+    @Test
     fun `opening is never retried, because a second attempt is a second transaction`() =
         runTest(timeout = timeout) {
             val (transport, client) = client(answer("", 500))

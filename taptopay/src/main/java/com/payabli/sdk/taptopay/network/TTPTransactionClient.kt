@@ -207,7 +207,12 @@ internal class TTPTransactionClient(
                 TTPTransactionException.ServiceRejected(envelope.code, envelope.reason)
             }
         }
-        val payload = envelope.payload ?: throw undecodable(route, response.statusCode, null)
+        // Blank counts as absent. The field is required, so kotlinx accepts `""` and the identifier is the
+        // one part of an approval this has to get right: a blank one reaches the reader, takes a card, and
+        // then fails the closing call's own nonblank check, leaving a processed charge nothing can close.
+        val payload =
+            envelope.payload?.takeIf { it.paymentTransId.isNotBlank() }
+                ?: throw undecodable(route, response.statusCode, null)
         logger.debug(
             LogField.safe("event", "ttp_transaction_opened"),
             LogField.safe("route", route),
