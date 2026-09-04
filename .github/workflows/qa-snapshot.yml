@@ -18,7 +18,11 @@ name: QA snapshot
 # coordinates. This workflow only chooses where the bytes go.
 on:
   push:
-    branches: [main]
+    # qa-snapshot-probe is a short-lived branch for proving the OIDC trust and the bucket's overwrite
+    # policy, neither of which can be read and both of which can be run. `workflow_dispatch` does not
+    # appear until this file is on the default branch, so a push trigger is the only way to reach the job
+    # beforehand. The probe-branch pattern nightly.yml documents. Delete the branch when it has answered.
+    branches: [main, qa-snapshot-probe]
   # The on-demand case: a fresh build of what is already there with no new commit, or a branch build
   # ahead of a merge. `ref` is what makes the second possible.
   workflow_dispatch:
