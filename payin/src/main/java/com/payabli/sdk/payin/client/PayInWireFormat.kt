@@ -34,15 +34,16 @@ internal object PayInRoutes {
     const val VOID: String = "/api/v2/MoneyIn/void/{transId}"
 
     /**
-     * The resolved path for [CAPTURE_AUTHORIZED]. The template is what a log may carry.
+     * The resolved path for [CAPTURE_AUTHORIZED], built from that template rather than beside it.
      *
      * The identifier is encoded as one path segment, so a `?`, `#` or `/` in it stays part of the
      * identifier instead of becoming a query, a fragment or another route.
      */
-    fun captureAuthorized(transId: String): String = "/api/v2/MoneyIn/capture/" + PercentEncoding.segment(transId)
+    fun captureAuthorized(transId: String): String =
+        PercentEncoding.pathFrom(CAPTURE_AUTHORIZED, PercentEncoding.segment(transId))
 
-    /** The resolved path for [VOID], encoded as [captureAuthorized] is and for the same reason. */
-    fun void(transId: String): String = "/api/v2/MoneyIn/void/" + PercentEncoding.segment(transId)
+    /** The resolved path for [VOID], built and encoded as [captureAuthorized] is, for the same reasons. */
+    fun void(transId: String): String = PercentEncoding.pathFrom(VOID, PercentEncoding.segment(transId))
 
     /** Spelled once in `:core`, since card-present sends the same header. Read on the transaction routes only. */
     const val HEADER_IDEMPOTENCY_KEY: String = PayabliRequest.IDEMPOTENCY_KEY_HEADER
