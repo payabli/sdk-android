@@ -124,6 +124,30 @@ class PayabliAuthTest {
             assertEquals(1, calls.get())
         }
 
+    /**
+     * The change flow reports rotations, and a first mint replaces nothing. A collector subscribes to be
+     * told when the token it holds stopped being the current one, so reporting the first would make every
+     * session's first request read as a refresh.
+     */
+    @Test
+    fun `the first mint is not published as a rotation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val subject = holding("initial-token") { "fresh-token" }
+            val seen = mutableListOf<String>()
+            val collector = launch { subject.tokenChanges.collect { seen += it } }
+            yield()
+
+            assertEquals("initial-token", subject.accessToken())
+            yield()
+            assertEquals("nothing rotated, so nothing is published", emptyList<String>(), seen)
+
+            subject.invalidateAndRefresh("initial-token")
+            yield()
+
+            assertEquals(listOf("fresh-token"), seen)
+            collector.cancel()
+        }
+
     @Test
     fun `concurrent first readers share one mint`() =
         runTest(timeout = TEST_TIMEOUT) {

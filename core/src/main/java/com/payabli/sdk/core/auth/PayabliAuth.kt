@@ -301,15 +301,23 @@ public class PayabliAuth(
         // newer token first and leave collectors seeing rotations out of order.
         // NonCancellable for the same reason as the failure path: the token is already minted, and
         // cancellation arriving while this lock is contended would leave the claim set with no owner.
+        val rotated = rejectedToken != null
         withContext(NonCancellable) {
             mutex.withLock {
                 currentToken = fresh
-                tokenChangeSink.tryEmit(fresh)
+                // A first mint replaces nothing, so it is not a rotation and [tokenChanges] does not carry
+                // it. Emitting it would report every session's first request as a refresh, to a collector
+                // that subscribed to be told when the token it holds stopped being the current one.
+                if (rotated) tokenChangeSink.tryEmit(fresh)
                 inFlight = null
             }
             shared.complete(fresh)
         }
-        logger.info(LogField.safe("event", "token_refreshed")) { "access token refreshed" }
+        if (rotated) {
+            logger.info(LogField.safe("event", "token_refreshed")) { "access token refreshed" }
+        } else {
+            logger.info(LogField.safe("event", "token_minted")) { "access token minted" }
+        }
         return fresh
     }
 
