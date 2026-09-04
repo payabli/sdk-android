@@ -1,5 +1,9 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.PayabliResponse
+import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
@@ -14,16 +18,20 @@ import com.payabli.sdk.taptopay.enrollment.registerBody
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
+import com.payabli.sdk.taptopay.network.TTPRoutes
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.approved
 import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.KSerializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -77,6 +85,27 @@ private fun scriptWithCloseControl(
 )
 
 /**
+ * The fixture's transport, with a hook that runs before the close is sent.
+ *
+ * Before, because that is where a test has to be to withdraw a caller while the close is in flight. The
+ * fixture's own fake takes a responder that cannot suspend, so it cannot hold one open.
+ */
+private class GatedCloseTransport(
+    private val inner: PayabliTransport,
+    private val onClose: suspend () -> Unit,
+) : PayabliTransport {
+    override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        if (request.route == TTPRoutes.UPDATE) onClose()
+        return inner.execute(request)
+    }
+
+    override suspend fun <T> execute(
+        request: PayabliRequest,
+        payloadSerializer: KSerializer<T>,
+    ): PayabliV2Envelope<T> = inner.execute(request, payloadSerializer)
+}
+
+/**
  * A whole payment over fakes: the two Payabli calls, the reader between them, and what each failure does
  * to the session.
  */
@@ -91,6 +120,23 @@ class TapToPayChargeRunnerTest {
             store = fixture.enrollment.store,
             keys = fixture.keys,
         )
+
+    private fun runnerGatedOnClose(
+        fixture: SessionFixture,
+        onClose: suspend () -> Unit,
+    ) = TapToPayChargeRunner(
+        entry = ENTRY,
+        coordinator = fixture.coordinator,
+        manager = fixture.manager,
+        reader = fixture.reader,
+        client =
+            TTPTransactionClient(
+                GatedCloseTransport(fixture.enrollment.transport, onClose),
+                fixture.enrollment.logger,
+            ),
+        store = fixture.enrollment.store,
+        keys = fixture.keys,
+    )
 
     private suspend fun readyFixture(
         updates: Int = 1,
@@ -596,6 +642,54 @@ class TapToPayChargeRunnerTest {
                 fixture.enrollment.trace.count { it == READ },
             )
             assertEquals("a second payment was opened", 1, fixture.routes.count { it == INITIATE })
+        }
+
+    @Test
+    fun `withdrawing does not abandon a close that is already running`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The card has been charged by this point, so a close dropped half way leaves the payment open
+            // with nobody holding the answer, which is the state this whole path exists to avoid.
+            val fixture = readyFixture()
+            val atClose = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val runner =
+                runnerGatedOnClose(fixture) {
+                    atClose.complete(Unit)
+                    release.await()
+                }
+
+            val charging =
+                async { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            atClose.await()
+            charging.cancel()
+            release.complete(Unit)
+            runCatching { charging.await() }
+
+            assertTrue("the close was abandoned when the caller withdrew", UPDATE in fixture.routes)
+        }
+
+    @Test
+    fun `a withdrawal during a later close unwinds as one, not as a failure`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Converting it would report a withdrawn caller as a failed payment, and would hide the
+            // cancellation from the facade, which reads the type to decide what to rethrow.
+            // Three answers for the close that gives up, which is what leaves a payment held to close later.
+            var closeFails = true
+            var withdrawOnClose = false
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 3) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner =
+                runnerGatedOnClose(fixture) {
+                    if (withdrawOnClose) throw CancellationException("the host withdrew")
+                }
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            closeFails = false
+            withdrawOnClose = true
+            val withdrawn = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+
+            assertTrue(withdrawn.toString(), withdrawn is CancellationException)
         }
 
     @Test

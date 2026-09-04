@@ -219,13 +219,29 @@ internal class TapToPayChargeRunner(
                 "no captured payment is waiting to be closed under that identifier"
             }
             try {
-                client.update(pending.paymentTransId, pending.read)
+                settle(pending.paymentTransId, pending.read)
+            } catch (withdrawn: CancellationException) {
+                // Withdrawing is not a failure, and the facade says a cancellation unwinds as itself.
+                // Converting it here would also hide it from the facade, which reads the type.
+                throw withdrawn
             } catch (failure: Exception) {
                 // Still held, so this can be tried again.
                 throw failed(failure, pending.paymentTransId, captured = true)
             }
             pendingClose = null
         }
+
+    /**
+     * Closes a payment the card was already charged for.
+     *
+     * Uncancellable, for the reason [closeAfterFailedRead] is: the money has moved either way, and a caller
+     * withdrawing mid-close would otherwise leave the payment open with nothing holding the answer. The
+     * cancellation still unwinds once the close is done.
+     */
+    private suspend fun settle(
+        paymentTransId: String,
+        read: CardReadResult,
+    ) = withContext(NonCancellable) { client.update(paymentTransId, read) }
 
     /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
     private fun failed(
