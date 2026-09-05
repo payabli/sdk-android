@@ -67,10 +67,11 @@ internal class SessionFixture(
     firstReadGate: (suspend () -> Unit)? = null,
     readerGate: (suspend () -> Unit)? = null,
     eligibilityFailure: Throwable? = null,
+    readGate: (suspend () -> Unit)? = null,
 ) {
     val enrollment = EnrollmentFixture(script, firstReadGate = firstReadGate)
 
-    val reader = FakeTapToPayProvider(enrollment.trace, readerGate, eligibilityFailure)
+    val reader = FakeTapToPayProvider(enrollment.trace, readerGate, eligibilityFailure, readGate = readGate)
 
     val manager = TapToPaySessionManager(enrollment.logger)
 

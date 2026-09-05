@@ -142,9 +142,21 @@ internal class TapToPayChargeRunner(
                         throw failure
                     }
 
-                client.update(paymentTransId, result)
-                // The close landed, so this transaction is resolved and its attempt is over.
-                keys.settle(entry, idempotencyKey)
+                // Uncancellable, for the same reason the failed-read close is: once `startReading` has
+                // returned, the processor has taken the card, and this is the only call that tells the
+                // service so. A cancellation arriving here would unwind through the withdrawn branch and
+                // leave a processed charge open, while the caller is told it withdrew and may charge again.
+                // The transport's own deadlines still bound it, so this cannot wait forever.
+                //
+                // The settle is inside for the same reason rather than a tidier one: a cancellation landing
+                // between the two leaves the attempt unsettled, so the next charge reuses a key the service
+                // has already seen and is refused as a duplicate. Closing and finishing the attempt are one
+                // step or neither.
+                withContext(NonCancellable) {
+                    client.update(paymentTransId, result)
+                    // The close landed, so this transaction is resolved and its attempt is over.
+                    keys.settle(entry, idempotencyKey)
+                }
                 TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                     .also { TapToPayReports.chargeSucceeded(startedAt) }
             } catch (withdrawn: CancellationException) {

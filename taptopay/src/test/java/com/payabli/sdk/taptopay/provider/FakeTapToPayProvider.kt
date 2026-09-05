@@ -28,6 +28,13 @@ internal class FakeTapToPayProvider(
     private val gate: (suspend () -> Unit)? = null,
     private val eligibilityFailure: Throwable? = null,
     private val readResult: CardReadResult = cardRead(),
+    /**
+     * Runs inside [startReading], after the card is taken and before the result is handed back.
+     *
+     * The one place a test can act on the window where the processor holds the card and the service has
+     * not been told. A gate in [prepareReader] is too early for that: the read has not happened.
+     */
+    private val readGate: (suspend () -> Unit)? = null,
 ) : TapToPayProvider {
     var eligibilityCount: Int = 0
         private set
@@ -82,6 +89,7 @@ internal class FakeTapToPayProvider(
             nextReadFailure = null
             throw it
         }
+        readGate?.invoke()
         return readResult
     }
 }

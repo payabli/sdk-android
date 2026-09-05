@@ -20,6 +20,9 @@ import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -426,6 +429,32 @@ class TapToPayChargeRunnerTest {
             assertTrue(failure.toString(), failure is IllegalStateException)
             assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
             assertFalse(INITIATE in fixture.routes)
+        }
+
+    @Test
+    fun `a cancellation after the card is taken still closes the transaction`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The window this guards: `startReading` has returned, so the processor holds the card, and
+            // the closing call is the only thing that tells the service. Cancelling from inside the read
+            // puts the job in that state deterministically, rather than racing a timer against it.
+            var charging: Job? = null
+            val fixture =
+                SessionFixture(script(updates = 1), readGate = { charging?.cancel() })
+                    .also { it.coordinator.initialize() }
+
+            // A child job, so the cancellation lands on the charge rather than on the test itself.
+            charging =
+                launch {
+                    runCatching {
+                        runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    }
+                }
+            charging.join()
+
+            // What the caller is told is not the point and is not asserted: the close runs to completion,
+            // so the charge may simply return. The guarantee is that the service was told about a card the
+            // processor has already taken, because the alternative is a charge nothing can reconcile.
+            assertTrue(fixture.routes.toString(), UPDATE in fixture.routes)
         }
 
     @Test
