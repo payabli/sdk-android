@@ -136,7 +136,7 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_INITIALIZE_FAILED,
             TelemetryEvents.TTP_ATTESTATION_FAILED,
             TelemetryEvents.TTP_CHARGE_FAILED,
-            // A payment left open with the card charged, which is the one an operator has to see now.
+            // A charged payment whose close was not confirmed, which is the one an operator has to see now.
             TelemetryEvents.TTP_CLOSE_FAILED,
             TelemetryEvents.TTP_NFC_FAILED,
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED,

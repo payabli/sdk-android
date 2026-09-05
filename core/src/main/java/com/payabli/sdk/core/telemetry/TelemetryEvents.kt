@@ -71,7 +71,7 @@ public object TelemetryEvents {
     /** The payment was closed, so the money it took is settled. */
     public const val TTP_CLOSE_SUCCEEDED: String = "ttp.close.succeeded"
 
-    /** The payment is still open, and still charged. */
+    /** The close was not confirmed, so a charged payment is of unknown standing. */
     public const val TTP_CLOSE_FAILED: String = "ttp.close.failed"
 
     /** The tap window opened. */
