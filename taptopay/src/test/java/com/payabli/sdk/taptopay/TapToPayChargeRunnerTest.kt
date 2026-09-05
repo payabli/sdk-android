@@ -578,7 +578,11 @@ class TapToPayChargeRunnerTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
             assertEquals(TRANS_ID, (failure as TapToPayException).paymentTransId)
-            assertFalse("the card was never charged, so nothing may say it was", failure.captured)
+            assertEquals(
+                "a tap that ended without an answer may still have taken the money",
+                TapToPayCapture.UNKNOWN,
+                failure.capture,
+            )
         }
 
     @Test
@@ -595,7 +599,7 @@ class TapToPayChargeRunnerTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
             assertNull((failure as TapToPayException).paymentTransId)
-            assertFalse(failure.captured)
+            assertEquals(TapToPayCapture.NOT_CHARGED, failure.capture)
         }
 
     @Test
@@ -614,7 +618,11 @@ class TapToPayChargeRunnerTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
             assertEquals(TRANS_ID, (failure as TapToPayException).paymentTransId)
-            assertTrue("the money moved and the failure did not say so", failure.captured)
+            assertEquals(
+                "the money moved and the failure did not say so",
+                TapToPayCapture.CHARGED,
+                failure.capture,
+            )
         }
 
     @Test
@@ -682,9 +690,10 @@ class TapToPayChargeRunnerTest {
 
             val firstRetry = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
             assertTrue(firstRetry.toString(), firstRetry is TapToPayException)
-            assertTrue(
+            assertEquals(
                 "a failed recovery stopped saying the card was charged",
-                (firstRetry as TapToPayException).captured,
+                TapToPayCapture.CHARGED,
+                (firstRetry as TapToPayException).capture,
             )
 
             closeFails = false
@@ -695,10 +704,30 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a recovery that closed lets the attempt go, so the next charge opens its own`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The close resolves the transaction whenever it lands, so the attempt is over then too. Holding
+            // the key past it makes the next charge reuse one the service has already seen, and it is
+            // refused as a duplicate rather than taking a payment.
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 5) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            closeFails = false
+            runner.closeCaptured(TRANS_ID)
+            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+
+            assertEquals("the next charge reused the closed attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
     fun `a payment that closed is no longer held`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Nothing is kept once the close lands: the reader's answer carries the card's expiry and the
-            // token the processor minted.
+            // Nothing is kept once the close lands, so the processor metadata the recovery held is
+            // released with it.
             val fixture = readyFixture()
             val runner = runnerOver(fixture)
             val receipt = runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)

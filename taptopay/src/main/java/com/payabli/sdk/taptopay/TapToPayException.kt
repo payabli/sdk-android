@@ -27,10 +27,9 @@ public class TapToPayException internal constructor(
      */
     public val paymentTransId: String? = null,
     /**
-     * True when the card was charged and the payment was left open.
+     * Whether the card was charged.
      *
-     * The money has moved, so charging again takes it a second time. Finish this payment with
-     * [PayabliTTP.closeCapturedCharge] instead, which needs no second tap.
+     * Only [TapToPayCapture.NOT_CHARGED] means a retry cannot take the money twice.
      */
-    public val captured: Boolean = false,
+    public val capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
 ) : Exception(message, cause)

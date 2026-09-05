@@ -56,6 +56,8 @@ internal class TapToPayChargeRunner(
     private class PendingClose(
         val paymentTransId: String,
         val read: CardReadResult,
+        /** The attempt this payment was opened under, settled when a later close lands. */
+        val idempotencyKey: String,
     )
 
     suspend fun charge(
@@ -85,7 +87,7 @@ internal class TapToPayChargeRunner(
             val startedAt = System.nanoTime()
             // What the failure will be able to say, which only this scope knows.
             var openedAs: String? = null
-            var captured = false
+            var capture = TapToPayCapture.NOT_CHARGED
             TapToPayReports.chargeStarted()
 
             // Hoisted so the failure path below can name the key this charge sent. Null until it is
@@ -134,6 +136,7 @@ internal class TapToPayChargeRunner(
                 // Set before the reader is asked, not after it answers: the processor takes the sale before
                 // the answer is delivered, so everything from here on may have moved money.
                 askedForCard = true
+                capture = TapToPayCapture.UNKNOWN
                 val result =
                     try {
                         reader.startReading(
@@ -165,8 +168,8 @@ internal class TapToPayChargeRunner(
                     }
 
                 // The card has been charged. Everything from here reports a payment whose money has moved.
-                captured = true
-                pendingClose = PendingClose(paymentTransId, result)
+                capture = TapToPayCapture.CHARGED
+                pendingClose = PendingClose(paymentTransId, result, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -201,7 +204,7 @@ internal class TapToPayChargeRunner(
                 TapToPayReports.chargeFailed(failure, startedAt)
                 // An Error is left as it is, as the facade leaves it: a linkage error is not a payment
                 // outcome and has no transaction to name.
-                throw if (failure is Exception) failed(failure, openedAs, captured) else failure
+                throw if (failure is Exception) failed(failure, openedAs, capture) else failure
             }
         }
 
@@ -220,7 +223,14 @@ internal class TapToPayChargeRunner(
             val startedAt = System.nanoTime()
             TapToPayReports.closeStarted()
             try {
-                settle(pending.paymentTransId, pending.read)
+                withContext(NonCancellable) {
+                    client.update(pending.paymentTransId, pending.read)
+                    // The same three as the charge's own close, for the same reason: a close that landed
+                    // with its attempt still reserved leaves the next charge reusing a key the service has
+                    // already seen, and one still held would be offered for closing again.
+                    keys.settle(entry, pending.idempotencyKey)
+                    pendingClose = null
+                }
             } catch (withdrawn: CancellationException) {
                 // Converting it would hide it from the facade, which reads the type to decide what to
                 // rethrow.
@@ -228,34 +238,21 @@ internal class TapToPayChargeRunner(
             } catch (failure: Exception) {
                 TapToPayReports.closeFailed(failure, startedAt)
                 // Still held, so this can be tried again.
-                throw failed(failure, pending.paymentTransId, captured = true)
+                throw failed(failure, pending.paymentTransId, TapToPayCapture.CHARGED)
             }
-            pendingClose = null
             TapToPayReports.closeSucceeded(startedAt)
         }
-
-    /**
-     * Closes a payment the card was already charged for.
-     *
-     * Uncancellable, for the reason [closeAfterFailedRead] is: the money has moved either way, and a caller
-     * withdrawing mid-close would otherwise leave the payment open with nothing holding the answer. The
-     * cancellation still unwinds once the close is done.
-     */
-    private suspend fun settle(
-        paymentTransId: String,
-        read: CardReadResult,
-    ) = withContext(NonCancellable) { client.update(paymentTransId, read) }
 
     /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
     private fun failed(
         failure: Exception,
         paymentTransId: String?,
-        captured: Boolean,
+        capture: TapToPayCapture,
     ) = TapToPayException(
         failure.message ?: failure.javaClass.simpleName,
         failure,
         paymentTransId = paymentTransId,
-        captured = captured,
+        capture = capture,
     )
 
     /**
