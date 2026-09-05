@@ -42,9 +42,10 @@ internal object LiveTapToPay {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = LiveRunSettings.accessToken(),
                     entryPoint = LiveRunSettings.entry,
                     environment = LiveRunSettings.environment,
+                    // The provider is the only way a token reaches the SDK now, and it mints a fresh one
+                    // per call, which is what keeps a long live sequence off a single expiring token.
                     tokenProvider = { LiveRunSettings.accessToken() },
                 ),
                 HostBindings(context),
