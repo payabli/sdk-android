@@ -5,10 +5,11 @@ import com.payabli.example.app.demo.net.checkToken
 import kotlinx.coroutines.CoroutineScope
 
 /**
- * Step one of both payment screens: reach the token server, then start the SDK with what it returned.
+ * Step one of both payment screens: check the token server is reachable, then start the SDK.
  *
- * The order is the point and it is not a choice: `PayabliConfig` refuses a blank access token, so there is
- * nothing to configure until that route has answered.
+ * Two calls rather than a handover. Nothing the probe returns is passed on: the SDK is configured with a
+ * provider and mints through it when it first needs a token. The probe runs first so a dead token server is
+ * reported at startup instead of at the first payment.
  *
  * One type, so both view models call the sequence and neither carries it. An interface for the reason
  * [PayInFlowGate] is one: the real thing needs a reachable server and a `Context`, and a screen's own tests
@@ -30,7 +31,7 @@ fun interface PayInStartup {
     )
 }
 
-/** The real one: probe the token server, then open the gate with the token it minted. */
+/** The real one: probe the token server, then open the gate. The probe's token is not passed on. */
 fun payInStartup(
     tokenClient: TokenServerClient,
     gate: PayInFlowGate,
