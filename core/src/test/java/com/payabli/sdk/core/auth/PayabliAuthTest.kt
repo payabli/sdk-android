@@ -132,7 +132,10 @@ class PayabliAuthTest {
     @Test
     fun `the first mint is not published as a rotation`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val subject = holding("initial-token") { "fresh-token" }
+            // Unminted, and the collector subscribes before the mint. The flow replays nothing, so a holder
+            // that had already minted would hide an emission behind the subscription rather than observe it
+            // not happening, and the assertion below would hold either way.
+            val subject = auth(answering("initial-token", "fresh-token"))
             val seen = mutableListOf<String>()
             val collector = launch { subject.tokenChanges.collect { seen += it } }
             yield()
