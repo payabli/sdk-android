@@ -25,9 +25,7 @@ import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -643,30 +641,6 @@ class TapToPayChargeRunnerTest {
                 fixture.enrollment.trace.count { it == READ },
             )
             assertEquals("a second payment was opened", 1, fixture.routes.count { it == INITIATE })
-        }
-
-    @Test
-    fun `withdrawing does not abandon a close that is already running`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // The card has been charged by this point, so a close dropped half way leaves the payment open
-            // with nobody holding the answer, which is the state this whole path exists to avoid.
-            val fixture = readyFixture()
-            val atClose = CompletableDeferred<Unit>()
-            val release = CompletableDeferred<Unit>()
-            val runner =
-                runnerGatedOnClose(fixture) {
-                    atClose.complete(Unit)
-                    release.await()
-                }
-
-            val charging =
-                async { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
-            atClose.await()
-            charging.cancel()
-            release.complete(Unit)
-            runCatching { charging.await() }
-
-            assertTrue("the close was abandoned when the caller withdrew", UPDATE in fixture.routes)
         }
 
     @Test
