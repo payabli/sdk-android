@@ -45,11 +45,11 @@ internal class TapToPayChargeRunner(
     private val region = Mutex()
 
     /**
-     * A payment the card was charged for and that could not be closed, held so it can be closed later.
+     * A payment the card was charged for and whose close was not confirmed, held so it can be closed later.
      *
-     * Read and written under [region], so there is never more than one. [CardReadResult] carries the card's
-     * expiry and the token the processor minted, so it is dropped as soon as the close lands and again
-     * whenever a new payment is opened.
+     * Read and written under [region], so there is never more than one. It is dropped once a close is
+     * confirmed and again whenever a new payment is opened, which bounds how long the processor's answer is
+     * held.
      */
     private var pendingClose: PendingClose? = null
 
