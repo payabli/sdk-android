@@ -1,6 +1,7 @@
 package com.payabli.example.app.sdk
 
 import android.content.Context
+import com.payabli.example.app.demo.sample.SampleIdentity
 import com.payabli.example.app.demo.terminal.ChargeReceipt
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.demo.terminal.TerminalEvent
@@ -8,6 +9,7 @@ import com.payabli.example.app.demo.terminal.TerminalEventCode
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.sdk.taptopay.PayabliTTP
+import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
@@ -36,6 +38,7 @@ class TapToPayTerminal(
     private val entryPoint: String,
     private val cloudProjectNumber: Long?,
     private val scope: CoroutineScope,
+    private val identity: SampleIdentity,
 ) : TerminalController {
     private val _sessionState = MutableStateFlow(TerminalSessionState.Idle)
     override val sessionState: StateFlow<TerminalSessionState> = _sessionState.asStateFlow()
@@ -69,7 +72,19 @@ class TapToPayTerminal(
             // below are true of that span. `DemoTerminalController` emits the NFC pair because it stands
             // in for the reader and does know where the tap begins.
             emit(TerminalEventCode.ChargeInitiated, "amount=$amount")
-            val receipt = ttp.charge(TapToPayPaymentDetails(amount))
+            // The same identity the card-not-present flow charges under. The service refuses a customer
+            // object whose three always-present fields are blank, which is what the default carries, so a
+            // tap taken without this cannot be opened at all. It also names the device in a dashboard,
+            // which is why the card-not-present side has always sent it.
+            val receipt =
+                ttp.charge(
+                    TapToPayPaymentDetails(amount),
+                    TapToPayCustomerData(
+                        firstName = identity.firstName,
+                        lastName = identity.lastName,
+                        customerNumber = identity.customerNumber,
+                    ),
+                )
             emit(TerminalEventCode.UpdateCompleted, receipt.cardNetwork.orEmpty())
             ChargeReceipt(receipt.paymentTransId)
         }
