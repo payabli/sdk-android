@@ -11,8 +11,11 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * [TapToPaySessionState.SessionExpired] when the reader session is spent.
  *
  * **A tap that did not complete is not one of them.** The reader session it ran on is unaffected and the
- * state does not move, so a host retries the charge rather than bringing the reader up again. Only a reader
- * session that is unusable, or a device the vendor has refused, expires the session.
+ * state does not move, so a host retries the charge rather than bringing the reader up again.
+ *
+ * Three things expire the session: a reader session that is unusable, a device the vendor has refused, and
+ * a charge that finds the stored device record gone. The last is not a reader condition at all, and it is
+ * why this list is not two.
  */
 public class TapToPayException internal constructor(
     message: String,
