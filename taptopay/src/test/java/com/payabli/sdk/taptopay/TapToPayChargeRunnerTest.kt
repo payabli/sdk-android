@@ -521,7 +521,8 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
-            assertTrue(failure.toString(), failure is IllegalStateException)
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertTrue(failure.toString(), failure?.cause is IllegalStateException)
             assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
             assertFalse(INITIATE in fixture.routes)
         }
