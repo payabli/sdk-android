@@ -11,6 +11,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import com.payabli.sdk.testutils.auth.mintingThen
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -85,15 +86,18 @@ class PayabliSessionTest {
             token
         }
 
+    /**
+     * [STALE] is what the holder mints first, so a test drives the shape it is about: a request carrying
+     * the token the service refuses, then a refresh through [tokenProvider]. Counting inside that provider
+     * therefore counts refreshes and not the first mint.
+     */
     private fun config(
-        accessToken: String = STALE,
         entryPoint: String = "entry",
-        tokenProvider: PayabliTokenProvider? = null,
+        tokenProvider: PayabliTokenProvider = provider(),
     ) = PayabliConfig(
-        accessToken = accessToken,
         entryPoint = entryPoint,
         environment = PayabliEnvironment.SANDBOX,
-        tokenProvider = tokenProvider,
+        tokenProvider = mintingThen(STALE, tokenProvider),
     )
 
     /** Answers 401 to the stale token and 200 to anything else, which is the whole shape of a refresh. */
@@ -119,6 +123,34 @@ class PayabliSessionTest {
         server: LoopbackServer,
         config: PayabliConfig,
     ): PayabliSession = PayabliSession.initializeAgainst(server.baseUrl, config).getOrThrow()
+
+    /**
+     * Its own configuration rather than [config], whose first answer comes from the wrapper and would make
+     * a count of [provider] read zero whether a mint happened or not.
+     */
+    @Test
+    fun `initialize mints nothing, so a session nobody uses costs the host's backend nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                val calls = AtomicInteger()
+                session(
+                    server,
+                    PayabliConfig(
+                        entryPoint = "entry",
+                        environment = PayabliEnvironment.SANDBOX,
+                        tokenProvider = {
+                            calls.incrementAndGet()
+                            STALE
+                        },
+                    ),
+                )
+
+                // The token is obtained on the first request instead. A session that is initialized and
+                // never used spends no call on the host's backend, and one left idle does not hold a token
+                // that expired before anything sent it.
+                assertEquals("initialize must not call the provider", 0, calls.get())
+            }
+        }
 
     // ---- the acceptance criterion -------------------------------------------------------------------
 
@@ -279,9 +311,10 @@ class PayabliSessionTest {
                 runCatching { completing("the request that finishes the session") { dead.transport.execute(ping()) } }
                 assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
 
-                // The documented recovery, and it has to work with a newly brokered token, so the new
-                // configuration differs. Refusing here would leave the host with no way back.
-                val revived = session(server, config(accessToken = "brokered-again"))
+                // The documented recovery. Refusing here would leave the host with no way back, and the
+                // token the provider mints for the new session is not what makes it a new one: the identity
+                // never included a credential.
+                val revived = session(server, config())
 
                 assertNotSame("re-initializing after a finished session must build a new one", dead, revived)
                 assertEquals(SdkState.Ready, PayabliSession.state.value)
@@ -368,7 +401,7 @@ class PayabliSessionTest {
                 assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
 
                 PayabliSession
-                    .initializeWith(config(accessToken = "brokered-again")) { _ ->
+                    .initializeWith(config()) { _ ->
                         TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                     }.getOrThrow()
                 assertEquals(SdkState.Ready, PayabliSession.state.value)
@@ -414,7 +447,7 @@ class PayabliSessionTest {
 
                         val initializing =
                             async(Dispatchers.IO) {
-                                PayabliSession.initializeWith(config(accessToken = "brokered-again")) { _ ->
+                                PayabliSession.initializeWith(config()) { _ ->
                                     insideBuilder.complete(Unit)
                                     releaseBuilder.await()
                                     TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
@@ -582,21 +615,6 @@ class PayabliSessionTest {
                 // The discriminating case. Every 401 maps to TOKEN_EXPIRED, so anything inferring the state
                 // from the error code would finish this session, which just recovered exactly as designed.
                 assertEquals(SdkState.Ready, PayabliSession.state.value)
-            }
-        }
-
-    @Test
-    fun `a rejection with no token provider finishes the session`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            LoopbackServer().use { server ->
-                server.respondWith(401, "{}")
-                val subject = session(server, config(tokenProvider = null))
-
-                runCatching { completing("the unrefreshable request") { subject.transport.execute(ping()) } }
-
-                // No provider means every future refresh fails the same way, so there is nothing to wait for.
-                assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
-                assertEquals("a session with no provider must not have called one", 0, providerCalls.get())
             }
         }
 

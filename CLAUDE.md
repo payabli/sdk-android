@@ -27,6 +27,31 @@
 
 **Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `gpr.user` and `gpr.token` in `~/.gradle/gradle.properties` (never in this repo) for the card reader registry that `:taptopay` resolves from; it needs a classic PAT with `read:packages`. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
 
+**When to run which**, because running everything at every step costs more than it catches:
+
+| Moment | Run |
+|---|---|
+| after an edit | `./gradlew test` — the whole unit suite, every module |
+| before a commit | add `ktlintCheck` |
+| before a push | add `lint` and `assembleAndroidTest`, and add `.github/scripts/tests/verify.py` and `sabotage.py` **only if `.github/` changed** |
+
+**`test` does not compile `src/androidTest`, and neither does `lint`.** So a change to a shared type can
+leave every instrumented source set uncompilable while all three of those pass, and the first thing to say so
+is CI. `assembleAndroidTest` is the cheap check: it compiles every instrumented variant, including
+`:example`'s two flavours, which `assembleDebugAndroidTest` does not reach. It needs no device.
+
+The unit suite is not the expensive part: every module's tests run in about 25 seconds and a fix that broke a
+sibling module is exactly what they catch, so run them freely. `lint` is roughly four times that and belongs
+once, before a push — not droppable, though, since it has caught a `NoSuchMethodError` no emulator surfaced.
+The Python harness takes two minutes and reads `.github/**` and the workflows only, which is the same
+condition `scripts.yml`'s path filter already encodes, so a Kotlin-only change buys nothing by running it.
+
+Two things not to reach for. `--rerun-tasks` to force a re-run discards every task's state including
+compilation; `--rerun` on the one test task does the same job, and changed inputs invalidate without either.
+And `org.gradle.parallel` stays unset deliberately — `ci.yml` records the coverage worker race that made it
+unsafe — so each invocation pays its own configuration cost and fewer, larger commands beat more, cheaper
+ones.
+
 **Work tracking**: Linear, Platform team, project `Android SDK`, `Android -` title prefix.
 
 ## Architecture
@@ -74,7 +99,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - **A blocking `HttpURLConnection` call is not interrupted by cancellation or `withTimeout`.** Neither `outputStream` nor `readBytes()` observes the coroutine, so a slow-drip response keeps resetting the socket read timeout and outlives the deadline. A test that asserts only the eventual exception after the server finally responds passes without exercising any of this.
 - **A public knob that nothing reads is a defect, not a placeholder.** An integrator sets it, nothing changes, and they cannot tell whether the fault is theirs. The same applies to a type whose only callers are tests: the build is green because the tests are the callers, and no host can reach the capability. Ask what call from a host app, against the published artifacts alone, reaches it.
 - **A value written by hand in two places drifts.** Prefer one definition the other sites read. Where a mirror is unavoidable, the commit that changes the source changes every mirror, and something fails when they disagree. Match a mirrored enum by name or an explicit map, never by indexing on the raw value, so an unknown value is a handled case instead of a read past the end.
-- **Compose:** `@Immutable` on a type holding a caller-supplied `List`, `Set` or `Map` is a promise Compose acts on, and it may skip the update entirely when the caller mutates the collection it passed in. A button disabled through state is not a single-flight guard, because a second tap lands before the recomposition; guard the submit synchronously. A `clickable` row sized to its text is below the 48dp touch target at normal font scale. `AnimatedVisibility` removes its content from the semantics tree while hidden, which takes a result message and its action away from a screen reader. A label that is a sibling of its control is announced as an unlabelled control; put it in the control's semantics.
+- **Compose:** `@Immutable` on a type holding a caller-supplied `List`, `Set` or `Map` is a promise Compose acts on, and it may skip the update entirely when the caller mutates the collection it passed in. A button disabled through state is not a single-flight guard, because a second tap lands before the recomposition; guard the submit synchronously. A `clickable` row sized to its text is below the 48dp touch target at normal font scale. `AnimatedVisibility` removes its content from the semantics tree while hidden, which takes a result message and its action away from a screen reader. A label that is a sibling of its control is announced as an unlabelled control; put it in the control's semantics. **In a test, `hasText` searches `InputText` as well as `EditableText`, and `InputText` is the raw input, which bypasses the visual transformation**: an assertion that a masked field now shows its digits matches one still drawn as bullets, and passes with the reveal control replaced by an empty lambda. Match `EditableText`, and assert both sides of the change, since only the pair separates a transformation that lifted from one that was never applied. **A composition body runs more than once**, so appending to a collection from inside `setContent` grows it on every recomposition and fails a count on something other than its subject; assign by key, which is idempotent however often the body runs.
 - **A money-moving request needs an idempotency key that outlives the process.** Rotate it only on a definitive accepted or refused response. A timeout, a decode failure or a cancellation after the request left may mean the charge landed, so reusing the key is what makes the retry safe. A key generated in state that is rebuilt after process death is a new key for the same attempt, and the retry charges again.
 
 ## CI

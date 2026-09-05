@@ -4,6 +4,7 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.SdkState
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliRequest
@@ -113,9 +114,9 @@ class SessionInitializeReportingTest {
 
     private fun configFor(entryPoint: String) =
         PayabliConfig(
-            accessToken = "a-token",
             entryPoint = entryPoint,
             environment = PayabliEnvironment.SANDBOX,
+            tokenProvider = PayabliTokenProvider { "a-minted-token" },
         )
 
     private object UnusedTransport : PayabliTransport {

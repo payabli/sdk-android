@@ -190,7 +190,8 @@ internal sealed class DeviceActivationException(
         resultCode: Int?,
         reason: String,
     ) : DeviceActivationException(
-            "the configured entry point cannot be used with this access token; check both in PayabliConfig",
+            "the configured entry point cannot be used with this access token; check the entry point in " +
+                "PayabliConfig and the token your tokenProvider returns",
             resultCode,
             reason,
         )

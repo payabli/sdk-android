@@ -16,9 +16,8 @@ import org.junit.runner.RunWith
  * That `initialize` derives the automatic log level, which is the half of the feature no JVM test can reach.
  *
  * `HostLogLevelInstrumentedTest` already covers the derivation itself: a real `ApplicationInfo`, the real
- * per-tag gate, and explicit-beats-automatic in both orders. What it could not cover is the caller, because
- * until this ticket there was none. So these assert only the wiring, and deliberately do not restate what
- * that class proves.
+ * per-tag gate, and explicit-beats-automatic in both orders. What it does not cover is the caller, so these
+ * assert the wiring alone and do not restate what that class proves.
  *
  * The test APK is built debug, so the application under test is debuggable. That is the premise the first
  * test rests on and the reason it can assert `DEBUG` rather than merely "changed".
@@ -29,9 +28,9 @@ class PayabliSessionInstrumentedTest {
 
     private fun config() =
         PayabliConfig(
-            accessToken = "instrumented-token",
             entryPoint = "entry",
             environment = PayabliEnvironment.SANDBOX,
+            tokenProvider = { "instrumented-token" },
         )
 
     @After
