@@ -65,6 +65,15 @@ public object TelemetryEvents {
     /** The charge was declined or failed. */
     public const val TTP_CHARGE_FAILED: String = "ttp.charge.failed"
 
+    /** Closing a payment the card was already charged for began. */
+    public const val TTP_CLOSE_STARTED: String = "ttp.close.started"
+
+    /** The payment was closed, so the money it took is settled. */
+    public const val TTP_CLOSE_SUCCEEDED: String = "ttp.close.succeeded"
+
+    /** The close was not confirmed, so a charged payment is of unknown standing. */
+    public const val TTP_CLOSE_FAILED: String = "ttp.close.failed"
+
     /** The tap window opened. */
     public const val TTP_NFC_STARTED: String = "ttp.nfc.started"
 

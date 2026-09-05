@@ -87,6 +87,13 @@ public class PayInFailure(
     public val explanation: String?,
     public val action: String?,
     public val httpStatus: Int?,
+    /**
+     * The transaction this refusal belongs to, or null where the service named none.
+     *
+     * A refusal can still leave a transaction behind, and this is the only handle to it, so a caller that
+     * means to reconcile one holds this.
+     */
+    public val paymentTransId: String? = null,
 ) {
     override fun toString(): String = "PayInFailure(code=$code, httpStatus=$httpStatus)"
 }

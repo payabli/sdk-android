@@ -17,6 +17,7 @@ import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import com.payabli.sdk.taptopay.provider.CardReadRequest
+import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
@@ -43,6 +44,22 @@ internal class TapToPayChargeRunner(
     /** One payment at a time. A second caller waits; the reader takes one card. */
     private val region = Mutex()
 
+    /**
+     * A payment the card was charged for and whose close was not confirmed, held so it can be closed later.
+     *
+     * Read and written under [region], so there is never more than one. It is dropped once a close is
+     * confirmed and again whenever a new payment is opened, which bounds how long the processor's answer is
+     * held.
+     */
+    private var pendingClose: PendingClose? = null
+
+    private class PendingClose(
+        val paymentTransId: String,
+        val read: CardReadResult,
+        /** The attempt this payment was opened under, settled when a later close lands. */
+        val idempotencyKey: String,
+    )
+
     suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
         customer: TapToPayCustomerData,
@@ -68,6 +85,9 @@ internal class TapToPayChargeRunner(
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
             // measures is what a merchant waits through.
             val startedAt = System.nanoTime()
+            // What the failure will be able to say, which only this scope knows.
+            var openedAs: String? = null
+            var capture = TapToPayCapture.NOT_CHARGED
             TapToPayReports.chargeStarted()
 
             // Hoisted so the failure path below can name the key this charge sent. Null until it is
@@ -104,6 +124,10 @@ internal class TapToPayChargeRunner(
                         invoice = invoice,
                         orderDescription = orderDescription,
                     )
+                openedAs = paymentTransId
+                // A second payment now exists, so the one held from a failed close is no longer the one a
+                // caller means.
+                pendingClose = null
                 logger.debug(
                     LogField.safe("event", "ttp_charge_opened"),
                     LogField.safe("phase", "initiate"),
@@ -112,6 +136,7 @@ internal class TapToPayChargeRunner(
                 // Set before the reader is asked, not after it answers: the processor takes the sale before
                 // the answer is delivered, so everything from here on may have moved money.
                 askedForCard = true
+                capture = TapToPayCapture.UNKNOWN
                 val result =
                     try {
                         reader.startReading(
@@ -142,6 +167,10 @@ internal class TapToPayChargeRunner(
                         throw failure
                     }
 
+                // The card has been charged. Everything from here reports a payment whose money has moved.
+                capture = TapToPayCapture.CHARGED
+                pendingClose = PendingClose(paymentTransId, result, idempotencyKey)
+
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
                 // service so. A cancellation arriving here would unwind through the withdrawn branch and
@@ -150,12 +179,14 @@ internal class TapToPayChargeRunner(
                 //
                 // The settle is inside for the same reason rather than a tidier one: a cancellation landing
                 // between the two leaves the attempt unsettled, so the next charge reuses a key the service
-                // has already seen and is refused as a duplicate. Closing and finishing the attempt are one
-                // step or neither.
+                // has already seen and is refused as a duplicate. So is dropping the held payment, which
+                // would otherwise be offered for closing again after it had closed. Those three are one step
+                // or none.
                 withContext(NonCancellable) {
                     client.update(paymentTransId, result)
                     // The close landed, so this transaction is resolved and its attempt is over.
                     keys.settle(entry, idempotencyKey)
+                    pendingClose = null
                 }
                 TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                     .also { TapToPayReports.chargeSucceeded(startedAt) }
@@ -168,10 +199,61 @@ internal class TapToPayChargeRunner(
                 // After the reader has answered the sale may be captured, so no failure arriving from
                 // there on is evidence the money did not move.
                 if (!askedForCard && isAnswered(failure)) reserved?.let { keys.settle(entry, it) }
+                // Reported before it is wrapped: the report reads the failure's own type to decide what kind
+                // of failure it was, and would classify every one of them alike once wrapped.
                 TapToPayReports.chargeFailed(failure, startedAt)
-                throw failure
+                // An Error is left as it is, as the facade leaves it: a linkage error is not a payment
+                // outcome and has no transaction to name.
+                throw if (failure is Exception) failed(failure, openedAs, capture) else failure
             }
         }
+
+    /**
+     * Closes a payment the card was charged for, when the close did not land at the time.
+     *
+     * Takes no second tap: the reader already answered and its answer was kept. Refuses anything but the
+     * payment currently held, so a mistyped identifier cannot close a payment this SDK has no answer for.
+     */
+    suspend fun closeCaptured(paymentTransId: String): Unit =
+        region.withLock {
+            val pending = pendingClose
+            require(pending != null && pending.paymentTransId == paymentTransId) {
+                "no captured payment is waiting to be closed under that identifier"
+            }
+            val startedAt = System.nanoTime()
+            TapToPayReports.closeStarted()
+            try {
+                withContext(NonCancellable) {
+                    client.update(pending.paymentTransId, pending.read)
+                    // The same three as the charge's own close, for the same reason: a close that landed
+                    // with its attempt still reserved leaves the next charge reusing a key the service has
+                    // already seen, and one still held would be offered for closing again.
+                    keys.settle(entry, pending.idempotencyKey)
+                    pendingClose = null
+                }
+            } catch (withdrawn: CancellationException) {
+                // Converting it would hide it from the facade, which reads the type to decide what to
+                // rethrow.
+                throw withdrawn
+            } catch (failure: Exception) {
+                TapToPayReports.closeFailed(failure, startedAt)
+                // Still held, so this can be tried again.
+                throw failed(failure, pending.paymentTransId, TapToPayCapture.CHARGED)
+            }
+            TapToPayReports.closeSucceeded(startedAt)
+        }
+
+    /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
+    private fun failed(
+        failure: Exception,
+        paymentTransId: String?,
+        capture: TapToPayCapture,
+    ) = TapToPayException(
+        failure.message ?: failure.javaClass.simpleName,
+        failure,
+        paymentTransId = paymentTransId,
+        capture = capture,
+    )
 
     /**
      * Closes a transaction whose tap did not complete, best effort, and lets its key go if that lands.

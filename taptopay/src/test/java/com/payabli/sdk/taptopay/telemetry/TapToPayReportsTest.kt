@@ -56,6 +56,37 @@ class TapToPayReportsTest {
     }
 
     @Test
+    fun `closing a captured payment reports its own event, not the charge's`() {
+        // Settling money that already moved is a separate operation, and reusing the charge's names would
+        // make a count of failed charges a mixture of two populations.
+        TapToPayReports.closeStarted()
+        TapToPayReports.closeSucceeded(System.nanoTime())
+
+        assertEquals(
+            listOf(TelemetryEvents.TTP_CLOSE_STARTED, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+            recorded.map { it.first },
+        )
+        assertEquals(emptyMap<String, String>(), recorded.first().second)
+        assertEquals(setOf(TelemetryProperty.DURATION_MS.key), recorded.last().second.keys)
+    }
+
+    @Test
+    fun `a close that was not confirmed says how long it took and how it ended`() {
+        TapToPayReports.closeFailed(deniedBy("677"), System.nanoTime())
+
+        val (event, properties) = recorded.single()
+        assertEquals(TelemetryEvents.TTP_CLOSE_FAILED, event)
+        assertEquals(
+            setOf(
+                TelemetryProperty.OUTCOME.key,
+                TelemetryProperty.CODE.key,
+                TelemetryProperty.DURATION_MS.key,
+            ),
+            properties.keys,
+        )
+    }
+
+    @Test
     fun `a reader refusal reports the vendor code, and never the vendor's words`() {
         TapToPayReports.chargeFailed(deniedBy("677", "Device has been suspended or deactivated"), System.nanoTime())
 
