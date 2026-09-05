@@ -15,6 +15,9 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * comes next. A tap that did not complete produces either, so choosing between them from the failure alone
  * gets one of the two wrong.
  *
+ * **Whether to charge again at all is a different question, and [capture] answers it.** Only
+ * [TapToPayCapture.NOT_CHARGED] means a second charge cannot take the money twice.
+ *
  * A repair does not always succeed on the next call: where the reader was refused, it succeeds once that
  * refusal is settled with the vendor.
  *
@@ -32,9 +35,11 @@ public class TapToPayException private constructor(
     message: String,
     cause: Throwable?,
     /**
-     * The payment this failure belongs to, or null when no payment was opened.
+     * The payment this failure belongs to, or null when no identifier was received.
      *
-     * It is the only handle to a payment that exists, so a caller that means to reconcile one holds this.
+     * Null is not proof that nothing was opened: the call that opens a payment may have succeeded with its
+     * answer lost, which is the case the attempt is kept for. It is the only handle to a payment that
+     * exists, so a caller that means to reconcile one holds this.
      */
     public val paymentTransId: String? = null,
     /**
