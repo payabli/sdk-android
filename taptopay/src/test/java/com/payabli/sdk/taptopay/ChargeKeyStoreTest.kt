@@ -5,8 +5,11 @@ import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
 import com.payabli.sdk.taptopay.enrollment.OTHER_ENTRY
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -73,13 +76,29 @@ class ChargeKeyStoreTest {
         runTest(timeout = TEST_TIMEOUT) {
             // A terminal is built per call, so the retry usually reaches a second store. The key has to be
             // the backing entry's rather than either object's.
-            val storage = FakeSecureStore()
+            //
+            // The two reservations overlap, which is the whole point: run in sequence the first write has
+            // already landed and a mutex held per instance passes just as well. Here the first is parked
+            // after its read, so a lock that is not shared lets the second read the same empty record and
+            // mint a second key.
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val storage =
+                FakeSecureStore(
+                    afterFirstReadGate = {
+                        entered.complete(Unit)
+                        release.await()
+                    },
+                )
             val first = storeOver(storage)
             val second = storeOver(storage)
 
-            val reserved = first.reserve(ENTRY)
+            val firstKey = async { first.reserve(ENTRY) }
+            entered.await()
+            val secondKey = async { second.reserve(ENTRY) }
+            release.complete(Unit)
 
-            assertEquals(reserved, second.reserve(ENTRY))
+            assertEquals(firstKey.await(), secondKey.await())
         }
 
     @Test
@@ -163,6 +182,29 @@ class ChargeKeyStoreTest {
             assertTrue("$failure", failure is ChargeKeyUnreadableException)
             assertEquals(0, minted.get())
             assertTrue("the unreadable record was removed", storage.get(CHARGE_KEY_ENTRY) != null)
+        }
+
+    @Test
+    fun `what would not decode is not carried out on the cause chain`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The record holds entry points and idempotency keys, and kotlinx appends the input it choked
+            // on to its message. This failure reaches a host as TapToPayException.cause.cause, so the whole
+            // chain is walked rather than the top of it.
+            val storage = FakeSecureStore()
+            storage.set(
+                CHARGE_KEY_ENTRY,
+                """{"attempts":[{"entry":"tell-tale-entry","key":""".toByteArray(Charsets.UTF_8),
+            )
+
+            val failure = runCatching { storeOver(storage).reserve(ENTRY) }.exceptionOrNull()
+
+            assertTrue("$failure", failure is ChargeKeyUnreadableException)
+            generateSequence(failure) { it.cause }.forEach { link ->
+                assertFalse(
+                    "the rejected record reached ${link.javaClass.name}: ${link.message}",
+                    link.message.orEmpty().contains("tell-tale-entry"),
+                )
+            }
         }
 
     @Test

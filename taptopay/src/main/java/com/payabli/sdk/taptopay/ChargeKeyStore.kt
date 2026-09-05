@@ -124,7 +124,7 @@ internal class ChargeKeyStore(
             // Narrowed to the serializer's own failure, so a storage failure raised by the read is not
             // swallowed here on its way past.
             reportUnreadable(malformed)
-            throw ChargeKeyUnreadableException(malformed)
+            throw ChargeKeyUnreadableException(RedactedCause(malformed))
         } finally {
             bytes.fill(0)
         }
@@ -178,6 +178,25 @@ internal class ChargeKeyStore(
 internal class ChargeKeyUnreadableException(
     cause: Throwable,
 ) : IllegalStateException("a held charge key could not be read, so no charge can be named", cause)
+
+/**
+ * A decode failure with its words removed, keeping the type and the frames.
+ *
+ * `SerializationException.message` quotes the input it rejected, and this record holds entry points and
+ * idempotency keys. The exception reaches a host as `TapToPayException.cause.cause`, so attaching the raw
+ * one puts that excerpt in every crash report that walks the chain; redacting the log line alone leaves the
+ * public path open. The frames are the diagnostic value and carry no text, so they stay.
+ *
+ * A third copy of a type `:payin` and `:core` each hold. Sharing it would mean widening a published
+ * module's surface to suit an internal one, which is not the trade.
+ */
+internal class RedactedCause(
+    original: Throwable,
+) : Throwable("${original.javaClass.name} (message withheld)") {
+    init {
+        stackTrace = original.stackTrace
+    }
+}
 
 /**
  * Every slot holds a charge whose outcome is still in doubt, so there is no room to name another.
