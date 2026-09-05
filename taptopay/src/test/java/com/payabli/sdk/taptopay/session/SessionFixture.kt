@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.EnrollmentFixture
 import com.payabli.sdk.taptopay.enrollment.RouteScript
@@ -9,10 +11,14 @@ import com.payabli.sdk.taptopay.enrollment.configBody
 import com.payabli.sdk.taptopay.enrollment.registerBody
 import com.payabli.sdk.taptopay.provider.FakeTapToPayProvider
 import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
 
 /** Bounds every test in this package, so a wedge fails the test that caused it. */
 internal val TEST_TIMEOUT = 5.seconds
+
+/** The stem every key [SessionFixture] reserves is built from. */
+internal const val MINTED_KEY = "minted"
 
 /**
  * One state per member, for the tests that walk all of them.
@@ -68,6 +74,22 @@ internal class SessionFixture(
 
     val manager = TapToPaySessionManager(enrollment.logger)
 
+    /** Counted rather than random, so a test can tell one reserved key from the next. */
+    val minted: AtomicInteger = AtomicInteger()
+
+    /**
+     * Over [EnrollmentFixture.storage], which is the one backing store a device has.
+     *
+     * A second fixture built on the same storage is what two terminals for one entry point look like, which
+     * is the shape the key has to survive.
+     */
+    val keys =
+        ChargeKeyStore(
+            enrollment.storage,
+            newKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
+            logger = enrollment.logger,
+        )
+
     val coordinator =
         TapToPaySessionCoordinator(
             entry = ENTRY,
@@ -80,6 +102,12 @@ internal class SessionFixture(
 
     /** Only the transport's half of the trace, for asserting call order alone. */
     val routes: List<String> get() = enrollment.routes
+
+    /** Every request sent, for asserting what one of them carried rather than which were sent. */
+    val requests: List<PayabliRequest> get() = enrollment.requests
+
+    /** The requests sent to [path], in order. */
+    fun requestsTo(path: String): List<PayabliRequest> = enrollment.requests.filter { it.path == path }
 
     val state: TapToPaySessionState get() = manager.state.value
 

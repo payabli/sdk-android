@@ -1,6 +1,7 @@
 package com.payabli.sdk.core.network
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 /**
@@ -91,5 +92,32 @@ class PercentEncodingTest {
         // Stated because it is a trap: the caller gets a path with a trailing slash and no identifier, which
         // is a different route. Whether that is allowed is the caller's question, and this says so.
         assertEquals("", PercentEncoding.segment(""))
+    }
+
+    @Test
+    fun `a path is built from its own template, wherever the placeholder sits`() {
+        // The template is the only form a log may carry and the path is what goes on the wire, so both come
+        // from one literal. A placeholder that is not last is covered because nothing says it has to be.
+        assertEquals(
+            "/api/v2/MoneyIn/capture/12-abc",
+            PercentEncoding.pathFrom("/api/v2/MoneyIn/capture/{transId}", "12-abc"),
+        )
+        assertEquals("/a/one/b", PercentEncoding.pathFrom("/a/{id}/b", "one"))
+    }
+
+    @Test
+    fun `the segment is placed as given, not encoded a second time`() {
+        // Callers do not agree on what makes a segment safe: a transaction identifier is encoded, an entry
+        // point is refused unless it already is. Encoding here would double-encode the first.
+        assertEquals("/a/%2F/b", PercentEncoding.pathFrom("/a/{id}/b", PercentEncoding.segment("/")))
+    }
+
+    @Test
+    fun `a template with no placeholder is refused rather than returned unchanged`() {
+        // A route wired to this helper without one is a defect here, not a value a caller could correct.
+        // Returning the template would send every request to the same literal path.
+        listOf("/api/v2/MoneyIn/getpaid", "/a/{unclosed", "/a/}{").forEach { template ->
+            assertThrows(IllegalArgumentException::class.java) { PercentEncoding.pathFrom(template, "one") }
+        }
     }
 }

@@ -40,6 +40,7 @@ class PayabliTapToPayTest {
                     reader = fixture.reader,
                     client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
                     store = fixture.enrollment.store,
+                    keys = fixture.keys,
                 ),
         )
 

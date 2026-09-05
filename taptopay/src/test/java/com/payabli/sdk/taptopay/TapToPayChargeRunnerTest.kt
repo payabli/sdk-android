@@ -16,6 +16,7 @@ import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.approved
+import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
@@ -35,15 +36,17 @@ private const val INITIATE = "/api/v2/MoneyIn/initiate"
 
 private const val UPDATE = "/api/v2/MoneyIn/update/$TRANS_ID"
 
-private fun script(updates: Int = 1) =
-    RouteScript(
-        RouteScript.CHALLENGE to listOf(challengeBody()),
-        RouteScript.REGISTER to listOf(registerBody(status = "active")),
-        RouteScript.ATTEST to listOf(attestBody()),
-        RouteScript.CONFIG to listOf(configBody()),
-        INITIATE to listOf(approved("""{"paymentTransId":"$TRANS_ID"}""")),
-        UPDATE to List(updates) { "{}" },
-    )
+private fun script(
+    updates: Int = 1,
+    opens: Int = 1,
+) = RouteScript(
+    RouteScript.CHALLENGE to listOf(challengeBody()),
+    RouteScript.REGISTER to listOf(registerBody(status = "active")),
+    RouteScript.ATTEST to listOf(attestBody()),
+    RouteScript.CONFIG to listOf(configBody()),
+    INITIATE to List(opens) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+    UPDATE to List(updates) { "{}" },
+)
 
 /**
  * A whole payment over fakes: the two Payabli calls, the reader between them, and what each failure does
@@ -58,10 +61,13 @@ class TapToPayChargeRunnerTest {
             reader = fixture.reader,
             client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
             store = fixture.enrollment.store,
+            keys = fixture.keys,
         )
 
-    private suspend fun readyFixture(updates: Int = 1): SessionFixture =
-        SessionFixture(script(updates)).also { it.coordinator.initialize() }
+    private suspend fun readyFixture(
+        updates: Int = 1,
+        opens: Int = 1,
+    ): SessionFixture = SessionFixture(script(updates, opens)).also { it.coordinator.initialize() }
 
     private fun details(amount: String = "12.34") = TapToPayPaymentDetails(BigDecimal(amount))
 
@@ -152,6 +158,137 @@ class TapToPayChargeRunnerTest {
             }
 
             assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
+        }
+
+    /** The key one opening carried, from the request itself rather than from the store that held it. */
+    private fun SessionFixture.keySent(attempt: Int = 0): String? =
+        requestsTo(INITIATE)[attempt].headers["idempotencyKey"]
+
+    @Test
+    fun `a charge names its attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+
+            runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent())
+        }
+
+    @Test
+    fun `a charge that settled leaves the next one to name its own attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Two sales, two attempts. Reusing the key here would refuse the second payment.
+            val fixture = readyFixture(updates = 2, opens = 2)
+            val runner = runnerOver(fixture)
+
+            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a tap that was captured and could not be closed keeps its attempt for the retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The sharp one. The reader captured the sale and the close never landed, so the obvious
+            // recovery is to charge again — and that opens a second transaction unless it repeats the key.
+            val fixture = readyFixture(updates = 0, opens = 2)
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a close the service refused keeps the attempt, because the reader already captured`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The service answering 400 says the close was rejected, not that the sale was not taken: the
+            // reader captured before `update` was ever sent. Releasing the key on an answer that arrives
+            // after the capture is what lets the next charge take the money again.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                        UPDATE to List(2) { "" },
+                        statusFor = { if (it == UPDATE) 400 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals(
+                "the retry named a second attempt after the sale was captured",
+                "$MINTED_KEY-1",
+                fixture.keySent(1),
+            )
+        }
+
+    @Test
+    fun `a tap that failed lets its attempt go once the close is recorded`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Not because the read failed — that is no proof the sale was not captured — but because the
+            // service has recorded this transaction as failed. Its outcome is no longer in doubt, so the
+            // next sale needs its own attempt and holding the key would refuse it.
+            val fixture = readyFixture(updates = 2, opens = 2)
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+
+            assertEquals("$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a tap that failed and could not be closed keeps its attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The transaction is open and nothing recorded what became of it, so the sale may have been
+            // captured. A fresh key on the next charge would take the money again.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                        UPDATE to List(6) { "" },
+                        statusFor = { if (it == UPDATE) 500 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a second terminal for one entry point repeats the attempt the first left unsettled`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A terminal is built per call and caches nothing, so the retry usually comes from a second one
+            // after the screen holding the first was rebuilt. A key on the instance would be gone.
+            val fixture = readyFixture(updates = 0, opens = 2)
+
+            runCatching { runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("the second terminal named its own attempt", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
     @Test

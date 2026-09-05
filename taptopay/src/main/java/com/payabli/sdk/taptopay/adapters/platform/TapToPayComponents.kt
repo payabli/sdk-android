@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.adapters.platform
 import android.content.Context
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.TapToPayChargeRunner
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
@@ -63,6 +64,9 @@ internal object TapToPayComponents {
                     reader = reader,
                     client = TTPTransactionClient(session.transport),
                     store = store,
+                    // Over the same backing store as the bindings, so a key outlives the terminal that
+                    // reserved it and the process that held it.
+                    keys = ChargeKeyStore(trust.store),
                 ),
         )
     }

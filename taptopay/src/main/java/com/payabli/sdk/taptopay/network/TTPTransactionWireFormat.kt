@@ -45,7 +45,7 @@ internal object TTPRoutes {
     const val UPDATE: String = "/api/v2/MoneyIn/update/{transId}"
 
     /**
-     * The resolved path for [UPDATE].
+     * The resolved path for [UPDATE], built from that template rather than beside it.
      *
      * The identifier is encoded as one path segment, so a `?`, `#` or `/` in it stays part of the
      * identifier instead of becoming a query, a fragment or another route.
@@ -55,7 +55,8 @@ internal object TTPRoutes {
      * back from a response, so its shape is not this SDK's to assume, and refusing it would fail a charge
      * over a format nobody here controls.
      */
-    fun update(paymentTransId: String): String = "/api/v2/MoneyIn/update/" + PercentEncoding.segment(paymentTransId)
+    fun update(paymentTransId: String): String =
+        PercentEncoding.pathFrom(UPDATE, PercentEncoding.segment(paymentTransId))
 }
 
 /**
