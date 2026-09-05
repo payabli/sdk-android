@@ -29,8 +29,9 @@ import java.util.UUID
  * mid-charge.
  *
  * **The key is all that is kept.** It is an opaque random value naming an attempt, so holding it discloses
- * nothing about an instrument or a payer. What the reader answered is never written here: that carries the
- * card's expiry and the processor's token, so its lifetime is a security property rather than bookkeeping.
+ * nothing about an instrument or a payer. What the reader answered is never written here: the contract
+ * permits an implementation to forward whatever the processor returned, so its lifetime is a security
+ * property rather than bookkeeping.
  *
  * One entry holds every entry point's key, for the reason [com.payabli.sdk.taptopay.enrollment
  * .AttestedDeviceStore]'s does: the store offers no enumeration, so a name built from a value that changes
