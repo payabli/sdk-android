@@ -55,7 +55,19 @@ class TapToPayTerminal(
     private val lock = Mutex()
     private var terminal: PayabliTTP? = null
 
-    override suspend fun initialize(): Result<Unit> = attempt { terminal().initialize() }
+    /**
+     * A device that owes activation is a handoff, not a failure.
+     *
+     * `initialize` throws for it, because the reader did not come up. The screen reads that as setup having
+     * failed while the step list has already moved on to activation, so the same state was reported two
+     * ways at once. The session is what says which happened, and the demo controller answers success here
+     * for the same reason.
+     */
+    override suspend fun initialize(): Result<Unit> =
+        attempt { terminal().initialize() }
+            .recoverCatching { failure ->
+                if (terminal?.sessionState?.value != TapToPaySessionState.PendingActivation) throw failure
+            }
 
     override suspend fun reinitializeIfNeeded(): Result<Unit> =
         attempt {
