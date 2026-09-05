@@ -372,6 +372,29 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `an amount past what the money decimal carries opens nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Rounds cleanly and is still unsendable: the digit bounds pass it, and only the mantissa
+            // check refuses it. Without that it reaches the wire and the service refuses it, which spends
+            // a reader session on a charge that was never sendable.
+            val fixture = readyFixture()
+            val beyondTheMantissa = BigDecimal("79228162514264337593543950336")
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(
+                        TapToPayPaymentDetails(beyondTheMantissa),
+                        TapToPayCustomerData(),
+                        TapToPayInvoiceData(),
+                        null,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is IllegalArgumentException)
+            assertFalse(INITIATE in fixture.routes)
+        }
+
+    @Test
     fun `the reader is asked for the amount the paypoint recorded`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The serializer rounds what initiate sent, so a caller's own scale asks the card for one
