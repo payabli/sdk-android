@@ -278,7 +278,8 @@ public class PayabliAuth(
         val fresh =
             minted ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT))
 
-        // PayabliConfig rejects a blank token at construction, so a refresh must not install one either.
+        // A blank token cannot authenticate anything, so it is refused rather than installed. This is the
+        // only place the rule holds, since nothing validates a token before it reaches here.
         if (fresh.isBlank()) {
             fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_BLANK_TOKEN))
         }
