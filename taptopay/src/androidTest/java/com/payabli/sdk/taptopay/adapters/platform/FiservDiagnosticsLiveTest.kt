@@ -86,7 +86,15 @@ class FiservDiagnosticsLiveTest {
                 // that suspends.
                 val progress = Channel<String>(Channel.UNLIMITED)
                 FiservTTPCardReader.setLoggingChannel(progress)
-                launch { for (line in progress) Log.i(TAG, "vendor: $line") }
+                // Scrubbed, because this stream is the vendor's and nothing bounds what it puts on it. The
+                // two values worth hiding are the ones handed over a few lines above, so they can be matched
+                // exactly rather than guessed at by shape. Everything else is printed, which is what this
+                // tier is for.
+                launch {
+                    for (line in progress) {
+                        Log.i(TAG, "vendor: ${line.withoutSecrets(arming.apiKey, arming.secretKey)}")
+                    }
+                }
 
                 // Two failure paths: the call itself throwing, and the flow answering with a failed Result.
                 val thrown =
@@ -115,6 +123,10 @@ class FiservDiagnosticsLiveTest {
         }
         Log.w(TAG, "cause=${failure.cause}")
     }
+
+    /** Replaces the credentials this run hands the vendor, wherever they appear in its own output. */
+    private fun String.withoutSecrets(vararg secrets: String): String =
+        secrets.filter { it.isNotBlank() }.fold(this) { line, secret -> line.replace(secret, "[redacted]") }
 
     private companion object {
         /** One tag, so a support ticket is one logcat filter. */
