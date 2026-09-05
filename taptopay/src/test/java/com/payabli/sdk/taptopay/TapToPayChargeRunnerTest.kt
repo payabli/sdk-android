@@ -466,18 +466,29 @@ class TapToPayChargeRunnerTest {
                     .also { it.coordinator.initialize() }
 
             // A child job, so the cancellation lands on the charge rather than on the test itself.
+            var outcome: Result<TapToPayResult>? = null
             charging =
                 launch {
-                    runCatching {
-                        runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
-                    }
+                    outcome =
+                        runCatching {
+                            runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                        }
                 }
             charging.join()
 
-            // What the caller is told is not the point and is not asserted: the close runs to completion,
-            // so the charge may simply return. The guarantee is that the service was told about a card the
-            // processor has already taken, because the alternative is a charge nothing can reconcile.
+            // The service was told about a card the processor has already taken, because the alternative is
+            // a charge nothing can reconcile.
             assertTrue(fixture.routes.toString(), UPDATE in fixture.routes)
+            // And the caller is handed the payment, which is what `PayabliTTP.charge` promises. A
+            // `CancellationException` states the charge did not happen, and by this line it has: the close
+            // landed and the attempt is settled. Throwing here would leave a withdrawing caller with no
+            // identifier for a payment the customer was charged for, which is the one outcome in this window
+            // that cannot be reconciled from the app.
+            //
+            // `withContext(NonCancellable)` does not rethrow on exit, so this is what the code already does.
+            // Measured on three shapes - the test dispatcher, `Dispatchers.IO`, and a job cancelled before
+            // the block was entered - and all three returned. It is asserted here so that stays a decision.
+            assertEquals(TRANS_ID, outcome?.getOrNull()?.paymentTransId)
         }
 
     @Test
