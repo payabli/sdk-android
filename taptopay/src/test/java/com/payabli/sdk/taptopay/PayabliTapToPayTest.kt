@@ -137,7 +137,7 @@ class PayabliTapToPayTest {
 
             val failure =
                 runCatching {
-                    terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")))
+                    terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")), PAYER)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
