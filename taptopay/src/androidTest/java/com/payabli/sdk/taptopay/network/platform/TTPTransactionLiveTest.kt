@@ -107,9 +107,12 @@ class TTPTransactionLiveTest {
                 val first = open(idempotencyKey = key)
                 val repeat = runCatching { open(idempotencyKey = key) }
 
+                // Neither identifier is logged, for the reason the opening test gives: an identifier names a
+                // live transaction and this runs against a real paypoint. Whether the repeat was refused is
+                // the whole of what this test is asking.
                 Log.i(
                     LiveTapToPay.LIVE_TAG,
-                    "opened $first; the repeat under the same key answered ${repeat.exceptionOrNull() ?: repeat.getOrNull()}",
+                    "the repeat under one key was refused: ${repeat.isFailure}",
                 )
                 assertTrue("the first opening minted no identifier", first.isNotBlank())
                 assertNotEquals(
