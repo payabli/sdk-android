@@ -61,10 +61,12 @@ public class PayabliTTP internal constructor(
     ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription) }
 
     /**
-     * Closes the payment named by [paymentTransId], where the card was charged and the payment was left open.
+     * Closes the payment named by [paymentTransId], where the card was charged and the close was not
+     * confirmed.
      *
-     * That is the case a [TapToPayException] reports with [TapToPayException.captured]. The card is not read
-     * again, so the person who paid does not tap twice, and no second payment is opened.
+     * That is the case a [TapToPayException] reports with [TapToPayCapture.CHARGED]. The card is not read
+     * again, so the person who paid does not tap twice, and no second payment is opened. Sending a close
+     * that already landed costs nothing, which is what makes trying again safe.
      *
      * Only the payment this terminal last took is closeable: nothing is kept once the close lands, once a
      * later payment is opened, or across process death.

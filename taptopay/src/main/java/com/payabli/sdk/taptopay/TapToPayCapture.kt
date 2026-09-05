@@ -20,10 +20,12 @@ public enum class TapToPayCapture {
     UNKNOWN,
 
     /**
-     * The card was charged and the payment was left open.
+     * The card was charged and the close was not confirmed.
      *
-     * The money has moved, so charging again takes it a second time. Finish this payment with
-     * [PayabliTTP.closeCapturedCharge] instead, which needs no second tap.
+     * The money has moved, so charging again takes it a second time. The close may have landed with its
+     * answer lost, so what is unknown here is whether the service was told rather than whether the card was
+     * charged. Finish this payment with [PayabliTTP.closeCapturedCharge], which needs no second tap and
+     * costs nothing if the close did land.
      */
     CHARGED,
 }
