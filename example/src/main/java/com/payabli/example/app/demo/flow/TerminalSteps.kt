@@ -119,7 +119,7 @@ object TerminalSteps {
             ),
             FlowStep(
                 title = "Take a payment",
-                detail = "The reader starts, waits for a card, and the SDK returns what it charged.",
+                detail = "The reader is already up, so this waits for a card and returns what it charged.",
                 status = charge,
             ),
         )
