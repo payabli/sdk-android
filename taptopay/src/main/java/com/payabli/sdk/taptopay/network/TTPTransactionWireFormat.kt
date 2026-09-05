@@ -28,6 +28,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonUnquotedLiteral
 import kotlinx.serialization.json.buildJsonObject
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.RoundingMode
 
 /** Amounts carry two decimal places on this wire, and the service reads them as a decimal. */
@@ -95,12 +96,18 @@ internal fun BigDecimal.sendableAmountOrNull(): BigDecimal? {
     if (signum() == 0) return setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
     if (scale().toLong() > MAX_ROUNDABLE_SCALE) return null
     if (precision().toLong() - scale().toLong() > MAX_INTEGER_DIGITS) return null
-    return setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
+    // The digit bounds above keep the rounding itself cheap; this one is what the service can actually
+    // carry. Without it a thousand-digit value rounds successfully, is serialized, and is refused
+    // downstream, which spends a reader session on a charge that was never sendable.
+    return setScale(AMOUNT_SCALE, RoundingMode.HALF_UP).takeIf { it.unscaledValue().abs() <= MAX_MANTISSA }
 }
 
 private const val MAX_ROUNDABLE_SCALE = 1_000L
 
 private const val MAX_INTEGER_DIGITS = 1_000L
+
+/** The largest unscaled value the money decimal carries, which is a 96-bit mantissa. */
+private val MAX_MANTISSA = BigInteger("79228162514264337593543950335")
 
 /**
  * Money on the wire: an unquoted JSON number with exactly two decimal places.
