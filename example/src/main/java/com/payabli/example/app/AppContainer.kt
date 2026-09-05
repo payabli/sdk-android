@@ -100,6 +100,7 @@ class AppContainer(
             // and blank means the screen says it is unset instead of failing at the platform verdict.
             cloudProjectNumber = BuildConfig.DEMO_CLOUD_PROJECT_NUMBER.toLongOrNull(),
             scope = MainScope(),
+            identity = sampleIdentity,
         )
     }
 
