@@ -17,7 +17,12 @@ import kotlinx.coroutines.flow.StateFlow
  * Four calls and two observables, [sessionState] and [isReady]. Every call that fails fails with
  * [TapToPayException], with two exceptions a caller has to know about: a cancellation unwinds as
  * `CancellationException`, because withdrawing is not a failure, and a JVM `Error` is not caught at
- * all. A failure that changed the session is published on [sessionState]: as
+ * all.
+ *
+ * **A withdrawn charge is the one place that is not the whole story.** Once the card has been taken, the
+ * call that tells the service is uncancellable, so a cancellation arriving after that point can still end
+ * in a completed payment and [charge] returns its result. A host that treats a cancelled charge as one that
+ * did not happen will be wrong exactly when money moved. A failure that changed the session is published on [sessionState]: as
  * [TapToPaySessionState.Failed] carrying a reason, or as [TapToPaySessionState.SessionExpired] where the
  * reader session is spent and a repair is what comes next. A failure that changed nothing leaves it alone.
  * Read the state rather than assuming which of the two a failure produced.
