@@ -12,6 +12,7 @@ import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
+import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -48,6 +49,9 @@ internal class TapToPaySessionCoordinator(
 ) {
     /** Where the session has got to. Safe to collect at any time; reading it takes no lock. */
     val state: StateFlow<TapToPaySessionState> get() = manager.state
+
+    /** Whether a payment can be taken right now. */
+    val isReady: StateFlow<Boolean> get() = manager.isReady
 
     /** Serialises the work. Held for a whole run, so no two runs are ever inside the reader together. */
     private val region = Mutex()
@@ -102,8 +106,8 @@ internal class TapToPaySessionCoordinator(
      * handle a concurrent registration has just replaced is a code wasted. A refused code leaves the session
      * exactly where it was, since the device still owes one.
      */
-    suspend fun confirmActivation(activationCode: String) =
-        runExclusively(SessionWorkKind.ACTIVATE) { runConfirmActivation(activationCode) }
+    suspend fun activateDevice(activationCode: String) =
+        runExclusively(SessionWorkKind.ACTIVATE) { runActivateDevice(activationCode) }
 
     /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
@@ -187,14 +191,45 @@ internal class TapToPaySessionCoordinator(
      * Then a reset, whatever the caller left behind, since the table of legal moves is narrow.
      */
     private suspend fun runInitialize() {
-        reader.checkEligibility()
-        manager.reset()
-        val outcome = manager.advance(TapToPaySessionState.AttestingDevice) { enrollment.enroll() }
-        if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
-            // Registration already said so, so there is nothing to learn from asking for the credentials.
-            throw TapToPaySessionException.PendingActivation()
+        val startedAt = System.nanoTime()
+        TapToPayReports.initializeStarted()
+        try {
+            reader.checkEligibility()
+            manager.reset()
+            val outcome = attesting()
+            if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
+                // Registration already said so, so there is nothing to learn from asking for the credentials.
+                throw TapToPaySessionException.PendingActivation()
+            }
+            bringReaderUp()
+        } catch (withdrawn: CancellationException) {
+            // Withdrawing is not an initialize result. `Throwable` covers CancellationException, so a
+            // caller that cancelled was recorded as one whose setup failed.
+            throw withdrawn
+        } catch (failure: Throwable) {
+            TapToPayReports.initializeFailed(failure, startedAt)
+            throw failure
         }
-        bringReaderUp()
+        TapToPayReports.initializeSucceeded(startedAt)
+    }
+
+    /** Bracketed separately from the initialize it sits inside, because it is the step that can be slow. */
+    private suspend fun attesting(): EnrollmentOutcome {
+        val startedAt = System.nanoTime()
+        TapToPayReports.attestationStarted()
+        val outcome =
+            try {
+                manager.advance(TapToPaySessionState.AttestingDevice) { enrollment.enroll() }
+            } catch (withdrawn: CancellationException) {
+                // A caller cancellation is not an attestation result, and this event is on the force-send
+                // list, so recording one flushed the batch over a withdrawal.
+                throw withdrawn
+            } catch (failure: Throwable) {
+                TapToPayReports.attestationFailed(failure, startedAt)
+                throw failure
+            }
+        TapToPayReports.attestationSucceeded(startedAt)
+        return outcome
     }
 
     /**
@@ -203,7 +238,10 @@ internal class TapToPaySessionCoordinator(
      * A ready session is left alone. That is the whole reason a charge can call this without a round trip.
      */
     private suspend fun runReinitializeIfNeeded() {
+        val startedAt = System.nanoTime()
         when (val current = state.value) {
+            // Before the started event: a ready session is the case this returns without doing anything,
+            // and a repair that did no work is not one to count.
             TapToPaySessionState.Ready -> return
             TapToPaySessionState.SessionExpired ->
                 // The only state the table lets a re-initialization be entered from.
@@ -212,7 +250,9 @@ internal class TapToPaySessionCoordinator(
             TapToPaySessionState.Idle, is TapToPaySessionState.Failed -> Unit
             else -> throw TapToPaySessionException.NotRecoverable(current)
         }
+        TapToPayReports.reinitializeStarted()
         bringReaderUp()
+        TapToPayReports.reinitializeSucceeded(startedAt)
     }
 
     /** The half both entry points share: credentials, then a reader configured with them. */
@@ -251,8 +291,8 @@ internal class TapToPaySessionCoordinator(
      * Whether the device is active is not this SDK's to hold, so nothing is recorded here. A code that is
      * refused leaves the state alone, because the device still owes one.
      */
-    private suspend fun runConfirmActivation(activationCode: String) {
-        enrollment.confirmActivation(activationCode)
+    private suspend fun runActivateDevice(activationCode: String) {
+        enrollment.activateDevice(activationCode)
         manager.settle(TapToPaySessionState.Idle)
     }
 }

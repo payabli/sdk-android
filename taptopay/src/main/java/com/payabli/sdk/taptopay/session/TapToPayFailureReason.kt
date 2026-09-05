@@ -9,7 +9,7 @@ package com.payabli.sdk.taptopay.session
  * it, and a `Throwable` carries a cause chain that can hold a response body. The exception still reaches
  * the caller that was waiting, by being thrown.
  */
-internal enum class TapToPayFailureReason {
+public enum class TapToPayFailureReason {
     /**
      * The device's proof of identity is gone or was refused, so the session must be built from the top.
      *
@@ -30,11 +30,12 @@ internal enum class TapToPayFailureReason {
     SERVICE_UNAVAILABLE,
 
     /**
-     * This handset cannot take contactless payments, and no repair reaches that.
+     * This handset cannot take contactless payments, and no repair reaches that. Either it lacks the
+     * hardware or the OS version, or the card reader vendor refused it.
      *
-     * The only member where the remedy is a different device. It is separate from
-     * [CONFIGURATION_REJECTED], which is an account someone can change, and from [SDK_INTERNAL_ERROR], which
-     * asks a host to report a defect: the wrong hardware is neither a defect nor a setting.
+     * The only member where the remedy is a different device. Separate from [CONFIGURATION_REJECTED],
+     * which is an account someone can change, and from [SDK_INTERNAL_ERROR], which asks a host to report
+     * a defect.
      */
     DEVICE_INELIGIBLE,
 

@@ -1,24 +1,12 @@
 package com.payabli.sdk.taptopay.network.platform
 
-import android.os.Build
 import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.payabli.sdk.core.HostBindings
-import com.payabli.sdk.core.PayabliSession
-import com.payabli.sdk.core.config.PayabliConfig
-import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.ManualDeviceTest
-import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
-import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
-import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
-import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
-import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
-import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
-import com.payabli.sdk.taptopay.enrollment.platform.ActivationCodeMinter
-import com.payabli.sdk.taptopay.enrollment.platform.DeviceDescriptionFactory
 import com.payabli.sdk.taptopay.enrollment.platform.LiveRunSettings
+import com.payabli.sdk.taptopay.enrollment.platform.LiveTapToPay
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
@@ -26,7 +14,6 @@ import com.payabli.sdk.taptopay.provider.CardReadResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
-import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
@@ -34,6 +21,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.math.BigDecimal
+import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 120.seconds
@@ -78,24 +66,13 @@ class TTPTransactionLiveTest {
 
     @Before
     fun requireHardware() {
-        // Fails rather than skips. This class is only ever invoked by name, so reaching it on an emulator
-        // means the run was pointed at the wrong target, and a skip there reads as a run that went fine.
         // The two calls need no hardware; the activated device they charge as does, because getting one
         // means attesting. Measured on a non-Play-Store image: the run dies at the platform verdict with
         // RemediationRequired(-14), which reads like a service problem and is not one.
-        assertFalse(
+        LiveTapToPay.requireWiredHandset(
             "the live tier is for wired handsets: charging needs a device the service has attested",
-            Build.HARDWARE in EMULATED,
         )
     }
-
-    @After
-    fun forgetTheDevice() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // The service's row stays: it is what the next run is recognised by, and what keeps a later run
-            // from spending another activation attempt.
-            AttestedDeviceStore(DeviceTrust.open(context).store).clear(LiveRunSettings.entry)
-        }
 
     @Test
     fun openingATransactionMintsAnIdentifier() =
@@ -104,7 +81,49 @@ class TTPTransactionLiveTest {
                 val paymentTransId = open()
 
                 assertTrue("no identifier came back", paymentTransId.isNotBlank())
-                Log.i(LIVE_TAG, "opened paymentTransId=$paymentTransId entry=${LiveRunSettings.entry}")
+                Log.i(LiveTapToPay.LIVE_TAG, "opened on entry=${LiveRunSettings.entry}")
+            }
+        }
+
+    /**
+     * A second opening under one key does not open a second transaction.
+     *
+     * The whole of what the key is for. Without it the two calls are two sales, and a caller that lost the
+     * first answer and asked again has charged the payer twice.
+     *
+     * **Asserted as a difference, not against any wording**, for the reason the closing test is: matching
+     * the text would put a decode table for someone else's messages in a public repository. The first call
+     * answers with an identifier and the second does not answer at all, which is the difference that
+     * matters, and the day the second one succeeds is the day the suppression stopped.
+     *
+     * One transaction is left behind rather than two, so this costs the paypoint less than the tests above.
+     */
+    @Test
+    fun openingTwiceUnderOneKeyOpensOneTransaction() =
+        runTest(timeout = TEST_TIMEOUT) {
+            withContext(Dispatchers.IO) {
+                val key = UUID.randomUUID().toString()
+
+                val first = open(idempotencyKey = key)
+                val repeat = runCatching { open(idempotencyKey = key) }
+
+                // Neither identifier is logged, for the reason the opening test gives: an identifier names a
+                // live transaction and this runs against a real paypoint. Whether the repeat was refused is
+                // the whole of what this test is asking.
+                Log.i(
+                    LiveTapToPay.LIVE_TAG,
+                    "the repeat under one key was refused: ${repeat.isFailure}",
+                )
+                assertTrue("the first opening minted no identifier", first.isNotBlank())
+                assertNotEquals(
+                    "a repeat under one key opened a second transaction",
+                    first,
+                    repeat.getOrNull(),
+                )
+                assertTrue(
+                    "a repeat under one key was carried out instead of being refused",
+                    repeat.isFailure,
+                )
             }
         }
 
@@ -136,7 +155,9 @@ class TTPTransactionLiveTest {
                 // identity of the transaction separates this call from the one above.
                 val invented = closing(paymentTransId.dropLast(1) + if (paymentTransId.last() == '0') '1' else '0')
 
-                Log.i(LIVE_TAG, "closed $paymentTransId with $real; the invented one answered $invented")
+                // Neither the identifier nor either answer: `closing` returns what the service said, which
+                // carries a reason and a detail. The assertions below hold both values.
+                Log.i(LiveTapToPay.LIVE_TAG, "closed the real transaction and the invented one")
                 assertFalse("the paypoint is not enabled for card-present payments", real.startsWith(NOT_ENABLED))
                 assertFalse("the paypoint is not enabled for card-present payments", invented.startsWith(NOT_ENABLED))
                 assertNotEquals(
@@ -165,81 +186,23 @@ class TTPTransactionLiveTest {
         }
     }
 
-    /** Opens one transaction against the live paypoint and answers with its identifier. */
-    private suspend fun open(): String =
+    /**
+     * Opens one transaction against the live paypoint and answers with its identifier.
+     *
+     * A fresh key per call unless [idempotencyKey] names one, so every test here opens its own transaction
+     * except the one asserting that a repeat under one key does not.
+     */
+    private suspend fun open(idempotencyKey: String = UUID.randomUUID().toString()): String =
         client().initiate(
             entryPoint = LiveRunSettings.entry,
-            deviceId = activatedDeviceId(),
+            deviceId = LiveTapToPay.activatedDeviceId(context),
             paymentDetails = TapToPayPaymentDetails(BigDecimal("1.00")),
+            idempotencyKey = idempotencyKey,
         )
 
-    private suspend fun client(): TTPTransactionClient = TTPTransactionClient(session().transport)
-
-    /**
-     * The device identifier for this handset, enrolling and activating it when there is not one yet.
-     *
-     * A device is recognised by the handset's own stable identity, so the first run on a handset registers
-     * and activates and every later run is warm. A fresh identity per run would spend an activation attempt
-     * every time and leave another registered device behind.
-     */
-    private suspend fun activatedDeviceId(): String {
-        val enrollment = enrollment()
-        val outcome = enrollment.enroll()
-        val store = AttestedDeviceStore(DeviceTrust.open(context).store)
-        val record = store.read(LiveRunSettings.entry) ?: error("the cold sequence recorded nothing to charge with")
-
-        if (outcome is EnrollmentOutcome.Attested && outcome.activationRequired) {
-            // Playing the merchant's part, as the activation tier does. The SDK cannot mint its own code,
-            // and the route needs a device handle that exists only once it has registered.
-            enrollment.confirmActivation(
-                ActivationCodeMinter.mint(
-                    accessToken = LiveRunSettings.accessToken(),
-                    baseUrl = LiveRunSettings.baseUrl,
-                    entry = LiveRunSettings.entry,
-                    deviceId = record.deviceId,
-                ),
-            )
-        }
-        return record.deviceId
-    }
-
-    private suspend fun session(): PayabliSession =
-        PayabliSession
-            .initialize(
-                PayabliConfig(
-                    entryPoint = LiveRunSettings.entry,
-                    environment = LiveRunSettings.environment,
-                    tokenProvider = { LiveRunSettings.accessToken() },
-                ),
-                HostBindings(context),
-            ).getOrThrow()
-
-    private suspend fun enrollment(): DeviceEnrollment {
-        val trust = DeviceTrust.open(context)
-        return DeviceEnrollment(
-            entry = LiveRunSettings.entry,
-            appId = context.packageName,
-            client = DeviceServiceClient(session().transport),
-            // Classic, to match the challenge the enrollment path builds. A standard attestor refuses one.
-            attestor = AttestorFactory.classic(context, cloudProjectNumber()),
-            deviceKey = trust.key,
-            signer = DeviceAssertionSigner(trust.key),
-            store = AttestedDeviceStore(trust.store),
-            description = DeviceDescriptionFactory.create(context),
-            dispatcher = Dispatchers.IO,
-        )
-    }
-
-    private fun cloudProjectNumber(): Long =
-        InstrumentationRegistry.getArguments().getString("cloudProjectNumber")?.toLongOrNull()
-            ?: error("payabli.cloudProjectNumber is required for the live tier; pass -Ppayabli.cloudProjectNumber=<n>")
+    private suspend fun client(): TTPTransactionClient = TTPTransactionClient(LiveTapToPay.session(context).transport)
 
     private companion object {
-        val EMULATED = setOf("ranchu", "goldfish")
-
-        /** One tag for this tier, so a live run's output is one logcat filter. */
-        const val LIVE_TAG = "PayabliLiveRun"
-
         /** The one outcome that is not a difference between two transactions but a switch nobody flipped. */
         const val NOT_ENABLED = "not enabled"
     }

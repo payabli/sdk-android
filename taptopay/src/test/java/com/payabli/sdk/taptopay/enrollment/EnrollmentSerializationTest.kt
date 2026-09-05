@@ -43,7 +43,7 @@ class EnrollmentSerializationTest {
 
             val activating =
                 launch(UnconfinedTestDispatcher(testScheduler)) {
-                    fixture.enrollment.confirmActivation(ACTIVATION_CODE)
+                    fixture.enrollment.activateDevice(ACTIVATION_CODE)
                 }
 
             assertTrue(activating.isActive)

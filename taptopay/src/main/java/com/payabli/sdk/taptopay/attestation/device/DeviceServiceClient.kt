@@ -14,6 +14,7 @@ import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
+import com.payabli.sdk.core.network.PercentEncoding
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -225,7 +226,7 @@ internal class DeviceServiceClient(
     ): ConfigResponse =
         get(
             route = ROUTE_CONFIG,
-            path = "$BASE/config/${pathSegment(entry)}",
+            path = PercentEncoding.pathFrom(ROUTE_CONFIG, pathSegment(entry)),
             payloadSerializer = ConfigResponse.serializer(),
             failureMapper = failureMapper,
             headers = assertion.asHeaders(),

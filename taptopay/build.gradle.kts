@@ -1,9 +1,37 @@
+// **This module does not publish, and that is deliberate rather than an oversight.**
+//
+// Card-present has never completed a tap. The vendor refuses every handset it has been offered: the
+// application had to be signed and onboarded by them before the reader would arm, that has now been
+// done, and the device is still denied because the instance they hold for it is deactivated. Until a
+// charge runs end to end on a real handset, an integrator resolving this artifact would get a module
+// whose happy path has never once executed.
+//
+// Not publishing rather than refusing at runtime, because an artifact that cannot be resolved says
+// what is true, where a public facade that throws by design is a surface that exists only to fail.
+// The umbrella already omits this module for a different reason - keeping the card reader dependency
+// opt-in - so nothing else changes here.
+//
+// Restore `id("payabli.publish")` when a tap has been taken and settled, and restore the
+// `sdk-android-taptopay` constraint in payabli-bom/build.gradle.kts in the same change. The BOM
+// advertises a coordinate, so leaving it pinned while nothing publishes it offers integrators a
+// version that resolves to nothing. The two decisions travel together in both directions.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
-    id("payabli.publish")
     id("payabli.quality")
 }
+
+// `payabli.publish` set this, and dropping the plugin dropped it with them.
+//
+// The group is not only a publishing coordinate. `@RestrictTo(LIBRARY_GROUP)` is enforced by Lint
+// against the Maven group of the two modules, so a module outside `io.github.payabli` cannot reach
+// `:core`'s internal surface: `AttestedDeviceStore` reads `PayabliSecureStorage`, and without this the
+// build fails with RestrictedApi. `payabli.publish.gradle.kts:16` says so where it sets them.
+//
+// So they stay while the publication does not, and they go back to being the plugin's the moment it
+// returns.
+group = providers.gradleProperty("payabli.group").get()
+version = providers.gradleProperty("payabli.version").get()
 
 android {
     namespace = "com.payabli.sdk.taptopay"
@@ -47,6 +75,10 @@ android {
                     add("com.payabli.sdk.taptopay.enrollment.platform.DeviceActivationLiveTest")
                     add("com.payabli.sdk.taptopay.network.platform.TTPTransactionLiveTest")
                     add("com.payabli.sdk.taptopay.session.platform.TapToPaySessionLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.FiservCardReaderLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.TapToPayChargeLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.FiservDiagnosticsLiveTest")
+                    add("com.payabli.sdk.taptopay.adapters.platform.ChargeWithoutTapLiveTest")
                 }
 
                 // Asserts an answer only a deployed service change produces, and this module ships ahead of

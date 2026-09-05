@@ -37,10 +37,11 @@ import java.net.HttpURLConnection.HTTP_NOT_FOUND
  * **Stateless.** It holds no entry point, caches nothing and sequences nothing. Whoever owns the charge owns
  * the order of the calls.
  *
- * **The two routes are retried differently, and the rule is per route.** Opening is not repeatable: a
- * second attempt is a second transaction, and this route carries no idempotency key to make it one. So
- * [initiate] is never retried, and a caller that loses the answer reconciles rather than asks again.
- * Closing is repeatable, so [update] is.
+ * **The two routes are retried differently, and the rule is per route.** [initiate] carries an idempotency
+ * key, so a repeat of one attempt is recognizable as a repeat rather than opening a second transaction. It is
+ * still never retried here: a suppressed repeat answers with nothing to carry on with, so the attempt cannot
+ * be continued from and only the caller holding the key can decide to send it again. Closing is repeatable,
+ * so [update] is.
  *
  * **Neither call sees a card.** The reader charges its processor itself and answers with that processor's
  * response, which [update] forwards to Payabli unread. No Payabli code holds a key that could open it.
@@ -59,17 +60,24 @@ internal class TTPTransactionClient(
      * [deviceId] has to be the identifier registration returned for this handset. It is what ties the
      * charge to this reader, and the identifier that comes back is what the rest of the charge is keyed by,
      * so the two travel together or neither means anything.
+     *
+     * [idempotencyKey] names the attempt, and it is required rather than defaulted so that a caller cannot
+     * open a transaction without one by leaving an argument off. Two calls under one key are one attempt;
+     * two attempts need two keys. Which of those a caller means is the caller's to know, so the key is
+     * reserved above this and never minted here.
      */
     suspend fun initiate(
         entryPoint: String,
         deviceId: String,
         paymentDetails: TapToPayPaymentDetails,
+        idempotencyKey: String,
         customer: TapToPayCustomerData = TapToPayCustomerData(),
         invoice: TapToPayInvoiceData = TapToPayInvoiceData(),
         orderDescription: String? = null,
     ): String {
         require(entryPoint.isNotBlank()) { "entryPoint is required" }
         require(deviceId.isNotBlank()) { "deviceId is required: the device has to be registered before it charges" }
+        requireUsableKey(idempotencyKey)
 
         val body =
             InitiateBody(
@@ -88,6 +96,7 @@ internal class TTPTransactionClient(
                 body = body,
                 bodySerializer = InitiateBody.serializer(),
                 route = TTPRoutes.INITIATE,
+                headers = mapOf(PayabliRequest.IDEMPOTENCY_KEY_HEADER to idempotencyKey),
             )
         return read(TTPRoutes.INITIATE, transport.execute(request)).paymentTransId
     }
@@ -207,7 +216,12 @@ internal class TTPTransactionClient(
                 TTPTransactionException.ServiceRejected(envelope.code, envelope.reason)
             }
         }
-        val payload = envelope.payload ?: throw undecodable(route, response.statusCode, null)
+        // Blank counts as absent. The field is required, so kotlinx accepts `""` and the identifier is the
+        // one part of an approval this has to get right: a blank one reaches the reader, takes a card, and
+        // then fails the closing call's own nonblank check, leaving a processed charge nothing can close.
+        val payload =
+            envelope.payload?.takeIf { it.paymentTransId.isNotBlank() }
+                ?: throw undecodable(route, response.statusCode, null)
         logger.debug(
             LogField.safe("event", "ttp_transaction_opened"),
             LogField.safe("route", route),
@@ -259,5 +273,28 @@ internal class TTPTransactionClient(
     private companion object {
         const val CONTENT_TYPE = "Content-Type"
         const val APPLICATION_JSON = "application/json"
+
+        /** A space is printable, so the range accepts padding at either end; HTTP would strip it. */
+        const val FIRST_PRINTABLE = ' '
+        const val LAST_PRINTABLE = '~'
+
+        /**
+         * Refuses a key the transport could not send, while the field is still named.
+         *
+         * `setRequestProperty` raises on an embedded carriage return or newline, which arrives as an
+         * argument failure from inside the transport with nothing pointing at the key. Padding is refused
+         * with the rest: what is read back from a header is trimmed, so a padded key would not match the
+         * one that was stored and the repeat it is meant to name would read as a new attempt.
+         *
+         * The message never carries the value. A key names one attempt at moving money, and a log is a
+         * wider audience than the call that made it.
+         */
+        fun requireUsableKey(value: String) {
+            require(value.isNotBlank()) { "idempotencyKey must not be blank" }
+            require(value == value.trim()) { "idempotencyKey must not be padded" }
+            require(value.all { it in FIRST_PRINTABLE..LAST_PRINTABLE }) {
+                "idempotencyKey must be usable as an HTTP header value"
+            }
+        }
     }
 }

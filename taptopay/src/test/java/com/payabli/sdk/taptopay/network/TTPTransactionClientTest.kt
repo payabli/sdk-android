@@ -23,6 +23,8 @@ private const val ENTRY = "merchant-entry"
 private const val DEVICE = "poi-1"
 private const val TRANS_ID = "12-abc"
 
+private const val KEY = "an-attempt-key"
+
 /**
  * Field names a card-present transaction may be recorded under. Anything else is a leak waiting to happen.
  *
@@ -54,10 +56,11 @@ class TTPTransactionClientTest {
         entryPoint: String = ENTRY,
         deviceId: String = DEVICE,
         details: TapToPayPaymentDetails = TapToPayPaymentDetails(BigDecimal("10")),
+        idempotencyKey: String = KEY,
         customer: TapToPayCustomerData = TapToPayCustomerData(),
         invoice: TapToPayInvoiceData = TapToPayInvoiceData(),
         orderDescription: String? = null,
-    ) = initiate(entryPoint, deviceId, details, customer, invoice, orderDescription)
+    ) = initiate(entryPoint, deviceId, details, idempotencyKey, customer, invoice, orderDescription)
 
     // Opening a transaction
 
@@ -137,7 +140,79 @@ class TTPTransactionClientTest {
         }
 
     @Test
-    fun `opening is never retried, because a second attempt is a second transaction`() =
+    fun `the body it could not read is not carried out on the cause chain`() =
+        runTest(timeout = timeout) {
+            // A well-formed body of the wrong shape is refused without a decoder throwing, so its cause is
+            // null and there is nothing to carry out. This one is malformed, which is what reaches the
+            // decoder: kotlinx appends the input it choked on to its message, and a real body here holds a
+            // paymentTransId and the processor's own fields.
+            val body = """{"responseData":"tell-tale-payment-identifier","""
+            val (_, client) = client(answer(body))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is TTPTransactionException.Undecodable)
+            // The whole chain, because a crash reporter renders all of it and the host's reporter is
+            // outside anything this SDK scrubs.
+            generateSequence(failure) { it.cause }.forEach { link ->
+                assertFalse(
+                    "the rejected body reached ${link.javaClass.name}: ${link.message}",
+                    link.message.orEmpty().contains("tell-tale-payment-identifier"),
+                )
+            }
+        }
+
+    @Test
+    fun `an approval whose identifier is blank cannot be read either`() =
+        runTest(timeout = timeout) {
+            // The field is required, so kotlinx accepts an empty string for it. A blank identifier reaches
+            // the reader, takes a card, and then fails the closing call's own nonblank check.
+            val (_, client) = client(answer(approved("""{"paymentTransId":""}""")))
+
+            val failure = runCatching { client.open() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is TTPTransactionException.Undecodable)
+        }
+
+    @Test
+    fun `opening names the attempt, so a repeat of it is recognizable as a repeat`() =
+        runTest(timeout = timeout) {
+            val (transport, client) = client(answer(approved("""{"paymentTransId":"$TRANS_ID"}""")))
+
+            client.open(idempotencyKey = "the-attempt")
+
+            assertEquals("the-attempt", transport.request.headers["idempotencyKey"])
+            // The whole set, so a header added here later is a decision rather than a side effect.
+            assertEquals(setOf("Content-Type", "idempotencyKey"), transport.request.headers.keys)
+        }
+
+    @Test
+    fun `closing names no attempt, because it names the transaction instead`() =
+        runTest(timeout = timeout) {
+            val (transport, client) = client(answer(""))
+
+            client.update(TRANS_ID, cardRead())
+
+            assertEquals(setOf("Content-Type"), transport.request.headers.keys)
+        }
+
+    @Test
+    fun `a key the transport could not send is refused before anything goes out`() =
+        runTest(timeout = timeout) {
+            // Padding and a control character both survive a `String` and fail at the connection, where the
+            // message names neither the key nor the field.
+            for (unusable in listOf("", " ", " padded", "padded ", "two\nlines")) {
+                val (transport, client) = client(answer(approved("""{"paymentTransId":"$TRANS_ID"}""")))
+
+                val failure = runCatching { client.open(idempotencyKey = unusable) }.exceptionOrNull()
+
+                assertTrue("<$unusable> was accepted: $failure", failure is IllegalArgumentException)
+                assertEquals("<$unusable> reached the wire", 0, transport.requests.size)
+            }
+        }
+
+    @Test
+    fun `opening is never retried, because a suppressed repeat answers with nothing to carry on with`() =
         runTest(timeout = timeout) {
             val (transport, client) = client(answer("", 500))
 

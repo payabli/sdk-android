@@ -47,22 +47,22 @@ jobs:
           # a licensing decision rather than a build one.
           cache-provider: basic
 
-      # :taptopay needs a credential fork PRs cannot have; see the card-present job.
+      # :taptopay needs a credential fork PRs cannot have; see the card-present job. :example is there
+      # too, and not here, because it links :taptopay for the Tap to pay screen and so resolves the card
+      # reader as well.
       - name: Build
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
-          :payabli-android:assembleDebug :example:assembleWithTelemetryDebug
-          :example:assembleWithoutTelemetryDebug :testutils:assembleDebug
+          :payabli-android:assembleDebug :testutils:assembleDebug
 
       - name: Unit tests
-        run: ./gradlew :core:test :payin:test :telemetry:test :example:test :testutils:test
+        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
 
       - name: Format
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :example:ktlintCheck
-          :testutils:ktlintCheck
+          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :testutils:ktlintCheck
 
       - name: Android Lint
-        run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint :example:lint
+        run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint
           :testutils:lint
 
       # The aggregate module has no tests, so no coverage task.
@@ -110,7 +110,6 @@ jobs:
           :core:createDebugUnitTestCoverageReport
           :payin:createDebugUnitTestCoverageReport
           :telemetry:createDebugUnitTestCoverageReport
-          :example:createWithTelemetryDebugUnitTestCoverageReport
           :testutils:createDebugUnitTestCoverageReport
 
       - name: Upload reports
@@ -295,20 +294,25 @@ jobs:
           # See the note on the first setup-gradle in this file.
           cache-provider: basic
 
+      # Release as well as debug, because the release variant is the artifact the card reader vendor
+      # signs and it resolves a source set debug never compiles. A break there is invisible to every
+      # other job: main has no release variant at all, and this branch found one the day it enabled it.
       - name: Build
-        run: ./gradlew :taptopay:assembleDebug
+        run: ./gradlew :taptopay:assembleDebug :example:assembleWithTelemetryDebug
+          :example:assembleWithoutTelemetryDebug :example:assembleWithTelemetryRelease
 
       - name: Unit tests
-        run: ./gradlew :taptopay:test
+        run: ./gradlew :taptopay:test :example:test
 
       - name: Format
-        run: ./gradlew :taptopay:ktlintCheck
+        run: ./gradlew :taptopay:ktlintCheck :example:ktlintCheck
 
       - name: Android Lint
-        run: ./gradlew :taptopay:lint
+        run: ./gradlew :taptopay:lint :example:lint
 
       - name: Coverage
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
+          :example:createWithTelemetryDebugUnitTestCoverageReport
 
   sonar:
     name: SonarCloud
@@ -343,7 +347,7 @@ jobs:
 
       # Analysis reads these reports, so they run first. Scoped to the modules that build
       # without a credential. :example is absent because the root build skips it in the
-      # analysis, so nothing here would read its reports. The build job still builds, tests,
+      # analysis, so nothing here would read its reports. The card-present job builds, tests,
       # lints and formats it.
       - name: Produce reports
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck

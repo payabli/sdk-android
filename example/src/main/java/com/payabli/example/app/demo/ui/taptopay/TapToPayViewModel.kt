@@ -18,6 +18,7 @@ import com.payabli.example.app.demo.terminal.EventBuffer
 import com.payabli.example.app.demo.terminal.TerminalAction
 import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
+import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,8 @@ data class TapToPayUiState(
     val problems: List<PreflightCheck> = emptyList(),
     val session: TerminalSessionState = TerminalSessionState.Idle,
     val isReady: Boolean = false,
+    /** Why the session failed, as the SDK named it. Null while it has not. */
+    val failureReason: TerminalFailureReason? = null,
     /**
      * Why the last activation attempt was refused, or null if it was not.
      *
@@ -87,6 +90,9 @@ class TapToPayViewModel(
         }
         viewModelScope.launch {
             terminal.sessionState.collect { state -> _uiState.update { it.copy(session = state) } }
+        }
+        viewModelScope.launch {
+            terminal.failureReason.collect { reason -> _uiState.update { it.copy(failureReason = reason) } }
         }
         viewModelScope.launch {
             terminal.isReady.collect { ready -> _uiState.update { it.copy(isReady = ready) } }
@@ -186,7 +192,16 @@ class TapToPayViewModel(
         _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
             val result = block()
-            val outcome = TerminalActionOutcome.from(action, result)
+            // A device the preflight passed is capable, so an ineligible verdict on it is the vendor's.
+            // Read from the terminal, whose republished flow a collector may not have updated yet.
+            val outcome =
+                TerminalActionOutcome.from(
+                    action,
+                    result,
+                    readerDenied =
+                        terminal.currentFailureReason() == TerminalFailureReason.DeviceIneligible &&
+                            _uiState.value.readiness != Readiness.NotAvailable,
+                )
             val reason = outcome.takeIf { result.isFailure }
             _uiState.update {
                 it.copy(

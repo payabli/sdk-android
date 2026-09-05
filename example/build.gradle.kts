@@ -58,9 +58,14 @@ android {
 
     defaultConfig {
         applicationId = "com.payabli.example.app"
-        // 24. The debug build reaches the local token server over cleartext, and the network
-        // security config that permits it for two addresses is ignored below 24.
-        minSdk = 24
+        // 30, imposed by the card reader this app links. The floor also has to stay at or above 24,
+        // which is where the network security config permitting cleartext to the local token server
+        // stops being ignored.
+        //
+        // The card reader's native library is arm64 only, and the app still installs on a 32-bit-only
+        // handset because another dependency carries an armeabi-v7a one. There, the Tap to pay screen
+        // is the one part that cannot work.
+        minSdk = 30
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -105,6 +110,14 @@ android {
         buildConfigField("boolean", "DEMO_DIAGNOSTICS", demoSetting("payabli.demo.diagnostics", "true"))
         // Off unless asked for, and the button it enables is drawn in a debug build only.
         buildConfigField("boolean", "DEMO_PREFILL", demoSetting("payabli.demo.prefill", "false"))
+        // The Google Cloud project the Play Integrity API is enabled in, which the card-present screen
+        // needs and a hand-installed build cannot infer. Not a secret: every app shipping Play Integrity
+        // carries its project number. Blank leaves the Tap to pay screen reporting that it is unset.
+        buildConfigField(
+            "String",
+            "DEMO_CLOUD_PROJECT_NUMBER",
+            quoted(demoSetting("payabli.cloudProjectNumber", "")),
+        )
 
         // The walkthrough submits real payments through the form, so it is kept out of an ordinary run and
         // excluded by name rather than skipped: a standing skip cannot be told apart from a regression that
@@ -173,14 +186,36 @@ android {
         }
     }
 
-    // **The demo app has no release build.** It is never published, never signed and never shipped, so a
-    // release variant is a thing CI could assemble and nobody could say why. The minified build worth
-    // checking is an integrator's, against the published artifacts and their own keep rules — not this.
-    androidComponents {
-        beforeVariants(selector().withBuildType("release")) { variant ->
-            variant.enable = false
+    // **The release variant exists for one reason: the card reader vendor signs a release artifact.**
+    // It was disabled here, on the grounds that nothing publishes this app and so nobody could say why CI
+    // would assemble it. That reason has been overtaken: the vendor's signing and onboarding step is what
+    // an APK has to pass before the reader will arm on any device, and it expects a release build. The
+    // build job assembles it for that reason, so a break in the variant the vendor signs turns a pull
+    // request red rather than surfacing at the next signing round.
+    //
+    // Signed with the debug keystore, deliberately and only until the vendor's process replaces that
+    // signature. A release variant with no signing config produces an unsigned APK, which cannot be
+    // installed and so cannot be retested against the very failure this is for. The certificate is the one
+    // already shared with the vendor, so what is submitted matches what they were told to expect.
+    //
+    // The minified build worth checking is still an integrator's, against the published artifacts and
+    // their own keep rules, and is not this.
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
+    // The card reader's kernel is refused when its native library is page-mapped from the APK rather
+    // than unpacked at install: Fiserv's signing step rejects the artifact outright. This is what sets
+    // `android:extractNativeLibs="true"` on the merged manifest, and it has to be set by the module that
+    // builds the APK. Declaring it in :taptopay's manifest does nothing, measured: AGP resolves the
+    // attribute at packaging time from this value and overwrote a library-supplied `true` with `false`.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -205,6 +240,11 @@ dependencies {
     implementation(project(":payin"))
     // Only one flavor links it; `withoutTelemetry` is the build that proves the SDK works without it.
     "withTelemetryImplementation"(project(":telemetry"))
+
+    // The SDK's card-present module, which the Tap to pay screen drives. It resolves from a credentialed
+    // repository, so every job that builds this app needs GPR_TOKEN; ci.yml puts it beside :taptopay for
+    // that reason.
+    implementation(project(":taptopay"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

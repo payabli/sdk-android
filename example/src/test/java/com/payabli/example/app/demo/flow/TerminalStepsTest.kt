@@ -126,6 +126,22 @@ class TerminalStepsTest {
     }
 
     @Test
+    fun `a device the reader vendor denied fails at the payment, not back at setup`() {
+        // Attestation, configuration and activation all succeeded; the vendor then refused the handset.
+        val sequence =
+            TerminalSteps.forCharging(
+                Readiness.Ready,
+                TerminalSessionState.Error,
+                activationFailed = false,
+                activated = true,
+                readerDenied = true,
+            )
+        assertEquals("setup did everything it owns", StepStatus.Done, sequence[1].status)
+        assertEquals(StepStatus.Done, sequence[2].status)
+        assertEquals("the refusal belongs where it bites", StepStatus.Failed, sequence[3].status)
+    }
+
+    @Test
     fun `an activation that succeeded reads as done, not as one that never applied`() {
         // Both let step 4 run, and they say different things happened. The session reports Ready for
         // either, so only the caller can tell them apart.

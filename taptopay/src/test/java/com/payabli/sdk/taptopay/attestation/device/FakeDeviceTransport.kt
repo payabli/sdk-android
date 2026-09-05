@@ -4,6 +4,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
+import kotlinx.coroutines.yield
 import kotlinx.serialization.KSerializer
 
 /**
@@ -15,9 +16,9 @@ import kotlinx.serialization.KSerializer
  * is not the trade, and the cross-module fixtures module is separate work. [PayabliTransport] is public, so
  * the cost of doing without is this file.
  *
- * Deliberately no decoration chain and no auth: what this exercises is a client's own request assembly and
- * response handling. A fake that stamped an `Authorization` header would let a test come to depend on a layer
- * it is not testing.
+ * No decoration chain and no auth. What these tests exercise is a client's own request assembly and response
+ * handling, and a fake that stamped an `Authorization` header would let one come to depend on a layer it is
+ * not testing.
  */
 internal class FakeDeviceTransport(
     private val respond: (PayabliRequest) -> PayabliResponse,
@@ -30,8 +31,16 @@ internal class FakeDeviceTransport(
     /** The single request's body as text. Empty when it carried none, which is itself worth asserting. */
     val requestBody: String get() = request.body?.toString(Charsets.UTF_8).orEmpty()
 
+    /**
+     * Suspends once before answering, which a real transport always does.
+     *
+     * Without it this double completes eagerly, and a suspend call that never suspends never observes
+     * cancellation. That hid a charge whose closing call ran in a cancellable context: the guarantee could
+     * not be shown to fail here, so the test asserting it passed either way.
+     */
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
         requests += request
+        yield()
         return respond(request)
     }
 

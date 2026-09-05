@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.session
 
+import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -26,6 +27,88 @@ class TapToPaySessionManagerTest {
     fun `a session starts at the beginning`() {
         assertEquals(TapToPaySessionState.Idle, manager.state.value)
     }
+
+    @Test
+    fun `a move a collector makes is reported after the move that woke it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            manager.advance(TapToPaySessionState.FetchingConfig)
+            manager.advance(TapToPaySessionState.InitializingReader)
+
+            val reported = mutableListOf<String>()
+            TelemetryRecorders.install { _, properties ->
+                reported += "${properties["from"]}->${properties["to"]}"
+            }
+            try {
+                val collector =
+                    launch(UnconfinedTestDispatcher(testScheduler)) {
+                        manager.state.collect { state ->
+                            if (state == TapToPaySessionState.Ready) manager.invalidate()
+                        }
+                    }
+
+                manager.advance(TapToPaySessionState.Ready)
+                collector.cancelAndJoin()
+
+                assertEquals(
+                    listOf("initializing_reader->ready", "ready->session_expired"),
+                    reported,
+                )
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
+    fun `a collector handed a state finds readiness already agreeing with it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            manager.advance(TapToPaySessionState.FetchingConfig)
+            manager.advance(TapToPaySessionState.InitializingReader)
+
+            // An unconfined collector resumes inside the state write, so this reads the pair at the one
+            // moment they can disagree.
+            val disagreements = mutableListOf<String>()
+            val collector =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    manager.state.collect { state ->
+                        val ready = manager.isReady.value
+                        if (ready != (state == TapToPaySessionState.Ready)) {
+                            disagreements += "$state with isReady=$ready"
+                        }
+                    }
+                }
+
+            manager.advance(TapToPaySessionState.Ready)
+            collector.cancelAndJoin()
+
+            assertEquals(emptyList<String>(), disagreements)
+        }
+
+    @Test
+    fun `readiness cannot be left disagreeing with the state that set it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            manager.advance(TapToPaySessionState.FetchingConfig)
+            manager.advance(TapToPaySessionState.InitializingReader)
+
+            // A second writer landing between the state write and the readiness write. An unconfined
+            // collector resumes inside the state write, which is that window exactly and reaches it
+            // without threads or timing: the reader invalidates from in there, so the two writes to
+            // readiness are ordered the wrong way round unless they were committed together.
+            val collector =
+                launch(UnconfinedTestDispatcher(testScheduler)) {
+                    manager.state.collect { state ->
+                        if (state == TapToPaySessionState.Ready) manager.invalidate()
+                    }
+                }
+
+            manager.advance(TapToPaySessionState.Ready)
+            collector.cancelAndJoin()
+
+            assertEquals(TapToPaySessionState.SessionExpired, manager.state.value)
+            assertFalse(
+                "state is ${manager.state.value} and isReady is ${manager.isReady.value}",
+                manager.isReady.value,
+            )
+        }
 
     @Test
     fun `a refused move throws before the work under it runs`() =
