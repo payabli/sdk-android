@@ -1,4 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<!--
+  The card reader's own screens are `AppCompatActivity`, and the vendor gives them no theme, so they
+  inherit the host application's and throw `IllegalStateException: You need to use a Theme.AppCompat
+  theme (or descendant) with this activity` the moment a card read starts. Measured on two handsets: both
+  armed, both emitted the charge, both died at the tap under `android:Theme.Material.Light.NoActionBar`,
+  which is an ordinary theme for a Compose app and is what this SDK's own sample uses.
 
+  So the theme is pinned here rather than asked for. A host chooses its own look and an integrator does not
+  adopt AppCompat because of a screen inside a dependency they never call. The vendor ships no theme to
+  reuse - its resources are two colours and two strings - so one is chosen: `Light` rather than `DayNight`,
+  because the text colours those screens set are their own and a system-dark background would be drawn
+  behind them.
+
+  `appcompat` reaches this module through the vendor's own `material` dependency, so nothing new is
+  declared to resolve the style.
+
+  Both activities are named because both are contributed, and an activity added by a later vendor version
+  arrives with no theme in the same way. If the reader crashes again on a version bump, look here first.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name="com.magiccube.tnp.TnPActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            tools:node="merge" />
+        <activity
+            android:name="com.magiccube.tnp.NfcTrainerActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            tools:node="merge" />
+    </application>
 </manifest>
