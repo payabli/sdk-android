@@ -19,7 +19,6 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -29,7 +28,6 @@ import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
 import java.net.ServerSocket
 import java.net.Socket
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
@@ -121,15 +119,13 @@ class PayInSessionSourceInstrumentedTest {
     @Test
     fun cAFreshTokenReachesTheSameInstalledSession() {
         // A cancelled install leaves a session installed process-wide and this source holding no record of
-        // which configuration it was. The next attempt mints a fresh token, and a token is not part of the
-        // identity the SDK compares, so it reaches that same session rather than being refused as a second one.
+        // which configuration it was. The next attempt reaches that same session rather than being refused as
+        // a second one, and it cannot differ by credential: the configuration carries none.
         runBlocking {
-            val attempted = CopyOnWriteArrayList<PayabliConfig>()
             val installing = CompletableDeferred<Unit>()
             var holdOpen = true
             val source =
                 sourceAgainst(server) { config ->
-                    attempted += config
                     if (holdOpen) {
                         installing.complete(Unit)
                         awaitCancellation()
@@ -147,29 +143,24 @@ class PayInSessionSourceInstrumentedTest {
             val second = source.session()
 
             assertTrue("the second attempt was refused: $second", second.isSuccess)
-            assertNotEquals(
-                "the test server handed out the same token twice, so this proves nothing",
-                attempted[0].accessToken,
-                attempted[1].accessToken,
-            )
         }
     }
 
     @Test
-    fun dATokenTheSdkRefusesIsAnsweredRatherThanThrown() {
-        // PayabliConfig validates what the token server returned, and a token carrying a newline cannot go in
-        // an HTTP header. Built outside the try, that threw out of session(), past the startup's fold, and out
-        // of the screen's own coroutine, leaving the step reading "Checking..." with its retry unreachable.
+    fun dAFailureInstallingTheSessionIsAnsweredRatherThanThrown() {
+        // Anything thrown while installing has to arrive as a failed Result. Thrown instead, it goes past the
+        // startup's fold and out of the screen's own coroutine, leaving the step reading "Checking..." with
+        // its retry unreachable.
         //
-        // Two characters on the wire, backslash and n, which is what JSON decodes into a newline.
-        server.token = "abc\\nvalue"
+        // A token the SDK refuses is no longer one of these: the configuration carries no token, so a
+        // malformed one is refused on the first request by the holder, which `PayabliAuthTest` asserts.
         runBlocking {
-            val source = sourceAgainst(server) { error("the install must not be reached") }
+            val source = sourceAgainst(server) { error("installing failed") }
 
             val answered = runCatching { source.session() }
 
             assertTrue("session() threw instead of answering: $answered", answered.isSuccess)
-            assertTrue("a token the SDK refuses was reported as a success", answered.getOrThrow().isFailure)
+            assertTrue("a failed install was reported as a success", answered.getOrThrow().isFailure)
         }
     }
 

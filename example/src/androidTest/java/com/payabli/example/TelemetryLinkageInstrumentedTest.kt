@@ -126,13 +126,11 @@ class TelemetryLinkageInstrumentedTest {
     /**
      * The one configuration every instrumented test in this application installs.
      *
-     * All four values the SDK compares are here, including whether a token provider was supplied: the
-     * comparison counts its presence, so a config without one is a different configuration however well the
-     * other three agree. `InstrumentedSession` holds the two the sibling classes also name.
+     * Every value the SDK compares is here. A provider is required, so its presence cannot distinguish two
+     * configurations and is not compared. `InstrumentedSession` holds the two the sibling classes also name.
      */
     private fun sharedConfiguration() =
         PayabliConfig(
-            accessToken = "a-token-for-this-test",
             entryPoint = InstrumentedSession.ENTRY_POINT,
             environment = InstrumentedSession.ENVIRONMENT.sdkEnvironment,
             tokenProvider = { "a-token-for-this-test" },

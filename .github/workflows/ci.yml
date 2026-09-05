@@ -380,7 +380,7 @@ jobs:
       # The paths inside the artifact are workspace-relative, so this restores them into the same module
       # build trees build.gradle.kts already points the analysis at.
       - name: Download instrumented coverage
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: instrumented-coverage
 

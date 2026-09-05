@@ -320,20 +320,17 @@ public class PayabliSession private constructor(
         private val entryPoint = config.entryPoint
         private val environment = config.environment
         private val telemetryEnabled = config.telemetryEnabled
-        private val hasTokenProvider = config.tokenProvider != null
 
         override fun equals(other: Any?): Boolean =
             other is ConfigIdentity &&
                 entryPoint == other.entryPoint &&
                 environment == other.environment &&
-                telemetryEnabled == other.telemetryEnabled &&
-                hasTokenProvider == other.hasTokenProvider
+                telemetryEnabled == other.telemetryEnabled
 
         override fun hashCode(): Int {
             var result = entryPoint.hashCode()
             result = 31 * result + environment.hashCode()
             result = 31 * result + telemetryEnabled.hashCode()
-            result = 31 * result + hasTokenProvider.hashCode()
             return result
         }
 
@@ -343,8 +340,6 @@ public class PayabliSession private constructor(
          * The entry point is withheld: it names a specific merchant, and this string reaches exception
          * messages and crash reports. It is the same rule and the same reason as `PayabliConfig`'s.
          */
-        override fun toString(): String =
-            "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled, " +
-                "tokenProvider=${if (hasTokenProvider) "present" else "absent"})"
+        override fun toString(): String = "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled)"
     }
 }

@@ -13,6 +13,7 @@ internal object RequestDecorationFactory {
     internal fun chainFor(auth: PayabliAuth): List<PayabliRequestDecoration> =
         listOf(
             // -- CONTRIBUTORS --
+            CorrelationDecoration(),
             BearerDecoration(auth),
             JsonBodyDecoration(),
             // -- BINDERS -- (none yet, and always last)

@@ -3,10 +3,15 @@ package com.payabli.sdk.core.config
 /**
  * Supplies a fresh access token on demand, minted by the host app's own backend.
  *
- * Called when a token is rejected, and only from inside the SDK.
+ * Called once before the first request needs a token, and again whenever one is rejected. Only from inside
+ * the SDK, and it is the only way a token reaches it: nothing is passed in at configuration.
  *
  * Must mint a token rather than return a cached one. Handing back the credential that was just rejected
- * is refused, because it would be rejected again and nothing would have rotated.
+ * is refused, because it would be rejected again and nothing would have rotated. The first call has nothing
+ * to rotate from, so any usable token answers it.
+ *
+ * Must not read the SDK's token while answering the first call. That value is the one this call was made to
+ * produce, so it is refused rather than waited for.
  *
  * Must return a non-blank token within thirty seconds. The bound is enforced by cancelling this call, so it
  * only reaches code that is cancellation-cooperative, which means suspending rather than blocking a thread.

@@ -111,7 +111,6 @@ class EntryPointRefusalLiveTest {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = LiveRunSettings.accessToken(),
                     entryPoint = LiveRunSettings.entry,
                     environment = LiveRunSettings.environment,
                     tokenProvider = { LiveRunSettings.accessToken() },

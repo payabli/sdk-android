@@ -41,10 +41,10 @@ class TokenServerClient(
         }
 
     /**
-     * The token itself, for the SDK's configuration and its token provider and for nothing else.
+     * The token itself, for the SDK's token provider and for nothing else.
      *
-     * The only path in this app that returns one. It goes straight into `PayabliConfig`, is never held in a
-     * screen's state, never rendered and never recorded in diagnostics, which is what keeps the rule
+     * The only path in this app that returns one. It is returned to the provider the SDK calls, is never held
+     * in a screen's state, never rendered and never recorded in diagnostics, which is what keeps the rule
      * [probeAccessToken] states: a token, its length and a prefix of it are all secret.
      *
      * Null when the route was unreachable or answered without one. The caller reports that as the SDK not

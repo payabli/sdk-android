@@ -3,6 +3,7 @@ package com.payabli.sdk.core.telemetry
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.config.PayabliTokenProvider
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -50,9 +51,9 @@ class TelemetryLiveTest {
                     .initializeAgainst(
                         baseUrl,
                         PayabliConfig(
-                            accessToken = "a-local-token",
                             entryPoint = ENTRY,
                             environment = PayabliEnvironment.SANDBOX,
+                            tokenProvider = PayabliTokenProvider { "a-minted-token" },
                         ),
                     ).getOrThrow()
 

@@ -77,8 +77,9 @@ class SimpleCaptureViewModel(
     }
 
     init {
-        // 1. The app's own backend mints a token and the SDK is configured with it. Nothing can be sent
-        //    until this has answered, which is why the form is not drawn yet.
+        // 1. The SDK is configured with a provider that calls the app's own backend. No token is minted
+        //    here: the first request is what asks for one. The form waits on the session alone, which is
+        //    why it is not drawn yet.
         viewModelScope.launch {
             sessionSource
                 .session()
