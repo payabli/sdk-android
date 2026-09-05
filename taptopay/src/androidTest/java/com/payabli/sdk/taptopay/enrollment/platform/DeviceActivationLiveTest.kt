@@ -184,8 +184,8 @@ class DeviceActivationLiveTest {
                 // before the attestation lookup is reached. Idempotent inside its own window.
                 val code =
                     ActivationCodeMinter.mint(
-                        baseUrl = LiveRunSettings.baseUrl,
                         accessToken = LiveRunSettings.accessToken(),
+                        baseUrl = LiveRunSettings.baseUrl,
                         entry = LiveRunSettings.entry,
                         deviceId = registration.deviceId,
                     )
@@ -228,8 +228,8 @@ class DeviceActivationLiveTest {
                 // only exists once the device has registered.
                 val code =
                     ActivationCodeMinter.mint(
-                        baseUrl = LiveRunSettings.baseUrl,
                         accessToken = LiveRunSettings.accessToken(),
+                        baseUrl = LiveRunSettings.baseUrl,
                         entry = LiveRunSettings.entry,
                         deviceId = record.deviceId,
                     )
@@ -263,7 +263,6 @@ class DeviceActivationLiveTest {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = LiveRunSettings.accessToken(),
                     entryPoint = LiveRunSettings.entry,
                     environment = LiveRunSettings.environment,
                     // What an integrator supplies: the SDK calls this when the service rejects the bearer.

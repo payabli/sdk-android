@@ -134,8 +134,8 @@ class TapToPaySessionLiveTest {
                     Log.i(LIVE_TAG, "device owes a code; minting one out of band")
                     coordinator.confirmActivation(
                         ActivationCodeMinter.mint(
-                            baseUrl = LiveRunSettings.baseUrl,
                             accessToken = LiveRunSettings.accessToken(),
+                            baseUrl = LiveRunSettings.baseUrl,
                             entry = LiveRunSettings.entry,
                             deviceId = record.deviceId,
                         ),
@@ -168,7 +168,6 @@ class TapToPaySessionLiveTest {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = LiveRunSettings.accessToken(),
                     entryPoint = LiveRunSettings.entry,
                     environment = LiveRunSettings.environment,
                     tokenProvider = { LiveRunSettings.accessToken() },

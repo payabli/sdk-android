@@ -18,16 +18,19 @@ class PayabliConfigTest {
     private val fixtureName = "fixture"
     private val fixtureOrigin = "https://api-fixture.payabli.com"
 
-    private val token = "SENTINEL-ACCESS-TOKEN"
     private val entry = "SENTINEL-ENTRY-POINT"
 
     private fun config(
-        accessToken: String = token,
         entryPoint: String = entry,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
-        tokenProvider: PayabliTokenProvider? = null,
+        tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "minted" },
         telemetryEnabled: Boolean = true,
-    ) = PayabliConfig(accessToken, entryPoint, environment, tokenProvider, telemetryEnabled)
+    ) = PayabliConfig(
+        entryPoint = entryPoint,
+        environment = environment,
+        tokenProvider = tokenProvider,
+        telemetryEnabled = telemetryEnabled,
+    )
 
     private fun failureFrom(block: () -> Unit): PayabliException {
         val thrown = runCatching { block() }.exceptionOrNull()
@@ -122,37 +125,17 @@ class PayabliConfigTest {
     }
 
     @Test
-    fun `a blank access token is a configuration error, not a late failure`() {
-        val failure = failureFrom { config(accessToken = "  ") }
-        assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
-    }
-
-    @Test
     fun `a blank entry point is a configuration error`() {
         val failure = failureFrom { config(entryPoint = "") }
         assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
     }
 
     @Test
-    fun `toString reveals neither the token nor the entry point`() {
-        val rendered = config(tokenProvider = { "unused" }).toString()
+    fun `toString reveals the entry point to nobody`() {
+        val rendered = config().toString()
 
-        assertFalse("the token leaked", rendered.contains(token))
         assertFalse("the entry point leaked", rendered.contains(entry))
         assertTrue(rendered.contains("sandbox"))
-        assertTrue(rendered.contains("present"))
-    }
-
-    @Test
-    fun `toString distinguishes a missing token provider from a present one`() {
-        assertTrue(config().toString().contains("absent"))
-        assertTrue(config(tokenProvider = { "unused" }).toString().contains("present"))
-    }
-
-    @Test
-    fun `the token provider is optional and defaults to absent`() {
-        assertNull(config().tokenProvider)
-        assertTrue(config().telemetryEnabled)
     }
 
     @Test
@@ -167,24 +150,5 @@ class PayabliConfigTest {
     @Test
     fun `telemetry can be switched off explicitly`() {
         assertFalse(config(telemetryEnabled = false).telemetryEnabled)
-    }
-
-    @Test
-    fun `an access token that cannot be a header value is refused at construction`() {
-        // CR and LF are header injection; the rest would make setRequestProperty throw from inside the
-        // transport, which is the wrong exception type for the wrong reason.
-        for (bad in listOf("tok\ren", "tok\nen", "tok en\u0000", "tok\u00e9n", "tok\ten")) {
-            val thrown = runCatching { config(accessToken = bad) }.exceptionOrNull()
-            assertTrue("$bad should be refused, got $thrown", thrown is PayabliException)
-            assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, (thrown as PayabliException).code)
-        }
-    }
-
-    @Test
-    fun `an ordinary bearer credential is accepted`() {
-        // Base64url and JWT shapes must keep working; the check must not be so strict it rejects real tokens.
-        for (good in listOf("abcDEF123", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", "a-b_c.d~e=", "tok en")) {
-            assertEquals(good, config(accessToken = good).accessToken)
-        }
     }
 }

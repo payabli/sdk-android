@@ -20,8 +20,9 @@ internal object InstrumentedSession {
     /**
      * Pinned as well as the entry point, because the SDK compares both.
      *
-     * `PayabliSession.ConfigIdentity` holds the entry point, the environment, the telemetry flag and
-     * whether a token provider was supplied. Agreeing on the entry point alone leaves a build configured
+     * `PayabliSession.ConfigIdentity` holds the entry point, the environment and the telemetry flag. A
+     * provider is required, so its presence distinguishes nothing and is not compared. Agreeing on the
+     * entry point alone leaves a build configured
      * with `payabli.demo.environment` installing one environment here and another there, which fails
      * the same way and only on that build.
      */

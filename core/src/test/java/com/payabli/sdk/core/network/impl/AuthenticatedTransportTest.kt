@@ -17,6 +17,7 @@ import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.Retry
 import com.payabli.sdk.core.network.RetryPolicy
 import com.payabli.sdk.testutils.auth.TEST_TOKEN
+import com.payabli.sdk.testutils.auth.mintingThen
 import com.payabli.sdk.testutils.auth.testAuth
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
@@ -144,10 +145,9 @@ class AuthenticatedTransportTest {
     private fun authWithCountingRefresh(calls: AtomicInteger): PayabliAuth =
         PayabliAuth(
             PayabliConfig(
-                accessToken = "initial-token",
                 entryPoint = "entry",
                 environment = PayabliEnvironment.SANDBOX,
-                tokenProvider = { REFRESHED.also { calls.incrementAndGet() } },
+                tokenProvider = mintingThen("initial-token") { REFRESHED.also { calls.incrementAndGet() } },
             ),
         )
 
@@ -362,6 +362,10 @@ class AuthenticatedTransportTest {
                 val calls = AtomicInteger()
                 val minted = listOf("rotated-by-other", "minted-for-us")
                 val auth = testAuth(tokenProvider = { minted[calls.getAndIncrement()] })
+                // Minted here rather than by the first request: what this case is about happens while that
+                // request is parked before the bearer is read, so the token it rotates away from has to
+                // already exist.
+                auth.accessToken()
                 val parked = CompletableDeferred<Unit>()
                 val release = CompletableDeferred<Unit>()
 
@@ -460,6 +464,9 @@ class AuthenticatedTransportTest {
                 val calls = AtomicInteger()
                 val auth = testAuth(tokenProvider = { "refreshed-${calls.incrementAndGet()}" })
                 val subject = stack(server, auth)
+                // Settling on a token needs one to be held, and the holder mints rather than being handed
+                // one, so the read that a sibling request would have done happens here.
+                auth.accessToken()
 
                 // Finish first, exactly as a sibling request would have: the token is unchanged and no
                 // refresh is running, so this is the settled case the choke-point acts on.
@@ -556,20 +563,6 @@ class AuthenticatedTransportTest {
                 assertEquals(2, server.recorded.size)
                 assertEquals("the first attempt sent the body", payload, server.recorded[0].body)
                 assertEquals("the retry sent the same body", payload, server.recorded[1].body)
-            }
-        }
-
-    @Test
-    fun `a 401 with no provider is terminal and is not retried`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            LoopbackServer().use { server ->
-                server.respondInOrder(UNAUTHORIZED to "")
-                val auth = testAuth(tokenProvider = null)
-
-                val failure = failureFrom { stack(server, auth).execute(ping()) }
-
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
-                assertEquals("nothing to refresh with, so no second attempt", 1, server.recorded.size)
             }
         }
 
@@ -747,7 +740,6 @@ class AuthenticatedTransportTest {
                 val auth =
                     PayabliAuth(
                         PayabliConfig(
-                            accessToken = TEST_TOKEN,
                             entryPoint = "entry",
                             environment = PayabliEnvironment.SANDBOX,
                             tokenProvider = {

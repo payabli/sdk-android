@@ -6,10 +6,8 @@ import com.payabli.sdk.core.config.PayabliTokenProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
-private const val TOKEN = "an-access-token-that-must-not-leak"
 private const val ENTRY_POINT = "a-merchant-entry-point"
 
 /**
@@ -21,14 +19,12 @@ private const val ENTRY_POINT = "a-merchant-entry-point"
  */
 class ConfigIdentityTest {
     private fun config(
-        accessToken: String = TOKEN,
         entryPoint: String = ENTRY_POINT,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
         telemetryEnabled: Boolean = true,
-        tokenProvider: PayabliTokenProvider? = null,
+        tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "t" },
     ) = PayabliSession.ConfigIdentity(
         PayabliConfig(
-            accessToken = accessToken,
             entryPoint = entryPoint,
             environment = environment,
             tokenProvider = tokenProvider,
@@ -49,15 +45,6 @@ class ConfigIdentityTest {
         assertNotEquals(config(), config(entryPoint = "another-entry"))
         assertNotEquals(config(), config(environment = PayabliEnvironment.PRODUCTION))
         assertNotEquals(config(), config(telemetryEnabled = false))
-        assertNotEquals(config(), config(tokenProvider = PayabliTokenProvider { "t" }))
-    }
-
-    @Test
-    fun `a freshly minted token is the same session`() {
-        // A token is a credential, not an identity: the same entry point in the same environment is the same
-        // session whichever token it carries.
-        assertEquals(config(), config(accessToken = "a-fresh-token"))
-        assertEquals(config().hashCode(), config(accessToken = "a-fresh-token").hashCode())
     }
 
     @Test
@@ -79,16 +66,9 @@ class ConfigIdentityTest {
     fun `rendering it reveals neither the token nor the entry point`() {
         val rendered = config().toString()
 
-        assertFalse("the access token reached toString: $rendered", rendered.contains(TOKEN))
         // The same rule `PayabliConfigTest` holds the configuration to, for the same reason: the entry point
         // names a specific merchant and this string reaches exception messages and crash reports. Copying
         // the fields into another type does not stop that applying, which is how it was missed here.
         assertFalse("the entry point reached toString: $rendered", rendered.contains(ENTRY_POINT))
-    }
-
-    @Test
-    fun `rendering it still says whether a provider was supplied`() {
-        assertTrue(config().toString().contains("absent"))
-        assertTrue(config(tokenProvider = PayabliTokenProvider { "unused" }).toString().contains("present"))
     }
 }

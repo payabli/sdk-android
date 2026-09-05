@@ -7,7 +7,6 @@ import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
@@ -120,25 +119,15 @@ internal class AuthenticatedTransport(
     }
 
     /**
-     * Refreshes, and reports the session dead only when the failure is structural.
+     * Refreshes, and never finishes the session on the outcome.
      *
-     * The discriminator is [PayabliAuth.canRefresh], not the error: a provider that timed out or threw once
-     * is a bad minute for the host's backend and the next request may well succeed, whereas no provider at
-     * all means every future refresh fails identically. Finishing a session for the first would make
-     * [SdkState.ReinitializeRequired] fire on a transient blip and teach hosts to ignore it.
+     * A provider that timed out or threw is a bad minute for the host's backend and the next request may
+     * well succeed, so finishing here would make [SdkState.ReinitializeRequired] fire on a transient blip
+     * and teach hosts to ignore it. What finishes a session is a refreshed token being refused in turn,
+     * which [PayabliAuth.finishIfSettledOn] decides from the token rather than from this failure.
      */
     private suspend fun refresh(rejected: String) {
-        try {
-            auth.invalidateAndRefresh(rejected)
-        } catch (failure: PayabliException) {
-            // No provider means every future refresh fails identically, so nothing could rotate and there
-            // is no settledness question to ask.
-            if (!auth.canRefresh) {
-                auth.finish(failure)
-                onAuthFailure.onUnrecoverable(failure)
-            }
-            throw failure
-        }
+        auth.invalidateAndRefresh(rejected)
     }
 
     /**

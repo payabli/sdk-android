@@ -52,18 +52,44 @@ class PayabliAuthTest {
     /** The failure the choke-point hands in when a refreshed token is refused again. */
     private fun terminal() = PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, TERMINAL_REASON)
 
-    private fun auth(
-        accessToken: String = "initial-token",
-        tokenProvider: PayabliTokenProvider? = null,
-    ) = PayabliAuth(
-        PayabliConfig(
-            accessToken = accessToken,
-            entryPoint = "entry",
-            environment = PayabliEnvironment.SANDBOX,
-            tokenProvider = tokenProvider,
-        ),
-        DefaultSdkLogger(LogCategory.AUTH, sink),
-    )
+    /**
+     * A provider that answers each value in turn and the last one for every call after.
+     *
+     * The holder mints rather than being handed a token, so a test that needs one value held and a
+     * different one on refresh says both here instead of seeding the first.
+     */
+    private fun answering(vararg tokens: String): PayabliTokenProvider {
+        val calls = AtomicInteger()
+        return PayabliTokenProvider { tokens[minOf(calls.getAndIncrement(), tokens.lastIndex)] }
+    }
+
+    /**
+     * A holder already holding [held], whose provider runs [refresh] for every call after that.
+     *
+     * Where a test about a refresh starts: a rejection needs a token to have been sent, and the holder
+     * obtains its first one by minting rather than by being handed it. The read is a provider call and a
+     * test that counts calls counts it, which is not an artefact of this helper. Obtaining the first token
+     * is a call to the host's backend, and a count that omitted it would describe a holder that got its
+     * first token from somewhere else.
+     */
+    private suspend fun holding(
+        held: String,
+        refresh: PayabliTokenProvider,
+    ): PayabliAuth {
+        val calls = AtomicInteger()
+        return auth { if (calls.getAndIncrement() == 0) held else refresh.freshToken() }
+            .also { it.accessToken() }
+    }
+
+    private fun auth(tokenProvider: PayabliTokenProvider = PayabliTokenProvider { "initial-token" }) =
+        PayabliAuth(
+            PayabliConfig(
+                entryPoint = "entry",
+                environment = PayabliEnvironment.SANDBOX,
+                tokenProvider = tokenProvider,
+            ),
+            DefaultSdkLogger(LogCategory.AUTH, sink),
+        )
 
     /**
      * Bounded so a stranded claim fails with what went wrong, rather than hanging until the test
@@ -83,9 +109,94 @@ class PayabliAuthTest {
     }
 
     @Test
-    fun `the initial token comes from the config`() =
+    fun `the first token comes from the provider, on the first read`() =
         runTest(timeout = TEST_TIMEOUT) {
-            assertEquals("initial-token", auth().accessToken())
+            val calls = AtomicInteger()
+            val subject = auth { "minted-${calls.incrementAndGet()}" }
+
+            // Nothing is minted by construction: the holder is handed no token, so the read is what obtains
+            // one. A holder built and never read costs the host's backend nothing.
+            assertEquals("constructing the holder must not call the provider", 0, calls.get())
+
+            assertEquals("minted-1", subject.accessToken())
+            assertEquals(1, calls.get())
+            assertEquals("a second read reuses what was minted", "minted-1", subject.accessToken())
+            assertEquals(1, calls.get())
+        }
+
+    /**
+     * The change flow reports rotations, and a first mint replaces nothing. A collector subscribes to be
+     * told when the token it holds stopped being the current one, so reporting the first would make every
+     * session's first request read as a refresh.
+     */
+    @Test
+    fun `the first mint is not published as a rotation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Unminted, and the collector subscribes before the mint. The flow replays nothing, so a holder
+            // that had already minted would hide an emission behind the subscription rather than observe it
+            // not happening, and the assertion below would hold either way.
+            val subject = auth(answering("initial-token", "fresh-token"))
+            val seen = mutableListOf<String>()
+            val collector = launch { subject.tokenChanges.collect { seen += it } }
+            yield()
+
+            assertEquals("initial-token", subject.accessToken())
+            yield()
+            assertEquals("nothing rotated, so nothing is published", emptyList<String>(), seen)
+
+            subject.invalidateAndRefresh("initial-token")
+            yield()
+
+            assertEquals(listOf("fresh-token"), seen)
+            collector.cancel()
+        }
+
+    @Test
+    fun `concurrent first readers share one mint`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val calls = AtomicInteger()
+            val gate = CompletableDeferred<Unit>()
+            val subject =
+                auth {
+                    calls.incrementAndGet()
+                    gate.await()
+                    "minted-once"
+                }
+
+            val readers = List(5) { async { subject.accessToken() } }
+            while (calls.get() == 0) yield()
+            gate.complete(Unit)
+
+            // The claim a refresh takes is the claim a first read takes, which is what keeps five readers
+            // from becoming five calls to the host's backend on a cold session.
+            assertEquals(List(5) { "minted-once" }, readers.map { it.await() })
+            assertEquals("exactly one provider invocation", 1, calls.get())
+        }
+
+    /**
+     * A provider that reads the token while minting the first one is asking for the value it was called to
+     * produce. There is nothing to answer it with, and joining the claim would be joining itself, so it
+     * fails instead of waiting.
+     *
+     * Bounded: the failure this rules out is a wedge, and an unbounded case would hang with no output.
+     */
+    @Test
+    fun `a provider that reads the token it is minting fails rather than waiting`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var holder: PayabliAuth? = null
+            var reentrant: Result<String>? = null
+            val subject =
+                auth {
+                    reentrant = runCatching { holder!!.accessToken() }
+                    "fresh-token"
+                }
+            holder = subject
+
+            assertEquals("fresh-token", completing("the first mint") { subject.accessToken() })
+
+            val failure = reentrant?.exceptionOrNull()
+            assertTrue("expected a PayabliException, got $failure", failure is PayabliException)
+            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
         }
 
     @Test
@@ -205,17 +316,6 @@ class PayabliAuthTest {
         }
 
     @Test
-    fun `no provider makes an expired token terminal`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            val subject = auth(tokenProvider = null)
-
-            val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
-
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
-            assertEquals("the token is unchanged", "initial-token", subject.accessToken())
-        }
-
-    @Test
     fun `a provider failure surfaces as token expired without its own message`() =
         runTest(timeout = TEST_TIMEOUT) {
             val sentinel = "SENTINEL-BACKEND-BODY"
@@ -274,7 +374,7 @@ class PayabliAuthTest {
             var holder: PayabliAuth? = null
             var reentrantRead: String? = null
             val subject =
-                auth {
+                holding("initial-token") {
                     reentrantRead = holder!!.accessToken()
                     "fresh-token"
                 }
@@ -292,7 +392,7 @@ class PayabliAuthTest {
             var holder: PayabliAuth? = null
             var reentrantRefresh: String? = null
             val subject =
-                auth {
+                holding("initial-token") {
                     reentrantRefresh = holder!!.invalidateAndRefresh("initial-token")
                     "fresh-token"
                 }
@@ -308,12 +408,12 @@ class PayabliAuthTest {
             var outer: PayabliAuth? = null
             var backIntoTheOuter: String? = null
             val inner =
-                auth("second-old") {
+                holding("second-old") {
                     backIntoTheOuter = outer!!.invalidateAndRefresh("first-old")
                     "second-fresh"
                 }
             val subject =
-                auth("first-old") {
+                holding("first-old") {
                     inner.invalidateAndRefresh("second-old")
                     "first-fresh"
                 }
@@ -329,7 +429,7 @@ class PayabliAuthTest {
     fun `a provider calling an unrelated holder refreshes that holder`() =
         runTest(timeout = TEST_TIMEOUT) {
             var fromTheOtherHolder: String? = null
-            val other = auth("other-old") { "other-fresh" }
+            val other = holding("other-old") { "other-fresh" }
             val subject =
                 auth {
                     fromTheOtherHolder = other.invalidateAndRefresh("other-old")
@@ -505,7 +605,7 @@ class PayabliAuthTest {
     @Test
     fun `a blank refreshed token is refused and the old one survives`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val subject = auth { "   " }
+            val subject = holding("initial-token") { "   " }
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
@@ -546,12 +646,30 @@ class PayabliAuthTest {
     fun `a refreshed token that cannot be a header value is refused`() =
         runTest(timeout = TEST_TIMEOUT) {
             for (bad in listOf("fresh\rtoken", "fresh\ntoken", "fresh\u0000token")) {
-                val subject = auth { bad }
+                val subject = holding("initial-token") { bad }
 
                 val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
                 assertEquals("$bad should be malformed", PayabliErrorCode.TOKEN_MALFORMED, failure.code)
                 assertEquals("the usable token is untouched", "initial-token", subject.accessToken())
+            }
+        }
+
+    /**
+     * The header-safety check must not be so strict it refuses tokens a real broker mints.
+     *
+     * Moved here from the configuration's own tests when the seed was removed: the check lives on the
+     * refresh path now, and a rule with only negative cases can be tightened until it rejects everything
+     * without anything going red.
+     */
+    @Test
+    fun `an ordinary bearer credential survives the refresh check`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            for (good in listOf("abcDEF123", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig", "a-b_c.d~e=", "tok en")) {
+                val subject = auth(answering("initial-token", good))
+                assertEquals("initial-token", subject.accessToken())
+
+                assertEquals(good, subject.invalidateAndRefresh("initial-token"))
             }
         }
 
@@ -620,7 +738,6 @@ class PayabliAuthTest {
             val subject =
                 PayabliAuth(
                     PayabliConfig(
-                        accessToken = "initial-token",
                         entryPoint = "entry",
                         environment = PayabliEnvironment.SANDBOX,
                         tokenProvider = { CompletableDeferred<String>().await() },
@@ -805,7 +922,7 @@ class PayabliAuthTest {
                 val thrown =
                     runCatching {
                         PayabliAuth(
-                            PayabliConfig("t", "e", PayabliEnvironment.SANDBOX),
+                            PayabliConfig("e", PayabliEnvironment.SANDBOX, PayabliTokenProvider { "t" }),
                             DefaultSdkLogger(LogCategory.AUTH, sink),
                             providerTimeoutMillis = invalid,
                         )
@@ -873,12 +990,10 @@ class PayabliAuthTest {
         runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject =
-                auth(
-                    tokenProvider = {
-                        calls.incrementAndGet()
-                        "never-minted"
-                    },
-                )
+                holding("initial-token") {
+                    calls.incrementAndGet()
+                    "never-minted"
+                }
             assertTrue(subject.finishIfSettledOn("initial-token", terminal()))
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
@@ -895,12 +1010,10 @@ class PayabliAuthTest {
         runTest(timeout = TEST_TIMEOUT) {
             val calls = AtomicInteger()
             val subject =
-                auth(
-                    tokenProvider = {
-                        calls.incrementAndGet()
-                        "never-minted"
-                    },
-                )
+                holding("initial-token") {
+                    calls.incrementAndGet()
+                    "never-minted"
+                }
             assertTrue(subject.finishIfSettledOn("initial-token", terminal()))
 
             val outcomes =
@@ -919,7 +1032,7 @@ class PayabliAuthTest {
     @Test
     fun `reset revives a finished instance, so one test cannot poison the next`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val subject = auth(tokenProvider = { "refreshed-token" })
+            val subject = holding("initial-token") { "refreshed-token" }
             assertTrue(subject.finishIfSettledOn("initial-token", terminal()))
             assertNotNull(subject.terminalFailure)
 

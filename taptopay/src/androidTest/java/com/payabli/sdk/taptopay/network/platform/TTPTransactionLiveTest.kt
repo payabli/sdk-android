@@ -193,8 +193,8 @@ class TTPTransactionLiveTest {
             // and the route needs a device handle that exists only once it has registered.
             enrollment.confirmActivation(
                 ActivationCodeMinter.mint(
-                    baseUrl = LiveRunSettings.baseUrl,
                     accessToken = LiveRunSettings.accessToken(),
+                    baseUrl = LiveRunSettings.baseUrl,
                     entry = LiveRunSettings.entry,
                     deviceId = record.deviceId,
                 ),
@@ -207,7 +207,6 @@ class TTPTransactionLiveTest {
         PayabliSession
             .initialize(
                 PayabliConfig(
-                    accessToken = LiveRunSettings.accessToken(),
                     entryPoint = LiveRunSettings.entry,
                     environment = LiveRunSettings.environment,
                     tokenProvider = { LiveRunSettings.accessToken() },

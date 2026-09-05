@@ -23,7 +23,7 @@ fun interface PayInFlowGate {
     suspend fun open(scope: CoroutineScope): Result<PayabliPayIn>
 }
 
-/** The real one: mint a token, configure the session, build the flow for this entry point. */
+/** The real one: configure the session and build the flow for this entry point. Nothing is minted here. */
 fun payInFlowGate(
     sessionSource: PayInSessionSource,
     entryPoint: String,

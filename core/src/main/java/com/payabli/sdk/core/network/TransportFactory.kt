@@ -48,7 +48,7 @@ internal object TransportFactory {
      *
      * Kept narrow rather than promoted now that this object is `internal`. `@VisibleForTesting` is a Lint hint
      * and leaves a member public in bytecode, so as published API this would be an origin override: a caller
-     * could send [PayabliConfig.accessToken] to any origin it liked, which is exactly what [PayabliEnvironment]
+     * could send the session's token to any origin it liked, which is exactly what [PayabliEnvironment]
      * promises shipped configuration cannot do, "not even behind a debug flag". A capability that needs a
      * live-server test wants a fixtures artifact, not a hole here.
      */
