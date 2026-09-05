@@ -17,6 +17,12 @@
 
   Both activities are named because both are contributed, and an activity added by a later vendor version
   arrives with no theme in the same way. If the reader crashes again on a version bump, look here first.
+
+  `MissingClass` is suppressed on each element because the classes are on the runtime classpath and not on
+  the compile classpath lint reads: `ttp-payment` declares `magiccube` at runtime scope, so it appears in
+  `debugRuntimeClasspath` and not in `debugCompileClasspath`, while `magiccube-3.4.1.aar` carries
+  `com/magiccube/tnp/TnPActivity.class` and `com/magiccube/tnp/NfcTrainerActivity.class`. Suppressing it
+  per element leaves a name that is genuinely wrong still failing.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
@@ -25,10 +31,12 @@
         <activity
             android:name="com.magiccube.tnp.TnPActivity"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            tools:ignore="MissingClass"
             tools:node="merge" />
         <activity
             android:name="com.magiccube.tnp.NfcTrainerActivity"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            tools:ignore="MissingClass"
             tools:node="merge" />
     </application>
 </manifest>
