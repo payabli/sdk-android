@@ -36,10 +36,24 @@ class CardReaderEligibilityInstrumentedTest {
         assertTrue(refusal == null || refusal is DeviceIneligibleException)
     }
 
+    /**
+     * Driven onto the refusing side rather than waiting for a handset that refuses.
+     *
+     * Every device these run on qualifies, so reading the real facts here returned without asserting
+     * anything and the redaction this names was never exercised.
+     */
     @Test
     fun aRefusalNamesTheCheckAndNotTheDevice() {
-        val refusal = runCatching { CardReaderEligibility(context).check() }.exceptionOrNull() ?: return
+        val belowTheFloor = CardReaderEligibility(context, apiLevel = CARD_PRESENT_MIN_API - 1)
+        val withoutContactless = CardReaderEligibility(context, hasContactless = { false })
 
-        assertTrue(refusal.message.orEmpty(), !refusal.message.orEmpty().contains(Build.MODEL))
+        for (gate in listOf(belowTheFloor, withoutContactless)) {
+            val refusal = runCatching { gate.check() }.exceptionOrNull()
+
+            assertTrue("a refusal was expected", refusal is DeviceIneligibleException)
+            // The model is what a refusal must not carry: it reaches crash reports and names the handset
+            // rather than the check that failed.
+            assertTrue(refusal?.message.orEmpty(), !refusal?.message.orEmpty()!!.contains(Build.MODEL))
+        }
     }
 }
