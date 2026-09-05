@@ -6,12 +6,15 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
+import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
@@ -34,6 +37,7 @@ internal class TapToPayChargeRunner(
     private val reader: TapToPayProvider,
     private val client: TTPTransactionClient,
     private val store: AttestedDeviceStore,
+    private val keys: ChargeKeyStore,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /** One payment at a time. A second caller waits; the reader takes one card. */
@@ -65,6 +69,14 @@ internal class TapToPayChargeRunner(
             // measures is what a merchant waits through.
             val startedAt = System.nanoTime()
             TapToPayReports.chargeStarted()
+
+            // Hoisted so the failure path below can name the key this charge sent. Null until it is
+            // reserved, which is what says a failure happened before there was an attempt to release.
+            var reserved: String? = null
+            // Set once the reader has been asked for a card, and never unset. Past that point no failure
+            // releases the key: the sale may already be captured, so nothing arriving afterwards is
+            // evidence the money did not move.
+            var askedForCard = false
             try {
                 // Repairs a spent reader session and does nothing to a ready one.
                 coordinator.reinitializeIfNeeded()
@@ -78,11 +90,16 @@ internal class TapToPayChargeRunner(
                         manager.invalidate()
                         error("the session is ready with no device to charge as")
                     }
+                // Reserved after the checks above, so a charge that never reaches the wire leaves no key
+                // behind, and held across a failure that leaves it unknown whether this opened anything.
+                val idempotencyKey = keys.reserve(entry)
+                reserved = idempotencyKey
                 val paymentTransId =
                     client.initiate(
                         entryPoint = entry,
                         deviceId = deviceId,
                         paymentDetails = paymentDetails,
+                        idempotencyKey = idempotencyKey,
                         customer = customer,
                         invoice = invoice,
                         orderDescription = orderDescription,
@@ -92,6 +109,9 @@ internal class TapToPayChargeRunner(
                     LogField.safe("phase", "initiate"),
                 ) { "the payment was opened" }
 
+                // Set before the reader is asked, not after it answers: the processor takes the sale before
+                // the answer is delivered, so everything from here on may have moved money.
+                askedForCard = true
                 val result =
                     try {
                         reader.startReading(
@@ -104,7 +124,7 @@ internal class TapToPayChargeRunner(
                             ),
                         )
                     } catch (withdrawn: CancellationException) {
-                        closeAfterFailedRead(paymentTransId, withdrawn)
+                        closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey)
                         throw withdrawn
                     } catch (failure: Exception) {
                         // A spent reader session is repaired by re-initializing. `invalidate` drops the move when
@@ -118,11 +138,13 @@ internal class TapToPayChargeRunner(
                         ) {
                             manager.invalidate()
                         }
-                        closeAfterFailedRead(paymentTransId, failure)
+                        closeAfterFailedRead(paymentTransId, failure, idempotencyKey)
                         throw failure
                     }
 
                 client.update(paymentTransId, result)
+                // The close landed, so this transaction is resolved and its attempt is over.
+                keys.settle(entry, idempotencyKey)
                 TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                     .also { TapToPayReports.chargeSucceeded(startedAt) }
             } catch (withdrawn: CancellationException) {
@@ -130,23 +152,35 @@ internal class TapToPayChargeRunner(
                 // not a failure.
                 throw withdrawn
             } catch (failure: Throwable) {
+                // Only before the reader answered, and only for a failure that says nothing was opened.
+                // After the reader has answered the sale may be captured, so no failure arriving from
+                // there on is evidence the money did not move.
+                if (!askedForCard && isAnswered(failure)) reserved?.let { keys.settle(entry, it) }
                 TapToPayReports.chargeFailed(failure, startedAt)
                 throw failure
             }
         }
 
     /**
-     * Closes a transaction whose tap never completed, best effort.
+     * Closes a transaction whose tap did not complete, best effort, and lets its key go if that lands.
      *
      * Uncancellable: a withdrawn caller is one of the ways a tap does not complete, and the transaction is
-     * open either way.
+     * open either way. That also makes it the one place a cancelled charge can still reach storage.
+     *
+     * **The key is released only if the close is recorded.** A read that failed is not proof that nothing
+     * was captured — the processor takes the sale before the answer reaches this code, so a cancellation
+     * can race with delivery. What the close settles is the transaction: once the service has recorded this
+     * one as failed, its outcome is no longer in doubt and the next sale needs its own. When the close does
+     * not land, the transaction is open and the attempt stays named, so a repeat is recognizable as one.
      */
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,
         failure: Throwable,
+        idempotencyKey: String,
     ) = withContext(NonCancellable) {
         try {
             client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
+            keys.settle(entry, idempotencyKey)
         } catch (failedClose: Exception) {
             logger.warn(
                 LogField.safe("event", "ttp_charge_close_failed"),
@@ -155,4 +189,25 @@ internal class TapToPayChargeRunner(
             ) { "an opened payment could not be closed after a failed tap" }
         }
     }
+
+    /**
+     * Whether [failure] says nothing was opened, so its key can be let go.
+     *
+     * Read only before the reader has answered. The service refusing, declining or reporting the paypoint
+     * unequipped are all answers about the opening: no transaction exists, so what comes next is a new
+     * attempt and a held key would refuse it. Anything else is kept.
+     *
+     * Kept rather than released is the safe direction, so this answers true only for what it recognises.
+     */
+    private fun isAnswered(failure: Throwable): Boolean =
+        when (failure) {
+            is CancellationException -> false
+            is TTPTransactionException.Refused,
+            is TTPTransactionException.ServiceRejected,
+            is TTPTransactionException.NotEnabled,
+            -> true
+
+            is PayabliException -> !failure.code.leavesOutcomeUnknown
+            else -> false
+        }
 }

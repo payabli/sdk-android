@@ -44,6 +44,15 @@ public class PayabliRequest(
         public const val APPLICATION_JSON: String = "application/json"
 
         /**
+         * The header a money-moving request names its attempt by, so a repeat is recognizable as one.
+         *
+         * This spelling, not `Idempotency-Key`. Here rather than in a capability module because both the
+         * card-not-present and card-present routes send it, and a wire constant spelled by hand in two
+         * modules is one that drifts.
+         */
+        public const val IDEMPOTENCY_KEY_HEADER: String = "idempotencyKey"
+
+        /**
          * Convenience for JSON bodies, adding `Content-Type: application/json`.
          *
          * [bodySerializer] is explicit for the same reason [PayabliTransport.execute] takes one: a
