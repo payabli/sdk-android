@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
@@ -256,5 +257,22 @@ class ChargeKeyStoreTest {
             // Still held, since the removal was refused, and the caller was told nothing.
             refusing = false
             assertEquals("the key was forgotten after a refused write", "key-1", store.reserve(ENTRY))
+        }
+
+    @Test
+    fun `a settle over a record that will not decode does not fail the caller`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The other way `settle` reaches a failure, and the more expensive one. `load` refuses to answer
+            // empty for a record it cannot read, so it raises, and by this line the charge has been closed
+            // at the service. Letting that escape hands the caller a failure for a payment the processor
+            // completed, and the retry it invites is the second sale this whole class exists to prevent.
+            val storage = FakeSecureStore()
+            storage.set(CHARGE_KEY_ENTRY, "not json".toByteArray(Charsets.UTF_8))
+            val store = storeOver(storage)
+
+            val failure = runCatching { store.settle(ENTRY, "key-1") }.exceptionOrNull()
+
+            assertNull("$failure", failure)
+            assertTrue("the unreadable record was removed", storage.get(CHARGE_KEY_ENTRY) != null)
         }
 }
