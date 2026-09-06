@@ -149,13 +149,27 @@ class FiservDiagnosticsLiveTest {
     private fun String.withoutSecrets(vararg secrets: String): String =
         secrets.filter { it.isNotBlank() }.fold(this) { line, secret -> line.replace(secret, "[redacted]") }
 
-    /** The part before the first colon, so a value the vendor derived cannot travel with its label. */
-    private fun String.labelOnly(): String {
-        val label = substringBefore(':', missingDelimiterValue = "")
-        return if (label.isBlank()) "[unrecognised line, $length characters]" else "$label: [withheld]"
-    }
+    /**
+     * One of the labels this vendor version is known to emit, or nothing but a length.
+     *
+     * Matched against [KNOWN_LABELS] rather than taken as whatever precedes the first colon. A line the
+     * vendor adds later can put anything in that position, a derived credential included, and printing it
+     * because it looked like a label is the same leak by another route.
+     */
+    private fun String.labelOnly(): String =
+        KNOWN_LABELS.firstOrNull { startsWith("$it:") }?.let { "$it: [withheld]" }
+            ?: "[unrecognised line, $length characters]"
 
     private companion object {
+        /**
+         * Every label this vendor version puts on its progress channel.
+         *
+         * Both carry a value that is withheld: a bearer the vendor derived from the reader credentials, and
+         * a device identifier. A label absent from this list is not printed, so a version that adds one is
+         * quiet until someone reads it and decides.
+         */
+        val KNOWN_LABELS = listOf("Access token", "AndroidTTPId")
+
         /** One tag, so a support ticket is one logcat filter. */
         const val TAG = "PayabliVendorDiag"
     }
