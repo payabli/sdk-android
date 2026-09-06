@@ -137,6 +137,8 @@ internal class TapToPayChargeRunner(
     /**
      * Asks the reader for one card, and closes [paymentTransId] if it does not deliver one.
      *
+     * [amount] is the value at the scale the paypoint recorded, so the card is asked for what was opened.
+     *
      * **Every exit but a card leaves a transaction open at the service**, cancellation included, so both
      * failure branches close it on the way out.
      *
@@ -152,7 +154,6 @@ internal class TapToPayChargeRunner(
         try {
             reader.startReading(
                 CardReadRequest(
-                    // The rounded value, so the card is asked for what the paypoint recorded.
                     amount = amount,
                     merchantTransactionId = paymentTransId,
                     merchantOrderId = paymentTransId,
