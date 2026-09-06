@@ -14,7 +14,6 @@ import com.fiserv.commercehub.ttp.provider.exception.FiservTTPCardReaderExceptio
 import com.fiserv.commercehub.ttp.provider.model.ChargesResponse
 import com.fiserv.commercehub.ttp.provider.model.FiservTTPConfig
 import com.fiserv.commercehub.ttp.provider.model.TransactionDetailsRequest
-import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.CardReaderGateway
 import com.payabli.sdk.taptopay.adapters.ChargeRecord
@@ -59,7 +58,7 @@ internal class FiservCardReaderGateway(
             // A reader that answers `false` is not armed, and the session would otherwise publish Ready over
             // it. The vendor's own version emits only `true` or a failed `Result`, so this is unreachable
             // today and is what a version bump would arrive through.
-            if (!armed) throw CardReaderException.ArmingFailed(null)
+            if (!armed) throw CardReaderFailure(ReaderFailureKind.UNCLASSIFIED)
         }
     }
 
