@@ -13,6 +13,7 @@ import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
+import com.payabli.sdk.taptopay.model.identifiesSomeone
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
@@ -52,6 +53,10 @@ internal class TapToPayChargeRunner(
     ): TapToPayResult =
         region.withLock {
             val sendable = sendableAmountOf(paymentDetails)
+            // The service refuses an opening that identifies nobody, and it refuses it after the reader has
+            // been armed and a card taken. Checked here, so a caller learns it before a merchant asks
+            // someone to tap.
+            require(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
 
             // After the precondition, so a caller's own bad argument is not counted as a charge that
             // failed. The bracket spans the whole of initiate, the tap and update, because what it

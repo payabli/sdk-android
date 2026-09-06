@@ -37,6 +37,9 @@ private const val TRANS_ID = "12-abc"
 
 private const val INITIATE = "/api/v2/MoneyIn/initiate"
 
+/** Every charge here names a payer, because a charge that names nobody is refused before it is sent. */
+private val PAYER = TapToPayCustomerData(firstName = "Ada", lastName = "Payer", customerNumber = "cust-1")
+
 private const val UPDATE = "/api/v2/MoneyIn/update/$TRANS_ID"
 
 private fun script(
@@ -93,7 +96,7 @@ class TapToPayChargeRunnerTest {
                 val outcome =
                     runCatching {
                         runnerOver(fixture)
-                            .charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                            .charge(details(), PAYER, TapToPayInvoiceData(), null)
                     }.exceptionOrNull()
 
                 assertTrue(outcome.toString(), outcome is CancellationException)
@@ -109,12 +112,54 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a charge naming nobody is refused before the reader is touched`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The service refuses this opening, and it refuses it after the reader has been armed and a
+            // card has been taken. Asserting the reader was never asked is the point: the failure alone
+            // would pass with the check placed after the tap, which is where it costs a merchant.
+            val fixture = readyFixture()
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(
+                        details(),
+                        TapToPayCustomerData(),
+                        TapToPayInvoiceData(),
+                        null,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is IllegalArgumentException)
+            assertFalse("a payment was opened for a charge naming nobody", INITIATE in fixture.routes)
+            assertEquals("the reader was asked for a card", null, fixture.reader.lastReadRequest)
+        }
+
+    @Test
+    fun `an identifier alone names the payer, because the service decides the rest`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // What is measured is that all three of first name, last name and customer number empty is
+            // refused. Whether an id on its own suffices is the service's answer, so this check does not
+            // pre-empt it: refusing here would break a caller the service would have accepted.
+            val fixture = readyFixture()
+
+            val receipt =
+                runnerOver(fixture).charge(
+                    details(),
+                    TapToPayCustomerData(customerId = 91),
+                    TapToPayInvoiceData(),
+                    null,
+                )
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+        }
+
+    @Test
     fun `a payment is opened, tapped and closed, in that order`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture()
 
             val receipt =
-                runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             assertEquals(TRANS_ID, receipt.paymentTransId)
             assertEquals(listOf(INITIATE, UPDATE), fixture.routes.filter { it.startsWith("/api/v2/MoneyIn") })
@@ -127,7 +172,7 @@ class TapToPayChargeRunnerTest {
             // identifier for the two.
             val fixture = readyFixture()
 
-            runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantTransactionId)
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantOrderId)
@@ -142,7 +187,7 @@ class TapToPayChargeRunnerTest {
 
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is CardReaderException.ReadFailed)
@@ -157,7 +202,7 @@ class TapToPayChargeRunnerTest {
             fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
 
             runCatching {
-                runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
             }
 
             assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
@@ -172,7 +217,7 @@ class TapToPayChargeRunnerTest {
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture()
 
-            runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             assertEquals("$MINTED_KEY-1", fixture.keySent())
         }
@@ -184,8 +229,8 @@ class TapToPayChargeRunnerTest {
             val fixture = readyFixture(updates = 2, opens = 2)
             val runner = runnerOver(fixture)
 
-            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
-            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+            runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+            runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("$MINTED_KEY-2", fixture.keySent(1))
@@ -199,8 +244,8 @@ class TapToPayChargeRunnerTest {
             val fixture = readyFixture(updates = 0, opens = 2)
             val runner = runnerOver(fixture)
 
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
@@ -226,8 +271,8 @@ class TapToPayChargeRunnerTest {
                 ).also { it.coordinator.initialize() }
             val runner = runnerOver(fixture)
 
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals(
@@ -247,8 +292,8 @@ class TapToPayChargeRunnerTest {
             fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
             val runner = runnerOver(fixture)
 
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
-            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             assertEquals("$MINTED_KEY-2", fixture.keySent(1))
         }
@@ -273,8 +318,8 @@ class TapToPayChargeRunnerTest {
             fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
             val runner = runnerOver(fixture)
 
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
@@ -287,8 +332,8 @@ class TapToPayChargeRunnerTest {
             // after the screen holding the first was rebuilt. A key on the instance would be gone.
             val fixture = readyFixture(updates = 0, opens = 2)
 
-            runCatching { runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
-            runCatching { runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("the second terminal named its own attempt", "$MINTED_KEY-1", fixture.keySent(1))
@@ -302,7 +347,7 @@ class TapToPayChargeRunnerTest {
             val failure =
                 runCatching {
                     runnerOver(fixture)
-                        .charge(details("0.00"), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                        .charge(details("0.00"), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is IllegalArgumentException)
@@ -323,7 +368,7 @@ class TapToPayChargeRunnerTest {
 
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
@@ -343,7 +388,7 @@ class TapToPayChargeRunnerTest {
             val failure =
                 runCatching {
                     runnerOver(fixture)
-                        .charge(details("0.001"), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                        .charge(details("0.001"), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is IllegalArgumentException)
@@ -361,7 +406,7 @@ class TapToPayChargeRunnerTest {
                 runCatching {
                     runnerOver(fixture).charge(
                         TapToPayPaymentDetails(BigDecimal("1E-2147483647")),
-                        TapToPayCustomerData(),
+                        PAYER,
                         TapToPayInvoiceData(),
                         null,
                     )
@@ -384,7 +429,7 @@ class TapToPayChargeRunnerTest {
                 runCatching {
                     runnerOver(fixture).charge(
                         TapToPayPaymentDetails(beyondTheMantissa),
-                        TapToPayCustomerData(),
+                        PAYER,
                         TapToPayInvoiceData(),
                         null,
                     )
@@ -402,7 +447,7 @@ class TapToPayChargeRunnerTest {
             val fixture = readyFixture()
 
             runnerOver(fixture)
-                .charge(details("12.345"), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                .charge(details("12.345"), PAYER, TapToPayInvoiceData(), null)
 
             assertEquals(BigDecimal("12.35"), fixture.reader.lastReadRequest?.amount)
         }
@@ -416,7 +461,7 @@ class TapToPayChargeRunnerTest {
                 runCatching {
                     runnerOver(fixture).charge(
                         TapToPayPaymentDetails(BigDecimal("10.00"), serviceFee = BigDecimal("-0.01")),
-                        TapToPayCustomerData(),
+                        PAYER,
                         TapToPayInvoiceData(),
                         null,
                     )
@@ -425,7 +470,7 @@ class TapToPayChargeRunnerTest {
                 runCatching {
                     runnerOver(fixture).charge(
                         TapToPayPaymentDetails(BigDecimal("10.00"), serviceFee = BigDecimal("1E+2147483647")),
-                        TapToPayCustomerData(),
+                        PAYER,
                         TapToPayInvoiceData(),
                         null,
                     )
@@ -446,7 +491,7 @@ class TapToPayChargeRunnerTest {
 
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is IllegalStateException)
@@ -471,7 +516,7 @@ class TapToPayChargeRunnerTest {
                 launch {
                     outcome =
                         runCatching {
-                            runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                         }
                 }
             charging.join()
@@ -497,7 +542,7 @@ class TapToPayChargeRunnerTest {
             val fixture = SessionFixture(script())
 
             runCatching {
-                runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
             }
 
             assertFalse(INITIATE in fixture.routes)
