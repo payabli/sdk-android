@@ -77,6 +77,8 @@ class TapToPaySessionFailuresTest {
             DeviceIneligibleException("contactless payments are not supported") to failed(DEVICE_INELIGIBLE),
             CardReaderException.CredentialsUnusable("terminalId is blank") to failed(CONFIGURATION_REJECTED),
             CardReaderException.ArmingFailed(null) to failed(SERVICE_UNAVAILABLE),
+            // A refusal the vendor holds as state, so it is not the retryable landing above it.
+            CardReaderException.DeviceDenied(null) to failed(DEVICE_INELIGIBLE),
             // The one landing a repair exists for, and the only failure that reaches it.
             CardReaderException.SessionUnusable(null) to TapToPaySessionState.SessionExpired,
             // A tap that did not complete says nothing about the session it ran on.
