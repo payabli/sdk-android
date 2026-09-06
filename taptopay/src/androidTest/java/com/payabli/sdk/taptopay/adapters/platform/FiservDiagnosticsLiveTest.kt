@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.fiserv.commercehub.ttp.provider.FiservTTPCardReader
 import com.fiserv.commercehub.ttp.provider.exception.FiservTTPCardReaderException
 import com.payabli.sdk.taptopay.ManualDeviceTest
+import com.payabli.sdk.taptopay.adapters.ReaderArming
 import com.payabli.sdk.taptopay.adapters.toArming
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
@@ -86,13 +87,15 @@ class FiservDiagnosticsLiveTest {
                 // that suspends.
                 val progress = Channel<String>(Channel.UNLIMITED)
                 FiservTTPCardReader.setLoggingChannel(progress)
-                // Scrubbed, because this stream is the vendor's and nothing bounds what it puts on it. The
-                // two values worth hiding are the ones handed over a few lines above, so they can be matched
-                // exactly rather than guessed at by shape. Everything else is printed, which is what this
-                // tier is for.
+                // Labels only. This stream is the vendor's, it carries credentials it derived rather than
+                // ones handed to it, and this log is written to be attached to a support ticket. Both lines
+                // the shipped version emits are `Access token: <bearer>` and `AndroidTTPId: <identifier>`,
+                // so the label is the whole diagnostic value: it says which stage the workflow reached.
+                // A line in any other shape is reported as unrecognised rather than printed, because
+                // nothing bounds what a later version puts here.
                 launch {
                     for (line in progress) {
-                        Log.i(TAG, "vendor: ${line.withoutSecrets(arming.apiKey, arming.secretKey)}")
+                        Log.i(TAG, "vendor: ${line.labelOnly()}")
                     }
                 }
 
@@ -103,30 +106,51 @@ class FiservDiagnosticsLiveTest {
                             FiservTTPCardReader.initializeSession(context, arming.toVendorConfig()).first()
                         armed.exceptionOrNull()?.let { throw it }
                     }
-                report(thrown.exceptionOrNull())
+                report(thrown.exceptionOrNull(), arming)
                 progress.close()
             }
         }
 
-    private fun report(failure: Throwable?) {
+    /**
+     * Everything the vendor said about a refusal, with the two credentials this run supplied removed.
+     *
+     * The free-text fields are the whole reason this tier exists: `code` alone does not separate one
+     * refusal from another, and the shipped adapter drops the rest because no caller branches on prose.
+     *
+     * The risk in printing them is an echo of an input, and an echo is verbatim by construction, so
+     * matching the two secrets exactly covers it. That is not true of the vendor's own progress stream,
+     * which carries values it derived and is handled by label above.
+     */
+    private fun report(
+        failure: Throwable?,
+        arming: ReaderArming,
+    ) {
         if (failure == null) {
             Log.i(TAG, "the reader came up")
             return
         }
+        val secrets = arrayOf(arming.apiKey, arming.secretKey)
         Log.w(TAG, "arming failed: ${failure.javaClass.name}")
         if (failure is FiservTTPCardReaderException) {
-            Log.w(TAG, "type=${failure.type}")
+            Log.w(TAG, "type=${failure.type?.withoutSecrets(*secrets)}")
             Log.w(TAG, "code=${failure.code}")
-            Log.w(TAG, "field=${failure.field}")
-            Log.w(TAG, "message=${failure.message}")
-            Log.w(TAG, "additionalInfo=${failure.additionalInfo}")
+            Log.w(TAG, "field=${failure.field?.withoutSecrets(*secrets)}")
+            Log.w(TAG, "message=${failure.message?.withoutSecrets(*secrets)}")
+            Log.w(TAG, "additionalInfo=${failure.additionalInfo?.withoutSecrets(*secrets)}")
         }
-        Log.w(TAG, "cause=${failure.cause}")
+        // The type only. A cause's `toString` is its own free text and it is not this SDK's type.
+        Log.w(TAG, "cause=${failure.cause?.javaClass?.name}")
     }
 
     /** Replaces the credentials this run hands the vendor, wherever they appear in its own output. */
     private fun String.withoutSecrets(vararg secrets: String): String =
         secrets.filter { it.isNotBlank() }.fold(this) { line, secret -> line.replace(secret, "[redacted]") }
+
+    /** The part before the first colon, so a value the vendor derived cannot travel with its label. */
+    private fun String.labelOnly(): String {
+        val label = substringBefore(':', missingDelimiterValue = "")
+        return if (label.isBlank()) "[unrecognised line, $length characters]" else "$label: [withheld]"
+    }
 
     private companion object {
         /** One tag, so a support ticket is one logcat filter. */
