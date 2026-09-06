@@ -706,7 +706,7 @@ class TapToPayChargeRunnerTest {
 
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
@@ -727,7 +727,7 @@ class TapToPayChargeRunnerTest {
 
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
@@ -746,7 +746,7 @@ class TapToPayChargeRunnerTest {
 
             val failure =
                 runCatching {
-                    runnerOver(fixture).charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
@@ -769,7 +769,7 @@ class TapToPayChargeRunnerTest {
             val runner = runnerOver(fixture)
             val failure =
                 runCatching {
-                    runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull() as TapToPayException
             val readsBefore = fixture.enrollment.trace.count { it == READ }
 
@@ -799,7 +799,7 @@ class TapToPayChargeRunnerTest {
                 runnerGatedOnClose(fixture) {
                     if (withdrawOnClose) throw CancellationException("the host withdrew")
                 }
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             closeFails = false
             withdrawOnClose = true
@@ -819,7 +819,7 @@ class TapToPayChargeRunnerTest {
                 SessionFixture(scriptWithCloseControl(closes = 7) { closeFails })
                     .also { it.coordinator.initialize() }
             val runner = runnerOver(fixture)
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             val firstRetry = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
             assertTrue(firstRetry.toString(), firstRetry is TapToPayException)
@@ -847,11 +847,11 @@ class TapToPayChargeRunnerTest {
                 SessionFixture(scriptWithCloseControl(opens = 2, closes = 5) { closeFails })
                     .also { it.coordinator.initialize() }
             val runner = runnerOver(fixture)
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             closeFails = false
             runner.closeCaptured(TRANS_ID)
-            runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+            runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             assertEquals("the next charge reused the closed attempt", "$MINTED_KEY-2", fixture.keySent(1))
         }
@@ -863,7 +863,7 @@ class TapToPayChargeRunnerTest {
             // released with it.
             val fixture = readyFixture()
             val runner = runnerOver(fixture)
-            val receipt = runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null)
+            val receipt = runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             val refusal = runCatching { runner.closeCaptured(receipt.paymentTransId) }.exceptionOrNull()
 
@@ -879,11 +879,11 @@ class TapToPayChargeRunnerTest {
                 SessionFixture(scriptWithCloseControl(opens = 2, closes = 4) { closeFails })
                     .also { it.coordinator.initialize() }
             val runner = runnerOver(fixture)
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             closeFails = false
             fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
-            runCatching { runner.charge(details(), TapToPayCustomerData(), TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             val refusal = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
             assertTrue(refusal.toString(), refusal is IllegalArgumentException)
