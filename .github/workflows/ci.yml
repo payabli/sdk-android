@@ -304,6 +304,13 @@ jobs:
       - name: Unit tests
         run: ./gradlew :taptopay:test :example:test
 
+      # `test` and `lint` do not compile `src/androidTest`, so a change to a shared type can leave every
+      # instrumented source set uncompilable while all of the above pass. This needs no device, and it is
+      # the only job that can do it for these two: `:taptopay` resolves the card reader from a private
+      # registry, and `:example` links it.
+      - name: Compile instrumented tests
+        run: ./gradlew :taptopay:assembleAndroidTest :example:assembleAndroidTest
+
       - name: Format
         run: ./gradlew :taptopay:ktlintCheck :example:ktlintCheck
 
