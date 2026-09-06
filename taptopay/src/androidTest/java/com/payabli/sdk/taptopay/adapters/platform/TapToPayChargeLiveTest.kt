@@ -123,7 +123,10 @@ class TapToPayChargeLiveTest {
                 }
 
                 val result = read.getOrThrow()
-                client.update(paymentTransId, result)
+                // Uncancellable for the reason the failed-read close above is, and this one is the sharper
+                // half: the card has been charged by this line, so a deadline expiring here leaves a real
+                // transaction open on the paypoint with the money already taken.
+                withContext(NonCancellable) { client.update(paymentTransId, result) }
                 Log.i(
                     LiveTapToPay.LIVE_TAG,
                     "closed on ${result.cardNetwork ?: "an unnamed network"}",
