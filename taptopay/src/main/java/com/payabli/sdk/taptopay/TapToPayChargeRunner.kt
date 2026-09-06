@@ -137,12 +137,11 @@ internal class TapToPayChargeRunner(
     /**
      * Asks the reader for one card, and closes [paymentTransId] if it does not deliver one.
      *
-     * **Every exit but a card leaves a transaction open at the service**, so both failure branches close it
-     * on the way out. A withdrawn caller is one of the ways a tap does not complete, which is why
-     * cancellation is a branch here and not something that unwinds past.
+     * **Every exit but a card leaves a transaction open at the service**, cancellation included, so both
+     * failure branches close it on the way out.
      *
-     * Called only with the reader already asked, so nothing here settles the key: past that point the sale
-     * may be captured, and no failure arriving afterwards is evidence the money did not move.
+     * The key is never settled here. The reader has been asked by this point, so the sale may be captured
+     * and nothing arriving afterwards says the money did not move.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -182,9 +181,9 @@ internal class TapToPayChargeRunner(
     /**
      * The amount [paymentDetails] will actually send, once both of its values have been checked.
      *
-     * **Checked at the scale it will be sent at, not as supplied.** `0.001` is more than zero and reaches
-     * the wire as `0.00`, so checking the raw value opened a payment for nothing. The service fee takes the
-     * same rounding through the same serializer; zero is allowed there and below zero is not.
+     * **Checked at the scale it will be sent at.** `0.001` is above zero and reaches the wire as `0.00`, so
+     * the raw value passing says nothing about what the paypoint records. The service fee takes the same
+     * rounding through the same serializer; zero is allowed there and below zero is not.
      */
     private fun sendableAmountOf(paymentDetails: TapToPayPaymentDetails): BigDecimal {
         val sendable =

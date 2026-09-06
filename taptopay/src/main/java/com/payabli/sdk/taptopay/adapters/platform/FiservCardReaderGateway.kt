@@ -56,13 +56,9 @@ internal class FiservCardReaderGateway(
                         .first()
                         .getOrThrow()
                 }
-            // The vendor answers `Result<Boolean>`, and the shipped version never puts `false` in it: across
-            // 1.1.4.1 the init workflow boxes `true` at all 11 of its emit sites and boxes `false` at none,
-            // so arming either succeeds or the `Result` carries the failure. Nothing holds a later version to
-            // that, and this value going unread is what would let one arm a reader that reported itself down.
-            // The session would publish Ready and the merchant would tap into nothing.
-            //
-            // Outside `mappingFailures` because there is no vendor exception here to map.
+            // A reader that answers `false` is not armed, and the session would otherwise publish Ready over
+            // it. The vendor's own version emits only `true` or a failed `Result`, so this is unreachable
+            // today and is what a version bump would arrive through.
             if (!armed) throw CardReaderException.ArmingFailed(null)
         }
     }

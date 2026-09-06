@@ -84,12 +84,8 @@ internal class ChargeKeyStore(
      * the next charge for this entry point reuses it and is suppressed; that is visible, recoverable, and
      * cheaper than turning an approval into an error.
      *
-     * **A record that will not decode is one of the ways that happens**, and it is caught here for the same
-     * reason a write that fails is. [load] refuses to answer empty for an unreadable record, so it raises,
-     * and the charge that reaches this line has already been closed at the service. Letting that escape
-     * would take a payment the processor completed and hand the caller a failure, which is the retry this
-     * whole class exists to make recognisable. The key stays named, because nothing here can read it to
-     * remove it.
+     * A record that will not decode raises out of [load] and is caught here too. The key stays named, since
+     * removing it needs the record this cannot read.
      */
     suspend fun settle(
         entry: String,
@@ -107,9 +103,8 @@ internal class ChargeKeyStore(
                 "a settled charge's idempotency key could not be forgotten"
             }
         } catch (unreadable: ChargeKeyUnreadableException) {
-            // Passed as it is rather than redacted: its own message is fixed text and its cause is already
-            // a `RedactedCause`, so the excerpt the decoder quoted is not in the chain. `load` has logged
-            // the unreadable record itself.
+            // Safe unredacted: the message is fixed text and the cause underneath is already a
+            // `RedactedCause`, so the decoder's excerpt is not on this chain.
             logger.warn(unreadable, LogField.safe("event", EVENT_NOT_SETTLED)) {
                 "a settled charge's idempotency key could not be forgotten"
             }
