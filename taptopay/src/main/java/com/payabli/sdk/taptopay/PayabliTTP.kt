@@ -51,7 +51,18 @@ public class PayabliTTP internal constructor(
     public suspend fun activateDevice(activationCode: String): Unit =
         wrapping { coordinator.activateDevice(activationCode) }
 
-    /** Takes one payment. Waits for a card, so it runs as long as the person in front of the phone. */
+    /**
+     * Takes one payment. Waits for a card, so it runs as long as the person in front of the phone.
+     *
+     * **Whether [customer] can be left out is the paypoint's rule, not this SDK's.** The default sends an
+     * empty first name, last name and customer number, and a paypoint that requires an identifiable payer
+     * refuses the opening before a card is ever asked for. Measured on two of them: one accepts it, one
+     * answers `E7020` naming the customer data. A card-present opening cannot ask the service to create the
+     * customer, so there is nothing this SDK can send on the caller's behalf to bridge that.
+     *
+     * Name the payer where the paypoint expects one. The three fields above are what it reads; the rest of
+     * [TapToPayCustomerData] is omitted when unset.
+     */
     public suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
         customer: TapToPayCustomerData = TapToPayCustomerData(),
