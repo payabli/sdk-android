@@ -50,19 +50,7 @@ internal class TapToPayChargeRunner(
         orderDescription: String?,
     ): TapToPayResult =
         region.withLock {
-            // At the scale it will be sent at, not as supplied. `0.001` is more than zero and reaches the
-            // wire as `0.00`, so checking the raw value opened a payment for nothing.
-            val amount = paymentDetails.amount
-            val sendable =
-                requireNotNull(amount.sendableAmountOrNull()) { "an amount has to be one this SDK can send" }
-            require(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
-
-            // Same checks, same serializer. Zero is allowed; below zero is not.
-            val sendableFee =
-                requireNotNull(paymentDetails.serviceFee.sendableAmountOrNull()) {
-                    "a service fee has to be one this SDK can send"
-                }
-            require(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
+            val sendable = sendableAmountOf(paymentDetails)
 
             // After the precondition, so a caller's own bad argument is not counted as a charge that
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
@@ -172,6 +160,28 @@ internal class TapToPayChargeRunner(
                 throw failure
             }
         }
+
+    /**
+     * The amount [paymentDetails] will actually send, once both of its values have been checked.
+     *
+     * **Checked at the scale it will be sent at, not as supplied.** `0.001` is more than zero and reaches
+     * the wire as `0.00`, so checking the raw value opened a payment for nothing. The service fee takes the
+     * same rounding through the same serializer; zero is allowed there and below zero is not.
+     */
+    private fun sendableAmountOf(paymentDetails: TapToPayPaymentDetails): BigDecimal {
+        val sendable =
+            requireNotNull(paymentDetails.amount.sendableAmountOrNull()) {
+                "an amount has to be one this SDK can send"
+            }
+        require(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
+
+        val sendableFee =
+            requireNotNull(paymentDetails.serviceFee.sendableAmountOrNull()) {
+                "a service fee has to be one this SDK can send"
+            }
+        require(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
+        return sendable
+    }
 
     /**
      * Closes a transaction whose tap did not complete, best effort, and lets its key go if that lands.
