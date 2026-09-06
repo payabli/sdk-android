@@ -67,7 +67,10 @@ class FiservDiagnosticsLiveTest {
                 )
 
                 // Enrols and spends a code where one is owed: `/config` refuses a device that is not active.
-                Log.i(TAG, "deviceId=${LiveTapToPay.activatedDeviceId(context)}")
+                // The identifier it answers with is device identity, which the wire types withhold from
+                // their own `toString` for the same reason, and this log is written to leave the device.
+                LiveTapToPay.activatedDeviceId(context)
+                Log.i(TAG, "the device is active")
                 val enrollment = LiveTapToPay.enrollment(context)
                 val assertion = enrollment.assertion() ?: error("this handset has no attested identity yet")
                 val credentials =
