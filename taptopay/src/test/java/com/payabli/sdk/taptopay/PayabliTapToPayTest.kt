@@ -7,6 +7,7 @@ import com.payabli.sdk.taptopay.enrollment.attestBody
 import com.payabli.sdk.taptopay.enrollment.challengeBody
 import com.payabli.sdk.taptopay.enrollment.configBody
 import com.payabli.sdk.taptopay.enrollment.registerBody
+import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.approved
@@ -23,6 +24,9 @@ import kotlin.time.Duration.Companion.seconds
 private val TEST_TIMEOUT = 5.seconds
 
 private const val TRANS_ID = "12-abc"
+
+/** A named payer, because the public call takes one: an opening that identifies nobody is refused. */
+private val PAYER = TapToPayCustomerData(firstName = "Ada", lastName = "Payer", customerNumber = "cust-1")
 
 /**
  * The public surface: what each call does to [PayabliTTP.sessionState], and what a host is given when one
@@ -100,7 +104,7 @@ class PayabliTapToPayTest {
             val terminal = terminalOver(fixture)
             terminal.initialize()
 
-            val result = terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")))
+            val result = terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")), PAYER)
 
             assertEquals(TRANS_ID, result.paymentTransId)
         }
@@ -115,7 +119,7 @@ class PayabliTapToPayTest {
             terminal.initialize()
 
             val failure =
-                runCatching { terminal.charge(TapToPayPaymentDetails(BigDecimal.ZERO)) }.exceptionOrNull()
+                runCatching { terminal.charge(TapToPayPaymentDetails(BigDecimal.ZERO), PAYER) }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
         }

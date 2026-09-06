@@ -54,18 +54,12 @@ public class PayabliTTP private constructor(
     /**
      * Takes one payment. Waits for a card, so it runs as long as the person in front of the phone.
      *
-     * **Whether [customer] can be left out is the paypoint's rule, not this SDK's.** The default sends an
-     * empty first name, last name and customer number, and a paypoint that requires an identifiable payer
-     * refuses the opening before a card is ever asked for. Measured on two of them: one accepts it, one
-     * answers `E7020` naming the customer data. A card-present opening cannot ask the service to create the
-     * customer, so there is nothing this SDK can send on the caller's behalf to bridge that.
-     *
-     * Name the payer where the paypoint expects one. The three fields above are what it reads; the rest of
-     * [TapToPayCustomerData] is omitted when unset.
+     * [customer] has to identify the payer: an opening that names none is refused before a card is asked
+     * for. `firstName`, `lastName` and `customerNumber` are the fields it is read from.
      */
     public suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
-        customer: TapToPayCustomerData = TapToPayCustomerData(),
+        customer: TapToPayCustomerData,
         invoice: TapToPayInvoiceData = TapToPayInvoiceData(),
         orderDescription: String? = null,
     ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription) }
@@ -96,13 +90,11 @@ public class PayabliTTP private constructor(
         ): PayabliTTP = TapToPayComponents.build(session, context, entryPoint, cloudProjectNumber)
 
         /**
-         * The seam [TapToPayComponents] builds through, once it has wired a coordinator to its runner.
+         * The only way a terminal is constructed.
          *
-         * A factory rather than an `internal` constructor, matching the card-not-present flow's: `internal`
-         * is a Kotlin boundary and not a JVM one, so an internal constructor compiles to a public one and
-         * Java could build a terminal from any coordinator and any runner. Those two share a session by
-         * construction here, and nothing downstream re-checks it. A constructor cannot carry
-         * `@JvmSynthetic` and a function can.
+         * [coordinator] and [runner] have to share a session, and nothing downstream re-checks it.
+         * `internal` is a Kotlin boundary and not a JVM one, so an internal constructor is callable from
+         * Java; `@JvmSynthetic` is what closes that, and it cannot be applied to a constructor.
          */
         @JvmSynthetic
         internal fun over(

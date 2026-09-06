@@ -12,7 +12,6 @@ import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.platform.LiveRunSettings
 import com.payabli.sdk.taptopay.enrollment.platform.LiveTapToPay
-import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
@@ -119,7 +118,7 @@ class ChargeWithoutTapLiveTest {
                         keys = ChargeKeyStore(DeviceTrust.open(context).store),
                     ).charge(
                         TapToPayPaymentDetails(AMOUNT),
-                        TapToPayCustomerData(),
+                        LiveTapToPay.PAYER,
                         TapToPayInvoiceData(),
                         null,
                     )

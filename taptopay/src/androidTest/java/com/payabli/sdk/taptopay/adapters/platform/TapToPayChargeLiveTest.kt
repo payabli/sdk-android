@@ -96,6 +96,7 @@ class TapToPayChargeLiveTest {
                         // Its own, because this walk drives the two calls by hand rather than through the
                         // runner that would reserve one.
                         idempotencyKey = UUID.randomUUID().toString(),
+                        customer = LiveTapToPay.PAYER,
                     )
                 Log.i(LiveTapToPay.LIVE_TAG, "opened; present a card now")
 

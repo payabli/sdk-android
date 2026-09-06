@@ -71,7 +71,7 @@ internal class TTPTransactionClient(
         deviceId: String,
         paymentDetails: TapToPayPaymentDetails,
         idempotencyKey: String,
-        customer: TapToPayCustomerData = TapToPayCustomerData(),
+        customer: TapToPayCustomerData,
         invoice: TapToPayInvoiceData = TapToPayInvoiceData(),
         orderDescription: String? = null,
     ): String {

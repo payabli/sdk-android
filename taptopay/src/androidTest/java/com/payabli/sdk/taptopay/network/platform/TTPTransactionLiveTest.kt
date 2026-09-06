@@ -34,9 +34,9 @@ private val TEST_TIMEOUT = 120.seconds
  * only thing that can show the request bodies are the ones the service accepts. Everything the unit tier
  * asserts about them is asserted against this SDK's own idea of the wire.
  *
- * **Not against sandbox.** A card-present opening cannot send `forceCustomerCreation`, and the sandbox
- * paypoint refuses a body that names no identifiable customer, so the same request is accepted on another
- * environment and refused there. The refusal is the paypoint's rule, not a defect here.
+ * **Every opening names [LiveTapToPay.PAYER].** A body identifying no payer is refused with `400` and
+ * `E7020` naming `customerData`, and a card-present opening cannot send `forceCustomerCreation` to have the
+ * customer created for it.
  *
  * ```
  * adb -s <serial> reverse tcp:8787 tcp:8787
@@ -198,6 +198,7 @@ class TTPTransactionLiveTest {
             deviceId = LiveTapToPay.activatedDeviceId(context),
             paymentDetails = TapToPayPaymentDetails(BigDecimal("1.00")),
             idempotencyKey = idempotencyKey,
+            customer = LiveTapToPay.PAYER,
         )
 
     private suspend fun client(): TTPTransactionClient = TTPTransactionClient(LiveTapToPay.session(context).transport)

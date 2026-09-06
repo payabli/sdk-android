@@ -13,6 +13,7 @@ import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
+import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertFalse
 
@@ -29,6 +30,19 @@ import org.junit.Assert.assertFalse
 internal object LiveTapToPay {
     /** One tag for this tier, so a live run's output is one logcat filter. */
     const val LIVE_TAG: String = "PayabliLiveRun"
+
+    /**
+     * The payer every opening in this tier names.
+     *
+     * An opening whose first name, last name and customer number are all empty is refused with `400` and
+     * `E7020`. The name reads as a test's on the paypoint, where these rows stay.
+     */
+    val PAYER: TapToPayCustomerData =
+        TapToPayCustomerData(
+            firstName = "Payabli",
+            lastName = "LiveTier",
+            customerNumber = "sdk-android-live-tier",
+        )
 
     private val EMULATED = setOf("ranchu", "goldfish")
 
