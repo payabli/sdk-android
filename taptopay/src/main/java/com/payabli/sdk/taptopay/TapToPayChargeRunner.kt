@@ -17,6 +17,7 @@ import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
 import com.payabli.sdk.taptopay.provider.CardReadRequest
+import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
@@ -100,35 +101,7 @@ internal class TapToPayChargeRunner(
                 // Set before the reader is asked, not after it answers: the processor takes the sale before
                 // the answer is delivered, so everything from here on may have moved money.
                 askedForCard = true
-                val result =
-                    try {
-                        reader.startReading(
-                            CardReadRequest(
-                                // The rounded value, so the card is asked for what the paypoint recorded.
-                                amount = sendable,
-                                merchantTransactionId = paymentTransId,
-                                merchantOrderId = paymentTransId,
-                                merchantInvoiceNumber = invoice.invoiceNumber,
-                            ),
-                        )
-                    } catch (withdrawn: CancellationException) {
-                        closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey)
-                        throw withdrawn
-                    } catch (failure: Exception) {
-                        // A spent reader session is repaired by re-initializing. `invalidate` drops the move when
-                        // the state has already left ready, so a failure arriving after a replacement is built
-                        // does not kill the healthy session.
-                        //
-                        // A denial expires it too: Ready may only move to SessionExpired, so the
-                        // DEVICE_INELIGIBLE landing is unreachable here and the repair lands it.
-                        if (failure is CardReaderException.SessionUnusable ||
-                            failure is CardReaderException.DeviceDenied
-                        ) {
-                            manager.invalidate()
-                        }
-                        closeAfterFailedRead(paymentTransId, failure, idempotencyKey)
-                        throw failure
-                    }
+                val result = readCard(paymentTransId, sendable, invoice, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -159,6 +132,51 @@ internal class TapToPayChargeRunner(
                 TapToPayReports.chargeFailed(failure, startedAt)
                 throw failure
             }
+        }
+
+    /**
+     * Asks the reader for one card, and closes [paymentTransId] if it does not deliver one.
+     *
+     * **Every exit but a card leaves a transaction open at the service**, so both failure branches close it
+     * on the way out. A withdrawn caller is one of the ways a tap does not complete, which is why
+     * cancellation is a branch here and not something that unwinds past.
+     *
+     * Called only with the reader already asked, so nothing here settles the key: past that point the sale
+     * may be captured, and no failure arriving afterwards is evidence the money did not move.
+     */
+    private suspend fun readCard(
+        paymentTransId: String,
+        amount: BigDecimal,
+        invoice: TapToPayInvoiceData,
+        idempotencyKey: String,
+    ): CardReadResult =
+        try {
+            reader.startReading(
+                CardReadRequest(
+                    // The rounded value, so the card is asked for what the paypoint recorded.
+                    amount = amount,
+                    merchantTransactionId = paymentTransId,
+                    merchantOrderId = paymentTransId,
+                    merchantInvoiceNumber = invoice.invoiceNumber,
+                ),
+            )
+        } catch (withdrawn: CancellationException) {
+            closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey)
+            throw withdrawn
+        } catch (failure: Exception) {
+            // A spent reader session is repaired by re-initializing. `invalidate` drops the move when the
+            // state has already left ready, so a failure arriving after a replacement is built does not
+            // kill the healthy session.
+            //
+            // A denial expires it too: Ready may only move to SessionExpired, so the DEVICE_INELIGIBLE
+            // landing is unreachable here and the repair lands it.
+            if (failure is CardReaderException.SessionUnusable ||
+                failure is CardReaderException.DeviceDenied
+            ) {
+                manager.invalidate()
+            }
+            closeAfterFailedRead(paymentTransId, failure, idempotencyKey)
+            throw failure
         }
 
     /**
