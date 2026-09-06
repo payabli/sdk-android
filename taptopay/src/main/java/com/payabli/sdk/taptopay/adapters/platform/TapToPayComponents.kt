@@ -54,7 +54,7 @@ internal object TapToPayComponents {
                 reader = reader,
                 manager = manager,
             )
-        return PayabliTTP(
+        return PayabliTTP.over(
             coordinator = coordinator,
             runner =
                 TapToPayChargeRunner(

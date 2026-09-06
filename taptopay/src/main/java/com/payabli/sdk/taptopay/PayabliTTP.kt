@@ -27,7 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
  * reader session is spent and a repair is what comes next. A failure that changed nothing leaves it alone.
  * Read the state rather than assuming which of the two a failure produced.
  */
-public class PayabliTTP internal constructor(
+public class PayabliTTP private constructor(
     private val coordinator: TapToPaySessionCoordinator,
     private val runner: TapToPayChargeRunner,
 ) {
@@ -77,7 +77,7 @@ public class PayabliTTP internal constructor(
         } catch (withdrawn: CancellationException) {
             throw withdrawn
         } catch (failure: Exception) {
-            throw TapToPayException(failure.message ?: failure.javaClass.simpleName, failure)
+            throw TapToPayException.of(failure.message ?: failure.javaClass.simpleName, failure)
         }
 
     public companion object {
@@ -94,5 +94,20 @@ public class PayabliTTP internal constructor(
             entryPoint: String,
             cloudProjectNumber: Long? = null,
         ): PayabliTTP = TapToPayComponents.build(session, context, entryPoint, cloudProjectNumber)
+
+        /**
+         * The seam [TapToPayComponents] builds through, once it has wired a coordinator to its runner.
+         *
+         * A factory rather than an `internal` constructor, matching the card-not-present flow's: `internal`
+         * is a Kotlin boundary and not a JVM one, so an internal constructor compiles to a public one and
+         * Java could build a terminal from any coordinator and any runner. Those two share a session by
+         * construction here, and nothing downstream re-checks it. A constructor cannot carry
+         * `@JvmSynthetic` and a function can.
+         */
+        @JvmSynthetic
+        internal fun over(
+            coordinator: TapToPaySessionCoordinator,
+            runner: TapToPayChargeRunner,
+        ): PayabliTTP = PayabliTTP(coordinator, runner)
     }
 }

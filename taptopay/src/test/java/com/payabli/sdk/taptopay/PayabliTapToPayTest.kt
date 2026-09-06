@@ -30,7 +30,7 @@ private const val TRANS_ID = "12-abc"
  */
 class PayabliTapToPayTest {
     private fun terminalOver(fixture: SessionFixture) =
-        PayabliTTP(
+        PayabliTTP.over(
             coordinator = fixture.coordinator,
             runner =
                 TapToPayChargeRunner(
