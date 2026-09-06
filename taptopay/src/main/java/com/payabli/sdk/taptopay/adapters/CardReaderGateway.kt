@@ -14,18 +14,21 @@ internal interface CardReaderGateway {
 }
 
 /**
- * What the vendor reported, in full.
+ * What the vendor reported, reduced to what this module acts on.
  *
- * [kind] is the only part a decision may be taken on. [detail] is their `message`, renamed because
- * `Throwable.message` is taken. [code] is a fixed vocabulary; the other three are free text.
+ * [kind] is the only part a decision may be taken on and [code] is a fixed vocabulary. Both are safe to
+ * log and to report.
+ *
+ * **The vendor's free text is not carried.** This failure reaches a host as `TapToPayException.cause.cause`,
+ * and `internal` is a Kotlin boundary rather than a JVM one, so every property here is a public getter that
+ * a Java caller or a field-inspecting crash reporter can read. The vendor's prose is outside this SDK's
+ * control and can echo what was sent to it, which for arming is the reader's API credentials. Nothing in
+ * this module reads it: the log line carries the kind and the code, telemetry has a test asserting the
+ * vendor's words reach no property, and the diagnostic tier reads them from the vendor's own exception.
  */
 internal class CardReaderFailure(
     val kind: ReaderFailureKind,
     val code: String? = null,
-    val type: String? = null,
-    val field: String? = null,
-    val detail: String? = null,
-    val additionalInfo: String? = null,
     cause: Throwable? = null,
 ) : Exception("card reader error ${code ?: kind.diagnosticName}", cause)
 

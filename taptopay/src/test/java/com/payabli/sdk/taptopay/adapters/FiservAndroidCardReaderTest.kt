@@ -185,28 +185,18 @@ class FiservAndroidCardReaderTest {
         }
 
     @Test
-    fun `everything the vendor reported survives to the caller`() =
+    fun `what the vendor refused with survives to the caller`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Read off the cause by whoever reports the failure.
-            val refusal =
-                CardReaderFailure(
-                    kind = ReaderFailureKind.UNCLASSIFIED,
-                    code = "677",
-                    type = "FSSDK",
-                    field = "",
-                    detail = "Device Denied",
-                    additionalInfo = "Device has been suspended or deactivated",
-                )
+            // Read off the cause by whoever reports the failure. The kind and the code are what crosses;
+            // the vendor's prose does not, and `VendorFailureBoundaryTest` is where that is asserted.
+            val refusal = CardReaderFailure(kind = ReaderFailureKind.UNCLASSIFIED, code = "677")
             val reader = readerFor(FakeCardReaderGateway(prepareFailure = refusal))
             reader.configure(readerCredentials())
 
             val reported = runCatching { reader.prepareReader() }.exceptionOrNull()?.cause as? CardReaderFailure
 
             assertEquals("677", reported?.code)
-            assertEquals("FSSDK", reported?.type)
-            assertEquals("", reported?.field)
-            assertEquals("Device Denied", reported?.detail)
-            assertEquals("Device has been suspended or deactivated", reported?.additionalInfo)
+            assertEquals(ReaderFailureKind.UNCLASSIFIED, reported?.kind)
         }
 
     @Test

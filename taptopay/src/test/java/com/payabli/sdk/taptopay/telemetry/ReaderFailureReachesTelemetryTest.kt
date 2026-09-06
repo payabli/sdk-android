@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.telemetry
 
+import com.fiserv.commercehub.ttp.provider.exception.FiservTTPCardReaderException
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
@@ -8,6 +9,7 @@ import com.payabli.sdk.taptopay.adapters.FakeCardReaderGateway
 import com.payabli.sdk.taptopay.adapters.FiservAndroidCardReader
 import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
 import com.payabli.sdk.taptopay.adapters.eligibility
+import com.payabli.sdk.taptopay.adapters.platform.asFailure
 import com.payabli.sdk.taptopay.adapters.readerCredentials
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import kotlinx.coroutines.test.runTest
@@ -44,7 +46,7 @@ class ReaderFailureReachesTelemetryTest {
     @Test
     fun `a tap the vendor refused reports the kind, and the code on the phase around it`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val denial = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677", detail = VENDOR_PROSE)
+            val denial = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677")
             val reader = FiservAndroidCardReader(FakeCardReaderGateway(readFailure = denial), eligibility())
             reader.configure(readerCredentials())
             reader.prepareReader()
@@ -69,7 +71,7 @@ class ReaderFailureReachesTelemetryTest {
     fun `the code an unexplained refusal carries reaches telemetry too, and stays apart from 677`() =
         runTest(timeout = TEST_TIMEOUT) {
             val denial =
-                CardReaderFailure(ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED, code = "705", detail = VENDOR_PROSE)
+                CardReaderFailure(ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED, code = "705")
             val reader = FiservAndroidCardReader(FakeCardReaderGateway(readFailure = denial), eligibility())
             reader.configure(readerCredentials())
             reader.prepareReader()
@@ -88,7 +90,7 @@ class ReaderFailureReachesTelemetryTest {
     @Test
     fun `an arming the vendor refused carries its code out, because no nfc event covers arming`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val denial = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677", detail = VENDOR_PROSE)
+            val denial = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677")
             val reader = FiservAndroidCardReader(FakeCardReaderGateway(prepareFailure = denial), eligibility())
             reader.configure(readerCredentials())
 
@@ -105,13 +107,12 @@ class ReaderFailureReachesTelemetryTest {
     @Test
     fun `nothing the vendor wrote reaches any property, on either path`() =
         runTest(timeout = TEST_TIMEOUT) {
+            // Mapped from a real vendor exception rather than built by hand, so the prose genuinely exists
+            // upstream of the assertion. Constructing the failure directly cannot show this any more: the
+            // type has no field to put prose in, which would make the assertion below pass on nothing.
             val denial =
-                CardReaderFailure(
-                    ReaderFailureKind.DEVICE_DENIED,
-                    code = "677",
-                    detail = VENDOR_PROSE,
-                    additionalInfo = VENDOR_PROSE,
-                )
+                FiservTTPCardReaderException("677", "DeviceDenied", "device", VENDOR_PROSE, VENDOR_PROSE)
+                    .asFailure(ReaderFailureKind.DEVICE_DENIED)
             val reader = FiservAndroidCardReader(FakeCardReaderGateway(readFailure = denial), eligibility())
             reader.configure(readerCredentials())
             reader.prepareReader()

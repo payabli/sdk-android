@@ -62,12 +62,27 @@ class VendorFailureBoundaryTest {
 
         assertEquals(ReaderFailureKind.DEVICE_DENIED, failure.kind)
         assertEquals(vendor.code, failure.code)
-        assertEquals(vendor.type, failure.type)
-        assertEquals(vendor.field, failure.field)
-        assertEquals(vendor.message, failure.detail)
-        assertEquals(vendor.additionalInfo, failure.additionalInfo)
         // Where inside the vendor library it arose, which is the half of a cause worth keeping.
         assertArrayEquals(vendor.stackTrace, failure.stackTrace)
+    }
+
+    @Test
+    fun `nothing the vendor wrote is readable on the failure a host receives`() {
+        // `internal` is a Kotlin boundary and not a JVM one, so every property here compiles to a public
+        // getter. A Java caller and a field-inspecting crash reporter read them off the chain whatever the
+        // Kotlin surface says, and arming hands the vendor the reader's API credentials, so its prose is
+        // text this SDK does not control and cannot vouch for.
+        val vendor = FiservTTPCardReaderException("677", "DeviceDenied", "device", VENDOR_PROSE, "extra")
+
+        val failure = vendor.asFailure(ReaderFailureKind.DEVICE_DENIED)
+
+        val readable =
+            failure.javaClass.methods
+                .filter { it.name.startsWith("get") && it.parameterCount == 0 }
+                .mapNotNull { getter -> runCatching { getter.name to getter.invoke(failure) }.getOrNull() }
+                .filter { (_, value) -> value is String && value.contains(VENDOR_PROSE) }
+                .map { (name, _) -> name }
+        assertEquals("the vendor's words are readable through $readable", emptyList<String>(), readable)
     }
 
     /** Every `Throwable` in the vendor's exception package, read out of the archive it ships in. */

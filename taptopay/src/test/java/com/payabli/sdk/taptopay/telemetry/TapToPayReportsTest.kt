@@ -195,6 +195,6 @@ class TapToPayReportsTest {
         message: String? = null,
     ): Throwable =
         CardReaderException.DeviceDenied(
-            CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = code, detail = message),
+            CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = code),
         )
 }

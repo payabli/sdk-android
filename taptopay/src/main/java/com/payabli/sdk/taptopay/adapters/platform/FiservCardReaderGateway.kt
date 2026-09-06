@@ -234,22 +234,19 @@ private val UNCONFIRMED_DENIAL_CODES =
     )
 
 /**
- * The vendor's exception as a [CardReaderFailure], with its stack trace and without the exception itself.
+ * The vendor's exception as a [CardReaderFailure], with its stack trace and nothing it wrote.
  *
- * The failure reaches a host as `TapToPayException.cause.cause`, so a vendor exception attached here is a
- * vendor type on the public chain and its free text is in every crash report that walks it. The five fields
- * copied above are the diagnostics; what is dropped is the type a caller could catch and the words nothing
- * here controls. The trace is kept, since it names where inside the vendor library the failure arose and
- * carries no message.
+ * The failure reaches a host as `TapToPayException.cause.cause`, so anything carried across here is on the
+ * public chain and in every crash report that walks it. What crosses is the classified [kind] and the
+ * fixed-vocabulary code. What does not is the vendor's type, field, message and additional info, which are
+ * prose this SDK does not control and which can echo the credentials arming was given, and the exception
+ * itself, which would be a vendor type a caller could catch. The trace is kept, since it names where inside
+ * the vendor library the failure arose and carries no message.
+ *
+ * The full text is still reachable where it is wanted: `FiservDiagnosticsLiveTest` reads it from the
+ * vendor's own exception, on a path a host never takes.
  *
  * Internal so a test can hold the result, which is where a vendor type would reappear.
  */
 internal fun FiservTTPCardReaderException.asFailure(kind: ReaderFailureKind): CardReaderFailure =
-    CardReaderFailure(
-        kind = kind,
-        code = code,
-        type = type,
-        field = field,
-        detail = message,
-        additionalInfo = additionalInfo,
-    ).also { it.stackTrace = stackTrace }
+    CardReaderFailure(kind = kind, code = code).also { it.stackTrace = stackTrace }
