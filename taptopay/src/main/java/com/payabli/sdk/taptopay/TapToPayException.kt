@@ -10,13 +10,17 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * [TapToPaySessionState.Failed] carrying a [TapToPayFailureReason], or as
  * [TapToPaySessionState.SessionExpired] when the reader session is spent.
  *
- * **A failure does not say whether the terminal is still usable; the state does.** Retrying the charge is
- * right where the state has not moved, and repairing the terminal is right where it reads
- * [TapToPaySessionState.SessionExpired]. A tap that did not complete produces either, so choosing between
- * them from the failure alone gets one of the two wrong.
+ * **A failure does not say whether the terminal is still usable; the state does.** Where the state has not
+ * moved the terminal is still up, and where it reads [TapToPaySessionState.SessionExpired] a repair is what
+ * comes next. A tap that did not complete produces either, so choosing between them from the failure alone
+ * gets one of the two wrong.
  *
  * A repair does not always succeed on the next call: where the reader was refused, it succeeds once that
  * refusal is settled with the vendor.
+ *
+ * **A terminal that is still up is not the same as a charge that can be repeated.** Where a failure left it
+ * unknown whether the payment was opened, the next charge carries the same attempt, so a charge for a
+ * different amount is not what to send next. There is no call that resolves such an attempt yet.
  */
 public class TapToPayException private constructor(
     message: String,
