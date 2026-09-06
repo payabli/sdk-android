@@ -14,6 +14,7 @@ import com.fiserv.commercehub.ttp.provider.exception.FiservTTPCardReaderExceptio
 import com.fiserv.commercehub.ttp.provider.model.ChargesResponse
 import com.fiserv.commercehub.ttp.provider.model.FiservTTPConfig
 import com.fiserv.commercehub.ttp.provider.model.TransactionDetailsRequest
+import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.adapters.CardReaderGateway
 import com.payabli.sdk.taptopay.adapters.ChargeRecord
@@ -48,12 +49,21 @@ internal class FiservCardReaderGateway(
 
     override suspend fun prepareReader(config: ReaderArming) {
         withContext(dispatcher) {
-            mappingFailures {
-                FiservTTPCardReader
-                    .initializeSession(context, config.toVendorConfig())
-                    .first()
-                    .getOrThrow()
-            }
+            val armed =
+                mappingFailures {
+                    FiservTTPCardReader
+                        .initializeSession(context, config.toVendorConfig())
+                        .first()
+                        .getOrThrow()
+                }
+            // The vendor answers `Result<Boolean>`, and the shipped version never puts `false` in it: across
+            // 1.1.4.1 the init workflow boxes `true` at all 11 of its emit sites and boxes `false` at none,
+            // so arming either succeeds or the `Result` carries the failure. Nothing holds a later version to
+            // that, and this value going unread is what would let one arm a reader that reported itself down.
+            // The session would publish Ready and the merchant would tap into nothing.
+            //
+            // Outside `mappingFailures` because there is no vendor exception here to map.
+            if (!armed) throw CardReaderException.ArmingFailed(null)
         }
     }
 
