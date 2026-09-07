@@ -1,12 +1,12 @@
 package com.payabli.sdk.taptopay.enrollment.platform
 
 import android.content.Context
-import android.os.Build
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.HostBindings
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.taptopay.adapters.platform.looksEmulated
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
@@ -44,13 +44,14 @@ internal object LiveTapToPay {
             customerNumber = "sdk-android-live-tier",
         )
 
-    private val EMULATED = setOf("ranchu", "goldfish")
-
     /**
      * Fails rather than skips. A live class is only ever invoked by name, so reaching it on an emulator
      * means the run was pointed at the wrong target, and a skip there reads as a run that went fine.
+     *
+     * The SDK's own detector, so every image it recognises is refused here too. A guard that reads fewer
+     * build values than the SDK lets an image through to a route that charges a real paypoint.
      */
-    fun requireWiredHandset(reason: String) = assertFalse(reason, Build.HARDWARE in EMULATED)
+    fun requireWiredHandset(reason: String) = assertFalse(reason, looksEmulated())
 
     suspend fun session(context: Context): PayabliSession =
         PayabliSession
