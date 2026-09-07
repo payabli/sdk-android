@@ -77,10 +77,12 @@ internal class ChargeKeyStore(
      * Called only where the answer is definite. A failure that leaves it unknown whether money moved keeps
      * the key, which is the whole point of holding one.
      *
-     * **[key] is checked, not assumed.** Two terminals for one entry point hold separate charge locks, so a
-     * charge can finish after another has reserved in its place. Removing whatever is held would then drop
-     * an attempt that is still in flight, and its retry would name a new one. A key that no longer matches
-     * has already been superseded, and the charge that owns it is the one entitled to settle it.
+     * **[key] is checked, not assumed.** Two terminals for one entry point take one charge at a time, so a
+     * charge settling here is normally the one that reserved. The check is what holds when that is not the
+     * assumption: this store is reached from paths the charge region does not cover, and a caller that
+     * builds its own is not serialized by anything this class owns. Removing whatever is held would then
+     * drop an attempt still in flight, and its retry would name a new one. A key that no longer matches has
+     * already been superseded, and the charge that owns it is the one entitled to settle it.
      *
      * **Never fails the caller.** By the time this runs the charge has an outcome the caller is entitled to,
      * and raising here would report a settled payment as a failed one. What a key left behind costs is that
