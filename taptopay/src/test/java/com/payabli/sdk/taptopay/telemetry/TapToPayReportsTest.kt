@@ -72,6 +72,18 @@ class TapToPayReportsTest {
     }
 
     @Test
+    fun `a decline on a close is a failure, because no close happens before the card is asked for`() {
+        // A close exists only once the reader has answered, so it is always on the far side of the window
+        // `cardWasAsked` marks on a charge. Counting a 402 here as `declined` counts a captured sale as a
+        // refused one.
+        TapToPayReports.closeFailed(PayabliDeclineException(rawCode = "D0329"), System.nanoTime())
+
+        val (_, properties) = recorded.single()
+        assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+        assertEquals("D0329", properties[TelemetryProperty.CODE.key])
+    }
+
+    @Test
     fun `a close that was not confirmed says how long it took and how it ended`() {
         TapToPayReports.closeFailed(deniedBy("677"), System.nanoTime())
 
