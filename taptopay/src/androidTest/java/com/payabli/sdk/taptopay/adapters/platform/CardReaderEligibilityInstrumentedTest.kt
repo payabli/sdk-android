@@ -37,6 +37,19 @@ class CardReaderEligibilityInstrumentedTest {
         assertTrue(refusal == null || refusal is DeviceIneligibleException)
     }
 
+    @Test
+    fun anUnexpectedFailureIsNotReportedAsAnIneligibleDevice() {
+        // `isSatisfied` feeds `PayabliTTP.isSupported`, whose contract says `false` is the reliable half.
+        // A linkage error or a defect becoming `false` would tell a host this device cannot take payments
+        // when nothing has established that.
+        val broken =
+            CardReaderEligibility(context, hasContactless = { throw LinkageError("the platform is broken") })
+
+        val escaped = runCatching { broken.isSatisfied() }.exceptionOrNull()
+
+        assertTrue("$escaped", escaped is LinkageError)
+    }
+
     /**
      * Driven onto the refusing side rather than waiting for a handset that refuses.
      *

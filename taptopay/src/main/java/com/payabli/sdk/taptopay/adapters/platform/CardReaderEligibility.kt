@@ -87,6 +87,18 @@ internal class CardReaderEligibility(
         }
     }
 
-    /** The same facts as [check], answered rather than raised. */
-    fun isSatisfied(): Boolean = runCatching { check() }.isSuccess
+    /**
+     * The same facts as [check], answered rather than raised.
+     *
+     * Only a refusal becomes `false`. Anything else leaves this the way it arrived: `false` is the answer
+     * a caller is told to rely on, and a linkage error or a defect turning into one would say a device
+     * cannot take payments when nothing has established that.
+     */
+    fun isSatisfied(): Boolean =
+        try {
+            check()
+            true
+        } catch (ineligible: DeviceIneligibleException) {
+            false
+        }
 }
