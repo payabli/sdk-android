@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
@@ -37,29 +38,29 @@ import java.util.concurrent.ConcurrentHashMap
 private const val REGION_STRIPES = 16
 
 /**
- * The charge regions, striped rather than one per entry point.
+ * The charge regions, striped rather than one per scope.
  *
  * Held here rather than on the runner for the reason [TapToPayChargeRunner.region] gives. Striped because
- * the entry point is a caller-supplied string and nothing bounds how many distinct ones a host passes, so a
- * map keyed on it grows with whatever it is handed. A fixed set of locks cannot.
+ * the entry point a scope is built from is a caller-supplied string and nothing bounds how many distinct
+ * ones a host passes, so a map keyed on it grows with whatever it is handed. A fixed set of locks cannot.
  *
- * What striping costs is that two unrelated entry points sharing a stripe wait for each other. What it keeps
- * is the only property that matters here: one entry point always resolves to the same lock, in this process
- * and in every terminal built in it.
+ * What striping costs is that two unrelated scopes sharing a stripe wait for each other. What it keeps is
+ * the only property that matters here: one scope always resolves to the same lock, in this process and in
+ * every terminal built in it.
  */
 private val REGIONS: List<Mutex> = List(REGION_STRIPES) { Mutex() }
 
 /** Masked rather than negated: `Int.MIN_VALUE` has no positive counterpart and negating it returns itself. */
-private fun regionFor(entry: String): Mutex =
-    REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
+private fun regionFor(scope: String): Mutex =
+    REGIONS[(scope.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
 /**
- * The payment each entry point has charged a card for and not confirmed a close on.
+ * The payment each scope has charged a card for and not confirmed a close on.
  *
- * Keyed exactly rather than striped, because two entry points sharing a stripe share a lock and must not
- * share a payment. Unbounded growth is not the concern the regions have: an entry appears only once a card
- * has actually been charged for that entry point, and it is removed when the close lands or the next payment
- * opens, so it is bounded by paypoints a device has taken money for rather than by anything a caller passes.
+ * Keyed exactly rather than striped, because two scopes sharing a stripe share a lock and must not share a
+ * payment. Unbounded growth is not the concern the regions have: an entry appears only once a card has
+ * actually been charged under that scope, and it is removed when the close lands or the next payment opens,
+ * so it is bounded by paypoints a device has taken money for rather than by anything a caller passes.
  *
  * Shared rather than held per runner for the reason the region is. A terminal is built per call, so a
  * payment retained by one and a payment retained by another are the same paypoint's, and an instance field
@@ -78,6 +79,7 @@ private class PendingClose(
 /** One payment, end to end: open it at Payabli, tap, close it. */
 internal class TapToPayChargeRunner(
     private val entry: String,
+    environment: PayabliEnvironment,
     private val coordinator: TapToPaySessionCoordinator,
     private val manager: TapToPaySessionManager,
     private val reader: TapToPayProvider,
@@ -87,14 +89,25 @@ internal class TapToPayChargeRunner(
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /**
-     * One payment at a time for this entry point, across every terminal built for it.
+     * What a retained payment belongs to: the entry point, under the environment it was opened against.
      *
-     * Keyed by the entry point rather than held per instance, because that is what it protects. A terminal
-     * is built per call, so two of them exist for one paypoint whenever a screen is rebuilt, and they share
-     * the charge key by design. An instance mutex lets one settle that key while the other is mid-charge,
-     * after which an ambiguous failure mints a fresh one and the payer can be charged twice.
+     * The entry point alone does not name a payment. A session that has reached
+     * [com.payabli.sdk.core.SdkState.ReinitializeRequired] admits any configuration next, so one process can
+     * hold a payment opened against one environment and then build a terminal for the same entry point
+     * against another. Keyed on the entry point alone, that terminal finds the first payment and offers to
+     * close it, sending an identifier and a processor answer to a service that never opened it.
      */
-    private val region: Mutex get() = regionFor(entry)
+    private val scope: String = "${environment.name}/$entry"
+
+    /**
+     * One payment at a time for this scope, across every terminal built for it.
+     *
+     * Keyed by the scope rather than held per instance, because that is what it protects. A terminal is
+     * built per call, so two of them exist for one paypoint whenever a screen is rebuilt, and they share the
+     * charge key by design. An instance mutex lets one settle that key while the other is mid-charge, after
+     * which an ambiguous failure mints a fresh one and the payer can be charged twice.
+     */
+    private val region: Mutex get() = regionFor(scope)
 
     suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
@@ -155,7 +168,7 @@ internal class TapToPayChargeRunner(
                 openedAs = paymentTransId
                 // A second payment now exists, so the one held from a failed close is no longer the one a
                 // caller means.
-                HELD.remove(entry)
+                HELD.remove(scope)
                 logger.debug(
                     LogField.safe("event", "ttp_charge_opened"),
                     LogField.safe("phase", "initiate"),
@@ -169,7 +182,7 @@ internal class TapToPayChargeRunner(
 
                 // The card has been charged. Everything from here reports a payment whose money has moved.
                 capture = TapToPayCapture.CHARGED
-                HELD[entry] = PendingClose(paymentTransId, result, idempotencyKey)
+                HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -190,7 +203,7 @@ internal class TapToPayChargeRunner(
                     if (result.outcome != CardReadOutcome.INDETERMINATE) keys.settle(entry, idempotencyKey)
                     // The close landed, so there is nothing left to recover for this payment,
                     // whatever the outcome was.
-                    HELD.remove(entry)
+                    HELD.remove(scope)
                 }
 
                 // The close is sent for every outcome above, and only an approval is a payment. A refused
@@ -298,7 +311,7 @@ internal class TapToPayChargeRunner(
      */
     suspend fun closeCaptured(paymentTransId: String): Unit =
         region.withLock {
-            val pending = HELD[entry]
+            val pending = HELD[scope]
             if (pending == null || pending.paymentTransId != paymentTransId) {
                 // Named rather than left to the facade's default. A caller reaches this by asking to close
                 // a payment whose answer is no longer held, and the default would report it as never
@@ -319,7 +332,7 @@ internal class TapToPayChargeRunner(
                     // with its attempt still reserved leaves the next charge reusing a key the service has
                     // already seen, and one still held would be offered for closing again.
                     keys.settle(entry, pending.idempotencyKey)
-                    HELD.remove(entry)
+                    HELD.remove(scope)
                 }
             } catch (withdrawn: CancellationException) {
                 // Converting it would hide it from the facade, which reads the type to decide what to

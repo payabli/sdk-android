@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.RouteScript
@@ -40,6 +41,7 @@ class PayabliTapToPayTest {
             runner =
                 TapToPayChargeRunner(
                     entry = ENTRY,
+                    environment = PayabliEnvironment.SANDBOX,
                     coordinator = fixture.coordinator,
                     manager = fixture.manager,
                     reader = fixture.reader,
