@@ -31,6 +31,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
 
 /** Enough that unrelated paypoints rarely share one, small enough to be a fixed cost. */
 private const val REGION_STRIPES = 16
@@ -52,6 +53,28 @@ private val REGIONS: List<Mutex> = List(REGION_STRIPES) { Mutex() }
 private fun regionFor(entry: String): Mutex =
     REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
+/**
+ * The payment each entry point has charged a card for and not confirmed a close on.
+ *
+ * Keyed exactly rather than striped, because two entry points sharing a stripe share a lock and must not
+ * share a payment. Unbounded growth is not the concern the regions have: an entry appears only once a card
+ * has actually been charged for that entry point, and it is removed when the close lands or the next payment
+ * opens, so it is bounded by paypoints a device has taken money for rather than by anything a caller passes.
+ *
+ * Shared rather than held per runner for the reason the region is. A terminal is built per call, so a
+ * payment retained by one and a payment retained by another are the same paypoint's, and an instance field
+ * lets the second hide the first: both then believe they hold it, and whichever settles the attempt first
+ * leaves the other to mint a fresh key and charge again.
+ */
+private val HELD = ConcurrentHashMap<String, PendingClose>()
+
+private class PendingClose(
+    val paymentTransId: String,
+    val read: CardReadResult,
+    /** The attempt this payment was opened under, settled when a later close lands. */
+    val idempotencyKey: String,
+)
+
 /** One payment, end to end: open it at Payabli, tap, close it. */
 internal class TapToPayChargeRunner(
     private val entry: String,
@@ -72,22 +95,6 @@ internal class TapToPayChargeRunner(
      * after which an ambiguous failure mints a fresh one and the payer can be charged twice.
      */
     private val region: Mutex get() = regionFor(entry)
-
-    /**
-     * A payment the card was charged for and whose close was not confirmed, held so it can be closed later.
-     *
-     * Read and written under [region], so there is never more than one. It is dropped once a close is
-     * confirmed and again whenever a new payment is opened, which bounds how long the processor's answer is
-     * held.
-     */
-    private var pendingClose: PendingClose? = null
-
-    private class PendingClose(
-        val paymentTransId: String,
-        val read: CardReadResult,
-        /** The attempt this payment was opened under, settled when a later close lands. */
-        val idempotencyKey: String,
-    )
 
     suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
@@ -148,7 +155,7 @@ internal class TapToPayChargeRunner(
                 openedAs = paymentTransId
                 // A second payment now exists, so the one held from a failed close is no longer the one a
                 // caller means.
-                pendingClose = null
+                HELD.remove(entry)
                 logger.debug(
                     LogField.safe("event", "ttp_charge_opened"),
                     LogField.safe("phase", "initiate"),
@@ -162,7 +169,7 @@ internal class TapToPayChargeRunner(
 
                 // The card has been charged. Everything from here reports a payment whose money has moved.
                 capture = TapToPayCapture.CHARGED
-                pendingClose = PendingClose(paymentTransId, result, idempotencyKey)
+                HELD[entry] = PendingClose(paymentTransId, result, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -183,7 +190,7 @@ internal class TapToPayChargeRunner(
                     if (result.outcome != CardReadOutcome.INDETERMINATE) keys.settle(entry, idempotencyKey)
                     // The close landed, so there is nothing left to recover for this payment,
                     // whatever the outcome was.
-                    pendingClose = null
+                    HELD.remove(entry)
                 }
 
                 // The close is sent for every outcome above, and only an approval is a payment. A refused
@@ -291,7 +298,7 @@ internal class TapToPayChargeRunner(
      */
     suspend fun closeCaptured(paymentTransId: String): Unit =
         region.withLock {
-            val pending = pendingClose
+            val pending = HELD[entry]
             if (pending == null || pending.paymentTransId != paymentTransId) {
                 // Named rather than left to the facade's default. A caller reaches this by asking to close
                 // a payment whose answer is no longer held, and the default would report it as never
@@ -312,7 +319,7 @@ internal class TapToPayChargeRunner(
                     // with its attempt still reserved leaves the next charge reusing a key the service has
                     // already seen, and one still held would be offered for closing again.
                     keys.settle(entry, pending.idempotencyKey)
-                    pendingClose = null
+                    HELD.remove(entry)
                 }
             } catch (withdrawn: CancellationException) {
                 // Converting it would hide it from the facade, which reads the type to decide what to
