@@ -28,7 +28,9 @@ import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -857,6 +859,48 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `closing a payment this terminal does not hold says unknown, never not-charged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The state a host reaches after a restart, holding an identifier it persisted. Reporting it as
+            // never charged would tell that host a second charge is safe for a payment that took money.
+            val fixture = readyFixture()
+            val runner = runnerOver(fixture)
+
+            val refusal =
+                runCatching { runner.closeCaptured("12-not-held") }.exceptionOrNull()
+
+            assertTrue(refusal.toString(), refusal is TapToPayException)
+            assertEquals("12-not-held", (refusal as TapToPayException).paymentTransId)
+            assertEquals(TapToPayCapture.UNKNOWN, refusal.capture)
+        }
+
+    @Test
+    fun `two terminals for one entry point take one payment at a time`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Two terminals exist for one paypoint whenever a screen is rebuilt, and they share the charge
+            // key. Asserted on the order the two payments reach the wire rather than on a mid-flight state,
+            // which a second terminal that simply had not got there yet would satisfy either way.
+            val fixture = readyFixture(updates = 2, opens = 2)
+            val second = runnerOver(fixture)
+            val release = CompletableDeferred<Unit>()
+            val first =
+                runnerGatedOnClose(fixture) { release.await() }
+
+            val held = async { first.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val blocked = async { second.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            release.complete(Unit)
+            held.await()
+            blocked.await()
+
+            // One payment start to finish, then the next. Sharing no region interleaves the two openings
+            // before either close, which is the window where one terminal settles a key the other is using.
+            assertEquals(
+                listOf(INITIATE, UPDATE, INITIATE, UPDATE),
+                fixture.routes.filter { it.startsWith("/api/v2/MoneyIn") },
+            )
+        }
+
+    @Test
     fun `a payment that closed is no longer held`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Nothing is kept once the close lands, so the processor metadata the recovery held is
@@ -867,7 +911,8 @@ class TapToPayChargeRunnerTest {
 
             val refusal = runCatching { runner.closeCaptured(receipt.paymentTransId) }.exceptionOrNull()
 
-            assertTrue(refusal.toString(), refusal is IllegalArgumentException)
+            assertTrue(refusal.toString(), refusal is TapToPayException)
+            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
         }
 
     @Test
@@ -886,6 +931,7 @@ class TapToPayChargeRunnerTest {
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             val refusal = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
-            assertTrue(refusal.toString(), refusal is IllegalArgumentException)
+            assertTrue(refusal.toString(), refusal is TapToPayException)
+            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
         }
 }

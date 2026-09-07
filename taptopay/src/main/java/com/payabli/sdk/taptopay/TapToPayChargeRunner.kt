@@ -31,6 +31,18 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * The charge regions, one per entry point, shared by every runner built for it.
+ *
+ * Held here rather than on the runner for the reason [TapToPayChargeRunner.region] gives. Entries are never
+ * removed: an entry point is a merchant identifier from a small fixed set, and a `Mutex` nobody holds costs
+ * a reference, where removing one a caller is waiting on would hand the next caller a different lock.
+ */
+private val REGIONS = ConcurrentHashMap<String, Mutex>()
+
+private fun regionFor(entry: String): Mutex = REGIONS.computeIfAbsent(entry) { Mutex() }
 
 /** One payment, end to end: open it at Payabli, tap, close it. */
 internal class TapToPayChargeRunner(
@@ -43,8 +55,15 @@ internal class TapToPayChargeRunner(
     private val keys: ChargeKeyStore,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
-    /** One payment at a time. A second caller waits; the reader takes one card. */
-    private val region = Mutex()
+    /**
+     * One payment at a time for this entry point, across every terminal built for it.
+     *
+     * Keyed by the entry point rather than held per instance, because that is what it protects. A terminal
+     * is built per call, so two of them exist for one paypoint whenever a screen is rebuilt, and they share
+     * the charge key by design. An instance mutex lets one settle that key while the other is mid-charge,
+     * after which an ambiguous failure mints a fresh one and the payer can be charged twice.
+     */
+    private val region: Mutex get() = regionFor(entry)
 
     /**
      * A payment the card was charged for and whose close was not confirmed, held so it can be closed later.
@@ -265,8 +284,16 @@ internal class TapToPayChargeRunner(
     suspend fun closeCaptured(paymentTransId: String): Unit =
         region.withLock {
             val pending = pendingClose
-            require(pending != null && pending.paymentTransId == paymentTransId) {
-                "no captured payment is waiting to be closed under that identifier"
+            if (pending == null || pending.paymentTransId != paymentTransId) {
+                // Named rather than left to the facade's default. A caller reaches this by asking to close
+                // a payment whose answer is no longer held, and the default would report it as never
+                // charged, which is the one thing this SDK must not say about a payment it cannot account
+                // for. It carries the identifier it was given, and unknown, because that is what is true.
+                throw failed(
+                    IllegalStateException("no captured payment is held under that identifier"),
+                    paymentTransId,
+                    TapToPayCapture.UNKNOWN,
+                )
             }
             val startedAt = System.nanoTime()
             TapToPayReports.closeStarted()
