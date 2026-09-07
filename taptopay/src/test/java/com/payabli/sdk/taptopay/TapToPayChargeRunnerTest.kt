@@ -877,27 +877,54 @@ class TapToPayChargeRunnerTest {
     @Test
     fun `two terminals for one entry point take one payment at a time`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Two terminals exist for one paypoint whenever a screen is rebuilt, and they share the charge
-            // key. Asserted on the order the two payments reach the wire rather than on a mid-flight state,
-            // which a second terminal that simply had not got there yet would satisfy either way.
+            // The second terminal is started only once the first is inside its close and holding the
+            // region, so the window being tested is open when it arrives rather than assumed to be.
             val fixture = readyFixture(updates = 2, opens = 2)
             val second = runnerOver(fixture)
+            val atClose = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             val first =
-                runnerGatedOnClose(fixture) { release.await() }
+                runnerGatedOnClose(fixture) {
+                    atClose.complete(Unit)
+                    release.await()
+                }
 
             val held = async { first.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            atClose.await()
             val blocked = async { second.charge(details(), PAYER, TapToPayInvoiceData(), null) }
             release.complete(Unit)
             held.await()
             blocked.await()
 
-            // One payment start to finish, then the next. Sharing no region interleaves the two openings
-            // before either close, which is the window where one terminal settles a key the other is using.
+            // One payment start to finish, then the next. Terminals that share no region interleave the two
+            // openings before either close, which is the window where one settles a key the other is using.
             assertEquals(
                 listOf(INITIATE, UPDATE, INITIATE, UPDATE),
                 fixture.routes.filter { it.startsWith("/api/v2/MoneyIn") },
             )
+        }
+
+    @Test
+    fun `a payment held by one terminal is the same payment another terminal holds`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Held per instance, the second terminal's payment hides the first's and both believe they hold
+            // one. Whichever settles the attempt first leaves the other to mint a fresh key and charge again.
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 4) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val first = runnerOver(fixture)
+            val second = runnerOver(fixture)
+
+            runCatching { first.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = false
+            second.charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            // The second terminal opened a payment, which drops what any terminal was holding for this
+            // paypoint, so the first has nothing left to close.
+            val refusal = runCatching { first.closeCaptured(TRANS_ID) }.exceptionOrNull()
+            assertTrue(refusal.toString(), refusal is TapToPayException)
+            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
         }
 
     @Test
