@@ -4,7 +4,9 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.taptopay.ManualDeviceTest
+import com.payabli.sdk.taptopay.adapters.ChargeRecord
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.platform.LiveRunSettings
@@ -21,7 +23,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,6 +33,9 @@ import kotlin.time.Duration.Companion.seconds
 private val TEST_TIMEOUT = 300.seconds
 
 private val AMOUNT = BigDecimal("1.00")
+
+/** The state the processor puts a sale in when the money has been taken. */
+private const val CAPTURED = "CAPTURED"
 
 /**
  * A whole card-present payment: open at Payabli, tap, close.
@@ -132,10 +136,15 @@ class TapToPayChargeLiveTest {
                     "closed on ${result.cardNetwork ?: "an unnamed network"}",
                 )
 
-                assertTrue(
-                    "the reader answered with an empty record",
-                    result.providerResponse.length > "{}".length,
-                )
+                // What this class exists to prove, and the only assertion that can prove it. A non-empty
+                // record is answered by a decline too, so the state the processor put the sale in is what
+                // separates a tap that took the money from a tap that was refused.
+                val state =
+                    PayabliJson.format
+                        .decodeFromString(ChargeRecord.serializer(), result.providerResponse)
+                        .gatewayResponse
+                        ?.transactionState
+                assertEquals("the sale was not captured", CAPTURED, state?.uppercase())
             }
         }
 }
