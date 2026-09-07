@@ -24,7 +24,8 @@ class CardReaderEligibilityInstrumentedTest {
     fun theGateAgreesWithWhatThisHandsetIs() {
         val qualifies =
             Build.VERSION.SDK_INT >= CARD_PRESENT_MIN_API &&
-                context.packageManager.hasSystemFeature(PackageManager.FEATURE_NFC)
+                context.packageManager.hasSystemFeature(PackageManager.FEATURE_NFC) &&
+                CARD_PRESENT_REQUIRED_ABI in Build.SUPPORTED_ABIS.orEmpty()
 
         val refusal = runCatching { CardReaderEligibility(context).check() }.exceptionOrNull()
 
@@ -46,8 +47,9 @@ class CardReaderEligibilityInstrumentedTest {
     fun aRefusalNamesTheCheckAndNotTheDevice() {
         val belowTheFloor = CardReaderEligibility(context, apiLevel = CARD_PRESENT_MIN_API - 1)
         val withoutContactless = CardReaderEligibility(context, hasContactless = { false })
+        val wrongAbi = CardReaderEligibility(context, abis = { listOf("armeabi-v7a") })
 
-        for (gate in listOf(belowTheFloor, withoutContactless)) {
+        for (gate in listOf(belowTheFloor, withoutContactless, wrongAbi)) {
             val refusal = runCatching { gate.check() }.exceptionOrNull()
 
             assertTrue("a refusal was expected", refusal is DeviceIneligibleException)

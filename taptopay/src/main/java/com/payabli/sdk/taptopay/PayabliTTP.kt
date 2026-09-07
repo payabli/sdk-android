@@ -2,7 +2,9 @@ package com.payabli.sdk.taptopay
 
 import android.content.Context
 import com.payabli.sdk.core.PayabliSession
+import com.payabli.sdk.taptopay.adapters.platform.CardReaderEligibility
 import com.payabli.sdk.taptopay.adapters.platform.TapToPayComponents
+import com.payabli.sdk.taptopay.adapters.platform.looksEmulated
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
@@ -75,6 +77,23 @@ public class PayabliTTP private constructor(
         }
 
     public companion object {
+        /**
+         * Whether this device can take card-present payments, answered before anything is built.
+         *
+         * Needs no session, no credentials and no network, so a host can decide whether to offer
+         * card-present at all before it has any of them.
+         *
+         * **A signal, not a gate.** It answers from what the device reports about itself: the platform
+         * version, whether a contactless radio is present, whether the ABI the card reader ships native
+         * code for is offered, and whether the build looks like an emulator image. None of that can see a
+         * paypoint that is not enabled for card-present, a device the vendor has refused, or a reader that
+         * fails once it is armed, so `false` is reliable and `true` is not a promise. The SDK does not
+         * consult this: [create] and [initialize] run whatever it says, and report what actually happened.
+         */
+        @JvmStatic
+        public fun isSupported(context: Context): Boolean =
+            CardReaderEligibility(context).isSatisfied() && !looksEmulated()
+
         /**
          * Builds a terminal against [session], for [entryPoint].
          *
