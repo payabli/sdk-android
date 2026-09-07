@@ -263,6 +263,7 @@ private fun SetupScreenPreview() {
                             isEmulator = true,
                             model = "Google sdk_gphone64_arm64",
                             apiLevel = 36,
+                            readerSupported = false,
                             hasNfcHardware = false,
                             isNfcEnabled = false,
                             playServicesInstalled = true,

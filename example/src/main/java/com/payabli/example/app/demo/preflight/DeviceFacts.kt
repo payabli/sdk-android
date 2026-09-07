@@ -18,6 +18,14 @@ data class DeviceFacts(
     val isEmulator: Boolean,
     val model: String,
     val apiLevel: Int,
+    /**
+     * What the SDK answers for this device, rather than a floor this app holds a copy of.
+     *
+     * The SDK owns which platform version, which ABI and which hardware the card reader needs, and it is
+     * the only thing that can be right about them. A number written here as well would agree until one of
+     * them moved.
+     */
+    val readerSupported: Boolean,
     val hasNfcHardware: Boolean,
     val isNfcEnabled: Boolean,
     val playServicesInstalled: Boolean,

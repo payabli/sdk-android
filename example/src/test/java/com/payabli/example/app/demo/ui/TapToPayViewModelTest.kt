@@ -67,6 +67,7 @@ class TapToPayViewModelTest {
             isEmulator = false,
             model = "Pixel 8",
             apiLevel = 34,
+            readerSupported = true,
             hasNfcHardware = true,
             isNfcEnabled = true,
             playServicesInstalled = true,
