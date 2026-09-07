@@ -62,10 +62,22 @@ class EmulatorMarkersTest {
                 "Android SDK built for arm64",
                 "Genymotion",
                 "google_sdk",
-                "unknown",
             )
         for (image in images) {
             assertTrue(image, looksEmulatedFrom(handset() + ("product" to image)))
+        }
+    }
+
+    @Test
+    fun `a property Android could not read is not an emulator`() {
+        // `unknown` is Android's own substitute for a build property it cannot read. Matching it reported a
+        // handset with one missing property as unable to take payments, and `false` is the half of this
+        // answer a host is told to rely on.
+        for (field in handset().keys) {
+            assertFalse(
+                "a missing $field was read as an emulator",
+                looksEmulatedFrom(handset() + (field to "unknown")),
+            )
         }
     }
 

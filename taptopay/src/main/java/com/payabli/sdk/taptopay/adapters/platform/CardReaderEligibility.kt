@@ -23,6 +23,11 @@ internal const val CARD_PRESENT_REQUIRED_ABI: String = "arm64-v8a"
 /**
  * Build values a handset does not carry and an emulator image does.
  *
+ * **Each one names an emulator rather than an absence.** `unknown` is what Android itself substitutes for a
+ * build property it cannot read, so a handset missing one property would match it and be reported as
+ * unable to take payments. A marker that fires on a real device is worse than one that misses an image,
+ * because `false` is the half of this answer a host is told to rely on.
+ *
  * These say what the device looks like. [CardReaderEligibility] says what it can do, and a build matching
  * none of these still cannot read a card without a radio. A match is reported as unsupported and refuses
  * nothing.
@@ -30,7 +35,6 @@ internal const val CARD_PRESENT_REQUIRED_ABI: String = "arm64-v8a"
 private val EMULATOR_MARKERS =
     listOf(
         "generic",
-        "unknown",
         "google_sdk",
         "sdk_gphone",
         "sdk_phone",
