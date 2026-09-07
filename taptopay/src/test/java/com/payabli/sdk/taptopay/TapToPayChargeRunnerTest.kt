@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -117,22 +118,26 @@ private class GatedCloseTransport(
  * to the session.
  */
 class TapToPayChargeRunnerTest {
-    private fun runnerOver(fixture: SessionFixture) =
-        TapToPayChargeRunner(
-            entry = ENTRY,
-            coordinator = fixture.coordinator,
-            manager = fixture.manager,
-            reader = fixture.reader,
-            client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
-            store = fixture.enrollment.store,
-            keys = fixture.keys,
-        )
+    private fun runnerOver(
+        fixture: SessionFixture,
+        environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
+    ) = TapToPayChargeRunner(
+        entry = ENTRY,
+        environment = environment,
+        coordinator = fixture.coordinator,
+        manager = fixture.manager,
+        reader = fixture.reader,
+        client = TTPTransactionClient(fixture.enrollment.transport, fixture.enrollment.logger),
+        store = fixture.enrollment.store,
+        keys = fixture.keys,
+    )
 
     private fun runnerGatedOnClose(
         fixture: SessionFixture,
         onClose: suspend () -> Unit,
     ) = TapToPayChargeRunner(
         entry = ENTRY,
+        environment = PayabliEnvironment.SANDBOX,
         coordinator = fixture.coordinator,
         manager = fixture.manager,
         reader = fixture.reader,
@@ -937,6 +942,30 @@ class TapToPayChargeRunnerTest {
             val receipt = runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
             val refusal = runCatching { runner.closeCaptured(receipt.paymentTransId) }.exceptionOrNull()
+
+            assertTrue(refusal.toString(), refusal is TapToPayException)
+            assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
+        }
+
+    @Test
+    fun `a payment held for one environment is not offered to a terminal on another`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A session that needs reinitializing admits any configuration next, so one process can hold a
+            // payment opened against sandbox and then build a terminal for the same entry point against
+            // production. Keyed on the entry point alone, that terminal closes a payment the production
+            // service never opened.
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 1, closes = 3) { closeFails })
+                    .also { it.coordinator.initialize() }
+            runCatching {
+                runnerOver(fixture, PayabliEnvironment.SANDBOX)
+                    .charge(details(), PAYER, TapToPayInvoiceData(), null)
+            }
+
+            closeFails = false
+            val elsewhere = runnerOver(fixture, PayabliEnvironment.PRODUCTION)
+            val refusal = runCatching { elsewhere.closeCaptured(TRANS_ID) }.exceptionOrNull()
 
             assertTrue(refusal.toString(), refusal is TapToPayException)
             assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
