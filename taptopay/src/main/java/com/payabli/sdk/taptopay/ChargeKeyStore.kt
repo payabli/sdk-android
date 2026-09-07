@@ -233,9 +233,10 @@ internal class ChargeAttempt(
 /**
  * Every unsettled charge this device holds, one per entry point, most recently reserved first.
  *
- * A list rather than a map, as the device bindings are: the order is what decides which is discarded when
- * [MAX] is reached, and a map would rest that on whatever the decoder happened to build. Lookup is by
- * [entry][ChargeAttempt.entry] either way, and at this size a scan beats a second structure.
+ * A list rather than a map, as the device bindings are, and the order is part of the record rather than
+ * whatever a decoder happened to build. **Nothing is discarded at [MAX]:** every entry names a charge whose
+ * outcome is still in doubt, so `reserve` refuses a new entry point instead of evicting one. Lookup is by
+ * [entry][ChargeAttempt.entry], and at this size a scan beats a second structure.
  *
  * [attempts] carries no default. The SDK's decoder ignores keys it does not recognize, so a defaulted list
  * would let a record written in some other shape decode cleanly to an empty one — and empty here means no

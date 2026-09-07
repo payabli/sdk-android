@@ -57,7 +57,9 @@ public class PayabliTTP private constructor(
      * Takes one payment. Waits for a card, so it runs as long as the person in front of the phone.
      *
      * [customer] has to identify the payer: an opening that names none is refused before a card is asked
-     * for. `firstName`, `lastName` and `customerNumber` are the fields it is read from.
+     * for. Any one of `customerId`, `customerNumber`, `firstName` or `lastName` satisfies that, so a caller
+     * holding only the identifier the service already knows does not have to invent a name to go with it.
+     * What a given paypoint then requires is its own rule and is answered by the service.
      */
     public suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
