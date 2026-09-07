@@ -31,18 +31,26 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
-import java.util.concurrent.ConcurrentHashMap
+
+/** Enough that unrelated paypoints rarely share one, small enough to be a fixed cost. */
+private const val REGION_STRIPES = 16
 
 /**
- * The charge regions, one per entry point, shared by every runner built for it.
+ * The charge regions, striped rather than one per entry point.
  *
- * Held here rather than on the runner for the reason [TapToPayChargeRunner.region] gives. Entries are never
- * removed: an entry point is a merchant identifier from a small fixed set, and a `Mutex` nobody holds costs
- * a reference, where removing one a caller is waiting on would hand the next caller a different lock.
+ * Held here rather than on the runner for the reason [TapToPayChargeRunner.region] gives. Striped because
+ * the entry point is a caller-supplied string and nothing bounds how many distinct ones a host passes, so a
+ * map keyed on it grows with whatever it is handed. A fixed set of locks cannot.
+ *
+ * What striping costs is that two unrelated entry points sharing a stripe wait for each other. What it keeps
+ * is the only property that matters here: one entry point always resolves to the same lock, in this process
+ * and in every terminal built in it.
  */
-private val REGIONS = ConcurrentHashMap<String, Mutex>()
+private val REGIONS: List<Mutex> = List(REGION_STRIPES) { Mutex() }
 
-private fun regionFor(entry: String): Mutex = REGIONS.computeIfAbsent(entry) { Mutex() }
+/** Masked rather than negated: `Int.MIN_VALUE` has no positive counterpart and negating it returns itself. */
+private fun regionFor(entry: String): Mutex =
+    REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
 /** One payment, end to end: open it at Payabli, tap, close it. */
 internal class TapToPayChargeRunner(
