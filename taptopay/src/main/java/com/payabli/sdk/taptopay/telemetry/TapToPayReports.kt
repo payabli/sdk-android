@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.telemetry
 
+import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -130,11 +131,21 @@ internal object TapToPayReports {
      * still carries the vendor's.
      */
     private fun outcomeOf(failure: Throwable): String =
-        if (generateSequence(failure) { it.cause }.any { it is TTPTransactionException.Refused }) {
+        if (generateSequence(failure) { it.cause }.any { it.isDecline() }) {
             TelemetryProperties.Outcome.DECLINED
         } else {
             TelemetryProperties.Outcome.FAILED
         }
+
+    /**
+     * A decline from either shape the service answers one in.
+     *
+     * The v2 envelope carries a refusal that the transaction client reads, and an HTTP 402 is turned into
+     * [PayabliDeclineException] by the shared error table before that envelope is parsed. Both are the
+     * issuer declining the card, and reading only the first reported the second as a failure.
+     */
+    private fun Throwable.isDecline(): Boolean =
+        this is TTPTransactionException.Refused || this is PayabliDeclineException
 
     /**
      * The code a refusal carries, from either party that issues one.
@@ -149,6 +160,9 @@ internal object TapToPayReports {
                 when (it) {
                     is CardReaderFailure -> it.code
                     is TTPTransactionException -> it.code
+                    // The processor's own decline code, which is where it lands when the service answers
+                    // 402 rather than a v2 envelope. Fixed vocabulary, like the two above.
+                    is PayabliDeclineException -> it.rawCode
                     else -> null
                 }
             }

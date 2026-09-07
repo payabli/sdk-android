@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.telemetry
 
+import com.payabli.sdk.core.model.PayabliDeclineException
 import com.payabli.sdk.core.telemetry.TelemetryCatalog
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -91,6 +92,35 @@ class TapToPayReportsTest {
         assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
         // Which decline. Without it the event says a payment was refused and nothing says by what.
         assertEquals("D0001", properties[TelemetryProperty.CODE.key])
+    }
+
+    @Test
+    fun `a decline the service answered with a 402 is declined too, and keeps its code`() {
+        // The other shape a decline arrives in. `PayabliHttpErrors` turns a 402 into this before the v2
+        // envelope is read, so it is never a `TTPTransactionException` and reading only that type reported
+        // a real issuer decline as a failure, with the processor's code dropped.
+        TapToPayReports.chargeFailed(
+            PayabliDeclineException(rawCode = "D0329"),
+            System.nanoTime(),
+        )
+
+        val (_, properties) = recorded.single()
+        assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
+        assertEquals("D0329", properties[TelemetryProperty.CODE.key])
+    }
+
+    @Test
+    fun `a 402 decline under a wrapper is still declined`() {
+        // The runner wraps what the client threw, so the decline reaches telemetry on the cause chain
+        // rather than at the top of it.
+        TapToPayReports.chargeFailed(
+            IllegalStateException("the charge failed", PayabliDeclineException(rawCode = "D0329")),
+            System.nanoTime(),
+        )
+
+        val (_, properties) = recorded.single()
+        assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
+        assertEquals("D0329", properties[TelemetryProperty.CODE.key])
     }
 
     @Test
