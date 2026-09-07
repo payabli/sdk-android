@@ -110,6 +110,23 @@ class TapToPayReportsTest {
     }
 
     @Test
+    fun `a decline arriving after the card was asked for is a failure, not a decline`() {
+        // The window this guards: once the reader has answered, the processor may hold the card, and the
+        // closing call is what records that. A 402 there is a failure to record an outcome rather than a
+        // payment the issuer turned down, and calling it `declined` counts a captured sale as a refused one.
+        TapToPayReports.chargeFailed(
+            PayabliDeclineException(rawCode = "D0329"),
+            System.nanoTime(),
+            cardWasAsked = true,
+        )
+
+        val (_, properties) = recorded.single()
+        assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+        // The code still travels: which refusal it was is the diagnostic, whatever it is counted as.
+        assertEquals("D0329", properties[TelemetryProperty.CODE.key])
+    }
+
+    @Test
     fun `a 402 decline under a wrapper is still declined`() {
         // The runner wraps what the client threw, so the decline reaches telemetry on the cause chain
         // rather than at the top of it.

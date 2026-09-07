@@ -134,7 +134,7 @@ internal class TapToPayChargeRunner(
                 // After the reader has answered the sale may be captured, so no failure arriving from
                 // there on is evidence the money did not move.
                 if (!askedForCard && isAnswered(failure)) reserved?.let { keys.settle(entry, it) }
-                TapToPayReports.chargeFailed(failure, startedAt)
+                TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard)
                 throw failure
             }
         }

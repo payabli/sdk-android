@@ -52,10 +52,20 @@ internal object TapToPayReports {
 
     fun chargeSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_CHARGE_SUCCEEDED, startedAt)
 
+    /**
+     * A charge that did not succeed.
+     *
+     * **[cardWasAsked] decides whether a decline can still be one.** Before the reader is asked, a refusal
+     * is the issuer refusing the payment. After it answers, the processor may already hold the card, and a
+     * refusal arriving while the outcome is being recorded is a failure to record it rather than a payment
+     * that was turned down. Reporting the second as `declined` would count a captured sale as a refused
+     * one, in a property the card-not-present path shares.
+     */
     fun chargeFailed(
         failure: Throwable,
         startedAt: Long,
-    ) = failed(TelemetryEvents.TTP_CHARGE_FAILED, failure, startedAt)
+        cardWasAsked: Boolean = false,
+    ) = failed(TelemetryEvents.TTP_CHARGE_FAILED, failure, startedAt, canBeDeclined = !cardWasAsked)
 
     fun nfcStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_STARTED)
 
@@ -105,9 +115,10 @@ internal object TapToPayReports {
         event: String,
         failure: Throwable,
         startedAt: Long,
+        canBeDeclined: Boolean = true,
     ) = TelemetryRecorders.record(event) {
         buildMap {
-            put(TelemetryProperty.OUTCOME.key, outcomeOf(failure))
+            put(TelemetryProperty.OUTCOME.key, outcomeOf(failure, canBeDeclined))
             put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
             codeOf(failure)?.let { put(TelemetryProperty.CODE.key, it) }
         }
@@ -130,8 +141,11 @@ internal object TapToPayReports {
      * Nothing is lost by the change: `reason` still names the kind where the event carries one, and `code`
      * still carries the vendor's.
      */
-    private fun outcomeOf(failure: Throwable): String =
-        if (generateSequence(failure) { it.cause }.any { it.isDecline() }) {
+    private fun outcomeOf(
+        failure: Throwable,
+        canBeDeclined: Boolean,
+    ): String =
+        if (canBeDeclined && generateSequence(failure) { it.cause }.any { it.isDecline() }) {
             TelemetryProperties.Outcome.DECLINED
         } else {
             TelemetryProperties.Outcome.FAILED
