@@ -37,11 +37,10 @@ import java.net.HttpURLConnection.HTTP_NOT_FOUND
  * **Stateless.** It holds no entry point, caches nothing and sequences nothing. Whoever owns the charge owns
  * the order of the calls.
  *
- * **The two routes are retried differently, and the rule is per route.** [initiate] carries an idempotency
- * key, so a repeat of one attempt is recognizable as a repeat rather than opening a second transaction. It is
- * still never retried here: a suppressed repeat answers with nothing to carry on with, so the attempt cannot
- * be continued from and only the caller holding the key can decide to send it again. Closing is repeatable,
- * so [update] is.
+ * **The two routes are retried differently, and the rule is per route.** [initiate] sends an idempotency key
+ * naming the attempt, and is never retried here: only the caller holding that key decides whether to send it
+ * again. **What the service does with that key is unconfirmed**, and nothing here depends on it suppressing
+ * anything, so a second send may open a second transaction. Closing is repeatable, so [update] is.
  *
  * **Neither call sees a card.** The reader charges its processor itself and answers with that processor's
  * response, which [update] forwards to Payabli unread. No Payabli code holds a key that could open it.

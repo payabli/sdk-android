@@ -219,7 +219,7 @@ internal class TapToPayChargeRunner(
      * processor captured comes back captured rather than failed. This call sends the request and does not
      * decode the answer, so a close that landed says the service now knows the outcome and not what the
      * outcome was. Releasing on it would rotate the key after a capture and let the next charge take the
-     * money again. Holding it keeps the repeat recognizable as one, which is the whole point of the key.
+     * money again. Holding it keeps the repeat named as one attempt, which is the whole point of the key.
      */
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,

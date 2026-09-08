@@ -20,7 +20,8 @@ import java.util.UUID
  *
  * A charge opens a transaction, waits on a card, then closes it. Every step after the open can fail leaving
  * the caller unsure whether money moved, and the recovery a host reaches for is to charge again. Reusing the
- * key of the unsettled attempt is what makes that repeat recognizable as a repeat instead of a second sale.
+ * key of the unsettled attempt is what names that repeat as one attempt and not two sales. What the service
+ * does with that name is unconfirmed; [com.payabli.sdk.taptopay.network.TTPTransactionClient] carries it.
  *
  * **In storage rather than on the runner that reads it.** A terminal is built per call and holds no cache, so
  * two terminals for one entry point are two objects, and the retry usually comes from the second one because
@@ -82,8 +83,8 @@ internal class ChargeKeyStore(
      *
      * **Never fails the caller.** By the time this runs the charge has an outcome the caller is entitled to,
      * and raising here would report a settled payment as a failed one. What a key left behind costs is that
-     * the next charge for this entry point reuses it and is suppressed; that is visible, recoverable, and
-     * cheaper than turning an approval into an error.
+     * the next charge for this entry point reuses it; that is visible, recoverable, and cheaper than
+     * turning an approval into an error.
      *
      * A record that will not decode raises out of [load] and is caught here too. The key stays named, since
      * removing it needs the record this cannot read.
