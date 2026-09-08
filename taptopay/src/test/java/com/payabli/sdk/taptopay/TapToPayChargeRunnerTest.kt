@@ -910,6 +910,37 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `two terminals on one paypoint in different environments take one payment at a time`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // What the region protects is the charge key, and `ChargeKeyStore` holds one record per entry
+            // point. A region keyed on the environment as well is narrower than the record it guards, so two
+            // terminals for one paypoint on different environments do not serialize: one can settle a key
+            // the other is charging under, after which an ambiguous tap mints a fresh one and the payer is
+            // charged twice.
+            val fixture = readyFixture(updates = 2, opens = 2)
+            val second = runnerOver(fixture, PayabliEnvironment.PRODUCTION)
+            val atClose = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val first =
+                runnerGatedOnClose(fixture) {
+                    atClose.complete(Unit)
+                    release.await()
+                }
+
+            val held = async { first.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            atClose.await()
+            val blocked = async { second.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            release.complete(Unit)
+            held.await()
+            blocked.await()
+
+            assertEquals(
+                listOf(INITIATE, UPDATE, INITIATE, UPDATE),
+                fixture.routes.filter { it.startsWith("/api/v2/MoneyIn") },
+            )
+        }
+
+    @Test
     fun `a payment held by one terminal is the same payment another terminal holds`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Held per instance, the second terminal's payment hides the first's and both believe they hold
