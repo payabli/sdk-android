@@ -70,9 +70,9 @@ internal object TapToPayComponents {
             runner =
                 TapToPayChargeRunner(
                     entry = entryPoint,
-                    // The session's, not the terminal's: a capability can be pointed at an entry point the
-                    // session was not configured with, and the payment is still opened against the
-                    // session's backend.
+                    // The backend the payment is opened against: `client` below is built over
+                    // `session.transport`, so a retained payment has to be scoped to the service that
+                    // transport reaches.
                     environment = session.telemetry.environment,
                     coordinator = coordinator,
                     manager = manager,
