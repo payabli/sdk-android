@@ -56,6 +56,27 @@ internal sealed class TTPTransactionException(
         reason: String?,
     ) : TTPTransactionException("the service did not approve the transaction", code, reason)
 
+    /**
+     * The processor refused the card.
+     *
+     * Read from the reader's own answer rather than from an envelope, so [code] carries the gateway's
+     * transaction state. Its own type because a refused card is the one failure here a merchant can act on
+     * by asking for another card, and because it is the only one that arrives after the card has been read.
+     */
+    class CardRefused(
+        state: String?,
+    ) : TTPTransactionException("the card was refused", code = state, reason = null)
+
+    /**
+     * The reader answered with a state that names neither an approval nor a refusal.
+     *
+     * Neither outcome is claimed, which is the point: the payment may have been taken. The attempt keeps its
+     * idempotency key, so whatever resolves it can still recognise it.
+     */
+    class OutcomeUnknown(
+        state: String?,
+    ) : TTPTransactionException("the payment outcome is not known", code = state, reason = null)
+
     /** An approval carrying none of the fields it is an approval for. */
     class Undecodable(
         cause: Throwable? = null,

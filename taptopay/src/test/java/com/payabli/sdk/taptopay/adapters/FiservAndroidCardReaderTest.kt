@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.adapters
 
+import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import kotlinx.coroutines.test.runTest
@@ -244,6 +245,44 @@ class FiservAndroidCardReaderTest {
 
             assertEquals("MASTERCARD", result.cardNetwork)
             assertTrue(result.providerResponse, result.providerResponse.contains("CAPTURED"))
+        }
+
+    @Test
+    fun `the gateway's own state decides whether the card was approved, refused or neither`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The reader answers with a record for a refused card as readily as for an approved one, so the
+            // state is the only thing separating a tap that took the money from one that was turned down.
+            // AUTHORIZED is an approval: a device auth holds funds without settling, and treating only
+            // CAPTURED as approved would report a held card as refused.
+            val expected =
+                mapOf(
+                    "CAPTURED" to CardReadOutcome.APPROVED,
+                    "AUTHORIZED" to CardReadOutcome.APPROVED,
+                    "authorized" to CardReadOutcome.APPROVED,
+                    "DECLINED" to CardReadOutcome.DECLINED,
+                    "VOIDED" to CardReadOutcome.INDETERMINATE,
+                    "WAITING" to CardReadOutcome.INDETERMINATE,
+                    "SOMETHING_NEW" to CardReadOutcome.INDETERMINATE,
+                )
+
+            for ((state, outcome) in expected) {
+                val gateway = FakeCardReaderGateway(record = chargeRecord(transactionState = state))
+
+                val result = readerFor(gateway).startReading(readRequest())
+
+                assertEquals(state, outcome, result.outcome)
+                assertEquals("the state was not carried for diagnosis", state, result.providerState)
+            }
+        }
+
+    @Test
+    fun `a record naming no state at all is neither an approval nor a refusal`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway = FakeCardReaderGateway(record = chargeRecord(transactionState = null))
+
+            val result = readerFor(gateway).startReading(readRequest())
+
+            assertEquals(CardReadOutcome.INDETERMINATE, result.outcome)
         }
 
     @Test

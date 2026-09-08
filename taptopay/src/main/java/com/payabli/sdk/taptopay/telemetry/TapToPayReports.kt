@@ -145,7 +145,9 @@ internal object TapToPayReports {
         failure: Throwable,
         canBeDeclined: Boolean,
     ): String =
-        if (canBeDeclined && generateSequence(failure) { it.cause }.any { it.isDecline() }) {
+        if (generateSequence(failure) { it.cause }.any { it.isCardRefusal() } ||
+            (canBeDeclined && generateSequence(failure) { it.cause }.any { it.isDecline() })
+        ) {
             TelemetryProperties.Outcome.DECLINED
         } else {
             TelemetryProperties.Outcome.FAILED
@@ -160,6 +162,16 @@ internal object TapToPayReports {
      */
     private fun Throwable.isDecline(): Boolean =
         this is TTPTransactionException.Refused || this is PayabliDeclineException
+
+    /**
+     * A card the processor refused, which is a decline whenever it arrives.
+     *
+     * Separate from [isDecline] because the phase test does not apply to it. The two shapes above refuse the
+     * opening, so after the reader has answered a decline-shaped failure is about the close rather than
+     * about the card. This one can only happen once the card has been read, which is exactly the phase the
+     * other test excludes, so sharing that test would report every refused card as a plain failure.
+     */
+    private fun Throwable.isCardRefusal(): Boolean = this is TTPTransactionException.CardRefused
 
     /**
      * The code a refusal carries, from either party that issues one.

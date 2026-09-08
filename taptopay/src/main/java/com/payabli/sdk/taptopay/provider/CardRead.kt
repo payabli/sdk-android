@@ -32,6 +32,32 @@ internal class CardReadRequest(
 internal class CardReadResult(
     val cardNetwork: String?,
     val providerResponse: String,
+    val outcome: CardReadOutcome,
+    /**
+     * The implementation's own name for what [outcome] was read from, for diagnosis.
+     *
+     * Safe to log and safe to keep: a short fixed token from the processor's vocabulary, of the same kind as
+     * [cardNetwork]. It carries no amount, no identifier and nothing of the card. Null where the
+     * implementation had no state to read, which is itself one reason an outcome can be indeterminate.
+     */
+    val providerState: String?,
 ) {
-    override fun toString(): String = "CardReadResult(cardNetwork=$cardNetwork)"
+    override fun toString(): String = "CardReadResult(cardNetwork=$cardNetwork, outcome=$outcome)"
+}
+
+/**
+ * What the processor did with the card, as the implementation reads it.
+ *
+ * **A read that returned is not a payment that was taken.** The reader answers with a record for a refused
+ * card as readily as for an approved one, so an implementation that cannot say which has to say so rather
+ * than let the caller assume the first.
+ *
+ * [INDETERMINATE] is a third answer and not a polite refusal: it is for a state the implementation does not
+ * recognise, and for one that names neither outcome. Resolving it needs the transaction read back, which is
+ * not this call's to do, so what it buys here is that nothing reports such a payment as taken.
+ */
+internal enum class CardReadOutcome {
+    APPROVED,
+    DECLINED,
+    INDETERMINATE,
 }

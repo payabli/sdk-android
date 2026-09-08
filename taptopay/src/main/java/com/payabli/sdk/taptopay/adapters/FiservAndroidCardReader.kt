@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
+import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
@@ -95,7 +96,12 @@ internal class FiservAndroidCardReader(
                 throw failure.asChargeFailure()
             }
         TapToPayReports.nfcSucceeded(startedAt)
-        return CardReadResult(cardNetwork = record.cardNetwork, providerResponse = record.encoded())
+        return CardReadResult(
+            cardNetwork = record.cardNetwork,
+            providerResponse = record.encoded(),
+            outcome = record.outcome(),
+            providerState = record.gatewayResponse?.transactionState,
+        )
     }
 
     /**
@@ -157,3 +163,21 @@ internal class FiservAndroidCardReader(
         LogField.safe("errorCode", failure.code),
     ) { "the card reader failed" }
 }
+
+/**
+ * What the gateway's own state says happened to the card.
+ *
+ * **A held authorization is an approval.** A device authorization answers `AUTHORIZED` rather than
+ * `CAPTURED`, and Payabli classifies it as an approval, so treating only `CAPTURED` as approved would report
+ * a held card as refused and invite charging one that has already paid.
+ *
+ * Everything the two sets do not name is [CardReadOutcome.INDETERMINATE], including a missing state. A
+ * voided sale and one still settling are both real answers that are neither an approval nor a refusal, and
+ * an unrecognised value is a vocabulary this SDK has not been taught rather than a refusal.
+ */
+private fun ChargeRecord.outcome(): CardReadOutcome =
+    when (gatewayResponse?.transactionState?.uppercase()) {
+        "AUTHORIZED", "CAPTURED" -> CardReadOutcome.APPROVED
+        "DECLINED" -> CardReadOutcome.DECLINED
+        else -> CardReadOutcome.INDETERMINATE
+    }

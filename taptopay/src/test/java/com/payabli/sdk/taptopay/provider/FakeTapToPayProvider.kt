@@ -2,11 +2,25 @@ package com.payabli.sdk.taptopay.provider
 
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 
-/** What the reader answers when a test does not care what it answers. */
+/**
+ * What the reader answers when a test does not care what it answers.
+ *
+ * [outcome] is stated rather than derived from [providerResponse], so a test that wants a refusal says so.
+ * Deriving it here would be a second copy of the adapter's mapping, and the two would answer differently the
+ * first time one of them learned a state; that mapping is covered where it lives.
+ */
 internal fun cardRead(
     cardNetwork: String? = "Visa",
     providerResponse: String = """{"gatewayResponse":{"transactionState":"CAPTURED"}}""",
-): CardReadResult = CardReadResult(cardNetwork = cardNetwork, providerResponse = providerResponse)
+    outcome: CardReadOutcome = CardReadOutcome.APPROVED,
+    providerState: String? = "CAPTURED",
+): CardReadResult =
+    CardReadResult(
+        cardNetwork = cardNetwork,
+        providerResponse = providerResponse,
+        outcome = outcome,
+        providerState = providerState,
+    )
 
 /**
  * The one test double for [TapToPayProvider].
@@ -58,6 +72,18 @@ internal class FakeTapToPayProvider(
         nextReadFailure = failure
     }
 
+    /**
+     * Makes the reader answer with [result], for the outcomes a tap can end in.
+     *
+     * Separate from [failNextRead] because these are not failures of the read: the reader answered, and what
+     * it answered is what decides whether a payment happened.
+     */
+    fun answerReadWith(result: CardReadResult) {
+        answer = result
+    }
+
+    private var answer: CardReadResult? = null
+
     override suspend fun checkEligibility() {
         trace += "reader:eligibility"
         eligibilityCount++
@@ -90,6 +116,6 @@ internal class FakeTapToPayProvider(
             throw it
         }
         readGate?.invoke()
-        return readResult
+        return answer ?: readResult
     }
 }

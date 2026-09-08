@@ -15,6 +15,7 @@ import com.payabli.sdk.taptopay.enrollment.platform.LiveTapToPay
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
+import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
@@ -74,6 +75,8 @@ class ChargeWithoutTapLiveTest {
             CardReadResult(
                 cardNetwork = "VISA",
                 providerResponse = """{"gatewayResponse":{"transactionState":"CAPTURED"}}""",
+                outcome = CardReadOutcome.APPROVED,
+                providerState = "CAPTURED",
             )
     }
 

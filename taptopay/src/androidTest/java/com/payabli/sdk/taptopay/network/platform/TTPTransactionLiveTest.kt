@@ -10,6 +10,7 @@ import com.payabli.sdk.taptopay.enrollment.platform.LiveTapToPay
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
+import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -176,7 +177,12 @@ class TTPTransactionLiveTest {
                     paymentTransId,
                     // A reader never ran, so nothing this body holds can change the outcome. It is here
                     // because the body is part of the request shape under test.
-                    CardReadResult(cardNetwork = null, providerResponse = "{}"),
+                    CardReadResult(
+                        cardNetwork = null,
+                        providerResponse = "{}",
+                        outcome = CardReadOutcome.INDETERMINATE,
+                        providerState = null,
+                    ),
                 )
             }.exceptionOrNull() ?: return "accepted"
         return when (outcome) {

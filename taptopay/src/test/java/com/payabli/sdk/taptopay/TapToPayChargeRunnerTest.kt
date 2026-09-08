@@ -15,7 +15,10 @@ import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
+import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.approved
+import com.payabli.sdk.taptopay.provider.CardReadOutcome
+import com.payabli.sdk.taptopay.provider.cardRead
 import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
@@ -177,6 +180,59 @@ class TapToPayChargeRunnerTest {
 
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantTransactionId)
             assertEquals(TRANS_ID, fixture.reader.lastReadRequest?.merchantOrderId)
+        }
+
+    @Test
+    fun `a refused card is not reported as a completed payment`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The reader answers with a record for a refused card as readily as for an approved one, so
+            // returning whatever it answered told a host a payment happened when none did.
+            val fixture = readyFixture()
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TTPTransactionException.CardRefused)
+            assertTrue("the close was not sent for a refusal", UPDATE in fixture.routes)
+        }
+
+    @Test
+    fun `a refused card settles its attempt, because a refusal is an answer`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture(updates = 2, opens = 2)
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.answerReadWith(cardRead())
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals("the next sale reused a settled attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `an outcome that is neither an approval nor a refusal keeps its attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Nothing here says whether the money moved, so the key stays and a repeat is recognisable.
+            val fixture = readyFixture(updates = 2, opens = 2)
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertTrue(failure.toString(), failure is TTPTransactionException.OutcomeUnknown)
+            assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
     @Test

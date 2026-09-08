@@ -17,6 +17,7 @@ import com.payabli.sdk.taptopay.model.identifiesSomeone
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.sendableAmountOrNull
+import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
@@ -120,11 +121,23 @@ internal class TapToPayChargeRunner(
                 // step or neither.
                 withContext(NonCancellable) {
                     client.update(paymentTransId, result)
-                    // The close landed, so this transaction is resolved and its attempt is over.
-                    keys.settle(entry, idempotencyKey)
+                    // Both an approval and a refusal are definitive, so the attempt is over and its key can
+                    // go. An outcome that is neither keeps it: the payment may have been taken, and the key
+                    // is what would let a repeat be recognised as one.
+                    if (result.outcome != CardReadOutcome.INDETERMINATE) keys.settle(entry, idempotencyKey)
                 }
-                TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
-                    .also { TapToPayReports.chargeSucceeded(startedAt) }
+
+                // The close is sent for every outcome above, and only an approval is a payment. A refused
+                // card reported as a completed one is the failure this branch exists to prevent.
+                when (result.outcome) {
+                    CardReadOutcome.APPROVED ->
+                        TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
+                            .also { TapToPayReports.chargeSucceeded(startedAt) }
+
+                    CardReadOutcome.DECLINED -> throw TTPTransactionException.CardRefused(result.providerState)
+
+                    CardReadOutcome.INDETERMINATE -> throw TTPTransactionException.OutcomeUnknown(result.providerState)
+                }
             } catch (withdrawn: CancellationException) {
                 // `Throwable` covers CancellationException, and the facade states a withdrawn caller is
                 // not a failure.
