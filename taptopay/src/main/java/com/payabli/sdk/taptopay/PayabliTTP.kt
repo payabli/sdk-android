@@ -70,9 +70,13 @@ public class PayabliTTP private constructor(
      * Closes the payment named by [paymentTransId], where the card was charged and the close was not
      * confirmed.
      *
-     * That is the case a [TapToPayException] reports with [TapToPayCapture.CHARGED]. The card is not read
-     * again, so the person who paid does not tap twice, and no second payment is opened. Sending a close
-     * that already landed costs nothing, which is what makes trying again safe.
+     * The card is not read again, so the person who paid does not tap twice, and no second payment is
+     * opened. Sending a close that already landed costs nothing, which is what makes trying again safe.
+     *
+     * **Reachable from any [TapToPayCapture], not only [TapToPayCapture.CHARGED].** The transaction is open
+     * at the service whatever the card did, so a payment whose card was refused or whose outcome was never
+     * definite is worth closing too. The failure this raises carries the capture state the reader's answer
+     * supports rather than assuming the money moved.
      *
      * What is closeable is the payment last taken for this entry point under this environment, by whichever
      * terminal took it. The record is shared across every terminal built for that pair, which is what lets a

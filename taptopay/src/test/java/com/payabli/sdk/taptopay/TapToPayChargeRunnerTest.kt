@@ -872,6 +872,60 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a recovery for an outcome that was never definite keeps its attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The held payment is kept for every outcome, because the transaction is open at the service
+            // whatever the card did. Settling on a recovery for an indeterminate read drops the only handle
+            // on an attempt that may have taken money, and the next charge mints a fresh key.
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 6) { closeFails })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = false
+            runner.closeCaptured(TRANS_ID)
+
+            fixture.reader.answerReadWith(cardRead())
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            // The same key both times, rather than a literal: a kept attempt is one the retry names again.
+            assertEquals(
+                "the recovery settled an attempt that was never answered",
+                fixture.keySent(0),
+                fixture.keySent(1),
+            )
+        }
+
+    @Test
+    fun `a recovery that fails reports the answer the reader gave, not a charge`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A refused card leaves a transaction to close, so the recovery is reachable for one. Reporting
+            // it as charged tells a host money moved when the card was turned down.
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 1, closes = 3) { true })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(
+                "a refused card was reported as charged by the recovery",
+                TapToPayCapture.NOT_CHARGED,
+                (failure as TapToPayException).capture,
+            )
+        }
+
+    @Test
     fun `closing a payment this terminal does not hold says unknown, never not-charged`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The state a host reaches after a restart, holding an identifier it persisted. Reporting it as

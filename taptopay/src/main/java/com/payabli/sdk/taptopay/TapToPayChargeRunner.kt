@@ -187,12 +187,7 @@ internal class TapToPayChargeRunner(
                 // What the reader answered decides this, not the fact that it answered. An approval moved
                 // money; a refusal is an answer that none moved; anything else leaves it unknown, which is
                 // what it already was.
-                capture =
-                    when (result.outcome) {
-                        CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
-                        CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
-                        CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
-                    }
+                capture = captureOf(result.outcome)
                 HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
@@ -338,10 +333,14 @@ internal class TapToPayChargeRunner(
             try {
                 withContext(NonCancellable) {
                     client.update(pending.paymentTransId, pending.read)
-                    // The same three as the charge's own close, for the same reason: a close that landed
-                    // with its attempt still reserved leaves the next charge sending a key for a payment
-                    // already resolved, and one still held would be offered for closing again.
-                    keys.settle(entry, pending.idempotencyKey)
+                    // The same rule as the charge's own close, on the same reader answer. A held payment
+                    // is kept for every outcome, because the transaction is open at the service whatever
+                    // the card did, so a recovery can be closing one whose outcome was never definite.
+                    // Settling that would drop the only handle on an attempt that may have taken money.
+                    if (pending.read.outcome != CardReadOutcome.INDETERMINATE) {
+                        keys.settle(entry, pending.idempotencyKey)
+                    }
+                    // The close landed either way, so nothing is left to recover.
                     HELD.remove(scope)
                 }
             } catch (withdrawn: CancellationException) {
@@ -351,9 +350,21 @@ internal class TapToPayChargeRunner(
             } catch (failure: Exception) {
                 TapToPayReports.closeFailed(failure, startedAt)
                 // Still held, so this can be tried again.
-                throw failed(failure, pending.paymentTransId, TapToPayCapture.CHARGED)
+                throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome))
             }
             TapToPayReports.closeSucceeded(startedAt)
+        }
+
+    /**
+     * What the reader's answer says about the money, which is not the same as whether it answered.
+     *
+     * Read by the charge and by the recovery, so the two cannot disagree about a payment they both saw.
+     */
+    private fun captureOf(outcome: CardReadOutcome): TapToPayCapture =
+        when (outcome) {
+            CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
+            CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
+            CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
         }
 
     /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
