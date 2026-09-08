@@ -38,21 +38,21 @@ import java.util.concurrent.ConcurrentHashMap
 private const val REGION_STRIPES = 16
 
 /**
- * The charge regions, striped rather than one per scope.
+ * The charge regions, striped rather than one per entry point.
  *
  * Held here rather than on the runner for the reason [TapToPayChargeRunner.region] gives. Striped because
- * the entry point a scope is built from is a caller-supplied string and nothing bounds how many distinct
- * ones a host passes, so a map keyed on it grows with whatever it is handed. A fixed set of locks cannot.
+ * the entry point is a caller-supplied string and nothing bounds how many distinct ones a host passes, so a
+ * map keyed on it grows with whatever it is handed. A fixed set of locks cannot.
  *
- * What striping costs is that two unrelated scopes sharing a stripe wait for each other. What it keeps is
- * the only property that matters here: one scope always resolves to the same lock, in this process and in
- * every terminal built in it.
+ * What striping costs is that two unrelated paypoints sharing a stripe wait for each other. What it keeps is
+ * the only property that matters here: one entry point always resolves to the same lock, in this process and
+ * in every terminal built in it.
  */
 private val REGIONS: List<Mutex> = List(REGION_STRIPES) { Mutex() }
 
 /** Masked rather than negated: `Int.MIN_VALUE` has no positive counterpart and negating it returns itself. */
-private fun regionFor(scope: String): Mutex =
-    REGIONS[(scope.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
+private fun regionFor(entry: String): Mutex =
+    REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
 /**
  * The payment each scope has charged a card for and not confirmed a close on.
@@ -100,14 +100,18 @@ internal class TapToPayChargeRunner(
     private val scope: String = "${environment.name}/$entry"
 
     /**
-     * One payment at a time for this scope, across every terminal built for it.
+     * One payment at a time for this entry point, across every terminal built for it and every environment.
      *
-     * Keyed by the scope rather than held per instance, because that is what it protects. A terminal is
+     * Keyed by the entry point rather than held per instance, because that is what it protects. A terminal is
      * built per call, so two of them exist for one paypoint whenever a screen is rebuilt, and they share the
      * charge key by design. An instance mutex lets one settle that key while the other is mid-charge, after
      * which an ambiguous failure mints a fresh one and the payer can be charged twice.
+     *
+     * **Broader than [scope], which is what a payment belongs to.** [ChargeKeyStore] holds one record per
+     * entry point, so a lock keyed on the environment as well is narrower than the record it guards and
+     * leaves two terminals for one paypoint on different environments unserialized over it.
      */
-    private val region: Mutex get() = regionFor(scope)
+    private val region: Mutex get() = regionFor(entry)
 
     suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
