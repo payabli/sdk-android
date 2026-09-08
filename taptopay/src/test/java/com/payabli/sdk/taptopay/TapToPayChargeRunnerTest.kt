@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -193,6 +194,25 @@ class TapToPayChargeRunnerTest {
             assertTrue(failure.toString(), failure is CardReaderException.ReadFailed)
             assertTrue(UPDATE in fixture.routes)
             assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `a JVM error during the tap still closes the transaction, and reaches the caller unchanged`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The vendor loads native code, so a LinkageError from the reader is the reachable shape here.
+            // It is not an attestation outcome or a payment outcome and must not be converted into one, but
+            // the transaction it leaves open is a real payment at the paypoint with nothing to resolve it.
+            val fixture = readyFixture()
+            val raised = LinkageError("libmc3.so")
+            fixture.reader.failNextRead(raised)
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertSame("the error was converted rather than rethrown", raised, failure)
+            assertTrue("the opened payment was left standing", UPDATE in fixture.routes)
         }
 
     @Test

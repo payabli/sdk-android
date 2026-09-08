@@ -144,8 +144,10 @@ internal class TapToPayChargeRunner(
      *
      * [amount] is the value at the scale the paypoint recorded, so the card is asked for what was opened.
      *
-     * **Every exit but a card leaves a transaction open at the service**, cancellation included, so both
-     * failure branches close it on the way out.
+     * **Every exit but a card leaves a transaction open at the service**, cancellation and a JVM `Error`
+     * included, so every failure branch closes it on the way out. The `Error` is rethrown unchanged rather
+     * than converted, so the facade's promise that one is not caught still holds for a caller: what the
+     * branch exists for is the open payment it would otherwise leave standing.
      *
      * The key is never settled here. The reader has been asked by this point, so the sale may be captured
      * and nothing arriving afterwards says the money did not move.
@@ -168,7 +170,7 @@ internal class TapToPayChargeRunner(
         } catch (withdrawn: CancellationException) {
             closeAfterFailedRead(paymentTransId, withdrawn)
             throw withdrawn
-        } catch (failure: Exception) {
+        } catch (failure: Throwable) {
             // A spent reader session is repaired by re-initializing. `invalidate` drops the move when the
             // state has already left ready, so a failure arriving after a replacement is built does not
             // kill the healthy session.
