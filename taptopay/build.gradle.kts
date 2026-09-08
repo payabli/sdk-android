@@ -1,10 +1,11 @@
 // **This module does not publish, and that is deliberate rather than an oversight.**
 //
-// Card-present has never completed a tap. The vendor refuses every handset it has been offered: the
-// application had to be signed and onboarded by them before the reader would arm, that has now been
-// done, and the device is still denied because the instance they hold for it is deactivated. Until a
-// charge runs end to end on a real handset, an integrator resolving this artifact would get a module
-// whose happy path has never once executed.
+// Card-present has never completed a tap, and what stands in the way has moved since this was written.
+// Under the application identity the vendor has enrolled, the reader arms and a card is read; the
+// closing call is then refused, because the merchant that identity carries does not belong to the
+// paypoint the transaction was opened on. Under this repository's own identity the vendor still refuses
+// to arm at all. So the path has run in parts and never end to end, and an integrator resolving this
+// artifact would get a module whose closing call has never been accepted.
 //
 // Not publishing rather than refusing at runtime, because an artifact that cannot be resolved says
 // what is true, where a public facade that throws by design is a surface that exists only to fail.
