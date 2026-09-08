@@ -8,7 +8,12 @@ package com.payabli.sdk.taptopay
  * money twice.
  */
 public enum class TapToPayCapture {
-    /** The card was never asked for, so no money moved. */
+    /**
+     * No money moved, so charging again cannot take it twice.
+     *
+     * Either the card was never asked for, or it was asked for and refused. A refusal is an answer, which
+     * is what separates it from [UNKNOWN].
+     */
     NOT_CHARGED,
 
     /**

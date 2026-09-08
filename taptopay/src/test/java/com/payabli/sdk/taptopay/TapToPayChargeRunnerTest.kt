@@ -273,7 +273,13 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull()
 
-            assertTrue(failure.toString(), failure is TTPTransactionException.CardRefused)
+            // Wrapped, because this branch names the payment on every failure after the opening. The
+            // refusal is the cause, and the capture state is what a host reads before offering a retry.
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val refused = failure as TapToPayException
+            assertTrue(refused.cause.toString(), refused.cause is TTPTransactionException.CardRefused)
+            assertEquals("a refused card was reported as charged", TapToPayCapture.NOT_CHARGED, refused.capture)
+            assertEquals(TRANS_ID, refused.paymentTransId)
             assertTrue("the close was not sent for a refusal", UPDATE in fixture.routes)
         }
 
@@ -307,7 +313,10 @@ class TapToPayChargeRunnerTest {
                 }.exceptionOrNull()
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
-            assertTrue(failure.toString(), failure is TTPTransactionException.OutcomeUnknown)
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val unknown = failure as TapToPayException
+            assertTrue(unknown.cause.toString(), unknown.cause is TTPTransactionException.OutcomeUnknown)
+            assertEquals("an unknown outcome was reported as settled", TapToPayCapture.UNKNOWN, unknown.capture)
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
