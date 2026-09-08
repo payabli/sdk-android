@@ -184,8 +184,15 @@ internal class TapToPayChargeRunner(
                 capture = TapToPayCapture.UNKNOWN
                 val result = readCard(paymentTransId, sendable, invoice)
 
-                // The card has been charged. Everything from here reports a payment whose money has moved.
-                capture = TapToPayCapture.CHARGED
+                // What the reader answered decides this, not the fact that it answered. An approval moved
+                // money; a refusal is an answer that none moved; anything else leaves it unknown, which is
+                // what it already was.
+                capture =
+                    when (result.outcome) {
+                        CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
+                        CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
+                        CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
+                    }
                 HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
