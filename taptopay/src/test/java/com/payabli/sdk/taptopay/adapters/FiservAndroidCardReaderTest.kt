@@ -278,11 +278,21 @@ class FiservAndroidCardReaderTest {
     @Test
     fun `a record naming no state at all is neither an approval nor a refusal`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val gateway = FakeCardReaderGateway(record = chargeRecord(transactionState = null))
+            // Two shapes reach this, and a fixture that always builds a gateway response only reaches one:
+            // the state absent from a response that is present, and no response at all.
+            val absentState = FakeCardReaderGateway(record = chargeRecord(transactionState = null))
+            val absentResponse = FakeCardReaderGateway(record = ChargeRecord(cardNetwork = "VISA"))
 
-            val result = readerFor(gateway).startReading(readRequest())
-
-            assertEquals(CardReadOutcome.INDETERMINATE, result.outcome)
+            assertEquals(
+                "a present response naming no state",
+                CardReadOutcome.INDETERMINATE,
+                readerFor(absentState).startReading(readRequest()).outcome,
+            )
+            assertEquals(
+                "no gateway response at all",
+                CardReadOutcome.INDETERMINATE,
+                readerFor(absentResponse).startReading(readRequest()).outcome,
+            )
         }
 
     @Test
