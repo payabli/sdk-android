@@ -72,7 +72,7 @@ internal object TapToPayReports {
     fun closeSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_CLOSE_SUCCEEDED, startedAt)
 
     /**
-     * A close that did not land.
+     * A close that was not confirmed.
      *
      * **No close can be a decline**, which is why this takes no equivalent of [chargeFailed]'s
      * `cardWasAsked`. A close exists only once the reader has answered, so it is always on the far side of
