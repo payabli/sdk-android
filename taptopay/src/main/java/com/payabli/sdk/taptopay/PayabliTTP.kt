@@ -74,8 +74,10 @@ public class PayabliTTP private constructor(
      * again, so the person who paid does not tap twice, and no second payment is opened. Sending a close
      * that already landed costs nothing, which is what makes trying again safe.
      *
-     * Only the payment this terminal last took is closeable: nothing is kept once the close lands, once a
-     * later payment is opened, or across process death.
+     * What is closeable is the payment last taken for this entry point under this environment, by whichever
+     * terminal took it. The record is shared across every terminal built for that pair, which is what lets a
+     * screen that has been rebuilt finish a close the screen before it started. Nothing is kept once the
+     * close lands, once a later payment is opened, or across process death.
      */
     public suspend fun closeCapturedCharge(paymentTransId: String): Unit =
         wrapping { runner.closeCaptured(paymentTransId) }
