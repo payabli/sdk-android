@@ -66,6 +66,16 @@ data class TapToPayUiState(
 ) {
     /** Any work at all, which is what disables the controls. */
     val isWorking: Boolean get() = workingAction != null || isProbingToken
+
+    /**
+     * Never [resultText], which carries the payment's identifier once a charge succeeds.
+     *
+     * A data class prints every property it holds, and this one reaches assertion failures and crash
+     * reports without passing anything that redacts. Both the SDK's result and this app's receipt withhold
+     * that identifier from their own `toString`, and holding it here in a generated one gives it back the
+     * route they closed. It stays on screen, where a merchant needs it.
+     */
+    override fun toString(): String = "TapToPayUiState(session=$session, isReady=$isReady, working=$workingAction)"
 }
 
 class TapToPayViewModel(
