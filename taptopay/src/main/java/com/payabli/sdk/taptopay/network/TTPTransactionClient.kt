@@ -38,9 +38,11 @@ import java.net.HttpURLConnection.HTTP_NOT_FOUND
  * the order of the calls.
  *
  * **The two routes are retried differently, and the rule is per route.** [initiate] sends an idempotency key
- * naming the attempt, and is never retried here: only the caller holding that key decides whether to send it
- * again. **What the service does with that key is unconfirmed**, and nothing here depends on it suppressing
- * anything, so a second send may open a second transaction. Closing is repeatable, so [update] is.
+ * naming the attempt. A repeat under one key is refused and answers with no identifier, measured against a
+ * live paypoint, so it does not open a second transaction. **How long that holds is not measured**, and a
+ * repeat far enough after the first is outside what anyone has shown. [initiate] is never retried here
+ * either way: a refused repeat leaves nothing to carry on with, so only the caller holding the key decides
+ * whether to send one. Closing is repeatable, so [update] is.
  *
  * **Neither call sees a card.** The reader charges its processor itself and answers with that processor's
  * response, which [update] forwards to Payabli unread. No Payabli code holds a key that could open it.
