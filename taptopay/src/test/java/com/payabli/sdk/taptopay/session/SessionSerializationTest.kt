@@ -69,6 +69,28 @@ class SessionSerializationTest {
         }
 
     @Test
+    fun `a queued call withdrawing does not reset the state of the one running`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A caller cancelled while waiting for the region never started anything, so there is nothing of
+            // its own to settle. Settling anyway reaches the run that does hold the region, and puts the
+            // session somewhere the running work cannot move on from.
+            val held = CompletableDeferred<Unit>()
+            val fixture = SessionFixture(SessionFixture.coldScript(), readerGate = { held.await() })
+
+            val build = launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.initialize() }
+            val queued =
+                launch(UnconfinedTestDispatcher(testScheduler)) { fixture.coordinator.activateDevice("123456") }
+            assertTrue("the activation is waiting for the region", queued.isActive)
+
+            queued.cancelAndJoin()
+
+            held.complete(Unit)
+            completing("the build") { build.join() }
+
+            assertEquals("the withdrawal reset a session it never owned", TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
     fun `a second build joins the one in flight and runs nothing of its own`() =
         runTest(timeout = TEST_TIMEOUT) {
             val held = CompletableDeferred<Unit>()

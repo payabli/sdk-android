@@ -140,11 +140,19 @@ internal class TapToPaySessionCoordinator(
         claim: Claim,
         work: suspend () -> Unit,
     ) {
+        var entered = false
         try {
-            region.withLock { work() }
+            region.withLock {
+                entered = true
+                work()
+            }
         } catch (withdrawn: CancellationException) {
-            // Nothing failed and nothing is in progress. Idle is also the one target that is never refused.
-            withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
+            // **Only where this caller held the region.** A withdrawal reaching here without having entered
+            // never started anything, so it has nothing of its own to settle — and the session it would
+            // settle belongs to whatever is running inside. Idle is the one target never refused, so the
+            // reset lands, and the run holding the region is then somewhere it cannot move on from: a build
+            // parked at the reader comes back to find it cannot reach ready from idle.
+            if (entered) withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
             release(claim, TapToPaySessionException.SetupAbandoned())
             throw withdrawn
         } catch (failure: Exception) {
