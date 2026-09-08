@@ -22,10 +22,12 @@ internal object TapToPayComponents {
     suspend fun build(
         session: PayabliSession,
         context: Context,
-        entryPoint: String,
-        cloudProjectNumber: Long?,
     ): PayabliTTP {
         val application = context.applicationContext
+        // The session's own, which is what it publishes this for: a capability shipped as its own artifact
+        // has no other way to learn which entry point it is working against, and taking it again as a
+        // parameter would let a terminal be pointed somewhere the session was never configured for.
+        val entryPoint = session.telemetry.entryPoint
         val trust = DeviceTrust.open(application)
         val store = AttestedDeviceStore(trust.store)
         val deviceService = DeviceServiceClient(session.transport)
@@ -34,8 +36,11 @@ internal object TapToPayComponents {
                 entry = entryPoint,
                 appId = application.packageName,
                 client = deviceService,
-                // Classic, to match the challenge the enrollment path builds.
-                attestor = AttestorFactory.classic(application, cloudProjectNumber),
+                // Classic, to match the challenge the enrollment path builds, and with no cloud project
+                // number: the platform makes it optional for a classic request because an app distributed
+                // through Play already carries the linkage. An integrator cannot supply one, since the
+                // service decodes every Android attestation against a single deployment-level project.
+                attestor = AttestorFactory.classic(application, cloudProjectNumber = null),
                 deviceKey = trust.key,
                 signer = DeviceAssertionSigner(trust.key),
                 store = store,

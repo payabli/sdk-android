@@ -42,9 +42,6 @@ public class PayabliTTP private constructor(
     /** Brings the terminal up from wherever it stands. Safe to call again at any time. */
     public suspend fun initialize(): Unit = wrapping { coordinator.initialize() }
 
-    /** Repairs a terminal whose reader session is spent, and does nothing to a ready one. */
-    public suspend fun reinitializeIfNeeded(): Unit = wrapping { coordinator.reinitializeIfNeeded() }
-
     /**
      * Spends the six-digit code the merchant was issued for this device.
      *
@@ -97,18 +94,15 @@ public class PayabliTTP private constructor(
             CardReaderEligibility(context).isSatisfied() && !looksEmulated()
 
         /**
-         * Builds a terminal against [session], for [entryPoint].
+         * Builds a terminal against [session].
          *
-         * [cloudProjectNumber] is the Google Cloud project the Play Integrity API is enabled in. It is
-         * needed where the app's Play Console listing does not already carry that link, which includes every
-         * build installed by hand.
+         * The entry point is the session's, read from what it publishes rather than taken again here, so a
+         * terminal cannot be pointed at one the session was not configured with.
          */
         public suspend fun create(
             session: PayabliSession,
             context: Context,
-            entryPoint: String,
-            cloudProjectNumber: Long? = null,
-        ): PayabliTTP = TapToPayComponents.build(session, context, entryPoint, cloudProjectNumber)
+        ): PayabliTTP = TapToPayComponents.build(session, context)
 
         /**
          * The only way a terminal is constructed.
