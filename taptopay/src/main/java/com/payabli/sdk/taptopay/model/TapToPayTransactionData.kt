@@ -5,6 +5,13 @@ import java.math.BigDecimal
 /**
  * What is being charged.
  *
+ * **[amount] is the whole of what the payer is charged, and [serviceFee] is the part of it charged for the
+ * service.** A fee is not added to the amount by this SDK or by the service: the card is asked for [amount],
+ * and [amount] is what the payment is opened for, with [serviceFee] travelling beside it so the paypoint
+ * records how much of that total was the fee. A caller passing a base amount and a fee to be added on charges
+ * the base and records a fee it never took. The card-not-present side names the same field `totalAmount`,
+ * which says this in the name; here it is said once, in words.
+ *
  * [amount] is a [BigDecimal] and never a `Double`: binary floating point cannot hold `0.10`, which is not
  * a property a payment amount can afford.
  *
