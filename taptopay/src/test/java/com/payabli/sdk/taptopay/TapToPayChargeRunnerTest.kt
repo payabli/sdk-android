@@ -847,8 +847,7 @@ class TapToPayChargeRunnerTest {
     fun `a recovery that closed lets the attempt go, so the next charge opens its own`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The close resolves the transaction whenever it lands, so the attempt is over then too. Holding
-            // the key past it makes the next charge reuse one the service has already seen, and it is
-            // refused as a duplicate rather than taking a payment.
+            // the key past it makes the next charge send one that names a payment already resolved.
             var closeFails = true
             val fixture =
                 SessionFixture(scriptWithCloseControl(opens = 2, closes = 5) { closeFails })
