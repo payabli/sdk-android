@@ -166,7 +166,7 @@ internal class TapToPayChargeRunner(
                 ),
             )
         } catch (withdrawn: CancellationException) {
-            closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey)
+            closeAfterFailedRead(paymentTransId, withdrawn)
             throw withdrawn
         } catch (failure: Exception) {
             // A spent reader session is repaired by re-initializing. `invalidate` drops the move when the
@@ -180,7 +180,7 @@ internal class TapToPayChargeRunner(
             ) {
                 manager.invalidate()
             }
-            closeAfterFailedRead(paymentTransId, failure, idempotencyKey)
+            closeAfterFailedRead(paymentTransId, failure)
             throw failure
         }
 
@@ -207,25 +207,24 @@ internal class TapToPayChargeRunner(
     }
 
     /**
-     * Closes a transaction whose tap did not complete, best effort, and lets its key go if that lands.
+     * Closes a transaction whose tap did not complete, best effort. The attempt stays named either way.
      *
      * Uncancellable: a withdrawn caller is one of the ways a tap does not complete, and the transaction is
-     * open either way. That also makes it the one place a cancelled charge can still reach storage.
+     * open either way.
      *
-     * **The key is released only if the close is recorded.** A read that failed is not proof that nothing
-     * was captured — the processor takes the sale before the answer reaches this code, so a cancellation
-     * can race with delivery. What the close settles is the transaction: once the service has recorded this
-     * one as failed, its outcome is no longer in doubt and the next sale needs its own. When the close does
-     * not land, the transaction is open and the attempt stays named, so a repeat is recognizable as one.
+     * **The key is never released here, and a recorded close is not a recorded failure.** The close makes
+     * the service pull the processor for this transaction and write back what it finds, so a sale the
+     * processor captured comes back captured rather than failed. This call sends the request and does not
+     * decode the answer, so a close that landed says the service now knows the outcome and not what the
+     * outcome was. Releasing on it would rotate the key after a capture and let the next charge take the
+     * money again. Holding it keeps the repeat recognizable as one, which is the whole point of the key.
      */
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,
         failure: Throwable,
-        idempotencyKey: String,
     ) = withContext(NonCancellable) {
         try {
             client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
-            keys.settle(entry, idempotencyKey)
         } catch (failedClose: Exception) {
             logger.warn(
                 LogField.safe("event", "ttp_charge_close_failed"),

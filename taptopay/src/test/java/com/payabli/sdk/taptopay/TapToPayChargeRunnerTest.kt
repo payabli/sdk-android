@@ -283,11 +283,12 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a tap that failed lets its attempt go once the close is recorded`() =
+    fun `a tap that failed keeps its attempt, because the close never says whether the sale captured`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // Not because the read failed — that is no proof the sale was not captured — but because the
-            // service has recorded this transaction as failed. Its outcome is no longer in doubt, so the
-            // next sale needs its own attempt and holding the key would refuse it.
+            // A recorded close is not a recorded failure. The close makes the service pull the processor
+            // and write back whatever it found, so a captured sale comes back captured; this SDK sends the
+            // request and does not decode the answer, so it cannot tell that outcome from the ordinary one.
+            // Releasing the key here would let the next charge take the money a second time.
             val fixture = readyFixture(updates = 2, opens = 2)
             fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
             val runner = runnerOver(fixture)
@@ -295,7 +296,7 @@ class TapToPayChargeRunnerTest {
             runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
             runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
 
-            assertEquals("$MINTED_KEY-2", fixture.keySent(1))
+            assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
         }
 
     @Test
