@@ -113,6 +113,7 @@ class ChargeWithoutTapLiveTest {
                 val receipt =
                     TapToPayChargeRunner(
                         entry = LiveRunSettings.entry,
+                        environment = LiveRunSettings.environment,
                         coordinator = coordinator,
                         manager = manager,
                         reader = StubReader(),
