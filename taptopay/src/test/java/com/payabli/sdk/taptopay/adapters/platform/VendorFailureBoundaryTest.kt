@@ -100,7 +100,10 @@ class VendorFailureBoundaryTest {
                 .entries()
                 .asSequence()
                 .map { it.name }
-                .filter { it.startsWith(VENDOR_PACKAGE) && it.endsWith(".class") && !it.contains('$') }
+                // No `$` filter: a nested or inner class is exactly where a vendor upgrade adds an
+                // exception outside the caught hierarchy, and excluding those left this test claiming a
+                // completeness it did not have. The Throwable filter below decides relevance on its own.
+                .filter { it.startsWith(VENDOR_PACKAGE) && it.endsWith(".class") }
                 .map { Class.forName(it.removeSuffix(".class").replace('/', '.')) }
                 .filter { Throwable::class.java.isAssignableFrom(it) }
                 .toList()
