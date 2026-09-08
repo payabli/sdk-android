@@ -195,10 +195,9 @@ internal class TapToPayChargeRunner(
                 // The transport's own deadlines still bound it, so this cannot wait forever.
                 //
                 // The settle is inside for the same reason rather than a tidier one: a cancellation landing
-                // between the two leaves the attempt unsettled, so the next charge reuses a key the service
-                // has already seen and is refused as a duplicate. So is dropping the held payment, which
-                // would otherwise be offered for closing again after it had closed. Those three are one step
-                // or none.
+                // between the two leaves the attempt unsettled, so the next charge sends a key naming a
+                // payment that is already resolved. So is dropping the held payment, which would otherwise
+                // be offered for closing again after it had closed. Those three are one step or none.
                 withContext(NonCancellable) {
                     client.update(paymentTransId, result)
                     // Both an approval and a refusal are definitive, so the attempt is over and its key can
@@ -333,8 +332,8 @@ internal class TapToPayChargeRunner(
                 withContext(NonCancellable) {
                     client.update(pending.paymentTransId, pending.read)
                     // The same three as the charge's own close, for the same reason: a close that landed
-                    // with its attempt still reserved leaves the next charge reusing a key the service has
-                    // already seen, and one still held would be offered for closing again.
+                    // with its attempt still reserved leaves the next charge sending a key for a payment
+                    // already resolved, and one still held would be offered for closing again.
                     keys.settle(entry, pending.idempotencyKey)
                     HELD.remove(scope)
                 }
