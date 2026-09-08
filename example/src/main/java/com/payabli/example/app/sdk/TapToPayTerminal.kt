@@ -69,12 +69,6 @@ class TapToPayTerminal(
                 if (terminal?.sessionState?.value != TapToPaySessionState.PendingActivation) throw failure
             }
 
-    override suspend fun reinitializeIfNeeded(): Result<Unit> =
-        attempt {
-            terminal().reinitializeIfNeeded()
-            emit(TerminalEventCode.ReinitializeCompleted)
-        }
-
     override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> =
         attempt {
             val ttp = terminal()
@@ -133,14 +127,9 @@ class TapToPayTerminal(
 
     private suspend fun build(): PayabliTTP {
         check(entryPoint.isNotBlank()) { "No entry point is configured, so nothing can be sent." }
-        check(cloudProjectNumber != null) {
-            "payabli.cloudProjectNumber is not set, and a build installed by hand needs it to attest."
-        }
         return PayabliTTP.create(
             session = sessionSource.session().getOrThrow(),
             context = appContext,
-            entryPoint = entryPoint,
-            cloudProjectNumber = cloudProjectNumber,
         )
     }
 

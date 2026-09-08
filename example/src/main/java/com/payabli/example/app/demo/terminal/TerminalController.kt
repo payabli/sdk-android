@@ -40,9 +40,6 @@ interface TerminalController {
     /** Attest, fetch configuration, prepare the reader. */
     suspend fun initialize(): Result<Unit>
 
-    /** Start again after expiry. Succeeds without doing anything if the session is still good. */
-    suspend fun reinitializeIfNeeded(): Result<Unit>
-
     /** Take a payment. [amount] is in major units. */
     suspend fun charge(amount: java.math.BigDecimal): Result<ChargeReceipt>
 

@@ -133,27 +133,6 @@ class DemoTerminalControllerTest {
             assertEquals(TerminalSessionState.PendingActivation, terminal.sessionState.value)
         }
 
-    @Test
-    fun `reinitialize on a ready session does nothing and succeeds`() =
-        runTest {
-            val terminal = controller()
-            terminal.initialize()
-            terminal.activateDevice("ANY-CODE")
-            val seen = collectInBackground(terminal.events)
-
-            assertTrue(terminal.reinitializeIfNeeded().isSuccess)
-
-            assertEquals(emptyList<TerminalEvent>(), seen)
-        }
-
-    @Test
-    fun `reinitialize from idle runs the sequence again`() =
-        runTest {
-            val terminal = controller()
-            assertTrue(terminal.reinitializeIfNeeded().isSuccess)
-            assertEquals(TerminalSessionState.PendingActivation, terminal.sessionState.value)
-        }
-
     /** Initialised and activated, which is what a charge needs. */
     private suspend fun DemoTerminalController.ready() {
         initialize()

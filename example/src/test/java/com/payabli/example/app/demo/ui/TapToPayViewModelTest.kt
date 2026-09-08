@@ -220,7 +220,7 @@ class TapToPayViewModelTest {
             assertNotNull(viewModel.uiState.value.activationFailure)
 
             // Anything else running must leave that alone: the step it belongs to is still failed.
-            viewModel.reinitialize()
+            viewModel.enableTerminal()
 
             assertNotNull(
                 "the activation failure was cleared by another action",

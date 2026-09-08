@@ -110,12 +110,6 @@ fun TapToPayScreen(
                     onClick = actions.onEnable,
                     enabled = !state.isWorking,
                 )
-                BorderedButton(
-                    text = "Start the session again",
-                    icon = DemoIcons.Reinitialize,
-                    onClick = actions.onReinitialize,
-                    enabled = !state.isWorking,
-                )
                 TokenCheckStep(
                     text = state.tokenProbeText,
                     isChecking = state.isProbingToken,

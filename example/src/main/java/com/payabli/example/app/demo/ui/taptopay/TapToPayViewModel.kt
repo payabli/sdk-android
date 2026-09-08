@@ -120,11 +120,6 @@ class TapToPayViewModel(
             terminal.initialize().map { "reader ready" }
         }
 
-    fun reinitialize() =
-        run(TerminalAction.Reinitialize) {
-            terminal.reinitializeIfNeeded().map { "session is good" }
-        }
-
     fun charge() {
         // Parsed here, so a bad amount produces a message that explains it. Restricting the field's
         // input would leave the keyboard silently refusing a character with no explanation.

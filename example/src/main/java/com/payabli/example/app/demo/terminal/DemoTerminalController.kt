@@ -70,16 +70,6 @@ class DemoTerminalController(
         return Result.success(Unit)
     }
 
-    override suspend fun reinitializeIfNeeded(): Result<Unit> {
-        if (_sessionState.value == TerminalSessionState.Ready) {
-            return Result.success(Unit)
-        }
-        step(TerminalSessionState.Reinitializing, TerminalEventCode.ReinitializeStarted)
-        val outcome = initialize()
-        emit(TerminalEventCode.ReinitializeCompleted)
-        return outcome
-    }
-
     override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> {
         if (amount <= BigDecimal.ZERO) {
             return Result.failure(IllegalArgumentException("Enter an amount greater than zero"))
