@@ -106,7 +106,7 @@ internal class TapToPayChargeRunner(
                 // Set before the reader is asked, not after it answers: the processor takes the sale before
                 // the answer is delivered, so everything from here on may have moved money.
                 askedForCard = true
-                val result = readCard(paymentTransId, sendable, invoice, idempotencyKey)
+                val result = readCard(paymentTransId, sendable, invoice)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -156,7 +156,6 @@ internal class TapToPayChargeRunner(
         paymentTransId: String,
         amount: BigDecimal,
         invoice: TapToPayInvoiceData,
-        idempotencyKey: String,
     ): CardReadResult =
         try {
             reader.startReading(
