@@ -35,8 +35,9 @@ public class TapToPayPaymentDetails(
  * optional and none is checked against a paypoint's rules here.
  *
  * **One thing is checked: that the payer is identified at all.** A charge naming nobody is refused by every
- * paypoint this has been sent to, and refused after the reader is armed and a card has been taken, so it is
- * refused locally instead.
+ * paypoint this has been sent to, and refused on the call that opens the payment — after the terminal is set
+ * up and before a card is asked for. Nothing has been taken from anyone at that point, so what the local
+ * check saves is a round trip and a reader session rather than a payment.
  */
 public class TapToPayCustomerData(
     public val customerId: Long? = null,
