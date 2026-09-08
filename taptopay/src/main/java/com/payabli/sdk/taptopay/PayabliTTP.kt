@@ -65,16 +65,6 @@ public class PayabliTTP private constructor(
         orderDescription: String? = null,
     ): TapToPayResult = wrapping { runner.charge(paymentDetails, customer, invoice, orderDescription) }
 
-    /** A withdrawn caller passes through: it is not a failure and must not be reported as one. */
-    private suspend fun <T> wrapping(block: suspend () -> T): T =
-        try {
-            block()
-        } catch (withdrawn: CancellationException) {
-            throw withdrawn
-        } catch (failure: Exception) {
-            throw TapToPayException.of(failure.message ?: failure.javaClass.simpleName, failure)
-        }
-
     public companion object {
         /**
          * Whether this device can take card-present payments, answered before anything is built.
@@ -102,7 +92,7 @@ public class PayabliTTP private constructor(
         public suspend fun create(
             session: PayabliSession,
             context: Context,
-        ): PayabliTTP = TapToPayComponents.build(session, context)
+        ): PayabliTTP = wrapping { TapToPayComponents.build(session, context) }
 
         /**
          * The only way a terminal is constructed.
@@ -118,3 +108,18 @@ public class PayabliTTP private constructor(
         ): PayabliTTP = PayabliTTP(coordinator, runner)
     }
 }
+
+/**
+ * A withdrawn caller passes through: it is not a failure and must not be reported as one.
+ *
+ * At file scope rather than on the instance because [PayabliTTP.create] needs it too, and a member of the
+ * class is unreachable from the companion that builds one.
+ */
+private suspend fun <T> wrapping(block: suspend () -> T): T =
+    try {
+        block()
+    } catch (withdrawn: CancellationException) {
+        throw withdrawn
+    } catch (failure: Exception) {
+        throw TapToPayException.of(failure.message ?: failure.javaClass.simpleName, failure)
+    }
