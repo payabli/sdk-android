@@ -21,8 +21,9 @@ internal class ReaderCharge(
 /**
  * What is kept of the processor's answer, and forwarded to Payabli.
  *
- * A named subset, never a re-encoding: the same response carries the card, its holder, its expiry and its
- * security code, and forwarding a list of fields is what keeps those out of it.
+ * A named subset, and the processor's response is never forwarded whole: it carries the card, its holder,
+ * its expiry and its security code, so what leaves here is built from the fields listed below and encoded
+ * again from those alone.
  */
 @Serializable
 internal class ChargeRecord(
