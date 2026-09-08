@@ -88,10 +88,11 @@ public class PayInFailure(
     public val action: String?,
     public val httpStatus: Int?,
     /**
-     * The transaction this refusal belongs to, or null where the service named none.
+     * The transaction this failure belongs to, or null where the service named none.
      *
-     * A refusal can still leave a transaction behind, and this is the only handle to it, so a caller that
-     * means to reconcile one holds this.
+     * Carried for every non-approved answer, so a service error names its transaction as a decline does.
+     * A caller that means to reconcile one reads this whichever kind of failure it holds, because either
+     * can leave a transaction behind and this is the only handle on it.
      */
     public val paymentTransId: String? = null,
 ) {
