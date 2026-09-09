@@ -10,6 +10,7 @@ import com.payabli.sdk.taptopay.adapters.platform.looksEmulated
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
+import com.payabli.sdk.taptopay.attestation.platform.CloudProject
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
@@ -111,7 +112,29 @@ internal object LiveTapToPay {
             deviceId = deviceId,
         )
 
-    fun cloudProjectNumber(): Long =
-        InstrumentationRegistry.getArguments().getString("cloudProjectNumber")?.toLongOrNull()
-            ?: error("payabli.cloudProjectNumber is required for the live tier; pass -Ppayabli.cloudProjectNumber=<n>")
+    /**
+     * The project this run attests against, checked against the one the SDK would resolve.
+     *
+     * The number is configured rather than resolved, because this tier has to be pointable at a project
+     * without rebuilding. That alone would leave the shipping path untested: `PayabliTTP.create` resolves
+     * through [CloudProject], this tier does not, and a run would stay green with the two disagreeing.
+     *
+     * So the configured value is compared. A mismatch fails here, naming both numbers, rather than at an
+     * attestation refusal that names neither. Where [CloudProject] has no entry for the environment there is
+     * nothing to compare and the configured value stands, which is the sandbox case.
+     */
+    fun cloudProjectNumber(): Long {
+        val configured =
+            InstrumentationRegistry.getArguments().getString("cloudProjectNumber")?.toLongOrNull()
+                ?: error(
+                    "payabli.cloudProjectNumber is required for the live tier; pass -Ppayabli.cloudProjectNumber=<n>",
+                )
+
+        val resolved = CloudProject.forEnvironment(LiveRunSettings.environment)
+        check(resolved == null || resolved == configured) {
+            "payabli.cloudProjectNumber is $configured but the SDK resolves $resolved for " +
+                "${LiveRunSettings.environment.name}; the live tier and the shipping path disagree"
+        }
+        return configured
+    }
 }
