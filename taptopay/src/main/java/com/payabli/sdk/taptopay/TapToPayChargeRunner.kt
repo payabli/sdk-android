@@ -239,7 +239,13 @@ internal class TapToPayChargeRunner(
     ) = withContext(NonCancellable) {
         try {
             client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
-        } catch (failedClose: Exception) {
+        } catch (failedClose: Throwable) {
+            // `Throwable`, which is wider than this file catches anywhere else and is the width the caller
+            // already uses. `readCard` catches `Throwable`, calls this, and rethrows what it caught, so a
+            // failure raised *here* would replace the one being reported. An `Error` from the close would
+            // then reach the host in place of the original, which is the opposite of the contract that a
+            // JVM error is rethrown unchanged. This is the cleanup, so it is never the authoritative
+            // failure.
             logger.warn(
                 LogField.safe("event", "ttp_charge_close_failed"),
                 LogField.safe("phase", "update"),
