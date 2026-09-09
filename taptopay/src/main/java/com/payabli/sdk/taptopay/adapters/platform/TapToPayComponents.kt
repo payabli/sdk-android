@@ -9,6 +9,7 @@ import com.payabli.sdk.taptopay.TapToPayChargeRunner
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
+import com.payabli.sdk.taptopay.attestation.platform.CloudProject
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.platform.DeviceDescriptionFactory
@@ -36,11 +37,16 @@ internal object TapToPayComponents {
                 entry = entryPoint,
                 appId = application.packageName,
                 client = deviceService,
-                // Classic, to match the challenge the enrollment path builds, and with no cloud project
-                // number: the platform makes it optional for a classic request because an app distributed
-                // through Play already carries the linkage. An integrator cannot supply one, since the
-                // service decodes every Android attestation against a single deployment-level project.
-                attestor = AttestorFactory.classic(application, cloudProjectNumber = null),
+                // Classic, to match the challenge the enrollment path builds. The project is Payabli's and
+                // is resolved from the session's environment, never taken from an integrator: the platform
+                // documents naming a project this way for an SDK, and the service decodes against one
+                // project per environment. Null where that environment has none, which the platform accepts
+                // for an app whose Play Console listing carries the linkage and a sideloaded one does not.
+                attestor =
+                    AttestorFactory.classic(
+                        application,
+                        cloudProjectNumber = CloudProject.forEnvironment(session.telemetry.environment),
+                    ),
                 deviceKey = trust.key,
                 signer = DeviceAssertionSigner(trust.key),
                 store = store,
