@@ -427,31 +427,45 @@ def test_collector():
     # absent-artifact build is the whole reason the flavors exist, so a variant that stops running has to be
     # visible. Globbing the module covers one variant with the other: the count is never zero and the module
     # never reads as silent.
-    example_inst = "example/build/outputs/androidTest-results/connected"
+    # The fixtures below are at the directory AGP actually writes, `<buildType>/flavors/<flavor>`, and the
+    # module list is the one nightly.yml carries. Both were a bare variant name until 2026-09-10, which was
+    # self-consistent and matched nothing on a real runner. W10 is what holds the workflow's value to this
+    # layout; these cases test the collector's per-variant logic, which was never wrong.
+    example_inst = "example/build/outputs/androidTest-results/connected/debug/flavors"
+    example_modules = "core,payin,example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry"
     r = run_collector(
         make_repo({
             UNIT_XML: junit("S", [("a", None)]),
             INST_XML: junit("I", [("b", None)]),
             PAYIN_INST_XML: junit("P", [("c", None)]),
-            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
-            # withoutTelemetryDebug wrote nothing: the flavor that proves the absent-artifact path stopped
+            f"{example_inst}/withTelemetry/TEST-emulator.xml": junit("E", [("d", None)]),
+            # withoutTelemetry wrote nothing: the flavor that proves the absent-artifact path stopped
             # running, and the module as a whole still has results.
         }),
         INSTRUMENTED_OUTCOME="success",
-        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+        INSTRUMENTED_MODULES=example_modules,
     )
     check("C22 a silent variant is caught", "verdict=red" in r["output"], r["output"])
+    # And caught for its own reason. Red alone passes whenever *both* variants read as silent, which is every
+    # way the path can be wrong, so this case reported red against the broken collector and against the fixed
+    # one alike and could not fail for the thing it tests. The label has to name the variant that wrote
+    # nothing and leave out the one that wrote results.
+    suites = {s["name"]: s["label"] for s in (r["facts"] or {}).get("suites") or []}
+    label = str(suites.get("Instrumented", ""))
+    check("C22 and the label names only the silent variant",
+          "flavors/withoutTelemetry" in label and "flavors/withTelemetry," not in label
+          and not label.endswith("flavors/withTelemetry"), label)
 
     r = run_collector(
         make_repo({
             UNIT_XML: junit("S", [("a", None)]),
             INST_XML: junit("I", [("b", None)]),
             PAYIN_INST_XML: junit("P", [("c", None)]),
-            f"{example_inst}/withTelemetryDebug/TEST-emulator.xml": junit("E", [("d", None)]),
-            f"{example_inst}/withoutTelemetryDebug/TEST-emulator.xml": junit("E2", [("e", None)]),
+            f"{example_inst}/withTelemetry/TEST-emulator.xml": junit("E", [("d", None)]),
+            f"{example_inst}/withoutTelemetry/TEST-emulator.xml": junit("E2", [("e", None)]),
         }),
         INSTRUMENTED_OUTCOME="success",
-        INSTRUMENTED_MODULES="core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug",
+        INSTRUMENTED_MODULES=example_modules,
     )
     check("C22 both variants present is green", "verdict=green" in r["output"], r["output"])
 
@@ -1974,6 +1988,41 @@ def meaningful_lines(body) -> list[str]:
     return [line.strip() for line in body.splitlines() if line.strip() and not line.strip().startswith("#")]
 
 
+FLAVOR_CREATE = re.compile(r"""create\(\s*["']([A-Za-z0-9_]+)["']\s*\)""")
+# What AGP writes for a module with product flavors: the build type, then `flavors`, then the flavor. A bare
+# variant name such as `withTelemetryDebug` is the shape that read as plausible and matched nothing.
+FLAVORED_RESULTS = re.compile(r"[A-Za-z0-9]+/flavors/([A-Za-z0-9_]+)")
+
+
+def product_flavors(module: str) -> set[str]:
+    """The flavors a module declares, read from its own build file rather than listed here.
+
+    A copy of the names in this file is the thing that drifts, and it would drift in the same commit that
+    broke the workflow: the check below exists to notice a module list that no longer matches the build, so
+    it has to read the build. A module with no `productFlavors` block returns nothing, which is the answer
+    for :core and :payin.
+    """
+    try:
+        text = (SDK / module / "build.gradle.kts").read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    opening = re.search(r"productFlavors\s*\{", text)
+    if not opening:
+        return set()
+    # Balanced to its own closing brace, so a `create(...)` belonging to some other block is not read as a
+    # flavor. Scanning to the first `}` would stop inside the first flavor.
+    start = opening.end() - 1
+    depth = 0
+    for index in range(start, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return set(FLAVOR_CREATE.findall(text[start:index]))
+    return set()
+
+
 LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
 
 
@@ -2149,6 +2198,68 @@ def test_live_reporting(mod, nightly):
           [c for c in calls if c["method"] == "chat.scheduleMessage"] == [],
           str([c["method"] for c in calls]))
     FakeSlack.behaviour = {}
+
+    def first_block_text(call) -> str:
+        blocks = call["payload"].get("blocks") or []
+        return str(((blocks[0] if blocks else {}).get("text") or {}).get("text", ""))
+
+    # L15 the verdict has to be in the block, not only in `text`. Slack renders `blocks` whenever they are
+    # present and falls back to `text` for a notification, so an icon living only there never reaches the
+    # channel: every live post arrived without one, a red run was indistinguishable from a green one, and ten
+    # consecutive daily failures read as a routine status line. Asserting `text` alone is what missed it, so
+    # both are asserted and the block is the one that matters.
+    _, _, calls = run_live_poster(mod, LIVE_XML_FAIL)
+    posted = [c for c in calls if c["method"] == "chat.postMessage"]
+    check("L15 a red run posts something to read", bool(posted), str([c["method"] for c in calls]))
+    if posted:
+        check("L15 and the block carries the red verdict", ":red_circle:" in first_block_text(posted[0]),
+              first_block_text(posted[0]))
+        check("L15 and so does the notification fallback",
+              ":red_circle:" in str(posted[0]["payload"].get("text", "")),
+              str(posted[0]["payload"].get("text", "")))
+
+    # The green summary reaches the channel only when the alarm could not be armed, which is L13's case. It
+    # is also the only way to assert "distinguishable" rather than "carries an icon".
+    FakeSlack.behaviour = {"chat.postMessage": ok_post,
+                           "chat.scheduleMessage": [{"ok": False, "error": "invalid_time"}]}
+    _, _, calls = run_live_poster(mod, LIVE_XML_PASS)
+    posted = [c for c in calls if c["method"] == "chat.postMessage"]
+    if posted:
+        green = first_block_text(posted[0])
+        check("L15 a green post carries the other verdict in its block",
+              ":white_check_mark:" in green and ":red_circle:" not in green, green)
+    FakeSlack.behaviour = {}
+
+    # L16 a job that died before any flow ran. "No results written" is a statement about the artifact, so it
+    # sent the reader after a lost upload while the cause went unnamed on ten consecutive qa runs whose token
+    # server never started. The job result is what tells the two situations apart, so it decides first.
+    _, _, calls = run_live_poster(mod, None, LIVE_JOB_RESULT="failure")
+    posted = [c for c in calls if c["method"] == "chat.postMessage"]
+    check("L16 a job that wrote nothing still posts", bool(posted), str([c["method"] for c in calls]))
+    if posted:
+        parent = first_block_text(posted[0])
+        check("L16 and names the job result rather than the missing artifact",
+              "the job reported failure" in parent and "no results written" not in parent, parent)
+        threaded = [c for c in posted if c["payload"].get("thread_ts")]
+        check("L16 and the thread carries the cause", bool(threaded),
+              str([c["payload"].get("text") for c in posted]))
+        if threaded:
+            check("L16 and the cause names what ended the job",
+                  "ended `failure`" in str(threaded[0]["payload"].get("text", "")),
+                  str(threaded[0]["payload"].get("text", "")))
+
+    # A job that succeeded having run nothing is the case those three words do describe, and folding it into
+    # the one above would lose the only situation where the artifact really is the story.
+    _, _, calls = run_live_poster(mod, None, LIVE_JOB_RESULT="success")
+    posted = [c for c in calls if c["method"] == "chat.postMessage"]
+    if posted:
+        parent = first_block_text(posted[0])
+        check("L16 a green job that ran nothing still says no results were written",
+              "no results written" in parent, parent)
+        threaded = [c for c in posted if c["payload"].get("thread_ts")]
+        check("L16 and its thread says the suites were excluded rather than lost",
+              bool(threaded) and "excluded" in str(threaded[0]["payload"].get("text", "")),
+              str(threaded[0]["payload"].get("text", "")) if threaded else "no thread")
 
 
 def test_live_summary(mod):
@@ -2458,6 +2569,40 @@ def test_workflows():
         named = str((guard.get("env") or {}).get("INSTRUMENTED_MODULES", ""))
         for module in ("payin", "example"):
             check(f"W7 and it names {module}", module in named.split(), named)
+
+    # W10 nightly.yml's own module list, held to the directory layout AGP writes rather than to a name that
+    # merely looks like a variant. Nothing else can hold it. The collector is handed the segment after the
+    # colon and interpolates it into a glob, so it cannot tell a wrong path from a module that wrote nothing,
+    # and the collector's own cases supply their module list as a test parameter, so they move their input to
+    # match whatever the code does. That is why `example:withTelemetryDebug` survived review, matched nothing
+    # on every real runner, and left the nightly red for fourteen nights from 2026-08-28 while its tests
+    # passed. Both sources here are real: the workflow, and the module's own build file.
+    collect = next((step for step in steps_of(workflow_doc("nightly.yml"))
+                    if "nightly_report.py" in str(step.get("run", ""))), None)
+    check("W10 nightly.yml has a step that collects the report", collect is not None)
+    if collect is not None:
+        raw = str((collect.get("env") or {}).get("INSTRUMENTED_MODULES", ""))
+        entries = [entry.strip() for entry in raw.split(",") if entry.strip()]
+        check("W10 and it names the modules its instrumented step ran", bool(entries), raw)
+        by_module: dict[str, list[str]] = {}
+        for entry in entries:
+            module, _, variant = entry.partition(":")
+            by_module.setdefault(module, []).append(variant)
+        for module, variants in sorted(by_module.items()):
+            flavors = product_flavors(module)
+            if not flavors:
+                # One results directory, so no segment to name. A segment here would be read as a path and
+                # match nothing, the same failure from the other direction.
+                check(f"W10 {module} declares no flavors and names no results directory",
+                      variants == [""], f"{variants}")
+                continue
+            matches = [FLAVORED_RESULTS.fullmatch(variant) for variant in variants]
+            for variant, matched in zip(variants, matches):
+                check(f"W10 {module}:{variant or '(none)'} is a results directory, not a variant name",
+                      matched is not None, variant)
+            check(f"W10 and every flavor {module} declares is named",
+                  {matched.group(1) for matched in matches if matched} == flavors,
+                  f"named={sorted(m.group(1) for m in matches if m)} declared={sorted(flavors)}")
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")

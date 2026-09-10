@@ -140,6 +140,27 @@ def flows(results: Path) -> list[Flow]:
     return found
 
 
+def no_flows_cause(job_result: str) -> str:
+    """Why a run wrote no results, which the headline cannot carry on its own.
+
+    Two situations reach here with different answers, so the message must not merge them, exactly as
+    `nightly_slack.unreported_blocks` keeps its own pair apart. The job result is what tells them apart, and
+    the two guards counting different things is why: the workflow's own check counts results *files*, while
+    `flows` counts the test cases inside them. So a job that died did so before anything was written, and a
+    job that succeeded got past that check with a results file that carried no flow.
+    """
+    if job_result == "success":
+        return (
+            "The job passed, so results were written and carried no flow. Each suite is excluded by its own "
+            "build file when the settings it needs are absent, which is what leaves a results file with "
+            "nothing in it."
+        )
+    return (
+        f"The job ended `{mrkdwn(job_result)}` before any flow wrote results. A token server that did not "
+        "start, a refused configuration, or a job timeout each end it this way; the run log names which."
+    )
+
+
 def run_url() -> str:
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repository = os.environ.get("GITHUB_REPOSITORY", "")
@@ -194,12 +215,20 @@ def main() -> int:
 
     link = run_url()
     where = f"{platform} · live flows · {environment}"
-    if silent:
-        headline = f"{where} · no results written"
-    elif failed:
+    # Ordered by what the reader can act on, which is not the order these become true. A refusal is the most
+    # specific account of the run, so it wins over the job result that reports the same failure. The job
+    # result comes next, because a job that died before any flow ran wrote no results *because* it died, and
+    # a headline naming the absent artifact sends the reader looking for a lost upload. That leaves "no
+    # results written" for the case those words describe: a job that succeeded having run nothing.
+    #
+    # The old order tested `silent` first, so ten consecutive qa runs that never reached the emulator were
+    # announced as missing results while the cause, a token server refusing to start, went unnamed.
+    if failed:
         headline = f"{where} · {len(failed)} of {len(found)} refused"
     elif job_result != "success":
         headline = f"{where} · the job reported {job_result}"
+    elif silent:
+        headline = f"{where} · no results written"
     else:
         headline = f"{where} · {len(found)} of {len(found)} approved"
 
@@ -208,8 +237,15 @@ def main() -> int:
     # and one of the two escaping is how the pair drifts.
     # Slack's own tokens, as `nightly_slack` uses, so the two reporters render the same in every client and
     # in a notification. A literal codepoint also has to survive this file's encoding to reach the channel.
-    text = f"{':red_circle:' if red else ':white_check_mark:'} {mrkdwn(headline)}"
-    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{mrkdwn(headline)}*"}}]
+    #
+    # The icon goes in the block as well, and that is the load-bearing half. Slack renders `blocks` whenever
+    # they are present and falls back to `text` only for a notification or a client that cannot render them,
+    # so an icon living only in `text` never reaches the channel: red and green posts arrived identical, and
+    # ten daily failures read as a routine status line. `nightly_slack.summary_blocks` puts it in the block
+    # for this reason and this reporter did not.
+    icon = ":red_circle:" if red else ":white_check_mark:"
+    text = f"{icon} {mrkdwn(headline)}"
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *{mrkdwn(headline)}*"}}]
     if link:
         blocks.append({
             "type": "context",
@@ -250,11 +286,14 @@ def main() -> int:
         # only question this alarm asks.
         reset_liveness_switch(token, channel, marker=marker, subject=subject)
 
-    if failed:
+    # A run that wrote nothing gets a thread too. Without it the post was a headline and a link, so the one
+    # case where the channel cannot infer the cause was the one case that carried none.
+    detail = thread_body(failed) if failed else (no_flows_cause(job_result) if silent else "")
+    if detail:
         slack_post("chat.postMessage", token, {
             "channel": channel,
             "thread_ts": parent.get("ts"),
-            "text": thread_body(failed),
+            "text": detail,
         })
 
     return 0
