@@ -67,6 +67,7 @@ class TapToPayViewModelTest {
             isEmulator = false,
             model = "Pixel 8",
             apiLevel = 34,
+            readerSupported = true,
             hasNfcHardware = true,
             isNfcEnabled = true,
             playServicesInstalled = true,
@@ -219,7 +220,7 @@ class TapToPayViewModelTest {
             assertNotNull(viewModel.uiState.value.activationFailure)
 
             // Anything else running must leave that alone: the step it belongs to is still failed.
-            viewModel.reinitialize()
+            viewModel.enableTerminal()
 
             assertNotNull(
                 "the activation failure was cleared by another action",

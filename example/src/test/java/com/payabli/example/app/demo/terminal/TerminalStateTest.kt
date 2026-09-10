@@ -1,6 +1,7 @@
 package com.payabli.example.app.demo.terminal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -102,7 +103,23 @@ class TerminalStateTest {
 
     @Test
     fun `a success without detail still names the action`() {
-        assertEquals("✓ Enable terminal succeeded", TerminalActionOutcome.success(TerminalAction.Initialize))
+        assertEquals("✓ Set up the terminal succeeded", TerminalActionOutcome.success(TerminalAction.Initialize))
+    }
+
+    @Test
+    fun `a refused reader names the reader, not the step that met it`() {
+        // The step list leaves setup done and fails the payment step, because every call Payabli owns
+        // succeeded and the refusal is the vendor's. A line saying setup failed contradicted the list
+        // beside it.
+        val line =
+            TerminalActionOutcome.failure(
+                TerminalAction.Initialize,
+                IllegalStateException("677"),
+                readerDenied = true,
+            )
+
+        assertTrue(line, line.contains("card reader was refused"))
+        assertFalse(line, line.contains("Set up the terminal failed"))
     }
 
     @Test
@@ -139,6 +156,23 @@ class TerminalStateTest {
             listOf(TerminalSessionState.SessionExpired, TerminalSessionState.Error).sorted(),
             withReason.sorted(),
         )
+    }
+
+    @Test
+    fun `a stopped session reports the reason the SDK named`() {
+        // Without this the step says only that the session stopped, which is the same sentence whether a
+        // paypoint needs changing, a service is down, or the device can never do this at all.
+        TerminalFailureReason.entries.forEach { reason ->
+            assertEquals(
+                reason.message,
+                sessionFailureReason(TerminalSessionState.Error, reason),
+            )
+        }
+    }
+
+    @Test
+    fun `a stopped session with no reason still says something`() {
+        assertEquals("The session stopped.", sessionFailureReason(TerminalSessionState.Error, null))
     }
 
     @Test

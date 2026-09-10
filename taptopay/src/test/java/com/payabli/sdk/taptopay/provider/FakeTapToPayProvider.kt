@@ -2,11 +2,25 @@ package com.payabli.sdk.taptopay.provider
 
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 
-/** What the reader answers when a test does not care what it answers. */
+/**
+ * What the reader answers when a test does not care what it answers.
+ *
+ * [outcome] is stated rather than derived from [providerResponse], so a test that wants a refusal says so.
+ * Deriving it here would be a second copy of the adapter's mapping, and the two would answer differently the
+ * first time one of them learned a state; that mapping is covered where it lives.
+ */
 internal fun cardRead(
     cardNetwork: String? = "Visa",
     providerResponse: String = """{"gatewayResponse":{"transactionState":"CAPTURED"}}""",
-): CardReadResult = CardReadResult(cardNetwork = cardNetwork, providerResponse = providerResponse)
+    outcome: CardReadOutcome = CardReadOutcome.APPROVED,
+    providerState: String? = "CAPTURED",
+): CardReadResult =
+    CardReadResult(
+        cardNetwork = cardNetwork,
+        providerResponse = providerResponse,
+        outcome = outcome,
+        providerState = providerState,
+    )
 
 /**
  * The one test double for [TapToPayProvider].
@@ -28,6 +42,13 @@ internal class FakeTapToPayProvider(
     private val gate: (suspend () -> Unit)? = null,
     private val eligibilityFailure: Throwable? = null,
     private val readResult: CardReadResult = cardRead(),
+    /**
+     * Runs inside [startReading], after the card is taken and before the result is handed back.
+     *
+     * The one place a test can act on the window where the processor holds the card and the service has
+     * not been told. A gate in [prepareReader] is too early for that: the read has not happened.
+     */
+    private val readGate: (suspend () -> Unit)? = null,
 ) : TapToPayProvider {
     var eligibilityCount: Int = 0
         private set
@@ -43,6 +64,25 @@ internal class FakeTapToPayProvider(
         private set
 
     private var inside = false
+
+    private var nextReadFailure: Throwable? = null
+
+    /** Makes the next tap fail, which is how the charge path's two failure branches are reached. */
+    fun failNextRead(failure: Throwable) {
+        nextReadFailure = failure
+    }
+
+    /**
+     * Makes the reader answer with [result], for the outcomes a tap can end in.
+     *
+     * Separate from [failNextRead] because these are not failures of the read: the reader answered, and what
+     * it answered is what decides whether a payment happened.
+     */
+    fun answerReadWith(result: CardReadResult) {
+        answer = result
+    }
+
+    private var answer: CardReadResult? = null
 
     override suspend fun checkEligibility() {
         trace += "reader:eligibility"
@@ -71,6 +111,11 @@ internal class FakeTapToPayProvider(
     override suspend fun startReading(request: CardReadRequest): CardReadResult {
         trace += "reader:read"
         lastReadRequest = request
-        return readResult
+        nextReadFailure?.let {
+            nextReadFailure = null
+            throw it
+        }
+        readGate?.invoke()
+        return answer ?: readResult
     }
 }

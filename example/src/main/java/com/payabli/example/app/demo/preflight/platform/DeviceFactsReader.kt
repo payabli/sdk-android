@@ -6,6 +6,7 @@ import android.nfc.NfcManager
 import android.os.Build
 import com.payabli.example.app.demo.preflight.DeviceFacts
 import com.payabli.example.app.demo.preflight.TapToPayPreflight
+import com.payabli.example.app.sdk.cardPresentSupported
 import java.security.MessageDigest
 
 /**
@@ -26,6 +27,7 @@ object DeviceFactsReader {
             isEmulator = isEmulator(),
             model = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
             apiLevel = Build.VERSION.SDK_INT,
+            readerSupported = cardPresentSupported(context),
             hasNfcHardware = packageManager.hasSystemFeature(PackageManager.FEATURE_NFC),
             isNfcEnabled = isNfcEnabled(context),
             playServicesInstalled = isInstalled(packageManager, PLAY_SERVICES),

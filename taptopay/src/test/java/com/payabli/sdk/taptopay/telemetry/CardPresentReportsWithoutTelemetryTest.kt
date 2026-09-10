@@ -2,6 +2,9 @@ package com.payabli.sdk.taptopay.telemetry
 
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
 import com.payabli.sdk.core.telemetry.TelemetryBootstrap
+import com.payabli.sdk.taptopay.adapters.CardReaderException
+import com.payabli.sdk.taptopay.adapters.CardReaderFailure
+import com.payabli.sdk.taptopay.adapters.ReaderFailureKind
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
@@ -10,6 +13,9 @@ import com.payabli.sdk.taptopay.attestation.device.FakeDeviceTransport
 import com.payabli.sdk.taptopay.attestation.device.declineEnvelope
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
 import com.payabli.sdk.taptopay.attestation.impl.PlayIntegrityErrorMapping
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason
+import com.payabli.sdk.taptopay.session.TapToPaySessionManager
+import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -95,6 +101,44 @@ class CardPresentReportsWithoutTelemetryTest {
             )
 
         assertTrue("classic: $classic", classic is AttestationException.Throttled)
+    }
+
+    @Test
+    fun `every card-present lifecycle report is silent, and none of them throws`() {
+        val startedAt = System.nanoTime()
+        val failure = CardReaderException.DeviceDenied(CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"))
+
+        // Every method on the facade, because absence has to hold for all of them and not for the one
+        // a later change happened to exercise.
+        TapToPayReports.initializeStarted()
+        TapToPayReports.initializeSucceeded(startedAt)
+        TapToPayReports.initializeFailed(failure, startedAt)
+        TapToPayReports.attestationStarted()
+        TapToPayReports.attestationSucceeded(startedAt)
+        TapToPayReports.attestationFailed(failure, startedAt)
+        TapToPayReports.reinitializeStarted()
+        TapToPayReports.reinitializeSucceeded(startedAt)
+        TapToPayReports.chargeStarted()
+        TapToPayReports.chargeSucceeded(startedAt)
+        TapToPayReports.chargeFailed(failure, startedAt)
+        TapToPayReports.nfcStarted()
+        TapToPayReports.nfcSucceeded(startedAt)
+        TapToPayReports.nfcFailed(CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"), startedAt)
+        TapToPayReports.sessionStateChanged(
+            TapToPaySessionState.Idle,
+            TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_INELIGIBLE),
+        )
+    }
+
+    @Test
+    fun `the session still moves with nothing listening`() {
+        // The real call site, not the facade: the write funnel reports on every published move, so a
+        // recorder that could throw would take the state machine with it.
+        val manager = TapToPaySessionManager(logger)
+
+        manager.advance(TapToPaySessionState.AttestingDevice)
+
+        assertEquals(TapToPaySessionState.AttestingDevice, manager.state.value)
     }
 
     private companion object {

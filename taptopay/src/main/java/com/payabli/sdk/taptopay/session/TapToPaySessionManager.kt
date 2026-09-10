@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +37,17 @@ internal class TapToPaySessionManager(
 
     /** Where the session has got to. Conflated, so a collector joining late sees the current value. */
     val state: StateFlow<TapToPaySessionState> = sink.asStateFlow()
+
+    private val readySink = MutableStateFlow(false)
+
+    /**
+     * Whether a payment can be taken right now.
+     *
+     * Its own flow, written wherever [state] is written, so the two cannot fall out of step. Deriving it
+     * with `stateIn` would need a scope, and a scope handed in from outside is a coroutine that never
+     * completes.
+     */
+    val isReady: StateFlow<Boolean> = readySink.asStateFlow()
 
     /**
      * Moves to [to] and then runs [work] under it.
@@ -115,9 +127,13 @@ internal class TapToPaySessionManager(
     }
 
     /**
-     * Decides and writes under [guard]. Both records are emitted after the monitor is released, because a
-     * collector on an immediate dispatcher resumes inside the write, so whatever is held here is held while
-     * foreign code runs.
+     * Decides, reports and writes under [guard].
+     *
+     * The report comes before the writes, so a collector that transitions from inside `sink.value = to`
+     * cannot report its move before this one. Nothing foreign runs under the monitor at that point: the
+     * recorder returns immediately and never throws, and a collector resumes only on the write after it.
+     *
+     * The refusal record is outside, where it publishes nothing.
      */
     private fun write(to: TapToPaySessionState): Written {
         val from: TapToPaySessionState
@@ -129,6 +145,22 @@ internal class TapToPaySessionManager(
             permitted = TapToPaySessionTransitions.permits(from, to)
             published = permitted && from != to
             if (published) {
+                // Reported before the flows are written, so this move is reported before any move a
+                // collector makes from inside that write. Nothing foreign has run yet: a collector
+                // resumes on the write below, and the recorder returns immediately and never throws.
+                //
+                // Here rather than at the nine callers: this is the one place a move is decided, so a
+                // state added later reports without anyone remembering to add it.
+                logger.info(
+                    LogField.safe("event", "ttp_session_state"),
+                    LogField.safe("state", to.diagnosticName),
+                    LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
+                ) { "session state changed" }
+                TapToPayReports.sessionStateChanged(from, to)
+
+                // Readiness first: `sink.value = to` resumes an unconfined collector, which reads
+                // [isReady] on the state it was just handed.
+                readySink.value = to == TapToPaySessionState.Ready
                 sink.value = to
             }
         }
@@ -139,13 +171,6 @@ internal class TapToPaySessionManager(
                 LogField.safe("fromstate", from.diagnosticName),
                 LogField.safe("tostate", to.diagnosticName),
             ) { "refused a session state change" }
-        }
-        if (published) {
-            logger.info(
-                LogField.safe("event", "ttp_session_state"),
-                LogField.safe("state", to.diagnosticName),
-                LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
-            ) { "session state changed" }
         }
         return Written(from, permitted)
     }

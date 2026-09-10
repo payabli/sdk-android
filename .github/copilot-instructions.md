@@ -9,7 +9,7 @@ demonstrates it.
 |---|---|---|
 | `:core` | Session, token and transport foundation. Depends on nothing first-party. | yes |
 | `:payin` | Card-not-present: the clients, the submission holder and the Compose payment form. | yes |
-| `:taptopay` | Card-present: attestation and the card reader. | yes |
+| `:taptopay` | Card-present: attestation and the card reader. | **withheld** |
 | `:telemetry` | Opt-in instrumentation. | yes |
 | `:payabli-android` | Umbrella AAR over `:core`, `:payin` and `:telemetry`. | yes |
 | `:payabli-bom` | Version constraints. | yes |
@@ -47,7 +47,8 @@ These are settled decisions. A finding that amounts to reversing one is not a fi
 - **A capability module never depends on a sibling capability**, and the umbrella deliberately omits
   `:taptopay` so the card reader dependency stays opt-in.
 - **`minSdk` is per module.** `:taptopay` is 30 because its card reader dependency requires it; published
-  modules are 23; `:example` is 24. Aligning them is not an improvement.
+  modules are 23; `:example` is 30, taking that floor because it links `:taptopay`. Aligning the published
+  modules to it is not an improvement.
 - **The payment form names no colour or measurement of its own**, taking them from the host's
   `MaterialTheme`. A literal colour or size under `payin/.../ui` is a defect; the absence of one is not.
 - **Sensitive input lives in a zeroizable buffer**, never an immutable `String`, and is overwritten after

@@ -121,9 +121,18 @@ internal class EnrollmentFixture(
     val trace: MutableList<String> = mutableListOf()
     val logger = RecordingSdkLogger()
 
+    /**
+     * Every request the transport was handed, whole.
+     *
+     * [trace] carries paths, which is what call order is asserted from; a header belongs to one request and
+     * cannot be read off a list of paths.
+     */
+    val requests: MutableList<PayabliRequest> = mutableListOf()
+
     val transport =
         FakeDeviceTransport { request ->
             trace += request.path
+            requests += request
             script.respond(request)
         }
 
