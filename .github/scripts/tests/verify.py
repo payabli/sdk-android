@@ -2227,6 +2227,10 @@ def test_live_reporting(mod, nightly):
                            "chat.scheduleMessage": [{"ok": False, "error": "invalid_time"}]}
     _, _, calls = run_live_poster(mod, LIVE_XML_PASS)
     posted = [c for c in calls if c["method"] == "chat.postMessage"]
+    # Asserted before the conditional, or a regression that stops posting the green summary altogether takes
+    # the comparison with it and this case passes having examined nothing.
+    check("L15 a refused alarm still posts the green summary", bool(posted),
+          str([c["method"] for c in calls]))
     if posted:
         green = first_block_text(posted[0])
         check("L15 a green post carries the other verdict in its block",
