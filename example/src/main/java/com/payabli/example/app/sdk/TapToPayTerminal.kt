@@ -36,7 +36,6 @@ class TapToPayTerminal(
     private val appContext: Context,
     private val sessionSource: PayInSessionSource,
     private val entryPoint: String,
-    private val cloudProjectNumber: Long?,
     private val scope: CoroutineScope,
     private val identity: SampleIdentity,
 ) : TerminalController {

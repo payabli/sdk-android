@@ -96,9 +96,6 @@ class AppContainer(
             appContext = appContext,
             sessionSource = sessionSource,
             entryPoint = configuration.entryPoint,
-            // Read here rather than through DemoConfiguration: the Tap to pay screen is the only reader,
-            // and blank means the screen says it is unset instead of failing at the platform verdict.
-            cloudProjectNumber = BuildConfig.DEMO_CLOUD_PROJECT_NUMBER.toLongOrNull(),
             scope = MainScope(),
             identity = sampleIdentity,
         )

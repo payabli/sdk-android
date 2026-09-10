@@ -110,15 +110,6 @@ android {
         buildConfigField("boolean", "DEMO_DIAGNOSTICS", demoSetting("payabli.demo.diagnostics", "true"))
         // Off unless asked for, and the button it enables is drawn in a debug build only.
         buildConfigField("boolean", "DEMO_PREFILL", demoSetting("payabli.demo.prefill", "false"))
-        // The Google Cloud project the Play Integrity API is enabled in, which the card-present screen
-        // needs and a hand-installed build cannot infer. Not a secret: every app shipping Play Integrity
-        // carries its project number. Blank leaves the Tap to pay screen reporting that it is unset.
-        buildConfigField(
-            "String",
-            "DEMO_CLOUD_PROJECT_NUMBER",
-            quoted(demoSetting("payabli.cloudProjectNumber", "")),
-        )
-
         // The walkthrough submits real payments through the form, so it is kept out of an ordinary run and
         // excluded by name rather than skipped: a standing skip cannot be told apart from a regression that
         // started skipping. It also needs a reachable token server and a configured paypoint, which is why
