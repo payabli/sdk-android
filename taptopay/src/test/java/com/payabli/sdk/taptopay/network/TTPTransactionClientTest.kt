@@ -175,6 +175,22 @@ class TTPTransactionClientTest {
         }
 
     @Test
+    fun `an approval whose identifier is a dot segment cannot be read either`() =
+        runTest(timeout = timeout) {
+            // Worse than blank rather than the same: a dot segment is unreserved, so percent-encoding
+            // leaves it intact and the closing PATCH addresses the collection or its parent instead of one
+            // transaction, after the card has been taken. Both forms, because rejecting one is not
+            // rejecting the other.
+            for (identifier in listOf(".", "..", "  .  ")) {
+                val (_, client) = client(answer(approved("""{"paymentTransId":"$identifier"}""")))
+
+                val failure = runCatching { client.open() }.exceptionOrNull()
+
+                assertTrue("$identifier -> $failure", failure is TTPTransactionException.Undecodable)
+            }
+        }
+
+    @Test
     fun `opening names the attempt, so a repeat of it is recognizable as a repeat`() =
         runTest(timeout = timeout) {
             val (transport, client) = client(answer(approved("""{"paymentTransId":"$TRANS_ID"}""")))

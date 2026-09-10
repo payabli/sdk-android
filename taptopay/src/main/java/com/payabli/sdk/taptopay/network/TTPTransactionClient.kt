@@ -220,8 +220,13 @@ internal class TTPTransactionClient(
         // Blank counts as absent. The field is required, so kotlinx accepts `""` and the identifier is the
         // one part of an approval this has to get right: a blank one reaches the reader, takes a card, and
         // then fails the closing call's own nonblank check, leaving a processed charge nothing can close.
+        //
+        // A dot segment counts as absent too, and it is worse than blank: `.` and `..` are unreserved, so
+        // percent-encoding leaves them intact and the closing PATCH resolves to a different path than the
+        // one it names. That happens after the card has been taken. `PayInValidation.transId` refuses the
+        // same two values on the card-not-present side, for the same reason.
         val payload =
-            envelope.payload?.takeIf { it.paymentTransId.isNotBlank() }
+            envelope.payload?.takeIf { it.paymentTransId.isUsableTransId() }
                 ?: throw undecodable(route, response.statusCode, null)
         logger.debug(
             LogField.safe("event", "ttp_transaction_opened"),
@@ -298,4 +303,20 @@ internal class TTPTransactionClient(
             }
         }
     }
+}
+
+/**
+ * Whether this identifier can address the transaction it names.
+ *
+ * Blank cannot, and neither can a dot segment: `.` and `..` are unreserved, so percent-encoding leaves them
+ * as they are and the resolved path addresses the collection or its parent instead of one transaction.
+ *
+ * The invariant is this client's: it closes a transaction only over a path that names that transaction, so
+ * an identifier it cannot address is refused before a card is taken rather than after.
+ *
+ * Internal so a test can name a value, which is the half of this that rots.
+ */
+internal fun String.isUsableTransId(): Boolean {
+    val trimmed = trim()
+    return trimmed.isNotEmpty() && trimmed != "." && trimmed != ".."
 }
