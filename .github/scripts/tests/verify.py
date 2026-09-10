@@ -2287,9 +2287,15 @@ def test_live_reporting(mod, nightly):
         check("L16 and the thread carries the cause", bool(threaded),
               str([c["payload"].get("text") for c in posted]))
         if threaded:
-            check("L16 and the cause names what ended the job",
-                  "ended `failure`" in str(threaded[0]["payload"].get("text", "")),
-                  str(threaded[0]["payload"].get("text", "")))
+            body = str(threaded[0]["payload"].get("text", ""))
+            check("L16 and the cause names what ended the job", "ended `failure`" in body, body)
+            # And claims nothing about how far it got. `Live flows` carries no `continue-on-error`, so a
+            # refused flow fails the job after writing its results, and the upload that would have carried
+            # them runs `if: always()` and is allowed to fail. So results that were written and then lost
+            # reach here identically to a job that stopped before any flow ran, and saying it stopped first
+            # would be false of the more interesting of the two.
+            check("L16 and does not claim the job stopped before a flow wrote anything",
+                  "before any flow wrote" not in body and "run log" in body, body)
 
     # A job that succeeded and carried no flow is the case "no results written" does describe, and it has two
     # causes that must not be merged. `flows` counts test cases, so an empty directory and a results file with

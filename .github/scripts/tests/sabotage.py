@@ -457,6 +457,15 @@ MUTATIONS = [
     ("A lost artifact is reported as a deliberately excluded suite", LIVE_POSTER, "live",
      '    wrote_results = any(results.glob("**/TEST-*.xml"))', "    wrote_results = True"),
 
+    # `Live flows` carries no `continue-on-error`, so a refused flow fails the job after writing its results,
+    # and the upload that would have carried them is allowed to fail. Claiming the job stopped first is false
+    # of exactly the case worth reading: a real refusal whose evidence was lost in transfer.
+    ("A failed job is said to have stopped before any flow wrote results", LIVE_POSTER, "live",
+     'f"The job ended `{mrkdwn(job_result)}` and no flow results reached the reporter. It may have "\n'
+     '            "stopped before any flow ran, or written results that the upload or the download then '
+     'lost. The "\n            "run log separates the two."',
+     'f"The job ended `{mrkdwn(job_result)}` before any flow wrote results. The run log names which."'),
+
     ("A refused arm counts as a reset, so green goes silent with nothing watching", LIVE_POSTER, "live",
      "    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):",
      "    if not red and (reset_liveness_switch(token, channel, marker=marker, subject=subject) or True):"),

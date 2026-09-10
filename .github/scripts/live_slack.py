@@ -151,11 +151,18 @@ def no_flows_cause(job_result: str, wrote_results: bool) -> str:
     are both non-blocking in `live-flows.yml`, so a failed transfer empties the directory without touching the
     job result. Reading an empty directory as an excluded suite would report a lost artifact as a deliberate
     exclusion, which is the same mistake as the headline naming the artifact instead of the job.
+
+    On a job that did not succeed, that same non-blocking transfer means nothing can be said about how far it
+    got. `Live flows` carries no `continue-on-error`, so a refused flow fails the job *after* writing its
+    results, and the upload that would have carried them runs `if: always()` and is allowed to fail. So a
+    refused flow whose artifact was then lost is indistinguishable here from a job that stopped before any
+    flow ran, and only the run log separates them.
     """
     if job_result != "success":
         return (
-            f"The job ended `{mrkdwn(job_result)}` before any flow wrote results. A token server that did not "
-            "start, a refused configuration, or a job timeout each end it this way; the run log names which."
+            f"The job ended `{mrkdwn(job_result)}` and no flow results reached the reporter. It may have "
+            "stopped before any flow ran, or written results that the upload or the download then lost. The "
+            "run log separates the two."
         )
     if wrote_results:
         return (
@@ -165,7 +172,7 @@ def no_flows_cause(job_result: str, wrote_results: bool) -> str:
     return (
         "The job passed and no results reached the reporter. The upload and the download are both "
         "non-blocking, so a transfer that failed loses them while the job stays green. The run log says "
-        "which of the two happened."
+        "which of the two lost them."
     )
 
 
