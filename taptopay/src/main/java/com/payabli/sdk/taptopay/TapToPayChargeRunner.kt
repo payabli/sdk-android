@@ -170,8 +170,8 @@ internal class TapToPayChargeRunner(
                         orderDescription = orderDescription,
                     )
                 openedAs = paymentTransId
-                // A second payment now exists, so the one held from a failed close is no longer the one a
-                // caller means.
+                // A second payment now exists, so the one held from an unconfirmed close is no longer the
+                // one a caller means.
                 HELD.remove(scope)
                 logger.debug(
                     LogField.safe("event", "ttp_charge_opened"),
@@ -309,10 +309,15 @@ internal class TapToPayChargeRunner(
     }
 
     /**
-     * Closes a payment the card was charged for, when the close did not land at the time.
+     * Retries the unconfirmed close of a retained payment.
      *
-     * Takes no second tap: the reader already answered and its answer was kept. Refuses anything but the
-     * payment currently held, so a mistyped identifier cannot close a payment this SDK has no answer for.
+     * Takes no second tap: the reader already answered and its answer was kept, whatever that answer was.
+     * Refuses anything but the payment currently held, so a mistyped identifier cannot close a payment this
+     * SDK has no answer for.
+     *
+     * Whether the first close reached the service is not known here and does not need to be. Sending one
+     * that already applied costs nothing, and a response that never arrived may have followed a close that
+     * did apply, so an unconfirmed close is what this retries rather than a failed one.
      */
     suspend fun closeCaptured(paymentTransId: String): Unit =
         region.withLock {

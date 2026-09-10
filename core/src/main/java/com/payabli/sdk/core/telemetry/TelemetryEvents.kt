@@ -65,7 +65,7 @@ public object TelemetryEvents {
     /** The charge was declined or failed. */
     public const val TTP_CHARGE_FAILED: String = "ttp.charge.failed"
 
-    /** Closing a payment whose close did not land began. */
+    /** Retrying a retained payment's unconfirmed close began. */
     public const val TTP_CLOSE_STARTED: String = "ttp.close.started"
 
     /** The close landed, so the service has this payment's outcome. Whether money moved is not this. */
