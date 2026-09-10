@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -131,6 +133,76 @@ class PayInPaymentFlowTest {
             val cause = outcome.exceptionOrNull()
             assertTrue("$cause", cause is PayInException.Refused)
             assertEquals(PayabliErrorCode.PAYMENT_DECLINED, (cause as PayInException.Refused).code)
+        }
+
+    /**
+     * What a caller holding a `Result` gets is that the outcome is open, and the classification underneath.
+     *
+     * Not the key. It is held for this payment and resent by the next call naming the same transaction, so
+     * there is nothing for a caller to carry; `PayInSubmissionTest` covers that the resend reuses it.
+     */
+    @Test
+    fun `capturing an authorization answers that the outcome is open, carrying no key`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause =
+                flow
+                    .captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+                    .exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.NETWORK_ERROR, (cause as PayInException.Unsettled).code)
+        }
+
+    @Test
+    fun `voiding answers that the outcome is open`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+        }
+
+    /** A settled refusal is itself, so a caller branching on the type is not told to wait and see. */
+    @Test
+    fun `a decline is not reported as an open outcome`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering(DECLINED_TRANSACTION))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull()
+
+            assertFalse("$cause", cause is PayInException.Unsettled)
+        }
+
+    /** The message can quote a response body, so only the type survives. */
+    @Test
+    fun `the reported failure withholds what the underlying one said`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull() as PayInException.Unsettled
+
+            assertTrue("${cause.cause}", cause.cause?.message?.contains("PayabliGenericException") == true)
+            assertFalse("${cause.cause}", cause.cause?.message?.contains(DROPPED_DETAIL) == true)
+        }
+
+    /**
+     * The form reads `PayInSubmissionState.Failed.retryKey`, so wrapping there would be a second channel for
+     * one key and would change what a host catches.
+     */
+    @Test
+    fun `the state a form reads carries the underlying failure, not the wrapper`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
+            val published = flow.state.value as PayInSubmissionState.Failed
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertFalse("${published.cause}", published.cause is PayInException.Unsettled)
+            assertNotNull("the form's own channel still carries the key", published.retryKey)
         }
 
     @Test
@@ -253,6 +325,9 @@ class PayInPaymentFlowTest {
             collector.cancel()
         }
 
+    private fun dropped(): PayabliGenericException =
+        PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
+
     private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
         PayInPaymentFlow.over(
             transport = transport,
@@ -261,4 +336,9 @@ class PayInPaymentFlowTest {
             dispatcher = StandardTestDispatcher(testScheduler),
             logger = RecordingSdkLogger(),
         )
+
+    private companion object {
+        /** Stands in for text a real failure would carry from the wire, so a test can assert it is withheld. */
+        const val DROPPED_DETAIL = "the link dropped"
+    }
 }

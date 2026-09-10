@@ -34,8 +34,8 @@ import kotlinx.serialization.SerializationException
  *
  * **Nothing here is wrapped in `Retry`, and that is per route.** A capture is not repeatable: sending it twice
  * charges twice unless the repeat can be recognized as one, which is what
- * [PayInTransactionOptions.idempotencyKey] is for. So a caller that sets a key can retry safely and a caller
- * that does not cannot.
+ * [PayInTransactionOptions.idempotencyKey] is for. Every route here is reached through the flow, which
+ * reserves a key per attempt, so one is always sent.
  *
  * And the transport can send one of these a second time on its own. Credential recovery replays a request
  * whose rejection was an exact 401, which on these routes cannot take a second payment, so it costs a wasted
@@ -321,7 +321,7 @@ private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pa
     }
 
 /**
- * [key] rather than this object's own, because a form submission mints one when the caller set none.
+ * [key] rather than this object's own, because the flow mints one when the caller set none.
  *
  * Passed in rather than read here so there is one answer per attempt and one place that decides it. A caller
  * that set a key still sends exactly that key: the flow only fills a gap.

@@ -55,11 +55,11 @@ public sealed class PayabliPayIn {
      * credential, a 5xx, a rate limit and a transport failure arrive as the `:core` types this SDK raises
      * everywhere else. Catch the supertype, or branch on `PayabliException.code`, which both cover.
      *
-     * **This call moves money, so set [PayInAuthorizedRequest.idempotencyKey] to retry it safely.** A read
-     * timeout, a cancellation or a response that could not be decoded all leave it unknown whether the
-     * capture was applied, and only a repeat carrying the same key is recognized as the same attempt. Nothing
-     * is minted here: a key this SDK invented would not reach a caller holding a `Result`, so it could not be
-     * resent, and the attempt would read as retryable while it is not.
+     * **This call moves money, so it always carries an idempotency key.** Set
+     * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. Where
+     * a failure leaves it unknown whether the capture was applied, it arrives as
+     * [PayInException.Unsettled], and **calling again with the same [PayInAuthorizedRequest.transId] is the
+     * retry**: the key is sent again with it, so the repeat cannot capture a second time.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
@@ -70,9 +70,8 @@ public sealed class PayabliPayIn {
      * it will not reverse comes back as the refusal it sent, carrying its own reason.
      *
      * @param transId the transaction to reverse, as [PayInTransaction.paymentTransId] reported it.
-     * @param idempotencyKey makes a repeated send the same attempt rather than a second one. Supply it to
-     *   retry safely after a failure that leaves the outcome unknown; absent, none is sent and a retry is a
-     *   new attempt. Nothing is minted, for the reason given on [captureAuthorizedTransaction].
+     * @param idempotencyKey makes a repeated send the same attempt rather than a second one. Left unset, one
+     *   is minted for the attempt and reported the same way [captureAuthorizedTransaction] reports its own.
      */
     public abstract suspend fun voidTransaction(
         transId: String,

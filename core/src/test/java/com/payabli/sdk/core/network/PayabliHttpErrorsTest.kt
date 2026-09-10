@@ -74,12 +74,23 @@ class PayabliHttpErrorsTest {
 
     @Test
     fun `an unmapped non-2xx falls through to unknown, naming the status`() {
-        listOf(404, 409, 418, 451).forEach { status ->
+        listOf(404, 418, 451).forEach { status ->
             val mapped = map(status)
             assertTrue("status $status", mapped is PayabliGenericException)
             assertEquals(PayabliErrorCode.UNKNOWN, mapped?.code)
             assertEquals("HTTP $status", mapped?.reason)
         }
+    }
+
+    @Test
+    fun `a 409 is a conflict, and its body never reaches the reason`() {
+        // The service names the duplicated idempotency key in that body, and reason is displayable.
+        val mapped = map(409, "Duplicated idempotencyKey: key-9")
+
+        assertTrue(mapped is PayabliGenericException)
+        assertEquals(PayabliErrorCode.CONFLICT, mapped?.code)
+        assertEquals("Conflict (409)", mapped?.reason)
+        assertNull(mapped?.detail)
     }
 
     @Test

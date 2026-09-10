@@ -163,12 +163,31 @@ public sealed class PayInException(
     /**
      * The submission was canceled with the request in flight, so its outcome is unknown.
      *
-     * The payment may already have been taken. The key to retry with is on the state rather than here:
-     * `PayInSubmissionState.Failed.retryKey` answers it for every failure that leaves the outcome unknown, and
-     * a cancellation is one of several rather than the only one.
+     * The payment may already have been taken, and a cancellation is one of several failures that leave the
+     * outcome unknown rather than the only one. What makes a retry safe depends on which call was canceled: a
+     * call answering with a `Result` raises [Unsettled] and holds the key itself, and a form's own submission
+     * publishes `PayInSubmissionState.Failed.retryKey` for the host to send again.
      */
     public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"
+    }
+
+    /**
+     * The request may have been carried out, and the outcome is not known.
+     *
+     * **Calling again is the retry.** The idempotency key that makes the repeat recognizable is the SDK's,
+     * held for this payment and sent again on the next call naming the same transaction, so a caller acts on
+     * this by repeating the call rather than by carrying anything. What came back the first time is not
+     * repeated, so a caller that needs the outcome itself reads the transaction back.
+     *
+     * [code] is the underlying classification, so a caller branching on [PayabliException.code] reads what
+     * went wrong as well as that it is unresolved. [cause] names the failing type and withholds its message.
+     */
+    public class Unsettled(
+        code: PayabliErrorCode,
+        cause: PayabliException,
+    ) : PayInException(code, DEFAULT_UNSETTLED_REASON, detail = cause.reason, cause = RedactedCause(cause)) {
+        override fun toString(): String = "PayInException.Unsettled(code=${code.wireName})"
     }
 
     /**
@@ -187,6 +206,8 @@ public sealed class PayInException(
         internal const val DEFAULT_SERVICE_ERROR_REASON: String = "The payment could not be processed"
         internal const val DEFAULT_UNDECODABLE_REASON: String = "The response could not be read"
         internal const val DEFAULT_INTERRUPTED_REASON: String = "The payment was interrupted before it finished"
+        internal const val DEFAULT_UNSETTLED_REASON: String =
+            "The payment may have been taken, and its outcome is not known"
         internal const val DEFAULT_ALREADY_SUBMITTING_REASON: String = "A submission is already in flight"
     }
 }

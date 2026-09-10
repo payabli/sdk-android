@@ -30,7 +30,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -190,35 +192,155 @@ class PayInSubmissionTest {
         }
 
     /**
-     * A key nothing can read is worse than no key.
+     * Both move money, so neither can reach the service unprotected.
      *
-     * These two publish no state, so a minted key would reach neither the caller's `Result` nor
-     * [PayInSubmissionState.Failed.retryKey] that a form reads. The caller's own key is sent unchanged,
-     * because that one they already hold.
+     * The key is readable afterwards: a failure that leaves the outcome unknown answers with
+     * [PayInException.Unsettled], which carries it.
      */
     @Test
-    fun `a headless call mints no idempotency key of its own`() =
+    fun `a headless call mints an idempotency key when the caller set none`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
             val submission = submissionOver(transport)
 
             submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
-            assertFalse(
-                "a key was minted that no caller can read",
-                transport.request
-                    ?.headers
-                    .orEmpty()
-                    .containsKey("idempotencyKey"),
-            )
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
 
             submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
-            assertFalse(
-                "a key was minted that no caller can read",
-                transport.request
-                    ?.headers
-                    .orEmpty()
-                    .containsKey("idempotencyKey"),
-            )
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /**
+     * The resend is the same request, so it has to be the same key.
+     *
+     * A fresh key here is a second capture of the same authorization, which is the defect the held key exists
+     * to prevent. Only one key is minted across both calls.
+     */
+    @Test
+    fun `capturing the same authorization again after an unknown outcome sends the same key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            val first = transport.request?.headers?.get("idempotencyKey")
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", first)
+            assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    @Test
+    fun `voiding the same transaction again after an unknown outcome sends the same key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+            val first = transport.request?.headers?.get("idempotencyKey")
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+
+            assertEquals("$MINTED_KEY-1", first)
+            assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** The service answered, so what goes next is a different request and carrying the key would misname it. */
+    @Test
+    fun `capturing again after the service answered sends a new key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(declined)
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            val first = transport.request?.headers?.get("idempotencyKey")
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", first)
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A held key belongs to one transaction, so it cannot reach another. */
+    @Test
+    fun `capturing a different authorization sends a key of its own`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
+            val first = transport.request?.headers?.get("idempotencyKey")
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("202-def", testDetails()))
+
+            assertEquals("$MINTED_KEY-1", first)
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /**
+     * A key too old to be recognized is worse than no key: it is carried out as a new payment.
+     *
+     * So a resend past the window mints instead, which risks a refusal rather than a second charge.
+     */
+    @Test
+    fun `a held key is not sent once it is too old to be recognized`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(90))
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    @Test
+    fun `a held key is still sent while it is young enough`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(89))
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A caller naming the attempt outranks the one held for it: the flow only ever fills a gap. */
+    @Test
+    fun `a caller's own key outranks the one held for that payment`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+
+            submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = "caller-key")
+
+            assertEquals("caller-key", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** Two form submissions of equal value are two payments, so nothing is held across them. */
+    @Test
+    fun `a form submission holds no key for the next one`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(null), cardForm())
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+
+            submission.reset()
+            submission.submit(TEST_ENTRY_POINT, captureOf(null), cardForm())
+
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
     @Test
@@ -339,6 +461,7 @@ class PayInSubmissionTest {
                     storage = TokenStorageClient(transport, logger),
                     dispatcher = StandardTestDispatcher(testScheduler),
                     newIdempotencyKey = { MINTED_KEY },
+                    nanoTime = clock::get,
                     logger = logger,
                 )
 
@@ -702,11 +825,19 @@ class PayInSubmissionTest {
             dispatcher = StandardTestDispatcher(testScheduler),
             // Counted, so a test can tell one minted key from the next without matching a UUID.
             newIdempotencyKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
+            // Advanced by a test that needs a held key to age; still otherwise, so nothing expires by surprise.
+            nanoTime = clock::get,
             logger = logger,
         )
     }
 
     private val minted = AtomicInteger(0)
+
+    private val clock = AtomicLong(0)
+
+    /** A failure after the bytes were written, which is what leaves an outcome unknown. */
+    private fun dropped(): PayabliGenericException =
+        PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the link dropped")
 
     private fun failed(state: PayInSubmissionState): PayInSubmissionState.Failed {
         assertTrue("expected a failure, and the state is $state", state is PayInSubmissionState.Failed)

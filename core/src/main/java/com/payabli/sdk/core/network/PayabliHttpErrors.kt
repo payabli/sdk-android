@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonTransformingSerializer
 import kotlinx.serialization.json.buildJsonObject
 import java.net.HttpURLConnection.HTTP_BAD_REQUEST
+import java.net.HttpURLConnection.HTTP_CONFLICT
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
 import java.net.HttpURLConnection.HTTP_GONE
 import java.net.HttpURLConnection.HTTP_INTERNAL_ERROR
@@ -98,6 +99,7 @@ private typealias FieldFailures =
  * | 401 | [PayabliGenericException], [PayabliErrorCode.TOKEN_EXPIRED] |
  * | 402 | [PayabliDeclineException] |
  * | 403 | [PayabliGenericException], [PayabliErrorCode.PERMISSION_DENIED] |
+ * | 409 | [PayabliGenericException], [PayabliErrorCode.CONFLICT] |
  * | 410 | [PayabliGenericException], [PayabliErrorCode.SESSION_BURNED] |
  * | >= 500 | [PayabliServerException] |
  * | any other non-2xx | [PayabliGenericException], [PayabliErrorCode.UNKNOWN] |
@@ -137,6 +139,9 @@ public object PayabliHttpErrors {
             status == HTTP_PAYMENT_REQUIRED -> decline(body)
             status == HTTP_FORBIDDEN -> PayabliGenericException(PayabliErrorCode.PERMISSION_DENIED, "Forbidden (403)")
             status == HTTP_GONE -> PayabliGenericException(PayabliErrorCode.SESSION_BURNED, "Session burned (410)")
+            // The reason is fixed rather than read from the body: on the money-in routes that body
+            // quotes the request's own idempotency key, and reason is displayable.
+            status == HTTP_CONFLICT -> PayabliGenericException(PayabliErrorCode.CONFLICT, "Conflict (409)")
             status == HTTP_TOO_MANY_REQUESTS -> PayabliRateLimitException(retryAfterMillis(response))
             // Anything at or above 500, including the 6xx-plus codes a proxy may invent: RFC 9110 says a
             // client "SHOULD process the response as if it had a 5xx (Server Error) status code". Do not
