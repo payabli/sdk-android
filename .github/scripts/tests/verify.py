@@ -2023,6 +2023,42 @@ def product_flavors(module: str) -> set[str]:
     return set()
 
 
+CONNECTED_TASK = re.compile(r":([A-Za-z0-9_-]+):connected([A-Za-z0-9]*)AndroidTest")
+
+
+def expected_results_entries(script: str) -> tuple[set[str], list[str]]:
+    """The `INSTRUMENTED_MODULES` entries the instrumented step's own gradle tasks imply.
+
+    Derived from the tasks rather than listed here, because the two things that have to agree are the tasks
+    that run and the directories the collector checks, and a list in this file agrees with neither. Compared
+    against a shape instead, `release/flavors/withTelemetry` passes while the step runs Debug, and a module
+    dropped from the value is simply not checked by anything.
+
+    Returns the entries the tasks imply, and any task whose variant no declared flavor accounts for, which is
+    reported rather than skipped: an unresolved task means this function no longer understands the build, and
+    silently expecting nothing for it is how the comparison stops covering it.
+    """
+    expected: set[str] = set()
+    unresolved: list[str] = []
+    for module, variant in CONNECTED_TASK.findall(script):
+        flavors = product_flavors(module)
+        if not variant or not flavors:
+            # `connectedAndroidTest` names no variant, and a module with no product flavors writes one
+            # results directory whatever the task is called, so the entry carries no segment and the
+            # collector's `**` fallback matches it.
+            expected.add(module)
+            continue
+        # Longest match, so a flavor that is a prefix of another cannot claim the other's task.
+        flavor = max((name for name in flavors if variant.startswith(name[:1].upper() + name[1:])),
+                     key=len, default="")
+        if not flavor:
+            unresolved.append(f"{module}:{variant}")
+            continue
+        build_type = variant[len(flavor):]
+        expected.add(f"{module}:{build_type[:1].lower() + build_type[1:]}/flavors/{flavor}")
+    return expected, unresolved
+
+
 LIVE_POSTER = Path(os.environ.get("NIGHTLY_LIVE_POSTER", SDK / ".github/scripts/live_slack.py"))
 
 
@@ -2627,6 +2663,21 @@ def test_workflows():
             check(f"W10 and every flavor {module} declares is named",
                   {matched.group(1) for matched in matches if matched} == flavors,
                   f"named={sorted(m.group(1) for m in matches if m)} declared={sorted(flavors)}")
+
+        # The shape checks above accept any build type and say nothing about which modules are named, so
+        # `release/flavors/withTelemetry` satisfies them while the step runs Debug, and a module dropped from
+        # the value is not checked by anything. The tasks the step runs are what the value has to agree with,
+        # so they are what it is compared against.
+        instrumented = next((step for step in steps_of(workflow_doc("nightly.yml"))
+                             if step.get("id") == "instrumented"), None)
+        check("W10 nightly.yml has the instrumented step the value describes", instrumented is not None)
+        script = str(((instrumented or {}).get("with") or {}).get("script", ""))
+        check("W10 and that step runs connected tests", bool(CONNECTED_TASK.search(script)), script[:200])
+        implied, unresolved = expected_results_entries(script)
+        check("W10 every connected task resolves against its module's flavors", not unresolved,
+              f"{unresolved}")
+        check("W10 and the module list is exactly what those tasks imply", set(entries) == implied,
+              f"named={sorted(entries)} implied={sorted(implied)}")
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")
