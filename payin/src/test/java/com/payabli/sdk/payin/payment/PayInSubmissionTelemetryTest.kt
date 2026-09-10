@@ -29,6 +29,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -38,6 +39,9 @@ import kotlin.time.Duration.Companion.seconds
  * refusal rates, which are the questions asked when a payment path is suspected.
  */
 class PayInSubmissionTelemetryTest {
+    /** Advances a millisecond per read, so a reported duration is non-zero. */
+    private val ticks = AtomicLong(0)
+
     private val recorded = mutableListOf<Pair<String, Map<String, String>>>()
 
     @Before
@@ -328,6 +332,7 @@ class PayInSubmissionTelemetryTest {
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
             newIdempotencyKey = { "a-minted-key" },
+            nanoTime = { ticks.addAndGet(1_000_000) },
             logger = logger,
             session = session,
         )

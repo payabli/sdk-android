@@ -85,6 +85,9 @@ internal class PayInPaymentFlow private constructor(
             dispatcher = dispatcher,
             // Random per attempt, so two payments from one screen are never one request to the service.
             newIdempotencyKey = { UUID.randomUUID().toString() },
+            // Monotonic. A wall clock corrected mid-window would either drop a key that is still good
+            // or send one that is not, and the second charges a payer twice.
+            nanoTime = System::nanoTime,
             session = telemetry,
         ),
         PayInFormReports(telemetry?.forEntryPoint(entryPoint)),
@@ -188,13 +191,20 @@ internal class PayInPaymentFlow private constructor(
     /**
      * The failure behind a state that is not the success the caller asked for.
      *
+     * A retry key on the state means the request may have been carried out, and a caller holding a `Result`
+     * cannot read the state, so the failure says so as [PayInException.Unsettled]. The key itself stays
+     * inside: it is held for this payment and sent again by the next call naming the same transaction, so
+     * publishing it would offer a caller a value it has nothing to do with.
+     *
      * A null state is a submission refused because one was already in flight. Idle and Submitting cannot
      * arise for a call that has returned, and reporting them as a defect is what keeps this exhaustive
      * without inventing a plausible-looking failure for a state that cannot occur.
      */
     private fun PayInSubmissionState?.asFailure(): Throwable =
         when (this) {
-            is PayInSubmissionState.Failed -> cause
+            is PayInSubmissionState.Failed ->
+                if (retryKey != null) PayInException.Unsettled(cause.code, cause) else cause
+
             null -> PayInException.AlreadySubmitting()
             else -> IllegalStateException("a submission returned while its state read $this")
         }

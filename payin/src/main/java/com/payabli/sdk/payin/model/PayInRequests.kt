@@ -123,7 +123,7 @@ public class PayInTransactionOptions(
     public val subdomain: String? = null,
     public val subscriptionId: Long? = null,
     /**
-     * Makes a repeated request return the first one's result instead of charging again.
+     * Identifies this attempt, so a retry sending the same key is the same request rather than a second one.
      *
      * Sent as the `idempotencyKey` header. Optional: the payment flow mints one per attempt when it is absent.
      */
@@ -163,10 +163,10 @@ public class PayInAuthorizedRequest(
     public val transId: String,
     public val paymentDetails: PayInPaymentDetails,
     /**
-     * Makes a repeated capture return the first one's result instead of capturing again.
+     * Identifies this attempt, so a retry sending the same key is the same capture rather than a second one.
      *
-     * This call moves money, so a response lost on the way back leaves a caller unable to retry without
-     * risking a second partial capture.
+     * Optional: one is minted for the attempt when it is absent, and kept for this [transId] so that
+     * capturing it again after a failure that leaves the outcome unknown is the same attempt.
      */
     public val idempotencyKey: String? = null,
 )

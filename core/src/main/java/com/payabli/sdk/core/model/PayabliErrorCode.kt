@@ -36,6 +36,16 @@ public enum class PayabliErrorCode(
      */
     RATE_LIMITED("RATE_LIMITED"),
 
+    /**
+     * HTTP 409. The request was not carried out because the service already holds one like it, which is an
+     * answer rather than an unresolved outcome: sending the same request again is refused again, and what
+     * goes next is a different request.
+     *
+     * Folded into [UNKNOWN] it would read as unresolved, and a caller would keep resending a request that
+     * cannot succeed.
+     */
+    CONFLICT("CONFLICT"),
+
     // Client-side, never returned by the API.
     INVALID_CONFIGURATION("INVALID_CONFIGURATION"),
     NETWORK_ERROR("NETWORK_ERROR"),
