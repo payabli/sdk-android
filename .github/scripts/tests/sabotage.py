@@ -70,6 +70,12 @@ WALKTHROUGH_COMMAND = (
     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest "
     "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"
 )
+# The nightly's instrumented module list, quoted by four mutations below. One spelling, for the reason the
+# walkthrough command has one: an anchor that no longer matches reports itself invalid rather than caught.
+INSTRUMENTED_MODULES_LINE = (
+    "          INSTRUMENTED_MODULES: core,payin,"
+    "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry"
+)
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -324,16 +330,28 @@ MUTATIONS = [
     # cannot catch this — it is handed the segment — so W10 reads the workflow against the module's own
     # flavors instead.
     ("The nightly names a variant where the collector wants a results directory", NIGHTLY, "workflows",
-     "          INSTRUMENTED_MODULES: core,payin,"
-     "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry",
+     INSTRUMENTED_MODULES_LINE,
      "          INSTRUMENTED_MODULES: core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug"),
 
     # The other half of the same value: a flavor that stops being named goes back to being covered by its
     # sibling's results, which is what naming them separately exists to prevent.
     ("The nightly names the flavored module once instead of per flavor", NIGHTLY, "workflows",
-     "          INSTRUMENTED_MODULES: core,payin,"
-     "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry",
+     INSTRUMENTED_MODULES_LINE,
      "          INSTRUMENTED_MODULES: core,payin,example:debug/flavors/withTelemetry"),
+
+    # A build type the instrumented step does not run. The path is well formed and names a declared flavor,
+    # so every shape check passes and the collector checks a directory nothing writes.
+    ("The nightly names a build type the instrumented step does not run", NIGHTLY, "workflows",
+     INSTRUMENTED_MODULES_LINE,
+     "          INSTRUMENTED_MODULES: core,payin,"
+     "example:release/flavors/withTelemetry,example:release/flavors/withoutTelemetry"),
+
+    # A module dropped from the value is not checked by anything, so it can go silent under a sibling's
+    # results exactly as a flavor could. Nothing about the remaining entries looks wrong.
+    ("The nightly stops naming the modules that have no flavors", NIGHTLY, "workflows",
+     INSTRUMENTED_MODULES_LINE,
+     "          INSTRUMENTED_MODULES: "
+     "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry"),
 
     # Substitution happens before the script runs, so the guard inside the script cannot see the value that
     # replaced it. This is the form the file used to carry.
@@ -429,8 +447,15 @@ MUTATIONS = [
 
     # Without the thread, the one case where the channel cannot infer the cause is the one carrying none.
     ("A run that wrote nothing loses its thread, so the post carries no cause", LIVE_POSTER, "live",
-     '    detail = thread_body(failed) if failed else (no_flows_cause(job_result) if silent else "")',
+     "    detail = thread_body(failed) if failed else (\n"
+     "        no_flows_cause(job_result, wrote_results) if silent else \"\")",
      '    detail = thread_body(failed) if failed else ""'),
+
+    # Both artifact transfers are non-blocking, so an empty results directory is as likely to be a lost
+    # upload as an excluded suite. Assuming results arrived reports the lost artifact as a deliberate
+    # exclusion, which is the same mistake as the headline naming the artifact instead of the job.
+    ("A lost artifact is reported as a deliberately excluded suite", LIVE_POSTER, "live",
+     '    wrote_results = any(results.glob("**/TEST-*.xml"))', "    wrote_results = True"),
 
     ("A refused arm counts as a reset, so green goes silent with nothing watching", LIVE_POSTER, "live",
      "    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):",
