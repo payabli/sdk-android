@@ -73,10 +73,16 @@ public class PayabliTTP private constructor(
      * The card is not read again, so the person who paid does not tap twice, and no second payment is
      * opened. Sending a close that already landed costs nothing, which is what makes trying again safe.
      *
-     * **Reachable from any [TapToPayCapture], not only [TapToPayCapture.CHARGED].** The transaction is open
-     * at the service whatever the card did, so a payment whose card was refused or whose outcome was never
-     * definite is worth closing too. The failure this raises carries the capture state the reader's answer
-     * supports rather than assuming the money moved.
+     * **What is closeable is a payment whose card was read and whose close did not land**, whatever the
+     * reader answered. An approval, a refusal and an outcome that was never definite all leave a
+     * transaction open at the service, and all three are worth closing; the failure this raises carries the
+     * capture state the reader's answer supports rather than assuming the money moved.
+     *
+     * **A failure raised before the reader answered is not closeable, and carries
+     * [TapToPayCapture.UNKNOWN] as well.** Nothing is retained for it, because the charge sent its own
+     * close on the way out. So the capture state alone does not say whether this call can help, and there
+     * is no member that does. Calling it anyway is safe: a payment this SDK is not holding is refused with
+     * [TapToPayCapture.UNKNOWN] and nothing is sent. Reconcile that one against Payabli instead.
      *
      * What is closeable is the payment last taken for this entry point under this environment, by whichever
      * terminal took it. The record is shared across every terminal built for that pair, which is what lets a
