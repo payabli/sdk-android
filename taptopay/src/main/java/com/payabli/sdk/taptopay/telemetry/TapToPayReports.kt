@@ -67,6 +67,23 @@ internal object TapToPayReports {
         cardWasAsked: Boolean = false,
     ) = failed(TelemetryEvents.TTP_CHARGE_FAILED, failure, startedAt, canBeDeclined = !cardWasAsked)
 
+    fun closeStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_STARTED)
+
+    fun closeSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_CLOSE_SUCCEEDED, startedAt)
+
+    /**
+     * A close that was not confirmed.
+     *
+     * **No close can be a decline**, which is why this takes no equivalent of [chargeFailed]'s
+     * `cardWasAsked`. A close exists only once the reader has answered, so it is always on the far side of
+     * the window that flag marks: a refusal here is a failure to record an outcome, never a payment the
+     * issuer turned down.
+     */
+    fun closeFailed(
+        failure: Throwable,
+        startedAt: Long,
+    ) = failed(TelemetryEvents.TTP_CLOSE_FAILED, failure, startedAt, canBeDeclined = false)
+
     fun nfcStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_STARTED)
 
     fun nfcSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_NFC_SUCCEEDED, startedAt)

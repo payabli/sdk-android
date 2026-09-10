@@ -87,6 +87,14 @@ public class PayInFailure(
     public val explanation: String?,
     public val action: String?,
     public val httpStatus: Int?,
+    /**
+     * The transaction this failure belongs to, or null where the service named none.
+     *
+     * Carried for every non-approved answer, so a service error names its transaction as a decline does.
+     * A caller that means to reconcile one reads this whichever kind of failure it holds, because either
+     * can leave a transaction behind and this is the only handle on it.
+     */
+    public val paymentTransId: String? = null,
 ) {
     override fun toString(): String = "PayInFailure(code=$code, httpStatus=$httpStatus)"
 }

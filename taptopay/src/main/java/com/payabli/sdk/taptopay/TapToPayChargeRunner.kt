@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
@@ -31,10 +32,54 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
+import java.util.concurrent.ConcurrentHashMap
+
+/** Enough that unrelated paypoints rarely share one, small enough to be a fixed cost. */
+private const val REGION_STRIPES = 16
+
+/**
+ * The charge regions, striped rather than one per entry point.
+ *
+ * Held here rather than on the runner for the reason [TapToPayChargeRunner.region] gives. Striped because
+ * the entry point is a caller-supplied string and nothing bounds how many distinct ones a host passes, so a
+ * map keyed on it grows with whatever it is handed. A fixed set of locks cannot.
+ *
+ * What striping costs is that two unrelated paypoints sharing a stripe wait for each other. What it keeps is
+ * the only property that matters here: one entry point always resolves to the same lock, in this process and
+ * in every terminal built in it.
+ */
+private val REGIONS: List<Mutex> = List(REGION_STRIPES) { Mutex() }
+
+/** Masked rather than negated: `Int.MIN_VALUE` has no positive counterpart and negating it returns itself. */
+private fun regionFor(entry: String): Mutex =
+    REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
+
+/**
+ * The payment each scope has charged a card for and not confirmed a close on.
+ *
+ * Keyed exactly rather than striped, because two scopes sharing a stripe share a lock and must not share a
+ * payment. Unbounded growth is not the concern the regions have: an entry appears only once a card has
+ * actually been charged under that scope, and it is removed when the close lands or the next payment opens,
+ * so it is bounded by paypoints a device has taken money for rather than by anything a caller passes.
+ *
+ * Shared rather than held per runner for the reason the region is. A terminal is built per call, so a
+ * payment retained by one and a payment retained by another are the same paypoint's, and an instance field
+ * lets the second hide the first: both then believe they hold it, and whichever settles the attempt first
+ * leaves the other to mint a fresh key and charge again.
+ */
+private val HELD = ConcurrentHashMap<String, PendingClose>()
+
+private class PendingClose(
+    val paymentTransId: String,
+    val read: CardReadResult,
+    /** The attempt this payment was opened under, settled when a later close lands. */
+    val idempotencyKey: String,
+)
 
 /** One payment, end to end: open it at Payabli, tap, close it. */
 internal class TapToPayChargeRunner(
     private val entry: String,
+    environment: PayabliEnvironment,
     private val coordinator: TapToPaySessionCoordinator,
     private val manager: TapToPaySessionManager,
     private val reader: TapToPayProvider,
@@ -43,8 +88,30 @@ internal class TapToPayChargeRunner(
     private val keys: ChargeKeyStore,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
-    /** One payment at a time. A second caller waits; the reader takes one card. */
-    private val region = Mutex()
+    /**
+     * What a retained payment belongs to: the entry point, under the environment it was opened against.
+     *
+     * The entry point alone does not name a payment. A session that has reached
+     * [com.payabli.sdk.core.SdkState.ReinitializeRequired] admits any configuration next, so one process can
+     * hold a payment opened against one environment and then build a terminal for the same entry point
+     * against another. Keyed on the entry point alone, that terminal finds the first payment and offers to
+     * close it, sending an identifier and a processor answer to a service that never opened it.
+     */
+    private val scope: String = "${environment.name}/$entry"
+
+    /**
+     * One payment at a time for this entry point, across every terminal built for it and every environment.
+     *
+     * Keyed by the entry point rather than held per instance, because that is what it protects. A terminal is
+     * built per call, so two of them exist for one paypoint whenever a screen is rebuilt, and they share the
+     * charge key by design. An instance mutex lets one settle that key while the other is mid-charge, after
+     * which an ambiguous failure mints a fresh one and the payer can be charged twice.
+     *
+     * **Broader than [scope], which is what a payment belongs to.** [ChargeKeyStore] holds one record per
+     * entry point, so a lock keyed on the environment as well is narrower than the record it guards and
+     * leaves two terminals for one paypoint on different environments unserialized over it.
+     */
+    private val region: Mutex get() = regionFor(entry)
 
     suspend fun charge(
         paymentDetails: TapToPayPaymentDetails,
@@ -63,6 +130,9 @@ internal class TapToPayChargeRunner(
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
             // measures is what a merchant waits through.
             val startedAt = System.nanoTime()
+            // What the failure will be able to say, which only this scope knows.
+            var openedAs: String? = null
+            var capture = TapToPayCapture.NOT_CHARGED
             TapToPayReports.chargeStarted()
 
             // Hoisted so the failure path below can name the key this charge sent. Null until it is
@@ -99,6 +169,10 @@ internal class TapToPayChargeRunner(
                         invoice = invoice,
                         orderDescription = orderDescription,
                     )
+                openedAs = paymentTransId
+                // A second payment now exists, so the one held from an unconfirmed close is no longer the
+                // one a caller means.
+                HELD.remove(scope)
                 logger.debug(
                     LogField.safe("event", "ttp_charge_opened"),
                     LogField.safe("phase", "initiate"),
@@ -107,7 +181,14 @@ internal class TapToPayChargeRunner(
                 // Set before the reader is asked, not after it answers: the processor takes the sale before
                 // the answer is delivered, so everything from here on may have moved money.
                 askedForCard = true
+                capture = TapToPayCapture.UNKNOWN
                 val result = readCard(paymentTransId, sendable, invoice)
+
+                // What the reader answered decides this, not the fact that it answered. An approval moved
+                // money; a refusal is an answer that none moved; anything else leaves it unknown, which is
+                // what it already was.
+                capture = captureOf(result.outcome)
+                HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -116,15 +197,18 @@ internal class TapToPayChargeRunner(
                 // The transport's own deadlines still bound it, so this cannot wait forever.
                 //
                 // The settle is inside for the same reason rather than a tidier one: a cancellation landing
-                // between the two leaves the attempt unsettled, so the next charge reuses a key the service
-                // has already seen and is refused as a duplicate. Closing and finishing the attempt are one
-                // step or neither.
+                // between the two leaves the attempt unsettled, so the next charge sends a key naming a
+                // payment that is already resolved. So is dropping the held payment, which would otherwise
+                // be offered for closing again after it had closed. Those three are one step or none.
                 withContext(NonCancellable) {
                     client.update(paymentTransId, result)
                     // Both an approval and a refusal are definitive, so the attempt is over and its key can
                     // go. An outcome that is neither keeps it: the payment may have been taken, and the key
                     // is what would let a repeat be recognised as one.
                     if (result.outcome != CardReadOutcome.INDETERMINATE) keys.settle(entry, idempotencyKey)
+                    // The close landed, so there is nothing left to recover for this payment,
+                    // whatever the outcome was.
+                    HELD.remove(scope)
                 }
 
                 // The close is sent for every outcome above, and only an approval is a payment. A refused
@@ -147,8 +231,12 @@ internal class TapToPayChargeRunner(
                 // After the reader has answered the sale may be captured, so no failure arriving from
                 // there on is evidence the money did not move.
                 if (!askedForCard && isAnswered(failure)) reserved?.let { keys.settle(entry, it) }
+                // Reported before it is wrapped: the report reads the failure's own type to decide what kind
+                // of failure it was, and would classify every one of them alike once wrapped.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard)
-                throw failure
+                // An Error is left as it is, as the facade leaves it: a linkage error is not a payment
+                // outcome and has no transaction to name.
+                throw if (failure is Exception) failed(failure, openedAs, capture) else failure
             }
         }
 
@@ -219,6 +307,82 @@ internal class TapToPayChargeRunner(
         require(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
         return sendable
     }
+
+    /**
+     * Retries the unconfirmed close of a retained payment.
+     *
+     * Takes no second tap: the reader already answered and its answer was kept, whatever that answer was.
+     * Refuses anything but the payment currently held, so a mistyped identifier cannot close a payment this
+     * SDK has no answer for.
+     *
+     * Whether the first close reached the service is not known here and does not need to be. Sending one
+     * that already applied costs nothing, and a response that never arrived may have followed a close that
+     * did apply, so an unconfirmed close is what this retries rather than a failed one.
+     */
+    suspend fun closeCaptured(paymentTransId: String): Unit =
+        region.withLock {
+            val pending = HELD[scope]
+            if (pending == null || pending.paymentTransId != paymentTransId) {
+                // Named rather than left to the facade's default. A caller reaches this by asking to close
+                // a payment whose answer is no longer held, and the default would report it as never
+                // charged, which is the one thing this SDK must not say about a payment it cannot account
+                // for. It carries the identifier it was given, and unknown, because that is what is true.
+                throw failed(
+                    IllegalStateException("no captured payment is held under that identifier"),
+                    paymentTransId,
+                    TapToPayCapture.UNKNOWN,
+                )
+            }
+            val startedAt = System.nanoTime()
+            TapToPayReports.closeStarted()
+            try {
+                withContext(NonCancellable) {
+                    client.update(pending.paymentTransId, pending.read)
+                    // The same rule as the charge's own close, on the same reader answer. A held payment
+                    // is kept for every outcome, because the transaction is open at the service whatever
+                    // the card did, so a recovery can be closing one whose outcome was never definite.
+                    // Settling that would drop the only handle on an attempt that may have taken money.
+                    if (pending.read.outcome != CardReadOutcome.INDETERMINATE) {
+                        keys.settle(entry, pending.idempotencyKey)
+                    }
+                    // The close landed either way, so nothing is left to recover.
+                    HELD.remove(scope)
+                }
+            } catch (withdrawn: CancellationException) {
+                // Converting it would hide it from the facade, which reads the type to decide what to
+                // rethrow.
+                throw withdrawn
+            } catch (failure: Exception) {
+                TapToPayReports.closeFailed(failure, startedAt)
+                // Still held, so this can be tried again.
+                throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome))
+            }
+            TapToPayReports.closeSucceeded(startedAt)
+        }
+
+    /**
+     * What the reader's answer says about the money, which is not the same as whether it answered.
+     *
+     * Read by the charge and by the recovery, so the two cannot disagree about a payment they both saw.
+     */
+    private fun captureOf(outcome: CardReadOutcome): TapToPayCapture =
+        when (outcome) {
+            CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
+            CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
+            CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
+        }
+
+    /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
+    private fun failed(
+        failure: Exception,
+        paymentTransId: String?,
+        capture: TapToPayCapture,
+    ) = TapToPayException.of(
+        failure.message ?: failure.javaClass.simpleName,
+        failure,
+        paymentTransId = paymentTransId,
+        capture = capture,
+    )
 
     /**
      * Closes a transaction whose tap did not complete, best effort. The attempt stays named either way.

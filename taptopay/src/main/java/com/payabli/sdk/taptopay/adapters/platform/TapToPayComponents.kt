@@ -70,6 +70,10 @@ internal object TapToPayComponents {
             runner =
                 TapToPayChargeRunner(
                     entry = entryPoint,
+                    // The backend the payment is opened against: `client` below is built over
+                    // `session.transport`, so a retained payment has to be scoped to the service that
+                    // transport reaches.
+                    environment = session.telemetry.environment,
                     coordinator = coordinator,
                     manager = manager,
                     reader = reader,
