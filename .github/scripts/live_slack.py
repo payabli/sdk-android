@@ -140,24 +140,32 @@ def flows(results: Path) -> list[Flow]:
     return found
 
 
-def no_flows_cause(job_result: str) -> str:
-    """Why a run wrote no results, which the headline cannot carry on its own.
+def no_flows_cause(job_result: str, wrote_results: bool) -> str:
+    """Why a run carried no flow, which the headline cannot say on its own.
 
-    Two situations reach here with different answers, so the message must not merge them, exactly as
-    `nightly_slack.unreported_blocks` keeps its own pair apart. The job result is what tells them apart, and
-    the two guards counting different things is why: the workflow's own check counts results *files*, while
-    `flows` counts the test cases inside them. So a job that died did so before anything was written, and a
-    job that succeeded got past that check with a results file that carried no flow.
+    Three situations reach here and each has a different answer, so the message names only what this job can
+    actually establish. `nightly_slack.unreported_blocks` keeps its own pair apart for the same reason.
+
+    The job result separates a job that died from one that finished. What separates the other two is whether
+    any results file arrived at all, and that has to be read rather than inferred: the upload and the download
+    are both non-blocking in `live-flows.yml`, so a failed transfer empties the directory without touching the
+    job result. Reading an empty directory as an excluded suite would report a lost artifact as a deliberate
+    exclusion, which is the same mistake as the headline naming the artifact instead of the job.
     """
-    if job_result == "success":
+    if job_result != "success":
         return (
-            "The job passed, so results were written and carried no flow. Each suite is excluded by its own "
-            "build file when the settings it needs are absent, which is what leaves a results file with "
-            "nothing in it."
+            f"The job ended `{mrkdwn(job_result)}` before any flow wrote results. A token server that did not "
+            "start, a refused configuration, or a job timeout each end it this way; the run log names which."
+        )
+    if wrote_results:
+        return (
+            "Results reached the reporter and carried no flow. Each suite is excluded by its own build file "
+            "when the settings it needs are absent, which is what leaves a results file with nothing in it."
         )
     return (
-        f"The job ended `{mrkdwn(job_result)}` before any flow wrote results. A token server that did not "
-        "start, a refused configuration, or a job timeout each end it this way; the run log names which."
+        "The job passed and no results reached the reporter. The upload and the download are both "
+        "non-blocking, so a transfer that failed loses them while the job stays green. The run log says "
+        "which of the two happened."
     )
 
 
@@ -205,8 +213,12 @@ def main() -> int:
     job_result = os.environ.get("LIVE_JOB_RESULT", "unknown").strip() or "unknown"
     platform = os.environ.get("PLATFORM", "Android").strip() or "Android"
 
-    found = flows(Path(sys.argv[1]))
+    results = Path(sys.argv[1])
+    found = flows(results)
     failed = [flow for flow in found if flow.failed]
+    # Whether anything arrived, as distinct from what was in it. `flows` counts test cases, so it reads an
+    # empty directory and a results file with no case in it the same way, and those have different causes.
+    wrote_results = any(results.glob("**/TEST-*.xml"))
 
     # Three ways to be red, and the third is the one a count cannot see: a step that succeeded having run
     # nothing writes no XML, and a suite total of zero would otherwise render as "0 of 0 approved".
@@ -288,7 +300,8 @@ def main() -> int:
 
     # A run that wrote nothing gets a thread too. Without it the post was a headline and a link, so the one
     # case where the channel cannot infer the cause was the one case that carried none.
-    detail = thread_body(failed) if failed else (no_flows_cause(job_result) if silent else "")
+    detail = thread_body(failed) if failed else (
+        no_flows_cause(job_result, wrote_results) if silent else "")
     if detail:
         slack_post("chat.postMessage", token, {
             "channel": channel,

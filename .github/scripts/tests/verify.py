@@ -2049,6 +2049,9 @@ LIVE_XML_PASS = ('<testsuite name="s" tests="1"><testcase classname="a.b.PayInLi
                  'name="capturingACard"/></testsuite>')
 LIVE_XML_FAIL = ('<testsuite name="s" tests="1"><testcase classname="a.b.PayInLiveFlowsInstrumentedTest" '
                  'name="capturingACard"><failure message="code=PAYMENT_DECLINED"/></testcase></testsuite>')
+# Results that arrived and carry no test case, which is what an excluded suite leaves behind. Distinct from
+# an empty directory, which is what a lost artifact leaves, and `flows` cannot tell them apart on its own.
+LIVE_XML_NO_CASES = '<testsuite name="s" tests="0" failures="0" errors="0" skipped="0"></testsuite>'
 
 
 def run_live_poster(mod, xml, **env_extra):
@@ -2248,18 +2251,35 @@ def test_live_reporting(mod, nightly):
                   "ended `failure`" in str(threaded[0]["payload"].get("text", "")),
                   str(threaded[0]["payload"].get("text", "")))
 
-    # A job that succeeded having run nothing is the case those three words do describe, and folding it into
-    # the one above would lose the only situation where the artifact really is the story.
+    # A job that succeeded and carried no flow is the case "no results written" does describe, and it has two
+    # causes that must not be merged. `flows` counts test cases, so an empty directory and a results file with
+    # no case in it look identical to it; the upload and the download are both non-blocking in
+    # `live-flows.yml`, so the empty directory is as likely to be a lost artifact as an excluded suite.
+    # Reporting a lost artifact as a deliberate exclusion is the same mistake as the headline naming the
+    # artifact instead of the job.
     _, _, calls = run_live_poster(mod, None, LIVE_JOB_RESULT="success")
     posted = [c for c in calls if c["method"] == "chat.postMessage"]
+    check("L16 a green job whose results never arrived still posts", bool(posted),
+          str([c["method"] for c in calls]))
     if posted:
         parent = first_block_text(posted[0])
-        check("L16 a green job that ran nothing still says no results were written",
-              "no results written" in parent, parent)
+        check("L16 and still says no results were written", "no results written" in parent, parent)
         threaded = [c for c in posted if c["payload"].get("thread_ts")]
+        body = str(threaded[0]["payload"].get("text", "")) if threaded else "no thread"
+        check("L16 and its thread names the transfer rather than claiming an exclusion",
+              bool(threaded) and "non-blocking" in body and "excluded" not in body, body)
+
+    # Results that did arrive and carried nothing. This is the only case that can claim an exclusion, because
+    # the file is the evidence the suites were reached at all.
+    _, _, calls = run_live_poster(mod, LIVE_XML_NO_CASES, LIVE_JOB_RESULT="success")
+    posted = [c for c in calls if c["method"] == "chat.postMessage"]
+    check("L16 a results file carrying no flow still posts", bool(posted),
+          str([c["method"] for c in calls]))
+    if posted:
+        threaded = [c for c in posted if c["payload"].get("thread_ts")]
+        body = str(threaded[0]["payload"].get("text", "")) if threaded else "no thread"
         check("L16 and its thread says the suites were excluded rather than lost",
-              bool(threaded) and "excluded" in str(threaded[0]["payload"].get("text", "")),
-              str(threaded[0]["payload"].get("text", "")) if threaded else "no thread")
+              bool(threaded) and "excluded" in body, body)
 
 
 def test_live_summary(mod):
