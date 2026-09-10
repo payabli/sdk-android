@@ -140,6 +140,42 @@ def flows(results: Path) -> list[Flow]:
     return found
 
 
+def no_flows_cause(job_result: str, wrote_results: bool) -> str:
+    """Why a run carried no flow, which the headline cannot say on its own.
+
+    Three situations reach here and each has a different answer, so the message names only what this job can
+    actually establish. `nightly_slack.unreported_blocks` keeps its own pair apart for the same reason.
+
+    The job result separates a job that died from one that finished. What separates the other two is whether
+    any results file arrived at all, and that has to be read rather than inferred: the upload and the download
+    are both non-blocking in `live-flows.yml`, so a failed transfer empties the directory without touching the
+    job result. Reading an empty directory as an excluded suite would report a lost artifact as a deliberate
+    exclusion, which is the same mistake as the headline naming the artifact instead of the job.
+
+    On a job that did not succeed, that same non-blocking transfer means nothing can be said about how far it
+    got. `Live flows` carries no `continue-on-error`, so a refused flow fails the job *after* writing its
+    results, and the upload that would have carried them runs `if: always()` and is allowed to fail. So a
+    refused flow whose artifact was then lost is indistinguishable here from a job that stopped before any
+    flow ran, and only the run log separates them.
+    """
+    if job_result != "success":
+        return (
+            f"The job ended `{mrkdwn(job_result)}` and no flow results reached the reporter. It may have "
+            "stopped before any flow ran, or written results that the upload or the download then lost. The "
+            "run log separates the two."
+        )
+    if wrote_results:
+        return (
+            "Results reached the reporter and carried no flow. Each suite is excluded by its own build file "
+            "when the settings it needs are absent, which is what leaves a results file with nothing in it."
+        )
+    return (
+        "The job passed and no results reached the reporter. The upload and the download are both "
+        "non-blocking, so a transfer that failed loses them while the job stays green. The run log says "
+        "which of the two lost them."
+    )
+
+
 def run_url() -> str:
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
     repository = os.environ.get("GITHUB_REPOSITORY", "")
@@ -184,8 +220,12 @@ def main() -> int:
     job_result = os.environ.get("LIVE_JOB_RESULT", "unknown").strip() or "unknown"
     platform = os.environ.get("PLATFORM", "Android").strip() or "Android"
 
-    found = flows(Path(sys.argv[1]))
+    results = Path(sys.argv[1])
+    found = flows(results)
     failed = [flow for flow in found if flow.failed]
+    # Whether anything arrived, as distinct from what was in it. `flows` counts test cases, so it reads an
+    # empty directory and a results file with no case in it the same way, and those have different causes.
+    wrote_results = any(results.glob("**/TEST-*.xml"))
 
     # Three ways to be red, and the third is the one a count cannot see: a step that succeeded having run
     # nothing writes no XML, and a suite total of zero would otherwise render as "0 of 0 approved".
@@ -194,12 +234,20 @@ def main() -> int:
 
     link = run_url()
     where = f"{platform} · live flows · {environment}"
-    if silent:
-        headline = f"{where} · no results written"
-    elif failed:
+    # Ordered by what the reader can act on, which is not the order these become true. A refusal is the most
+    # specific account of the run, so it wins over the job result that reports the same failure. The job
+    # result comes next, because a job that died before any flow ran wrote no results *because* it died, and
+    # a headline naming the absent artifact sends the reader looking for a lost upload. That leaves "no
+    # results written" for the case those words describe: a job that succeeded having run nothing.
+    #
+    # The old order tested `silent` first, so ten consecutive qa runs that never reached the emulator were
+    # announced as missing results while the cause, a token server refusing to start, went unnamed.
+    if failed:
         headline = f"{where} · {len(failed)} of {len(found)} refused"
     elif job_result != "success":
         headline = f"{where} · the job reported {job_result}"
+    elif silent:
+        headline = f"{where} · no results written"
     else:
         headline = f"{where} · {len(found)} of {len(found)} approved"
 
@@ -208,8 +256,15 @@ def main() -> int:
     # and one of the two escaping is how the pair drifts.
     # Slack's own tokens, as `nightly_slack` uses, so the two reporters render the same in every client and
     # in a notification. A literal codepoint also has to survive this file's encoding to reach the channel.
-    text = f"{':red_circle:' if red else ':white_check_mark:'} {mrkdwn(headline)}"
-    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{mrkdwn(headline)}*"}}]
+    #
+    # The icon goes in the block as well, and that is the load-bearing half. Slack renders `blocks` whenever
+    # they are present and falls back to `text` only for a notification or a client that cannot render them,
+    # so an icon living only in `text` never reaches the channel: red and green posts arrived identical, and
+    # ten daily failures read as a routine status line. `nightly_slack.summary_blocks` puts it in the block
+    # for this reason and this reporter did not.
+    icon = ":red_circle:" if red else ":white_check_mark:"
+    text = f"{icon} {mrkdwn(headline)}"
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *{mrkdwn(headline)}*"}}]
     if link:
         blocks.append({
             "type": "context",
@@ -250,11 +305,15 @@ def main() -> int:
         # only question this alarm asks.
         reset_liveness_switch(token, channel, marker=marker, subject=subject)
 
-    if failed:
+    # A run that wrote nothing gets a thread too. Without it the post was a headline and a link, so the one
+    # case where the channel cannot infer the cause was the one case that carried none.
+    detail = thread_body(failed) if failed else (
+        no_flows_cause(job_result, wrote_results) if silent else "")
+    if detail:
         slack_post("chat.postMessage", token, {
             "channel": channel,
             "thread_ts": parent.get("ts"),
-            "text": thread_body(failed),
+            "text": detail,
         })
 
     return 0

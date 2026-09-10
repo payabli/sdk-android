@@ -324,7 +324,12 @@ jobs:
           # The modules the instrumented step above ran. The collector checks each one wrote results,
           # because the suite total cannot: a module that writes nothing is hidden by a sibling that wrote
           # plenty, and the run stays green having lost a whole tier. Keep this in step with that script.
-          INSTRUMENTED_MODULES: core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug
+          #
+          # What follows a colon is the results directory under `connected/`, not a variant name. A module
+          # with product flavors writes `<buildType>/flavors/<flavor>`, so a variant name matches nothing and
+          # every run of that module reads as silent while its tests pass. `verify.py` holds this value to
+          # the layout, because nothing else can: the collector is handed the segment and interpolates it.
+          INSTRUMENTED_MODULES: core,payin,example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact rather than a file inside `nightly-reports`, and a single-file directory rather than
