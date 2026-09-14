@@ -298,12 +298,6 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
-    /**
-     * The window runs from the first reservation, not from the last resend.
-     *
-     * Restamping it on reuse would let a resend every eighty-nine seconds keep one key alive forever, and
-     * the service stops recognizing it long before that.
-     */
     @Test
     fun `resending does not start the window again`() =
         runTest(timeout = timeout) {
@@ -337,13 +331,6 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
-    /**
-     * A call canceled before it reserved anything settles nothing, so the key held stands.
-     *
-     * Undispatched, so the cancellation lands after the guard is taken and before the block runs: nothing
-     * is sent and no key is reserved. Dropping the held key there would send the next attempt under a fresh
-     * one, and the attempt whose outcome is still unknown would be charged a second time.
-     */
     @Test
     fun `a cancellation before anything is reserved leaves the held key alone`() =
         runTest(timeout = timeout) {
@@ -355,6 +342,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
             val sent = transport.count
 
+            // Undispatched, so the cancellation lands after the guard is taken and before the block runs.
             val canceled =
                 launch(start = CoroutineStart.UNDISPATCHED) {
                     submission.captureAuthorized(TEST_ENTRY_POINT, request)
@@ -368,11 +356,6 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
-    /**
-     * A refused repeat is not an answer about the payment, so the key stays.
-     *
-     * Dropping it here would send a third attempt under a fresh key, and a fresh key is a second payment.
-     */
     @Test
     fun `a refused repeat keeps the key rather than settling the payment`() =
         runTest(timeout = timeout) {
