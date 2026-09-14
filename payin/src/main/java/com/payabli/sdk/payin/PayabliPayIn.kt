@@ -52,8 +52,9 @@ public sealed class PayabliPayIn {
      *
      * **The failure is a `PayabliException`, and only some of them are a `PayInException`.** A refusal the
      * service described arrives as `PayInException.Refused` or `.ServiceError`; a rejected field, a rejected
-     * credential, a 5xx, a rate limit and a transport failure arrive as the `:core` types this SDK raises
-     * everywhere else. Catch the supertype, or branch on `PayabliException.code`, which both cover.
+     * credential and a rate limit arrive as the `:core` types this SDK raises everywhere else. A failure
+     * that leaves the outcome open is [PayInException.Unsettled] instead of the type it wraps, so branch on
+     * [PayabliException.code], which is the underlying classification either way and covers both.
      *
      * **This call moves money, so it always carries an idempotency key.** Set
      * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. Where
