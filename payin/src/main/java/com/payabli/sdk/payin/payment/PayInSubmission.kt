@@ -300,10 +300,10 @@ internal class PayInSubmission(
         payment: String,
         now: Long,
     ): HeldKey? {
-        val held = unresolved[payment] ?: return null
-        if (now - held.reservedAt < HELD_KEY_WINDOW_NANOS) return held
-        unresolved.remove(payment)
-        return null
+        // Every entry, not just this payment's: a flow that meets many transactions revisits few of them,
+        // so keying the sweep on the lookup would hold every key it ever minted for as long as it lives.
+        unresolved.values.removeAll { now - it.reservedAt >= HELD_KEY_WINDOW_NANOS }
+        return unresolved[payment]
     }
 
     /**
