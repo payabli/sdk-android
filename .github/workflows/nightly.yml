@@ -335,6 +335,14 @@ jobs:
           # module the step does not run turns every green nightly red for a tier that was never asked to
           # produce anything; dropping one the step does run loses that tier silently, which is the failure
           # this check exists to catch. Card-present is absent from both, per the note at the top of the file.
+          #
+          # `:example` is absent too, and it is not an oversight: it depends on `:taptopay`, whose native
+          # library is arm64 only, so its test APK cannot install on this job's x86_64 emulator at all.
+          #
+          # If a flavoured module is ever listed here again, what follows its colon is the results directory
+          # under `connected/`, not a variant name: a module with product flavors writes
+          # `<buildType>/flavors/<flavor>`, and a variant name matches nothing while its tests pass, which
+          # reads as silence rather than as failure.
           INSTRUMENTED_MODULES: core,payin
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 

@@ -70,6 +70,12 @@ WALKTHROUGH_COMMAND = (
     "            ./gradlew :example:connectedWithTelemetryDebugAndroidTest "
     "-Ppayabli.sampleWalkthrough=true -Ppayabli.demo.prefill=true"
 )
+# The nightly's instrumented module list, quoted by four mutations below. One spelling, for the reason the
+# walkthrough command has one: an anchor that no longer matches reports itself invalid rather than caught.
+INSTRUMENTED_MODULES_LINE = (
+    "          INSTRUMENTED_MODULES: core,payin,"
+    "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry"
+)
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -218,6 +224,18 @@ MUTATIONS = [
      "    for failure in all_failures[:MAX_ATTRIBUTED_FAILURES]:",
      "    for failure in all_failures:"),
 
+    # The per-variant check, reduced to the module-wide glob it replaced. One flavor's results then cover a
+    # flavor that stopped running, the suite total is never zero, and a whole tier goes missing green.
+    ("The variant is ignored, so one flavor's results cover a flavor that stopped", COLLECTOR, "collector",
+     "        results = f\"{module}/build/outputs/androidTest-results/connected/{variant or '**'}/TEST-*.xml\"",
+     '        results = f"{module}/build/outputs/androidTest-results/connected/**/TEST-*.xml"'),
+
+    # The other direction, and the one a red verdict alone cannot tell apart: a path that matches nothing
+    # reads as every variant being silent, which is red for a reason that has nothing to do with a flavor
+    # stopping. Only the label distinguishes them, which is why C22 asserts what it names.
+    ("Every variant path matches nothing, so a broken path reads as a silent flavor", COLLECTOR, "collector",
+     "connected/{variant or '**'}/TEST-*.xml", "connected/nowhere/{variant or '**'}/TEST-*.xml"),
+
     ("Coverage phrases repeated per module again", POSTER, "poster",
      "            if shareable:\n                rendered.append(\", \".join(names) + f\" {phrase}\")\n            else:\n                rendered.extend(f\"{name} {phrase}\" for name in names)",
      "            rendered.extend(f\"{name} {phrase}\" for name in names)"),
@@ -306,6 +324,35 @@ MUTATIONS = [
     ("The results guard stops naming the sample app", LIVE_FLOWS, "workflows",
      "          INSTRUMENTED_MODULES: payin example", "          INSTRUMENTED_MODULES: payin"),
 
+    # The value that shipped on 2026-08-27 and left the nightly red for fourteen nights while its tests
+    # passed. `withTelemetryDebug` is a variant name where the collector wants a results directory, so the
+    # glob matched nothing, both flavors read as silent, and the gate failed a green suite. The collector
+    # cannot catch this — it is handed the segment — so W10 reads the workflow against the module's own
+    # flavors instead.
+    ("The nightly names a variant where the collector wants a results directory", NIGHTLY, "workflows",
+     INSTRUMENTED_MODULES_LINE,
+     "          INSTRUMENTED_MODULES: core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug"),
+
+    # The other half of the same value: a flavor that stops being named goes back to being covered by its
+    # sibling's results, which is what naming them separately exists to prevent.
+    ("The nightly names the flavored module once instead of per flavor", NIGHTLY, "workflows",
+     INSTRUMENTED_MODULES_LINE,
+     "          INSTRUMENTED_MODULES: core,payin,example:debug/flavors/withTelemetry"),
+
+    # A build type the instrumented step does not run. The path is well formed and names a declared flavor,
+    # so every shape check passes and the collector checks a directory nothing writes.
+    ("The nightly names a build type the instrumented step does not run", NIGHTLY, "workflows",
+     INSTRUMENTED_MODULES_LINE,
+     "          INSTRUMENTED_MODULES: core,payin,"
+     "example:release/flavors/withTelemetry,example:release/flavors/withoutTelemetry"),
+
+    # A module dropped from the value is not checked by anything, so it can go silent under a sibling's
+    # results exactly as a flavor could. Nothing about the remaining entries looks wrong.
+    ("The nightly stops naming the modules that have no flavors", NIGHTLY, "workflows",
+     INSTRUMENTED_MODULES_LINE,
+     "          INSTRUMENTED_MODULES: "
+     "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry"),
+
     # Substitution happens before the script runs, so the guard inside the script cannot see the value that
     # replaced it. This is the form the file used to carry.
     ("The environment is interpolated into the script instead of reaching it as a variable", LIVE_FLOWS,
@@ -322,16 +369,16 @@ MUTATIONS = [
     # The origin an environment outside the checkout arrives by. Written in the file it is the address this
     # repository exists not to carry; dropped, the run authenticates against whatever the fallback names.
     ("The qa caller writes its origin into the public repository", LIVE_QA, "workflows",
-     "      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}",
+     "      api-origin: ${{ vars.PAYABLI_API_BASE_URL_QA }}",
      "      api-origin: https://api-qa.payabli.com"),
 
     ("The qa caller takes its origin from a secret, where an address cannot be reviewed", LIVE_QA,
-     "workflows", "      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}",
-     "      api-origin: ${{ secrets.PAYABLI_QA_BASE_URL }}"),
+     "workflows", "      api-origin: ${{ vars.PAYABLI_API_BASE_URL_QA }}",
+     "      api-origin: ${{ secrets.PAYABLI_API_BASE_URL_QA }}"),
 
     ("The qa caller stops carrying an origin, so its environment falls back", LIVE_QA, "workflows",
-     "      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}",
-     "      # api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}"),
+     "      api-origin: ${{ vars.PAYABLI_API_BASE_URL_QA }}",
+     "      # api-origin: ${{ vars.PAYABLI_API_BASE_URL_QA }}"),
 
     ("The run's environment is not added to the SDK, so the sample and the token server disagree",
      LIVE_FLOWS, "workflows",
@@ -380,6 +427,44 @@ MUTATIONS = [
 
     ("The live reporter stops arming its alarm, leaving silence unmonitored", LIVE_POSTER, "live",
      "    if red and owns_liveness_switch():", "    if False:"),
+
+    # Slack renders `blocks` and keeps `text` for the notification, so an icon in `text` alone never reaches
+    # the channel. This is the form the file carried: red and green posts arrived identical, and ten daily
+    # failures read as a routine status line.
+    ("The verdict icon is left in the notification fallback only", LIVE_POSTER, "live",
+     '    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"{icon} *{mrkdwn(headline)}*"}}]',
+     '    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": f"*{mrkdwn(headline)}*"}}]'),
+
+    # The order that shipped. A job dying before any flow ran wrote no results because it died, so testing
+    # the absent artifact first announces the artifact and never the cause.
+    ("The absent artifact is announced ahead of the job that caused it", LIVE_POSTER, "live",
+     '    if failed:\n        headline = f"{where} · {len(failed)} of {len(found)} refused"\n'
+     '    elif job_result != "success":\n        headline = f"{where} · the job reported {job_result}"\n'
+     '    elif silent:\n        headline = f"{where} · no results written"',
+     '    if silent:\n        headline = f"{where} · no results written"\n'
+     '    elif failed:\n        headline = f"{where} · {len(failed)} of {len(found)} refused"\n'
+     '    elif job_result != "success":\n        headline = f"{where} · the job reported {job_result}"'),
+
+    # Without the thread, the one case where the channel cannot infer the cause is the one carrying none.
+    ("A run that wrote nothing loses its thread, so the post carries no cause", LIVE_POSTER, "live",
+     "    detail = thread_body(failed) if failed else (\n"
+     "        no_flows_cause(job_result, wrote_results) if silent else \"\")",
+     '    detail = thread_body(failed) if failed else ""'),
+
+    # Both artifact transfers are non-blocking, so an empty results directory is as likely to be a lost
+    # upload as an excluded suite. Assuming results arrived reports the lost artifact as a deliberate
+    # exclusion, which is the same mistake as the headline naming the artifact instead of the job.
+    ("A lost artifact is reported as a deliberately excluded suite", LIVE_POSTER, "live",
+     '    wrote_results = any(results.glob("**/TEST-*.xml"))', "    wrote_results = True"),
+
+    # `Live flows` carries no `continue-on-error`, so a refused flow fails the job after writing its results,
+    # and the upload that would have carried them is allowed to fail. Claiming the job stopped first is false
+    # of exactly the case worth reading: a real refusal whose evidence was lost in transfer.
+    ("A failed job is said to have stopped before any flow wrote results", LIVE_POSTER, "live",
+     'f"The job ended `{mrkdwn(job_result)}` and no flow results reached the reporter. It may have "\n'
+     '            "stopped before any flow ran, or written results that the upload or the download then '
+     'lost. The "\n            "run log separates the two."',
+     'f"The job ended `{mrkdwn(job_result)}` before any flow wrote results. The run log names which."'),
 
     ("A refused arm counts as a reset, so green goes silent with nothing watching", LIVE_POSTER, "live",
      "    if not red and reset_liveness_switch(token, channel, marker=marker, subject=subject):",
