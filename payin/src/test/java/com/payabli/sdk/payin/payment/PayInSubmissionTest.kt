@@ -192,12 +192,7 @@ class PayInSubmissionTest {
             assertEquals(2, transport.count)
         }
 
-    /**
-     * Both move money, so neither can reach the service unprotected.
-     *
-     * The key is readable afterwards: a failure that leaves the outcome unknown answers with
-     * [PayInException.Unsettled], which carries it.
-     */
+    /** Both move money, so neither can reach the service unprotected. */
     @Test
     fun `a headless call mints an idempotency key when the caller set none`() =
         runTest(timeout = timeout) {
