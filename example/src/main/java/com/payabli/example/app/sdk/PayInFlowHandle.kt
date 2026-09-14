@@ -46,9 +46,9 @@ interface PayInFlowHandle {
      * Not visible in [isSubmitting] or [isBusy]: the SDK publishes this to no state, because nothing is
      * drawing it. A screen that offers it tracks its own in-flight flag.
      *
-     * The key is the caller's because the SDK mints none for this call, and it is required here rather than
-     * defaulted: a reversal whose response is lost has to be retried as the same attempt, or the second try
-     * meets a transaction the service has already reversed and reports a failure over a success.
+     * The SDK mints one when this is left out, so the key is required here as the app's own choice rather
+     * than to fill a gap: this screen names the attempt so its own controls can reason about it, where a
+     * host with nothing to say about the attempt would leave it out and let the SDK carry it.
      */
     suspend fun voidTransaction(
         transId: String,
