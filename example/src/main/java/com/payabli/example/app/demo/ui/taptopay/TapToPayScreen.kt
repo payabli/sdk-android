@@ -195,11 +195,7 @@ private fun ApprovalSheet(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Text(
-                text = "$${state.amountText}",
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            // No amount: the SDK rounds to wire scale, so the input is not what was charged.
             ResultCard(text = state.resultText, emptyText = "")
             ProminentButton(
                 text = "Take another payment",
