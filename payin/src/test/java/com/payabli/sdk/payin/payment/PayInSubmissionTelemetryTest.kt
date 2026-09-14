@@ -25,7 +25,6 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -64,7 +63,7 @@ class PayInSubmissionTelemetryTest {
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
-            assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
+            assertEquals("1", properties[TelemetryProperty.DURATION_MS.key])
         }
 
     @Test
@@ -98,7 +97,7 @@ class PayInSubmissionTelemetryTest {
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
-            assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
+            assertEquals("1", properties[TelemetryProperty.DURATION_MS.key])
         }
 
     @Test

@@ -352,7 +352,7 @@ internal class PayInSubmission(
             startedAt?.let {
                 put(
                     TelemetryProperty.DURATION_MS.key,
-                    TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - it).toString(),
+                    TimeUnit.NANOSECONDS.toMillis(nanoTime() - it).toString(),
                 )
             }
         }
