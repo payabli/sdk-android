@@ -18,6 +18,7 @@ object TerminalSteps {
      *   [TerminalSessionState.Ready] both for a device that was activated and for one that never
      *   had to be, and those are a finished step and a skipped one.
      * @param chargeFailed the last charge attempt failed.
+     * @param charged a charge succeeded.
      * @param working which action is in flight, or null. The session reports
      *   [TerminalSessionState.Ready] throughout a charge and [TerminalSessionState.PendingActivation]
      *   throughout an activation, so it cannot say on its own that either is running. Which one
@@ -33,6 +34,7 @@ object TerminalSteps {
         working: TerminalAction? = null,
         activated: Boolean = false,
         readerDenied: Boolean = false,
+        charged: Boolean = false,
     ): List<FlowStep> {
         val device =
             when (readiness) {
@@ -94,9 +96,8 @@ object TerminalSteps {
                 // The session never reached Ready, so nothing below would report this at all.
                 readerDenied -> StepStatus.Failed
                 working == TerminalAction.Charge && session == TerminalSessionState.Ready -> StepStatus.InProgress
-                // The session stays Ready through a failed charge, so the outcome is recorded and
-                // read here or step 4 never reports one.
                 chargeFailed && session == TerminalSessionState.Ready -> StepStatus.Failed
+                charged && session == TerminalSessionState.Ready -> StepStatus.Done
                 session == TerminalSessionState.Ready -> StepStatus.Current
                 else -> StepStatus.Blocked
             }

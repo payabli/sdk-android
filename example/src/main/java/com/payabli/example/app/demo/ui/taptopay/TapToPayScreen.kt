@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -14,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,7 +72,7 @@ fun TapToPayScreen(
             chargeFailed = state.chargeFailure != null,
             working = state.workingAction,
             activated = state.activated,
-            // A device the preflight passed is capable, so an ineligible verdict on it is the vendor's.
+            charged = state.charged,
             readerDenied =
                 state.failureReason == TerminalFailureReason.DeviceIneligible &&
                     state.readiness != Readiness.NotAvailable,
@@ -132,7 +134,7 @@ fun TapToPayScreen(
             }
         }
 
-        StepRow(index = 4, step = steps[3]) {
+        StepRow(index = 4, step = steps[3], repeatable = true) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
                 // A denied reader fails this step with no charge attempted, so there is no recorded
                 // charge failure to show.
@@ -153,6 +155,59 @@ fun TapToPayScreen(
 
     if (state.isActivationOpen) {
         ActivationSheet(state, actions.onActivationCodeChange, actions.onActivate, actions.onDismissActivation)
+    }
+
+    if (state.isApprovalOpen) {
+        ApprovalSheet(state, actions.onDismissApproval)
+    }
+}
+
+/**
+ * What a merchant looks at when the payment is taken, before going back for the next one.
+ *
+ * The result line carries the same identifier, and it is one row among four steps and an event list. A
+ * payment being approved is the moment the whole screen exists for, so it is said once, on its own.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ApprovalSheet(
+    state: TapToPayUiState,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding),
+            verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = DemoIcons.Pass,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "Payment approved",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Text(
+                text = "$${state.amountText}",
+                style = MaterialTheme.typography.displaySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            ResultCard(text = state.resultText, emptyText = "")
+            ProminentButton(
+                text = "Take another payment",
+                icon = DemoIcons.TapToPay,
+                onClick = onDismiss,
+                enabled = true,
+            )
+        }
     }
 }
 

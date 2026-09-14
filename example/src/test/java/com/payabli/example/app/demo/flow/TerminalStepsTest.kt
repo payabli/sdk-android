@@ -197,6 +197,35 @@ class TerminalStepsTest {
     }
 
     @Test
+    fun `a captured payment finishes the step that took it`() {
+        // The session reports Ready before, during and after a charge, so without the recorded outcome
+        // this step reads Current and a merchant who has just been paid is told to take a payment.
+        val sequence =
+            TerminalSteps.forCharging(
+                readiness = Readiness.Ready,
+                session = TerminalSessionState.Ready,
+                activationFailed = false,
+                charged = true,
+            )
+        assertEquals(StepStatus.Done, sequence[3].status)
+    }
+
+    @Test
+    fun `a charge that failed after one that worked reports the failure`() {
+        // Both recorded, because a merchant acts on the attempt they just made rather than the best
+        // one of the session.
+        val sequence =
+            TerminalSteps.forCharging(
+                readiness = Readiness.Ready,
+                session = TerminalSessionState.Ready,
+                activationFailed = false,
+                chargeFailed = true,
+                charged = true,
+            )
+        assertEquals(StepStatus.Failed, sequence[3].status)
+    }
+
+    @Test
     fun `a step that is working keeps what its controls are holding`() {
         // Hiding them disposes the composition, and the amount typed in goes with it.
         val charging =

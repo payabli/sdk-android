@@ -52,6 +52,9 @@ data class TapToPayUiState(
     val chargeFailure: String? = null,
     /** An activation succeeded. [session] reads Ready whether one was needed or not. */
     val activated: Boolean = false,
+    val charged: Boolean = false,
+    /** A payment was approved and the confirmation has not been dismissed. */
+    val isApprovalOpen: Boolean = false,
     val isActivationOpen: Boolean = false,
     /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
     val isProbingToken: Boolean = false,
@@ -99,13 +102,19 @@ class TapToPayViewModel(
             }
         }
         viewModelScope.launch {
-            terminal.sessionState.collect { state -> _uiState.update { it.copy(session = state) } }
+            terminal.sessionState.collect { state ->
+                _uiState.update { it.copy(session = state) }
+            }
         }
         viewModelScope.launch {
-            terminal.failureReason.collect { reason -> _uiState.update { it.copy(failureReason = reason) } }
+            terminal.failureReason.collect { reason ->
+                _uiState.update { it.copy(failureReason = reason) }
+            }
         }
         viewModelScope.launch {
-            terminal.isReady.collect { ready -> _uiState.update { it.copy(isReady = ready) } }
+            terminal.isReady.collect { ready ->
+                _uiState.update { it.copy(isReady = ready) }
+            }
         }
     }
 
@@ -116,6 +125,9 @@ class TapToPayViewModel(
     fun openActivation() = _uiState.update { it.copy(isActivationOpen = true) }
 
     fun dismissActivation() = _uiState.update { it.copy(isActivationOpen = false) }
+
+    /** Closes the approval, leaving the step finished and ready to take another payment. */
+    fun dismissApproval() = _uiState.update { it.copy(isApprovalOpen = false) }
 
     fun clearEvents() = _uiState.update { it.copy(events = it.events.cleared()) }
 
@@ -197,7 +209,6 @@ class TapToPayViewModel(
         _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
             val result = block()
-            // A device the preflight passed is capable, so an ineligible verdict on it is the vendor's.
             // Read from the terminal, whose republished flow a collector may not have updated yet.
             val outcome =
                 TerminalActionOutcome.from(
@@ -220,6 +231,10 @@ class TapToPayViewModel(
                         it.activated || (action == TerminalAction.Activate && result.isSuccess),
                     chargeFailure =
                         if (action == TerminalAction.Charge) reason else it.chargeFailure,
+                    charged =
+                        if (action == TerminalAction.Charge) result.isSuccess else it.charged,
+                    isApprovalOpen =
+                        if (action == TerminalAction.Charge) result.isSuccess else it.isApprovalOpen,
                 )
             }
         }
