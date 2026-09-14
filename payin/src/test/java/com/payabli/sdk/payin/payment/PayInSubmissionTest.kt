@@ -352,18 +352,33 @@ class PayInSubmissionTest {
         }
 
     @Test
-    fun `a refused repeat keeps the key rather than settling the payment`() =
+    fun `a repeat this SDK sent and the service refused keeps the key`() =
         runTest(timeout = timeout) {
-            val transport = FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409)
-            val submission = submissionOver(transport)
+            val (transport, submission) = unknownThenConflict()
             val request = PayInAuthorizedRequest("101-abc", testDetails())
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
-            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
-
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+            assertEquals("$MINTED_KEY-1", sentKey(transport))
+        }
+
+    /** A conflict on a key the caller named is an answer like any other, so the payment settles. */
+    @Test
+    fun `a conflict on a caller's own key settles the payment`() =
+        runTest(timeout = timeout) {
+            val (transport, submission) = unknownThenConflict()
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(
+                TEST_ENTRY_POINT,
+                PayInAuthorizedRequest("101-abc", testDetails(), idempotencyKey = "caller-key"),
+            )
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
     /** A caller naming the attempt outranks the one held for it: the flow only ever fills a gap. */
@@ -884,6 +899,23 @@ class PayInSubmissionTest {
             logger = logger,
         )
     }
+
+    /** An attempt that ends unknown, then a refused repeat for every call after it. */
+    private fun TestScope.unknownThenConflict(): Pair<ScriptedPayInTransport, PayInSubmission> {
+        val transport =
+            ScriptedPayInTransport(
+                listOf(
+                    ScriptedPayInTransport.failingWith(dropped()),
+                    ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
+                ),
+            )
+        return transport to submissionOver(transport)
+    }
+
+    private fun sentKey(transport: ScriptedPayInTransport): String? =
+        transport.request
+            ?.headers
+            ?.get("idempotencyKey")
 
     private val minted = AtomicInteger(0)
 

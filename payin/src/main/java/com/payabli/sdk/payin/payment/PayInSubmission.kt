@@ -265,9 +265,11 @@ internal class PayInSubmission(
             // before the request is built reaches here too, and whatever was held is still the right key.
             key == null -> Unit
             code?.leavesOutcomeUnknown == true -> unresolved[payment] = HeldKey(key, retry.reservedAt)
-            // A refused repeat is not an answer about the payment, so this key is still the one to send.
-            // Held at its first reservation, so the window still ends rather than starting again.
-            code == PayabliErrorCode.CONFLICT -> unresolved[payment] = HeldKey(key, retry.reservedAt)
+            // A repeat this SDK sent answers the repeat rather than the payment, so the key is still the
+            // one to send, at its first reservation so the window still ends. A conflict on a caller's own
+            // key is an answer like any other.
+            code == PayabliErrorCode.CONFLICT && retry.reused ->
+                unresolved[payment] = HeldKey(key, retry.reservedAt)
             else -> unresolved.remove(payment)
         }
     }
@@ -412,6 +414,10 @@ internal class PayInSubmission(
         var reservedAt: Long = startedAt
             private set
 
+        /** Whether the key sent is the one held for this payment rather than the caller's or a new one. */
+        var reused: Boolean = false
+            private set
+
         /**
          * The key this attempt sends, in the order the caller's intent decides it.
          *
@@ -424,7 +430,11 @@ internal class PayInSubmission(
             val chosen =
                 when {
                     supplied != null -> supplied
-                    held != null -> held.key.also { reservedAt = held.reservedAt }
+                    held != null -> {
+                        reservedAt = held.reservedAt
+                        reused = true
+                        held.key
+                    }
                     else -> newIdempotencyKey()
                 }
             key = chosen
