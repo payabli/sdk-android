@@ -258,16 +258,33 @@ internal class PayInSubmission(
         outcome: PayInSubmissionState,
         retry: RetryKey,
     ) {
-        val code = (outcome as? PayInSubmissionState.Failed)?.cause?.code
+        val failure = (outcome as? PayInSubmissionState.Failed)?.cause
         val key = retry.key
         when {
             key == null -> Unit
-            code?.leavesOutcomeUnknown == true -> unresolved[payment] = HeldKey(key, retry.reservedAt)
-            code == PayabliErrorCode.CONFLICT && retry.reused ->
-                unresolved[payment] = HeldKey(key, retry.reservedAt)
-            else -> unresolved.remove(payment)
+            failure == null || failure.answersThePayment(retry.reused) -> unresolved.remove(payment)
+            failure.code.leavesOutcomeUnknown -> unresolved[payment] = HeldKey(key, retry.reservedAt)
+            else -> Unit
         }
     }
+
+    /**
+     * Whether this failure is an answer about the payment rather than about the attempt that carried it.
+     *
+     * A decline and a refusal the service made about the request are answers. A rejected credential, a
+     * refusal to act at all and anything that never left the device are not: the earlier attempt is exactly
+     * as unresolved afterwards, so its key is still the one to send.
+     *
+     * A conflict answers only a key the caller named. On one this SDK resent, what was refused is the
+     * repeat.
+     */
+    private fun PayabliException.answersThePayment(reused: Boolean): Boolean =
+        when (code) {
+            PayabliErrorCode.PAYMENT_DECLINED -> true
+            PayabliErrorCode.VALIDATION_ERROR -> this is PayabliValidationException
+            PayabliErrorCode.CONFLICT -> !reused
+            else -> false
+        }
 
     /**
      * The key held for [payment], or null once it is too old to send.

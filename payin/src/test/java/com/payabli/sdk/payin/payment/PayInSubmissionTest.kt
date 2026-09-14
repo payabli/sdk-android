@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -362,6 +363,60 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-1", sentKey(transport))
+        }
+
+    /** A rate limit refuses the retry, so the earlier attempt is exactly as unresolved as it was. */
+    @Test
+    fun `a refusal to act at all keeps the key`() =
+        runTest(timeout = timeout) {
+            val (transport, submission) =
+                scriptedFrom(
+                    ScriptedPayInTransport.failingWith(dropped()),
+                    ScriptedPayInTransport.answering(429),
+                )
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", sentKey(transport))
+        }
+
+    /** A rejected credential never reached the operation, so it settles nothing about it. */
+    @Test
+    fun `a rejected credential keeps the key`() =
+        runTest(timeout = timeout) {
+            val (transport, submission) =
+                scriptedFrom(
+                    ScriptedPayInTransport.failingWith(dropped()),
+                    ScriptedPayInTransport.answering(401),
+                )
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", sentKey(transport))
+        }
+
+    /** A refusal the service made about the request is an answer, so what goes next is a new attempt. */
+    @Test
+    fun `a validation failure the service made settles the payment`() =
+        runTest(timeout = timeout) {
+            val (transport, submission) =
+                scriptedFrom(
+                    ScriptedPayInTransport.failingWith(dropped()),
+                    ScriptedPayInTransport.answering(400, refusedCardNumber),
+                )
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
     /** A conflict on a key the caller named is an answer like any other, so the payment settles. */
@@ -900,17 +955,20 @@ class PayInSubmissionTest {
         )
     }
 
-    /** An attempt that ends unknown, then a refused repeat for every call after it. */
-    private fun TestScope.unknownThenConflict(): Pair<ScriptedPayInTransport, PayInSubmission> {
-        val transport =
-            ScriptedPayInTransport(
-                listOf(
-                    ScriptedPayInTransport.failingWith(dropped()),
-                    ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
-                ),
-            )
+    private fun TestScope.scriptedFrom(
+        first: Result<PayabliResponse>,
+        rest: Result<PayabliResponse>,
+    ): Pair<ScriptedPayInTransport, PayInSubmission> {
+        val transport = ScriptedPayInTransport(listOf(first, rest))
         return transport to submissionOver(transport)
     }
+
+    /** An attempt that ends unknown, then a refused repeat for every call after it. */
+    private fun TestScope.unknownThenConflict(): Pair<ScriptedPayInTransport, PayInSubmission> =
+        scriptedFrom(
+            ScriptedPayInTransport.failingWith(dropped()),
+            ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
+        )
 
     private fun sentKey(transport: ScriptedPayInTransport): String? =
         transport.request
