@@ -265,6 +265,9 @@ internal class PayInSubmission(
             // before the request is built reaches here too, and whatever was held is still the right key.
             key == null -> Unit
             code?.leavesOutcomeUnknown == true -> unresolved[payment] = HeldKey(key, retry.reservedAt)
+            // A refused repeat is not an answer about the payment, so this key is still the one to send.
+            // Held at its first reservation, so the window still ends rather than starting again.
+            code == PayabliErrorCode.CONFLICT -> unresolved[payment] = HeldKey(key, retry.reservedAt)
             else -> unresolved.remove(payment)
         }
     }

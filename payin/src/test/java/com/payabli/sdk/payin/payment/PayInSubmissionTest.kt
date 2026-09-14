@@ -368,6 +368,26 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
+    /**
+     * A refused repeat is not an answer about the payment, so the key stays.
+     *
+     * Dropping it here would send a third attempt under a fresh key, and a fresh key is a second payment.
+     */
+    @Test
+    fun `a refused repeat keeps the key rather than settling the payment`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409)
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
     /** A caller naming the attempt outranks the one held for it: the flow only ever fills a gap. */
     @Test
     fun `a caller's own key outranks the one held for that payment`() =
