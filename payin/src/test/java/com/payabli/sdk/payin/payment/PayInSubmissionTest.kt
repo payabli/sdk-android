@@ -18,6 +18,7 @@ import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -331,6 +332,37 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             clock.addAndGet(TimeUnit.SECONDS.toNanos(89))
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /**
+     * A call canceled before it reserved anything settles nothing, so the key held stands.
+     *
+     * Undispatched, so the cancellation lands after the guard is taken and before the block runs: nothing
+     * is sent and no key is reserved. Dropping the held key there would send the next attempt under a fresh
+     * one, and the attempt whose outcome is still unknown would be charged a second time.
+     */
+    @Test
+    fun `a cancellation before anything is reserved leaves the held key alone`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+            val sent = transport.count
+
+            val canceled =
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                }
+            canceled.cancel()
+            canceled.join()
+            assertEquals("the canceled call reached the wire", sent, transport.count)
+
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))

@@ -258,12 +258,14 @@ internal class PayInSubmission(
         outcome: PayInSubmissionState,
         retry: RetryKey,
     ) {
-        val unknown = (outcome as? PayInSubmissionState.Failed)?.cause?.code?.leavesOutcomeUnknown == true
+        val code = (outcome as? PayInSubmissionState.Failed)?.cause?.code
         val key = retry.key
-        if (unknown && key != null) {
-            unresolved[payment] = HeldKey(key, retry.reservedAt)
-        } else {
-            unresolved.remove(payment)
+        when {
+            // Nothing was reserved, so nothing went out under this call and it settles nothing. A refusal
+            // before the request is built reaches here too, and whatever was held is still the right key.
+            key == null -> Unit
+            code?.leavesOutcomeUnknown == true -> unresolved[payment] = HeldKey(key, retry.reservedAt)
+            else -> unresolved.remove(payment)
         }
     }
 
