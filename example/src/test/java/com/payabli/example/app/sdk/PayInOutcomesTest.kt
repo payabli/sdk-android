@@ -1,6 +1,8 @@
 package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.payment.PaymentError
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
@@ -290,6 +292,23 @@ class PayInOutcomesTest {
         assertEquals("Invalid transaction status", error.reason)
         // A returned failure carries no key: the caller's own is the only one, and it already holds it.
         assertFalse(refused.keepsItsIdempotencyKey)
+    }
+
+    @Test
+    fun `an open outcome keeps the key, and so does one refused for a submission already in flight`() {
+        val open =
+            Result
+                .failure<PayInResult>(
+                    PayInException.Unsettled(
+                        PayabliErrorCode.NETWORK_ERROR,
+                        PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the link dropped"),
+                    ),
+                ).toOutcome() as PayInOutcome.Refused
+        val inFlight =
+            Result.failure<PayInResult>(PayInException.AlreadySubmitting()).toOutcome() as PayInOutcome.Refused
+
+        assertTrue(open.keepsItsIdempotencyKey)
+        assertTrue(inFlight.keepsItsIdempotencyKey)
     }
 
     /** Anything that is not a `PayabliException` cannot come from the SDK's own paths. */
