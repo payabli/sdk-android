@@ -165,6 +165,27 @@ class PayInPaymentFlowTest {
             assertTrue("$cause", cause is PayInException.Unsettled)
         }
 
+    /** What the SDK keeps and what it reports agree, so a host is not told to start a new payment. */
+    @Test
+    fun `a refused repeat of this SDK's own key answers that the outcome is still open`() =
+        runTest(timeout = timeout) {
+            val transport =
+                ScriptedPayInTransport(
+                    listOf(
+                        ScriptedPayInTransport.failingWith(dropped()),
+                        ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
+                    ),
+                )
+            val flow = flowOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            flow.captureAuthorizedTransaction(request)
+            val cause = flow.captureAuthorizedTransaction(request).exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
+        }
+
     /** A settled refusal is itself, so a caller branching on the type is not told to wait and see. */
     @Test
     fun `a decline is not reported as an open outcome`() =
