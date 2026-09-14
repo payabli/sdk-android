@@ -50,7 +50,7 @@ internal class PayInSubmission(
     private val storage: TokenStorageClient,
     private val dispatcher: CoroutineDispatcher,
     private val newIdempotencyKey: () -> String,
-    private val nanoTime: () -> Long,
+    private val elapsedRealtimeNanos: () -> Long,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
     private val session: TelemetrySessionContext? = null,
 ) {
@@ -221,7 +221,7 @@ internal class PayInSubmission(
             return null
         }
         onReserved(true)
-        val startedAt = nanoTime()
+        val startedAt = elapsedRealtimeNanos()
         val retry = RetryKey(payment?.let { stillWorthSending(it, startedAt) }, startedAt)
         if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
@@ -349,7 +349,7 @@ internal class PayInSubmission(
             startedAt?.let {
                 put(
                     TelemetryProperty.DURATION_MS.key,
-                    TimeUnit.NANOSECONDS.toMillis(nanoTime() - it).toString(),
+                    TimeUnit.NANOSECONDS.toMillis(elapsedRealtimeNanos() - it).toString(),
                 )
             }
         }

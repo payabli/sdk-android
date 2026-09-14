@@ -530,7 +530,7 @@ class PayInSubmissionTest {
                     storage = TokenStorageClient(transport, logger),
                     dispatcher = StandardTestDispatcher(testScheduler),
                     newIdempotencyKey = { MINTED_KEY },
-                    nanoTime = clock::get,
+                    elapsedRealtimeNanos = clock::get,
                     logger = logger,
                 )
 
@@ -895,7 +895,7 @@ class PayInSubmissionTest {
             // Counted, so a test can tell one minted key from the next without matching a UUID.
             newIdempotencyKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
             // Advanced by a test that needs a held key to age; still otherwise, so nothing expires by surprise.
-            nanoTime = clock::get,
+            elapsedRealtimeNanos = clock::get,
             logger = logger,
         )
     }

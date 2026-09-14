@@ -334,6 +334,7 @@ class PayInPaymentFlowTest {
             entryPoint = TEST_ENTRY_POINT,
             scope = this,
             dispatcher = StandardTestDispatcher(testScheduler),
+            elapsedRealtimeNanos = { 0 },
             logger = RecordingSdkLogger(),
         )
 

@@ -331,7 +331,7 @@ class PayInSubmissionTelemetryTest {
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
             newIdempotencyKey = { "a-minted-key" },
-            nanoTime = { ticks.addAndGet(1_000_000) },
+            elapsedRealtimeNanos = { ticks.addAndGet(1_000_000) },
             logger = logger,
             session = session,
         )

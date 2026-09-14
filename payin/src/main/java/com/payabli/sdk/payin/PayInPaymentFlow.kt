@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin
 
+import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.PayabliTransport
@@ -67,13 +68,23 @@ internal class PayInPaymentFlow private constructor(
         session: PayabliSession,
         entryPoint: String,
         scope: CoroutineScope,
-    ) : this(session.transport, entryPoint, scope, IO_DISPATCHER, telemetry = session.telemetry)
+    ) : this(
+        session.transport,
+        entryPoint,
+        scope,
+        IO_DISPATCHER,
+        // Counts device sleep, which the held key's window spans: a payer who backgrounds the app after an
+        // unknown outcome comes back to a key `System.nanoTime` still reads as young.
+        SystemClock::elapsedRealtimeNanos,
+        telemetry = session.telemetry,
+    )
 
     private constructor(
         transport: PayabliTransport,
         entryPoint: String,
         scope: CoroutineScope,
         dispatcher: CoroutineDispatcher,
+        elapsedRealtimeNanos: () -> Long,
         logger: SdkLogger? = null,
         telemetry: TelemetrySessionContext? = null,
     ) : this(
@@ -85,9 +96,7 @@ internal class PayInPaymentFlow private constructor(
             dispatcher = dispatcher,
             // Random per attempt, so two payments from one screen are never one request to the service.
             newIdempotencyKey = { UUID.randomUUID().toString() },
-            // Monotonic. A wall clock corrected mid-window would either drop a key that is still good
-            // or send one that is not, and the second charges a payer twice.
-            nanoTime = System::nanoTime,
+            elapsedRealtimeNanos = elapsedRealtimeNanos,
             session = telemetry,
         ),
         PayInFormReports(telemetry?.forEntryPoint(entryPoint)),
@@ -235,15 +244,23 @@ internal class PayInPaymentFlow private constructor(
             scope: CoroutineScope,
         ): PayInPaymentFlow = PayInPaymentFlow(session, entryPoint, scope)
 
-        /** The seam a test builds over, which takes a transport rather than a session. */
+        /**
+         * The seam a test builds over, which takes a transport rather than a session.
+         *
+         * [elapsedRealtimeNanos] defaults to the production clock, which is what an instrumented test wants.
+         * A JVM test has to pass one: `SystemClock` does not exist there, so the default throws rather than
+         * measuring anything.
+         */
         @JvmSynthetic
         internal fun over(
             transport: PayabliTransport,
             entryPoint: String,
             scope: CoroutineScope,
             dispatcher: CoroutineDispatcher,
+            elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
             logger: SdkLogger? = null,
             telemetry: TelemetrySessionContext? = null,
-        ): PayInPaymentFlow = PayInPaymentFlow(transport, entryPoint, scope, dispatcher, logger, telemetry)
+        ): PayInPaymentFlow =
+            PayInPaymentFlow(transport, entryPoint, scope, dispatcher, elapsedRealtimeNanos, logger, telemetry)
     }
 }
