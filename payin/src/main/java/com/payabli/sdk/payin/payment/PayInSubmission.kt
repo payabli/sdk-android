@@ -261,13 +261,8 @@ internal class PayInSubmission(
         val code = (outcome as? PayInSubmissionState.Failed)?.cause?.code
         val key = retry.key
         when {
-            // Nothing was reserved, so nothing went out under this call and it settles nothing. A refusal
-            // before the request is built reaches here too, and whatever was held is still the right key.
             key == null -> Unit
             code?.leavesOutcomeUnknown == true -> unresolved[payment] = HeldKey(key, retry.reservedAt)
-            // A repeat this SDK sent answers the repeat rather than the payment, so the key is still the
-            // one to send, at its first reservation so the window still ends. A conflict on a caller's own
-            // key is an answer like any other.
             code == PayabliErrorCode.CONFLICT && retry.reused ->
                 unresolved[payment] = HeldKey(key, retry.reservedAt)
             else -> unresolved.remove(payment)
