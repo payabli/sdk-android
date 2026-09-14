@@ -164,9 +164,12 @@ public sealed class PayInException(
      * The submission was canceled with the request in flight, so its outcome is unknown.
      *
      * The payment may already have been taken, and a cancellation is one of several failures that leave the
-     * outcome unknown rather than the only one. What makes a retry safe depends on which call was canceled: a
-     * call answering with a `Result` raises [Unsettled] and holds the key itself, and a form's own submission
-     * publishes `PayInSubmissionState.Failed.retryKey` for the host to send again.
+     * outcome unknown rather than the only one.
+     *
+     * A canceled call does not deliver this: cancellation is rethrown, so a `Result` call never returns and
+     * a form's own submission publishes the state without a reader. What the cancellation left behind is a
+     * held key, sent again by the next call naming the same transaction, and
+     * `PayInSubmissionState.Failed.retryKey` for the form's own path.
      */
     public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"
