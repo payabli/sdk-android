@@ -297,6 +297,30 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
+    /**
+     * The window runs from the first reservation, not from the last resend.
+     *
+     * Restamping it on reuse would let a resend every eighty-nine seconds keep one key alive forever, and
+     * the service stops recognizing it long before that.
+     */
+    @Test
+    fun `resending does not start the window again`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(50))
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(50))
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
     @Test
     fun `a held key is still sent while it is young enough`() =
         runTest(timeout = timeout) {

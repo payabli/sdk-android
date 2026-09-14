@@ -280,9 +280,9 @@ internal class PayInSubmission(
     private fun stillWorthSending(
         payment: String,
         now: Long,
-    ): String? {
+    ): HeldKey? {
         val held = unresolved[payment] ?: return null
-        if (now - held.reservedAt < HELD_KEY_WINDOW_NANOS) return held.key
+        if (now - held.reservedAt < HELD_KEY_WINDOW_NANOS) return held
         unresolved.remove(payment)
         return null
     }
@@ -390,10 +390,21 @@ internal class PayInSubmission(
      * request carries the key, so it is known only once that has been built.
      */
     private inner class RetryKey(
-        private val held: String?,
-        val reservedAt: Long,
+        private val held: HeldKey?,
+        private val startedAt: Long,
     ) {
         var key: String? = null
+            private set
+
+        /**
+         * When the key this attempt sends was first reserved, which is [startedAt] for any key but a reused
+         * one.
+         *
+         * A reused key keeps the reservation it already had. Restamping it here would start the window
+         * again on every resend, so a key could be sent indefinitely and would eventually be one the service
+         * no longer holds, which is the second charge the window exists to prevent.
+         */
+        var reservedAt: Long = startedAt
             private set
 
         /**
@@ -404,7 +415,16 @@ internal class PayInSubmission(
          * second one. Otherwise a new key: a canceled or timed-out attempt may already have moved funds, and
          * an attempt with no key cannot be retried without risking a second charge.
          */
-        fun reserve(supplied: String?): String = (supplied ?: held ?: newIdempotencyKey()).also { key = it }
+        fun reserve(supplied: String?): String {
+            val chosen =
+                when {
+                    supplied != null -> supplied
+                    held != null -> held.key.also { reservedAt = held.reservedAt }
+                    else -> newIdempotencyKey()
+                }
+            key = chosen
+            return chosen
+        }
     }
 
     private companion object {
