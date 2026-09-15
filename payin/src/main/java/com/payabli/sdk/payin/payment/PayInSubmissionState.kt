@@ -70,7 +70,8 @@ public sealed class PayInSubmissionState {
          * Reversing a transaction and capturing an earlier authorization publish nothing here, so neither
          * reaches this field; each answers with its own result, and each keeps its own key for three
          * minutes, and longer once a repeat has been refused under it, sending it again when the same
-         * transaction is named inside that window.
+         * transaction is named inside that window. Neither keeps one for a payment past the point where too
+         * many are unresolved at once, and each says so by answering with no key.
          *
          * Null when the outcome is known, as a decline, a local refusal or a rejected credential is, where a
          * retry is a new attempt.

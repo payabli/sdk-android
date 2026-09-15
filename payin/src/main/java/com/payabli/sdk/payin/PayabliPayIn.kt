@@ -66,6 +66,11 @@ public sealed class PayabliPayIn {
      * bound the next call is a new capture under a new key,
      * and a host that needs to cross one sets [PayInAuthorizedRequest.idempotencyKey] itself and persists
      * it before calling.
+     *
+     * **[PayInException.Unsettled] is what says a key is held.** A failure that leaves the outcome unknown
+     * and arrives as the type it would otherwise wrap has none to resend, so the next call is a new
+     * capture. That is also what too many payments unresolved at once produces, since no key is kept for
+     * one past that point.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
