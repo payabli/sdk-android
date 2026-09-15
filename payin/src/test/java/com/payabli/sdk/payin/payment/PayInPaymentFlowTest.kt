@@ -6,6 +6,7 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.FakePayInTransport
+import com.payabli.sdk.payin.client.PayInRoutes
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.client.testDetails
@@ -119,6 +120,36 @@ class PayInPaymentFlowTest {
         }
 
     /**
+     * The key the member's own documentation promises, on both money-moving members.
+     *
+     * Asserted on the header rather than on the request, because that is where a caller's key and a minted
+     * one become the same thing. Without this the tests above pass with the reservation removed and the
+     * payment sent under no key at all.
+     */
+    @Test
+    fun `a direct call mints an idempotency key when the caller supplied none`() =
+        runTest(timeout = timeout) {
+            val captured = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val authorized = FakePayInTransport.answering(APPROVED_TRANSACTION)
+
+            flowOver(captured).capture(cardRequest())
+            flowOver(authorized).authorize(cardRequest())
+
+            assertNotNull("a capture went out under no key", captured.sentKey())
+            assertNotNull("an authorization went out under no key", authorized.sentKey())
+        }
+
+    @Test
+    fun `a direct call sends the caller's own key unchanged`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+
+            flowOver(transport).capture(cardRequest(idempotencyKey = "key-9"))
+
+            assertEquals("key-9", transport.sentKey())
+        }
+
+    /**
      * The buffers came from the caller, so the call does not close them.
      *
      * The form's own path builds the instrument per submission and closes it with the submission. A host
@@ -144,6 +175,28 @@ class PayInPaymentFlowTest {
             assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
 
             // Still the caller's to close, and closing them still works.
+            cardData.cardNumber.close()
+            cardData.securityCode.close()
+            assertEquals(0, cardData.cardNumber.length)
+            assertEquals(0, cardData.securityCode.length)
+        }
+
+    /** The same ownership on the other money-moving member, which delegates separately and can regress alone. */
+    @Test
+    fun `a direct authorization leaves the caller's buffers intact`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+            val cardData = testCardData()
+
+            flow.authorize(cardRequest(cardData = cardData))
+
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
+
+            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
+            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+
             cardData.cardNumber.close()
             cardData.securityCode.close()
             assertEquals(0, cardData.cardNumber.length)
@@ -498,6 +551,8 @@ class PayInPaymentFlowTest {
 
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
+
+    private fun FakePayInTransport.sentKey(): String? = request?.headers?.get(PayInRoutes.HEADER_IDEMPOTENCY_KEY)
 
     private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
         PayInPaymentFlow.over(
