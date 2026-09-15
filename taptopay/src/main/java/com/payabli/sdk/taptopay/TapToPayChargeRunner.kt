@@ -173,9 +173,8 @@ internal class TapToPayChargeRunner(
                 val idempotencyKey = reservation.key
                 reserved = idempotencyKey
                 resentKey = reservation.reused
-                // A resent key names an attempt that may already have asked for the card, so this charge
-                // cannot claim no money moved until the service accepts the opening. It does that only for
-                // a key it has not seen, which is what says the earlier attempt never opened anything.
+                // A resent key names an attempt that may already have asked for the card. Only the service
+                // accepting the opening says otherwise, accepting only a key it has not seen.
                 if (resentKey) capture = TapToPayCapture.UNKNOWN
                 val paymentTransId =
                     client.initiate(
@@ -448,11 +447,9 @@ internal class TapToPayChargeRunner(
      * unequipped are answers about the opening, so what comes next is a new attempt and a held key would
      * refuse it. Anything else is kept.
      *
-     * A key this SDK resent narrows that, which is what [resentKey] is for. On a resend the earlier opening
-     * reached the service and may have opened a transaction, so only the service answering about the
-     * transaction settles it. Everything else refused the send: a conflict, a rejected credential, a rate
-     * limit and anything before the idempotency check all leave the earlier opening exactly as open, and
-     * its key is the only thing that would recognise the next one as the same charge.
+     * On a resend the earlier opening reached the service and may have opened a transaction, so only the
+     * service answering about the transaction settles it. Everything else refused the send and leaves that
+     * opening exactly as open.
      *
      * Kept rather than released is the safe direction, so this answers true only for what it recognises.
      */

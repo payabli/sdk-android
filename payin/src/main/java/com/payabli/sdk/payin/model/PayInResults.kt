@@ -171,14 +171,12 @@ public sealed class PayInException(
     /**
      * The submission was canceled with the request in flight, so its outcome is unknown.
      *
-     * The payment may already have been taken, and a cancellation is one of several failures that leave the
-     * outcome unknown rather than the only one.
+     * The payment may already have been taken.
      *
      * A canceled call does not deliver this: cancellation is rethrown, so a `Result` call never returns and
-     * a form's own submission publishes the state without a reader. A cancellation arriving after the key
-     * was reserved leaves a held key, sent again by the next call naming the same transaction, and
-     * `PayInSubmissionState.Failed.retryKey` for the form's own path. One arriving before that leaves
-     * neither, nothing being encoded or sent until the key is chosen.
+     * a form's own submission publishes the state without a reader. A cancellation after the key was
+     * reserved leaves a held key, resent by the next call naming the same transaction, and
+     * `PayInSubmissionState.Failed.retryKey` for the form's path. One before that leaves neither.
      */
     public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"
@@ -187,14 +185,13 @@ public sealed class PayInException(
     /**
      * The request may have been carried out, and the outcome is not known.
      *
-     * **Calling again is the retry, and promptly.** The idempotency key that makes the repeat recognizable
-     * is the SDK's, held for this payment and sent again on the next call naming the same transaction, so a
-     * caller acts on this by repeating the call rather than by carrying anything. The key is held in
-     * memory for three minutes from when it was reserved, and longer once a repeat has been refused under
-     * it, so a call past that, or from a new instance, or after the process restarts, is a new payment under
-     * a new key. A key the caller set is the caller's own, so a host that supplies one retries across any of
-     * those by supplying it again. What came back the first time is not
-     * repeated, so a caller that needs the outcome itself reads the transaction back.
+     * **Calling again is the retry, and promptly.** The key is the SDK's, held for this payment and sent
+     * again on the next call naming the same transaction, so a caller repeats the call rather than carrying
+     * anything. It is held in memory for three minutes from when it was reserved, and longer once a repeat
+     * has been refused under it, so a call past that, from a new instance, or after a restart is a new
+     * payment under a new key. A key the caller set is the caller's own to supply again across any of
+     * those. What came back the first time is not repeated, so a caller that needs the outcome reads the
+     * transaction back.
      *
      * [code] is the underlying classification, so a caller branching on [PayabliException.code] reads what
      * went wrong as well as that it is unresolved. [cause] names the failing type and withholds its message.

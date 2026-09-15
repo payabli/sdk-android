@@ -68,38 +68,30 @@ internal class PayInSubmission(
     /**
      * The key of an attempt whose outcome nobody knows, against the payment it was for.
      *
-     * A resend of that payment carries the same key, so the service recognizes the repeat instead of taking
-     * the money a second time. Only a call that names the transaction it acts on has an entry here: capturing
-     * the same authorization twice is one payment by definition, where two form submissions of equal value
-     * are two payments and telling them apart is not this holder's to guess.
+     * A resend carries the same key, so the service recognizes the repeat instead of taking the money a
+     * second time. Only a call naming the transaction it acts on has an entry: two form submissions of
+     * equal value are two payments.
      *
-     * Read and written under [inFlight], which is held for the whole of [perform].
+     * Read and written under [inFlight].
      */
     private val unresolved = mutableMapOf<String, HeldKey>()
 
     /**
      * Whether the holder has already said it is full, so it says so once rather than once per payment.
-     *
-     * An outage puts every payment on the unheld path at once, and a line each drowns the one thing an
-     * operator reads it for. Cleared by the next key that is kept, which can only happen with room again.
+     * Cleared by the next key that is kept, which needs room again.
      */
     private var reportedFull: Boolean = false
 
     /**
-     * A key held for a payment, and when it was reserved.
-     *
-     * Not a `data class`: the synthesized `toString` would put the key into any assertion failure or crash
-     * report that renders one.
+     * A key held for a payment, and when it was reserved. Not a `data class`: the synthesized `toString`
+     * would put the key into any assertion failure or crash report that renders one.
      */
     private class HeldKey(
         val key: String,
         val reservedAt: Long,
         /**
-         * Whether the service has been seen to hold this key already.
-         *
-         * A repeat it refused is proof the attempt arrived, which is the one case where letting the key age
-         * out is worse than keeping it: past the window a resend and a fresh key are executed alike, and
-         * before it a resend is refused where a fresh key takes the money.
+         * Whether the service has been seen to hold this key. A repeat it refused is proof the attempt
+         * arrived, so the entry never ages out.
          */
         val arrived: Boolean = false,
     )
@@ -120,8 +112,7 @@ internal class PayInSubmission(
         values: PayInFormValues,
         onReserved: (Boolean) -> Unit = {},
     ): PayInSubmissionState? =
-        // No payment named: two form submissions of equal value are two payments, and nothing here can tell
-        // one from a resend of the other. Each mints its own key.
+        // No payment named: two submissions of equal value are two payments, not a resend of one.
         perform(operation.event, entryPoint, onReserved, payment = null) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
             // once here, so all three operations carry what the same form collected.
@@ -272,12 +263,11 @@ internal class PayInSubmission(
      * Keeps [payment]'s key where the outcome is unknown, forgets it where the service answered, and
      * answers with the outcome to report.
      *
-     * An answer of any kind ends the attempt, so what the caller sends next is a different request and
-     * carrying this key into it would claim a repeat that it is not.
+     * An answer of any kind ends the attempt, so carrying this key into the next request would claim a
+     * repeat that it is not.
      *
-     * A minted key there was no room to keep is reported as none: it is not sent again, so reporting it
-     * would name a retry that mints instead. A key the caller chose is reported whatever the map did,
-     * because the caller's own next request carries it.
+     * A minted key there was no room to keep is reported as none, not being sent again. A key the caller
+     * chose is reported whatever the map did, the caller's own next request carrying it.
      */
     private fun settle(
         payment: String,
@@ -306,12 +296,9 @@ internal class PayInSubmission(
     /**
      * Keeps [held] for [payment], without displacing a record that is protecting something else.
      *
-     * An attempt under a caller's own key does not replace one already held: the caller has its own key and
-     * can send it again, where the held one is the only copy of an attempt nobody has an answer for. Sending
-     * the caller's key on the next keyless call would name the wrong attempt.
-     *
-     * The same key updates its record rather than replacing it, so the earliest reservation stands and a
-     * conflict already seen is not forgotten by a later failure that has not seen one.
+     * A different key is not written: the held one is the only copy of an attempt nobody has an answer
+     * for, and the next keyless call would send the wrong one. The same key merges, so the earliest
+     * reservation stands and a conflict already seen is not forgotten.
      */
     private fun hold(
         payment: String,
@@ -345,9 +332,8 @@ internal class PayInSubmission(
     /**
      * Forgets [payment]'s key when it is still [key].
      *
-     * A caller that named its own key answers under that one while a held key is still in flight, and
-     * removing whatever is there would drop the attempt nobody has an answer for. The sibling store guards
-     * its own removal the same way.
+     * A caller answering under its own key while a held key is in flight would otherwise drop the attempt
+     * nobody has an answer for.
      */
     private fun forget(
         payment: String,
@@ -357,14 +343,12 @@ internal class PayInSubmission(
     }
 
     /**
-     * Whether this failure is an answer about the payment rather than about the attempt that carried it.
+     * Whether this failure answers the payment rather than the attempt that carried it.
      *
      * A decline and a refusal the service made about the request are answers. A rejected credential, a
-     * refusal to act at all and anything that never left the device are not: the earlier attempt is exactly
-     * as unresolved afterwards, so its key is still the one to send.
-     *
-     * A conflict answers only a key the caller named. On one this SDK resent, what was refused is the
-     * repeat.
+     * refusal to act at all and anything that never left the device leave the earlier attempt exactly as
+     * unresolved. A conflict answers only a key the caller named; on one this SDK resent, the repeat is
+     * what was refused.
      */
     private fun PayabliException.answersThePayment(reused: Boolean): Boolean =
         when (code) {
@@ -377,21 +361,18 @@ internal class PayInSubmission(
     /**
      * The key held for [payment], or null once it is too old to send.
      *
-     * Dropped rather than sent, because a key that is no longer recognized is carried out as a new payment:
-     * it would read as protection and take the money a second time. The clock starts when the key is
-     * reserved, which is before the request leaves the device, so what can be relied on is shorter than what
-     * the service honours by however long the attempt took.
+     * A key the service no longer recognizes is executed as a new payment, so sending one reads as
+     * protection and takes the money twice. The clock starts at reservation, which is before the request
+     * leaves the device, so what can be relied on is shorter than what the service honours.
      *
-     * Both directions cost a second payment once the service has forgotten the key, so the window buys a
-     * bound on what is held rather than safety. An entry the service was seen to hold is exempt: there the
-     * ages differ, and dropping it is the only one of the two that can charge twice.
+     * An entry the service was seen to hold is exempt, dropping it being the only one of the two that can
+     * charge twice.
      */
     private fun stillWorthSending(
         payment: String,
         now: Long,
     ): HeldKey? {
-        // Every entry, not just this payment's: a flow that meets many transactions revisits few of them,
-        // so keying the sweep on the lookup would hold every key it ever minted for as long as it lives.
+        // Every entry, not just this payment's: a flow meets many transactions and revisits few.
         unresolved.values.removeAll { !it.arrived && now - it.reservedAt >= HELD_KEY_MAX_AGE_NANOS }
         return unresolved[payment]
     }
@@ -403,9 +384,8 @@ internal class PayInSubmission(
      * [PayabliErrorCode.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
      * body writer or a serializer can quote what it was given.
      *
-     * A resent key is named for anything short of an answer, because this holder is keeping it and will send
-     * it again. Any other attempt is named only where the request may have been carried out, since nothing
-     * is held and a key reported here is one the host would have to carry itself.
+     * A resent key is named for anything short of an answer, this holder keeping it. Any other is named
+     * only where the request may have been carried out, since the host would have to carry it itself.
      */
     private fun Exception.asFailed(retry: RetryKey): PayInSubmissionState.Failed {
         val cause =
@@ -513,8 +493,7 @@ internal class PayInSubmission(
 
         /**
          * When the key this attempt sends was reserved, read as the key is chosen rather than as the call
-         * began: encoding a body and reaching the dispatcher sit between the two, and counting them spends
-         * part of the window before anything has been sent.
+         * began: encoding and dispatch sit between the two and would spend part of the window.
          *
          * A reused key keeps the reservation it already had, so a resend does not start the window again.
          */
@@ -530,12 +509,10 @@ internal class PayInSubmission(
             private set
 
         /**
-         * The key this attempt sends, in the order the caller's intent decides it.
+         * The key this attempt sends.
          *
-         * [supplied] first, because a caller that set a key is naming the attempt itself. Then the key held
-         * for this payment, so a resend after an outcome nobody knows is the same request rather than a
-         * second one. Otherwise a new key: a canceled or timed-out attempt may already have moved funds, and
-         * an attempt with no key cannot be retried without risking a second charge.
+         * [supplied] first, a caller that set a key naming the attempt itself. Then the key held for this
+         * payment, so a resend is the same request. Otherwise a new one.
          */
         fun reserve(supplied: String?): String {
             val chosen =
@@ -554,8 +531,8 @@ internal class PayInSubmission(
 
                     else -> {
                         reservedAt = elapsedRealtimeNanos()
-                        // Held as the header carries it, so the key that answers matches the key that was
-                        // kept. A blank one stays blank, because the header check is what refuses it.
+                        // Held as the header carries it, so the key that answers matches the one kept.
+                        // Blank stays blank: the header check is what refuses it.
                         supplied.trimOrNull() ?: supplied
                     }
                 }
@@ -568,27 +545,22 @@ internal class PayInSubmission(
         const val REASON_UNEXPECTED = "The payment could not be submitted"
 
         /**
-         * How long a key is held, derived to land past the point the service stops recognising it.
+         * How long a key is held, derived to land past the point the service stops recognising it: what
+         * the service holds, plus the transport's whole-call budget doubled for the one credential replay
+         * it may perform. This clock starts at reservation, which is earlier than the service's does.
          *
-         * The service keeps a key two minutes from the moment it reads the request. This clock starts when
-         * the key is reserved, which is earlier, so the same instant reads as older here than there and the
-         * difference has to be added rather than subtracted. That difference is bounded by the transport's
-         * whole-call budget, thirty seconds, doubled for the one credential replay it may perform: two
-         * minutes plus a minute.
-         *
-         * Erring long is free. A key the service has forgotten and a key it has never seen are executed
-         * alike, so holding one too long costs memory and nothing else, which is what [HELD_KEYS_MAX] is
-         * for. Erring short is not: it mints where a repeat would have been refused.
+         * Erring long costs memory and nothing else, a forgotten key and an unseen one being executed
+         * alike, and [HELD_KEYS_MAX] is what bounds that. Erring short mints where a repeat would have
+         * been refused.
          */
         val HELD_KEY_MAX_AGE_NANOS: Long = TimeUnit.MINUTES.toNanos(3)
 
         /**
          * How many payments may hold a key at once.
          *
-         * Reached only by a screen that leaves this many distinct transactions unresolved inside the window
-         * above. Past it a key is minted and not held, so the payment that overflows has what every payment
-         * had before any of this: one key per attempt and no resend. Nothing held is evicted, because each
-         * entry is the only thing that would recognise its own repeat.
+         * Past it a key is minted and not held, which is what every payment had before this holder: one
+         * key per attempt and no resend. Nothing held is evicted, each entry being the only thing that
+         * would recognise its own repeat.
          */
         const val HELD_KEYS_MAX: Int = 16
     }

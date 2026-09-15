@@ -154,13 +154,7 @@ class ChargeKeyStoreTest {
             assertNotEquals(one, store.reserve(ENTRY).key)
         }
 
-    /**
-     * A charge that is over does not go on naming itself, even when its record could not be removed.
-     *
-     * `settle` never fails its caller, so the key stays in storage. Resending it opens nothing, the refusal
-     * reads exactly like the one a live attempt earns, and every later charge for this entry point sends it
-     * again: the entry point stops being able to take a card at all.
-     */
+    /** A charge that is over does not go on naming itself, even when its record could not be removed. */
     @Test
     fun `a settled charge whose key could not be forgotten is not resent`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -197,13 +191,7 @@ class ChargeKeyStoreTest {
             assertEquals("key-2", store.reserve(ENTRY).key)
         }
 
-    /**
-     * Past the window the key is not resent, which is what keeps the bad path out of reach.
-     *
-     * A key the service no longer recognises is not refused: the opening it carries is executed exactly as a
-     * first send would be. So a charge resending one opens a second transaction while believing itself
-     * protected, and reports what that second tap did as though it answered for the first.
-     */
+    /** A key the service no longer recognises is executed as a first send would be, so it is not resent. */
     @Test
     fun `a key the service would no longer recognise is not resent`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -229,12 +217,7 @@ class ChargeKeyStoreTest {
             assertTrue(store.reserve(ENTRY).reused)
         }
 
-    /**
-     * A clock that moved backwards cannot make a record permanent.
-     *
-     * The stamp is read clamped into the window, so one in the future counts as reserved now and expires a
-     * window later rather than never.
-     */
+    /** A stamp in the future counts as reserved now, so a clock that moved cannot make a record permanent. */
     @Test
     fun `a reservation stamped in the future expires a window after it is read`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -248,13 +231,7 @@ class ChargeKeyStoreTest {
             assertEquals("a future stamp never expired", "key-2", store.reserve(ENTRY).key)
         }
 
-    /**
-     * A device upgrading keeps the key a charge in flight is holding.
-     *
-     * The previous record cannot decode into the current shape, and a record that will not decode is what
-     * stops a charge until its transactions are resolved outside the app. Every device holding a key would
-     * meet that at upgrade.
-     */
+    /** A device upgrading keeps the key a charge in flight is holding. */
     @Test
     fun `a record written before reservations were stamped is carried over`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -289,12 +266,7 @@ class ChargeKeyStoreTest {
             assertEquals("key-1", store.reserve(ENTRY).key)
         }
 
-    /**
-     * The cap refuses a charge to protect the records it already holds, so it counts only the live ones.
-     *
-     * An expired record names a key the service no longer knows. Counting it turns the refusal into one
-     * that protects nothing and stops a merchant charging for no reason.
-     */
+    /** The cap refuses a charge to protect what it holds, so it counts only the records still in doubt. */
     @Test
     fun `the cap counts only the charges still in doubt`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -413,10 +385,6 @@ class ChargeKeyStoreTest {
     @Test
     fun `a settle the store refuses does not fail the caller`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The charge already has an outcome the caller is entitled to, so raising here would report a
-            // settled payment as a failed one. It is reported to the log instead. What the next charge
-            // does with the key left behind is the subject of its own test.
-            //
             // Reserved before the store starts refusing, because `settle` returns early when the key does
             // not match and would then never reach the failure this asserts on.
             var refusing = false

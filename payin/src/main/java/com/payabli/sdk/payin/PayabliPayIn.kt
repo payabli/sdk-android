@@ -61,16 +61,13 @@ public sealed class PayabliPayIn {
      * a failure leaves it unknown whether the capture was applied, it arrives as
      * [PayInException.Unsettled], and **calling again with the same [PayInAuthorizedRequest.transId] is the
      * retry**: the key is sent again with it, so the repeat cannot capture a second time. That holds for
-     * three minutes from when the key is reserved, and longer once a repeat has been refused under it. It is
-     * in memory on this object, so a second instance and a restarted process each hold none. Past either
-     * bound the next call is a new capture under a new key,
-     * and a host that needs to cross one sets [PayInAuthorizedRequest.idempotencyKey] itself and persists
-     * it before calling.
+     * three minutes from when the key is reserved, and longer once a repeat has been refused under it. It
+     * is in memory on this object, so a second instance and a restarted process each hold none. Past either
+     * bound the next call is a new capture under a new key, and a host that needs to cross one sets
+     * [PayInAuthorizedRequest.idempotencyKey] itself and persists it before calling.
      *
-     * **[PayInException.Unsettled] is what says a key is held.** A failure that leaves the outcome unknown
-     * and arrives as the type it would otherwise wrap has none to resend, so the next call is a new
-     * capture. That is also what too many payments unresolved at once produces, since no key is kept for
-     * one past that point.
+     * **[PayInException.Unsettled] is what says a key is held**, so a failure that leaves the outcome
+     * unknown and arrives as the type it would otherwise wrap has none to resend.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 

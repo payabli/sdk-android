@@ -274,11 +274,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
-    /**
-     * A key too old to be recognized is worse than no key: it is carried out as a new payment.
-     *
-     * So a resend past the window mints instead, which risks a refusal rather than a second charge.
-     */
+    /** A key too old to be recognized is carried out as a new payment, so a resend past the window mints. */
     @Test
     fun `a held key is not sent once it is too old to be recognized`() =
         runTest(timeout = timeout) {
@@ -366,12 +362,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
-    /**
-     * A refused repeat is proof the attempt arrived, so its key outlives the window.
-     *
-     * Past the window a resend and a fresh key are executed alike, and before it a resend is refused where
-     * a fresh key takes the money. Ageing this one out is the only choice of the two that can charge twice.
-     */
+    /** A refused repeat is proof the attempt arrived, so its key outlives the window. */
     @Test
     fun `a key the service was seen to hold is not aged out`() =
         runTest(timeout = timeout) {
@@ -387,12 +378,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
-    /**
-     * A caller's own key is a second attempt, not a replacement for the one nobody has an answer for.
-     *
-     * Holding it instead would send it on the next keyless call, naming an attempt the service may never
-     * have seen while the one it did see goes unrecognised.
-     */
+    /** A caller's own key is a second attempt, not a replacement for the one nobody has an answer for. */
     @Test
     fun `an unknown outcome under a caller's own key does not displace the held one`() =
         runTest(timeout = timeout) {
@@ -410,12 +396,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
-    /**
-     * A caller's key is kept as the header carries it, so the answer to it matches what was kept.
-     *
-     * Sending it untrimmed and keeping it trimmed, or the other way round, leaves a settled attempt held:
-     * the next keyless call then resends a key the service has already answered and the capture is refused.
-     */
+    /** A caller's key is kept as the header carries it, so the answer to it matches what was kept. */
     @Test
     fun `a caller's key is kept as the header carries it`() =
         runTest(timeout = timeout) {
@@ -441,12 +422,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
-    /**
-     * Past the cap a minted key is not kept, and a failure that reports one would name a retry that mints.
-     *
-     * The caller acts on the report by calling again, so reporting a key nothing will resend turns an
-     * attempt that may have landed into a second payment.
-     */
+    /** Past the cap a minted key is not kept, so reporting one would name a retry that mints instead. */
     @Test
     fun `a minted key there was no room to keep is not reported`() =
         runTest(timeout = timeout) {
@@ -482,12 +458,7 @@ class PayInSubmissionTest {
             assertEquals("caller-key", failed(overflowing!!).retryKey)
         }
 
-    /**
-     * A refusal before anything is sent reports no key, whoever chose the key.
-     *
-     * The classification decides this and the key's origin does not, so a caller that names its own key is
-     * not told an attempt is open when nothing left the device.
-     */
+    /** A refusal before anything is sent reports no key, whoever chose it. */
     @Test
     fun `a refusal before anything is sent reports no key under a caller's own key`() =
         runTest(timeout = timeout) {
@@ -500,12 +471,7 @@ class PayInSubmissionTest {
             assertNull(failed(state!!).retryKey)
         }
 
-    /**
-     * The holder says it is full once, not once for every payment that finds it so.
-     *
-     * An outage puts every payment on the unheld path at once, and a line each buries the condition in the
-     * volume it produces, which is the opposite of what makes it noticeable.
-     */
+    /** The holder says it is full once, not once for every payment that finds it so. */
     @Test
     fun `the holder reports being full once, not once per payment`() =
         runTest(timeout = timeout) {
@@ -542,7 +508,6 @@ class PayInSubmissionTest {
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
-            // The one that resets the flag if the update does not carry it over.
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             clock.addAndGet(TimeUnit.MINUTES.toNanos(10))
@@ -605,13 +570,7 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
-    /**
-     * An answer under one key settles that attempt and no other.
-     *
-     * The caller's key is a different attempt from the one still held, so the conflict answers the caller
-     * and leaves the unresolved attempt its key. Dropping it here would send the next call under a fresh
-     * key and charge the earlier attempt a second time.
-     */
+    /** An answer under one key settles that attempt and no other. */
     @Test
     fun `a conflict on a caller's own key leaves an earlier attempt's key alone`() =
         runTest(timeout = timeout) {
