@@ -357,10 +357,10 @@ class PayInSubmissionTest {
             val submission = submissionOver(transport)
             val request = PayInAuthorizedRequest("101-abc", testDetails())
 
-            submission.captureAuthorized(TEST_ENTRY_POINT, request)
-            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
-            val sent = transport.count
-
+            // Nothing held, so a key taken by the canceled call is a key the next one does not get.
+            // Starting with one held, the canceled call would reuse it and the assertion would hold
+            // whether it reserved or not.
+            //
             // Undispatched, so the cancellation lands after the guard is taken and before the block runs.
             val canceled =
                 launch(start = CoroutineStart.UNDISPATCHED) {
@@ -368,7 +368,8 @@ class PayInSubmissionTest {
                 }
             canceled.cancel()
             canceled.join()
-            assertEquals("the canceled call reached the wire", sent, transport.count)
+            assertEquals("the canceled call reached the wire", 0, transport.count)
+            assertEquals("the canceled call took a key", 0, minted.get())
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
