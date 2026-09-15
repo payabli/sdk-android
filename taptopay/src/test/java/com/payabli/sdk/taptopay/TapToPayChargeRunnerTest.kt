@@ -349,6 +349,31 @@ class TapToPayChargeRunnerTest {
             assertEquals("a suppressed repeat released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
+    /** A first opening refused as a duplicate answers the send, so the attempt is released. */
+    @Test
+    fun `an opening refused on a key this SDK has not resent releases the attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to listOf("{}"),
+                        statusFor = { path -> if (path == INITIATE && ++openings == 1) 409 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(cardRead())
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a refused first opening kept its attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
     @Test
     fun `an opening refused on a resent key reports the payment as unknown`() =
         runTest(timeout = TEST_TIMEOUT) {
