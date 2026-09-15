@@ -142,7 +142,7 @@ class MoneyInClientTest {
                 }
 
             assertEquals("idempotencyKey", failure?.field)
-            // Refused before the request was built, so nothing was sent at all.
+            // Refused before anything was sent, which is what the assertion below reads.
             assertNull(transport.request)
         }
 
@@ -274,7 +274,7 @@ class MoneyInClientTest {
                         .exceptionOrNull()
 
                 assertTrue(method.toString(), failure is PayInException.InvalidInput)
-                // Refused before the request was built, so nothing reached the transport.
+                // Refused before anything was sent, so nothing reached the transport.
                 assertNull(method.toString(), transport.request)
             }
         }
