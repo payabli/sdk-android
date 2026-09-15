@@ -201,8 +201,12 @@ class PayInPaymentFlowTest {
             val request = PayInAuthorizedRequest("101-abc", testDetails())
 
             flow.captureAuthorizedTransaction(request)
+            val first = transport.request?.headers?.get("idempotencyKey")
             val cause = flow.captureAuthorizedTransaction(request).exceptionOrNull()
 
+            // The second send carries the first key, which is what makes this the resent case rather than
+            // a first attempt that happened to be rate limited.
+            assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals(PayabliErrorCode.RATE_LIMITED, (cause as PayInException.Unsettled).code)
         }

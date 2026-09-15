@@ -84,6 +84,14 @@ internal class PayInSubmission(
     private class HeldKey(
         val key: String,
         val reservedAt: Long,
+        /**
+         * Whether the service has been seen to hold this key already.
+         *
+         * A repeat it refused is proof the attempt arrived, which is the one case where letting the key age
+         * out is worse than keeping it: past the window a resend and a fresh key are executed alike, and
+         * before it a resend is refused where a fresh key takes the money.
+         */
+        val arrived: Boolean = false,
     )
 
     private val sink = MutableStateFlow<PayInSubmissionState>(PayInSubmissionState.Idle)
@@ -234,7 +242,7 @@ internal class PayInSubmission(
             outcome = PayInSubmissionState.Failed(PayInException.Interrupted(), retryKey = retry.key)
             throw cancellation
         } catch (failure: Exception) {
-            outcome = failure.asFailed(retry, holdsKey = payment != null)
+            outcome = failure.asFailed(retry)
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
@@ -263,10 +271,27 @@ internal class PayInSubmission(
         val key = retry.key
         when {
             key == null -> Unit
-            failure == null || failure.answersThePayment(retry.reused) -> unresolved.remove(payment)
+            failure == null || failure.answersThePayment(retry.reused) -> forget(payment, key)
             failure.code.leavesOutcomeUnknown -> unresolved[payment] = HeldKey(key, retry.reservedAt)
+            retry.reused && failure.code == PayabliErrorCode.CONFLICT ->
+                unresolved[payment] = HeldKey(key, retry.reservedAt, arrived = true)
+
             else -> Unit
         }
+    }
+
+    /**
+     * Forgets [payment]'s key when it is still [key].
+     *
+     * A caller that named its own key answers under that one while a held key is still in flight, and
+     * removing whatever is there would drop the attempt nobody has an answer for. The sibling store guards
+     * its own removal the same way.
+     */
+    private fun forget(
+        payment: String,
+        key: String,
+    ) {
+        if (unresolved[payment]?.key == key) unresolved.remove(payment)
     }
 
     /**
@@ -293,9 +318,11 @@ internal class PayInSubmission(
      * Dropped rather than sent, because a key that is no longer recognized is carried out as a new payment:
      * it would read as protection and take the money a second time. The clock starts when the key is
      * reserved, which is before the request leaves the device, so what can be relied on is shorter than what
-     * the service honours by however long the attempt took. Short by a margin rather than exact, because the
-     * two directions cost differently: stopping early mints a key where a repeat would have been refused,
-     * which costs a refusal, and stopping late charges a payer twice.
+     * the service honours by however long the attempt took.
+     *
+     * Both directions cost a second payment once the service has forgotten the key, so the window buys a
+     * bound on what is held rather than safety. An entry the service was seen to hold is exempt: there the
+     * ages differ, and dropping it is the only one of the two that can charge twice.
      */
     private fun stillWorthSending(
         payment: String,
@@ -303,7 +330,7 @@ internal class PayInSubmission(
     ): HeldKey? {
         // Every entry, not just this payment's: a flow that meets many transactions revisits few of them,
         // so keying the sweep on the lookup would hold every key it ever minted for as long as it lives.
-        unresolved.values.removeAll { now - it.reservedAt >= HELD_KEY_WINDOW_NANOS }
+        unresolved.values.removeAll { !it.arrived && now - it.reservedAt >= HELD_KEY_WINDOW_NANOS }
         return unresolved[payment]
     }
 
@@ -314,13 +341,11 @@ internal class PayInSubmission(
      * [PayabliErrorCode.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
      * body writer or a serializer can quote what it was given.
      *
-     * [holdsKey] picks the rule: a key this holder keeps outlives anything short of an answer, where a key
-     * the host keeps is named only for a failure that may have been carried out.
+     * A resent key is named for anything short of an answer, because this holder is keeping it and will send
+     * it again. Any other attempt is named only where the request may have been carried out, since nothing
+     * is held and a key reported here is one the host would have to carry itself.
      */
-    private fun Exception.asFailed(
-        retry: RetryKey,
-        holdsKey: Boolean,
-    ): PayInSubmissionState.Failed {
+    private fun Exception.asFailed(retry: RetryKey): PayInSubmissionState.Failed {
         val cause =
             this as? PayabliException
                 ?: PayabliGenericException(
@@ -333,7 +358,7 @@ internal class PayInSubmission(
             fieldErrors = PayInRejectedFields.of(this),
             retryKey =
                 retry.key.takeIf {
-                    if (holdsKey) !cause.answersThePayment(retry.reused) else cause.code.leavesOutcomeUnknown
+                    if (retry.reused) !cause.answersThePayment(true) else cause.code.leavesOutcomeUnknown
                 },
         )
     }

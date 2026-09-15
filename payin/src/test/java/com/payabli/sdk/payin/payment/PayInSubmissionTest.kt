@@ -365,6 +365,27 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
+    /**
+     * A refused repeat is proof the attempt arrived, so its key outlives the window.
+     *
+     * Past the window a resend and a fresh key are executed alike, and before it a resend is refused where
+     * a fresh key takes the money. Ageing this one out is the only choice of the two that can charge twice.
+     */
+    @Test
+    fun `a key the service was seen to hold is not aged out`() =
+        runTest(timeout = timeout) {
+            val (transport, submission) = unknownThenConflict()
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(300))
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", sentKey(transport))
+        }
+
     /** A rate limit refuses the retry, so the earlier attempt is exactly as unresolved as it was. */
     @Test
     fun `a refusal to act at all keeps the key`() =
@@ -419,9 +440,15 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", sentKey(transport))
         }
 
-    /** A conflict on a key the caller named is an answer like any other, so the payment settles. */
+    /**
+     * An answer under one key settles that attempt and no other.
+     *
+     * The caller's key is a different attempt from the one still held, so the conflict answers the caller
+     * and leaves the unresolved attempt its key. Dropping it here would send the next call under a fresh
+     * key and charge the earlier attempt a second time.
+     */
     @Test
-    fun `a conflict on a caller's own key settles the payment`() =
+    fun `a conflict on a caller's own key leaves an earlier attempt's key alone`() =
         runTest(timeout = timeout) {
             val (transport, submission) = unknownThenConflict()
             val request = PayInAuthorizedRequest("101-abc", testDetails())
@@ -431,9 +458,11 @@ class PayInSubmissionTest {
                 TEST_ENTRY_POINT,
                 PayInAuthorizedRequest("101-abc", testDetails(), idempotencyKey = "caller-key"),
             )
+            assertEquals("caller-key", sentKey(transport))
+
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            assertEquals("$MINTED_KEY-2", sentKey(transport))
+            assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
     /** A caller naming the attempt outranks the one held for it: the flow only ever fills a gap. */
