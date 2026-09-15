@@ -825,6 +825,45 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a withdrawn recovery still finishes the close it started`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The window this guards is the recovery's uncancellable step: once the close is in flight the
+            // settle and the drop have to land with it, or a withdrawn caller leaves a payment that closed
+            // still held and an attempt still named. Cancelling from the close's own gate puts the job in
+            // that state deterministically rather than racing a timer against it.
+            var closeFails = true
+            var cancelOnClose = false
+            var recovering: Job? = null
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 6) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner =
+                runnerGatedOnClose(fixture) {
+                    if (cancelOnClose) recovering?.cancel()
+                }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val closesBefore = fixture.routes.count { it.startsWith("/api/v2/MoneyIn/update") }
+
+            closeFails = false
+            cancelOnClose = true
+            // A child job, so the cancellation lands on the recovery rather than on the test itself.
+            recovering = launch { runCatching { runner.closeCaptured(TRANS_ID) } }
+            recovering.join()
+
+            // The close went out despite the withdrawal.
+            assertTrue(
+                fixture.routes.toString(),
+                fixture.routes.count { it.startsWith("/api/v2/MoneyIn/update") } > closesBefore,
+            )
+            // And the payment is no longer held, which is the half a cancellation would otherwise skip:
+            // asking again is refused rather than closing a payment that already closed.
+            cancelOnClose = false
+            val again = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+            assertTrue(again.toString(), again is TapToPayException)
+            assertEquals(TapToPayCapture.UNKNOWN, (again as TapToPayException).capture)
+        }
+
+    @Test
     fun `a recovery that failed leaves the payment held for another attempt`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Three for the charge's own close, three for the recovery that also gives up, one for the
