@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.payment
 
+import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliResponse
@@ -497,6 +498,31 @@ class PayInSubmissionTest {
 
             assertNull("a request was sent for a call that was refused", transport.request)
             assertNull(failed(state!!).retryKey)
+        }
+
+    /**
+     * The holder says it is full once, not once for every payment that finds it so.
+     *
+     * An outage puts every payment on the unheld path at once, and a line each buries the condition in the
+     * volume it produces, which is the opposite of what makes it noticeable.
+     */
+    @Test
+    fun `the holder reports being full once, not once per payment`() =
+        runTest(timeout = timeout) {
+            val logger = RecordingSdkLogger()
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()), logger)
+
+            repeat(PayInSubmission.HELD_KEYS_MAX + 3) {
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            assertEquals(
+                "the holder said it was full more than once",
+                1,
+                logger.records.count {
+                    it.level == LogLevel.WARN && it.message.contains("too many are unresolved")
+                },
+            )
         }
 
     /** A later failure that has not seen a conflict must not forget that an earlier one did. */
@@ -1109,9 +1135,11 @@ class PayInSubmissionTest {
             assertEquals(PayInSubmissionState.Idle, submission.state.value)
         }
 
-    private fun TestScope.submissionOver(transport: PayabliTransport): PayInSubmission {
-        val logger = RecordingSdkLogger()
-        return PayInSubmission(
+    private fun TestScope.submissionOver(
+        transport: PayabliTransport,
+        logger: RecordingSdkLogger = RecordingSdkLogger(),
+    ): PayInSubmission =
+        PayInSubmission(
             moneyIn = MoneyInClient(transport, logger),
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
@@ -1121,7 +1149,6 @@ class PayInSubmissionTest {
             elapsedRealtimeNanos = clock::get,
             logger = logger,
         )
-    }
 
     private fun TestScope.scriptedFrom(
         first: Result<PayabliResponse>,

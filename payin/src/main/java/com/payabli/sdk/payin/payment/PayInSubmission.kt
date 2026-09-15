@@ -78,6 +78,14 @@ internal class PayInSubmission(
     private val unresolved = mutableMapOf<String, HeldKey>()
 
     /**
+     * Whether the holder has already said it is full, so it says so once rather than once per payment.
+     *
+     * An outage puts every payment on the unheld path at once, and a line each drowns the one thing an
+     * operator reads it for. Cleared by the next key that is kept, which can only happen with room again.
+     */
+    private var reportedFull: Boolean = false
+
+    /**
      * A key held for a payment, and when it was reserved.
      *
      * Not a `data class`: the synthesized `toString` would put the key into any assertion failure or crash
@@ -312,11 +320,17 @@ internal class PayInSubmission(
         val existing = unresolved[payment]
         when {
             existing == null && unresolved.size >= HELD_KEYS_MAX ->
-                logger.warn(LogField.safe("event", "payin_retry_keys_full")) {
-                    "a payment's key was not held, because too many are unresolved at once"
+                if (!reportedFull) {
+                    reportedFull = true
+                    logger.warn(LogField.safe("event", "payin_retry_keys_full")) {
+                        "a payment's key was not held, because too many are unresolved at once"
+                    }
                 }
 
-            existing == null -> unresolved[payment] = held
+            existing == null -> {
+                reportedFull = false
+                unresolved[payment] = held
+            }
             existing.key != held.key -> Unit
             else ->
                 unresolved[payment] =
