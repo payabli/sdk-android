@@ -7,6 +7,7 @@ import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.TEST_PAN
+import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
@@ -138,10 +139,15 @@ class PayInPaymentFlowTest {
             assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
 
+            // Both buffers, because a card carries two and wiping either one is the same defect.
             assertEquals(TEST_PAN.length, cardData.cardNumber.length)
-            // Still the caller's to close, and closing it still works.
+            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+
+            // Still the caller's to close, and closing them still works.
             cardData.cardNumber.close()
+            cardData.securityCode.close()
             assertEquals(0, cardData.cardNumber.length)
+            assertEquals(0, cardData.securityCode.length)
         }
 
     /** A decline is an outcome the caller acts on, so it comes back rather than being thrown. */
