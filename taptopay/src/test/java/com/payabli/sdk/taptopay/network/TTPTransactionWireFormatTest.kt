@@ -4,7 +4,7 @@ import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
-import com.payabli.sdk.taptopay.provider.CardReadResult
+import com.payabli.sdk.taptopay.provider.cardRead
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
@@ -135,7 +135,7 @@ class TTPTransactionWireFormatTest {
     fun `the processor's response travels verbatim under the vendor-named key`() {
         val response = """{"gatewayResponse":{"transactionState":"CAPTURED"},"source":{"card":{"last4":"1111"}}}"""
 
-        val body = updateSuccessBody(CardReadResult(cardNetwork = "Visa", providerResponse = response))
+        val body = updateSuccessBody(cardRead(cardNetwork = "Visa", providerResponse = response))
 
         assertEquals(setOf("fiservResponse"), body.keys)
         assertEquals(
@@ -146,7 +146,7 @@ class TTPTransactionWireFormatTest {
 
     @Test
     fun `a reader answering with something that is not a JSON object is refused here`() {
-        val notAnObject = CardReadResult(cardNetwork = null, providerResponse = "\"captured\"")
+        val notAnObject = cardRead(cardNetwork = null, providerResponse = "\"captured\"")
 
         val failure = runCatching { updateSuccessBody(notAnObject) }.exceptionOrNull()
 
@@ -209,7 +209,7 @@ class TTPTransactionWireFormatTest {
     fun `nothing that identifies a payer or a payment survives a toString`() {
         val customer = TapToPayCustomerData(firstName = "Ada", billingEmail = "ada@example.com")
         val details = TapToPayPaymentDetails(BigDecimal("10"), currency = "USD")
-        val read = CardReadResult(cardNetwork = "Visa", providerResponse = """{"source":{"card":{"last4":"1111"}}}""")
+        val read = cardRead(cardNetwork = "Visa", providerResponse = """{"source":{"card":{"last4":"1111"}}}""")
 
         listOf(
             customer.toString(),
@@ -227,7 +227,7 @@ class TTPTransactionWireFormatTest {
 
     @Test
     fun `an empty body is not what an update sends`() {
-        val body: JsonObject = updateSuccessBody(CardReadResult(null, "{}"))
+        val body: JsonObject = updateSuccessBody(cardRead(cardNetwork = null, providerResponse = "{}"))
 
         assertNull(body["error"])
         assertEquals(JsonObject(emptyMap()), body["fiservResponse"])

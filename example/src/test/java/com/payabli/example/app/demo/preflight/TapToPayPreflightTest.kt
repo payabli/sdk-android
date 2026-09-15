@@ -16,6 +16,7 @@ class TapToPayPreflightTest {
             isEmulator = false,
             model = "Pixel 8",
             apiLevel = 34,
+            readerSupported = true,
             hasNfcHardware = true,
             isNfcEnabled = true,
             playServicesInstalled = true,
@@ -94,15 +95,20 @@ class TapToPayPreflightTest {
     // --- API level ---
 
     @Test
-    fun `below the reader floor fails`() {
-        assertEquals(CheckStatus.Fail, statusOf(healthy().copy(apiLevel = 29), "Android version"))
+    fun `a device the SDK does not support fails`() {
+        assertEquals(
+            CheckStatus.Fail,
+            statusOf(healthy().copy(readerSupported = false), "Device cannot take card-present payments"),
+        )
     }
 
     @Test
-    fun `exactly the reader floor passes`() {
+    fun `a device the SDK supports passes`() {
+        // Keyed on what the SDK answers rather than on a number this app holds. A floor written here as
+        // well would pass this test while disagreeing with the SDK, which is what it did.
         assertEquals(
             CheckStatus.Pass,
-            statusOf(healthy().copy(apiLevel = TapToPayPreflight.READER_MIN_API), "Android version"),
+            statusOf(healthy().copy(readerSupported = true), "Card-present support"),
         )
     }
 
@@ -215,7 +221,7 @@ class TapToPayPreflightTest {
     @Test
     fun `one failure among warnings still blocks`() {
         val checks =
-            TapToPayPreflight.checks(healthy().copy(isNfcEnabled = false, apiLevel = 29), appId, expectedCert)
+            TapToPayPreflight.checks(healthy().copy(isNfcEnabled = false, readerSupported = false), appId, expectedCert)
         assertEquals(Readiness.NotAvailable, readinessFrom(checks))
     }
 
@@ -239,6 +245,7 @@ class TapToPayPreflightTest {
                 isEmulator = true,
                 model = "sdk_gphone64_arm64",
                 apiLevel = 23,
+                readerSupported = false,
                 hasNfcHardware = false,
                 isNfcEnabled = false,
                 playServicesInstalled = false,

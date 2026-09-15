@@ -1,0 +1,327 @@
+package com.payabli.sdk.taptopay.adapters
+
+import com.payabli.sdk.taptopay.provider.CardReadOutcome
+import com.payabli.sdk.taptopay.provider.CardReadRequest
+import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.math.BigDecimal
+import kotlin.time.Duration.Companion.seconds
+
+private val TEST_TIMEOUT = 5.seconds
+
+private fun readRequest(
+    amount: BigDecimal = BigDecimal("12.34"),
+    merchantTransactionId: String = "trans-1",
+    merchantOrderId: String = "trans-1",
+    merchantInvoiceNumber: String? = "invoice-1",
+) = CardReadRequest(amount, merchantTransactionId, merchantOrderId, merchantInvoiceNumber)
+
+/** The four phases, their order, and what a failure in each of them means. */
+class FiservAndroidCardReaderTest {
+    private fun readerFor(
+        gateway: FakeCardReaderGateway = FakeCardReaderGateway(),
+        eligibility: ReaderEligibility = eligibility(),
+    ) = FiservAndroidCardReader(gateway, eligibility)
+
+    @Test
+    fun `eligibility is whatever the handset answered`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            readerFor().checkEligibility()
+
+            val refused = DeviceIneligibleException("this device has no contactless radio")
+            val raised =
+                runCatching { readerFor(eligibility = eligibility(refused)).checkEligibility() }.exceptionOrNull()
+
+            assertSame(refused, raised)
+        }
+
+    @Test
+    fun `bringing the reader up before it is configured is a defect in this SDK`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway = FakeCardReaderGateway()
+
+            val failure = runCatching { readerFor(gateway).prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is IllegalStateException)
+            assertEquals(0, gateway.prepareCount)
+        }
+
+    @Test
+    fun `the reader comes up with what the credentials mapped to`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway = FakeCardReaderGateway()
+            val reader = readerFor(gateway)
+
+            reader.configure(readerCredentials(merchantId = "merchant-1", environment = "production"))
+            reader.prepareReader()
+
+            assertEquals(1, gateway.prepareCount)
+            assertEquals("merchant-1", gateway.lastArming?.merchantId)
+            assertEquals(ReaderEnvironment.PROD, gateway.lastArming?.environment)
+        }
+
+    @Test
+    fun `one set of credentials brings the reader up once`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // They hold live vendor secrets and are not kept past the reader that takes them, so a second
+            // arming has nothing to arm with and a session that needs one fetches it again.
+            val gateway = FakeCardReaderGateway()
+            val reader = readerFor(gateway)
+            reader.configure(readerCredentials())
+            reader.prepareReader()
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is IllegalStateException)
+            assertEquals(1, gateway.prepareCount)
+        }
+
+    @Test
+    fun `a denial met during the tap is a denial, not a spent session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The vendor can refuse the handset at the tap as well as at arming, and the two exceptions mean
+            // different things to a caller: a spent session invites the retry a repair makes work, where a
+            // denial is refused again however many times it is asked.
+            val gateway =
+                FakeCardReaderGateway(
+                    readFailure = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"),
+                )
+            val reader = readerFor(gateway)
+            reader.configure(readerCredentials())
+            reader.prepareReader()
+
+            val failure = runCatching { reader.startReading(readRequest()) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
+        }
+
+    @Test
+    fun `an arming that was refused keeps nothing either`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The same guarantee on the path that does not succeed, which is the one that held the vendor's
+            // key and secret for the life of the reader. Asserted through the public surface: a second
+            // arming has nothing to arm with, so the credentials are gone.
+            val gateway =
+                FakeCardReaderGateway(
+                    prepareFailure = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"),
+                )
+            val reader = readerFor(gateway)
+            reader.configure(readerCredentials())
+
+            val denied = runCatching { reader.prepareReader() }.exceptionOrNull()
+            val second = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(denied.toString(), denied is CardReaderException.DeviceDenied)
+            assertTrue(second.toString(), second is IllegalStateException)
+            assertEquals(1, gateway.prepareCount)
+        }
+
+    @Test
+    fun `credentials that were refused leave nothing to arm with`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway = FakeCardReaderGateway()
+            val reader = readerFor(gateway)
+
+            val refusal =
+                runCatching { reader.configure(readerCredentials(terminalId = "")) }.exceptionOrNull()
+            val armed = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(refusal.toString(), refusal is CardReaderException.CredentialsUnusable)
+            assertTrue(armed.toString(), armed is IllegalStateException)
+            assertEquals(0, gateway.prepareCount)
+        }
+
+    @Test
+    fun `a reader that did not come up says so, and keeps what the vendor reported`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val refusal = CardReaderFailure(ReaderFailureKind.UNCLASSIFIED, code = "E-1")
+            val reader = readerFor(FakeCardReaderGateway(prepareFailure = refusal))
+            reader.configure(readerCredentials())
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.ArmingFailed)
+            assertSame(refusal, failure?.cause)
+            // The code is the only part that tells one refusal from another, and a host has nothing else
+            // to report.
+            assertTrue(failure?.message.orEmpty(), failure?.message.orEmpty().contains("E-1"))
+        }
+
+    @Test
+    fun `a denied device is not reported as a refusal to retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // One vendor type covers every arming refusal, so only the kind separates a denied handset
+            // from a service that was briefly away.
+            val denial = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677")
+            val reader = readerFor(FakeCardReaderGateway(prepareFailure = denial))
+            reader.configure(readerCredentials())
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
+            assertSame(denial, failure?.cause)
+            assertTrue(failure?.message.orEmpty(), failure?.message.orEmpty().contains("677"))
+        }
+
+    @Test
+    fun `a refusal we cannot explain is still terminal, and says which it was`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Treated as a denial on measurement rather than on the vendor saying so. It has to stop the
+            // retry loop like a known denial, and stay tellable apart from one.
+            val refusal = CardReaderFailure(ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED, code = "705")
+            val reader = readerFor(FakeCardReaderGateway(prepareFailure = refusal))
+            reader.configure(readerCredentials())
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.DeviceDenied)
+            assertEquals(
+                ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED,
+                (failure?.cause as? CardReaderFailure)?.kind,
+            )
+        }
+
+    @Test
+    fun `what the vendor refused with survives to the caller`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Read off the cause by whoever reports the failure. The kind and the code are what crosses;
+            // the vendor's prose does not, and `VendorFailureBoundaryTest` is where that is asserted.
+            val refusal = CardReaderFailure(kind = ReaderFailureKind.UNCLASSIFIED, code = "677")
+            val reader = readerFor(FakeCardReaderGateway(prepareFailure = refusal))
+            reader.configure(readerCredentials())
+
+            val reported = runCatching { reader.prepareReader() }.exceptionOrNull()?.cause as? CardReaderFailure
+
+            assertEquals("677", reported?.code)
+            assertEquals(ReaderFailureKind.UNCLASSIFIED, reported?.kind)
+        }
+
+    @Test
+    fun `a reader that never answers is reported instead of waited on`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // What the reader did on a handset: it took the credentials and produced nothing. Without a
+            // bound the caller waits for as long as its scope lives, and a merchant sees a screen that says
+            // it is working and never stops saying it.
+            val gateway = FakeCardReaderGateway(prepareNeverAnswers = true)
+            val reader = readerFor(gateway)
+            reader.configure(readerCredentials())
+
+            val failure = runCatching { reader.prepareReader() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.ArmingFailed)
+            assertEquals(
+                ReaderFailureKind.TIMED_OUT,
+                (failure?.cause as? CardReaderFailure)?.kind,
+            )
+        }
+
+    @Test
+    fun `the identifier the payment was opened under is the one the reader is given`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway = FakeCardReaderGateway()
+
+            readerFor(gateway).startReading(
+                readRequest(merchantTransactionId = "trans-9", merchantOrderId = "trans-9"),
+            )
+
+            assertEquals("trans-9", gateway.lastCharge?.merchantTransactionId)
+            assertEquals("trans-9", gateway.lastCharge?.merchantOrderId)
+            assertEquals(BigDecimal("12.34"), gateway.lastCharge?.amount)
+        }
+
+    @Test
+    fun `the result carries the network and the record the transaction client forwards`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gateway =
+                FakeCardReaderGateway(
+                    record = chargeRecord(cardNetwork = "MASTERCARD", transactionState = "CAPTURED"),
+                )
+
+            val result = readerFor(gateway).startReading(readRequest())
+
+            assertEquals("MASTERCARD", result.cardNetwork)
+            assertTrue(result.providerResponse, result.providerResponse.contains("CAPTURED"))
+        }
+
+    @Test
+    fun `the gateway's own state decides whether the card was approved, refused or neither`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The reader answers with a record for a refused card as readily as for an approved one, so the
+            // state is the only thing separating a tap that took the money from one that was turned down.
+            // AUTHORIZED is an approval: a device auth holds funds without settling, and treating only
+            // CAPTURED as approved would report a held card as refused.
+            val expected =
+                mapOf(
+                    "CAPTURED" to CardReadOutcome.APPROVED,
+                    "AUTHORIZED" to CardReadOutcome.APPROVED,
+                    "authorized" to CardReadOutcome.APPROVED,
+                    "DECLINED" to CardReadOutcome.DECLINED,
+                    "VOIDED" to CardReadOutcome.INDETERMINATE,
+                    "WAITING" to CardReadOutcome.INDETERMINATE,
+                    "SOMETHING_NEW" to CardReadOutcome.INDETERMINATE,
+                )
+
+            for ((state, outcome) in expected) {
+                val gateway = FakeCardReaderGateway(record = chargeRecord(transactionState = state))
+
+                val result = readerFor(gateway).startReading(readRequest())
+
+                assertEquals(state, outcome, result.outcome)
+                assertEquals("the state was not carried for diagnosis", state, result.providerState)
+            }
+        }
+
+    @Test
+    fun `a record naming no state at all is neither an approval nor a refusal`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Two shapes reach this, and a fixture that always builds a gateway response only reaches one:
+            // the state absent from a response that is present, and no response at all.
+            val absentState = FakeCardReaderGateway(record = chargeRecord(transactionState = null))
+            val absentResponse = FakeCardReaderGateway(record = ChargeRecord(cardNetwork = "VISA"))
+
+            assertEquals(
+                "a present response naming no state",
+                CardReadOutcome.INDETERMINATE,
+                readerFor(absentState).startReading(readRequest()).outcome,
+            )
+            assertEquals(
+                "no gateway response at all",
+                CardReadOutcome.INDETERMINATE,
+                readerFor(absentResponse).startReading(readRequest()).outcome,
+            )
+        }
+
+    @Test
+    fun `a dead session is not a failed tap`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A host repairs the two differently: one rebuilds the reader, the other takes the payment again.
+            val dead = FakeCardReaderGateway(readFailure = CardReaderFailure(ReaderFailureKind.SESSION_UNUSABLE))
+
+            val failure = runCatching { readerFor(dead).startReading(readRequest()) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is CardReaderException.SessionUnusable)
+        }
+
+    @Test
+    fun `every other reader failure is the tap that did not complete`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            for (kind in listOf(ReaderFailureKind.CONTACTLESS_UNAVAILABLE, ReaderFailureKind.UNCLASSIFIED)) {
+                val gateway = FakeCardReaderGateway(readFailure = CardReaderFailure(kind))
+
+                val failure = runCatching { readerFor(gateway).startReading(readRequest()) }.exceptionOrNull()
+
+                assertTrue("$kind became $failure", failure is CardReaderException.ReadFailed)
+            }
+        }
+
+    @Test
+    fun `nothing about a payment is printed`() {
+        val printed = ReaderCharge(BigDecimal("12.34"), "trans-1", "trans-1").toString()
+
+        assertTrue(printed, !printed.contains("12.34"))
+    }
+}

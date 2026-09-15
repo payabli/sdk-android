@@ -30,6 +30,7 @@ fun StepRow(
     index: Int,
     step: FlowStep,
     modifier: Modifier = Modifier,
+    repeatable: Boolean = false,
     content: @Composable () -> Unit = {},
 ) {
     val tint = step.status.tint()
@@ -81,7 +82,9 @@ fun StepRow(
                 }
             }
 
-            if (step.status.showsContent) content()
+            // A repeatable step keeps its controls once it is done. Taking a payment can be done again;
+            // checking the device and activating it cannot, and those hide their controls when finished.
+            if (step.status.showsContent || (repeatable && step.status == StepStatus.Done)) content()
         }
     }
 }

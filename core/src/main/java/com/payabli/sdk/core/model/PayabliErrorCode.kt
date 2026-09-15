@@ -1,5 +1,7 @@
 package com.payabli.sdk.core.model
 
+import androidx.annotation.RestrictTo
+
 /**
  * The cross-platform error vocabulary. [wireName] is what telemetry and support tooling match on, and
  * the sibling SDK holds the same strings: never change one without the sibling changing with it.
@@ -44,3 +46,39 @@ public enum class PayabliErrorCode(
     VALIDATION_ERROR("VALIDATION_ERROR"),
     UNKNOWN("UNKNOWN"),
 }
+
+/**
+ * Whether this failure leaves it unknown whether the request was carried out.
+ *
+ * The question is not how bad the failure was but whether the request may have been carried out, because
+ * that is what decides between resending the same attempt and making a new one. A money-moving request
+ * keeps its idempotency key while this is true and takes a fresh one once it is false.
+ *
+ * Unknown, so the attempt is kept: a cancellation and a network failure can both land after the bytes were
+ * written; a 5xx can follow work already done; a body that would not decode came from a service that
+ * answered; and an unexpected error is unexamined by definition.
+ *
+ * Known, so it is not: a decline and a validation refusal are answers, a rate limit is a refusal to act,
+ * and a rejected credential never reached the operation. Keeping an attempt across any of those would
+ * claim a repeat that the next request is not.
+ *
+ * Here rather than in a capability module because both card-not-present and card-present decide this, and
+ * the two answering differently is a difference nothing would report.
+ *
+ * **Restricted, unlike [PayabliErrorCode] itself.** The vocabulary is a host's to catch; which member keeps
+ * an attempt alive is this SDK's own retry policy, and publishing it would commit a consumer to a rule that
+ * exists to be changed as the services do.
+ */
+@get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+public val PayabliErrorCode.leavesOutcomeUnknown: Boolean
+    get() =
+        when (this) {
+            PayabliErrorCode.USER_CANCELLED,
+            PayabliErrorCode.NETWORK_ERROR,
+            PayabliErrorCode.SERVER_ERROR,
+            PayabliErrorCode.DECODING_ERROR,
+            PayabliErrorCode.UNKNOWN,
+            -> true
+
+            else -> false
+        }

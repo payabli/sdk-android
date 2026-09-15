@@ -50,4 +50,29 @@ public object PercentEncoding {
                 }
             }
         }
+
+    /**
+     * The path [template] names, with its `{placeholder}` replaced by [segment].
+     *
+     * A route that embeds an identifier has two forms: the template, which is the only one a log may
+     * carry, and the resolved path that goes on the wire. Both come from the one literal here. Written
+     * separately they drift, and what drifts is a request recorded under a route it did not go to, which
+     * no test comparing either against itself can see.
+     *
+     * [segment] is taken as given rather than encoded, because callers do not agree on what makes one
+     * safe: a transaction identifier is percent-encoded, while an entry point is refused unless it is
+     * already unreserved. Each keeps its own rule and this places the result.
+     *
+     * Refuses a template carrying no placeholder. That is a route wired to the wrong helper, not a value
+     * a caller could correct.
+     */
+    public fun pathFrom(
+        template: String,
+        segment: String,
+    ): String {
+        val open = template.indexOf('{')
+        val close = if (open < 0) -1 else template.indexOf('}', open + 1)
+        require(open >= 0 && close > open) { "a resolved route needs a {placeholder}: $template" }
+        return template.substring(0, open) + segment + template.substring(close + 1)
+    }
 }

@@ -74,7 +74,7 @@ class EntryPointRefusalTest {
             fixture.seedRecord()
 
             val thrown =
-                runCatching { fixture.enrollment.confirmActivation(ACTIVATION_CODE) }.exceptionOrNull()
+                runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }.exceptionOrNull()
 
             assertTrue("$thrown", thrown is DeviceActivationException.EntryPointUnusable)
             assertNotNull("a configuration fault discards nothing", fixture.storedRecord())

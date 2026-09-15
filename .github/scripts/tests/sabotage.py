@@ -72,10 +72,7 @@ WALKTHROUGH_COMMAND = (
 )
 # The nightly's instrumented module list, quoted by four mutations below. One spelling, for the reason the
 # walkthrough command has one: an anchor that no longer matches reports itself invalid rather than caught.
-INSTRUMENTED_MODULES_LINE = (
-    "          INSTRUMENTED_MODULES: core,payin,"
-    "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry"
-)
+INSTRUMENTED_MODULES_LINE = "          INSTRUMENTED_MODULES: core,payin"
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -324,34 +321,27 @@ MUTATIONS = [
     ("The results guard stops naming the sample app", LIVE_FLOWS, "workflows",
      "          INSTRUMENTED_MODULES: payin example", "          INSTRUMENTED_MODULES: payin"),
 
-    # The value that shipped on 2026-08-27 and left the nightly red for fourteen nights while its tests
-    # passed. `withTelemetryDebug` is a variant name where the collector wants a results directory, so the
-    # glob matched nothing, both flavors read as silent, and the gate failed a green suite. The collector
-    # cannot catch this — it is handed the segment — so W10 reads the workflow against the module's own
-    # flavors instead.
-    ("The nightly names a variant where the collector wants a results directory", NIGHTLY, "workflows",
-     INSTRUMENTED_MODULES_LINE,
-     "          INSTRUMENTED_MODULES: core,payin,example:withTelemetryDebug,example:withoutTelemetryDebug"),
-
-    # The other half of the same value: a flavor that stops being named goes back to being covered by its
-    # sibling's results, which is what naming them separately exists to prevent.
-    ("The nightly names the flavored module once instead of per flavor", NIGHTLY, "workflows",
+    # A module the instrumented step does not run. The step runs :core and :payin only, so naming any
+    # third module puts the value and the tasks out of agreement, and a green nightly would go red for a
+    # tier nobody asked to produce anything.
+    ("The nightly names a module the instrumented step does not run", NIGHTLY, "workflows",
      INSTRUMENTED_MODULES_LINE,
      "          INSTRUMENTED_MODULES: core,payin,example:debug/flavors/withTelemetry"),
 
-    # A build type the instrumented step does not run. The path is well formed and names a declared flavor,
-    # so every shape check passes and the collector checks a directory nothing writes.
-    ("The nightly names a build type the instrumented step does not run", NIGHTLY, "workflows",
+    # The same disagreement from the other side. A module dropped from the value is checked by nothing, so
+    # it can go silent under a sibling's results with nothing about the remaining entries looking wrong.
+    ("The nightly stops naming a module the instrumented step runs", NIGHTLY, "workflows",
      INSTRUMENTED_MODULES_LINE,
-     "          INSTRUMENTED_MODULES: core,payin,"
-     "example:release/flavors/withTelemetry,example:release/flavors/withoutTelemetry"),
+     "          INSTRUMENTED_MODULES: payin"),
 
-    # A module dropped from the value is not checked by anything, so it can go silent under a sibling's
-    # results exactly as a flavor could. Nothing about the remaining entries looks wrong.
-    ("The nightly stops naming the modules that have no flavors", NIGHTLY, "workflows",
-     INSTRUMENTED_MODULES_LINE,
-     "          INSTRUMENTED_MODULES: "
-     "example:debug/flavors/withTelemetry,example:debug/flavors/withoutTelemetry"),
+    # **Two cases were removed here, and W10's shape checks are vacuous until they come back.** They broke
+    # the results-directory form — `example:withTelemetryDebug`, the value that shipped on 2026-08-27 and
+    # left the nightly red for fourteen nights while its tests passed, and `example:release/...`, a well
+    # formed path naming a build type the step does not run. Both need a flavored module in the value to
+    # break, and this branch names none: :example depends on :taptopay, whose native library is arm64 only,
+    # so its test APK cannot install on the x86_64 emulator this job uses. W10 still carries the shape
+    # checks and nothing now proves they are not vacuous, which is the pair this file exists to keep.
+    # Restore both cases in the same change that returns :example to INSTRUMENTED_MODULES.
 
     # Substitution happens before the script runs, so the guard inside the script cannot see the value that
     # replaced it. This is the form the file used to carry.

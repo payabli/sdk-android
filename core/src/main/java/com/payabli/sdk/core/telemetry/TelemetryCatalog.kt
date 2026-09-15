@@ -79,10 +79,15 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_CHARGE_FAILED to TIMED_OUTCOME,
             TelemetryEvents.TTP_NFC_STARTED to NONE,
             TelemetryEvents.TTP_NFC_SUCCEEDED to TIMED,
+            // Carries both, and the code is the half that earns its place. [TelemetryProperty.REASON] is the
+            // reader's own classification, which is coarser than the vendor's code by design and is
+            // `unclassified` for any refusal the mapping does not recognise. That is the case where the code
+            // is the only information there is, and it is the case a reason alone withholds it.
             TelemetryEvents.TTP_NFC_FAILED to
                 setOf(
                     TelemetryProperty.OUTCOME.key,
                     TelemetryProperty.REASON.key,
+                    TelemetryProperty.CODE.key,
                     TelemetryProperty.DURATION_MS.key,
                 ),
             TelemetryEvents.TTP_REINITIALIZE_STARTED to NONE,
