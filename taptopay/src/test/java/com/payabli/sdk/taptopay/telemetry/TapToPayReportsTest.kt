@@ -57,6 +57,49 @@ class TapToPayReportsTest {
     }
 
     @Test
+    fun `closing a captured payment reports its own event, not the charge's`() {
+        // Settling money that already moved is a separate operation, and reusing the charge's names would
+        // make a count of failed charges a mixture of two populations.
+        TapToPayReports.closeStarted()
+        TapToPayReports.closeSucceeded(System.nanoTime())
+
+        assertEquals(
+            listOf(TelemetryEvents.TTP_CLOSE_STARTED, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+            recorded.map { it.first },
+        )
+        assertEquals(emptyMap<String, String>(), recorded.first().second)
+        assertEquals(setOf(TelemetryProperty.DURATION_MS.key), recorded.last().second.keys)
+    }
+
+    @Test
+    fun `a decline on a close is a failure, because no close happens before the card is asked for`() {
+        // A close exists only once the reader has answered, so it is always on the far side of the window
+        // `cardWasAsked` marks on a charge. Counting a 402 here as `declined` counts a captured sale as a
+        // refused one.
+        TapToPayReports.closeFailed(PayabliDeclineException(rawCode = "D0329"), System.nanoTime())
+
+        val (_, properties) = recorded.single()
+        assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
+        assertEquals("D0329", properties[TelemetryProperty.CODE.key])
+    }
+
+    @Test
+    fun `a close that was not confirmed says how long it took and how it ended`() {
+        TapToPayReports.closeFailed(deniedBy("677"), System.nanoTime())
+
+        val (event, properties) = recorded.single()
+        assertEquals(TelemetryEvents.TTP_CLOSE_FAILED, event)
+        assertEquals(
+            setOf(
+                TelemetryProperty.OUTCOME.key,
+                TelemetryProperty.CODE.key,
+                TelemetryProperty.DURATION_MS.key,
+            ),
+            properties.keys,
+        )
+    }
+
+    @Test
     fun `a reader refusal reports the vendor code, and never the vendor's words`() {
         TapToPayReports.chargeFailed(deniedBy("677", "Device has been suspended or deactivated"), System.nanoTime())
 
