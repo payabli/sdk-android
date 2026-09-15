@@ -175,9 +175,10 @@ public sealed class PayInException(
      * outcome unknown rather than the only one.
      *
      * A canceled call does not deliver this: cancellation is rethrown, so a `Result` call never returns and
-     * a form's own submission publishes the state without a reader. What the cancellation left behind is a
-     * held key, sent again by the next call naming the same transaction, and
-     * `PayInSubmissionState.Failed.retryKey` for the form's own path.
+     * a form's own submission publishes the state without a reader. A cancellation arriving after the key
+     * was reserved leaves a held key, sent again by the next call naming the same transaction, and
+     * `PayInSubmissionState.Failed.retryKey` for the form's own path. One arriving before that leaves
+     * neither, nothing being encoded or sent until the key is chosen.
      */
     public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"

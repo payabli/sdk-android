@@ -66,6 +66,9 @@ public sealed class PayInSubmissionState {
          * error. In each of those the payment may already have been taken, and a retry carrying this key is
          * recognized as the repeat it is instead of acting twice.
          *
+         * Null for a cancellation that arrives before the key is reserved, which is before anything is
+         * encoded or sent: no attempt exists for a repeat to name.
+         *
          * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
          * Reversing a transaction and capturing an earlier authorization publish nothing here, so neither
          * reaches this field; each answers with its own result, and each keeps its own key for three
