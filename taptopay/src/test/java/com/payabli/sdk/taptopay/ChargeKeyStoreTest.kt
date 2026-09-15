@@ -37,7 +37,7 @@ class ChargeKeyStoreTest {
     private val logger = RecordingSdkLogger()
     private val minted = AtomicInteger()
 
-    /** The settled markers are process state, so one test's outlive it unless they are dropped. */
+    /** The settled markers are process state, so one test's markers outlive it unless they are dropped. */
     @Before
     fun forgetSettledMarkers() = ChargeKeyStore.forgetSettled()
 
