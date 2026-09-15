@@ -26,7 +26,9 @@ jobs:
       # The origin, because the checkout names no environment beyond sandbox and production. A repository
       # variable rather than a secret: it is not a credential, it is an address this public repository does
       # not carry. Unset, the token server step refuses and says which environment had no origin.
-      api-origin: ${{ vars.PAYABLI_QA_BASE_URL }}
+      # An origin, so no path: `live-flows.yml` appends `/api` for the token server, and the SDK's
+      # environment generator refuses a value carrying one.
+      api-origin: ${{ vars.PAYABLI_API_BASE_URL_QA }}
     secrets:
       client-id: ${{ secrets.PAYABLI_CLIENT_ID_QA }}
       client-secret: ${{ secrets.PAYABLI_CLIENT_SECRET_QA }}

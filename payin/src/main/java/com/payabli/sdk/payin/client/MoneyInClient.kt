@@ -236,6 +236,7 @@ internal class MoneyInClient(
                     explanation = envelope.explanation,
                     action = envelope.action,
                     httpStatus = response.statusCode,
+                    paymentTransId = envelope.payload?.paymentTransId,
                 )
             logger.warn(
                 LogField.safe("event", "payin_transaction_not_approved"),

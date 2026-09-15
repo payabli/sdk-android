@@ -31,6 +31,7 @@ class RecheckReadsTheDeviceAgainTest {
             isEmulator = false,
             model = "Pixel 8",
             apiLevel = 34,
+            readerSupported = true,
             hasNfcHardware = true,
             isNfcEnabled = nfcEnabled,
             playServicesInstalled = true,

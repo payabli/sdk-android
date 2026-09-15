@@ -74,7 +74,7 @@ sonar {
         // annotation is gone rather than left looking like it did something.
         property(
             "sonar.issue.ignore.multicriteria",
-            "copyMirrorsItsProperties,formEntryComposable,formContentComposables",
+            "copyMirrorsItsProperties,formEntryComposable,formContentComposables,libraryManifestBackup",
         )
 
         // A hand-written `copy()` takes one parameter per property, which is what makes it a copy.
@@ -99,6 +99,22 @@ sonar {
         property(
             "sonar.issue.ignore.multicriteria.formContentComposables.resourceKey",
             "**/sdk/payin/ui/**",
+        )
+
+        // S6358 wants `android:allowBackup="false"` on every `<application>` it sees. A library manifest is
+        // not where that decision can be made: its application attributes merge into the host's, so a
+        // library setting it would turn off backups in an integrator's app that never asked. `:taptopay`
+        // declares the element only to pin a theme onto the two activities the card reader contributes,
+        // which would otherwise crash a non-AppCompat host at the tap.
+        //
+        // The decision is made where it belongs and the merged manifest is what proves it: `:example` sets
+        // `allowBackup="false"` with `dataExtractionRules`, and the merged manifest for its debug variant
+        // carries `android:allowBackup="false"`. Scoped to this one file, so an application manifest that
+        // omits the attribute is still reported.
+        property("sonar.issue.ignore.multicriteria.libraryManifestBackup.ruleKey", "xml:S6358")
+        property(
+            "sonar.issue.ignore.multicriteria.libraryManifestBackup.resourceKey",
+            "taptopay/src/main/AndroidManifest.xml",
         )
     }
 }

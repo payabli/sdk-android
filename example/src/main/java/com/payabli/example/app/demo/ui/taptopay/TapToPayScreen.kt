@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -14,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,10 +26,11 @@ import com.payabli.example.app.demo.config.TokenHostResolver
 import com.payabli.example.app.demo.flow.FlowStep
 import com.payabli.example.app.demo.flow.StepStatus
 import com.payabli.example.app.demo.flow.TerminalSteps
-import com.payabli.example.app.demo.terminal.DemoTerminalController
+import com.payabli.example.app.demo.preflight.Readiness
 import com.payabli.example.app.demo.terminal.EventBuffer
 import com.payabli.example.app.demo.terminal.TerminalEvent
 import com.payabli.example.app.demo.terminal.TerminalEventCode
+import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.example.app.demo.terminal.chipSpecFor
 import com.payabli.example.app.demo.terminal.sessionFailureReason
@@ -69,6 +72,10 @@ fun TapToPayScreen(
             chargeFailed = state.chargeFailure != null,
             working = state.workingAction,
             activated = state.activated,
+            charged = state.charged,
+            readerDenied =
+                state.failureReason == TerminalFailureReason.DeviceIneligible &&
+                    state.readiness != Readiness.NotAvailable,
         )
 
     DemoScreen(
@@ -98,17 +105,11 @@ fun TapToPayScreen(
 
         StepRow(index = 2, step = steps[1]) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[1], sessionFailureReason(state.session))
+                FailureReason(steps[1], sessionFailureReason(state.session, state.failureReason))
                 ProminentButton(
-                    text = "Turn on the terminal",
+                    text = "Set up the terminal",
                     icon = DemoIcons.TapToPay,
                     onClick = actions.onEnable,
-                    enabled = !state.isWorking,
-                )
-                BorderedButton(
-                    text = "Start the session again",
-                    icon = DemoIcons.Reinitialize,
-                    onClick = actions.onReinitialize,
                     enabled = !state.isWorking,
                 )
                 TokenCheckStep(
@@ -133,9 +134,14 @@ fun TapToPayScreen(
             }
         }
 
-        StepRow(index = 4, step = steps[3]) {
+        StepRow(index = 4, step = steps[3], repeatable = true) {
             Column(verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing)) {
-                FailureReason(steps[3], state.chargeFailure.orEmpty())
+                // A denied reader fails this step with no charge attempted, so there is no recorded
+                // charge failure to show.
+                FailureReason(
+                    steps[3],
+                    state.chargeFailure ?: state.failureReason?.message.orEmpty(),
+                )
                 PaymentBlock(state, actions.onAmountChange, actions.onCharge)
             }
         }
@@ -149,6 +155,55 @@ fun TapToPayScreen(
 
     if (state.isActivationOpen) {
         ActivationSheet(state, actions.onActivationCodeChange, actions.onActivate, actions.onDismissActivation)
+    }
+
+    if (state.isApprovalOpen) {
+        ApprovalSheet(state, actions.onDismissApproval)
+    }
+}
+
+/**
+ * What a merchant looks at when the payment is taken, before going back for the next one.
+ *
+ * The result line carries the same identifier, and it is one row among four steps and an event list. A
+ * payment being approved is the moment the whole screen exists for, so it is said once, on its own.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ApprovalSheet(
+    state: TapToPayUiState,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(Dimens.ScreenPadding),
+            verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = DemoIcons.Pass,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "Payment approved",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            // No amount: the SDK rounds to wire scale, so the input is not what was charged.
+            ResultCard(text = state.resultText, emptyText = "")
+            ProminentButton(
+                text = "Take another payment",
+                icon = DemoIcons.TapToPay,
+                onClick = onDismiss,
+                enabled = true,
+            )
+        }
     }
 }
 
@@ -190,7 +245,7 @@ private fun PaymentBlock(
             enabled = !state.isWorking && state.isReady,
         )
         if (!state.isReady) {
-            Caption("Turn on the terminal first. Charging needs a prepared reader.")
+            Caption("Set up the terminal first. Charging needs a prepared reader.")
         }
     }
 }
@@ -252,9 +307,7 @@ private fun ActivationSheet(
                     ),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Caption(
-                "Type ${DemoTerminalController.REJECTED_ACTIVATION_CODE} to see what a rejected code looks like.",
-            )
+            Caption("Six digits, issued to the merchant out of band.")
             ProminentButton(
                 text = "Activate",
                 icon = DemoIcons.Activate,

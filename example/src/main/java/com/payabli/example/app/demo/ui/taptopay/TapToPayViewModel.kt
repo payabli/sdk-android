@@ -18,6 +18,7 @@ import com.payabli.example.app.demo.terminal.EventBuffer
 import com.payabli.example.app.demo.terminal.TerminalAction
 import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
+import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -37,6 +38,8 @@ data class TapToPayUiState(
     val problems: List<PreflightCheck> = emptyList(),
     val session: TerminalSessionState = TerminalSessionState.Idle,
     val isReady: Boolean = false,
+    /** Why the session failed, as the SDK named it. Null while it has not. */
+    val failureReason: TerminalFailureReason? = null,
     /**
      * Why the last activation attempt was refused, or null if it was not.
      *
@@ -49,6 +52,9 @@ data class TapToPayUiState(
     val chargeFailure: String? = null,
     /** An activation succeeded. [session] reads Ready whether one was needed or not. */
     val activated: Boolean = false,
+    val charged: Boolean = false,
+    /** A payment was approved and the confirmation has not been dismissed. */
+    val isApprovalOpen: Boolean = false,
     val isActivationOpen: Boolean = false,
     /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
     val isProbingToken: Boolean = false,
@@ -63,6 +69,16 @@ data class TapToPayUiState(
 ) {
     /** Any work at all, which is what disables the controls. */
     val isWorking: Boolean get() = workingAction != null || isProbingToken
+
+    /**
+     * Never [resultText], which carries the payment's identifier once a charge succeeds.
+     *
+     * A data class prints every property it holds, and this one reaches assertion failures and crash
+     * reports without passing anything that redacts. Both the SDK's result and this app's receipt withhold
+     * that identifier from their own `toString`, and holding it here in a generated one gives it back the
+     * route they closed. It stays on screen, where a merchant needs it.
+     */
+    override fun toString(): String = "TapToPayUiState(session=$session, isReady=$isReady, working=$workingAction)"
 }
 
 class TapToPayViewModel(
@@ -86,10 +102,19 @@ class TapToPayViewModel(
             }
         }
         viewModelScope.launch {
-            terminal.sessionState.collect { state -> _uiState.update { it.copy(session = state) } }
+            terminal.sessionState.collect { state ->
+                _uiState.update { it.copy(session = state) }
+            }
         }
         viewModelScope.launch {
-            terminal.isReady.collect { ready -> _uiState.update { it.copy(isReady = ready) } }
+            terminal.failureReason.collect { reason ->
+                _uiState.update { it.copy(failureReason = reason) }
+            }
+        }
+        viewModelScope.launch {
+            terminal.isReady.collect { ready ->
+                _uiState.update { it.copy(isReady = ready) }
+            }
         }
     }
 
@@ -100,6 +125,9 @@ class TapToPayViewModel(
     fun openActivation() = _uiState.update { it.copy(isActivationOpen = true) }
 
     fun dismissActivation() = _uiState.update { it.copy(isActivationOpen = false) }
+
+    /** Closes the approval, leaving the step finished and ready to take another payment. */
+    fun dismissApproval() = _uiState.update { it.copy(isApprovalOpen = false) }
 
     fun clearEvents() = _uiState.update { it.copy(events = it.events.cleared()) }
 
@@ -112,11 +140,6 @@ class TapToPayViewModel(
     fun enableTerminal() =
         run(TerminalAction.Initialize) {
             terminal.initialize().map { "reader ready" }
-        }
-
-    fun reinitialize() =
-        run(TerminalAction.Reinitialize) {
-            terminal.reinitializeIfNeeded().map { "session is good" }
         }
 
     fun charge() {
@@ -186,7 +209,15 @@ class TapToPayViewModel(
         _uiState.update { it.copy(workingAction = action) }
         viewModelScope.launch {
             val result = block()
-            val outcome = TerminalActionOutcome.from(action, result)
+            // Read from the terminal, whose republished flow a collector may not have updated yet.
+            val outcome =
+                TerminalActionOutcome.from(
+                    action,
+                    result,
+                    readerDenied =
+                        terminal.currentFailureReason() == TerminalFailureReason.DeviceIneligible &&
+                            _uiState.value.readiness != Readiness.NotAvailable,
+                )
             val reason = outcome.takeIf { result.isFailure }
             _uiState.update {
                 it.copy(
@@ -200,6 +231,10 @@ class TapToPayViewModel(
                         it.activated || (action == TerminalAction.Activate && result.isSuccess),
                     chargeFailure =
                         if (action == TerminalAction.Charge) reason else it.chargeFailure,
+                    charged =
+                        if (action == TerminalAction.Charge) result.isSuccess else it.charged,
+                    isApprovalOpen =
+                        if (action == TerminalAction.Charge) result.isSuccess else it.isApprovalOpen,
                 )
             }
         }

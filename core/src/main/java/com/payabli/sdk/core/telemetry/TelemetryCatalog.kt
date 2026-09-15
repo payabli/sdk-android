@@ -77,12 +77,20 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_CHARGE_STARTED to NONE,
             TelemetryEvents.TTP_CHARGE_SUCCEEDED to TIMED,
             TelemetryEvents.TTP_CHARGE_FAILED to TIMED_OUTCOME,
+            TelemetryEvents.TTP_CLOSE_STARTED to NONE,
+            TelemetryEvents.TTP_CLOSE_SUCCEEDED to TIMED,
+            TelemetryEvents.TTP_CLOSE_FAILED to TIMED_OUTCOME,
             TelemetryEvents.TTP_NFC_STARTED to NONE,
             TelemetryEvents.TTP_NFC_SUCCEEDED to TIMED,
+            // Carries both, and the code is the half that earns its place. [TelemetryProperty.REASON] is the
+            // reader's own classification, which is coarser than the vendor's code by design and is
+            // `unclassified` for any refusal the mapping does not recognise. That is the case where the code
+            // is the only information there is, and it is the case a reason alone withholds it.
             TelemetryEvents.TTP_NFC_FAILED to
                 setOf(
                     TelemetryProperty.OUTCOME.key,
                     TelemetryProperty.REASON.key,
+                    TelemetryProperty.CODE.key,
                     TelemetryProperty.DURATION_MS.key,
                 ),
             TelemetryEvents.TTP_REINITIALIZE_STARTED to NONE,
@@ -128,6 +136,12 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_INITIALIZE_FAILED,
             TelemetryEvents.TTP_ATTESTATION_FAILED,
             TelemetryEvents.TTP_CHARGE_FAILED,
+            // A close that was not confirmed. Immediate because a charged payment is the case an operator
+            // has to see now, and this event does not say which of them that is: the recovery retains a
+            // payment whatever the reader answered, so refused and indeterminate ones arrive at the same
+            // urgency. Separating them needs the capture state on the event, which is a member on a public
+            // enum and so is its own change.
+            TelemetryEvents.TTP_CLOSE_FAILED,
             TelemetryEvents.TTP_NFC_FAILED,
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED,
             TelemetryEvents.SDK_INITIALIZE_FAILED,

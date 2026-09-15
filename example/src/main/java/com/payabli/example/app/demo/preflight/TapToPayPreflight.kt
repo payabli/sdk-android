@@ -12,9 +12,6 @@ import android.provider.Settings
  * Pure. Every input arrives in [DeviceFacts]; nothing here touches a framework or the network.
  */
 object TapToPayPreflight {
-    /** The floor the card-present module builds against. Below this the reader APIs do not exist. */
-    const val READER_MIN_API: Int = 30
-
     /**
      * @param expectedCertificate SHA-256 of the certificate this build should carry, in any
      *   punctuation. Blank when none is configured, and the signing key is then not checked.
@@ -90,14 +87,20 @@ object TapToPayPreflight {
         }
 
     private fun apiLevelCheck(facts: DeviceFacts): PreflightCheck =
-        if (facts.apiLevel < READER_MIN_API) {
+        if (!facts.readerSupported) {
             PreflightCheck(
-                title = "Android version too old",
-                detail = "The reader needs API $READER_MIN_API or newer; this device is on ${facts.apiLevel}.",
+                title = "Device cannot take card-present payments",
+                detail =
+                    "The SDK does not support the reader on this device. It is on API ${facts.apiLevel}; " +
+                        "the platform version, the ABI and the contactless radio are what it reads.",
                 status = CheckStatus.Fail,
             )
         } else {
-            PreflightCheck("Android version", "API ${facts.apiLevel}.", CheckStatus.Pass)
+            PreflightCheck(
+                title = "Card-present support",
+                detail = "The SDK supports the reader here. API ${facts.apiLevel}.",
+                status = CheckStatus.Pass,
+            )
         }
 
     /** Case and punctuation vary between the Play Console, `keytool` and `apksigner`. */

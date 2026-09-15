@@ -28,6 +28,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonUnquotedLiteral
 import kotlinx.serialization.json.buildJsonObject
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.RoundingMode
 
 /** Amounts carry two decimal places on this wire, and the service reads them as a decimal. */
@@ -45,7 +46,7 @@ internal object TTPRoutes {
     const val UPDATE: String = "/api/v2/MoneyIn/update/{transId}"
 
     /**
-     * The resolved path for [UPDATE].
+     * The resolved path for [UPDATE], built from that template rather than beside it.
      *
      * The identifier is encoded as one path segment, so a `?`, `#` or `/` in it stays part of the
      * identifier instead of becoming a query, a fragment or another route.
@@ -55,7 +56,8 @@ internal object TTPRoutes {
      * back from a response, so its shape is not this SDK's to assume, and refusing it would fail a charge
      * over a format nobody here controls.
      */
-    fun update(paymentTransId: String): String = "/api/v2/MoneyIn/update/" + PercentEncoding.segment(paymentTransId)
+    fun update(paymentTransId: String): String =
+        PercentEncoding.pathFrom(UPDATE, PercentEncoding.segment(paymentTransId))
 }
 
 /**
@@ -73,6 +75,39 @@ internal const val FIELD_PROVIDER_RESPONSE: String = "fiservResponse"
 internal const val NFC_FAILURE_TITLE: String = "NFC Tap Failed"
 
 internal const val NFC_FAILURE_REASON: String = "nfc_read"
+
+/**
+ * The amount as it would reach the wire, or null when it cannot be sent.
+ *
+ * **Checked at the scale it will be sent at, because that is the value the service acts on.** `0.001` is more
+ * than zero and [TTPAmountSerializer] rounds it to `0.00`, so a caller checking the value as supplied opens a
+ * payment the service is asked to take as nothing.
+ *
+ * The two guards exist only so the rounding cannot throw: `setScale` raises `ArithmeticException` at both
+ * extremes of the exponent. Both read `precision` and `scale` rather than the expanded value, so an absurd
+ * one costs nothing to refuse. Zero is answered first, because it rescales at any scale without expanding
+ * and would otherwise be refused for a scale it does not really carry.
+ *
+ * `:payin` holds an equivalent in `PayInValidation`, with the same bounds and the same measurements behind
+ * them. Two copies rather than one because a capability module never depends on a sibling, and neither
+ * belongs to `:core` yet. Whichever moves first should take the other with it.
+ */
+internal fun BigDecimal.sendableAmountOrNull(): BigDecimal? {
+    if (signum() == 0) return setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
+    if (scale().toLong() > MAX_ROUNDABLE_SCALE) return null
+    if (precision().toLong() - scale().toLong() > MAX_INTEGER_DIGITS) return null
+    // The digit bounds above keep the rounding itself cheap; this one is what the service can actually
+    // carry. Without it a thousand-digit value rounds successfully, is serialized, and is refused
+    // downstream, which spends a reader session on a charge that was never sendable.
+    return setScale(AMOUNT_SCALE, RoundingMode.HALF_UP).takeIf { it.unscaledValue().abs() <= MAX_MANTISSA }
+}
+
+private const val MAX_ROUNDABLE_SCALE = 1_000L
+
+private const val MAX_INTEGER_DIGITS = 1_000L
+
+/** The largest unscaled value the money decimal carries, which is a 96-bit mantissa. */
+private val MAX_MANTISSA = BigInteger("79228162514264337593543950335")
 
 /**
  * Money on the wire: an unquoted JSON number with exactly two decimal places.
@@ -258,7 +293,8 @@ internal fun updateSuccessBody(result: CardReadResult): JsonObject {
 /** The wire shape of [TapToPayPaymentDetails]. */
 internal fun TapToPayPaymentDetails.toBody(): InitiatePaymentDetailsBody =
     InitiatePaymentDetailsBody(
-        totalAmount = totalAmount,
+        // The wire keeps the service's own key; the surface uses the name both platforms publish.
+        totalAmount = amount,
         serviceFee = serviceFee,
         currency = currency.trimOrNull()?.uppercase(),
         paymentDescription = paymentDescription.trimOrNull(),
