@@ -3,6 +3,7 @@ package com.payabli.sdk.payin
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -194,7 +195,7 @@ internal class PayInPaymentFlow private constructor(
     private fun PayInSubmissionState?.asPayment(): Result<PayInResult> =
         when (this) {
             is PayInSubmissionState.Succeeded.Payment -> Result.success(result)
-            else -> Result.failure(asFailure())
+            else -> Result.failure(asFailure(movesMoney = true))
         }
 
     /**
@@ -209,10 +210,14 @@ internal class PayInPaymentFlow private constructor(
      * arise for a call that has returned, and reporting them as a defect is what keeps this exhaustive
      * without inventing a plausible-looking failure for a state that cannot occur.
      */
-    private fun PayInSubmissionState?.asFailure(): Throwable =
+    private fun PayInSubmissionState?.asFailure(movesMoney: Boolean = false): Throwable =
         when (this) {
             is PayInSubmissionState.Failed ->
-                if (retryKey != null) PayInException.Unsettled(cause) else cause
+                if (retryKey != null || (movesMoney && cause.code.leavesOutcomeUnknown)) {
+                    PayInException.Unsettled(cause)
+                } else {
+                    cause
+                }
 
             null -> PayInException.AlreadySubmitting()
             else -> IllegalStateException("a submission returned while its state read $this")

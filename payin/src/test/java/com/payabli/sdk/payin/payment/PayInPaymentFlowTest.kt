@@ -382,6 +382,41 @@ class PayInPaymentFlowTest {
             collector.cancel()
         }
 
+    /**
+     * The holder being full does not change which failure a caller receives.
+     *
+     * Whether there was room to keep a key is a fact about a map on the device. It does not make an unknown
+     * outcome known, and the episode that fills the holder is the one where payments are most likely to be
+     * unresolved at once.
+     */
+    @Test
+    fun `an unknown outcome past the holder's capacity is still reported as unknown`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+            repeat(PayInSubmission.HELD_KEYS_MAX) {
+                flow.captureAuthorizedTransaction(PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            val past =
+                flow.captureAuthorizedTransaction(
+                    PayInAuthorizedRequest("101-past-the-cap", testDetails()),
+                )
+
+            val failure = past.exceptionOrNull()
+            assertTrue("$failure", failure is PayInException.Unsettled)
+        }
+
+    /** A store is settled by reading the entry point's methods back, so it never reports an open outcome. */
+    @Test
+    fun `a store whose outcome is unknown is not reported as unsettled`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val failure = flow.storeMethod(cardForm()).exceptionOrNull()
+
+            assertFalse("$failure", failure is PayInException.Unsettled)
+        }
+
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
 
