@@ -46,9 +46,8 @@ interface PayInFlowHandle {
      * Not visible in [isSubmitting] or [isBusy]: the SDK publishes this to no state, because nothing is
      * drawing it. A screen that offers it tracks its own in-flight flag.
      *
-     * The SDK mints one when this is left out, so the key is required here as the app's own choice rather
-     * than to fill a gap: this screen names the attempt so its own controls can reason about it, where a
-     * host with nothing to say about the attempt would leave it out and let the SDK carry it.
+     * Required here because this screen names the attempt itself. `PayabliPayIn` takes it as optional and
+     * mints one when a caller does not.
      */
     suspend fun voidTransaction(
         transId: String,
