@@ -55,12 +55,17 @@ private fun regionFor(entry: String): Mutex =
     REGIONS[(entry.hashCode().toLong() and 0x7fffffffL).toInt() % REGION_STRIPES]
 
 /**
- * The payment each scope has charged a card for and not confirmed a close on.
+ * The payment each scope has read a card for and not confirmed a close on.
  *
  * Keyed exactly rather than striped, because two scopes sharing a stripe share a lock and must not share a
- * payment. Unbounded growth is not the concern the regions have: an entry appears only once a card has
- * actually been charged under that scope, and it is removed when the close lands or the next payment opens,
- * so it is bounded by paypoints a device has taken money for rather than by anything a caller passes.
+ * payment. Unbounded growth is not the concern the regions have: an entry appears only once the reader has
+ * answered under that scope, and it is removed when a close is confirmed or the next payment opens, so it
+ * is bounded by paypoints a device has taken a card at rather than by anything a caller passes.
+ *
+ * **An approval is not what puts one here.** A refusal and an outcome that was never definite are retained
+ * as well, because the transaction is open at the service whatever the card did and is worth closing. So
+ * what waits here is the reader's answer to any tap that produced one, and how long it waits is a property
+ * of that rather than of money having moved.
  *
  * Shared rather than held per runner for the reason the region is. A terminal is built per call, so a
  * payment retained by one and a payment retained by another are the same paypoint's, and an instance field
@@ -72,7 +77,13 @@ private val HELD = ConcurrentHashMap<String, PendingClose>()
 private class PendingClose(
     val paymentTransId: String,
     val read: CardReadResult,
-    /** The attempt this payment was opened under, settled when a later close lands. */
+    /**
+     * The attempt this payment was opened under.
+     *
+     * Settled once a close is confirmed and the reader's answer was definite. An outcome that was never
+     * definite keeps it, because the payment may have been taken and the attempt is what would name a
+     * repeat.
+     */
     val idempotencyKey: String,
 )
 
