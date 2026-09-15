@@ -274,6 +274,32 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
         }
 
+    /**
+     * The held key's age is read where it is sent, not where the call began.
+     *
+     * A dispatch and whatever the host does with the thread sit between the two, and this clock counts
+     * device sleep, so a check taken at the start can be arbitrarily stale by the time the request leaves.
+     */
+    @Test
+    fun `a key that ages out before the request is sent is not the one sent`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            // Parked after the call reads the clock and before it chooses a key, which is the gap the
+            // age has to be read on the far side of.
+            val resending =
+                launch(start = CoroutineStart.UNDISPATCHED) {
+                    submission.captureAuthorized(TEST_ENTRY_POINT, request)
+                }
+            clock.addAndGet(TimeUnit.MINUTES.toNanos(10))
+            resending.join()
+
+            assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
+        }
+
     /** A key too old to be recognized is carried out as a new payment, so a resend past the window mints. */
     @Test
     fun `a held key is not sent once it is too old to be recognized`() =

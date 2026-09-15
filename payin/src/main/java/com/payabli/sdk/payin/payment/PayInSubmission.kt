@@ -232,7 +232,7 @@ internal class PayInSubmission(
         }
         onReserved(true)
         val startedAt = elapsedRealtimeNanos()
-        val retry = RetryKey(payment?.let { stillWorthSending(it, startedAt) })
+        val retry = RetryKey(payment)
         if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
         try {
@@ -486,7 +486,7 @@ internal class PayInSubmission(
      * request carries the key, so it is known only once that has been built.
      */
     private inner class RetryKey(
-        private val held: HeldKey?,
+        private val payment: String?,
     ) {
         var key: String? = null
             private set
@@ -513,8 +513,16 @@ internal class PayInSubmission(
          *
          * [supplied] first, a caller that set a key naming the attempt itself. Then the key held for this
          * payment, so a resend is the same request. Otherwise a new one.
+         *
+         * **The held key's age is read here, where the key is sent, and not where the call began.** What
+         * sits between the two is a dispatch and whatever the host does with the thread, and this clock
+         * counts device sleep, so a check taken earlier can be arbitrarily stale by the time the request
+         * leaves. That is a separate moment from the reservation being stamped when a key is chosen: this
+         * decides whether a held key may still be sent, that decides what its window is measured from.
          */
         fun reserve(supplied: String?): String {
+            val now = elapsedRealtimeNanos()
+            val held = payment?.let { stillWorthSending(it, now) }
             val chosen =
                 when {
                     held != null && supplied == null -> {
@@ -524,13 +532,13 @@ internal class PayInSubmission(
                     }
 
                     supplied == null -> {
-                        reservedAt = elapsedRealtimeNanos()
+                        reservedAt = now
                         minted = true
                         newIdempotencyKey()
                     }
 
                     else -> {
-                        reservedAt = elapsedRealtimeNanos()
+                        reservedAt = now
                         // Held as the header carries it, so the key that answers matches the one kept.
                         // Blank stays blank: the header check is what refuses it.
                         supplied.trimOrNull() ?: supplied
