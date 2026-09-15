@@ -191,7 +191,8 @@ public sealed class PayInException(
      * caller acts on this by repeating the call rather than by carrying anything. The key is held in
      * memory for three minutes from when it was reserved, and longer once a repeat has been refused under
      * it, so a call past that, or from a new instance, or after the process restarts, is a new payment under
-     * a new key. What came back the first time is not
+     * a new key. A key the caller set is the caller's own, so a host that supplies one retries across any of
+     * those by supplying it again. What came back the first time is not
      * repeated, so a caller that needs the outcome itself reads the transaction back.
      *
      * [code] is the underlying classification, so a caller branching on [PayabliException.code] reads what
