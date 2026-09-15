@@ -338,14 +338,14 @@ class PayInSubmissionTelemetryTest {
     }
 
     /**
-     * Asserts a duration was reported and is greater than zero.
+     * Asserts a duration was reported, and that it was measured on the clock this test injected.
      *
-     * The exact figure counts how many times the code under test reads the clock, which is not what any of
-     * these tests is about.
+     * The bound is loose enough not to count how many times the code reads the clock, which is not what any
+     * of these tests is about, and tight enough that a reading taken from any other clock fails it.
      */
     private fun assertTimed(properties: Map<String, String>) {
         val reported = properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull()
-        assertTrue("no duration was reported: $reported", reported != null && reported > 0)
+        assertTrue("not measured on the injected clock: $reported", reported != null && reported in 1..5)
     }
 
     private fun aTestSession() =
