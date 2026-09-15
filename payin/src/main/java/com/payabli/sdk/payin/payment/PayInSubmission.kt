@@ -281,22 +281,36 @@ internal class PayInSubmission(
     }
 
     /**
-     * Keeps [held] for [payment], unless that would take the map past [HELD_KEYS_MAX].
+     * Keeps [held] for [payment], without displacing a record that is protecting something else.
      *
-     * Replacing an entry this payment already has is always allowed: it is the same payment, and the record
-     * is what decides its next send.
+     * An attempt under a caller's own key does not replace one already held: the caller has its own key and
+     * can send it again, where the held one is the only copy of an attempt nobody has an answer for. Sending
+     * the caller's key on the next keyless call would name the wrong attempt.
+     *
+     * The same key updates its record rather than replacing it, so the earliest reservation stands and a
+     * conflict already seen is not forgotten by a later failure that has not seen one.
      */
     private fun hold(
         payment: String,
         held: HeldKey,
     ) {
-        if (unresolved.size >= HELD_KEYS_MAX && payment !in unresolved) {
-            logger.debug(LogField.safe("event", "payin_retry_keys_full")) {
-                "a payment's key was not held, because too many are unresolved at once"
-            }
-            return
+        val existing = unresolved[payment]
+        when {
+            existing == null && unresolved.size >= HELD_KEYS_MAX ->
+                logger.debug(LogField.safe("event", "payin_retry_keys_full")) {
+                    "a payment's key was not held, because too many are unresolved at once"
+                }
+
+            existing == null -> unresolved[payment] = held
+            existing.key != held.key -> Unit
+            else ->
+                unresolved[payment] =
+                    HeldKey(
+                        held.key,
+                        minOf(existing.reservedAt, held.reservedAt),
+                        arrived = existing.arrived || held.arrived,
+                    )
         }
-        unresolved[payment] = held
     }
 
     /**

@@ -386,6 +386,55 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", sentKey(transport))
         }
 
+    /**
+     * A caller's own key is a second attempt, not a replacement for the one nobody has an answer for.
+     *
+     * Holding it instead would send it on the next keyless call, naming an attempt the service may never
+     * have seen while the one it did see goes unrecognised.
+     */
+    @Test
+    fun `an unknown outcome under a caller's own key does not displace the held one`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(
+                TEST_ENTRY_POINT,
+                PayInAuthorizedRequest("101-abc", testDetails(), idempotencyKey = "caller-key"),
+            )
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
+        }
+
+    /** A later failure that has not seen a conflict must not forget that an earlier one did. */
+    @Test
+    fun `an unknown outcome after a refused repeat leaves the key exempt from ageing`() =
+        runTest(timeout = timeout) {
+            val transport =
+                ScriptedPayInTransport(
+                    listOf(
+                        ScriptedPayInTransport.failingWith(dropped()),
+                        ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
+                        ScriptedPayInTransport.failingWith(dropped()),
+                    ),
+                )
+            val submission = submissionOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+            // The one that resets the flag if the update does not carry it over.
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            clock.addAndGet(TimeUnit.MINUTES.toNanos(10))
+            submission.captureAuthorized(TEST_ENTRY_POINT, request)
+
+            assertEquals("$MINTED_KEY-1", sentKey(transport))
+        }
+
     /** A rate limit refuses the retry, so the earlier attempt is exactly as unresolved as it was. */
     @Test
     fun `a refusal to act at all keeps the key`() =
