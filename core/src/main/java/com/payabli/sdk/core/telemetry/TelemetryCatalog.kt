@@ -136,7 +136,11 @@ public object TelemetryCatalog {
             TelemetryEvents.TTP_INITIALIZE_FAILED,
             TelemetryEvents.TTP_ATTESTATION_FAILED,
             TelemetryEvents.TTP_CHARGE_FAILED,
-            // A charged payment whose close was not confirmed, which is the one an operator has to see now.
+            // A close that was not confirmed. Immediate because a charged payment is the case an operator
+            // has to see now, and this event does not say which of them that is: the recovery retains a
+            // payment whatever the reader answered, so refused and indeterminate ones arrive at the same
+            // urgency. Separating them needs the capture state on the event, which is a member on a public
+            // enum and so is its own change.
             TelemetryEvents.TTP_CLOSE_FAILED,
             TelemetryEvents.TTP_NFC_FAILED,
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED,

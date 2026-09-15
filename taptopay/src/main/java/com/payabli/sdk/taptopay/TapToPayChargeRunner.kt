@@ -199,7 +199,12 @@ internal class TapToPayChargeRunner(
                 // The settle is inside for the same reason rather than a tidier one: a cancellation landing
                 // between the two leaves the attempt unsettled, so the next charge sends a key naming a
                 // payment that is already resolved. So is dropping the held payment, which would otherwise
-                // be offered for closing again after it had closed. Those three are one step or none.
+                // be offered for closing again after it had closed.
+                //
+                // What groups the three is cancellation, not success. `ChargeKeyStore.settle` never fails
+                // its caller by design, so a storage failure there leaves the key behind while the close and
+                // the drop stand. That key is stale rather than lost, and what it costs is written where
+                // that decision is.
                 withContext(NonCancellable) {
                     client.update(paymentTransId, result)
                     // Both an approval and a refusal are definitive, so the attempt is over and its key can
