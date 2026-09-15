@@ -173,6 +173,10 @@ internal class TapToPayChargeRunner(
                 val idempotencyKey = reservation.key
                 reserved = idempotencyKey
                 resentKey = reservation.reused
+                // A resent key names an attempt that may already have asked for the card, so this charge
+                // cannot claim no money moved until the service accepts the opening. It does that only for
+                // a key it has not seen, which is what says the earlier attempt never opened anything.
+                if (resentKey) capture = TapToPayCapture.UNKNOWN
                 val paymentTransId =
                     client.initiate(
                         entryPoint = entry,

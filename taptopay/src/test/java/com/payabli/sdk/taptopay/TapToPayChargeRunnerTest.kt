@@ -350,6 +350,42 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `an opening refused on a resent key reports the payment as unknown`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The attempt this key names asked the reader, so the money may already have moved. Reporting
+            // the retry's own state would tell a merchant it is safe to tap again.
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to listOf("{}"),
+                        statusFor = { path -> if (path == INITIATE && ++openings >= 2) 409 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(
+                "a refused repeat was reported as taking no money",
+                TapToPayCapture.UNKNOWN,
+                (failure as TapToPayException).capture,
+            )
+        }
+
+    @Test
     fun `an opening refused for any non-answer on a resent key keeps the attempt`() =
         runTest(timeout = TEST_TIMEOUT) {
             // A rate limit is refused before the idempotency check, so it says nothing about the opening
