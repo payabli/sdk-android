@@ -5,12 +5,12 @@ import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
+import com.payabli.sdk.payin.client.TEST_EXPIRY
 import com.payabli.sdk.payin.client.TEST_EXPIRY_WIRE
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.client.testDetails
-import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
@@ -202,7 +202,7 @@ internal fun cardRequest(
 internal fun testCardData(): PayInCardData =
     PayInCardData(
         cardNumber = SensitiveDigits.ofString(TEST_PAN),
-        expiry = ExpiryValue(12, 2030),
+        expiry = TEST_EXPIRY,
         securityCode = SensitiveDigits.ofString(TEST_SECURITY_CODE),
         holderName = "Integration Test",
         postalCode = "22039",
