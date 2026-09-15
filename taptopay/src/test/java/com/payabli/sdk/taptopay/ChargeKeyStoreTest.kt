@@ -273,6 +273,10 @@ class ChargeKeyStoreTest {
             val store = storeOver(FakeSecureStore())
             repeat(4) { store.reserve("entry-$it") }
 
+            // Live, so the cap is what refuses. Without this the test passes with no cap at all.
+            val refused = runCatching { store.reserve("entry-4") }.exceptionOrNull()
+            assertTrue("$refused", refused is ChargeKeyStoreFullException)
+
             clock.addAndGet(TimeUnit.MINUTES.toMillis(3))
 
             assertEquals("key-5", store.reserve("entry-4").key)
@@ -383,7 +387,7 @@ class ChargeKeyStoreTest {
         }
 
     @Test
-    fun `a settle the store refuses does not fail the caller`() =
+    fun `a settle the store refuses does not fail its caller`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Reserved before the store starts refusing, because `settle` returns early when the key does
             // not match and would then never reach the failure this asserts on.

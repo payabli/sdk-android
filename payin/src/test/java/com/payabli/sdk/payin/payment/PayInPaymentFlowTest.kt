@@ -18,6 +18,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -392,18 +393,26 @@ class PayInPaymentFlowTest {
     @Test
     fun `an unknown outcome past the holder's capacity is still reported as unknown`() =
         runTest(timeout = timeout) {
-            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+            val transport = FakePayInTransport.failingWith(dropped())
+            val flow = flowOver(transport)
             repeat(PayInSubmission.HELD_KEYS_MAX) {
                 flow.captureAuthorizedTransaction(PayInAuthorizedRequest("101-$it", testDetails()))
             }
 
-            val past =
-                flow.captureAuthorizedTransaction(
-                    PayInAuthorizedRequest("101-past-the-cap", testDetails()),
-                )
+            val overflowing = PayInAuthorizedRequest("101-past-the-cap", testDetails())
+            val past = flow.captureAuthorizedTransaction(overflowing)
+            val firstKey = transport.request?.headers?.get("idempotencyKey")
+            flow.captureAuthorizedTransaction(overflowing)
 
             val failure = past.exceptionOrNull()
             assertTrue("$failure", failure is PayInException.Unsettled)
+            // The premise as well as the subject. Held, the repeat would resend the same key and the
+            // assertion above would hold whether the cap had fired or not.
+            assertNotEquals(
+                "a key was retained past the cap",
+                firstKey,
+                transport.request?.headers?.get("idempotencyKey"),
+            )
         }
 
     /** A store is settled by reading the entry point's methods back, so it never reports an open outcome. */
