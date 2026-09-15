@@ -73,8 +73,7 @@ internal class MoneyInClient(
     /**
      * Authorizes a payment without taking it.
      *
-     * Refused here for anything but entered card data: only a card can be authorized, and a caller learns
-     * that without a round trip.
+     * Refused here for a method the route does not take, so a caller learns it without a round trip.
      */
     suspend fun authorize(
         entryPoint: String,
@@ -83,7 +82,7 @@ internal class MoneyInClient(
         idempotencyKey: String? = request.options.idempotencyKey,
     ): PayInResult {
         if (!request.paymentMethod.isAuthorizable) {
-            throw PayInException.InvalidInput("paymentMethod", "Only card details can be authorized")
+            throw PayInException.InvalidInput("paymentMethod", "This payment method cannot be authorized")
         }
         validate(entryPoint, request)
         return send(
