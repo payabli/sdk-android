@@ -52,6 +52,24 @@ internal class ChargeKeyStore(
     private val lock = SHARED_LOCK
 
     /**
+     * Keys this process settled and could not remove, by entry point.
+     *
+     * [settle] never fails its caller, so a cleanup that could not be written leaves a key named in storage
+     * for a charge that already has an outcome. Resending it opens nothing and is refused, and that refusal
+     * cannot be told apart from the one a live attempt earns, so without this the key is resent for as long
+     * as the record stands.
+     *
+     * In memory and per process, which is all it can be: the write that would have persisted it is the one
+     * that just failed. On the companion for the reason [lock] is, so two stores over one backing entry
+     * agree about what is settled.
+     *
+     * A marker is read against the key held now, so one naming a key that has since been replaced answers
+     * nothing and needs no clearing. An entry point holds at most one, and a later settled key for the same
+     * one takes its place.
+     */
+    private val settled = SHARED_SETTLED
+
+    /**
      * The key [entry]'s next opening sends, and whether it is one already held.
      *
      * [Reserved.reused] is what tells a caller a refusal answers the send rather than the charge: an opening
@@ -64,12 +82,18 @@ internal class ChargeKeyStore(
     suspend fun reserve(entry: String): Reserved =
         lock.withLock {
             val held = load()
-            held.forEntry(entry)?.let { return@withLock Reserved(it.key, reused = true) }
+            val existing = held.forEntry(entry)
+            if (existing != null && settled[entry] != existing.key) {
+                return@withLock Reserved(existing.key, reused = true)
+            }
             // Nothing is evicted to make room. Every record here names a charge whose outcome is still in
             // doubt, so dropping the coldest to admit a new one loses the only thing that would recognise
             // its repeat. Refusing is the recoverable direction: this needs more unsettled entry points at
             // once than a device has, and each one clears as its charge is closed.
-            if (held.isFull) throw ChargeKeyStoreFullException(held.attempts.size)
+            //
+            // An entry point already holding a record takes its slot back rather than being refused, which
+            // is what a settled key reaching here needs: `with` replaces that record instead of adding one.
+            if (existing == null && held.isFull) throw ChargeKeyStoreFullException(held.attempts.size)
             val minted = newKey()
             store(held.with(ChargeAttempt(entry = entry, key = minted)))
             Reserved(minted, reused = false)
@@ -99,9 +123,10 @@ internal class ChargeKeyStore(
      * already been superseded, and the charge that owns it is the one entitled to settle it.
      *
      * **Never fails the caller.** By the time this runs the charge has an outcome the caller is entitled to,
-     * and raising here would report a settled payment as a failed one. What a key left behind costs is that
-     * the next charge for this entry point reuses it and is refused; that is visible, recoverable, and
-     * cheaper than turning an approval into an error.
+     * and raising here would report a settled payment as a failed one. The key left behind is remembered in
+     * [settled] instead, so the next reservation mints rather than resending a charge that is over. Without
+     * that the record stands and every later charge for this entry point sends the same key and is refused,
+     * which is not the recoverable cost this catch was accepted for.
      *
      * A record that will not decode raises out of [load] and is caught here too. The key stays named, since
      * removing it needs the record this cannot read.
@@ -118,16 +143,36 @@ internal class ChargeKeyStore(
                 if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
             }
         } catch (unwritable: SecureStorageException) {
+            rememberSettled(entry, key)
             logger.warn(RedactedCause(unwritable), LogField.safe("event", EVENT_NOT_SETTLED)) {
                 "a settled charge's idempotency key could not be forgotten"
             }
         } catch (unreadable: ChargeKeyUnreadableException) {
+            rememberSettled(entry, key)
             // Safe unredacted: the message is fixed text and the cause underneath is already a
             // `RedactedCause`, so the decoder's excerpt is not on this chain.
             logger.warn(unreadable, LogField.safe("event", EVENT_NOT_SETTLED)) {
                 "a settled charge's idempotency key could not be forgotten"
             }
         }
+    }
+
+    /**
+     * Records that [entry]'s [key] names a charge that is over, for a reservation that storage will still
+     * offer it to.
+     *
+     * Capped at the number of records the store itself holds, since it answers a question only about those.
+     * The oldest goes when a further entry point needs a slot, which returns that one to being resent and
+     * refused until its reservation expires.
+     */
+    private suspend fun rememberSettled(
+        entry: String,
+        key: String,
+    ) = lock.withLock {
+        if (entry !in settled && settled.size >= ChargeAttempts.MAX) {
+            settled.remove(settled.keys.first())
+        }
+        settled[entry] = key
     }
 
     /**
@@ -180,7 +225,7 @@ internal class ChargeKeyStore(
             "a held charge key could not be read, so no charge can be named"
         }
 
-    private companion object {
+    internal companion object {
         /**
          * Versioned the way the device record's name is: if the shape changes, the next version takes a new
          * name and removes this one explicitly, because this is the last code that knows it.
@@ -192,6 +237,19 @@ internal class ChargeKeyStore(
 
         /** One per process, so every store over the one backing entry takes the same lock. */
         val SHARED_LOCK = Mutex()
+
+        /**
+         * One per process, for the reason [SHARED_LOCK] is. Insertion-ordered, so the oldest is the one
+         * dropped when a further entry point needs a slot.
+         */
+        val SHARED_SETTLED: MutableMap<String, String> = LinkedHashMap()
+
+        /**
+         * Drops every marker, for a test that would otherwise inherit the previous one's.
+         *
+         * Process state is what this has to be, so a suite sharing a JVM shares it too.
+         */
+        fun forgetSettled() = SHARED_SETTLED.clear()
     }
 }
 

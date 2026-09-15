@@ -13,6 +13,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
@@ -31,6 +32,10 @@ private const val CHARGE_KEY_ENTRY = "com.payabli.sdk.taptopay.chargekeys.v1"
 class ChargeKeyStoreTest {
     private val logger = RecordingSdkLogger()
     private val minted = AtomicInteger()
+
+    /** The settled markers are process state, so one test's outlive it unless they are dropped. */
+    @Before
+    fun forgetSettledMarkers() = ChargeKeyStore.forgetSettled()
 
     private fun storeOver(storage: FakeSecureStore) =
         ChargeKeyStore(storage, newKey = { "key-${minted.incrementAndGet()}" }, logger = logger)
@@ -136,6 +141,49 @@ class ChargeKeyStoreTest {
 
             assertEquals(other, store.reserve(OTHER_ENTRY).key)
             assertNotEquals(one, store.reserve(ENTRY).key)
+        }
+
+    /**
+     * A charge that is over does not go on naming itself, even when its record could not be removed.
+     *
+     * `settle` never fails its caller, so the key stays in storage. Resending it opens nothing, the refusal
+     * reads exactly like the one a live attempt earns, and every later charge for this entry point sends it
+     * again: the entry point stops being able to take a card at all.
+     */
+    @Test
+    fun `a settled charge whose key could not be forgotten is not resent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val storage =
+                FakeSecureStore(
+                    failWith = { operation, _ ->
+                        SecureStorageException.StorageUnavailable().takeIf { operation == "remove" }
+                    },
+                )
+            val store = storeOver(storage)
+
+            assertEquals("key-1", store.reserve(ENTRY).key)
+            store.settle(ENTRY, "key-1")
+
+            assertEquals("key-2", store.reserve(ENTRY).key)
+        }
+
+    /** What replaces it is an ordinary unsettled attempt, so the next charge resends it as it would any. */
+    @Test
+    fun `a key minted after a cleanup that failed is held like any other`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val storage =
+                FakeSecureStore(
+                    failWith = { operation, _ ->
+                        SecureStorageException.StorageUnavailable().takeIf { operation == "remove" }
+                    },
+                )
+            val store = storeOver(storage)
+            store.reserve(ENTRY)
+            store.settle(ENTRY, "key-1")
+
+            assertEquals("key-2", store.reserve(ENTRY).key)
+            assertTrue("the replacement was not held", store.reserve(ENTRY).reused)
+            assertEquals("key-2", store.reserve(ENTRY).key)
         }
 
     @Test
@@ -245,8 +293,9 @@ class ChargeKeyStoreTest {
     @Test
     fun `a settle the store refuses does not fail the caller`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The charge already has an outcome the caller is entitled to. A key left behind costs the next
-            // charge a suppressed opening; raising here would report a settled payment as a failed one.
+            // The charge already has an outcome the caller is entitled to, so raising here would report a
+            // settled payment as a failed one. It is reported to the log instead. What the next charge
+            // does with the key left behind is the subject of its own test.
             //
             // Reserved before the store starts refusing, because `settle` returns early when the key does
             // not match and would then never reach the failure this asserts on.
@@ -265,9 +314,10 @@ class ChargeKeyStoreTest {
 
             store.settle(ENTRY, reserved)
 
-            // Still held, since the removal was refused, and the caller was told nothing.
-            refusing = false
-            assertEquals("the key was forgotten after a refused write", "key-1", store.reserve(ENTRY).key)
+            assertTrue(
+                "a refused cleanup was not reported",
+                logger.records.any { it.message.contains("could not be forgotten") },
+            )
         }
 
     @Test
