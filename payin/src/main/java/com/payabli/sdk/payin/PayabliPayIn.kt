@@ -2,7 +2,9 @@ package com.payabli.sdk.payin
 
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
+import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
+import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
@@ -17,9 +19,9 @@ import kotlinx.coroutines.flow.StateFlow
  * Decompose component, a presenter. [state] replays its latest value, so a collector arriving after a
  * rotation sees `Submitting` or the outcome rather than nothing.
  *
- * Taking a payment, authorizing one and storing a method are reached by drawing [PayabliPayInForm], because
- * each of them needs an instrument the payer enters. The two members here need no instrument and no form,
- * which is why they are callable directly.
+ * **A form is one way to build a request, never the only way to reach an operation.** A host that has already
+ * collected the instrument, or that draws its own checkout, calls the member and reads what it returns.
+ * Drawing [PayabliPayInForm] is the other way in, and it reaches the same operations.
  *
  * **Sealed, so this SDK is the only thing that implements it.** [PayabliPayInForm] draws the implementation
  * built here and reaches members that are not on this contract, so an implementation from anywhere else
@@ -38,11 +40,46 @@ public sealed class PayabliPayIn {
      * Where the form's current submission has got to: what the form renders, and what a host reads for its
      * own chrome.
      *
-     * **The two calls below do not appear here.** Nothing is drawing them, and a terminal state on this flow
+     * **A call made directly does not appear here.** Nothing is drawing it, and a terminal state on this flow
      * stands until the form has delivered it, so an outcome published by a call the form did not start would
-     * wait for a reader that never comes. Those calls answer with their return value instead.
+     * wait for a reader that never comes. Such a call answers with its return value instead.
      */
     public abstract val state: StateFlow<PayInSubmissionState>
+
+    /**
+     * Takes the payment [request] describes, returning what the service said.
+     *
+     * `Result` rather than a thrown exception, because a decline is an outcome a caller acts on rather than a
+     * defect. The failure is a `PayabliException` and only some of them are a `PayInException`, on the same
+     * terms as [captureAuthorizedTransaction].
+     *
+     * **The buffers inside the request are the caller's to close.** A `SensitiveDigits` this SDK did not build
+     * is not overwritten here, so close what you built once the call has returned — `use` is the ordinary way.
+     * The form's own path builds the instrument per submission and closes it, which is why a form caller has
+     * nothing to do.
+     *
+     * **This call moves money, so it always carries an idempotency key**, minted for the attempt when
+     * [PayInTransactionOptions.idempotencyKey] is unset.
+     *
+     * **A minted one is not reused, so set your own to retry safely.** A read timeout, a cancellation or a
+     * response that could not be decoded all leave it unknown whether the payment was taken, and only a repeat
+     * carrying the same key is the same attempt. Nothing here can tell a retry of this payment from a second
+     * payment of equal value — unlike [captureAuthorizedTransaction], which has a transaction to name — so a
+     * key this SDK minted is not held for a later call, and calling again without your own is a second payment
+     * rather than a retry.
+     */
+    public abstract suspend fun capture(request: PayInRequest): Result<PayInResult>
+
+    /**
+     * Places a hold without taking it, which [captureAuthorizedTransaction] later completes and
+     * [voidTransaction] releases.
+     *
+     * Takes a card or a cloud device. An account, a check and cash are refused before anything is sent,
+     * because a round trip to learn that is worse than an answer now.
+     *
+     * Everything [capture] says about the failure, the buffers and the idempotency key holds here too.
+     */
+    public abstract suspend fun authorize(request: PayInRequest): Result<PayInResult>
 
     /**
      * Captures a transaction authorized earlier, in full or in part.

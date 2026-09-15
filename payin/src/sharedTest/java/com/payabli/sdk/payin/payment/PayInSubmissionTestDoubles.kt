@@ -10,10 +10,15 @@ import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.client.testDetails
+import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInCardData
+import com.payabli.sdk.payin.model.PayInPaymentMethod
+import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.serialization.KSerializer
 
@@ -181,3 +186,24 @@ internal fun authorizeOf(idempotencyKey: String? = null): PayabliPayInOperation.
 
 internal fun testOptions(idempotencyKey: String? = null): PayInTransactionOptions =
     PayInTransactionOptions(paymentDetails = testDetails(), idempotencyKey = idempotencyKey)
+
+/**
+ * A card request as a host that collected the instrument itself would build it.
+ *
+ * The counterpart of [cardForm] for the calls that take no form. The caller owns the buffers, so a test
+ * asserting they survive the call reads them back from the value this returns.
+ */
+internal fun cardRequest(
+    idempotencyKey: String? = null,
+    cardData: PayInCardData = testCardData(),
+): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(idempotencyKey))
+
+/** The same card [cardForm] describes, in the public type a host builds. */
+internal fun testCardData(): PayInCardData =
+    PayInCardData(
+        cardNumber = SensitiveDigits.ofString(TEST_PAN),
+        expiry = ExpiryValue(12, 2030),
+        securityCode = SensitiveDigits.ofString(TEST_SECURITY_CODE),
+        holderName = "Integration Test",
+        postalCode = "22039",
+    )

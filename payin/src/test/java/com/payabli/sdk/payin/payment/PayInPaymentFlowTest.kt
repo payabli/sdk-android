@@ -90,6 +90,63 @@ class PayInPaymentFlowTest {
             assertEquals("/api/v2/MoneyIn/void/101-abc", transport.request?.path)
         }
 
+    @Test
+    fun `a host that collected the card captures without drawing a form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val outcome = flow.capture(cardRequest())
+
+            assertEquals("A0000", outcome.getOrNull()?.code)
+            assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
+            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+        }
+
+    @Test
+    fun `a host that collected the card authorizes without drawing a form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val outcome = flow.authorize(cardRequest())
+
+            assertEquals("A0000", outcome.getOrNull()?.code)
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+        }
+
+    /**
+     * The buffers came from the caller, so the call does not close them.
+     *
+     * The form's own path builds the instrument per submission and closes it with the submission. A host
+     * that built its own has to be able to close it when it decides to, and a member that closed it first
+     * would leave a second call reading a wiped card.
+     */
+    @Test
+    fun `a direct capture leaves the caller's buffers intact`() =
+        runTest(timeout = timeout) {
+            val flow: PayabliPayIn = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+            val cardData = testCardData()
+
+            flow.capture(cardRequest(cardData = cardData))
+
+            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
+            cardData.cardNumber.close()
+            assertEquals(0, cardData.cardNumber.length)
+        }
+
+    /** A decline is an outcome the caller acts on, so it comes back rather than being thrown. */
+    @Test
+    fun `a declined direct capture answers as a failure carrying the typed cause`() =
+        runTest(timeout = timeout) {
+            val flow: PayabliPayIn = flowOver(FakePayInTransport.answering(DECLINED_TRANSACTION))
+
+            val outcome = flow.capture(cardRequest())
+
+            assertTrue("${outcome.exceptionOrNull()}", outcome.exceptionOrNull() is PayInException.Refused)
+        }
+
     /**
      * The reason the two calls above publish nothing to [PayabliPayIn.state].
      *
