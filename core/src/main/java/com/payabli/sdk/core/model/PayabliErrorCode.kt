@@ -39,9 +39,13 @@ public enum class PayabliErrorCode(
     RATE_LIMITED("RATE_LIMITED"),
 
     /**
-     * HTTP 409. The request was not carried out because the service already holds one like it, which is an
-     * answer rather than an unresolved outcome: sending the same request again is refused again, and what
-     * goes next is a different request.
+     * HTTP 409. The request was not carried out, because the service already holds one like it. That
+     * answers the request: sending the same one again is refused again.
+     *
+     * Whether it answers what the request was *for* is the capability's to say and not this code's. A
+     * repeat a capability sent on a caller's behalf is refused without resolving the attempt it repeats,
+     * and that capability reports it on its own result; read this code for what became of the request and
+     * that result for what to do next.
      *
      * Folded into [UNKNOWN] it would read as unresolved, and a caller would keep resending a request that
      * cannot succeed.
