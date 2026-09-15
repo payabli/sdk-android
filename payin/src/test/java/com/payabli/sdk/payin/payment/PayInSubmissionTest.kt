@@ -288,7 +288,7 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
 
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(90))
+            clock.addAndGet(TimeUnit.MINUTES.toNanos(3))
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
@@ -302,11 +302,11 @@ class PayInSubmissionTest {
             val request = PayInAuthorizedRequest("101-abc", testDetails())
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(50))
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(100))
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
 
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(50))
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(100))
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
@@ -321,7 +321,7 @@ class PayInSubmissionTest {
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(89))
+            clock.addAndGet(TimeUnit.SECONDS.toNanos(179))
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
@@ -380,7 +380,7 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(300))
+            clock.addAndGet(TimeUnit.MINUTES.toNanos(10))
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-1", sentKey(transport))

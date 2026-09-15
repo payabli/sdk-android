@@ -272,12 +272,31 @@ internal class PayInSubmission(
         when {
             key == null -> Unit
             failure == null || failure.answersThePayment(retry.reused) -> forget(payment, key)
-            failure.code.leavesOutcomeUnknown -> unresolved[payment] = HeldKey(key, retry.reservedAt)
+            failure.code.leavesOutcomeUnknown -> hold(payment, HeldKey(key, retry.reservedAt))
             retry.reused && failure.code == PayabliErrorCode.CONFLICT ->
-                unresolved[payment] = HeldKey(key, retry.reservedAt, arrived = true)
+                hold(payment, HeldKey(key, retry.reservedAt, arrived = true))
 
             else -> Unit
         }
+    }
+
+    /**
+     * Keeps [held] for [payment], unless that would take the map past [HELD_KEYS_MAX].
+     *
+     * Replacing an entry this payment already has is always allowed: it is the same payment, and the record
+     * is what decides its next send.
+     */
+    private fun hold(
+        payment: String,
+        held: HeldKey,
+    ) {
+        if (unresolved.size >= HELD_KEYS_MAX && payment !in unresolved) {
+            logger.debug(LogField.safe("event", "payin_retry_keys_full")) {
+                "a payment's key was not held, because too many are unresolved at once"
+            }
+            return
+        }
+        unresolved[payment] = held
     }
 
     /**
@@ -330,7 +349,7 @@ internal class PayInSubmission(
     ): HeldKey? {
         // Every entry, not just this payment's: a flow that meets many transactions revisits few of them,
         // so keying the sweep on the lookup would hold every key it ever minted for as long as it lives.
-        unresolved.values.removeAll { !it.arrived && now - it.reservedAt >= HELD_KEY_WINDOW_NANOS }
+        unresolved.values.removeAll { !it.arrived && now - it.reservedAt >= HELD_KEY_MAX_AGE_NANOS }
         return unresolved[payment]
     }
 
@@ -492,7 +511,29 @@ internal class PayInSubmission(
     private companion object {
         const val REASON_UNEXPECTED = "The payment could not be submitted"
 
-        /** How long a held key is still worth sending. See [stillWorthSending] for why it is short. */
-        val HELD_KEY_WINDOW_NANOS: Long = TimeUnit.SECONDS.toNanos(90)
+        /**
+         * How long a key is held, derived to land past the point the service stops recognising it.
+         *
+         * The service keeps a key two minutes from the moment it reads the request. This clock starts when
+         * the key is reserved, which is earlier, so the same instant reads as older here than there and the
+         * difference has to be added rather than subtracted. That difference is bounded by the transport's
+         * whole-call budget, thirty seconds, doubled for the one credential replay it may perform: two
+         * minutes plus a minute.
+         *
+         * Erring long is free. A key the service has forgotten and a key it has never seen are executed
+         * alike, so holding one too long costs memory and nothing else, which is what [HELD_KEYS_MAX] is
+         * for. Erring short is not: it mints where a repeat would have been refused.
+         */
+        val HELD_KEY_MAX_AGE_NANOS: Long = TimeUnit.MINUTES.toNanos(3)
+
+        /**
+         * How many payments may hold a key at once.
+         *
+         * Reached only by a screen that leaves this many distinct transactions unresolved inside the window
+         * above. Past it a key is minted and not held, so the payment that overflows has what every payment
+         * had before any of this: one key per attempt and no resend. Nothing held is evicted, because each
+         * entry is the only thing that would recognise its own repeat.
+         */
+        const val HELD_KEYS_MAX: Int = 16
     }
 }
