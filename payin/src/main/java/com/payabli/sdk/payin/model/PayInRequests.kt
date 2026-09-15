@@ -165,9 +165,9 @@ public class PayInAuthorizedRequest(
     /**
      * Identifies this attempt, so a retry sending the same key is the same capture rather than a second one.
      *
-     * Optional: one is minted for the attempt when it is absent, and kept for this [transId] for ninety
-     * seconds, so that capturing it again inside that window after a failure that leaves the outcome
-     * unknown is the same attempt. That key is held in memory by the flow that minted it, so it does not
+     * Optional: one is minted for the attempt when it is absent, and kept for this [transId] for three
+     * minutes, and longer once a repeat has been refused under it, so that capturing it again inside that
+     * window after a failure that leaves the outcome unknown is the same attempt. That key is held in memory by the flow that minted it, so it does not
      * outlive the process. Set this and persist it where a retry has to survive either bound.
      */
     public val idempotencyKey: String? = null,

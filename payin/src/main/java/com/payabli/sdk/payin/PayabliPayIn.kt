@@ -61,8 +61,9 @@ public sealed class PayabliPayIn {
      * a failure leaves it unknown whether the capture was applied, it arrives as
      * [PayInException.Unsettled], and **calling again with the same [PayInAuthorizedRequest.transId] is the
      * retry**: the key is sent again with it, so the repeat cannot capture a second time. That holds for
-     * ninety seconds from when the key is reserved. It is in memory on this object, so a second instance and
-     * a restarted process each hold none. Past either bound the next call is a new capture under a new key,
+     * three minutes from when the key is reserved, and longer once a repeat has been refused under it. It is
+     * in memory on this object, so a second instance and a restarted process each hold none. Past either
+     * bound the next call is a new capture under a new key,
      * and a host that needs to cross one sets [PayInAuthorizedRequest.idempotencyKey] itself and persists
      * it before calling.
      */

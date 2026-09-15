@@ -189,8 +189,9 @@ public sealed class PayInException(
      * **Calling again is the retry, and promptly.** The idempotency key that makes the repeat recognizable
      * is the SDK's, held for this payment and sent again on the next call naming the same transaction, so a
      * caller acts on this by repeating the call rather than by carrying anything. The key is held in
-     * memory for ninety seconds from the attempt that raised this, so a call after that, or from a new
-     * instance, or after the process restarts, is a new payment under a new key. What came back the first time is not
+     * memory for three minutes from when it was reserved, and longer once a repeat has been refused under
+     * it, so a call past that, or from a new instance, or after the process restarts, is a new payment under
+     * a new key. What came back the first time is not
      * repeated, so a caller that needs the outcome itself reads the transaction back.
      *
      * [code] is the underlying classification, so a caller branching on [PayabliException.code] reads what

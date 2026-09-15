@@ -68,8 +68,9 @@ public sealed class PayInSubmissionState {
          *
          * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
          * Reversing a transaction and capturing an earlier authorization publish nothing here, so neither
-         * reaches this field; each answers with its own result, and each keeps its own key for ninety
-         * seconds, sending it again when the same transaction is named inside that window.
+         * reaches this field; each answers with its own result, and each keeps its own key for three
+         * minutes, and longer once a repeat has been refused under it, sending it again when the same
+         * transaction is named inside that window.
          *
          * Null when the outcome is known, as a decline, a local refusal or a rejected credential is, where a
          * retry is a new attempt.
