@@ -57,19 +57,21 @@ public sealed class PayabliPayIn {
      * [PayabliException.code], which is the underlying classification either way and covers both.
      *
      * **This call moves money, so it always carries an idempotency key.** Set
-     * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. Where
-     * a failure leaves it unknown whether the capture was applied, it arrives as
-     * [PayInException.Unsettled], and **calling again with the same [PayInAuthorizedRequest.transId] is the
-     * retry**: the key is sent again with it, so the repeat cannot capture a second time.
+     * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. A
+     * failure that leaves it unknown whether the capture was applied arrives as [PayInException.Unsettled],
+     * and what repeating the call is worth then depends on who chose the key.
      *
-     * **What this SDK guarantees.** A key you supply is the one sent. A key the SDK minted is resent while
-     * it still holds one for this transaction, and how long it holds one is not published. It holds none at
-     * all past the point where too many payments are unresolved at once, and none survives a second
-     * instance or a restart.
+     * **A key you set is the one sent, every time.** So repeating the call with it is the same attempt
+     * rather than a second one, from any instance and after a restart.
      *
-     * **What only the service decides.** Whether a repeat is recognised at all. Persisting a key, your own
-     * or one this SDK handed you, lets you send it again; it does not make the service remember it. Past
-     * the point where the service has stopped, the same key is carried out as a new request.
+     * **A key the SDK minted is resent only while it still holds one** for this transaction, and how long
+     * that is is not published. It holds none past the point where too many payments are unresolved at
+     * once, none in a second instance and none after a restart. Where it holds none, repeating the call is
+     * a new capture under a new key, so set and persist a key of your own where that matters.
+     *
+     * **Whether a repeat is recognised at all is the service's.** Persisting a key lets you send it again;
+     * it does not make the service remember it. Past the point where it has stopped, the same key is
+     * carried out as a new request.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
