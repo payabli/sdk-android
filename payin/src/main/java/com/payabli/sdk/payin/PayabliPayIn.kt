@@ -77,10 +77,9 @@ public sealed class PayabliPayIn {
      * Which transactions can still be reversed is the service's to decide, and is not mirrored here: a state
      * it will not reverse comes back as the refusal it sent, carrying its own reason.
      *
-     * @param transId the transaction to reverse, as [PayInTransaction.paymentTransId] reported it.
-     * @param idempotencyKey makes a repeated send the same attempt rather than a second one. Left unset,
-     *   one is minted for the attempt. This route holds and resends a key exactly as
-     *   [captureAuthorizedTransaction] does, so the paragraph there is the contract for both.
+     * [transId] is the transaction to reverse, as [PayInTransaction.paymentTransId] reported it. This route
+     * holds and resends an idempotency key exactly as [captureAuthorizedTransaction] does, so the paragraph
+     * there is the contract for both.
      */
     public abstract suspend fun voidTransaction(
         transId: String,

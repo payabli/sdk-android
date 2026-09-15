@@ -40,11 +40,12 @@ import java.util.concurrent.TimeUnit
  * One entry holds every entry point's key, for the reason [com.payabli.sdk.taptopay.enrollment
  * .AttestedDeviceStore]'s does: the store offers no enumeration, so a name built from a value that changes
  * leaves an entry nothing can find and nothing can remove.
+ *
+ * [nowMillis] is a wall clock: these records outlive the process, and a monotonic one restarts at boot.
  */
 internal class ChargeKeyStore(
     private val storage: PayabliSecureStorage,
     private val newKey: () -> String = { UUID.randomUUID().toString() },
-    /** Wall clock: this record outlives the process, and a monotonic clock restarts at boot. */
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
@@ -198,8 +199,9 @@ internal class ChargeKeyStore(
      *
      * A record written before [ChargeAttempt.reservedAt] cannot decode into it, and a record that will not
      * decode stops every charge for this device, so the keys are carried rather than left. The carry stamps
-     * now: a key held past what the service recognises is executed like a fresh one, so the over-long
-     * retention costs nothing, and it keeps the refusal for an upgrade landing inside the window.
+     * now, which can hold a key past what the service recognises: sending one then opens a transaction just
+     * as minting would, so it costs nothing minting would not, and it keeps the refusal for an upgrade
+     * landing inside the window.
      */
     private suspend fun migrated(): ChargeAttempts {
         val bytes = storage.get(PREVIOUS_ENTRY) ?: return ChargeAttempts.EMPTY
@@ -319,15 +321,15 @@ internal class ChargeKeyStoreFullException(
  *
  * Not a data class: a generated `toString` would print the entry point, which names a merchant, and the key,
  * which names an attempt at moving their money.
+ *
+ * [reservedAt] is when the key was chosen, on a wall clock, and carries no default for the reason
+ * [ChargeAttempts.attempts] carries none: a record written in another shape would decode as one reserved
+ * now.
  */
 @Serializable
 internal class ChargeAttempt(
     val entry: String,
     val key: String,
-    /**
-     * When this key was chosen, on a wall clock. No default, for the reason [ChargeAttempts.attempts] has
-     * none: a record written in another shape would decode as one reserved now.
-     */
     val reservedAt: Long,
 ) {
     /** This attempt with its stamp clamped into the window ending at [nowMillis]. */
@@ -382,8 +384,9 @@ internal class ChargeAttempts(
      * The records still naming a key the service is expected to recognise, with their stamps clamped into
      * the window. `this` when neither was needed, so a caller can tell whether to write the result back.
      *
-     * A stamp is clamped rather than trusted: one in the future counts as reserved now, one older than the
-     * window is expired. So a device whose clock moved cannot make a record permanent or expire it early.
+     * A stamp is clamped rather than trusted, so one in the future counts as reserved now and cannot make
+     * a record permanent. A clock jumping forward past the window expires a key that is still live, and
+     * what that costs is the refusal a resend would have earned.
      */
     fun withinWindowAt(nowMillis: Long): ChargeAttempts {
         val kept =

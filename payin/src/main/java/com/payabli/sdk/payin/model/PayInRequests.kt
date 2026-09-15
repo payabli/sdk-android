@@ -158,19 +158,15 @@ public class PayInRequest(
  *
  * [transId] identifies the authorization and goes in the path, so the resolved path differs from the route
  * template this call is recorded under. Reversing a transaction is the other one shaped that way.
+ *
+ * [idempotencyKey] identifies the attempt, so a retry sending the same key is the same capture rather than
+ * a second one. One is minted when it is absent and kept for this [transId] for three minutes, longer once
+ * a repeat has been refused under it. That key is held in memory by the flow that minted it, and none is
+ * kept for a payment past the point where too many are unresolved at once. Set this and persist it where a
+ * retry has to survive any of those.
  */
 public class PayInAuthorizedRequest(
     public val transId: String,
     public val paymentDetails: PayInPaymentDetails,
-    /**
-     * Identifies this attempt, so a retry sending the same key is the same capture rather than a second one.
-     *
-     * Optional: one is minted for the attempt when it is absent, and kept for this [transId] for three
-     * minutes, and longer once a repeat has been refused under it, so that capturing it again inside that
-     * window after a failure that leaves the outcome unknown is the same attempt. That key is held in
-     * memory by the flow that minted it, so it does not outlive the process, and none is kept for a
-     * payment past the point where too many are unresolved at once. Set this and persist it where a retry
-     * has to survive any of those.
-     */
     public val idempotencyKey: String? = null,
 )

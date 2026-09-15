@@ -54,35 +54,24 @@ public sealed class PayInSubmissionState {
      * [cause] is the exception either client raised, so a decline, a validation failure and a network failure
      * stay tellable apart. [fieldErrors] is what the refusal blamed, per field, and is empty when it blamed
      * none.
+     *
+     * [retryKey] is the key to resend, on the two operations a form submits that move money and only where
+     * the outcome is unknown: a cancellation after the key was reserved, a network failure, a 5xx, a
+     * response that could not be decoded, and an unexpected error. The payment may already have been taken
+     * in each, and a retry carrying the key is recognized as the repeat rather than acting twice.
+     *
+     * It is null where the outcome is known, as a decline, a local refusal or a rejected credential is; for
+     * a cancellation arriving before the key was reserved, nothing having been sent; and for storing a
+     * payment method whatever the failure, a repeat not being recognizable there. A store whose outcome is
+     * unknown is settled by reading the entry point's stored methods back.
+     *
+     * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
+     * Reversing a transaction and capturing an earlier authorization answer with their own results and keep
+     * their own keys.
      */
     public class Failed(
         public val cause: PayabliException,
         fieldErrors: Map<PayInField, PayInFieldError> = emptyMap(),
-        /**
-         * The key to resend, when this failure leaves the outcome unknown.
-         *
-         * Present on the two operations a form submits that move money — a capture and an authorization — for
-         * a cancellation, a network failure, a 5xx, a response that could not be decoded, and an unexpected
-         * error. In each of those the payment may already have been taken, and a retry carrying this key is
-         * recognized as the repeat it is instead of acting twice.
-         *
-         * Null for a cancellation that arrives before the key is reserved, which is before anything is
-         * encoded or sent: no attempt exists for a repeat to name.
-         *
-         * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
-         * Reversing a transaction and capturing an earlier authorization publish nothing here, so neither
-         * reaches this field; each answers with its own result, and each keeps its own key for three
-         * minutes, and longer once a repeat has been refused under it, sending it again when the same
-         * transaction is named inside that window. Neither keeps one for a payment past the point where too
-         * many are unresolved at once, and each says so by answering with no key.
-         *
-         * Null when the outcome is known, as a decline, a local refusal or a rejected credential is, where a
-         * retry is a new attempt.
-         *
-         * **Also null for storing a payment method, whatever the failure**, because a repeat is not
-         * recognizable there and no key sent with a store is read by anything. A store whose outcome is
-         * unknown is settled by reading the entry point's stored methods back before sending it again.
-         */
         public val retryKey: String? = null,
     ) : PayInSubmissionState() {
         public val fieldErrors: Map<PayInField, PayInFieldError> =
