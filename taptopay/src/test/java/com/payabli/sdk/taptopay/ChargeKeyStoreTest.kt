@@ -40,19 +40,30 @@ class ChargeKeyStoreTest {
         runTest(timeout = TEST_TIMEOUT) {
             val store = storeOver(FakeSecureStore())
 
-            assertEquals("key-1", store.reserve(ENTRY))
-            assertEquals("key-1", store.reserve(ENTRY))
+            assertEquals("key-1", store.reserve(ENTRY).key)
+            assertEquals("key-1", store.reserve(ENTRY).key)
+        }
+
+    /** A caller cannot tell a resend from a first send by the key alone, and what it does with a refusal
+     *  depends on which it was. */
+    @Test
+    fun `a reservation says whether the key was already held`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = storeOver(FakeSecureStore())
+
+            assertFalse(store.reserve(ENTRY).reused)
+            assertTrue(store.reserve(ENTRY).reused)
         }
 
     @Test
     fun `a settled charge leaves the next one to reserve its own`() =
         runTest(timeout = TEST_TIMEOUT) {
             val store = storeOver(FakeSecureStore())
-            val first = store.reserve(ENTRY)
+            val first = store.reserve(ENTRY).key
 
             store.settle(ENTRY, first)
 
-            assertEquals("key-2", store.reserve(ENTRY))
+            assertEquals("key-2", store.reserve(ENTRY).key)
         }
 
     @Test
@@ -63,13 +74,13 @@ class ChargeKeyStoreTest {
             // still in flight, and its retry would name a new one.
             val storage = FakeSecureStore()
             val store = storeOver(storage)
-            val stale = store.reserve(ENTRY)
+            val stale = store.reserve(ENTRY).key
             store.settle(ENTRY, stale)
-            val current = store.reserve(ENTRY)
+            val current = store.reserve(ENTRY).key
 
             store.settle(ENTRY, stale)
 
-            assertEquals("the in-flight attempt was dropped by a stale settle", current, store.reserve(ENTRY))
+            assertEquals("the in-flight attempt was dropped by a stale settle", current, store.reserve(ENTRY).key)
         }
 
     @Test
@@ -94,9 +105,9 @@ class ChargeKeyStoreTest {
             val first = storeOver(storage)
             val second = storeOver(storage)
 
-            val firstKey = async { first.reserve(ENTRY) }
+            val firstKey = async { first.reserve(ENTRY).key }
             entered.await()
-            val secondKey = async { second.reserve(ENTRY) }
+            val secondKey = async { second.reserve(ENTRY).key }
             release.complete(Unit)
 
             assertEquals(firstKey.await(), secondKey.await())
@@ -107,24 +118,24 @@ class ChargeKeyStoreTest {
         runTest(timeout = TEST_TIMEOUT) {
             val store = storeOver(FakeSecureStore())
 
-            val one = store.reserve(ENTRY)
-            val other = store.reserve(OTHER_ENTRY)
+            val one = store.reserve(ENTRY).key
+            val other = store.reserve(OTHER_ENTRY).key
 
             assertNotEquals(one, other)
-            assertEquals(one, store.reserve(ENTRY))
+            assertEquals(one, store.reserve(ENTRY).key)
         }
 
     @Test
     fun `settling one entry point leaves another's alone`() =
         runTest(timeout = TEST_TIMEOUT) {
             val store = storeOver(FakeSecureStore())
-            val one = store.reserve(ENTRY)
-            val other = store.reserve(OTHER_ENTRY)
+            val one = store.reserve(ENTRY).key
+            val other = store.reserve(OTHER_ENTRY).key
 
             store.settle(ENTRY, one)
 
-            assertEquals(other, store.reserve(OTHER_ENTRY))
-            assertNotEquals(one, store.reserve(ENTRY))
+            assertEquals(other, store.reserve(OTHER_ENTRY).key)
+            assertNotEquals(one, store.reserve(ENTRY).key)
         }
 
     @Test
@@ -142,7 +153,7 @@ class ChargeKeyStoreTest {
                 )
             val store = storeOver(storage)
 
-            val failure = runCatching { store.reserve(ENTRY) }.exceptionOrNull()
+            val failure = runCatching { store.reserve(ENTRY).key }.exceptionOrNull()
 
             assertTrue("$failure", failure is SecureStorageException.CryptoUnavailable)
             assertEquals("a key was minted for an attempt that may already exist", 0, minted.get())
@@ -163,7 +174,7 @@ class ChargeKeyStoreTest {
                 )
             val store = storeOver(storage)
 
-            val failure = runCatching { store.reserve(ENTRY) }.exceptionOrNull()
+            val failure = runCatching { store.reserve(ENTRY).key }.exceptionOrNull()
 
             assertTrue("$failure", failure is SecureStorageException.KeyInvalidated)
             assertEquals(0, minted.get())
@@ -178,7 +189,7 @@ class ChargeKeyStoreTest {
             storage.set(CHARGE_KEY_ENTRY, "not json".toByteArray(Charsets.UTF_8))
             val store = storeOver(storage)
 
-            val failure = runCatching { store.reserve(ENTRY) }.exceptionOrNull()
+            val failure = runCatching { store.reserve(ENTRY).key }.exceptionOrNull()
 
             assertTrue("$failure", failure is ChargeKeyUnreadableException)
             assertEquals(0, minted.get())
@@ -213,7 +224,7 @@ class ChargeKeyStoreTest {
         runTest(timeout = TEST_TIMEOUT) {
             val store = storeOver(FakeSecureStore())
 
-            assertEquals("key-1", store.reserve(ENTRY))
+            assertEquals("key-1", store.reserve(ENTRY).key)
         }
 
     @Test
@@ -222,13 +233,13 @@ class ChargeKeyStoreTest {
             // Every record names a charge whose outcome is still in doubt, so dropping the coldest to admit
             // a new one loses the only thing that would recognise its repeat.
             val store = storeOver(FakeSecureStore())
-            val first = store.reserve("entry-1")
+            val first = store.reserve("entry-1").key
             repeat(ChargeAttempts.MAX - 1) { store.reserve("entry-${it + 2}") }
 
             val failure = runCatching { store.reserve("one-too-many") }.exceptionOrNull()
 
             assertTrue("$failure", failure is ChargeKeyStoreFullException)
-            assertEquals("the oldest unresolved attempt was evicted", first, store.reserve("entry-1"))
+            assertEquals("the oldest unresolved attempt was evicted", first, store.reserve("entry-1").key)
         }
 
     @Test
@@ -249,14 +260,14 @@ class ChargeKeyStoreTest {
                     },
                 )
             val store = storeOver(storage)
-            val reserved = store.reserve(ENTRY)
+            val reserved = store.reserve(ENTRY).key
             refusing = true
 
             store.settle(ENTRY, reserved)
 
             // Still held, since the removal was refused, and the caller was told nothing.
             refusing = false
-            assertEquals("the key was forgotten after a refused write", "key-1", store.reserve(ENTRY))
+            assertEquals("the key was forgotten after a refused write", "key-1", store.reserve(ENTRY).key)
         }
 
     @Test

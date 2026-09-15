@@ -52,15 +52,19 @@ internal class ChargeKeyStore(
     private val lock = SHARED_LOCK
 
     /**
-     * The key [entry]'s next opening sends: the unsettled attempt's, or a new one when nothing is held.
+     * The key [entry]'s next opening sends, and whether it is one already held.
+     *
+     * [Reserved.reused] is what tells a caller a refusal answers the send rather than the charge: an opening
+     * refused as a repeat of a key this SDK already sent says the earlier attempt reached the service, and
+     * says nothing about how it ended.
      *
      * Reading and reserving are one operation, under one lock. Split in two they leave a window where two
      * charges both find nothing held and mint separately.
      */
-    suspend fun reserve(entry: String): String =
+    suspend fun reserve(entry: String): Reserved =
         lock.withLock {
             val held = load()
-            held.forEntry(entry)?.let { return@withLock it.key }
+            held.forEntry(entry)?.let { return@withLock Reserved(it.key, reused = true) }
             // Nothing is evicted to make room. Every record here names a charge whose outcome is still in
             // doubt, so dropping the coldest to admit a new one loses the only thing that would recognise
             // its repeat. Refusing is the recoverable direction: this needs more unsettled entry points at
@@ -68,8 +72,18 @@ internal class ChargeKeyStore(
             if (held.isFull) throw ChargeKeyStoreFullException(held.attempts.size)
             val minted = newKey()
             store(held.with(ChargeAttempt(entry = entry, key = minted)))
-            minted
+            Reserved(minted, reused = false)
         }
+
+    /**
+     * A reserved key, and whether it was already held for this entry point.
+     *
+     * Not a `data class`: the synthesized `toString` would put the key into anything that renders one.
+     */
+    internal class Reserved(
+        val key: String,
+        val reused: Boolean,
+    )
 
     /**
      * Forgets [entry]'s key when it is still [key], because that charge reached an outcome not in doubt.
