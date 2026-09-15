@@ -127,12 +127,19 @@ class PayInPaymentFlowTest {
     @Test
     fun `a direct capture leaves the caller's buffers intact`() =
         runTest(timeout = timeout) {
-            val flow: PayabliPayIn = flowOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
             val cardData = testCardData()
 
             flow.capture(cardRequest(cardData = cardData))
 
+            // The card reached the wire, so the buffer below survived a request that read it rather than a
+            // call that never looked. Without this the assertions pass against a member that does nothing.
+            assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
+
             assertEquals(TEST_PAN.length, cardData.cardNumber.length)
+            // Still the caller's to close, and closing it still works.
             cardData.cardNumber.close()
             assertEquals(0, cardData.cardNumber.length)
         }
