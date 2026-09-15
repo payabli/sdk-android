@@ -481,6 +481,24 @@ class PayInSubmissionTest {
             assertEquals("caller-key", failed(overflowing!!).retryKey)
         }
 
+    /**
+     * A refusal before anything is sent reports no key, whoever chose the key.
+     *
+     * The classification decides this and the key's origin does not, so a caller that names its own key is
+     * not told an attempt is open when nothing left the device.
+     */
+    @Test
+    fun `a refusal before anything is sent reports no key under a caller's own key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val state = submission.void(TEST_ENTRY_POINT, " ", idempotencyKey = "caller-key")
+
+            assertNull("a request was sent for a call that was refused", transport.request)
+            assertNull(failed(state!!).retryKey)
+        }
+
     /** A later failure that has not seen a conflict must not forget that an earlier one did. */
     @Test
     fun `an unknown outcome after a refused repeat leaves the key exempt from ageing`() =
