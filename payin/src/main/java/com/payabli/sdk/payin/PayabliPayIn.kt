@@ -63,10 +63,9 @@ public sealed class PayabliPayIn {
      * retry**: the key is sent again with it, so the repeat cannot capture a second time.
      *
      * **What this SDK guarantees.** A key you supply is the one sent. A key the SDK minted is resent while
-     * it still holds one for this transaction, and it stops holding one after a bound it does not publish,
-     * unless the service has already refused a repeat under that key, which keeps it. It holds none at all
-     * past the point where too many payments are unresolved at once, and none survives a second instance or
-     * a restart.
+     * it still holds one for this transaction, and how long it holds one is not published. It holds none at
+     * all past the point where too many payments are unresolved at once, and none survives a second
+     * instance or a restart.
      *
      * **What only the service decides.** Whether a repeat is recognised at all. Persisting a key, your own
      * or one this SDK handed you, lets you send it again; it does not make the service remember it. Past
