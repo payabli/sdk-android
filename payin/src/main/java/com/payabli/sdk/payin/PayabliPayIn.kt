@@ -60,7 +60,9 @@ public sealed class PayabliPayIn {
      * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. Where
      * a failure leaves it unknown whether the capture was applied, it arrives as
      * [PayInException.Unsettled], and **calling again with the same [PayInAuthorizedRequest.transId] is the
-     * retry**: the key is sent again with it, so the repeat cannot capture a second time.
+     * retry**: the key is sent again with it, so the repeat cannot capture a second time. That holds for
+     * ninety seconds from the first attempt. A call after it is a new capture under a new key, so retry
+     * promptly or reconcile instead.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 

@@ -350,6 +350,35 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `an opening refused for any non-answer on a resent key keeps the attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A rate limit is refused before the idempotency check, so it says nothing about the opening
+            // the earlier tap may have left behind.
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(2) { "{}" },
+                        statusFor = { path -> if (path == INITIATE && ++openings >= 2) 429 else 200 },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a refused send released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
     fun `a tap that never completed still closes the transaction`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Otherwise the opened payment is left standing at the paypoint with nothing to resolve it.

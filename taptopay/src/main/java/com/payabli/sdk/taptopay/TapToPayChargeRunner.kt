@@ -7,7 +7,6 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.taptopay.adapters.CardReaderException
@@ -445,9 +444,11 @@ internal class TapToPayChargeRunner(
      * unequipped are answers about the opening, so what comes next is a new attempt and a held key would
      * refuse it. Anything else is kept.
      *
-     * A repeat refused on a key this SDK resent is the exception, which is what [resentKey] is for. That
-     * refusal is about the send: the earlier opening reached the service, may have opened a transaction,
-     * and its key is still the only thing that would recognise the next one as the same charge.
+     * A key this SDK resent narrows that, which is what [resentKey] is for. On a resend the earlier opening
+     * reached the service and may have opened a transaction, so only the service answering about the
+     * transaction settles it. Everything else refused the send: a conflict, a rejected credential, a rate
+     * limit and anything before the idempotency check all leave the earlier opening exactly as open, and
+     * its key is the only thing that would recognise the next one as the same charge.
      *
      * Kept rather than released is the safe direction, so this answers true only for what it recognises.
      */
@@ -459,13 +460,10 @@ internal class TapToPayChargeRunner(
             is CancellationException -> false
             is TTPTransactionException.Refused,
             is TTPTransactionException.ServiceRejected,
-            is TTPTransactionException.NotEnabled,
             -> true
 
-            is PayabliException ->
-                !failure.code.leavesOutcomeUnknown &&
-                    !(resentKey && failure.code == PayabliErrorCode.CONFLICT)
-
+            is TTPTransactionException.NotEnabled -> !resentKey
+            is PayabliException -> !resentKey && !failure.code.leavesOutcomeUnknown
             else -> false
         }
 }

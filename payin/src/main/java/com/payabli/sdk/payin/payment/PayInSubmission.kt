@@ -234,7 +234,7 @@ internal class PayInSubmission(
             outcome = PayInSubmissionState.Failed(PayInException.Interrupted(), retryKey = retry.key)
             throw cancellation
         } catch (failure: Exception) {
-            outcome = failure.asFailed(retry)
+            outcome = failure.asFailed(retry, holdsKey = payment != null)
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
@@ -279,9 +279,6 @@ internal class PayInSubmission(
      * A conflict answers only a key the caller named. On one this SDK resent, what was refused is the
      * repeat.
      */
-    private fun PayabliException.keepsTheKey(reused: Boolean): Boolean =
-        code.leavesOutcomeUnknown || (code == PayabliErrorCode.CONFLICT && reused)
-
     private fun PayabliException.answersThePayment(reused: Boolean): Boolean =
         when (code) {
             PayabliErrorCode.PAYMENT_DECLINED -> true
@@ -316,8 +313,14 @@ internal class PayInSubmission(
      * Anything that is not a [PayabliException] is a defect in this SDK, and arrives as
      * [PayabliErrorCode.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
      * body writer or a serializer can quote what it was given.
+     *
+     * [holdsKey] picks the rule: a key this holder keeps outlives anything short of an answer, where a key
+     * the host keeps is named only for a failure that may have been carried out.
      */
-    private fun Exception.asFailed(retry: RetryKey): PayInSubmissionState.Failed {
+    private fun Exception.asFailed(
+        retry: RetryKey,
+        holdsKey: Boolean,
+    ): PayInSubmissionState.Failed {
         val cause =
             this as? PayabliException
                 ?: PayabliGenericException(
@@ -328,7 +331,10 @@ internal class PayInSubmission(
         return PayInSubmissionState.Failed(
             cause = cause,
             fieldErrors = PayInRejectedFields.of(this),
-            retryKey = retry.key.takeIf { cause.keepsTheKey(retry.reused) },
+            retryKey =
+                retry.key.takeIf {
+                    if (holdsKey) !cause.answersThePayment(retry.reused) else cause.code.leavesOutcomeUnknown
+                },
         )
     }
 

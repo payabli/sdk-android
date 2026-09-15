@@ -186,6 +186,38 @@ class PayInPaymentFlowTest {
             assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
         }
 
+    /** The SDK is still holding the key, so a refusal of the send cannot be reported as an answer. */
+    @Test
+    fun `a rate limit on a resent key answers that the outcome is still open`() =
+        runTest(timeout = timeout) {
+            val transport =
+                ScriptedPayInTransport(
+                    listOf(
+                        ScriptedPayInTransport.failingWith(dropped()),
+                        ScriptedPayInTransport.answering(429),
+                    ),
+                )
+            val flow = flowOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            flow.captureAuthorizedTransaction(request)
+            val cause = flow.captureAuthorizedTransaction(request).exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.RATE_LIMITED, (cause as PayInException.Unsettled).code)
+        }
+
+    /** Nothing holds a key for the form, so naming one would point at a key that does not exist. */
+    @Test
+    fun `a rate limit on a form submission is not an open outcome`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering("", statusCode = 429))
+
+            val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
+
+            assertFalse("$cause", cause is PayInException.Unsettled)
+        }
+
     /** A settled refusal is itself, so a caller branching on the type is not told to wait and see. */
     @Test
     fun `a decline is not reported as an open outcome`() =
