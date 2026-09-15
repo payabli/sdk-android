@@ -130,23 +130,28 @@ internal class ChargeKeyStore(
         entry: String,
         key: String,
     ) {
-        try {
-            lock.withLock {
+        // Caught inside the lock, so the marker lands before any other charge can reserve. Caught outside
+        // it, the key sits in storage with nothing against it and the next reserve takes it as one to resend.
+        var unforgotten: Throwable? = null
+        lock.withLock {
+            try {
                 val held = load()
-                if (held.forEntry(entry)?.key != key) return@withLock
-                val remaining = held.without(entry)
-                if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
+                if (held.forEntry(entry)?.key == key) {
+                    val remaining = held.without(entry)
+                    if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
+                }
+            } catch (unwritable: SecureStorageException) {
+                rememberSettled(entry, key)
+                unforgotten = RedactedCause(unwritable)
+            } catch (unreadable: ChargeKeyUnreadableException) {
+                // Safe unredacted: the message is fixed text and the cause underneath is already a
+                // `RedactedCause`, so the decoder's excerpt is not on this chain.
+                rememberSettled(entry, key)
+                unforgotten = unreadable
             }
-        } catch (unwritable: SecureStorageException) {
-            rememberSettled(entry, key)
-            logger.warn(RedactedCause(unwritable), LogField.safe("event", EVENT_NOT_SETTLED)) {
-                "a settled charge's idempotency key could not be forgotten"
-            }
-        } catch (unreadable: ChargeKeyUnreadableException) {
-            rememberSettled(entry, key)
-            // Safe unredacted: the message is fixed text and the cause underneath is already a
-            // `RedactedCause`, so the decoder's excerpt is not on this chain.
-            logger.warn(unreadable, LogField.safe("event", EVENT_NOT_SETTLED)) {
+        }
+        unforgotten?.let {
+            logger.warn(it, LogField.safe("event", EVENT_NOT_SETTLED)) {
                 "a settled charge's idempotency key could not be forgotten"
             }
         }
@@ -154,12 +159,16 @@ internal class ChargeKeyStore(
 
     /**
      * Records that [entry]'s [key] names a charge that is over, for a reservation storage will still offer
-     * it to. Capped at [ChargeAttempts.MAX], oldest dropped.
+     * it to. Called with [lock] held, which is not reentrant.
+     *
+     * Capped at [ChargeAttempts.MAX], dropping the oldest, where [ChargeAttempts] refuses a new entry
+     * instead. The two differ because refusing is not available here: this records something that has
+     * already happened.
      */
-    private suspend fun rememberSettled(
+    private fun rememberSettled(
         entry: String,
         key: String,
-    ) = lock.withLock {
+    ) {
         if (entry !in settled && settled.size >= ChargeAttempts.MAX) {
             settled.remove(settled.keys.first())
         }
