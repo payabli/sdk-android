@@ -183,15 +183,17 @@ public sealed class PayInException(
     }
 
     /**
-     * The request may have been carried out, and the outcome is not known.
+     * The request may have been carried out, and the outcome is not known. That is the whole of what this
+     * reports, and it is true wherever it is raised.
      *
-     * **Calling again is the retry, and promptly.** The key is the SDK's, held for this payment and sent
-     * again on the next call naming the same transaction, so a caller repeats the call rather than carrying
-     * anything. It is held in memory for a bounded time from when it was reserved, and longer once a
-     * repeat has been refused under it, so a later call, one from a new instance, or one after a restart is
-     * a new payment under a new key. Supplying the key again does not change that: the bound is not this
-     * SDK's to extend and it applies whoever chose the key. What came back the first time is not repeated,
-     * so a caller that needs the outcome reads the transaction back.
+     * **Whether repeating the call is recognised as the same attempt is the member's to say, not this
+     * type's.** Only a call naming a transaction has an identity to hold a key against, so only those
+     * members promise a repeat is recognised, and each states its own bound. Elsewhere a repeat is
+     * recognised under a key the caller supplied and not otherwise.
+     *
+     * Acting on this promptly is what matters either way, because no bound is this SDK's to extend: a key
+     * the service no longer recognises is carried out as a new payment whoever chose it. What came back the
+     * first time is not repeated, so a caller that needs the outcome reads the transaction back.
      *
      * [code] is the underlying classification, so a caller branching on [PayabliException.code] reads what
      * went wrong as well as that it is unresolved. [cause] names the failing type and withholds its message.

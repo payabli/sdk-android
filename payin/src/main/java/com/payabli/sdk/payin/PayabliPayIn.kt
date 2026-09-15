@@ -66,8 +66,8 @@ public sealed class PayabliPayIn {
      * hold none. Past either bound the next call is a new capture under a new key, and persisting a key of
      * your own does not extend the first bound.
      *
-     * **[PayInException.Unsettled] is what says a key is held**, so a failure that leaves the outcome
-     * unknown and arrives as the type it would otherwise wrap has none to resend.
+     * No key is kept where too many payments are unresolved at once, and the next call is then a new
+     * capture under a new key as it is past either bound above.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
