@@ -160,8 +160,8 @@ public class PayInRequest(
  * template this call is recorded under. Reversing a transaction is the other one shaped that way.
  *
  * [idempotencyKey] identifies the attempt, so a retry sending the same key is the same capture rather than
- * a second one. One is minted when it is absent and kept for this [transId] for three minutes, longer once
- * a repeat has been refused under it. That key is held in memory by the flow that minted it, and none is
+ * a second one. One is minted when it is absent and kept for this [transId] for a bounded time, longer
+ * once a repeat has been refused under it. That key is held in memory by the flow that minted it, and none is
  * kept for a payment past the point where too many are unresolved at once. Set this and persist it where a
  * retry has to survive any of those.
  */

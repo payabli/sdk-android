@@ -67,7 +67,7 @@ public sealed class PayInSubmissionState {
      *
      * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
      * Reversing a transaction and capturing an earlier authorization answer with their own results and keep
-     * their own keys.
+     * their own keys, for the bounded time those contracts describe.
      */
     public class Failed(
         public val cause: PayabliException,

@@ -187,11 +187,11 @@ public sealed class PayInException(
      *
      * **Calling again is the retry, and promptly.** The key is the SDK's, held for this payment and sent
      * again on the next call naming the same transaction, so a caller repeats the call rather than carrying
-     * anything. It is held in memory for three minutes from when it was reserved, and longer once a repeat
-     * has been refused under it, so a call past that, from a new instance, or after a restart is a new
-     * payment under a new key. A key the caller set is the caller's own to supply again across any of
-     * those. What came back the first time is not repeated, so a caller that needs the outcome reads the
-     * transaction back.
+     * anything. It is held in memory for a bounded time from when it was reserved, and longer once a
+     * repeat has been refused under it, so a later call, one from a new instance, or one after a restart is
+     * a new payment under a new key. Supplying the key again does not change that: the bound is not this
+     * SDK's to extend and it applies whoever chose the key. What came back the first time is not repeated,
+     * so a caller that needs the outcome reads the transaction back.
      *
      * [code] is the underlying classification, so a caller branching on [PayabliException.code] reads what
      * went wrong as well as that it is unresolved. [cause] names the failing type and withholds its message.

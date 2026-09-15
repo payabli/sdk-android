@@ -60,11 +60,11 @@ public sealed class PayabliPayIn {
      * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. Where
      * a failure leaves it unknown whether the capture was applied, it arrives as
      * [PayInException.Unsettled], and **calling again with the same [PayInAuthorizedRequest.transId] is the
-     * retry**: the key is sent again with it, so the repeat cannot capture a second time. That holds for
-     * three minutes from when the key is reserved, and longer once a repeat has been refused under it. It
-     * is in memory on this object, so a second instance and a restarted process each hold none. Past either
-     * bound the next call is a new capture under a new key, and a host that needs to cross one sets
-     * [PayInAuthorizedRequest.idempotencyKey] itself and persists it before calling.
+     * retry**: the key is sent again with it, so the repeat cannot capture a second time. That holds for a
+     * bounded time from when the key is reserved, so retry promptly, and longer once a repeat has been
+     * refused under it. It is in memory on this object, so a second instance and a restarted process each
+     * hold none. Past either bound the next call is a new capture under a new key, and persisting a key of
+     * your own does not extend the first bound.
      *
      * **[PayInException.Unsettled] is what says a key is held**, so a failure that leaves the outcome
      * unknown and arrives as the type it would otherwise wrap has none to resend.
