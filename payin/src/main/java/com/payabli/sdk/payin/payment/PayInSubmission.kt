@@ -20,6 +20,7 @@ import com.payabli.sdk.payin.client.MoneyInClient
 import com.payabli.sdk.payin.client.PayInEnteredDetails
 import com.payabli.sdk.payin.client.PayInRoutes
 import com.payabli.sdk.payin.client.TokenStorageClient
+import com.payabli.sdk.payin.client.trimOrNull
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
@@ -539,7 +540,9 @@ internal class PayInSubmission(
 
                     else -> {
                         reservedAt = elapsedRealtimeNanos()
-                        supplied
+                        // Held as the header carries it, so the key that answers matches the key that was
+                        // kept. A blank one stays blank, because the header check is what refuses it.
+                        supplied.trimOrNull() ?: supplied
                     }
                 }
             key = chosen

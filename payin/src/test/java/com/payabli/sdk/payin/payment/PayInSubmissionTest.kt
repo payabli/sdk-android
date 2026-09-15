@@ -410,6 +410,37 @@ class PayInSubmissionTest {
         }
 
     /**
+     * A caller's key is kept as the header carries it, so the answer to it matches what was kept.
+     *
+     * Sending it untrimmed and keeping it trimmed, or the other way round, leaves a settled attempt held:
+     * the next keyless call then resends a key the service has already answered and the capture is refused.
+     */
+    @Test
+    fun `a caller's key is kept as the header carries it`() =
+        runTest(timeout = timeout) {
+            val transport =
+                ScriptedPayInTransport(
+                    listOf(
+                        ScriptedPayInTransport.failingWith(dropped()),
+                        ScriptedPayInTransport.answering(200, approved),
+                    ),
+                )
+            val submission = submissionOver(transport)
+
+            submission.captureAuthorized(
+                TEST_ENTRY_POINT,
+                PayInAuthorizedRequest("101-abc", testDetails(), idempotencyKey = " caller-key "),
+            )
+            submission.captureAuthorized(
+                TEST_ENTRY_POINT,
+                PayInAuthorizedRequest("101-abc", testDetails(), idempotencyKey = "caller-key"),
+            )
+            submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-abc", testDetails()))
+
+            assertEquals("$MINTED_KEY-1", sentKey(transport))
+        }
+
+    /**
      * Past the cap a minted key is not kept, and a failure that reports one would name a retry that mints.
      *
      * The caller acts on the report by calling again, so reporting a key nothing will resend turns an
