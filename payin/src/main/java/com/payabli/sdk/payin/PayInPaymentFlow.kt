@@ -12,6 +12,7 @@ import com.payabli.sdk.payin.form.PayInFormDraft
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoredMethod
@@ -178,6 +179,12 @@ internal class PayInPaymentFlow private constructor(
             is PayInSubmissionState.Succeeded.Method -> Result.success(outcome.storedMethod)
             else -> Result.failure(outcome.asFailure())
         }
+
+    override suspend fun capture(request: PayInRequest): Result<PayInResult> =
+        submission.capture(entryPoint, request).asPayment()
+
+    override suspend fun authorize(request: PayInRequest): Result<PayInResult> =
+        submission.authorize(entryPoint, request).asPayment()
 
     override suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult> =
         submission.captureAuthorized(entryPoint, request).asPayment()
