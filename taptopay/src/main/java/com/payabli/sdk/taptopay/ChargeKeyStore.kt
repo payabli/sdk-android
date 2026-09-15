@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * The idempotency key of a charge that has not settled, one per entry point.
@@ -21,8 +22,9 @@ import java.util.UUID
  * A charge opens a transaction, waits on a card, then closes it. Every step after the open can fail leaving
  * the caller unsure whether money moved, and the recovery a host reaches for is to charge again. Reusing the
  * key of the unsettled attempt is what names that repeat as one attempt and not two sales, and the service
- * refuses such a repeat instead of opening a second transaction. How long it keeps doing so is unmeasured;
- * [com.payabli.sdk.taptopay.network.TTPTransactionClient] carries the bound.
+ * refuses such a repeat instead of opening a second transaction, and stops once it no longer recognises
+ * the key. Past that a resend opens a transaction exactly as a first send would, so nothing is resent past
+ * [ChargeAttempts.MAX_AGE_MILLIS].
  *
  * **In storage rather than on the runner that reads it.** A terminal is built per call and holds no cache, so
  * two terminals for one entry point are two objects, and the retry usually comes from the second one because
@@ -38,10 +40,13 @@ import java.util.UUID
  * One entry holds every entry point's key, for the reason [com.payabli.sdk.taptopay.enrollment
  * .AttestedDeviceStore]'s does: the store offers no enumeration, so a name built from a value that changes
  * leaves an entry nothing can find and nothing can remove.
+ *
+ * [nowMillis] is a wall clock: these records outlive the process, and a monotonic one restarts at boot.
  */
 internal class ChargeKeyStore(
     private val storage: PayabliSecureStorage,
     private val newKey: () -> String = { UUID.randomUUID().toString() },
+    private val nowMillis: () -> Long = System::currentTimeMillis,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),
 ) {
     /**
@@ -52,24 +57,57 @@ internal class ChargeKeyStore(
     private val lock = SHARED_LOCK
 
     /**
-     * The key [entry]'s next opening sends: the unsettled attempt's, or a new one when nothing is held.
+     * Keys this process settled and could not remove, by entry point, so a reservation finding one mints
+     * rather than resending a charge that is over.
+     *
+     * In memory, because the write that would have persisted it is the one that failed. On the companion
+     * for the reason [lock] is.
+     */
+    private val settled = SHARED_SETTLED
+
+    /**
+     * The key [entry]'s next opening sends, and whether it is one already held.
+     *
+     * [Reserved.reused] is what tells a caller a refusal answers the send rather than the charge: an opening
+     * refused as a repeat of a key this SDK already sent says the earlier attempt reached the service, and
+     * says nothing about how it ended.
      *
      * Reading and reserving are one operation, under one lock. Split in two they leave a window where two
      * charges both find nothing held and mint separately.
      */
-    suspend fun reserve(entry: String): String =
+    suspend fun reserve(entry: String): Reserved =
         lock.withLock {
-            val held = load()
-            held.forEntry(entry)?.let { return@withLock it.key }
+            val now = nowMillis()
+            val loaded = load()
+            val held = loaded.withinWindowAt(now)
+            val existing = held.forEntry(entry)
+            if (existing != null && settled[entry] != existing.key) {
+                // Stored, not only read: a stamp left in the future reads as fresh on every reservation.
+                if (held !== loaded) store(held)
+                return@withLock Reserved(existing.key, reused = true)
+            }
             // Nothing is evicted to make room. Every record here names a charge whose outcome is still in
             // doubt, so dropping the coldest to admit a new one loses the only thing that would recognise
             // its repeat. Refusing is the recoverable direction: this needs more unsettled entry points at
             // once than a device has, and each one clears as its charge is closed.
-            if (held.isFull) throw ChargeKeyStoreFullException(held.attempts.size)
+            if (existing == null && held.isFull) throw ChargeKeyStoreFullException(held.attempts.size)
             val minted = newKey()
-            store(held.with(ChargeAttempt(entry = entry, key = minted)))
-            minted
+            store(held.with(ChargeAttempt(entry = entry, key = minted, reservedAt = now)))
+            Reserved(minted, reused = false)
         }
+
+    /**
+     * A reserved key, and whether it was already held for this entry point.
+     *
+     * Not a `data class`: the synthesized `toString` would put the key into anything that renders one.
+     *
+     * `internal` is a public name-mangled member on the JVM, so the key's getter is reachable from Java
+     * without it. `@get:JvmSynthetic` is what removes it; [reused] is a flag and carries nothing.
+     */
+    internal class Reserved(
+        @get:JvmSynthetic val key: String,
+        val reused: Boolean,
+    )
 
     /**
      * Forgets [entry]'s key when it is still [key], because that charge reached an outcome not in doubt.
@@ -85,9 +123,8 @@ internal class ChargeKeyStore(
      * already been superseded, and the charge that owns it is the one entitled to settle it.
      *
      * **Never fails the caller.** By the time this runs the charge has an outcome the caller is entitled to,
-     * and raising here would report a settled payment as a failed one. What a key left behind costs is that
-     * the next charge for this entry point reuses it and is refused; that is visible, recoverable, and
-     * cheaper than turning an approval into an error.
+     * and raising here would report a settled payment as a failed one. The key left behind is remembered in
+     * [settled], so the next reservation mints rather than resending a charge that is over.
      *
      * A record that will not decode raises out of [load] and is caught here too. The key stays named, since
      * removing it needs the record this cannot read.
@@ -96,24 +133,49 @@ internal class ChargeKeyStore(
         entry: String,
         key: String,
     ) {
-        try {
-            lock.withLock {
+        // Caught inside the lock, so the marker lands before any other charge can reserve. Caught outside
+        // it, the key sits in storage with nothing against it and the next reserve takes it as one to resend.
+        var unforgotten: Throwable? = null
+        lock.withLock {
+            try {
                 val held = load()
-                if (held.forEntry(entry)?.key != key) return@withLock
-                val remaining = held.without(entry)
-                if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
+                if (held.forEntry(entry)?.key == key) {
+                    val remaining = held.without(entry)
+                    if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
+                }
+            } catch (unwritable: SecureStorageException) {
+                rememberSettled(entry, key)
+                unforgotten = RedactedCause(unwritable)
+            } catch (unreadable: ChargeKeyUnreadableException) {
+                // Safe unredacted: the message is fixed text and the cause underneath is already a
+                // `RedactedCause`, so the decoder's excerpt is not on this chain.
+                rememberSettled(entry, key)
+                unforgotten = unreadable
             }
-        } catch (unwritable: SecureStorageException) {
-            logger.warn(RedactedCause(unwritable), LogField.safe("event", EVENT_NOT_SETTLED)) {
-                "a settled charge's idempotency key could not be forgotten"
-            }
-        } catch (unreadable: ChargeKeyUnreadableException) {
-            // Safe unredacted: the message is fixed text and the cause underneath is already a
-            // `RedactedCause`, so the decoder's excerpt is not on this chain.
-            logger.warn(unreadable, LogField.safe("event", EVENT_NOT_SETTLED)) {
+        }
+        unforgotten?.let {
+            logger.warn(it, LogField.safe("event", EVENT_NOT_SETTLED)) {
                 "a settled charge's idempotency key could not be forgotten"
             }
         }
+    }
+
+    /**
+     * Records that [entry]'s [key] names a charge that is over, for a reservation storage will still offer
+     * it to. Called with [lock] held, which is not reentrant.
+     *
+     * Capped at [ChargeAttempts.MAX], dropping the oldest, where [ChargeAttempts] refuses a new entry
+     * instead. The two differ because refusing is not available here: this records something that has
+     * already happened.
+     */
+    private fun rememberSettled(
+        entry: String,
+        key: String,
+    ) {
+        if (entry !in settled && settled.size >= ChargeAttempts.MAX) {
+            settled.remove(settled.keys.first())
+        }
+        settled[entry] = key
     }
 
     /**
@@ -130,7 +192,7 @@ internal class ChargeKeyStore(
      * to give.
      */
     private suspend fun load(): ChargeAttempts {
-        val bytes = storage.get(ENTRY) ?: return ChargeAttempts.EMPTY
+        val bytes = storage.get(ENTRY) ?: return migrated()
 
         return try {
             PayabliJson.format.decodeFromString(ChargeAttempts.serializer(), bytes.decodeToString())
@@ -142,6 +204,38 @@ internal class ChargeKeyStore(
         } finally {
             bytes.fill(0)
         }
+    }
+
+    /**
+     * The previous record's keys in the current shape, or empty when there is no previous record.
+     *
+     * A record written before [ChargeAttempt.reservedAt] cannot decode into it, and a record that will not
+     * decode stops every charge for this device, so the keys are carried rather than left. The carry stamps
+     * now, which can hold a key past what the service recognises: sending one then opens a transaction just
+     * as minting would, so it costs nothing minting would not, and it keeps the refusal for an upgrade
+     * landing inside the window.
+     */
+    private suspend fun migrated(): ChargeAttempts {
+        val bytes = storage.get(PREVIOUS_ENTRY) ?: return ChargeAttempts.EMPTY
+
+        val carried =
+            try {
+                PayabliJson.format
+                    .decodeFromString(PreviousChargeAttempts.serializer(), bytes.decodeToString())
+                    .attempts
+                    .map { ChargeAttempt(entry = it.entry, key = it.key, reservedAt = nowMillis()) }
+            } catch (malformed: SerializationException) {
+                reportUnreadable(malformed)
+                throw ChargeKeyUnreadableException(RedactedCause(malformed))
+            } finally {
+                bytes.fill(0)
+            }
+
+        val moved = ChargeAttempts(carried)
+        if (!moved.isEmpty) store(moved)
+        // Removed only once the new record stands, so a failure between the two leaves the keys readable.
+        storage.remove(PREVIOUS_ENTRY)
+        return moved
     }
 
     /** Encodes and stores the whole collection, wiping the buffer whichever way the write goes. */
@@ -166,18 +260,35 @@ internal class ChargeKeyStore(
             "a held charge key could not be read, so no charge can be named"
         }
 
-    private companion object {
+    internal companion object {
         /**
          * Versioned the way the device record's name is: if the shape changes, the next version takes a new
          * name and removes this one explicitly, because this is the last code that knows it.
          */
-        const val ENTRY = "com.payabli.sdk.taptopay.chargekeys.v1"
+        const val ENTRY = "com.payabli.sdk.taptopay.chargekeys.v2"
 
-        const val EVENT_UNREADABLE = "ttp_charge_key_unreadable"
-        const val EVENT_NOT_SETTLED = "ttp_charge_key_not_settled"
+        /** Read once and removed, so a device upgrading keeps the key a charge in flight is holding. */
+        const val PREVIOUS_ENTRY = "com.payabli.sdk.taptopay.chargekeys.v1"
+
+        private const val EVENT_UNREADABLE = "ttp_charge_key_unreadable"
+        private const val EVENT_NOT_SETTLED = "ttp_charge_key_not_settled"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
-        val SHARED_LOCK = Mutex()
+        private val SHARED_LOCK = Mutex()
+
+        /**
+         * One per process, for the reason [SHARED_LOCK] is. Insertion-ordered, so the oldest is the one
+         * dropped when a further entry point needs a slot.
+         *
+         * Private, because the companion is `internal` and that is a public name-mangled member on the
+         * JVM: exposed, this hands a Java caller the held keys and lets it clear the markers that stop a
+         * finished charge being resent.
+         */
+        private val SHARED_SETTLED: MutableMap<String, String> = LinkedHashMap()
+
+        /** Drops every marker. Process state, so a suite sharing one JVM shares it. */
+        @JvmSynthetic
+        fun forgetSettled() = SHARED_SETTLED.clear()
     }
 }
 
@@ -227,11 +338,35 @@ internal class ChargeKeyStoreFullException(
  *
  * Not a data class: a generated `toString` would print the entry point, which names a merchant, and the key,
  * which names an attempt at moving their money.
+ *
+ * [reservedAt] is when the key was chosen, on a wall clock, and carries no default for the reason
+ * [ChargeAttempts.attempts] carries none: a record written in another shape would decode as one reserved
+ * now.
  */
 @Serializable
 internal class ChargeAttempt(
     val entry: String,
     val key: String,
+    val reservedAt: Long,
+) {
+    /** This attempt with its stamp clamped into the window ending at [nowMillis]. */
+    fun clampedTo(nowMillis: Long): ChargeAttempt {
+        val within = reservedAt.coerceIn(nowMillis - ChargeAttempts.MAX_AGE_MILLIS, nowMillis)
+        return if (within == reservedAt) this else ChargeAttempt(entry, key, within)
+    }
+}
+
+/** The shape held before a reservation was stamped, read only to carry its keys into the current one. */
+@Serializable
+private class PreviousChargeAttempt(
+    val entry: String,
+    val key: String,
+)
+
+/** [PreviousChargeAttempt]s as the previous record held them. */
+@Serializable
+private class PreviousChargeAttempts(
+    val attempts: List<PreviousChargeAttempt>,
 )
 
 /**
@@ -262,6 +397,23 @@ internal class ChargeAttempts(
     fun with(attempt: ChargeAttempt): ChargeAttempts =
         ChargeAttempts(listOf(attempt) + attempts.filterNot { it.entry == attempt.entry })
 
+    /**
+     * The records still naming a key the service is expected to recognise, with their stamps clamped into
+     * the window. `this` when neither was needed, so a caller can tell whether to write the result back.
+     *
+     * A stamp is clamped rather than trusted, so one in the future counts as reserved now and cannot make
+     * a record permanent. A clock jumping forward past the window expires a key that is still live, and
+     * what that costs is the refusal a resend would have earned.
+     */
+    fun withinWindowAt(nowMillis: Long): ChargeAttempts {
+        val kept =
+            attempts
+                .map { it.clampedTo(nowMillis) }
+                .filter { nowMillis - it.reservedAt < MAX_AGE_MILLIS }
+        val unchanged = kept.size == attempts.size && kept.zip(attempts).all { (a, b) -> a === b }
+        return if (unchanged) this else ChargeAttempts(kept)
+    }
+
     /** No room for an entry point that is not already held. Nothing here may be evicted to make room. */
     val isFull: Boolean get() = attempts.size >= MAX
 
@@ -285,6 +437,16 @@ internal class ChargeAttempts(
          * Above the deployment that exists, which is one entry point at a time.
          */
         const val MAX: Int = 4
+
+        /**
+         * How long a key is held, derived to land past the point the service stops recognising it: what the
+         * service holds, plus the transport's whole-call budget doubled for the one credential replay it
+         * may perform. The card-present opening goes through the same suppression as the money-in routes.
+         *
+         * Erring long costs nothing, a forgotten key and an unseen one being executed alike. Erring short
+         * forfeits the refusal, which is the only thing on this path that stops a second charge.
+         */
+        val MAX_AGE_MILLIS: Long = TimeUnit.MINUTES.toMillis(3)
 
         val EMPTY: ChargeAttempts = ChargeAttempts(emptyList())
     }

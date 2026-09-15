@@ -35,6 +35,7 @@ class LeavesOutcomeUnknownTest {
             PayabliErrorCode.SESSION_BURNED,
             PayabliErrorCode.PAYMENT_DECLINED,
             PayabliErrorCode.RATE_LIMITED,
+            PayabliErrorCode.CONFLICT,
             PayabliErrorCode.INVALID_CONFIGURATION,
             PayabliErrorCode.VALIDATION_ERROR,
         )

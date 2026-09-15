@@ -149,6 +149,7 @@ internal class TapToPayChargeRunner(
             // Hoisted so the failure path below can name the key this charge sent. Null until it is
             // reserved, which is what says a failure happened before there was an attempt to release.
             var reserved: String? = null
+            var resentKey = false
             // Set once the reader has been asked for a card, and never unset. Past that point no failure
             // releases the key: the sale may already be captured, so nothing arriving afterwards is
             // evidence the money did not move.
@@ -168,8 +169,11 @@ internal class TapToPayChargeRunner(
                     }
                 // Reserved after the checks above, so a charge that never reaches the wire leaves no key
                 // behind, and held across a failure that leaves it unknown whether this opened anything.
-                val idempotencyKey = keys.reserve(entry)
+                val reservation = keys.reserve(entry)
+                val idempotencyKey = reservation.key
                 reserved = idempotencyKey
+                resentKey = reservation.reused
+                if (resentKey) capture = TapToPayCapture.UNKNOWN
                 val paymentTransId =
                     client.initiate(
                         entryPoint = entry,
@@ -246,7 +250,7 @@ internal class TapToPayChargeRunner(
                 // Only before the reader answered, and only for a failure that says nothing was opened.
                 // After the reader has answered the sale may be captured, so no failure arriving from
                 // there on is evidence the money did not move.
-                if (!askedForCard && isAnswered(failure)) reserved?.let { keys.settle(entry, it) }
+                if (!askedForCard && isAnswered(failure, resentKey)) reserved?.let { keys.settle(entry, it) }
                 // Reported before it is wrapped: the report reads the failure's own type to decide what kind
                 // of failure it was, and would classify every one of them alike once wrapped.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard)
@@ -438,20 +442,27 @@ internal class TapToPayChargeRunner(
      * Whether [failure] says nothing was opened, so its key can be let go.
      *
      * Read only before the reader has answered. The service refusing, declining or reporting the paypoint
-     * unequipped are all answers about the opening: no transaction exists, so what comes next is a new
-     * attempt and a held key would refuse it. Anything else is kept.
+     * unequipped are answers about the opening, so what comes next is a new attempt and a held key would
+     * refuse it. Anything else is kept.
+     *
+     * On a resend the earlier opening reached the service and may have opened a transaction, so only the
+     * service answering about the transaction settles it. Everything else refused the send and leaves that
+     * opening exactly as open.
      *
      * Kept rather than released is the safe direction, so this answers true only for what it recognises.
      */
-    private fun isAnswered(failure: Throwable): Boolean =
+    private fun isAnswered(
+        failure: Throwable,
+        resentKey: Boolean,
+    ): Boolean =
         when (failure) {
             is CancellationException -> false
             is TTPTransactionException.Refused,
             is TTPTransactionException.ServiceRejected,
-            is TTPTransactionException.NotEnabled,
             -> true
 
-            is PayabliException -> !failure.code.leavesOutcomeUnknown
+            is TTPTransactionException.NotEnabled -> !resentKey
+            is PayabliException -> !resentKey && !failure.code.leavesOutcomeUnknown
             else -> false
         }
 }

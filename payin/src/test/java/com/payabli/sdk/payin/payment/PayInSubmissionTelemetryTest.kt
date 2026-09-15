@@ -25,10 +25,10 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -38,6 +38,9 @@ import kotlin.time.Duration.Companion.seconds
  * refusal rates, which are the questions asked when a payment path is suspected.
  */
 class PayInSubmissionTelemetryTest {
+    /** Advances a millisecond per read, so a reported duration is non-zero. */
+    private val ticks = AtomicLong(0)
+
     private val recorded = mutableListOf<Pair<String, Map<String, String>>>()
 
     @Before
@@ -60,7 +63,7 @@ class PayInSubmissionTelemetryTest {
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
-            assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
+            assertTimed(properties)
         }
 
     @Test
@@ -94,7 +97,7 @@ class PayInSubmissionTelemetryTest {
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
-            assertNotNull(properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull())
+            assertTimed(properties)
         }
 
     @Test
@@ -328,9 +331,21 @@ class PayInSubmissionTelemetryTest {
             storage = TokenStorageClient(transport, logger),
             dispatcher = StandardTestDispatcher(testScheduler),
             newIdempotencyKey = { "a-minted-key" },
+            elapsedRealtimeNanos = { ticks.addAndGet(1_000_000) },
             logger = logger,
             session = session,
         )
+    }
+
+    /**
+     * Asserts a duration was reported, and that it was measured on the clock this test injected.
+     *
+     * The bound is loose enough not to count how many times the code reads the clock, which is not what any
+     * of these tests is about, and tight enough that a reading taken from any other clock fails it.
+     */
+    private fun assertTimed(properties: Map<String, String>) {
+        val reported = properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull()
+        assertTrue("not measured on the injected clock: $reported", reported != null && reported in 1..5)
     }
 
     private fun aTestSession() =

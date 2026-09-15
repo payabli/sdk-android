@@ -39,8 +39,9 @@ import java.net.HttpURLConnection.HTTP_NOT_FOUND
  *
  * **The two routes are retried differently, and the rule is per route.** [initiate] sends an idempotency key
  * naming the attempt. A repeat under one key is refused and answers with no identifier, measured against a
- * live paypoint, so it does not open a second transaction. **How long that holds is not measured**, and a
- * repeat far enough after the first is outside what anyone has shown. [initiate] is never retried here
+ * live paypoint, so it does not open a second transaction. **It holds only while the service still
+ * recognises the key**, and a repeat past that opens a transaction exactly as a first send would;
+ * `ChargeKeyStore` is what does not send one. [initiate] is never retried here
  * either way: a refused repeat leaves nothing to carry on with, so only the caller holding the key decides
  * whether to send one. Closing is repeatable, so [update] is.
  *
