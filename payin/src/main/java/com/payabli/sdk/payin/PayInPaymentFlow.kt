@@ -212,7 +212,7 @@ internal class PayInPaymentFlow private constructor(
     private fun PayInSubmissionState?.asFailure(): Throwable =
         when (this) {
             is PayInSubmissionState.Failed ->
-                if (retryKey != null) PayInException.Unsettled(cause.code, cause) else cause
+                if (retryKey != null) PayInException.Unsettled(cause) else cause
 
             null -> PayInException.AlreadySubmitting()
             else -> IllegalStateException("a submission returned while its state read $this")

@@ -300,7 +300,6 @@ class PayInOutcomesTest {
             Result
                 .failure<PayInResult>(
                     PayInException.Unsettled(
-                        PayabliErrorCode.NETWORK_ERROR,
                         PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the link dropped"),
                     ),
                 ).toOutcome() as PayInOutcome.Refused

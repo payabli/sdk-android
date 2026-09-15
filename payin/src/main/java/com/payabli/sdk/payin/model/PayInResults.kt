@@ -195,13 +195,19 @@ public sealed class PayInException(
      * the service no longer recognises is carried out as a new payment whoever chose it. What came back the
      * first time is not repeated, so a caller that needs the outcome reads the transaction back.
      *
-     * [code] is the underlying classification, so a caller branching on [PayabliException.code] reads what
-     * went wrong as well as that it is unresolved. [cause] names the failing type and withholds its message.
+     * [PayabliException.code] is [cause]'s own, so a caller branching on it reads what went wrong as well
+     * as that it is unresolved. It is taken from [cause] rather than accepted beside it, because two
+     * sources for one classification can disagree and a caller cannot tell which it is holding. [cause]
+     * names the failing type and withholds its message.
      */
     public class Unsettled(
-        code: PayabliErrorCode,
         cause: PayabliException,
-    ) : PayInException(code, DEFAULT_UNSETTLED_REASON, detail = cause.reason, cause = RedactedCause(cause)) {
+    ) : PayInException(
+            cause.code,
+            DEFAULT_UNSETTLED_REASON,
+            detail = cause.reason,
+            cause = RedactedCause(cause),
+        ) {
         override fun toString(): String = "PayInException.Unsettled(code=${code.wireName})"
     }
 
