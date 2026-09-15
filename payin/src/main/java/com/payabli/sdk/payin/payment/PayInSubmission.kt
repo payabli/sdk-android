@@ -5,6 +5,7 @@ import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
+import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
@@ -246,10 +247,12 @@ internal class PayInSubmission(
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
-            outcome?.let {
-                if (publishes) sink.value = it
-                if (payment != null) settle(payment, it, retry)
-                report(event, outcomeOf(it), codeOf(it), startedAt, entryPoint)
+            val finished = outcome
+            if (finished != null) {
+                val settled = if (payment != null) settle(payment, finished, retry) else finished
+                outcome = settled
+                if (publishes) sink.value = settled
+                report(event, outcomeOf(settled), codeOf(settled), startedAt, entryPoint)
             }
             inFlight.unlock()
         }
@@ -257,16 +260,21 @@ internal class PayInSubmission(
     }
 
     /**
-     * Keeps [payment]'s key where the outcome is unknown, and forgets it where the service answered.
+     * Keeps [payment]'s key where the outcome is unknown, forgets it where the service answered, and
+     * answers with the outcome to report.
      *
      * An answer of any kind ends the attempt, so what the caller sends next is a different request and
      * carrying this key into it would claim a repeat that it is not.
+     *
+     * A minted key there was no room to keep is reported as none: it is not sent again, so reporting it
+     * would name a retry that mints instead. A key the caller chose is reported whatever the map did,
+     * because the caller's own next request carries it.
      */
     private fun settle(
         payment: String,
         outcome: PayInSubmissionState,
         retry: RetryKey,
-    ) {
+    ): PayInSubmissionState {
         val failure = (outcome as? PayInSubmissionState.Failed)?.cause
         val key = retry.key
         when {
@@ -277,6 +285,12 @@ internal class PayInSubmission(
                 hold(payment, HeldKey(key, retry.reservedAt, arrived = true))
 
             else -> Unit
+        }
+        return when {
+            outcome !is PayInSubmissionState.Failed -> outcome
+            outcome.retryKey == null || !retry.minted -> outcome
+            unresolved[payment]?.key == outcome.retryKey -> outcome
+            else -> PayInSubmissionState.Failed(outcome.cause, outcome.fieldErrors, retryKey = null)
         }
     }
 
@@ -297,7 +311,7 @@ internal class PayInSubmission(
         val existing = unresolved[payment]
         when {
             existing == null && unresolved.size >= HELD_KEYS_MAX ->
-                logger.debug(LogField.safe("event", "payin_retry_keys_full")) {
+                logger.warn(LogField.safe("event", "payin_retry_keys_full")) {
                     "a payment's key was not held, because too many are unresolved at once"
                 }
 
@@ -492,6 +506,10 @@ internal class PayInSubmission(
         var reservedAt: Long = 0
             private set
 
+        /** Whether the key sent was minted here rather than chosen by the caller or already held. */
+        var minted: Boolean = false
+            private set
+
         /** Whether the key sent is the one held for this payment rather than the caller's or a new one. */
         var reused: Boolean = false
             private set
@@ -513,9 +531,15 @@ internal class PayInSubmission(
                         held.key
                     }
 
+                    supplied == null -> {
+                        reservedAt = elapsedRealtimeNanos()
+                        minted = true
+                        newIdempotencyKey()
+                    }
+
                     else -> {
                         reservedAt = elapsedRealtimeNanos()
-                        supplied ?: newIdempotencyKey()
+                        supplied
                     }
                 }
             key = chosen
@@ -523,7 +547,7 @@ internal class PayInSubmission(
         }
     }
 
-    private companion object {
+    internal companion object {
         const val REASON_UNEXPECTED = "The payment could not be submitted"
 
         /**

@@ -409,6 +409,47 @@ class PayInSubmissionTest {
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
         }
 
+    /**
+     * Past the cap a minted key is not kept, and a failure that reports one would name a retry that mints.
+     *
+     * The caller acts on the report by calling again, so reporting a key nothing will resend turns an
+     * attempt that may have landed into a second payment.
+     */
+    @Test
+    fun `a minted key there was no room to keep is not reported`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+            repeat(PayInSubmission.HELD_KEYS_MAX) {
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            val overflowing =
+                submission.captureAuthorized(
+                    TEST_ENTRY_POINT,
+                    PayInAuthorizedRequest("101-past-the-cap", testDetails()),
+                )
+
+            assertEquals(null, failed(overflowing!!).retryKey)
+        }
+
+    /** The caller's own next request carries its own key, so the cap does not take that away. */
+    @Test
+    fun `a caller's key is reported past the cap`() =
+        runTest(timeout = timeout) {
+            val submission = submissionOver(FakePayInTransport.failingWith(dropped()))
+            repeat(PayInSubmission.HELD_KEYS_MAX) {
+                submission.captureAuthorized(TEST_ENTRY_POINT, PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            val overflowing =
+                submission.captureAuthorized(
+                    TEST_ENTRY_POINT,
+                    PayInAuthorizedRequest("101-past-the-cap", testDetails(), idempotencyKey = "caller-key"),
+                )
+
+            assertEquals("caller-key", failed(overflowing!!).retryKey)
+        }
+
     /** A later failure that has not seen a conflict must not forget that an earlier one did. */
     @Test
     fun `an unknown outcome after a refused repeat leaves the key exempt from ageing`() =
