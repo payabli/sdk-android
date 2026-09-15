@@ -63,7 +63,7 @@ class PayInSubmissionTelemetryTest {
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
-            assertEquals("1", properties[TelemetryProperty.DURATION_MS.key])
+            assertTimed(properties)
         }
 
     @Test
@@ -97,7 +97,7 @@ class PayInSubmissionTelemetryTest {
             val (event, properties) = recorded.single()
             assertEquals(TelemetryEvents.PAYIN_VOID_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
-            assertEquals("1", properties[TelemetryProperty.DURATION_MS.key])
+            assertTimed(properties)
         }
 
     @Test
@@ -335,6 +335,17 @@ class PayInSubmissionTelemetryTest {
             logger = logger,
             session = session,
         )
+    }
+
+    /**
+     * Asserts a duration was reported and is greater than zero.
+     *
+     * The exact figure counts how many times the code under test reads the clock, which is not what any of
+     * these tests is about.
+     */
+    private fun assertTimed(properties: Map<String, String>) {
+        val reported = properties[TelemetryProperty.DURATION_MS.key]?.toLongOrNull()
+        assertTrue("no duration was reported: $reported", reported != null && reported > 0)
     }
 
     private fun aTestSession() =

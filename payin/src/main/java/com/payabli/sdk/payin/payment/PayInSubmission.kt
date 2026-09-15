@@ -231,7 +231,7 @@ internal class PayInSubmission(
         }
         onReserved(true)
         val startedAt = elapsedRealtimeNanos()
-        val retry = RetryKey(payment?.let { stillWorthSending(it, startedAt) }, startedAt)
+        val retry = RetryKey(payment?.let { stillWorthSending(it, startedAt) })
         if (publishes) sink.value = PayInSubmissionState.Submitting
         var outcome: PayInSubmissionState? = null
         try {
@@ -478,20 +478,18 @@ internal class PayInSubmission(
      */
     private inner class RetryKey(
         private val held: HeldKey?,
-        private val startedAt: Long,
     ) {
         var key: String? = null
             private set
 
         /**
-         * When the key this attempt sends was first reserved, which is [startedAt] for any key but a reused
-         * one.
+         * When the key this attempt sends was reserved, read as the key is chosen rather than as the call
+         * began: encoding a body and reaching the dispatcher sit between the two, and counting them spends
+         * part of the window before anything has been sent.
          *
-         * A reused key keeps the reservation it already had. Restamping it here would start the window
-         * again on every resend, so a key could be sent indefinitely and would eventually be one the service
-         * no longer holds, which is the second charge the window exists to prevent.
+         * A reused key keeps the reservation it already had, so a resend does not start the window again.
          */
-        var reservedAt: Long = startedAt
+        var reservedAt: Long = 0
             private set
 
         /** Whether the key sent is the one held for this payment rather than the caller's or a new one. */
@@ -509,13 +507,16 @@ internal class PayInSubmission(
         fun reserve(supplied: String?): String {
             val chosen =
                 when {
-                    supplied != null -> supplied
-                    held != null -> {
+                    held != null && supplied == null -> {
                         reservedAt = held.reservedAt
                         reused = true
                         held.key
                     }
-                    else -> newIdempotencyKey()
+
+                    else -> {
+                        reservedAt = elapsedRealtimeNanos()
+                        supplied ?: newIdempotencyKey()
+                    }
                 }
             key = chosen
             return chosen
