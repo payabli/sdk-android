@@ -134,8 +134,8 @@ public sealed class PayInPaymentMethod {
     /**
      * True when this method can be authorized as well as captured.
      *
-     * True for a card and a cloud device, false for an account, a check and cash. Checked before a request is
-     * built, so a caller learns it without a round trip.
+     * True for a card and a cloud device, false for an account, a check and cash. Read before anything is
+     * sent, so a caller is answered here rather than by a round trip.
      *
      * **[Stored] is absent because of how it is written here, not because a stored card cannot be held.** This
      * type names a stored method as a kind of its own rather than naming the method it stands for, and an
