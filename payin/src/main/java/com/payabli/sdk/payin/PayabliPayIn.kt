@@ -60,14 +60,16 @@ public sealed class PayabliPayIn {
      * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. Where
      * a failure leaves it unknown whether the capture was applied, it arrives as
      * [PayInException.Unsettled], and **calling again with the same [PayInAuthorizedRequest.transId] is the
-     * retry**: the key is sent again with it, so the repeat cannot capture a second time. That holds for a
-     * bounded time from when the key is reserved, so retry promptly, and longer once a repeat has been
-     * refused under it. It is in memory on this object, so a second instance and a restarted process each
-     * hold none. Past either bound the next call is a new capture under a new key, and persisting a key of
-     * your own does not extend the first bound.
+     * retry**: the key is sent again with it, so the repeat cannot capture a second time.
      *
-     * No key is kept where too many payments are unresolved at once, and the next call is then a new
-     * capture under a new key as it is past either bound above.
+     * **What this SDK guarantees.** A key you supply is the one sent. A key the SDK minted is resent while
+     * it still holds one for this transaction, and it stops holding one after a bound it does not publish.
+     * It holds none at all past the point where too many payments are unresolved at once, and none survives
+     * a second instance or a restart.
+     *
+     * **What only the service decides.** Whether a repeat is recognised at all. Persisting a key, your own
+     * or one this SDK handed you, lets you send it again; it does not make the service remember it. Past
+     * the point where the service has stopped, the same key is carried out as a new request.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
