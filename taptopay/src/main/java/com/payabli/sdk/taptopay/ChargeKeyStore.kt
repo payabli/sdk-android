@@ -100,9 +100,12 @@ internal class ChargeKeyStore(
      * A reserved key, and whether it was already held for this entry point.
      *
      * Not a `data class`: the synthesized `toString` would put the key into anything that renders one.
+     *
+     * `internal` is a public name-mangled member on the JVM, so the key's getter is reachable from Java
+     * without it. `@get:JvmSynthetic` is what removes it; [reused] is a flag and carries nothing.
      */
     internal class Reserved(
-        val key: String,
+        @get:JvmSynthetic val key: String,
         val reused: Boolean,
     )
 
@@ -267,19 +270,24 @@ internal class ChargeKeyStore(
         /** Read once and removed, so a device upgrading keeps the key a charge in flight is holding. */
         const val PREVIOUS_ENTRY = "com.payabli.sdk.taptopay.chargekeys.v1"
 
-        const val EVENT_UNREADABLE = "ttp_charge_key_unreadable"
-        const val EVENT_NOT_SETTLED = "ttp_charge_key_not_settled"
+        private const val EVENT_UNREADABLE = "ttp_charge_key_unreadable"
+        private const val EVENT_NOT_SETTLED = "ttp_charge_key_not_settled"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
-        val SHARED_LOCK = Mutex()
+        private val SHARED_LOCK = Mutex()
 
         /**
          * One per process, for the reason [SHARED_LOCK] is. Insertion-ordered, so the oldest is the one
          * dropped when a further entry point needs a slot.
+         *
+         * Private, because the companion is `internal` and that is a public name-mangled member on the
+         * JVM: exposed, this hands a Java caller the held keys and lets it clear the markers that stop a
+         * finished charge being resent.
          */
-        val SHARED_SETTLED: MutableMap<String, String> = LinkedHashMap()
+        private val SHARED_SETTLED: MutableMap<String, String> = LinkedHashMap()
 
         /** Drops every marker. Process state, so a suite sharing one JVM shares it. */
+        @JvmSynthetic
         fun forgetSettled() = SHARED_SETTLED.clear()
     }
 }
