@@ -142,7 +142,7 @@ class MoneyInClientTest {
                 }
 
             assertEquals("idempotencyKey", failure?.field)
-            // Refused before the request was built, so nothing was sent at all.
+            // Refused before anything was sent, which is what the assertion below reads.
             assertNull(transport.request)
         }
 
@@ -255,13 +255,14 @@ class MoneyInClientTest {
         }
 
     @Test
-    fun `authorize refuses everything but entered card details, before transport`() =
+    fun `authorize refuses a method the route does not take, before transport`() =
         runTest(timeout = timeout) {
             val methods =
                 listOf(
                     PayInPaymentMethod.BankAccount(testAccount()),
+                    // Sent as its own method name rather than the method it stands for, which this route
+                    // does not read. Refused here so the caller is not told by a round trip.
                     PayInPaymentMethod.Stored("stored-1"),
-                    PayInPaymentMethod.CloudDevice("device-1"),
                     PayInPaymentMethod.Check("A Payer"),
                     PayInPaymentMethod.Cash,
                 )
@@ -273,9 +274,28 @@ class MoneyInClientTest {
                         .exceptionOrNull()
 
                 assertTrue(method.toString(), failure is PayInException.InvalidInput)
-                // Refused before the request was built, so nothing reached the transport.
+                // Refused before anything was sent, so nothing reached the transport.
                 assertNull(method.toString(), transport.request)
             }
+        }
+
+    /**
+     * The other half of the refusal above, and the reason the guard is a list rather than a card check.
+     *
+     * Asserts the send rather than the absence of a throw, which is what separates a guard that admits a
+     * cloud device from one that stopped running.
+     */
+    @Test
+    fun `authorize sends a cloud device, which the route takes`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+
+            val result =
+                MoneyInClient(transport, RecordingSdkLogger())
+                    .authorize("e", cardRequest(PayInPaymentMethod.CloudDevice("device-1")))
+
+            assertEquals("A0000", result.code)
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
         }
 
     @Test

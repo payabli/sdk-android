@@ -125,7 +125,9 @@ public class PayInTransactionOptions(
     /**
      * Identifies this attempt, so a retry sending the same key is the same request rather than a second one.
      *
-     * Sent as the `idempotencyKey` header. Optional: the payment flow mints one per attempt when it is absent.
+     * Sent as the `idempotencyKey` header. Optional: one is minted per attempt when it is absent, by a form
+     * submission and by a direct call alike. A minted one is not held for a later call on these routes, so a
+     * retry that has to be recognized as one sets this itself — [PayabliPayIn.capture] says why.
      */
     public val idempotencyKey: String? = null,
     public val achValidation: Boolean? = null,
