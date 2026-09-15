@@ -209,9 +209,13 @@ internal class PayInPaymentFlow private constructor(
      * The failure behind a state that is not the success the caller asked for.
      *
      * A retry key on the state means the request may have been carried out, and a caller holding a `Result`
-     * cannot read the state, so the failure says so as [PayInException.Unsettled]. The key itself stays
-     * inside: it is held for this payment and sent again by the next call naming the same transaction, so
-     * publishing it would offer a caller a value it has nothing to do with.
+     * cannot read the state, so the failure says so as [PayInException.Unsettled]. That is the whole of what
+     * the wrap claims, and it is true of every caller here.
+     *
+     * The key itself stays inside either way, and what that buys differs by route. Where the call named a
+     * transaction it is kept against that transaction, so the next call naming it sends the same key without
+     * the caller doing anything. Where it did not, nothing is kept, and a repeat is recognized only under a
+     * key the caller supplied.
      *
      * A null state is a submission refused because one was already in flight. Idle and Submitting cannot
      * arise for a call that has returned, and reporting them as a defect is what keeps this exhaustive
