@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
@@ -17,6 +18,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -131,6 +134,133 @@ class PayInPaymentFlowTest {
             val cause = outcome.exceptionOrNull()
             assertTrue("$cause", cause is PayInException.Refused)
             assertEquals(PayabliErrorCode.PAYMENT_DECLINED, (cause as PayInException.Refused).code)
+        }
+
+    /**
+     * What a caller holding a `Result` gets is that the outcome is open, and the classification underneath.
+     *
+     * Not the key. It is held for this payment and resent by the next call naming the same transaction, so
+     * there is nothing for a caller to carry; `PayInSubmissionTest` covers that the resend reuses it.
+     */
+    @Test
+    fun `capturing an authorization answers that the outcome is open, carrying no key`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause =
+                flow
+                    .captureAuthorizedTransaction(PayInAuthorizedRequest("101-abc", testDetails()))
+                    .exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.NETWORK_ERROR, (cause as PayInException.Unsettled).code)
+        }
+
+    @Test
+    fun `voiding answers that the outcome is open`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+        }
+
+    /** What the SDK keeps and what it reports agree, so a host is not told to start a new payment. */
+    @Test
+    fun `a refused repeat of this SDK's own key answers that the outcome is still open`() =
+        runTest(timeout = timeout) {
+            val transport =
+                ScriptedPayInTransport(
+                    listOf(
+                        ScriptedPayInTransport.failingWith(dropped()),
+                        ScriptedPayInTransport.answering(409, "Duplicated idempotencyKey"),
+                    ),
+                )
+            val flow = flowOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            flow.captureAuthorizedTransaction(request)
+            val cause = flow.captureAuthorizedTransaction(request).exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
+        }
+
+    /** The SDK is still holding the key, so a refusal of the send cannot be reported as an answer. */
+    @Test
+    fun `a rate limit on a resent key answers that the outcome is still open`() =
+        runTest(timeout = timeout) {
+            val transport =
+                ScriptedPayInTransport(
+                    listOf(
+                        ScriptedPayInTransport.failingWith(dropped()),
+                        ScriptedPayInTransport.answering(429),
+                    ),
+                )
+            val flow = flowOver(transport)
+            val request = PayInAuthorizedRequest("101-abc", testDetails())
+
+            flow.captureAuthorizedTransaction(request)
+            val first = transport.request?.headers?.get("idempotencyKey")
+            val cause = flow.captureAuthorizedTransaction(request).exceptionOrNull()
+
+            // The second send carries the first key, which is what makes this the resent case rather than
+            // a first attempt that happened to be rate limited.
+            assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.RATE_LIMITED, (cause as PayInException.Unsettled).code)
+        }
+
+    /** Nothing holds a key for the form, so naming one would point at a key that does not exist. */
+    @Test
+    fun `a rate limit on a form submission is not an open outcome`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering("", statusCode = 429))
+
+            val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
+
+            assertFalse("$cause", cause is PayInException.Unsettled)
+        }
+
+    /** A settled refusal is itself, so a caller branching on the type is not told to wait and see. */
+    @Test
+    fun `a decline is not reported as an open outcome`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering(DECLINED_TRANSACTION))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull()
+
+            assertFalse("$cause", cause is PayInException.Unsettled)
+        }
+
+    /** The message can quote a response body, so only the type survives. */
+    @Test
+    fun `the reported failure withholds what the underlying one said`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull() as PayInException.Unsettled
+
+            assertTrue("${cause.cause}", cause.cause?.message?.contains("PayabliGenericException") == true)
+            assertFalse("${cause.cause}", cause.cause?.message?.contains(DROPPED_DETAIL) == true)
+        }
+
+    /**
+     * The form reads `PayInSubmissionState.Failed.retryKey`, so wrapping there would be a second channel for
+     * one key and would change what a host catches.
+     */
+    @Test
+    fun `the state a form reads carries the underlying failure, not the wrapper`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
+            val published = flow.state.value as PayInSubmissionState.Failed
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertFalse("${published.cause}", published.cause is PayInException.Unsettled)
+            assertNotNull("the form's own channel still carries the key", published.retryKey)
         }
 
     @Test
@@ -253,12 +383,64 @@ class PayInPaymentFlowTest {
             collector.cancel()
         }
 
+    /**
+     * The holder being full does not change which failure a caller receives.
+     *
+     * Whether there was room to keep a key is a fact about a map on the device. It does not make an unknown
+     * outcome known, and the episode that fills the holder is the one where payments are most likely to be
+     * unresolved at once.
+     */
+    @Test
+    fun `an unknown outcome past the holder's capacity is still reported as unknown`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.failingWith(dropped())
+            val flow = flowOver(transport)
+            repeat(PayInSubmission.HELD_KEYS_MAX) {
+                flow.captureAuthorizedTransaction(PayInAuthorizedRequest("101-$it", testDetails()))
+            }
+
+            val overflowing = PayInAuthorizedRequest("101-past-the-cap", testDetails())
+            val past = flow.captureAuthorizedTransaction(overflowing)
+            val firstKey = transport.request?.headers?.get("idempotencyKey")
+            flow.captureAuthorizedTransaction(overflowing)
+
+            val failure = past.exceptionOrNull()
+            assertTrue("$failure", failure is PayInException.Unsettled)
+            // The premise as well as the subject. Held, the repeat would resend the same key and the
+            // assertion above would hold whether the cap had fired or not.
+            assertNotEquals(
+                "a key was retained past the cap",
+                firstKey,
+                transport.request?.headers?.get("idempotencyKey"),
+            )
+        }
+
+    /** A store is settled by reading the entry point's methods back, so it never reports an open outcome. */
+    @Test
+    fun `a store whose outcome is unknown is not reported as unsettled`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val failure = flow.storeMethod(cardForm()).exceptionOrNull()
+
+            assertFalse("$failure", failure is PayInException.Unsettled)
+        }
+
+    private fun dropped(): PayabliGenericException =
+        PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
+
     private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
         PayInPaymentFlow.over(
             transport = transport,
             entryPoint = TEST_ENTRY_POINT,
             scope = this,
             dispatcher = StandardTestDispatcher(testScheduler),
+            elapsedRealtimeNanos = { 0 },
             logger = RecordingSdkLogger(),
         )
+
+    private companion object {
+        /** Stands in for text a real failure would carry from the wire, so a test can assert it is withheld. */
+        const val DROPPED_DETAIL = "the link dropped"
+    }
 }

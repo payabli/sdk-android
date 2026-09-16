@@ -1,7 +1,9 @@
 package com.payabli.sdk.payin
 
+import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -67,13 +69,23 @@ internal class PayInPaymentFlow private constructor(
         session: PayabliSession,
         entryPoint: String,
         scope: CoroutineScope,
-    ) : this(session.transport, entryPoint, scope, IO_DISPATCHER, telemetry = session.telemetry)
+    ) : this(
+        session.transport,
+        entryPoint,
+        scope,
+        IO_DISPATCHER,
+        // Counts device sleep, which the held key's window spans: a payer who backgrounds the app after an
+        // unknown outcome comes back to a key `System.nanoTime` still reads as young.
+        SystemClock::elapsedRealtimeNanos,
+        telemetry = session.telemetry,
+    )
 
     private constructor(
         transport: PayabliTransport,
         entryPoint: String,
         scope: CoroutineScope,
         dispatcher: CoroutineDispatcher,
+        elapsedRealtimeNanos: () -> Long,
         logger: SdkLogger? = null,
         telemetry: TelemetrySessionContext? = null,
     ) : this(
@@ -85,6 +97,7 @@ internal class PayInPaymentFlow private constructor(
             dispatcher = dispatcher,
             // Random per attempt, so two payments from one screen are never one request to the service.
             newIdempotencyKey = { UUID.randomUUID().toString() },
+            elapsedRealtimeNanos = elapsedRealtimeNanos,
             session = telemetry,
         ),
         PayInFormReports(telemetry?.forEntryPoint(entryPoint)),
@@ -182,19 +195,30 @@ internal class PayInPaymentFlow private constructor(
     private fun PayInSubmissionState?.asPayment(): Result<PayInResult> =
         when (this) {
             is PayInSubmissionState.Succeeded.Payment -> Result.success(result)
-            else -> Result.failure(asFailure())
+            else -> Result.failure(asFailure(movesMoney = true))
         }
 
     /**
      * The failure behind a state that is not the success the caller asked for.
      *
+     * A retry key on the state means the request may have been carried out, and a caller holding a `Result`
+     * cannot read the state, so the failure says so as [PayInException.Unsettled]. The key itself stays
+     * inside: it is held for this payment and sent again by the next call naming the same transaction, so
+     * publishing it would offer a caller a value it has nothing to do with.
+     *
      * A null state is a submission refused because one was already in flight. Idle and Submitting cannot
      * arise for a call that has returned, and reporting them as a defect is what keeps this exhaustive
      * without inventing a plausible-looking failure for a state that cannot occur.
      */
-    private fun PayInSubmissionState?.asFailure(): Throwable =
+    private fun PayInSubmissionState?.asFailure(movesMoney: Boolean = false): Throwable =
         when (this) {
-            is PayInSubmissionState.Failed -> cause
+            is PayInSubmissionState.Failed ->
+                if (retryKey != null || (movesMoney && cause.code.leavesOutcomeUnknown)) {
+                    PayInException.Unsettled(cause)
+                } else {
+                    cause
+                }
+
             null -> PayInException.AlreadySubmitting()
             else -> IllegalStateException("a submission returned while its state read $this")
         }
@@ -225,15 +249,23 @@ internal class PayInPaymentFlow private constructor(
             scope: CoroutineScope,
         ): PayInPaymentFlow = PayInPaymentFlow(session, entryPoint, scope)
 
-        /** The seam a test builds over, which takes a transport rather than a session. */
+        /**
+         * The seam a test builds over, which takes a transport rather than a session.
+         *
+         * [elapsedRealtimeNanos] defaults to the production clock, which is what an instrumented test wants.
+         * A JVM test has to pass one: `SystemClock` does not exist there, so the default throws rather than
+         * measuring anything.
+         */
         @JvmSynthetic
         internal fun over(
             transport: PayabliTransport,
             entryPoint: String,
             scope: CoroutineScope,
             dispatcher: CoroutineDispatcher,
+            elapsedRealtimeNanos: () -> Long = SystemClock::elapsedRealtimeNanos,
             logger: SdkLogger? = null,
             telemetry: TelemetrySessionContext? = null,
-        ): PayInPaymentFlow = PayInPaymentFlow(transport, entryPoint, scope, dispatcher, logger, telemetry)
+        ): PayInPaymentFlow =
+            PayInPaymentFlow(transport, entryPoint, scope, dispatcher, elapsedRealtimeNanos, logger, telemetry)
     }
 }

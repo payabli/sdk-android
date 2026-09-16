@@ -171,12 +171,44 @@ public sealed class PayInException(
     /**
      * The submission was canceled with the request in flight, so its outcome is unknown.
      *
-     * The payment may already have been taken. The key to retry with is on the state rather than here:
-     * `PayInSubmissionState.Failed.retryKey` answers it for every failure that leaves the outcome unknown, and
-     * a cancellation is one of several rather than the only one.
+     * The payment may already have been taken.
+     *
+     * A canceled call does not deliver this: cancellation is rethrown, so a `Result` call never returns and
+     * a form's own submission publishes the state without a reader. A cancellation after the key was
+     * reserved leaves a held key, resent by the next call naming the same transaction, and
+     * `PayInSubmissionState.Failed.retryKey` for the form's path. One before that leaves neither.
      */
     public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"
+    }
+
+    /**
+     * The request may have been carried out, and the outcome is not known. That is the whole of what this
+     * reports, and it is true wherever it is raised.
+     *
+     * **Whether repeating the call is recognised as the same attempt is the member's to say, not this
+     * type's.** Only a call naming a transaction has an identity to hold a key against, so only those
+     * members promise a repeat is recognised, and each states its own bound. Elsewhere a repeat is
+     * recognised under a key the caller supplied and not otherwise.
+     *
+     * Acting on this promptly is what matters either way, because no bound is this SDK's to extend: a key
+     * the service no longer recognises is carried out as a new payment whoever chose it. What came back the
+     * first time is not repeated, so a caller that needs the outcome reads the transaction back.
+     *
+     * [PayabliException.code] is [cause]'s own, so a caller branching on it reads what went wrong as well
+     * as that it is unresolved. It is taken from [cause] rather than accepted beside it, because two
+     * sources for one classification can disagree and a caller cannot tell which it is holding. [cause]
+     * names the failing type and withholds its message.
+     */
+    public class Unsettled(
+        cause: PayabliException,
+    ) : PayInException(
+            cause.code,
+            DEFAULT_UNSETTLED_REASON,
+            detail = cause.reason,
+            cause = RedactedCause(cause),
+        ) {
+        override fun toString(): String = "PayInException.Unsettled(code=${code.wireName})"
     }
 
     /**
@@ -195,6 +227,8 @@ public sealed class PayInException(
         internal const val DEFAULT_SERVICE_ERROR_REASON: String = "The payment could not be processed"
         internal const val DEFAULT_UNDECODABLE_REASON: String = "The response could not be read"
         internal const val DEFAULT_INTERRUPTED_REASON: String = "The payment was interrupted before it finished"
+        internal const val DEFAULT_UNSETTLED_REASON: String =
+            "The payment may have been taken, and its outcome is not known"
         internal const val DEFAULT_ALREADY_SUBMITTING_REASON: String = "A submission is already in flight"
     }
 }

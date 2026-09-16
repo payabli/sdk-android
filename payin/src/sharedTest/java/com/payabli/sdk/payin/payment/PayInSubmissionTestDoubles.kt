@@ -88,6 +88,43 @@ internal fun bankForm(
     )
 
 /**
+ * Answers each request differently, for a sequence a fixed answer cannot express.
+ *
+ * A retry only exists after an attempt that ended without one, so anything about resending needs the first
+ * call and the second to answer differently.
+ */
+internal class ScriptedPayInTransport(
+    private val steps: List<Result<PayabliResponse>>,
+) : PayabliTransport {
+    var request: PayabliRequest? = null
+        private set
+
+    private var next = 0
+
+    override suspend fun execute(request: PayabliRequest): PayabliResponse {
+        this.request = request
+        val step = steps[minOf(next, steps.lastIndex)]
+        next++
+        return step.getOrThrow()
+    }
+
+    override suspend fun <T> execute(
+        request: PayabliRequest,
+        payloadSerializer: KSerializer<T>,
+    ): PayabliV2Envelope<T> = throw UnsupportedOperationException("the PayIn clients decode their own envelopes")
+
+    companion object {
+        fun answering(
+            statusCode: Int,
+            body: String = "",
+        ): Result<PayabliResponse> =
+            Result.success(PayabliResponse(statusCode, emptyMap(), body.toByteArray(Charsets.UTF_8)))
+
+        fun failingWith(failure: Throwable): Result<PayabliResponse> = Result.failure(failure)
+    }
+}
+
+/**
  * A transport that suspends until it is released, so a test can hold a submission in flight.
  *
  * `FakePayInTransport` answers immediately, which cannot show a single-flight guard or a cancellation: both are
