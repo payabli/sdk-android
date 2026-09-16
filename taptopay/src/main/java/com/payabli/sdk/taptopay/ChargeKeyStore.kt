@@ -80,19 +80,28 @@ internal class ChargeKeyStore(
             val now = nowMillis()
             val loaded = load()
             val held = loaded.withinWindowAt(now)
-            val existing = held.forEntry(entry)
-            if (existing != null && settled[entry] != existing.key) {
+            // The one place a successful read says what is stored, so it is where a spent marker goes.
+            forgetMarkersNotIn(held)
+            // A record whose pair is marked settled names a charge that is over, so it is not a live
+            // attempt: it neither answers a reservation nor holds a slot against another entry point.
+            val live = held.withoutSettled(settled)
+            val existing = live.forEntry(entry)
+            if (existing != null) {
                 // Stored, not only read: a stamp left in the future reads as fresh on every reservation.
                 if (held !== loaded) store(held)
                 return@withLock Reserved(existing.key, reused = true)
             }
-            // Nothing is evicted to make room. Every record here names a charge whose outcome is still in
-            // doubt, so dropping the coldest to admit a new one loses the only thing that would recognise
-            // its repeat. Refusing is the recoverable direction: this needs more unsettled entry points at
-            // once than a device has, and each one clears as its charge is closed.
-            if (existing == null && held.isFull) throw ChargeKeyStoreFullException(held.attempts.size)
+            // Nothing live is evicted to make room. Every remaining record names a charge whose outcome is
+            // still in doubt, so dropping the coldest to admit a new one loses the only thing that would
+            // recognise its repeat. Refusing is the recoverable direction: this needs more unsettled entry
+            // points at once than a device has, and each one clears as its charge is closed.
+            if (live.isFull) throw ChargeKeyStoreFullException(live.attempts.size)
             val minted = newKey()
-            store(held.with(ChargeAttempt(entry = entry, key = minted, reservedAt = now)))
+            // The live set is what is written, so a record found settled here is removed by the same write
+            // that takes the new key, and its marker goes with it.
+            val stored = live.with(ChargeAttempt(entry = entry, key = minted, reservedAt = now))
+            store(stored)
+            forgetMarkersNotIn(stored)
             Reserved(minted, reused = false)
         }
 
@@ -164,18 +173,26 @@ internal class ChargeKeyStore(
      * Records that [entry]'s [key] names a charge that is over, for a reservation storage will still offer
      * it to. Called with [lock] held, which is not reentrant.
      *
-     * Capped at [ChargeAttempts.MAX], dropping the oldest, where [ChargeAttempts] refuses a new entry
-     * instead. The two differ because refusing is not available here: this records something that has
-     * already happened.
+     * **Nothing is evicted to make room**, and dropping a marker while the record it names is still
+     * stored would re-arm the key it exists to disarm. Nothing needs to be: a marker is written only for an
+     * entry whose reservation succeeded, `reserve` refuses a new entry point once the live records are at
+     * [ChargeAttempts.MAX], and a marker naming no stored record is dropped at the next reservation.
      */
     private fun rememberSettled(
         entry: String,
         key: String,
     ) {
-        if (entry !in settled && settled.size >= ChargeAttempts.MAX) {
-            settled.remove(settled.keys.first())
-        }
         settled[entry] = key
+    }
+
+    /**
+     * Drops every marker that no longer names a record in [stored].
+     *
+     * A marker exists to refuse a key storage is still offering. Once the record naming that key is gone it
+     * refuses nothing, and it is what keeps the map bounded by the records rather than by a cap of its own.
+     */
+    private fun forgetMarkersNotIn(stored: ChargeAttempts) {
+        settled.entries.removeAll { (marked, key) -> stored.forEntry(marked)?.key != key }
     }
 
     /**
@@ -185,6 +202,11 @@ internal class ChargeKeyStore(
      * says no attempt is outstanding, so a caller acting on it mints a fresh key. Reaching that conclusion
      * from a record that exists and cannot be read is what charges a payer twice: a key lost after a
      * captured sale whose close failed looks exactly like a device that has never charged.
+     *
+     * **The record is the truth about what is stored; the marker in [settled] is the truth about what is
+     * settled.** The two cannot be merged, because a marker is written exactly when writing the record
+     * failed. So a record whose pair is marked settled names no live attempt, and every site asking whether
+     * one is live reads the pair rather than the record alone.
      *
      * So an absent entry answers empty, and every other outcome raises. A charge that cannot start is
      * recoverable; a charge taken twice is not. The entry is left where it is, because removing an
@@ -277,14 +299,13 @@ internal class ChargeKeyStore(
         private val SHARED_LOCK = Mutex()
 
         /**
-         * One per process, for the reason [SHARED_LOCK] is. Insertion-ordered, so the oldest is the one
-         * dropped when a further entry point needs a slot.
+         * One per process, for the reason [SHARED_LOCK] is.
          *
          * Private, because the companion is `internal` and that is a public name-mangled member on the
          * JVM: exposed, this hands a Java caller the held keys and lets it clear the markers that stop a
          * finished charge being resent.
          */
-        private val SHARED_SETTLED: MutableMap<String, String> = LinkedHashMap()
+        private val SHARED_SETTLED: MutableMap<String, String> = HashMap()
 
         /** Drops every marker. Process state, so a suite sharing one JVM shares it. */
         @JvmSynthetic
@@ -412,6 +433,16 @@ internal class ChargeAttempts(
                 .filter { nowMillis - it.reservedAt < MAX_AGE_MILLIS }
         val unchanged = kept.size == attempts.size && kept.zip(attempts).all { (a, b) -> a === b }
         return if (unchanged) this else ChargeAttempts(kept)
+    }
+
+    /**
+     * Without the records whose pair is marked settled in [settled]. Those name charges that are over, so
+     * they are not live attempts. `this` when none of them was marked, so a caller can tell whether the
+     * result is worth writing back.
+     */
+    fun withoutSettled(settled: Map<String, String>): ChargeAttempts {
+        val live = attempts.filterNot { settled[it.entry] == it.key }
+        return if (live.size == attempts.size) this else ChargeAttempts(live)
     }
 
     /** No room for an entry point that is not already held. Nothing here may be evicted to make room. */

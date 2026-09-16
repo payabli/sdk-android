@@ -428,4 +428,63 @@ class ChargeKeyStoreTest {
             assertNull("$failure", failure)
             assertTrue("the unreadable record was removed", storage.get(CHARGE_KEY_ENTRY) != null)
         }
+
+    /**
+     * Fills every slot with a record whose cleanup failed, so each is stored and each is marked settled.
+     * The marker is what stops the key being resent, and it is only ever written because the record could
+     * not be removed.
+     */
+    private suspend fun ChargeKeyStore.markSettled(
+        entries: List<String>,
+        fail: (Boolean) -> Unit,
+    ) = entries.forEachIndexed { index, entry ->
+        reserve(entry)
+        fail(true)
+        settle(entry, "key-${index + 1}")
+        fail(false)
+    }
+
+    /** A marker outliving its own record is harmless; one dropped before its record is what resends. */
+    @Test
+    fun `a marker is not dropped while the record it names is still stored`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var failing = false
+            val storage =
+                FakeSecureStore(
+                    failWith = { _, _ -> SecureStorageException.StorageUnavailable().takeIf { failing } },
+                )
+            val store = storeOver(storage)
+            store.markSettled(listOf("e1", "e2", "e3", "e4")) { failing = it }
+
+            // One cleanup later succeeds, so that record goes and its own marker is the spent one.
+            store.settle("e4", "key-4")
+            // A further entry point charges and its cleanup fails too.
+            store.reserve("e5")
+            failing = true
+            store.settle("e5", "key-5")
+            failing = false
+
+            assertFalse("a charge that is over was offered for resending", store.reserve("e1").reused)
+        }
+
+    /** A slot is for a charge whose outcome is in doubt, and a marked one is not in doubt. */
+    @Test
+    fun `a record whose charge is over does not hold a slot against another entry point`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var failing = false
+            val storage =
+                FakeSecureStore(
+                    failWith = { _, _ -> SecureStorageException.StorageUnavailable().takeIf { failing } },
+                )
+            val store = storeOver(storage)
+            store.markSettled(listOf("e1", "e2", "e3", "e4")) { failing = it }
+
+            val reserved = runCatching { store.reserve("e5") }
+
+            assertTrue(
+                "settled records refused a live entry point: ${reserved.exceptionOrNull()}",
+                reserved.isSuccess,
+            )
+            assertEquals("key-5", reserved.getOrThrow().key)
+        }
 }
