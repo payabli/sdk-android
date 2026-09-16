@@ -143,6 +143,37 @@ internal class PayInSubmission(
             }
         }
 
+    /**
+     * Takes a payment from a request a caller built, rather than from a form. Reads no form.
+     *
+     * The buffers inside [request] belong to whoever built them and are not closed here, which is the
+     * opposite of the form's path: there the instrument is built per submission and closed with it.
+     */
+    suspend fun capture(
+        entryPoint: String,
+        request: PayInRequest,
+    ): PayInSubmissionState? =
+        // No payment named, for the reason `submit` gives: two captures of equal value are two payments, and
+        // nothing here tells one from a resend of the other. A caller that knows better sets its own key.
+        perform(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, entryPoint, publishes = false, payment = null) { retry ->
+            val key = retry.reserve(request.options.idempotencyKey)
+            PayInSubmissionState.Succeeded.Payment(
+                moneyIn.capture(entryPoint, request, PayInEnteredDetails.NONE, key),
+            )
+        }
+
+    /** Places a hold from a request a caller built, on the same terms as [capture]. Reads no form. */
+    suspend fun authorize(
+        entryPoint: String,
+        request: PayInRequest,
+    ): PayInSubmissionState? =
+        perform(TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED, entryPoint, publishes = false, payment = null) { retry ->
+            val key = retry.reserve(request.options.idempotencyKey)
+            PayInSubmissionState.Succeeded.Payment(
+                moneyIn.authorize(entryPoint, request, PayInEnteredDetails.NONE, key),
+            )
+        }
+
     /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
     suspend fun captureAuthorized(
         entryPoint: String,

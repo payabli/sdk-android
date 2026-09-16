@@ -134,8 +134,13 @@ public sealed class PayInPaymentMethod {
     /**
      * True when this method can be authorized as well as captured.
      *
-     * Only entered card data can: an authorization is against a card and nothing else. Checked before a
-     * request is built, so a caller learns it without a round trip.
+     * True for a card and a cloud device, false for an account, a check and cash. Read before anything is
+     * sent, so a caller is answered here rather than by a round trip.
+     *
+     * **[Stored] is absent because of how it is written here, not because a stored card cannot be held.** This
+     * type names a stored method as a kind of its own rather than naming the method it stands for, and an
+     * authorization is well formed only when that method travels with the identifier. This type has no way to
+     * say it, so the request cannot be built.
      */
-    internal val isAuthorizable: Boolean get() = this is Card
+    internal val isAuthorizable: Boolean get() = this is Card || this is CloudDevice
 }

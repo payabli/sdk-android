@@ -6,7 +6,9 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.FakePayInTransport
+import com.payabli.sdk.payin.client.PayInRoutes
 import com.payabli.sdk.payin.client.TEST_PAN
+import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
@@ -89,6 +91,127 @@ class PayInPaymentFlowTest {
 
             assertEquals("A0000", outcome.getOrNull()?.code)
             assertEquals("/api/v2/MoneyIn/void/101-abc", transport.request?.path)
+        }
+
+    @Test
+    fun `a host that collected the card captures without drawing a form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val outcome = flow.capture(cardRequest())
+
+            assertEquals("A0000", outcome.getOrNull()?.code)
+            assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
+            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+        }
+
+    @Test
+    fun `a host that collected the card authorizes without drawing a form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val outcome = flow.authorize(cardRequest())
+
+            assertEquals("A0000", outcome.getOrNull()?.code)
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+        }
+
+    /**
+     * The key the member's own documentation promises, on both money-moving members.
+     *
+     * Asserted on the header rather than on the request, because that is where a caller's key and a minted
+     * one become the same thing. Without this the tests above pass with the reservation removed and the
+     * payment sent under no key at all.
+     */
+    @Test
+    fun `a direct call mints an idempotency key when the caller supplied none`() =
+        runTest(timeout = timeout) {
+            val captured = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val authorized = FakePayInTransport.answering(APPROVED_TRANSACTION)
+
+            flowOver(captured).capture(cardRequest())
+            flowOver(authorized).authorize(cardRequest())
+
+            assertNotNull("a capture went out under no key", captured.sentKey())
+            assertNotNull("an authorization went out under no key", authorized.sentKey())
+        }
+
+    @Test
+    fun `a direct call sends the caller's own key unchanged`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+
+            flowOver(transport).capture(cardRequest(idempotencyKey = "key-9"))
+
+            assertEquals("key-9", transport.sentKey())
+        }
+
+    /**
+     * The buffers came from the caller, so the call does not close them.
+     *
+     * The form's own path builds the instrument per submission and closes it with the submission. A host
+     * that built its own has to be able to close it when it decides to, and a member that closed it first
+     * would leave a second call reading a wiped card.
+     */
+    @Test
+    fun `a direct capture leaves the caller's buffers intact`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+            val cardData = testCardData()
+
+            flow.capture(cardRequest(cardData = cardData))
+
+            // The card reached the wire, so the buffer below survived a request that read it rather than a
+            // call that never looked. Without this the assertions pass against a member that does nothing.
+            assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
+
+            // Both buffers, because a card carries two and wiping either one is the same defect.
+            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
+            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+
+            // Still the caller's to close, and closing them still works.
+            cardData.cardNumber.close()
+            cardData.securityCode.close()
+            assertEquals(0, cardData.cardNumber.length)
+            assertEquals(0, cardData.securityCode.length)
+        }
+
+    /** The same ownership on the other money-moving member, which delegates separately and can regress alone. */
+    @Test
+    fun `a direct authorization leaves the caller's buffers intact`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(APPROVED_TRANSACTION)
+            val flow: PayabliPayIn = flowOver(transport)
+            val cardData = testCardData()
+
+            flow.authorize(cardRequest(cardData = cardData))
+
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
+
+            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
+            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+
+            cardData.cardNumber.close()
+            cardData.securityCode.close()
+            assertEquals(0, cardData.cardNumber.length)
+            assertEquals(0, cardData.securityCode.length)
+        }
+
+    /** A decline is an outcome the caller acts on, so it comes back rather than being thrown. */
+    @Test
+    fun `a declined direct capture answers as a failure carrying the typed cause`() =
+        runTest(timeout = timeout) {
+            val flow: PayabliPayIn = flowOver(FakePayInTransport.answering(DECLINED_TRANSACTION))
+
+            val outcome = flow.capture(cardRequest())
+
+            assertTrue("${outcome.exceptionOrNull()}", outcome.exceptionOrNull() is PayInException.Refused)
         }
 
     /**
@@ -428,6 +551,8 @@ class PayInPaymentFlowTest {
 
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
+
+    private fun FakePayInTransport.sentKey(): String? = request?.headers?.get(PayInRoutes.HEADER_IDEMPOTENCY_KEY)
 
     private fun TestScope.flowOver(transport: PayabliTransport): PayInPaymentFlow =
         PayInPaymentFlow.over(
