@@ -80,15 +80,16 @@ internal class ChargeKeyStore(
             val now = nowMillis()
             val loaded = load()
             val held = loaded.withinWindowAt(now)
-            // The one place a successful read says what is stored, so it is where a spent marker goes.
-            forgetMarkersNotIn(held)
             // A record whose pair is marked settled names a charge that is over, so it is not a live
             // attempt: it neither answers a reservation nor holds a slot against another entry point.
             val live = held.withoutSettled(settled)
             val existing = live.forEntry(entry)
             if (existing != null) {
                 // Stored, not only read: a stamp left in the future reads as fresh on every reservation.
-                if (held !== loaded) store(held)
+                if (held !== loaded) {
+                    store(held)
+                    forgetMarkersNotIn(held)
+                }
                 return@withLock Reserved(existing.key, reused = true)
             }
             // Nothing live is evicted to make room. Every remaining record names a charge whose outcome is
@@ -151,6 +152,9 @@ internal class ChargeKeyStore(
                 if (held.forEntry(entry)?.key == key) {
                     val remaining = held.without(entry)
                     if (remaining.isEmpty) storage.remove(ENTRY) else store(remaining)
+                    // The record is gone, so a marker an earlier attempt at this left behind names nothing.
+                    // Dropped here rather than at the next reservation, which may never come.
+                    if (settled[entry] == key) settled.remove(entry)
                 }
             } catch (unwritable: SecureStorageException) {
                 rememberSettled(entry, key)
@@ -190,6 +194,11 @@ internal class ChargeKeyStore(
      *
      * A marker exists to refuse a key storage is still offering. Once the record naming that key is gone it
      * refuses nothing, and it is what keeps the map bounded by the records rather than by a cap of its own.
+     *
+     * **Called only after the write that removed the record has landed**, never on what a read returned. A
+     * record dropped from the read because its window passed is still in storage until a write says
+     * otherwise, so forgetting its marker first and then failing that write leaves the record unprotected,
+     * and a clock that moves back makes it live again.
      */
     private fun forgetMarkersNotIn(stored: ChargeAttempts) {
         settled.entries.removeAll { (marked, key) -> stored.forEntry(marked)?.key != key }

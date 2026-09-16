@@ -491,4 +491,39 @@ class ChargeKeyStoreTest {
             )
             assertEquals("key-5", reserved.getOrThrow().key)
         }
+
+    /**
+     * A record leaves the read once its window passes, and it leaves storage only when a write says so. A
+     * marker forgotten on the strength of the read alone, by a reservation whose write then failed, leaves
+     * that record in storage with nothing against it -- and a clock that moves back makes it live again.
+     */
+    @Test
+    fun `a marker outlives a reservation that could not write`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // One operation at a time, because the read has to succeed where the write does not: a
+            // reservation whose read fails never reaches a marker at all.
+            var failOp: String? = null
+            val storage =
+                FakeSecureStore(
+                    failWith = { operation, _ ->
+                        SecureStorageException.StorageUnavailable().takeIf { operation == failOp }
+                    },
+                )
+            val store = storeOver(storage)
+            val reserved = store.reserve(ENTRY).key
+            failOp = "remove"
+            store.settle(ENTRY, reserved)
+            failOp = null
+
+            // Past its window the record is out of the read, though still in storage. The reservation that
+            // reads it that way cannot write, so nothing it decided reaches storage either.
+            clock.addAndGet(TimeUnit.MINUTES.toMillis(3))
+            failOp = "set"
+            runCatching { store.reserve(OTHER_ENTRY) }
+            failOp = null
+            // The clock moves back, so the record that never left storage is inside its window again.
+            clock.addAndGet(-TimeUnit.MINUTES.toMillis(3))
+
+            assertFalse("a charge that is over was offered for resending", store.reserve(ENTRY).reused)
+        }
 }
