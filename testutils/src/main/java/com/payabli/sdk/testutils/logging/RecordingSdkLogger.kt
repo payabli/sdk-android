@@ -39,7 +39,7 @@ public class RecordingSdkLogger : SdkLogger {
 
     /**
      * Thread-safe, because a transport under test writes from every request in flight at once, and the
-     * auth holder this module's `testAuth` builds logs from whichever caller is refreshing.
+     * auth holder a transport test builds logs from whichever caller is refreshing.
      *
      * An `ArrayList` here loses records rather than reporting anything, and the same race throws out of
      * `ArrayList.add` often enough to redden a run with nothing wrong with it. `RecordingLogSink` is a

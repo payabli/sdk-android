@@ -1,6 +1,5 @@
 package com.payabli.sdk.core.auth
 
-import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.isHeaderSafe
@@ -69,14 +68,13 @@ internal const val DEFAULT_PROVIDER_TIMEOUT_MILLIS = 30_000L
 /**
  * Holds the access token and refreshes it through the host's provider.
  *
- * `@RestrictTo` rather than public: a public token accessor would hand an app the credential the SDK
- * exists to hold on its behalf.
+ * `@JvmSynthetic` on every member that carries the token, because `internal` alone compiles to a public,
+ * name-mangled method a Java caller can still reach.
  *
  * Concurrent refreshes share one provider call and one outcome, so a rejected token cannot fan out into
  * one provider call per in-flight request.
  */
-@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-public class PayabliAuth(
+internal class PayabliAuth(
     private val config: PayabliConfig,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.AUTH),
     private val providerTimeoutMillis: Long = DEFAULT_PROVIDER_TIMEOUT_MILLIS,
@@ -104,8 +102,9 @@ public class PayabliAuth(
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
 
-    /** Emits once per successful refresh. Carries the token, so it is internal like the rest of this type. */
-    public val tokenChanges: SharedFlow<String> = tokenChangeSink.asSharedFlow()
+    /** Emits once per successful refresh. Carries the token, so it never leaves `:core`. */
+    @get:JvmSynthetic
+    internal val tokenChanges: SharedFlow<String> = tokenChangeSink.asSharedFlow()
 
     /**
      * Why this instance is finished, or null while it still works.
@@ -161,7 +160,8 @@ public class PayabliAuth(
      * that has given up still answers with the credential it holds, and refusal is for the case where there
      * is nothing to answer with.
      */
-    public suspend fun accessToken(): String {
+    @JvmSynthetic
+    internal suspend fun accessToken(): String {
         reentrantToken()?.let { return it }
         val plan =
             mutex.withLock {
@@ -198,7 +198,8 @@ public class PayabliAuth(
      * [finished] is set no caller can reach the provider, whatever stage it had already got to elsewhere,
      * so the host's broker is never called again after this instance is done.
      */
-    public suspend fun invalidateAndRefresh(rejectedToken: String): String {
+    @JvmSynthetic
+    internal suspend fun invalidateAndRefresh(rejectedToken: String): String {
         reentrantToken()?.let { return it }
         val plan =
             mutex.withLock {

@@ -1,6 +1,9 @@
 package com.payabli.sdk.core.network.impl
 
 import com.payabli.sdk.core.auth.PayabliAuth
+import com.payabli.sdk.core.auth.TEST_TOKEN
+import com.payabli.sdk.core.auth.mintingThen
+import com.payabli.sdk.core.auth.testAuth
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogCategory
@@ -16,9 +19,6 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.network.Retry
 import com.payabli.sdk.core.network.RetryPolicy
-import com.payabli.sdk.testutils.auth.TEST_TOKEN
-import com.payabli.sdk.testutils.auth.mintingThen
-import com.payabli.sdk.testutils.auth.testAuth
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers

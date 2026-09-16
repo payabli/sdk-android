@@ -1045,4 +1045,18 @@ class PayabliAuthTest {
                 completing("the refresh after reset") { subject.invalidateAndRefresh("initial-token") },
             )
         }
+
+    @Test
+    fun `no member that carries the token is callable from Java`() {
+        // internal is a Kotlin rule only: these are emitted as public final accessToken$core() and friends,
+        // so without @JvmSynthetic a Java caller takes the credential the SDK exists to hold. javac refuses
+        // to resolve a synthetic method, which is what makes the annotation the enforcement.
+        val carrying =
+            PayabliAuth::class.java.declaredMethods.filter {
+                it.name.substringBefore('$') in setOf("accessToken", "invalidateAndRefresh", "getTokenChanges")
+            }
+
+        assertEquals(3, carrying.size)
+        carrying.forEach { assertTrue("${it.name} is reachable from Java", it.isSynthetic) }
+    }
 }
