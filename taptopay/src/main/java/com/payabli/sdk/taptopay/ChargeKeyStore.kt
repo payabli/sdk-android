@@ -205,8 +205,8 @@ internal class ChargeKeyStore(
     }
 
     /**
-     * Reads every unsettled charge this device holds, answering empty only when the entry is absent and
-     * raising for anything else. An unreadable entry is left where it is.
+     * Reads every record storage holds, answering empty only when the entry is absent and raising for
+     * anything else. An unreadable entry is left where it is.
      *
      * **Nothing readable and nothing held are different answers, and only the second one is empty.** Empty
      * says no attempt is outstanding, so a caller acting on it mints a fresh key, and reaching that from a
@@ -360,7 +360,7 @@ internal class ChargeKeyStoreFullException(
 ) : IllegalStateException("$held unresolved charges are held, so another cannot be named")
 
 /**
- * One entry point's unsettled charge, and the key its repeat has to carry.
+ * One entry point's charge record, and the key its repeat has to carry.
  *
  * Not a data class: a generated `toString` would print the entry point, which names a merchant, and the key,
  * which names an attempt at moving their money.
@@ -396,12 +396,13 @@ private class PreviousChargeAttempts(
 )
 
 /**
- * Every unsettled charge this device holds, one per entry point, most recently reserved first.
+ * Every charge record this device holds, one per entry point, most recently reserved first.
  *
  * A list rather than a map, as the device bindings are, and the order is part of the record rather than
- * whatever a decoder happened to build. **Nothing is discarded at [MAX]:** every entry names a charge whose
- * outcome is still in doubt, so `reserve` refuses a new entry point instead of evicting one. Lookup is by
- * [entry][ChargeAttempt.entry], and at this size a scan beats a second structure.
+ * whatever a decoder happened to build. **Nothing is discarded at [MAX]:** an entry names a charge whose
+ * outcome is still in doubt unless its pair is marked settled, so `reserve` refuses a new entry point
+ * instead of evicting one. Lookup is by [entry][ChargeAttempt.entry], and at this size a scan beats a
+ * second structure.
  *
  * [attempts] carries no default. The SDK's decoder ignores keys it does not recognize, so a defaulted list
  * would let a record written in some other shape decode cleanly to an empty one — and empty here means no
@@ -411,7 +412,7 @@ private class PreviousChargeAttempts(
 internal class ChargeAttempts(
     val attempts: List<ChargeAttempt>,
 ) {
-    /** The unsettled charge for [entry], or null when none is held. */
+    /** The record for [entry], or null when none is held. */
     fun forEntry(entry: String): ChargeAttempt? = attempts.firstOrNull { it.entry == entry }
 
     /**
