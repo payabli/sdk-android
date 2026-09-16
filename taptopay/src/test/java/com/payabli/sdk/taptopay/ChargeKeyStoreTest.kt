@@ -433,14 +433,19 @@ class ChargeKeyStoreTest {
      * Fills every slot with a record whose cleanup failed, so each is stored and each is marked settled.
      * The marker is what stops the key being resent, and it is only ever written because the record could
      * not be removed.
+     *
+     * **Every entry point reserves before any of them settles**, which is the state this describes: several
+     * mid-charge at once, and then each cleanup failing. Interleaving the two instead leaves one record at a
+     * time, because a reservation that mints carries away whatever is already marked -- so the slots never
+     * fill, and a test built that way asks nothing about what happens when they do.
      */
     private suspend fun ChargeKeyStore.markSettled(
         entries: List<String>,
         fail: (Boolean) -> Unit,
-    ) = entries.forEachIndexed { index, entry ->
-        reserve(entry)
+    ) {
+        val keys = entries.map { reserve(it).key }
         fail(true)
-        settle(entry, "key-${index + 1}")
+        entries.forEachIndexed { index, entry -> settle(entry, keys[index]) }
         fail(false)
     }
 
@@ -456,10 +461,9 @@ class ChargeKeyStoreTest {
             val store = storeOver(storage)
             store.markSettled(listOf("e1", "e2", "e3", "e4")) { failing = it }
 
-            // One cleanup later succeeds, so that record goes and its own marker is the spent one.
-            store.settle("e4", "key-4")
-            // A further entry point charges and its cleanup fails too.
-            store.reserve("e5")
+            // A further marker, from a cleanup that could not even read what was held. It reserves nothing
+            // and writes nothing, so all four records are still stored when it lands -- which is what makes
+            // the reservation below a question about the marker rather than about a record that has gone.
             failing = true
             store.settle("e5", "key-5")
             failing = false
