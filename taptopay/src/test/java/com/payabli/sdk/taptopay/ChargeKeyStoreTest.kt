@@ -428,4 +428,102 @@ class ChargeKeyStoreTest {
             assertNull("$failure", failure)
             assertTrue("the unreadable record was removed", storage.get(CHARGE_KEY_ENTRY) != null)
         }
+
+    /**
+     * Fills every slot with a record whose cleanup failed, so each is stored and each is marked settled.
+     * The marker is what stops the key being resent, and it is only ever written because the record could
+     * not be removed.
+     *
+     * **Every entry point reserves before any of them settles**, which is the state this describes: several
+     * mid-charge at once, and then each cleanup failing. Interleaving the two instead leaves one record at a
+     * time, because a reservation that mints carries away whatever is already marked -- so the slots never
+     * fill, and a test built that way asks nothing about what happens when they do.
+     */
+    private suspend fun ChargeKeyStore.markSettled(
+        entries: List<String>,
+        fail: (Boolean) -> Unit,
+    ) {
+        val keys = entries.map { reserve(it).key }
+        fail(true)
+        entries.forEachIndexed { index, entry -> settle(entry, keys[index]) }
+        fail(false)
+    }
+
+    /** A marker outliving its own record is harmless; one dropped before its record is what resends. */
+    @Test
+    fun `a marker is not dropped while the record it names is still stored`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var failing = false
+            val storage =
+                FakeSecureStore(
+                    failWith = { _, _ -> SecureStorageException.StorageUnavailable().takeIf { failing } },
+                )
+            val store = storeOver(storage)
+            store.markSettled(listOf("e1", "e2", "e3", "e4")) { failing = it }
+
+            // A further marker, from a cleanup that could not even read what was held. It reserves nothing
+            // and writes nothing, so all four records are still stored when it lands -- which is what makes
+            // the reservation below a question about the marker rather than about a record that has gone.
+            failing = true
+            store.settle("e5", "key-5")
+            failing = false
+
+            assertFalse("a charge that is over was offered for resending", store.reserve("e1").reused)
+        }
+
+    /** A slot is for a charge whose outcome is in doubt, and a marked one is not in doubt. */
+    @Test
+    fun `a record whose charge is over does not hold a slot against another entry point`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var failing = false
+            val storage =
+                FakeSecureStore(
+                    failWith = { _, _ -> SecureStorageException.StorageUnavailable().takeIf { failing } },
+                )
+            val store = storeOver(storage)
+            store.markSettled(listOf("e1", "e2", "e3", "e4")) { failing = it }
+
+            val reserved = runCatching { store.reserve("e5") }
+
+            assertTrue(
+                "settled records refused a live entry point: ${reserved.exceptionOrNull()}",
+                reserved.isSuccess,
+            )
+            assertEquals("key-5", reserved.getOrThrow().key)
+        }
+
+    /**
+     * A record leaves the read once its window passes, and it leaves storage only when a write says so. A
+     * marker forgotten on the strength of the read alone, by a reservation whose write then failed, leaves
+     * that record in storage with nothing against it -- and a clock that moves back makes it live again.
+     */
+    @Test
+    fun `a marker outlives a reservation that could not write`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // One operation at a time, because the read has to succeed where the write does not: a
+            // reservation whose read fails never reaches a marker at all.
+            var failOp: String? = null
+            val storage =
+                FakeSecureStore(
+                    failWith = { operation, _ ->
+                        SecureStorageException.StorageUnavailable().takeIf { operation == failOp }
+                    },
+                )
+            val store = storeOver(storage)
+            val reserved = store.reserve(ENTRY).key
+            failOp = "remove"
+            store.settle(ENTRY, reserved)
+            failOp = null
+
+            // Past its window the record is out of the read, though still in storage. The reservation that
+            // reads it that way cannot write, so nothing it decided reaches storage either.
+            clock.addAndGet(TimeUnit.MINUTES.toMillis(3))
+            failOp = "set"
+            runCatching { store.reserve(OTHER_ENTRY) }
+            failOp = null
+            // The clock moves back, so the record that never left storage is inside its window again.
+            clock.addAndGet(-TimeUnit.MINUTES.toMillis(3))
+
+            assertFalse("a charge that is over was offered for resending", store.reserve(ENTRY).reused)
+        }
 }
