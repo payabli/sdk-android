@@ -205,22 +205,18 @@ internal class ChargeKeyStore(
     }
 
     /**
-     * Everything held. Empty only when the entry is genuinely absent.
+     * Reads every unsettled charge this device holds, answering empty only when the entry is absent and
+     * raising for anything else. An unreadable entry is left where it is.
      *
      * **Nothing readable and nothing held are different answers, and only the second one is empty.** Empty
-     * says no attempt is outstanding, so a caller acting on it mints a fresh key. Reaching that conclusion
-     * from a record that exists and cannot be read is what charges a payer twice: a key lost after a
-     * captured sale whose close failed looks exactly like a device that has never charged.
+     * says no attempt is outstanding, so a caller acting on it mints a fresh key, and reaching that from a
+     * record that exists and cannot be read is what charges a payer twice. A charge that cannot start is
+     * recoverable; a charge taken twice is not.
      *
      * **The record is the truth about what is stored; the marker in [settled] is the truth about what is
-     * settled.** The two cannot be merged, because a marker is written exactly when writing the record
+     * settled**, and the two cannot be merged because a marker is written exactly when writing the record
      * failed. So a record whose pair is marked settled names no live attempt, and every site asking whether
      * one is live reads the pair rather than the record alone.
-     *
-     * So an absent entry answers empty, and every other outcome raises. A charge that cannot start is
-     * recoverable; a charge taken twice is not. The entry is left where it is, because removing an
-     * unreadable record makes the loss permanent and hands the next charge the empty answer this refuses
-     * to give.
      */
     private suspend fun load(): ChargeAttempts {
         val bytes = storage.get(ENTRY) ?: return migrated()
