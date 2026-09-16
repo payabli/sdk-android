@@ -73,3 +73,9 @@ internal fun declined(
     code: String = "D01",
     reason: String = "Declined",
 ): String = """{"code":"$code","reason":"$reason"}"""
+
+/** A rejection: anything that is neither an `A` nor a `D` is the service reporting a problem. */
+internal fun rejected(
+    code: String = "E01",
+    reason: String = "Rejected",
+): String = """{"code":"$code","reason":"$reason"}"""

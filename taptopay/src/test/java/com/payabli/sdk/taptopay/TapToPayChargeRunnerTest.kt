@@ -23,6 +23,8 @@ import com.payabli.sdk.taptopay.network.TTPRoutes
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.network.approved
+import com.payabli.sdk.taptopay.network.declined
+import com.payabli.sdk.taptopay.network.rejected
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.cardRead
 import com.payabli.sdk.taptopay.session.MINTED_KEY
@@ -465,6 +467,154 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals("an unequipped answer released an earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    /**
+     * A resent key reaches a controller only past the service's own marker, so what a rejection there
+     * refuses is a fresh opening and the earlier attempt is exactly as unresolved.
+     */
+    @Test
+    fun `a rejection on a resent key keeps the attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to
+                            listOf(
+                                approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
+                                rejected(),
+                                approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
+                            ),
+                        UPDATE to List(2) { "{}" },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a rejection released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    /** A first opening carries no earlier attempt, so a rejection of it answers everything there is. */
+    @Test
+    fun `a rejection on a key this SDK has not resent releases the attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(rejected(), approved("{\"paymentTransId\":\"$TRANS_ID\"}")),
+                        UPDATE to listOf("{}"),
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(cardRead())
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a rejected first opening kept its attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    /**
+     * A decline past the marker means the service processed a *new* opening, having forgotten the key,
+     * so it says no more about the earlier attempt than a rejection does.
+     */
+    @Test
+    fun `a decline on a resent key keeps the attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to
+                            listOf(
+                                approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
+                                declined(),
+                                approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
+                            ),
+                        UPDATE to List(2) { "{}" },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a decline released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
+    fun `a decline on a resent key reports the payment as unknown`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The attempt the key names asked the reader, so the money may have moved. Nothing this
+            // opening was told is about that attempt, so there is nothing to resolve it with.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(approved("{\"paymentTransId\":\"$TRANS_ID\"}"), declined()),
+                        UPDATE to listOf("{}"),
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(
+                "a decline on a resent key was reported as taking no money",
+                TapToPayCapture.UNKNOWN,
+                (failure as TapToPayException).capture,
+            )
+        }
+
+    /** The service processed this opening and refused it, and there is no earlier attempt to confuse it with. */
+    @Test
+    fun `a decline on a key this SDK has not resent releases the attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(declined(), approved("{\"paymentTransId\":\"$TRANS_ID\"}")),
+                        UPDATE to listOf("{}"),
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(cardRead())
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a declined first opening kept its attempt", "$MINTED_KEY-2", fixture.keySent(1))
         }
 
     @Test

@@ -445,9 +445,8 @@ internal class TapToPayChargeRunner(
      * unequipped are answers about the opening, so what comes next is a new attempt and a held key would
      * refuse it. Anything else is kept.
      *
-     * On a resend the earlier opening reached the service and may have opened a transaction, so only the
-     * service answering about the transaction settles it. Everything else refused the send and leaves that
-     * opening exactly as open.
+     * **Nothing settles a resent key.** That key names an earlier attempt, and nothing this opening is told
+     * is about that attempt. What releases it is the attempt expiring, or the payment it names being closed.
      *
      * Kept rather than released is the safe direction, so this answers true only for what it recognises.
      */
@@ -455,14 +454,15 @@ internal class TapToPayChargeRunner(
         failure: Throwable,
         resentKey: Boolean,
     ): Boolean =
-        when (failure) {
-            is CancellationException -> false
-            is TTPTransactionException.Refused,
-            is TTPTransactionException.ServiceRejected,
-            -> true
+        !resentKey &&
+            when (failure) {
+                is CancellationException -> false
+                is TTPTransactionException.Refused,
+                is TTPTransactionException.ServiceRejected,
+                is TTPTransactionException.NotEnabled,
+                -> true
 
-            is TTPTransactionException.NotEnabled -> !resentKey
-            is PayabliException -> !resentKey && !failure.code.leavesOutcomeUnknown
-            else -> false
-        }
+                is PayabliException -> !failure.code.leavesOutcomeUnknown
+                else -> false
+            }
 }
