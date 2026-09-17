@@ -3,6 +3,8 @@ package com.payabli.sdk.taptopay.attestation
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -98,12 +100,32 @@ class AttestationProjectStoreTest {
         }
 
     @Test
-    fun `resolveFromChallenge returns the response number under one lock`() =
+    fun `resolveFromChallenge keeps this response's number when another resolve overlaps`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val store = AttestationProjectStore(FakeSecureStore())
+            // Parked after its read while still holding the shared store lock, so a second resolve that
+            // is only queued — not interleaved — cannot change the number the first call returns. A
+            // remember-then-require split releases that lock between the two, and the second resolve can
+            // overwrite before the first require reads.
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val storage =
+                FakeSecureStore(
+                    afterFirstReadGate = {
+                        entered.complete(Unit)
+                        release.await()
+                    },
+                )
+            val first = AttestationProjectStore(storage)
+            val second = AttestationProjectStore(storage)
 
-            assertEquals(111L, store.resolveFromChallenge(PayabliEnvironment.SANDBOX, "111"))
-            assertEquals(111L, store.require(PayabliEnvironment.SANDBOX))
+            val firstNumber = async { first.resolveFromChallenge(PayabliEnvironment.SANDBOX, "111") }
+            entered.await()
+            val secondNumber = async { second.resolveFromChallenge(PayabliEnvironment.SANDBOX, "222") }
+            release.complete(Unit)
+
+            assertEquals(111L, firstNumber.await())
+            assertEquals(222L, secondNumber.await())
+            assertEquals(222L, first.require(PayabliEnvironment.SANDBOX))
         }
 
     @Test
