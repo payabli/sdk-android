@@ -56,8 +56,7 @@ internal class AttestationProjectStore(
     }
 
     /** The number last received for [environment], or null when none has been. */
-    suspend fun numberFor(environment: PayabliEnvironment): Long? =
-        lock.withLock { load()[environment.name] }
+    suspend fun numberFor(environment: PayabliEnvironment): Long? = lock.withLock { load()[environment.name] }
 
     /**
      * The number last received for [environment], or [AttestationException.Misconfigured] when none has.
