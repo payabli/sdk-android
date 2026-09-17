@@ -52,11 +52,15 @@ public sealed class PayInSubmissionState {
      * It did not go through.
      *
      * **[cause] is where the payment's outcome is reported, and [retryKey] is not.** Where a money-moving
-     * attempt may have been carried out, [cause] is a [PayInException.Unsettled] whose own cause is the
-     * exception a client raised; anywhere else it is that exception directly. [PayabliException.code] is the
-     * raised one's either way, so a decline, a validation failure and a network failure stay tellable apart
-     * without unwrapping. [fieldErrors] is what the refusal blamed, per field, and is empty when it blamed
-     * none.
+     * attempt may have been carried out, [cause] is a [PayInException.Unsettled]; anywhere else it is the
+     * exception a client raised, directly. [PayabliException.code] is the raised one's either way, so a
+     * decline, a validation failure and a network failure stay tellable apart without unwrapping.
+     * [fieldErrors] is what the refusal blamed, per field, and is empty when it blamed none.
+     *
+     * **A [PayInException.Unsettled] does not hand back the exception it wrapped.** Its own cause names the
+     * failing type and withholds the message, which can quote what was submitted, so it is safe to log and
+     * cannot be unwrapped or type-checked back to the original. Branch on [PayabliException.code], and read
+     * [PayInException.Unsettled.paymentTransId] for the payment to reconcile.
      *
      * [retryKey] answers a narrower question: whether there is a key worth sending again. It is set on the
      * two operations a form submits that move money, where the outcome is unknown and the key can still be
