@@ -22,6 +22,7 @@ import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -900,6 +901,31 @@ class PayInSubmissionTest {
             val cause = failed(submission.state.value).cause
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertEquals("101-abc", (cause as PayInException.Unsettled).paymentTransId)
+        }
+
+    @Test
+    fun `a money-moving cancellation before the reservation reports itself, nothing having been sent`() =
+        runTest(timeout = timeout) {
+            // The window the rule is actually about: a capture, so money is in play, canceled between the
+            // state going Submitting and the reservation inside the instrument. Cancelling from onReserved
+            // is what lands in it — that runs before the submission is dispatched, so the dispatch throws
+            // and `call` never reaches `retry.reserve`.
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            var running: Job? = null
+            running =
+                launch {
+                    submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) { taken ->
+                        if (taken) running?.cancel()
+                    }
+                }
+            running.join()
+
+            val state = failed(submission.state.value)
+            assertEquals("the request reached the wire", 0, transport.count)
+            assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
+            assertNull(state.retryKey)
         }
 
     @Test
