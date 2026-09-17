@@ -30,12 +30,36 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+
+/**
+ * The key the next attempt sends, from what this failure published and what is already held.
+ *
+ * **Whether a payment may still be outstanding is [PayInException.Unsettled]'s to say, and a key is the
+ * narrower question of whether the SDK has one to offer.** They come apart on a refused repeat: a `409`
+ * says the service has seen this key and nothing about whether the payment was taken, so it publishes no
+ * key while the payment is still unresolved. Reading the published key as the answer drops the one held
+ * here, and the next attempt mints a fresh one and starts a second payment for one that may already exist.
+ *
+ * Holding the refused key instead means the next attempt is refused too, which is the honest outcome: the
+ * payer's next move is to read the transaction back rather than to pay again.
+ *
+ * **There is always a key to hold by the time a refusal arrives here.** A form submission names no payment,
+ * so `RetryKey.reserve` never reuses a held key and sends either the one passed in or a fresh one; a `409`
+ * means the service has seen the key before, which on this screen only a key it already held can be. So an
+ * unresolved outcome that publishes no key cannot be the first thing this screen sees, and the branch that
+ * would return null for one is unreachable rather than a gap left open.
+ */
+internal fun keyForNextAttempt(
+    held: String?,
+    outcome: PayInSubmissionState.Failed,
+): String? = outcome.retryKey ?: held.takeIf { outcome.cause is PayInException.Unsettled }
 
 /**
  * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
@@ -69,7 +93,7 @@ class SimpleCaptureViewModel(
         private set
 
     fun failed(outcome: PayInSubmissionState.Failed) {
-        retryKey = outcome.retryKey
+        retryKey = keyForNextAttempt(retryKey, outcome)
     }
 
     fun succeeded() {

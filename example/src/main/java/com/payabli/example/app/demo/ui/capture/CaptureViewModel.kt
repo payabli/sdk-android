@@ -401,9 +401,10 @@ class CaptureViewModel(
     /**
      * A new key for the next attempt, once this one has an answer.
      *
-     * `retryKey` is the SDK's own statement of which failures left the attempt's fate unknown — a read that
-     * timed out, a 5xx, a 2xx that would not decode, a cancellation. Those keep the key, because a retry
-     * carrying it is recognized as the repeat it is instead of charging the payer twice.
+     * `PayInException.Unsettled` is the SDK's own statement that a failure left the attempt's fate unknown —
+     * a read that timed out, a 5xx, a 2xx that would not decode, a cancellation once the key had gone out, a
+     * conflict. Those keep the key, because a retry carrying it is recognized as the repeat it is instead of
+     * charging the payer twice, and the conflict keeps it though the SDK offers none to resend.
      *
      * Everything else was answered: no payment is outstanding, the form stays on screen, and what the payer
      * sends next is a different request. A decline and a rejected field are both in that group, and a rejected

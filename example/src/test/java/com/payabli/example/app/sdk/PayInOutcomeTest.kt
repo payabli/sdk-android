@@ -22,7 +22,7 @@ class PayInOutcomeTest {
     fun `an outcome that leaves the attempt unknown keeps its key`() {
         // The request may have reached the service and been taken in each of these: a read that timed out, a
         // 5xx, a 2xx that would not decode. Retried under a fresh key, all of them charge the payer twice.
-        // Each carries the attempt's key, because that is what the SDK sets for exactly these.
+        // The SDK says so by raising Unsettled, which is the one fact this reads.
         val unanswered =
             mapOf(
                 "a read that timed out" to PayabliNetworkException(),
@@ -31,10 +31,36 @@ class PayInOutcomeTest {
             )
 
         unanswered.forEach { (what, cause) ->
-            val outcome = PayInSubmissionState.Failed(cause, retryKey = "the-attempt-key").toOutcome()
+            val outcome =
+                PayInSubmissionState
+                    .Failed(PayInException.Unsettled(cause), retryKey = "the-attempt-key")
+                    .toOutcome()
 
             assertTrue("$what said its key was spent", outcome.keepsItsIdempotencyKey)
         }
+    }
+
+    @Test
+    fun `a refused repeat keeps its key, though there is none to resend`() {
+        // A 409 says a request under that key got past the service's check and nothing about whether the
+        // payment was taken. Rotating would start a new payment for one that may already have been made, so
+        // the screen holds what it has and the payer's next move is to reconcile rather than to pay again.
+        val conflict = PayInException.Unsettled(PayabliConflictException())
+
+        val outcome = PayInSubmissionState.Failed(conflict, retryKey = null).toOutcome()
+
+        assertTrue("a refused repeat rotated the key", outcome.keepsItsIdempotencyKey)
+    }
+
+    @Test
+    fun `a cancellation that may have been carried out keeps its key`() {
+        // The SDK reports a canceled submission whose key went out through the same carrier, so this reads
+        // one fact rather than naming a second type beside it.
+        val canceled = PayInException.Unsettled(PayInException.Interrupted())
+
+        val outcome = PayInSubmissionState.Failed(canceled, retryKey = "the-attempt-key").toOutcome()
+
+        assertTrue("a canceled attempt rotated the key", outcome.keepsItsIdempotencyKey)
     }
 
     @Test
@@ -73,6 +99,9 @@ class PayInOutcomeTest {
 
 private class PayabliNetworkException :
     PayabliException(PayabliErrorCode.NETWORK_ERROR, "The request did not complete", "timeout")
+
+private class PayabliConflictException :
+    PayabliException(PayabliErrorCode.CONFLICT, "The service has seen this idempotency key")
 
 private fun serviceFailure() =
     PayInFailure(code = "D0001", reason = "Insufficient funds", explanation = null, action = null, httpStatus = 200)

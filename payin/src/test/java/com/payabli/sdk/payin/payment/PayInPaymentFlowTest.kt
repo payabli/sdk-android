@@ -357,24 +357,54 @@ class PayInPaymentFlowTest {
             assertFalse("$cause", cause is PayInException.Unsettled)
         }
 
-    /** The message can quote a response body, so only the type survives. */
+    /** The message can quote a response body, so the message goes and the type stays. */
     @Test
-    fun `the reported failure withholds what the underlying one said`() =
+    fun `the reported failure withholds what the underlying one said, and names what raised it`() =
         runTest(timeout = timeout) {
             val flow = flowOver(FakePayInTransport.failingWith(dropped()))
 
             val cause = flow.voidTransaction("101-abc").exceptionOrNull() as PayInException.Unsettled
 
-            assertTrue("${cause.cause}", cause.cause?.message?.contains("PayabliGenericException") == true)
             assertFalse("${cause.cause}", cause.cause?.message?.contains(DROPPED_DETAIL) == true)
+            assertTrue("${cause.cause}", cause.cause?.message?.contains("PayabliGenericException") == true)
         }
 
     /**
-     * The form reads `PayInSubmissionState.Failed.retryKey`, so wrapping there would be a second channel for
-     * one key and would change what a host catches.
+     * The same handle on the path that returns a `Result`, which never had it. A caller told to reconcile
+     * and handed no identifier has been given an instruction it cannot carry out.
      */
     @Test
-    fun `the state a form reads carries the underlying failure, not the wrapper`() =
+    fun `a result that leaves the outcome open still names the transaction to reconcile`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering(SERVICE_ERROR_NAMING_TRANSACTION))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull() as PayInException.Unsettled
+
+            assertEquals("101-abc", cause.paymentTransId)
+        }
+
+    /**
+     * A redaction happens once. Wrapping one that has already happened names this SDK's own stand-in and
+     * carries the frames of the site that built it, so the type that failed is gone from what a host reads.
+     */
+    @Test
+    fun `an unexpected failure keeps the type that raised it through the wrapper`() =
+        runTest(timeout = timeout) {
+            val raised = IllegalStateException("could not parse $TEST_PAN")
+            val flow = flowOver(FakePayInTransport.failingWith(raised))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull() as PayInException.Unsettled
+
+            assertTrue("${cause.cause}", cause.cause?.message?.contains("IllegalStateException") == true)
+            assertFalse("${cause.cause}", cause.cause?.message?.contains(TEST_PAN) == true)
+        }
+
+    /**
+     * The two facts are separable, so the form reads each from its own place: whether the outcome is
+     * unknown from the cause, and whether there is a key to resend from `retryKey`.
+     */
+    @Test
+    fun `the state a form reads carries both the unknown outcome and the key`() =
         runTest(timeout = timeout) {
             val flow = flowOver(FakePayInTransport.failingWith(dropped()))
 
@@ -382,8 +412,43 @@ class PayInPaymentFlowTest {
             val published = flow.state.value as PayInSubmissionState.Failed
 
             assertTrue("$cause", cause is PayInException.Unsettled)
-            assertFalse("${published.cause}", published.cause is PayInException.Unsettled)
+            assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.NETWORK_ERROR, published.cause.code)
             assertNotNull("the form's own channel still carries the key", published.retryKey)
+        }
+
+    /**
+     * A `409` establishes that a request carrying that key got past the check, and nothing about whether
+     * the payment was taken. Rotating on it starts a new payment for one that may already have been made.
+     */
+    @Test
+    fun `a conflict on a form submission answers that the outcome is unknown, carrying no key`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409))
+
+            val cause = flow.capture(testOptions(), cardForm()).exceptionOrNull()
+            val published = flow.state.value as PayInSubmissionState.Failed
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
+            assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
+            assertNull("a host following the contract would resubmit this key", published.retryKey)
+        }
+
+    /** Whoever chose the key, the service's answer says the same thing about the payment. */
+    @Test
+    fun `a conflict on the caller's own key answers that the outcome is unknown`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering("Duplicated idempotencyKey", statusCode = 409))
+
+            val cause =
+                flow
+                    .captureAuthorizedTransaction(
+                        PayInAuthorizedRequest("101-abc", testDetails(), idempotencyKey = "caller-chose-this"),
+                    ).exceptionOrNull()
+
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
         }
 
     @Test

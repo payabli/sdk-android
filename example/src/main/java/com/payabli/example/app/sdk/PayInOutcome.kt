@@ -65,5 +65,6 @@ internal fun PayInSubmissionState.Failed.toOutcome(): PayInOutcome.Refused =
     PayInOutcome.Refused(
         error = toPaymentError(),
         diagnostic = cause.toString(),
-        keepsItsIdempotencyKey = retryKey != null || cause is PayInException.AlreadySubmitting,
+        keepsItsIdempotencyKey =
+            cause is PayInException.Unsettled || cause is PayInException.AlreadySubmitting,
     )

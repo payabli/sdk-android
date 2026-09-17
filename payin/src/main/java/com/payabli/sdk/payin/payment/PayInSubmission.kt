@@ -113,7 +113,13 @@ internal class PayInSubmission(
         onReserved: (Boolean) -> Unit = {},
     ): PayInSubmissionState? =
         // No payment named: two submissions of equal value are two payments, not a resend of one.
-        perform(operation.event, entryPoint, onReserved, payment = null) { retry ->
+        perform(
+            operation.event,
+            entryPoint,
+            onReserved,
+            movesMoney = operation.movesMoney,
+            payment = null,
+        ) { retry ->
             // The customer and the description the payer typed, which are not part of the instrument. Read
             // once here, so all three operations carry what the same form collected.
             val entered = PayInEnteredDetails.of(values)
@@ -235,6 +241,7 @@ internal class PayInSubmission(
         entryPoint: String? = null,
         onReserved: (Boolean) -> Unit = {},
         publishes: Boolean = true,
+        movesMoney: Boolean = true,
         payment: String?,
         call: suspend (RetryKey) -> PayInSubmissionState,
     ): PayInSubmissionState? {
@@ -271,10 +278,21 @@ internal class PayInSubmission(
         } catch (cancellation: CancellationException) {
             // Rethrown: a coroutine that swallows its own cancellation stops being cancellable. The state still
             // records it, because the charge may have landed and the retry key is what a second attempt needs.
-            outcome = PayInSubmissionState.Failed(PayInException.Interrupted(), retryKey = retry.key)
+            //
+            // The key is what says how far this got. Reserved, and the request may have been carried out, so
+            // it reports the open outcome every other interrupted attempt does. Not reserved, and nothing was
+            // sent. Gated on movesMoney as every other classification here is, so an operation that reserves
+            // a key without moving money would not start reporting an open payment.
+            val interrupted = PayInException.Interrupted()
+            val unknown = movesMoney && retry.key != null
+            outcome =
+                PayInSubmissionState.Failed(
+                    cause = if (unknown) PayInException.Unsettled(interrupted) else interrupted,
+                    retryKey = retry.key,
+                )
             throw cancellation
         } catch (failure: Exception) {
-            outcome = failure.asFailed(retry)
+            outcome = failure.asFailed(retry, movesMoney)
         } finally {
             // Nothing here suspends, so all of it runs on the canceled path as it does on any other. That is
             // what makes an abandoned payment countable: it is the one outcome nobody is left to report.
@@ -415,10 +433,19 @@ internal class PayInSubmission(
      * [PayabliErrorCode.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
      * body writer or a serializer can quote what it was given.
      *
+     * **Two facts, and each has its own place.** Whether the payment's outcome is unknown is carried by the
+     * cause, wrapped as [PayInException.Unsettled]; whether there is a key worth sending again is carried by
+     * `retryKey`. They agree everywhere but one case, and that case is the reason they are separate: a
+     * conflict this holder did not resend leaves the outcome unknown and names no key, the service having
+     * just refused the only value there would be to send.
+     *
      * A resent key is named for anything short of an answer, this holder keeping it. Any other is named
      * only where the request may have been carried out, since the host would have to carry it itself.
      */
-    private fun Exception.asFailed(retry: RetryKey): PayInSubmissionState.Failed {
+    private fun Exception.asFailed(
+        retry: RetryKey,
+        movesMoney: Boolean,
+    ): PayInSubmissionState.Failed {
         val cause =
             this as? PayabliException
                 ?: PayabliGenericException(
@@ -426,15 +453,35 @@ internal class PayInSubmission(
                     REASON_UNEXPECTED,
                     cause = RedactedCause(this),
                 )
+        val unknown = movesMoney && cause.leavesTheOutcomeUnknown(retry.reused)
         return PayInSubmissionState.Failed(
-            cause = cause,
+            cause = if (unknown) PayInException.Unsettled(cause) else cause,
             fieldErrors = PayInRejectedFields.of(this),
             retryKey =
                 retry.key.takeIf {
-                    if (retry.reused) !cause.answersThePayment(true) else cause.code.leavesOutcomeUnknown
+                    unknown && (retry.reused || cause.code != PayabliErrorCode.CONFLICT)
                 },
         )
     }
+
+    /**
+     * Whether the payment's outcome is unknown once this failure has arrived.
+     *
+     * A key this holder resent names an attempt nobody has an answer for, so anything short of an answer
+     * about the payment leaves it exactly as unresolved. Otherwise the code decides, and it decides for one
+     * more case than [leavesOutcomeUnknown] carries: a conflict establishes that a request under that key
+     * got past the service's check, and never whether the payment was taken.
+     *
+     * **A conflict is not added to [leavesOutcomeUnknown] itself**, which decides which attempt is kept
+     * alive rather than what a caller is told. Adding it there would report a key that was just refused,
+     * and card-present reads the same property for a question this answer is not about.
+     */
+    private fun PayabliException.leavesTheOutcomeUnknown(reused: Boolean): Boolean =
+        if (reused) {
+            !answersThePayment(true)
+        } else {
+            code.leavesOutcomeUnknown || code == PayabliErrorCode.CONFLICT
+        }
 
     /**
      * Reports how one submission ended.

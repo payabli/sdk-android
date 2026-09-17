@@ -22,6 +22,7 @@ import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -878,9 +879,74 @@ class PayInSubmissionTest {
             running.join()
 
             val state = failed(submission.state.value)
-            assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
+            // The request was in flight, so the payment may have been taken and the form is told so through
+            // the carrier every other interrupted attempt uses.
+            assertTrue("${state.cause}", state.cause is PayInException.Unsettled)
             assertEquals("key-9", state.retryKey)
             assertEquals(PayabliErrorCode.USER_CANCELLED, state.cause.code)
+        }
+
+    /**
+     * An unsettled outcome is exactly when a caller reconciles, and `PayInFailure.paymentTransId` is the
+     * only handle it has on the transaction to reconcile.
+     */
+    @Test
+    fun `a service error that leaves the outcome open still names its transaction`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(SERVICE_ERROR_NAMING_TRANSACTION)
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val cause = failed(submission.state.value).cause
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals("101-abc", (cause as PayInException.Unsettled).paymentTransId)
+        }
+
+    @Test
+    fun `a money-moving cancellation before the reservation reports itself, nothing having been sent`() =
+        runTest(timeout = timeout) {
+            // The window the rule is actually about: a capture, so money is in play, canceled between the
+            // state going Submitting and the reservation inside the instrument. Cancelling from onReserved
+            // is what lands in it — that runs before the submission is dispatched, so the dispatch throws
+            // and `call` never reaches `retry.reserve`.
+            val transport = FakePayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            var running: Job? = null
+            running =
+                launch {
+                    submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) { taken ->
+                        if (taken) running?.cancel()
+                    }
+                }
+            running.join()
+
+            val state = failed(submission.state.value)
+            assertEquals("the request reached the wire", 0, transport.count)
+            assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
+            assertNull(state.retryKey)
+        }
+
+    @Test
+    fun `a canceled store reports itself, a repeat of one not being recognizable`() =
+        runTest(timeout = timeout) {
+            // The request has gone out before this cancels: the gate opens on transport.arrived. That is the
+            // point of pinning it here rather than beside the money-moving case above — a store reserves no
+            // key, so there is nothing to say how far it got, and it is still reported as the whole of the
+            // outcome because a store moves no money and three identical bodies return three identifiers.
+            val transport = GatedPayInTransport.answering(stored)
+            val submission = submissionOver(transport)
+
+            val running =
+                launch { submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), cardForm()) }
+            transport.arrived.await()
+            running.cancel()
+            running.join()
+
+            val state = failed(submission.state.value)
+            assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
+            assertNull(state.retryKey)
         }
 
     @Test
