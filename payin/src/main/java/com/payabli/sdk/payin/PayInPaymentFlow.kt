@@ -3,7 +3,6 @@ package com.payabli.sdk.payin
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
-import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -202,34 +201,29 @@ internal class PayInPaymentFlow private constructor(
     private fun PayInSubmissionState?.asPayment(): Result<PayInResult> =
         when (this) {
             is PayInSubmissionState.Succeeded.Payment -> Result.success(result)
-            else -> Result.failure(asFailure(movesMoney = true))
+            else -> Result.failure(asFailure())
         }
 
     /**
      * The failure behind a state that is not the success the caller asked for.
      *
-     * A retry key on the state means the request may have been carried out, and a caller holding a `Result`
-     * cannot read the state, so the failure says so as [PayInException.Unsettled]. That is the whole of what
-     * the wrap claims, and it is true of every caller here.
+     * The cause already says whether the request may have been carried out, being
+     * [PayInException.Unsettled] where it was, so this reads it rather than deciding it a second time. One
+     * definition, at the submission that knows which key went out, so a caller holding a `Result` and a form
+     * reading the state are told the same thing.
      *
-     * The key itself stays inside either way, and what that buys differs by route. Where the call named a
-     * transaction it is kept against that transaction, so the next call naming it sends the same key without
-     * the caller doing anything. Where it did not, nothing is kept, and a repeat is recognized only under a
-     * key the caller supplied.
+     * The key itself stays inside, and what that buys differs by route. Where the call named a transaction
+     * it is kept against that transaction, so the next call naming it sends the same key without the caller
+     * doing anything. Where it did not, nothing is kept, and a repeat is recognized only under a key the
+     * caller supplied.
      *
      * A null state is a submission refused because one was already in flight. Idle and Submitting cannot
      * arise for a call that has returned, and reporting them as a defect is what keeps this exhaustive
      * without inventing a plausible-looking failure for a state that cannot occur.
      */
-    private fun PayInSubmissionState?.asFailure(movesMoney: Boolean = false): Throwable =
+    private fun PayInSubmissionState?.asFailure(): Throwable =
         when (this) {
-            is PayInSubmissionState.Failed ->
-                if (retryKey != null || (movesMoney && cause.code.leavesOutcomeUnknown)) {
-                    PayInException.Unsettled(cause)
-                } else {
-                    cause
-                }
-
+            is PayInSubmissionState.Failed -> cause
             null -> PayInException.AlreadySubmitting()
             else -> IllegalStateException("a submission returned while its state read $this")
         }

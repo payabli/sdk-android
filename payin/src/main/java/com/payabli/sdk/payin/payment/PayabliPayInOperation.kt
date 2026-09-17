@@ -61,6 +61,20 @@ internal val PayabliPayInOperation.event: String
             is PayabliPayInOperation.Authorize -> TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED
         }
 
+/**
+ * Whether a failed attempt at this operation can leave money in doubt.
+ *
+ * Storing an instrument moves none, and three identical bodies under one key return three different
+ * identifiers, so a repeat is not recognizable there and no failure of it is unresolved: the entry point's
+ * stored methods are read back instead.
+ */
+internal val PayabliPayInOperation.movesMoney: Boolean
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> false
+            is PayabliPayInOperation.Capture, is PayabliPayInOperation.Authorize -> true
+        }
+
 /** The operation as a fixed word, for the form events. Closed, as [event] is. */
 internal val PayabliPayInOperation.step: String
     get() =

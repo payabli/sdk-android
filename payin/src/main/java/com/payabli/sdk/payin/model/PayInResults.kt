@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.model
 
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.RedactedFailure
 import java.math.BigDecimal
 
 /** A method the service stored, identified for later use. */
@@ -169,14 +170,15 @@ public sealed class PayInException(
     }
 
     /**
-     * The submission was canceled with the request in flight, so its outcome is unknown.
+     * The submission was canceled before it finished.
      *
-     * The payment may already have been taken.
+     * A `Result` call never receives this: cancellation is rethrown, so the call does not return. It reaches
+     * a form through the state it publishes.
      *
-     * A canceled call does not deliver this: cancellation is rethrown, so a `Result` call never returns and
-     * a form's own submission publishes the state without a reader. A cancellation after the key was
-     * reserved leaves a held key, resent by the next call naming the same transaction, and
-     * `PayInSubmissionState.Failed.retryKey` for the form's path. One before that leaves neither.
+     * **What it says depends on how far the submission got, and the key is what marks the line.** Canceled
+     * after the key was reserved, the request may have been carried out, so the form publishes [Unsettled]
+     * carrying this as its cause and a held key is resent by the next call naming the same transaction.
+     * Canceled before that, nothing was sent and nothing is held, so this is the whole of the outcome.
      */
     public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"
@@ -198,7 +200,8 @@ public sealed class PayInException(
      * [PayabliException.code] is [cause]'s own, so a caller branching on it reads what went wrong as well
      * as that it is unresolved. It is taken from [cause] rather than accepted beside it, because two
      * sources for one classification can disagree and a caller cannot tell which it is holding. [cause]
-     * names the failing type and withholds its message.
+     * names the failing type and withholds its message, and it names the type that failed rather than this
+     * SDK's stand-in for it: a failure already carrying a redaction keeps the one it has.
      */
     public class Unsettled(
         cause: PayabliException,
@@ -206,7 +209,7 @@ public sealed class PayInException(
             cause.code,
             DEFAULT_UNSETTLED_REASON,
             detail = cause.reason,
-            cause = RedactedCause(cause),
+            cause = cause.redactedOnce(),
         ) {
         override fun toString(): String = "PayInException.Unsettled(code=${code.wireName})"
     }
@@ -234,6 +237,15 @@ public sealed class PayInException(
 }
 
 /**
+ * The redaction [PayabliException.cause] already is, or a new one standing in for the failure itself.
+ *
+ * A failure that reached here through a client has had its message taken off already, and that stand-in is
+ * what names the type that actually failed. Redacting it a second time would name this SDK's own wrapper
+ * and carry the frames of the site that built it.
+ */
+private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is RedactedFailure } ?: RedactedCause(this)
+
+/**
  * Carries a cause's type without its message.
  *
  * A decode failure's message quotes the input, which for these bodies can be a card number. `:core` draws the
@@ -241,7 +253,8 @@ public sealed class PayInException(
  */
 internal class RedactedCause(
     cause: Throwable,
-) : Throwable("${cause.javaClass.name} (message withheld)") {
+) : Throwable("${cause.javaClass.name} (message withheld)"),
+    RedactedFailure {
     init {
         // The frames are the whole diagnostic value: which serializer failed, in which file, at which line.
         // Dropping them leaves every decode failure pointing at this constructor.

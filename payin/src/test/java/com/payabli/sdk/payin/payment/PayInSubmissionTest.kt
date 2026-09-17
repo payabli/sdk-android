@@ -878,9 +878,30 @@ class PayInSubmissionTest {
             running.join()
 
             val state = failed(submission.state.value)
-            assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
+            // The request was in flight, so the payment may have been taken and the form is told so through
+            // the carrier every other interrupted attempt uses.
+            assertTrue("${state.cause}", state.cause is PayInException.Unsettled)
             assertEquals("key-9", state.retryKey)
             assertEquals(PayabliErrorCode.USER_CANCELLED, state.cause.code)
+        }
+
+    @Test
+    fun `a cancellation that reserved no key reports itself, nothing having been sent`() =
+        runTest(timeout = timeout) {
+            // A store reserves none at all, which is the reachable form of "canceled before the key". Its
+            // outcome is known: no request carrying a key went out, so there is nothing to reconcile.
+            val transport = GatedPayInTransport.answering(stored)
+            val submission = submissionOver(transport)
+
+            val running =
+                launch { submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), cardForm()) }
+            transport.arrived.await()
+            running.cancel()
+            running.join()
+
+            val state = failed(submission.state.value)
+            assertTrue("${state.cause}", state.cause is PayInException.Interrupted)
+            assertNull(state.retryKey)
         }
 
     @Test
