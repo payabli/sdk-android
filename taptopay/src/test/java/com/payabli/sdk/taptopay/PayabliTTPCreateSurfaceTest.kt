@@ -16,14 +16,13 @@ class PayabliTTPCreateSurfaceTest {
     fun `create takes session and context only`() {
         // Suspend methods carry a Continuation as the last JVM parameter; the host-facing arity is the
         // rest. The method lives on the companion, not on the class.
-        val create =
+        val creates =
             Class
                 .forName("com.payabli.sdk.taptopay.PayabliTTP\$Companion")
                 .methods
-                .single {
-                    it.name == "create" &&
-                        it.parameterTypes.getOrNull(0) == PayabliSession::class.java
-                }
+                .filter { it.name == "create" }
+        assertEquals(1, creates.size)
+        val create = creates.single()
 
         assertEquals(3, create.parameterCount)
         assertEquals(PayabliSession::class.java, create.parameterTypes[0])
