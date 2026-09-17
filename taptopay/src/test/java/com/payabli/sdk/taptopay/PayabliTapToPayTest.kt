@@ -35,6 +35,10 @@ private val PAYER = TapToPayCustomerData(firstName = "Ada", lastName = "Payer", 
  * fails.
  */
 class PayabliTapToPayTest {
+    @org.junit.Before
+    @org.junit.After
+    fun forgetHeldKeys() = ChargeKeyStore.forgetHeld()
+
     private fun terminalOver(fixture: SessionFixture) =
         PayabliTTP.over(
             coordinator = fixture.coordinator,

@@ -81,11 +81,13 @@ private class PendingClose(
     /**
      * The attempt this payment was opened under.
      *
-     * Settled once a close is confirmed and the reader's answer was definite. An outcome that was never
-     * definite keeps it, because the payment may have been taken and the attempt is what would name a
-     * repeat.
+     * Settled once a close is confirmed and the reader's answer was definite — and only when this
+     * payment was opened under a fresh key. A resent key names an earlier attempt; nothing this run
+     * learns settles it.
      */
     val idempotencyKey: String,
+    /** True when [idempotencyKey] was reused from an unsettled earlier attempt. */
+    val resentKey: Boolean,
 )
 
 /** One payment, end to end: open it at Payabli, tap, close it. */
@@ -121,8 +123,8 @@ internal class TapToPayChargeRunner(
      *
      * **Broader than [scope], which is what a payment belongs to.** The store matches on entry point
      * plus environment, so two environments for one paypoint hold separate keys. The lock stays keyed
-     * on the entry point alone so two terminals for that paypoint — even across environments — cannot
-     * mint and settle side by side over the same process map.
+     * on the entry point alone so two terminals for that paypoint cannot open, close or settle side by
+     * side — including across environments, where [HELD] and the session repair still share the paypoint.
      */
     private val region: Mutex get() = regionFor(entry)
 
@@ -213,7 +215,7 @@ internal class TapToPayChargeRunner(
                             reported
                         }
                     }
-                HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey)
+                HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey, resentKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -230,10 +232,12 @@ internal class TapToPayChargeRunner(
                 // the process map, so it cannot fail the caller.
                 withContext(NonCancellable) {
                     client.update(paymentTransId, result)
-                    // Both an approval and a refusal are definitive, so the attempt is over and its key can
-                    // go. An outcome that is neither keeps it: the payment may have been taken, and the key
-                    // is what would let a repeat be recognised as one.
-                    if (result.outcome != CardReadOutcome.INDETERMINATE) {
+                    // Both an approval and a refusal are definitive for a fresh key, so the attempt is over
+                    // and its key can go. An outcome that is neither keeps it: the payment may have been
+                    // taken, and the key is what would let a repeat be recognised as one. A resent key is
+                    // never settled here: this run's answer is about a different opening than the one the
+                    // key names.
+                    if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
                         keys.settle(entry, environment, idempotencyKey)
                     }
                     // The close landed, so there is nothing left to recover for this payment,
@@ -262,7 +266,7 @@ internal class TapToPayChargeRunner(
                 // there on is evidence the money did not move.
                 if (!askedForCard) {
                     val key = reserved
-                    if (key != null && isConflict(failure)) {
+                    if (key != null && resentKey && isConflict(failure)) {
                         // A 409 on a resent key proves the earlier opening reached the service, so the
                         // sweep must not drop it.
                         keys.markArrived(entry, environment, key)
@@ -382,7 +386,8 @@ internal class TapToPayChargeRunner(
                     // is kept for every outcome, because the transaction is open at the service whatever
                     // the card did, so a recovery can be closing one whose outcome was never definite.
                     // Settling that would drop the only handle on an attempt that may have taken money.
-                    if (pending.read.outcome != CardReadOutcome.INDETERMINATE) {
+                    // A resent key is never settled from what this close learns about a later opening.
+                    if (!pending.resentKey && pending.read.outcome != CardReadOutcome.INDETERMINATE) {
                         keys.settle(entry, environment, pending.idempotencyKey)
                     }
                     // The close landed either way, so nothing is left to recover.

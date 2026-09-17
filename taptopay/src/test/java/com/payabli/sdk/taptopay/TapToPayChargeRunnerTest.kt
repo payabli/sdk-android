@@ -457,7 +457,8 @@ class TapToPayChargeRunnerTest {
     fun `a card decline after a resent opening still reports unknown`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Initiate accepts the resent key past the service window: a new opening. The decline of that
-            // opening must not claim the earlier attempt left no money.
+            // opening must not claim the earlier attempt left no money, and must not settle the key the
+            // earlier attempt still owns.
             val fixture =
                 SessionFixture(
                     RouteScript(
@@ -465,12 +466,8 @@ class TapToPayChargeRunnerTest {
                         RouteScript.REGISTER to listOf(registerBody(status = "active")),
                         RouteScript.ATTEST to listOf(attestBody()),
                         RouteScript.CONFIG to listOf(configBody()),
-                        INITIATE to
-                            listOf(
-                                approved("{\"paymentTransId\":\"$TRANS_ID\"}"),
-                                approved("{\"paymentTransId\":\"$TRANS_ID-2\"}"),
-                            ),
-                        UPDATE to List(2) { "{}" },
+                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(3) { "{}" },
                     ),
                 ).also { it.coordinator.initialize() }
             fixture.reader.answerReadWith(
@@ -491,6 +488,13 @@ class TapToPayChargeRunnerTest {
                 "a decline on a resent opening was reported as taking no money",
                 TapToPayCapture.UNKNOWN,
                 (failure as TapToPayException).capture,
+            )
+            fixture.reader.answerReadWith(cardRead())
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            assertEquals(
+                "a decline on a resent opening settled the earlier attempt",
+                "$MINTED_KEY-1",
+                fixture.keySent(2),
             )
         }
 
@@ -639,7 +643,7 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
-            assertEquals("a decline released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
+            assertEquals("a decline kept the earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
     @Test
