@@ -55,7 +55,6 @@ class DeviceEnrollmentTest {
                     RouteScript.CHALLENGE,
                     "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
-                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     RouteScript.REGISTER,
                     RouteScript.ATTEST,
                     "get:$RECORD_ENTRY",
@@ -239,7 +238,6 @@ class DeviceEnrollmentTest {
                     "remove:$LEGACY_RECORD_ENTRY",
                     "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
-                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                 ),
                 fixture.storage.operations,
             )
@@ -253,7 +251,7 @@ class DeviceEnrollmentTest {
 
             fixture.enrollment.enroll()
 
-            // Binding reads and one write, plus the project-number remember after challenge. No remove of
+            // Binding reads and one write, plus the project-number resolve after challenge. No remove of
             // another paypoint's binding.
             assertEquals(
                 listOf(
@@ -261,7 +259,6 @@ class DeviceEnrollmentTest {
                     "remove:$LEGACY_RECORD_ENTRY",
                     "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
-                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "get:$RECORD_ENTRY",
                     "set:$RECORD_ENTRY",
                 ),

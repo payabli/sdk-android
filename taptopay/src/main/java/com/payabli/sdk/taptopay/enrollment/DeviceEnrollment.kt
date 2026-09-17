@@ -135,10 +135,10 @@ internal class DeviceEnrollment(
             }
 
             val challenge = client.challenge(entry, failureMapper = EntryPointFailures)
-            projects.rememberFromChallenge(environment, challenge.cloudProjectNumber)
-            // Before the attestor: a missing project must not reach Play Integrity, and FakeAppAttestor
-            // would otherwise skip the check the shipping classic path performs inside its resolver.
-            val projectNumber = projects.require(environment)
+            // One store lock: the number this challenge owns, not whatever a concurrent enrollment may
+            // write between a separate remember and require.
+            val projectNumber =
+                projects.resolveFromChallenge(environment, challenge.cloudProjectNumber)
 
             mintProject.whilePinned(projectNumber) {
                 val registration =

@@ -92,7 +92,6 @@ class EnrollmentSerializationTest {
                     "get:$LEGACY_RECORD_ENTRY",
                     "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
-                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "get:$RECORD_ENTRY",
                     "get:$LEGACY_RECORD_ENTRY",
                     "set:$RECORD_ENTRY",

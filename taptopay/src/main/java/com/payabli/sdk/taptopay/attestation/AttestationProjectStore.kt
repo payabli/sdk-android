@@ -51,9 +51,35 @@ internal class AttestationProjectStore(
         environment: PayabliEnvironment,
         cloudProjectNumber: String?,
     ) {
-        val number = cloudProjectNumber?.trim()?.toLongOrNull()?.takeIf { it > 0L } ?: return
+        val number = parse(cloudProjectNumber) ?: return
         remember(environment, number)
     }
+
+    /**
+     * The project this challenge-to-mint interval must use, decided under one hold of the store lock.
+     *
+     * When the response names a project, that value is persisted and returned. When it does not, the
+     * environment's stored number is returned, or [AttestationException.Misconfigured] when none has
+     * ever been received. Returning the parsed value rather than re-reading after a separate write is
+     * what keeps a concurrent enrollment from changing the number already chosen for this challenge.
+     */
+    suspend fun resolveFromChallenge(
+        environment: PayabliEnvironment,
+        cloudProjectNumber: String?,
+    ): Long =
+        lock.withLock {
+            val parsed = parse(cloudProjectNumber)
+            val held = load()
+            if (parsed != null) {
+                store(held + (environment.name to parsed))
+                return@withLock parsed
+            }
+            held[environment.name]
+                ?: throw AttestationException.Misconfigured(
+                    errorCode = null,
+                    message = MISSING_ATTESTATION_PROJECT,
+                )
+        }
 
     /** The number last received for [environment], or null when none has been. */
     suspend fun numberFor(environment: PayabliEnvironment): Long? = lock.withLock { load()[environment.name] }
@@ -70,6 +96,9 @@ internal class AttestationProjectStore(
                 errorCode = null,
                 message = MISSING_ATTESTATION_PROJECT,
             )
+
+    private fun parse(cloudProjectNumber: String?): Long? =
+        cloudProjectNumber?.trim()?.toLongOrNull()?.takeIf { it > 0L }
 
     private suspend fun load(): Map<String, Long> {
         val bytes =

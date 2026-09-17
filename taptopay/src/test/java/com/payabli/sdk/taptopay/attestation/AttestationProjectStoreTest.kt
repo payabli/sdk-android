@@ -98,6 +98,38 @@ class AttestationProjectStoreTest {
         }
 
     @Test
+    fun `resolveFromChallenge returns the response number under one lock`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            assertEquals(111L, store.resolveFromChallenge(PayabliEnvironment.SANDBOX, "111"))
+            assertEquals(111L, store.require(PayabliEnvironment.SANDBOX))
+        }
+
+    @Test
+    fun `resolveFromChallenge returns the stored number when the response omits one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.remember(PayabliEnvironment.SANDBOX, 424242L)
+
+            assertEquals(424242L, store.resolveFromChallenge(PayabliEnvironment.SANDBOX, null))
+        }
+
+    @Test
+    fun `resolveFromChallenge fails when the response omits and nothing is stored`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            val failure =
+                runCatching { store.resolveFromChallenge(PayabliEnvironment.SANDBOX, null) }
+                    .exceptionOrNull() as AttestationException.Misconfigured
+
+            assertNull(failure.errorCode)
+            assertEquals(AttestationProjectStore.MISSING_ATTESTATION_PROJECT, failure.message)
+        }
+
+    @Test
     fun `zero and negative wire values are not remembered`() =
         runTest(timeout = TEST_TIMEOUT) {
             val store = AttestationProjectStore(FakeSecureStore())
