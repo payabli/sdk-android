@@ -8,9 +8,15 @@ name: Mirror the card reader
 # reading the history. A dispatch against an environment is the one subject that is neither a tag nor
 # every branch.
 #
-# That environment is the gate. The publishing role trusts exactly
-# `environment:card-reader-mirror` on this repository and nothing else, so a run cannot reach the
-# origin until a required reviewer approves it. Nobody holds an AWS credential for this.
+# That environment is the gate, and two of its three parts are repository settings rather than
+# anything in this file — so read them there before trusting the sentence above. It carries a
+# required reviewer, and its deployment branch policy admits protected branches only.
+#
+# The branch policy is the load-bearing half, because the OIDC subject for an environment carries no
+# ref: the publishing role trusts `environment:card-reader-mirror` from any ref that can reach the
+# environment. Without the policy a branch could carry its own edited copy of the script and dispatch
+# it, and the reviewer would be approving a deployment rather than a diff. With it, only a protected
+# branch can, which is the review the pinned list below is actually defended by.
 #
 # The version has to be pinned in mirror_card_reader.py before it can be dispatched. The list there
 # is the record of what each SDK release was certified against, and adding to it is the one decision
@@ -48,7 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: card-reader-mirror
     steps:
-      - uses: actions/checkout@v7
+      # SHA-pinned, as live-flows.yml pins every action it uses: this job holds GPR_TOKEN and
+      # mints an AWS publishing credential, and a mutable tag is resolved at run time by whoever
+      # controls it. The comment carries the tag so a bump is still readable.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Variables rather than secrets, deliberately: a role ARN is not a credential, it is an
       # identifier that only works alongside this repository's OIDC identity. Masking it as a secret
@@ -69,14 +78,18 @@ jobs:
           AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
 
       - name: Authenticate to AWS
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@cabfdba3510de1431bac9dba27511d97497fc100 # v5
         with:
           role-to-assume: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_SDK_CDN_REGION }}
 
-      # The account the script refuses to publish outside is the account this run just assumed into,
-      # read off the role ARN rather than configured a second time. Two copies of an account id are
-      # two things to keep in step, and the one that drifts is the one further from the credential.
+      # The account is read off the role ARN this run just assumed rather than configured a second
+      # time, so there is one copy of it rather than two that can drift.
+      #
+      # Derived that way it cannot disagree with the caller's own account, so it proves nothing about
+      # the caller. What it is for is the bucket: the script passes it as --expected-bucket-owner, so
+      # a mistyped bucket name that happens to resolve to somebody else's bucket is refused rather
+      # than written to. S3 names are global and not reserved to us.
       - name: Mirror the reader
         env:
           # Through the environment, never interpolated into the script body: a dispatch input is

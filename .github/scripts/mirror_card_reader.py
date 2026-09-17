@@ -55,9 +55,6 @@ this file: this repository is public, and a role ARN carries an AWS account id.
     AWS_REGION             standard AWS variable, set by the credentials action
 """
 
-# Annotations are lazy so the union syntax parses on the system Python, which is 3.9 on some benches.
-from __future__ import annotations
-
 import argparse
 import hashlib
 import os
@@ -72,11 +69,24 @@ REGISTRY = "https://maven.pkg.github.com/Fiserv/ch-ttp-androidsdk"
 CACHE_CONTROL = "max-age=31536000, immutable"
 
 # Reader version -> every coordinate certified with it, as (group path, artifact, version,
-# extensions). Append a block; never edit or remove one.
+# {extension: sha256}). Append a block; never edit or remove one.
+#
+# The digests are what make a fetch verifiable. A key written here is immutable, so bytes that are
+# not what we mean to publish cannot be corrected afterwards by this tool or any other: the write is
+# refused, and every later run reports the key as already present. So the artifact is checked against
+# a digest recorded when the version was certified, rather than trusted because the transfer
+# returned. Take a new block's digests from a fetch-only run and read them before committing them.
 RELEASES = {
     "1.1.4.1": [
-        ("com/fiserv/ch", "ttp-payment", "1.1.4.1", ("pom", "aar", "module")),
-        ("com", "magiccube", "3.4.1", ("pom", "aar")),
+        ("com/fiserv/ch", "ttp-payment", "1.1.4.1", {
+            "pom": "bc958328f0f14e0ed2a6707211c2fbeb07b25da58f84a62f7915ac2519b91c8e",
+            "aar": "9fae867347e664511a0615f9021b383c5096fd11a5824406399b38c13d9f5500",
+            "module": "7f860bdad099f0112dab8fbd4bedf1075098b7d5dc0ed8f99428add6820fb7c0",
+        }),
+        ("com", "magiccube", "3.4.1", {
+            "pom": "17abd03b0bb856e2cfe0142472b59bd7a6456f951d4174c3ea530be9d9fe9886",
+            "aar": "629d36584c66cc0c468ca27747e148b12efbafbf7882773e9bbd8013f1c52cd2",
+        }),
     ],
 }
 
@@ -91,18 +101,22 @@ def coordinates(version: str):
         f"pinned: {known}\n\n"
         "Add it to RELEASES in this file first, cross-checked against gradle/libs.versions.toml:\n\n"
         f'    "{version}": [\n'
-        f'        ("com/fiserv/ch", "ttp-payment", "{version}", ("pom", "aar", "module")),\n'
-        '        ("com", "magiccube", "<its transitive version>", ("pom", "aar")),\n'
+        f'        ("com/fiserv/ch", "ttp-payment", "{version}", {{"pom": "<sha256>", '
+        '"aar": "<sha256>", "module": "<sha256>"}),\n'
+        '        ("com", "magiccube", "<its transitive version>", '
+        '{"pom": "<sha256>", "aar": "<sha256>"}),\n'
         "    ],\n\n"
+        "Take the digests from a --fetch-only run against the new version.\n"
         "The list is the record of what each release was certified against, which is why adding a\n"
         "version is a reviewed change rather than a dispatch input."
     )
 
 
 def keys(version: str):
-    for group, artifact, ver, exts in coordinates(version):
-        for ext in exts:
-            yield f"{group}/{artifact}/{ver}/{artifact}-{ver}.{ext}"
+    """Each mirrored key for a reader version, with the digest it is required to have."""
+    for group, artifact, ver, digests in coordinates(version):
+        for ext, want in digests.items():
+            yield f"{group}/{artifact}/{ver}/{artifact}-{ver}.{ext}", want
 
 
 def require(name: str) -> str:
@@ -123,10 +137,16 @@ def check_token(tok: str) -> None:
          "-H", f"Authorization: Bearer {tok}", "https://api.github.com/user"],
         capture_output=True, text=True,
     ).stdout.strip()
+    if code in ("", "000"):
+        # curl reports 000 when no response arrived: DNS, connect, proxy, or the timeout. Calling that
+        # a bad credential sends someone to rotate a working one.
+        sys.exit("could not reach api.github.com to check the vendor token. Network, not credential.")
     if code != "200":
         sys.exit(
             f"the vendor token is not valid (api.github.com/user -> {code}).\n"
-            "Renew it: a classic PAT with read:packages."
+            "Renew it: a classic PAT with read:packages.\n"
+            "This answers 200 for any live token, whatever its scopes, so a token without\n"
+            "read:packages passes here and is refused per artifact with HTTP 401 instead."
         )
 
 
@@ -152,52 +172,95 @@ def check_aws(expect_account: str) -> str:
             f"that identity is in account {account}, and the origin is in {expect_account}.\n"
             f"  {arn}"
         )
-    return arn
+    # The resource half only. A full ARN carries the account id, and this run's log is world-readable
+    # on a public repository — which is the same reason the id is not written in this file.
+    resource = arn.split(":", 5)[-1]
+    parts = resource.split("/")
+    return "/".join(parts[:2]) if parts[0] == "assumed-role" else resource
 
 
 def fetch(tok: str, version: str, out: pathlib.Path):
+    """Fetch every key for a version, and accept one only if its digest is the recorded one.
+
+    `-f` so an HTTP refusal is never written to the file: curl exits 0 on a 404 or a 401 and would
+    otherwise save the refusal body under the artifact's name, where only its shape distinguishes it
+    from the artifact. The digest is what settles that, and a size threshold is not: small artifacts
+    are ordinary, and a proxy's error page is not small.
+
+    The vendor token is in this argv, so nothing here raises on a non-zero exit — a CalledProcessError
+    would carry the whole command, token included, into a traceback. A by-hand run prints it in the
+    clear; only Actions masks a secret.
+    """
     print(f"{'key':<62} {'bytes':>10}  sha256")
     print("-" * 96)
     got, failed = [], 0
-    for rel in keys(version):
+    for rel, want in keys(version):
         dest = out / "maven" / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            ["curl", "-sL", "-H", f"Authorization: Bearer {tok}",
-             "-o", str(dest), "--max-time", "300", f"{REGISTRY}/{rel}"],
-            check=True,
+        r = subprocess.run(
+            ["curl", "-sfL", "-H", f"Authorization: Bearer {tok}",
+             "-o", str(dest), "--max-time", "300", "-w", "%{http_code}", f"{REGISTRY}/{rel}"],
+            capture_output=True, text=True,
         )
-        data = dest.read_bytes()
-        # A refusal body is short text or JSON. An artifact is neither.
-        if len(data) < 2048 and b"<project" not in data:
-            print(f"maven/{rel:<56} {'FAILED':>10}  {data[:60]!r}")
+        code = r.stdout.strip() or "000"
+        if r.returncode != 0:
+            # 000 is curl's answer when no response arrived at all: DNS, connect, or the timeout.
+            why = f"HTTP {code}" if code not in ("", "000") else f"no response (curl {r.returncode})"
+            print(f"maven/{rel:<56} {'FAILED':>10}  {why}")
             dest.unlink(missing_ok=True)
             failed += 1
             continue
-        print(f"maven/{rel:<56} {len(data):>10}  {hashlib.sha256(data).hexdigest()[:16]}…")
+        data = dest.read_bytes()
+        digest = hashlib.sha256(data).hexdigest()
+        if digest != want:
+            # Both in full, on their own lines. Truncated they are unreadable in the case that
+            # matters: two digests of the same artifact differ somewhere, and rarely in the first
+            # sixteen characters, so an abbreviated pair reads as identical.
+            print(f"maven/{rel:<56} {'FAILED':>10}  digest mismatch")
+            print(f"    got      {digest}")
+            print(f"    recorded {want}")
+            dest.unlink(missing_ok=True)
+            failed += 1
+            continue
+        print(f"maven/{rel:<56} {len(data):>10}  {digest[:16]}…")
         got.append((rel, dest))
     if failed:
-        sys.exit(f"\n{failed} file(s) failed to fetch. Nothing partial was kept, nothing published.")
+        sys.exit(f"\n{failed} file(s) failed to fetch or did not match. Nothing was published.")
     print("-" * 96)
     print(f"{sum(p.stat().st_size for _, p in got):,} bytes")
     return got
 
 
-def publish(files, bucket: str) -> int:
+def put(bucket: str, account: str, key: str, path: pathlib.Path):
+    return subprocess.run(
+        ["aws", "s3api", "put-object", "--bucket", bucket, "--key", key,
+         "--body", str(path), "--if-none-match", "*", "--cache-control", CACHE_CONTROL,
+         # The bucket has to belong to the account as well as the caller. Checking the caller's
+         # account alone leaves a mistyped bucket name resolving to somebody else's bucket, since
+         # S3 names are global but not reserved to us.
+         "--expected-bucket-owner", account],
+        capture_output=True, text=True,
+    )
+
+
+def publish(files, bucket: str, account: str) -> int:
     print(f"\n{'key':<62} result")
     print("-" * 96)
     uploaded = present = failed = 0
     for rel, path in files:
         key = f"maven/{rel}"
-        r = subprocess.run(
-            ["aws", "s3api", "put-object", "--bucket", bucket, "--key", key,
-             "--body", str(path), "--if-none-match", "*", "--cache-control", CACHE_CONTROL],
-            capture_output=True, text=True,
-        )
+        r = put(bucket, account, key, path)
+        # `PreconditionFailed` alone, never the bare status: stderr carries the bucket, the region and
+        # the key, so a substring test for "412" reclassifies a real failure as success whenever one
+        # of those happens to contain it, and the run then exits 0 having uploaded nothing.
+        if r.returncode != 0 and "ConditionalRequestConflict" in r.stderr:
+            # A concurrent write to the same key. S3 documents this as retryable, and it is reachable
+            # here because the workflow's concurrency group cannot serialise a by-hand run beside it.
+            r = put(bucket, account, key, path)
         if r.returncode == 0:
             print(f"{key:<62} uploaded")
             uploaded += 1
-        elif "PreconditionFailed" in r.stderr or "412" in r.stderr:
+        elif "PreconditionFailed" in r.stderr:
             # Already mirrored, and these bytes are immutable, so this is the steady state on every
             # run after the first rather than a failure.
             print(f"{key:<62} present")
@@ -245,9 +308,12 @@ def main() -> int:
     try:
         files = fetch(tok, args.version, out)
         if args.fetch_only:
-            print(f"\nFetched only, into {out / 'maven'}. Re-run without --fetch-only to publish.")
+            # Only name a path that still exists afterwards. Without --out the tree is a temporary
+            # directory this function removes, so naming it sends someone to look at nothing.
+            where = f" into {out / 'maven'}" if args.out else ", keeping nothing (pass --out to keep it)"
+            print(f"\nFetched only{where}. Re-run without --fetch-only to publish.")
             return 0
-        return publish(files, bucket)
+        return publish(files, bucket, account)
     finally:
         if tmp is not None:
             tmp.cleanup()
