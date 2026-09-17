@@ -39,17 +39,6 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
 /**
- * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
- *
- * `PayabliPayInForm` states that retention is the flow's owner's: held in the composition, the form empties
- * whenever it leaves it, and the key that makes a retry safe goes with it.
- *
- * A view model survives rotation and backgrounding, not the process ending, so [retryKey] is gone after a
- * kill and this screen cannot recover a payment interrupted that way. A host that needs to survive it sets
- * `idempotencyKey` on the transaction options itself and persists it before submitting;
- * `payin/src/androidTest/PROCESS-DEATH.md` covers what is and is not recoverable.
- */
-/**
  * The key the next attempt sends, from what this failure published and what is already held.
  *
  * **Whether a payment may still be outstanding is [PayInException.Unsettled]'s to say, and a key is the
@@ -66,6 +55,17 @@ internal fun keyForNextAttempt(
     outcome: PayInSubmissionState.Failed,
 ): String? = outcome.retryKey ?: held.takeIf { outcome.cause is PayInException.Unsettled }
 
+/**
+ * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
+ *
+ * `PayabliPayInForm` states that retention is the flow's owner's: held in the composition, the form empties
+ * whenever it leaves it, and the key that makes a retry safe goes with it.
+ *
+ * A view model survives rotation and backgrounding, not the process ending, so [retryKey] is gone after a
+ * kill and this screen cannot recover a payment interrupted that way. A host that needs to survive it sets
+ * `idempotencyKey` on the transaction options itself and persists it before submitting;
+ * `payin/src/androidTest/PROCESS-DEATH.md` covers what is and is not recoverable.
+ */
 class SimpleCaptureViewModel(
     sessionSource: PayInSessionSource,
     entryPoint: String,
