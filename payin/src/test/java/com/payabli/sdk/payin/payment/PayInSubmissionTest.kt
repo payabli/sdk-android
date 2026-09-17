@@ -929,12 +929,12 @@ class PayInSubmissionTest {
         }
 
     @Test
-    fun `a cancellation with no key reserved reports itself, nothing having been sent`() =
+    fun `a canceled store reports itself, a repeat of one not being recognizable`() =
         runTest(timeout = timeout) {
-            // A store is what reaches this arm today, and it reaches it twice over: it moves no money and it
-            // reserves no key. So this pins the published outcome and not which of the two conditions
-            // produced it — the money-moving attempt canceled in the window between Submitting and the
-            // reservation is the case neither this nor anything else drives.
+            // The request has gone out before this cancels: the gate opens on transport.arrived. That is the
+            // point of pinning it here rather than beside the money-moving case above — a store reserves no
+            // key, so there is nothing to say how far it got, and it is still reported as the whole of the
+            // outcome because a store moves no money and three identical bodies return three identifiers.
             val transport = GatedPayInTransport.answering(stored)
             val submission = submissionOver(transport)
 
