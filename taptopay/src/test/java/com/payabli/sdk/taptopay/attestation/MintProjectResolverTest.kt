@@ -47,4 +47,22 @@ class MintProjectResolverTest {
 
             assertEquals(listOf(333L), gateway.cloudProjectNumbers)
         }
+
+    @Test
+    fun `a failing pinned block clears the pin for the next enrollment`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val mintProject = MintProjectResolver { 333L }
+
+            runCatching {
+                mintProject.whilePinned(111L) {
+                    error("registration failed")
+                }
+            }
+
+            assertEquals(333L, mintProject.resolve())
+            mintProject.whilePinned(222L) {
+                assertEquals(222L, mintProject.resolve())
+            }
+            assertEquals(333L, mintProject.resolve())
+        }
 }
