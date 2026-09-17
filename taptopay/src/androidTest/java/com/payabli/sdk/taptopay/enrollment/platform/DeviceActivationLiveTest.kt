@@ -9,6 +9,8 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.taptopay.ManualDeviceTest
+import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
+import com.payabli.sdk.taptopay.attestation.MintProjectResolver
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
@@ -278,16 +280,23 @@ class DeviceActivationLiveTest {
         description: DeviceDescription = DeviceDescriptionFactory.create(context),
     ): DeviceEnrollment {
         val trust = DeviceTrust.open(context)
+        val projects = AttestationProjectStore(trust.store)
+        val environment = LiveRunSettings.environment
+        val mintProject = MintProjectResolver { projects.require(environment) }
+        projects.remember(environment, cloudProjectNumber())
         return DeviceEnrollment(
             entry = LiveRunSettings.entry,
             appId = context.packageName,
             client = DeviceServiceClient(session().transport),
             // Classic, and it has to be: the challenge derived for this flow is a classic one, which a
             // standard attestor refuses outright.
-            attestor = AttestorFactory.classic(context, cloudProjectNumber()),
+            attestor = AttestorFactory.classic(context) { mintProject.resolve() },
             deviceKey = trust.key,
             signer = DeviceAssertionSigner(trust.key),
             store = AttestedDeviceStore(trust.store),
+            projects = projects,
+            mintProject = mintProject,
+            environment = environment,
             description = description,
             dispatcher = Dispatchers.IO,
         )

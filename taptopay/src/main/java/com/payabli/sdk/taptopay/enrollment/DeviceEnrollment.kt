@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.enrollment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.logging.LogCategory
@@ -9,6 +10,8 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.taptopay.attestation.AppAttestor
+import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
+import com.payabli.sdk.taptopay.attestation.MintProjectResolver
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertion
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceAttestationBinding
@@ -64,6 +67,23 @@ internal class DeviceEnrollment(
     /** Must sign with [deviceKey]. Injected so a test can fix the clock. */
     private val signer: DeviceAssertionSigner,
     private val store: AttestedDeviceStore,
+    /**
+     * Project numbers the service has returned for [environment].
+     *
+     * A challenge that carries a number updates this before the mint; [require] then fails when nothing
+     * has ever been received for the environment, before Play Integrity is consulted.
+     */
+    private val projects: AttestationProjectStore,
+    /**
+     * Pins the project resolved for this enrollment's challenge through its mint.
+     *
+     * The classic attestor resolves through this rather than reading the store again, so a concurrent
+     * enrollment that overwrites the environment's stored number cannot change the project this mint
+     * was already decided for.
+     */
+    private val mintProject: MintProjectResolver,
+    /** The session environment the project store is keyed on. */
+    private val environment: PayabliEnvironment,
     private val description: DeviceDescription,
     /**
      * Where the blocking key-store work runs.
@@ -115,60 +135,66 @@ internal class DeviceEnrollment(
             }
 
             val challenge = client.challenge(entry, failureMapper = EntryPointFailures)
+            // One store lock: the number this challenge owns, not whatever a concurrent enrollment may
+            // write between a separate remember and require.
+            val projectNumber =
+                projects.resolveFromChallenge(environment, challenge.cloudProjectNumber)
 
-            val registration =
-                client.register(
+            mintProject.whilePinned(projectNumber) {
+                val registration =
+                    client.register(
+                        entry = entry,
+                        hardwareId = description.hardwareId,
+                        keyId = identity.identity,
+                        deviceName = description.deviceName,
+                        model = description.model,
+                        osVersion = description.osVersion,
+                        failureMapper = EntryPointFailures,
+                    )
+
+                if (known != null) {
+                    reportRowChange(registration.outcome)
+                }
+
+                // Awaiting activation does not short-circuit: attesting is what activation later verifies
+                // against, so stopping here would leave nothing to verify.
+                //
+                // Keyed on `isActive`, not on the negation of `isPending`. An absent or unrecognized status
+                // makes both false, and reporting that as active is the direction a caller cannot recover
+                // from: it stops asking for a code the device still owes.
+                val activationRequired = !registration.isActive
+
+                val token = attestor.attest(DeviceAttestationBinding.nonceChallenge(challenge.challenge))
+
+                client.attest(
                     entry = entry,
-                    hardwareId = description.hardwareId,
-                    keyId = identity.identity,
-                    deviceName = description.deviceName,
-                    model = description.model,
-                    osVersion = description.osVersion,
+                    challengeId = challenge.challengeId,
+                    identity =
+                        DeviceIdentity(
+                            deviceId = registration.deviceId,
+                            keyId = identity.identity,
+                            publicKey = Base64.getEncoder().encodeToString(identity.point),
+                        ),
+                    appId = appId,
+                    token = token,
                     failureMapper = EntryPointFailures,
                 )
 
-            if (known != null) {
-                reportRowChange(registration.outcome)
+                // One write, so there is no ordering to get right and no half-written state to compensate
+                // for. Uncancellable because the binding exists at the service by this point: dropping the
+                // write to a cancellation costs a redundant attestation on the next run for nothing.
+                withContext(NonCancellable) {
+                    store.write(
+                        AttestedDevice(
+                            entry = entry,
+                            deviceId = registration.deviceId,
+                            keyId = identity.identity,
+                        ),
+                    )
+                }
+
+                EnrollmentOutcome.Attested(activationRequired = activationRequired)
             }
-
-            // Awaiting activation does not short-circuit: attesting is what activation later verifies
-            // against, so stopping here would leave nothing to verify.
-            //
-            // Keyed on `isActive`, not on the negation of `isPending`. An absent or unrecognized status
-            // makes both false, and reporting that as active is the direction a caller cannot recover from:
-            // it stops asking for a code the device still owes.
-            val activationRequired = !registration.isActive
-
-            val token = attestor.attest(DeviceAttestationBinding.nonceChallenge(challenge.challenge))
-
-            client.attest(
-                entry = entry,
-                challengeId = challenge.challengeId,
-                identity =
-                    DeviceIdentity(
-                        deviceId = registration.deviceId,
-                        keyId = identity.identity,
-                        publicKey = Base64.getEncoder().encodeToString(identity.point),
-                    ),
-                appId = appId,
-                token = token,
-                failureMapper = EntryPointFailures,
-            )
-
-            // One write, so there is no ordering to get right and no half-written state to compensate for.
-            // Uncancellable because the binding exists at the service by this point: dropping the write to a
-            // cancellation costs a redundant attestation on the next run for nothing.
-            withContext(NonCancellable) {
-                store.write(
-                    AttestedDevice(
-                        entry = entry,
-                        deviceId = registration.deviceId,
-                        keyId = identity.identity,
-                    ),
-                )
-            }
-
-            EnrollmentOutcome.Attested(activationRequired = activationRequired)
         }
 
     /**

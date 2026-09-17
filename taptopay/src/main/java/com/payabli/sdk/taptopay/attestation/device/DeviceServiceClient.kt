@@ -84,7 +84,7 @@ internal class DeviceServiceClient(
     ): ChallengeResponse =
         post(
             route = ROUTE_CHALLENGE,
-            body = ChallengeRequest(entry = entry),
+            body = ChallengeRequest(entry = entry, platform = DEVICE_PLATFORM),
             bodySerializer = ChallengeRequest.serializer(),
             payloadSerializer = ChallengeResponse.serializer(),
             failureMapper = failureMapper,

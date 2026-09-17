@@ -21,8 +21,8 @@ class ClassicAttestorTest {
 
     private fun attestorFor(
         gateway: FakeClassicGateway,
-        cloudProjectNumber: Long? = null,
-    ) = ClassicAttestor(gateway, cloudProjectNumber, logger = logger)
+        cloudProjectNumber: Long = FAKE_CLOUD_PROJECT,
+    ) = ClassicAttestor(gateway, { cloudProjectNumber }, logger = logger)
 
     @Test
     fun `the token comes back exactly as the platform produced it`() =
@@ -45,18 +45,13 @@ class ClassicAttestorTest {
         }
 
     @Test
-    fun `the cloud project number is sent only when there is one`() =
+    fun `the resolved cloud project number reaches the platform`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val withNumber = FakeClassicGateway()
-            val withoutNumber = FakeClassicGateway()
+            val gateway = FakeClassicGateway()
 
-            attestorFor(withNumber, FAKE_CLOUD_PROJECT).attest(challenge())
-            attestorFor(withoutNumber, null).attest(challenge())
+            attestorFor(gateway, FAKE_CLOUD_PROJECT).attest(challenge())
 
-            assertEquals(listOf(FAKE_CLOUD_PROJECT), withNumber.cloudProjectNumbers)
-            // Null rather than a placeholder: an app whose Play Console listing carries the linkage needs
-            // no explicit number, and inventing one would fail a request that would otherwise have worked.
-            assertEquals(listOf(null), withoutNumber.cloudProjectNumbers)
+            assertEquals(listOf(FAKE_CLOUD_PROJECT), gateway.cloudProjectNumbers)
         }
 
     @Test

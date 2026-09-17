@@ -146,7 +146,7 @@ class SingleUseChallengeTest {
     fun `the guard holds for classic attestations too`() =
         runTest(timeout = TEST_TIMEOUT) {
             val gateway = FakeClassicGateway()
-            val attestor = ClassicAttestor(gateway)
+            val attestor = ClassicAttestor(gateway, { FAKE_CLOUD_PROJECT })
             val challenge = AttestationChallenge.classic("Y2xhc3NpYy1zaW5nbGUtdXNl")
 
             attestor.attest(challenge)

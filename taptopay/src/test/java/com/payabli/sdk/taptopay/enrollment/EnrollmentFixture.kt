@@ -1,9 +1,12 @@
 package com.payabli.sdk.taptopay.enrollment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
+import com.payabli.sdk.taptopay.attestation.MintProjectResolver
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.FakeDeviceTransport
@@ -35,8 +38,19 @@ internal const val OTHER_ENTRY = "other-entry-point-value"
 /** A base64 challenge, so the nonce derivation has something valid to decode. */
 internal const val SERVER_CHALLENGE = "c2VydmVyLWlzc3VlZC1jaGFsbGVuZ2UtdmFsdWU="
 
-internal fun challengeBody(): String =
-    successEnvelope("""{"challengeId":"$CHALLENGE_ID","challenge":"$SERVER_CHALLENGE"}""")
+/** Decimal project number the default challenge body carries, matching [FAKE_CLOUD_PROJECT] shape. */
+internal const val CHALLENGE_PROJECT_NUMBER = "424242"
+
+internal fun challengeBody(cloudProjectNumber: String? = CHALLENGE_PROJECT_NUMBER): String {
+    val projectField =
+        when (cloudProjectNumber) {
+            null -> ""
+            else -> ""","cloudProjectNumber":"$cloudProjectNumber""""
+        }
+    return successEnvelope(
+        """{"challengeId":"$CHALLENGE_ID","challenge":"$SERVER_CHALLENGE"$projectField}""",
+    )
+}
 
 internal fun registerBody(
     status: String = "pending",
@@ -138,6 +152,9 @@ internal class EnrollmentFixture(
 
     val storage = FakeSecureStore(failWith = storeFailure, trace = trace, firstReadGate = firstReadGate)
     val store = AttestedDeviceStore(storage, logger)
+    val projects = AttestationProjectStore(storage)
+    val environment: PayabliEnvironment = PayabliEnvironment.SANDBOX
+    val mintProject = MintProjectResolver { projects.require(environment) }
 
     val client = DeviceServiceClient(transport, logger)
 
@@ -150,6 +167,9 @@ internal class EnrollmentFixture(
             deviceKey = deviceKey,
             signer = DeviceAssertionSigner(deviceKey, FIXED_CLOCK),
             store = store,
+            projects = projects,
+            mintProject = mintProject,
+            environment = environment,
             description =
                 DeviceDescription(
                     hardwareId = hardwareId,
@@ -176,6 +196,9 @@ internal class EnrollmentFixture(
             deviceKey = deviceKey,
             signer = DeviceAssertionSigner(deviceKey, FIXED_CLOCK),
             store = store,
+            projects = projects,
+            mintProject = mintProject,
+            environment = environment,
             description =
                 DeviceDescription(
                     hardwareId = HARDWARE_ID,

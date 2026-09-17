@@ -19,12 +19,14 @@ import kotlin.time.Duration
  * not an omission: a classic request reaches Google's servers every time by design, which is also why the
  * platform rates it for infrequent use and advises against caching what it returns.
  *
- * [cloudProjectNumber] is nullable here and required for a standard request, because the platform makes it
- * optional for this one: an app whose Play Console listing carries the linkage needs no explicit number.
+ * [cloudProjectNumber] is resolved at each mint. The shipping path pins the number from the challenge
+ * that started this enrollment through that mint, and falls back to the environment store when nothing
+ * is pinned (a later mint with no response in hand). When that resolver finds nothing stored,
+ * [AttestationException.Misconfigured] is raised inside [attest] before Play Integrity is called.
  */
 internal class ClassicAttestor(
     private val gateway: ClassicIntegrityGateway,
-    private val cloudProjectNumber: Long? = null,
+    private val cloudProjectNumber: suspend () -> Long,
     private val ledger: ChallengeLedger = ChallengeLedger(),
     private val throttleGate: ThrottleGate = ThrottleGate(),
     private val deadline: Duration = DEFAULT_PLATFORM_DEADLINE,
@@ -39,6 +41,7 @@ internal class ClassicAttestor(
         }
         // Before the challenge is spent, so a refused attempt does not burn a value the caller must replace.
         throttleGate.check()
+        val projectNumber = cloudProjectNumber()
         // Before the request, not after it. A challenge is spent by being offered.
         try {
             ledger.spend(challenge.value)
@@ -54,7 +57,7 @@ internal class ClassicAttestor(
 
         val token =
             try {
-                underDeadline(deadline) { gateway.requestToken(challenge.value, cloudProjectNumber) }
+                underDeadline(deadline) { gateway.requestToken(challenge.value, projectNumber) }
             } catch (failure: IntegrityFailure) {
                 val mapped = PlayIntegrityErrorMapping.failureFor(failure.errorCode, VerdictClass.CLASSIC, failure)
                 logger.error(

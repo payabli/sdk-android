@@ -118,16 +118,18 @@ public sealed class AttestationException(
     /**
      * An SDK or configuration defect, not a fault on the device.
      *
-     * A cloud project number that is absent or not one where the API is enabled, or a challenge the
-     * platform rejected on shape. The shape half should be unreachable, since [AttestationChallenge]
-     * rejects a malformed value at construction; if it arrives anyway, the two validations disagree and
-     * that is worth knowing rather than retrying.
+     * Two cases share this disposition: a Payabli attestation project that never arrived for the
+     * environment (raised before the platform is consulted, [errorCode] null), and a request the
+     * platform rejected on shape or project enablement (carries the platform's code). The shape half
+     * should be unreachable, since [AttestationChallenge] rejects a malformed value at construction; if
+     * it arrives anyway, the two validations disagree and that is worth knowing rather than retrying.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class Misconfigured(
         errorCode: Int?,
         cause: Throwable? = null,
-    ) : AttestationException("the integrity request was configured wrongly by this SDK", errorCode, cause)
+        message: String = "the integrity request was configured wrongly by this SDK",
+    ) : AttestationException(message, errorCode, cause)
 
     /**
      * The challenge had already been used.

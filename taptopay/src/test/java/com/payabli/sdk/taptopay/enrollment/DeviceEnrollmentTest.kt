@@ -4,6 +4,8 @@ import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -38,19 +40,21 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `nothing is written until the attestation has been accepted`() =
+    fun `the binding is written only after attestation and the project after the challenge`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(coldScript())
 
             fixture.enrollment.enroll()
 
-            // One list across both fakes: the property is that the write comes after the last call, and a
-            // per-fake list cannot express an ordering between two of them.
+            // One list across both fakes. The binding write comes after attest; the project-number write
+            // comes after challenge, which is when the service answered.
             assertEquals(
                 listOf(
                     "get:$RECORD_ENTRY",
                     "get:$LEGACY_RECORD_ENTRY",
                     RouteScript.CHALLENGE,
+                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
+                    "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     RouteScript.REGISTER,
                     RouteScript.ATTEST,
                     "get:$RECORD_ENTRY",
@@ -229,7 +233,12 @@ class DeviceEnrollmentTest {
             // device and costs the merchant a fresh code.
             assertNotNull(fixture.storedRecord("a-different-entry-point"))
             assertEquals(
-                listOf("get:$RECORD_ENTRY", "remove:$LEGACY_RECORD_ENTRY"),
+                listOf(
+                    "get:$RECORD_ENTRY",
+                    "remove:$LEGACY_RECORD_ENTRY",
+                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
+                    "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
+                ),
                 fixture.storage.operations,
             )
         }
@@ -242,11 +251,14 @@ class DeviceEnrollmentTest {
 
             fixture.enrollment.enroll()
 
-            // Reads and one write. No remove, so nothing is unstored between them.
+            // Binding reads and one write, plus the project-number resolve after challenge. No remove of
+            // another paypoint's binding.
             assertEquals(
                 listOf(
                     "get:$RECORD_ENTRY",
                     "remove:$LEGACY_RECORD_ENTRY",
+                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
+                    "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "get:$RECORD_ENTRY",
                     "set:$RECORD_ENTRY",
                 ),
@@ -378,10 +390,77 @@ class DeviceEnrollmentTest {
                             EnrollmentFixture.FIXED_CLOCK,
                         ),
                     store = fixture.store,
+                    projects = fixture.projects,
+                    mintProject = fixture.mintProject,
+                    environment = fixture.environment,
                     description = DeviceDescription(HARDWARE_ID, null, MODEL, OS_VERSION),
                     dispatcher = kotlinx.coroutines.test.UnconfinedTestDispatcher(),
                 )
 
             assertNotNull(production.enroll())
+        }
+
+    @Test
+    fun `the challenge request posts platform Android on the wire`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(coldScript())
+
+            fixture.enrollment.enroll()
+
+            val challenge = fixture.requests.single { it.path == RouteScript.CHALLENGE }
+            val body =
+                com.payabli.sdk.core.network.PayabliJson.format
+                    .parseToJsonElement(challenge.body!!.decodeToString())
+                    .jsonObject
+            assertEquals(
+                setOf("entry", "platform"),
+                body.keys,
+            )
+            assertEquals(
+                com.payabli.sdk.taptopay.attestation.device.DEVICE_PLATFORM,
+                body.getValue("platform").jsonPrimitive.content,
+            )
+        }
+
+    @Test
+    fun `a challenge with no project fails as Misconfigured when nothing is stored`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(RouteScript.CHALLENGE to listOf(challengeBody(cloudProjectNumber = null))),
+                )
+
+            val failure = runCatching { fixture.enrollment.enroll() }.exceptionOrNull()
+
+            assertTrue(failure is com.payabli.sdk.taptopay.attestation.AttestationException.Misconfigured)
+            val misconfigured =
+                failure as com.payabli.sdk.taptopay.attestation.AttestationException.Misconfigured
+            assertEquals(null, misconfigured.errorCode)
+            assertEquals(
+                com.payabli.sdk.taptopay.attestation.AttestationProjectStore.MISSING_ATTESTATION_PROJECT,
+                misconfigured.message,
+            )
+            assertEquals(listOf(RouteScript.CHALLENGE), fixture.routes)
+        }
+
+    @Test
+    fun `a challenge with an explicit null project fails the same way when nothing is stored`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to
+                            listOf(
+                                successEnvelope(
+                                    """{"challengeId":"$CHALLENGE_ID","challenge":"$SERVER_CHALLENGE","cloudProjectNumber":null}""",
+                                ),
+                            ),
+                    ),
+                )
+
+            val failure = runCatching { fixture.enrollment.enroll() }.exceptionOrNull()
+
+            assertTrue(failure is com.payabli.sdk.taptopay.attestation.AttestationException.Misconfigured)
+            assertEquals(listOf(RouteScript.CHALLENGE), fixture.routes)
         }
 }
