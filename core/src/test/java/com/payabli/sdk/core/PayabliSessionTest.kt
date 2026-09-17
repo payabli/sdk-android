@@ -1,5 +1,6 @@
 package com.payabli.sdk.core
 
+import com.payabli.sdk.core.auth.mintingThen
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
@@ -11,7 +12,6 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
-import com.payabli.sdk.testutils.auth.mintingThen
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers

@@ -1,5 +1,6 @@
 package com.payabli.sdk.core.network.impl
 
+import com.payabli.sdk.core.auth.testAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
@@ -8,7 +9,6 @@ import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
-import com.payabli.sdk.testutils.auth.testAuth
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest

@@ -1,6 +1,5 @@
-package com.payabli.sdk.testutils.auth
+package com.payabli.sdk.core.auth
 
-import com.payabli.sdk.core.auth.PayabliAuth
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
@@ -8,7 +7,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import java.util.concurrent.atomic.AtomicInteger
 
-public const val TEST_TOKEN: String = "test-token"
+internal const val TEST_TOKEN: String = "test-token"
 
 /**
  * A provider answering [held] on its first call and running [refresh] for every call after.
@@ -21,7 +20,7 @@ public const val TEST_TOKEN: String = "test-token"
  *
  * [refresh] is not called for the first token, so a counter inside it counts refreshes and not the mint.
  */
-public fun mintingThen(
+internal fun mintingThen(
     held: String,
     refresh: PayabliTokenProvider,
 ): PayabliTokenProvider {
@@ -44,7 +43,7 @@ public fun mintingThen(
  * A counter inside [tokenProvider] therefore counts refreshes and not the mint, which is what keeps a
  * "refreshed once" assertion reading the way it always did.
  */
-public fun testAuth(
+internal fun testAuth(
     tokenProvider: PayabliTokenProvider = PayabliTokenProvider { TEST_TOKEN },
     logger: SdkLogger = RecordingSdkLogger(),
 ): PayabliAuth =

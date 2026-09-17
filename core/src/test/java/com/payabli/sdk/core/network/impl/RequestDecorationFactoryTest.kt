@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.network.impl
 
-import com.payabli.sdk.testutils.auth.testAuth
+import com.payabli.sdk.core.auth.testAuth
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
