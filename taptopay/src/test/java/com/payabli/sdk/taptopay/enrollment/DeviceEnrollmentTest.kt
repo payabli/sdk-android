@@ -40,7 +40,7 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `nothing is written until the attestation has been accepted`() =
+    fun `the binding is written only after attestation; the project is written after the challenge`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(coldScript())
 
