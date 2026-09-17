@@ -273,13 +273,11 @@ private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is R
  * displayable and never loggable because they can quote what was submitted, and a type whose work is to
  * withhold a message does not republish them in another slot.
  *
+ * [PayInException.Refused] carries one too and is absent here, because a decline is an answer: it never
+ * reaches a carrier that reports the outcome as open.
  */
 private fun PayabliException.namedTransaction(): String? =
-    when (this) {
-        is PayInException.ServiceError -> failure.paymentTransId
-        is PayInException.Refused -> failure.paymentTransId
-        else -> null
-    }
+    (this as? PayInException.ServiceError)?.failure?.paymentTransId
 
 /**
  * Carries a cause's type without its message.
