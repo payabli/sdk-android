@@ -2,7 +2,10 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -68,6 +71,38 @@ class ChargeKeyStoreTest {
                 current,
                 keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key,
             )
+        }
+
+    @Test
+    fun `two stores over the process map mint one key under one lock`() =
+        runBlocking {
+            // Park the first mint under the lock so a second reserve races the lookup. Without the shared
+            // mutex both would mint; with it the second waits and reuses.
+            val mintStarted = CompletableDeferred<Unit>()
+            val releaseMint = CompletableDeferred<Unit>()
+            val racing = AtomicInteger()
+            val first =
+                ChargeKeyStore(
+                    newKey = {
+                        val n = racing.incrementAndGet()
+                        if (n == 1) {
+                            mintStarted.complete(Unit)
+                            runBlocking { releaseMint.await() }
+                        }
+                        "key-$n"
+                    },
+                    elapsedRealtimeNanos = clock::get,
+                )
+            val second = store()
+
+            val one = async { first.reserve(ENTRY, PayabliEnvironment.SANDBOX).key }
+            mintStarted.await()
+            val other = async { second.reserve(ENTRY, PayabliEnvironment.SANDBOX).key }
+            yield()
+            releaseMint.complete(Unit)
+
+            assertEquals(one.await(), other.await())
+            assertEquals("two keys were minted under contention", 1, racing.get())
         }
 
     @Test
