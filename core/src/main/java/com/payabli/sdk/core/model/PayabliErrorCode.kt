@@ -16,7 +16,30 @@ public enum class PayabliErrorCode(
 ) {
     MISSING_TOKEN("MISSING_TOKEN"),
     TOKEN_EXPIRED("TOKEN_EXPIRED"),
+
+    /**
+     * Nothing in this SDK raises this, on either platform. Published rather than removed: a host may still
+     * be matching on it, and retiring a public member is a larger, separate decision from this one.
+     */
     TOKEN_MALFORMED("TOKEN_MALFORMED"),
+
+    /**
+     * The host's `tokenProvider` did not do its job: it hung past the bound, threw, was cancelled, returned
+     * a blank or unusable token, returned the token the server had just rejected, or read the token it was
+     * called to mint. Every one of those means the same thing to a caller — fix the callback — so they
+     * share this code and are distinguished by reason rather than by a code each.
+     *
+     * Not [TOKEN_EXPIRED]: that is the service refusing a credential, which is a different answer about a
+     * different thing. Neither this SDK's own retry logic nor `AuthRecoveryPolicy` treats [TOKEN_EXPIRED]
+     * as worth repeating — both leave it terminal, and [TOKEN_EXPIRED] is absent from
+     * `RetryPolicy.RETRYABLE_CODES` for exactly that reason — so the hazard this code exists to avoid is a
+     * *host's* retry or UI logic reading the code: one written for "the service refused this" would call a
+     * deadlocked or misbehaving callback again on exactly that read.
+     *
+     * Ruled 2026-09-15, maintainer. Recorded in `documentation/features/public-interface.md`, "A
+     * misbehaving `tokenProvider` gets its own code". iOS carries the same agreement.
+     */
+    TOKEN_PROVIDER_FAILED("TOKEN_PROVIDER_FAILED"),
     INVALID_SIGNATURE("INVALID_SIGNATURE"),
     PERMISSION_DENIED("PERMISSION_DENIED"),
     SESSION_BURNED("SESSION_BURNED"),
@@ -72,8 +95,14 @@ public enum class PayabliErrorCode(
  * answered; and an unexpected error is unexamined by definition.
  *
  * Known, so it is not: a decline and a validation refusal are answers, a rate limit is a refusal to act,
- * and a rejected credential never reached the operation. Keeping an attempt across any of those would
- * claim a repeat that the next request is not.
+ * and a rejected credential or a misbehaving provider never reached the operation. Keeping an attempt
+ * across any of those would claim a repeat that the next request is not.
+ *
+ * **A new member lands here by default, not by the compiler.** The `when` below ends `else -> false`, so
+ * nothing fails to compile if a member is left unclassified — only
+ * `LeavesOutcomeUnknownTest`'s comparison of its two lists against [PayabliErrorCode.entries] catches it,
+ * and the default it lands on is "known", which for an unclassified failure is the direction that
+ * double-charges.
  *
  * Here rather than in a capability module because both card-not-present and card-present decide this, and
  * the two answering differently is a difference nothing would report.
