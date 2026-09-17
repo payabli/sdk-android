@@ -21,8 +21,8 @@ import kotlin.time.Duration
  *
  * [cloudProjectNumber] is resolved at each mint. The shipping path pins the number from the challenge
  * that started this enrollment through that mint, and falls back to the environment store when nothing
- * is pinned (a later mint with no response in hand). A missing number fails before this attestor is
- * reached.
+ * is pinned (a later mint with no response in hand). When that resolver finds nothing stored,
+ * [AttestationException.Misconfigured] is raised inside [attest] before Play Integrity is called.
  */
 internal class ClassicAttestor(
     private val gateway: ClassicIntegrityGateway,
