@@ -2,13 +2,13 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
-import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -20,6 +20,7 @@ class ChargeKeyStoreTest {
     private val clock = AtomicLong(1_000_000_000L)
     private val minted = AtomicInteger()
 
+    @Before
     @After
     fun forgetHeld() = ChargeKeyStore.forgetHeld()
 
@@ -70,13 +71,16 @@ class ChargeKeyStoreTest {
         }
 
     @Test
-    fun `two stores over the process map mint one key under one lock`() =
+    fun `two stores over the process map share one held key`() =
         runBlocking {
+            // Two store objects, one companion map: what two terminals for one entry point look like.
             val first = store()
             val second = store()
-            val one = async { first.reserve(ENTRY, PayabliEnvironment.SANDBOX).key }
-            val other = async { second.reserve(ENTRY, PayabliEnvironment.SANDBOX).key }
-            assertEquals(one.await(), other.await())
+            assertEquals(
+                first.reserve(ENTRY, PayabliEnvironment.SANDBOX).key,
+                second.reserve(ENTRY, PayabliEnvironment.SANDBOX).key,
+            )
+            assertTrue(second.reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
         }
 
     @Test
@@ -130,16 +134,6 @@ class ChargeKeyStoreTest {
             clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds * 2)
             assertEquals(reserved.key, keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
             assertTrue(keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).reused)
-        }
-
-    @Test
-    fun `a wall clock is never consulted so advancing it does not drop a live key`() =
-        runBlocking {
-            // The store only reads [elapsedRealtimeNanos]. Holding the monotonic clock still and
-            // advancing a wall clock elsewhere cannot expire the key — there is no wall clock to move.
-            val keys = store()
-            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
-            assertEquals("key-1", keys.reserve(ENTRY, PayabliEnvironment.SANDBOX).key)
         }
 
     @Test

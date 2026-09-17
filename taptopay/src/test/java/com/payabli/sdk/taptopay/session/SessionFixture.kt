@@ -68,6 +68,7 @@ internal class SessionFixture(
     readerGate: (suspend () -> Unit)? = null,
     eligibilityFailure: Throwable? = null,
     readGate: (suspend () -> Unit)? = null,
+    elapsedRealtimeNanos: () -> Long = { System.nanoTime() },
 ) {
     val enrollment = EnrollmentFixture(script, firstReadGate = firstReadGate)
 
@@ -86,7 +87,7 @@ internal class SessionFixture(
     val keys =
         ChargeKeyStore(
             newKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
-            elapsedRealtimeNanos = { System.nanoTime() },
+            elapsedRealtimeNanos = elapsedRealtimeNanos,
         )
 
     val coordinator =

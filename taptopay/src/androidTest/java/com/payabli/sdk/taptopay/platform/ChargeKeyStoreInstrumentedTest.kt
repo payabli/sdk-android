@@ -39,6 +39,9 @@ class ChargeKeyStoreInstrumentedTest {
             val trust = DeviceTrust.open(context)
             runCatching { trust.store.remove(ChargeKeyStore.LEGACY_ENTRY) }
             runCatching { trust.store.remove(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY) }
+            // Force the encrypted file into existence so the no-blob assertion has something to read.
+            trust.store.set("pla-3026-probe", byteArrayOf(1))
+            trust.store.remove("pla-3026-probe")
         }
 
     private fun storeOver(minted: String) =
@@ -82,7 +85,7 @@ class ChargeKeyStoreInstrumentedTest {
         runTest(timeout = TEST_TIMEOUT) {
             storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX)
 
-            if (!storeFile.exists()) return@runTest
+            assertTrue("the encrypted store file was never created", storeFile.exists())
             val contents = storeFile.readText()
             assertFalse(contents.contains(ChargeKeyStore.LEGACY_ENTRY))
             assertFalse(contents.contains(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY))

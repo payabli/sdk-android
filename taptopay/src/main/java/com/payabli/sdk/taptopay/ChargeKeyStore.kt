@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.UUID
@@ -160,9 +161,11 @@ internal class ChargeKeyStore(
         private val SHARED_LOCK = Mutex()
         private val SHARED_HELD: MutableList<ChargeAttempt> = ArrayList()
 
-        /** Drops every held attempt. Process state, so a suite sharing one JVM shares it. */
+        /** Drops every held attempt under the same lock the reserves take. Process state for tests. */
         @JvmSynthetic
-        fun forgetHeld() = SHARED_HELD.clear()
+        fun forgetHeld() {
+            runBlocking { SHARED_LOCK.withLock { SHARED_HELD.clear() } }
+        }
     }
 }
 

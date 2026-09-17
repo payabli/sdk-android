@@ -119,9 +119,10 @@ internal class TapToPayChargeRunner(
      * charge key by design. An instance mutex lets one settle that key while the other is mid-charge, after
      * which an ambiguous failure mints a fresh one and the payer can be charged twice.
      *
-     * **Broader than [scope], which is what a payment belongs to.** [ChargeKeyStore] matches on entry point
-     * plus environment, so a lock keyed on the entry point alone is what keeps two environments for one
-     * paypoint from minting side by side.
+     * **Broader than [scope], which is what a payment belongs to.** The store matches on entry point
+     * plus environment, so two environments for one paypoint hold separate keys. The lock stays keyed
+     * on the entry point alone so two terminals for that paypoint — even across environments — cannot
+     * mint and settle side by side over the same process map.
      */
     private val region: Mutex get() = regionFor(entry)
 
@@ -202,8 +203,16 @@ internal class TapToPayChargeRunner(
 
                 // What the reader answered decides this, not the fact that it answered. An approval moved
                 // money; a refusal is an answer that none moved; anything else leaves it unknown, which is
-                // what it already was.
-                capture = captureOf(result.outcome)
+                // what it already was. A resent key never reports NOT_CHARGED: that answer is about this
+                // run, and the key names an earlier one whose money may have moved.
+                capture =
+                    captureOf(result.outcome).let { reported ->
+                        if (resentKey && reported == TapToPayCapture.NOT_CHARGED) {
+                            TapToPayCapture.UNKNOWN
+                        } else {
+                            reported
+                        }
+                    }
                 HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has

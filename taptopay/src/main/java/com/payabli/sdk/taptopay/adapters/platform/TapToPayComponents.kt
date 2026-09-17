@@ -5,6 +5,7 @@ import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.core.storage.PayabliSecureStorage
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.TapToPayChargeRunner
@@ -95,7 +96,15 @@ internal object TapToPayComponents {
      * only clears dead blobs so they do not linger beside the device binding.
      */
     private suspend fun forgetLegacyChargeKeys(storage: PayabliSecureStorage) {
-        runCatching { storage.remove(ChargeKeyStore.LEGACY_ENTRY) }
-        runCatching { storage.remove(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY) }
+        try {
+            storage.remove(ChargeKeyStore.LEGACY_ENTRY)
+        } catch (_: SecureStorageException) {
+            // Best-effort cleanup of a blob nothing reads; a failed remove must not stop wiring.
+        }
+        try {
+            storage.remove(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY)
+        } catch (_: SecureStorageException) {
+            // Same as above.
+        }
     }
 }
