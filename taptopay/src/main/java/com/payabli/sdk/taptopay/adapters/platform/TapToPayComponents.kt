@@ -6,10 +6,10 @@ import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.TapToPayChargeRunner
+import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
-import com.payabli.sdk.taptopay.attestation.platform.CloudProject
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.platform.DeviceDescriptionFactory
@@ -29,8 +29,10 @@ internal object TapToPayComponents {
         // has no other way to learn which entry point it is working against, and taking it again as a
         // parameter would let a terminal be pointed somewhere the session was never configured for.
         val entryPoint = session.telemetry.entryPoint
+        val environment = session.telemetry.environment
         val trust = DeviceTrust.open(application)
         val store = AttestedDeviceStore(trust.store)
+        val projects = AttestationProjectStore(trust.store)
         val deviceService = DeviceServiceClient(session.transport)
         val enrollment =
             DeviceEnrollment(
@@ -38,18 +40,14 @@ internal object TapToPayComponents {
                 appId = application.packageName,
                 client = deviceService,
                 // Classic, to match the challenge the enrollment path builds. The project is Payabli's and
-                // is resolved from the session's environment, never taken from an integrator: the platform
-                // documents naming a project this way for an SDK, and the service decodes against one
-                // project per environment. Null where that environment has none, which the platform accepts
-                // for an app whose Play Console listing carries the linkage and a sideloaded one does not.
-                attestor =
-                    AttestorFactory.classic(
-                        application,
-                        cloudProjectNumber = CloudProject.forEnvironment(session.telemetry.environment),
-                    ),
+                // comes from the challenge store: each mint resolves the number last received for this
+                // environment, and enrollment fails before Play Integrity when none has been received.
+                attestor = AttestorFactory.classic(application) { projects.require(environment) },
                 deviceKey = trust.key,
                 signer = DeviceAssertionSigner(trust.key),
                 store = store,
+                projects = projects,
+                environment = environment,
                 description = DeviceDescriptionFactory.create(application),
                 dispatcher = Dispatchers.IO,
             )
@@ -73,7 +71,7 @@ internal object TapToPayComponents {
                     // The backend the payment is opened against: `client` below is built over
                     // `session.transport`, so a retained payment has to be scoped to the service that
                     // transport reaches.
-                    environment = session.telemetry.environment,
+                    environment = environment,
                     coordinator = coordinator,
                     manager = manager,
                     reader = reader,

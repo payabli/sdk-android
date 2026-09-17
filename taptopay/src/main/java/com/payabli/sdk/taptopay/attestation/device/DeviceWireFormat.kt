@@ -47,11 +47,22 @@ internal const val STATUS_ACTIVE: String = "active"
 @Serializable
 internal class ChallengeRequest(
     val entry: String,
+    /**
+     * The calling platform. Required on the wire for Android so the service returns
+     * [ChallengeResponse.cloudProjectNumber]; omitted by iOS callers that send only `entry`.
+     */
+    val platform: String,
 ) {
-    override fun toString(): String = "ChallengeRequest()"
+    override fun toString(): String = "ChallengeRequest(platform=$platform)"
 }
 
-/** `{ challengeId, challenge }`. Both required: a challenge missing either is not usable. */
+/**
+ * `{ challengeId, challenge }` and, for Android, optional `cloudProjectNumber`.
+ *
+ * Both [challengeId] and [challenge] are required: a challenge missing either is not usable.
+ * [cloudProjectNumber] is the deployment-level Google Cloud project as a decimal string; absent or null
+ * means this response carries no project.
+ */
 @Serializable
 internal class ChallengeResponse(
     val challengeId: String,
@@ -62,6 +73,8 @@ internal class ChallengeResponse(
      * the backend expects.
      */
     val challenge: String,
+    /** Decimal project number when the service supplies one; absent or null when it does not. */
+    val cloudProjectNumber: String? = null,
 ) {
     override fun toString(): String = "ChallengeResponse()"
 }

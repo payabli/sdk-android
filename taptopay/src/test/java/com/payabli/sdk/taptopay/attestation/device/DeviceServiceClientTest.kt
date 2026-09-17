@@ -69,7 +69,7 @@ class DeviceServiceClientTest {
     private fun JsonObject.text(key: String): String = getValue(key).jsonPrimitive.content
 
     @Test
-    fun `challenge posts the entry to the challenge route`() =
+    fun `challenge posts the entry and platform to the challenge route`() =
         runTest(timeout = TEST_TIMEOUT) {
             val transport =
                 FakeDeviceTransport.answering(
@@ -80,12 +80,46 @@ class DeviceServiceClientTest {
 
             assertEquals(HttpMethod.POST, transport.request.method)
             assertEquals("/api/v2/device/taptopay/challenge", transport.request.path)
-            assertEquals(setOf("entry"), transport.bodyJson().keys)
+            assertEquals(setOf("entry", "platform"), transport.bodyJson().keys)
             assertEquals(ENTRY, transport.bodyJson().text("entry"))
+            assertEquals(DEVICE_PLATFORM, transport.bodyJson().text("platform"))
         }
 
     @Test
-    fun `challenge reads both fields of the response`() =
+    fun `challenge reads the project number when the response carries one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val transport =
+                FakeDeviceTransport.answering(
+                    successEnvelope(
+                        """{"challengeId":"challenge-id-from-server","challenge":"Y2hhbGxlbmdlLW1hdGVyaWFs","cloudProjectNumber":"736636912167"}""",
+                    ),
+                )
+
+            val response = clientFor(transport).challenge(ENTRY)
+
+            assertEquals("challenge-id-from-server", response.challengeId)
+            assertEquals("Y2hhbGxlbmdlLW1hdGVyaWFs", response.challenge)
+            assertEquals("736636912167", response.cloudProjectNumber)
+        }
+
+    @Test
+    fun `challenge reads a null project number the same as an absent one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val absent =
+                FakeDeviceTransport.answering(
+                    successEnvelope("""{"challengeId":"c-1","challenge":"Y2g="}"""),
+                )
+            val explicit =
+                FakeDeviceTransport.answering(
+                    successEnvelope("""{"challengeId":"c-2","challenge":"Y2g=","cloudProjectNumber":null}"""),
+                )
+
+            assertNull(clientFor(absent).challenge(ENTRY).cloudProjectNumber)
+            assertNull(clientFor(explicit).challenge(ENTRY).cloudProjectNumber)
+        }
+
+    @Test
+    fun `challenge reads both required fields of the response`() =
         runTest(timeout = TEST_TIMEOUT) {
             val transport =
                 FakeDeviceTransport.answering(

@@ -7,10 +7,10 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.taptopay.adapters.platform.looksEmulated
+import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
-import com.payabli.sdk.taptopay.attestation.platform.CloudProject
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
@@ -69,18 +69,24 @@ internal object LiveTapToPay {
 
     suspend fun enrollment(context: Context): DeviceEnrollment {
         val trust = DeviceTrust.open(context)
+        val projects = AttestationProjectStore(trust.store)
+        val environment = LiveRunSettings.environment
         return DeviceEnrollment(
             entry = LiveRunSettings.entry,
             appId = context.packageName,
             client = DeviceServiceClient(session(context).transport),
             // Classic, to match the challenge the enrollment path builds. A standard attestor refuses one.
-            attestor = AttestorFactory.classic(context, cloudProjectNumber()),
+            // The store is the shipping source; the Gradle number seeds it so a live run can point at a
+            // project before the challenge answers, and a challenge that carries one overwrites it.
+            attestor = AttestorFactory.classic(context) { projects.require(environment) },
             deviceKey = trust.key,
             signer = DeviceAssertionSigner(trust.key),
             store = AttestedDeviceStore(trust.store),
+            projects = projects,
+            environment = environment,
             description = DeviceDescriptionFactory.create(context),
             dispatcher = Dispatchers.IO,
-        )
+        ).also { projects.remember(environment, cloudProjectNumber()) }
     }
 
     /**
@@ -113,28 +119,15 @@ internal object LiveTapToPay {
         )
 
     /**
-     * The project this run attests against, checked against the one the SDK would resolve.
+     * The project this run attests against.
      *
-     * The number is configured rather than resolved, because this tier has to be pointable at a project
-     * without rebuilding. That alone would leave the shipping path untested: `PayabliTTP.create` resolves
-     * through [CloudProject], this tier does not, and a run would stay green with the two disagreeing.
-     *
-     * So the configured value is compared. A mismatch fails here, naming both numbers, rather than at an
-     * attestation refusal that names neither. Where [CloudProject] has no entry for the environment there is
-     * nothing to compare and the configured value stands, which is the sandbox case.
+     * Configured rather than committed: the live tier has to be pointable at a project without rebuilding.
+     * The shipping path reads the same number from the challenge response; this seed covers the bench's
+     * ability to name a project explicitly before that response arrives.
      */
-    fun cloudProjectNumber(): Long {
-        val configured =
-            InstrumentationRegistry.getArguments().getString("cloudProjectNumber")?.toLongOrNull()
-                ?: error(
-                    "payabli.cloudProjectNumber is required for the live tier; pass -Ppayabli.cloudProjectNumber=<n>",
-                )
-
-        val resolved = CloudProject.forEnvironment(LiveRunSettings.environment)
-        check(resolved == null || resolved == configured) {
-            "payabli.cloudProjectNumber is $configured but the SDK resolves $resolved for " +
-                "${LiveRunSettings.environment.name}; the live tier and the shipping path disagree"
-        }
-        return configured
-    }
+    fun cloudProjectNumber(): Long =
+        InstrumentationRegistry.getArguments().getString("cloudProjectNumber")?.toLongOrNull()
+            ?: error(
+                "payabli.cloudProjectNumber is required for the live tier; pass -Ppayabli.cloudProjectNumber=<n>",
+            )
 }

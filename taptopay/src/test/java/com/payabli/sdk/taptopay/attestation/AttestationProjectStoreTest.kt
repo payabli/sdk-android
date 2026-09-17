@@ -1,0 +1,83 @@
+package com.payabli.sdk.taptopay.attestation
+
+import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.time.Duration.Companion.seconds
+
+private val TEST_TIMEOUT = 5.seconds
+
+class AttestationProjectStoreTest {
+    @Test
+    fun `a number received on a challenge is kept for a later mint`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, "736636912167")
+
+            assertEquals(736636912167L, store.require(PayabliEnvironment.SANDBOX))
+        }
+
+    @Test
+    fun `a later challenge carrying a different number replaces the stored one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, "111")
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, "222")
+
+            assertEquals(222L, store.require(PayabliEnvironment.SANDBOX))
+        }
+
+    @Test
+    fun `a number stored for one environment is never used in another`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.remember(PayabliEnvironment.SANDBOX, 111L)
+
+            assertNull(store.numberFor(PayabliEnvironment.PRODUCTION))
+            val failure =
+                runCatching { store.require(PayabliEnvironment.PRODUCTION) }.exceptionOrNull()
+
+            assertTrue(failure is AttestationException.Misconfigured)
+            assertNull((failure as AttestationException.Misconfigured).errorCode)
+            assertEquals(
+                AttestationProjectStore.MISSING_ATTESTATION_PROJECT,
+                failure.message,
+            )
+        }
+
+    @Test
+    fun `absent and null challenge fields leave the store unchanged and fail when empty`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, null)
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, "   ")
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, "not-a-number")
+
+            assertNull(store.numberFor(PayabliEnvironment.SANDBOX))
+            val failure =
+                runCatching { store.require(PayabliEnvironment.SANDBOX) }.exceptionOrNull()
+                    as AttestationException.Misconfigured
+
+            assertNull(failure.errorCode)
+            assertEquals(AttestationProjectStore.MISSING_ATTESTATION_PROJECT, failure.message)
+        }
+
+    @Test
+    fun `a challenge that omits the number still uses what was stored earlier`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.remember(PayabliEnvironment.SANDBOX, 424242L)
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, null)
+
+            assertEquals(424242L, store.require(PayabliEnvironment.SANDBOX))
+        }
+}

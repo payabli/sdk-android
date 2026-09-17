@@ -85,10 +85,14 @@ class EnrollmentSerializationTest {
             // The reset ran after the write, so the record is gone. Interleaved, its own read would have
             // landed before the write and found nothing to remove.
             // Each read consults the older entry too, until something has been written to the current one.
+            // Project-number remember lands between challenge and the binding write.
             assertEquals(
                 listOf(
                     "get:$RECORD_ENTRY",
                     "get:$LEGACY_RECORD_ENTRY",
+                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
+                    "set:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
+                    "get:${com.payabli.sdk.taptopay.attestation.AttestationProjectStore.ENTRY}",
                     "get:$RECORD_ENTRY",
                     "get:$LEGACY_RECORD_ENTRY",
                     "set:$RECORD_ENTRY",

@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.enrollment
 
+import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.logging.LogCategory
@@ -9,6 +10,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.taptopay.attestation.AppAttestor
+import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertion
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceAttestationBinding
@@ -64,6 +66,15 @@ internal class DeviceEnrollment(
     /** Must sign with [deviceKey]. Injected so a test can fix the clock. */
     private val signer: DeviceAssertionSigner,
     private val store: AttestedDeviceStore,
+    /**
+     * Project numbers the service has returned for [environment].
+     *
+     * A challenge that carries a number updates this before the mint; [require] then fails when nothing
+     * has ever been received for the environment, before Play Integrity is consulted.
+     */
+    private val projects: AttestationProjectStore,
+    /** The session environment the project store is keyed on. */
+    private val environment: PayabliEnvironment,
     private val description: DeviceDescription,
     /**
      * Where the blocking key-store work runs.
@@ -115,6 +126,10 @@ internal class DeviceEnrollment(
             }
 
             val challenge = client.challenge(entry, failureMapper = EntryPointFailures)
+            projects.rememberFromChallenge(environment, challenge.cloudProjectNumber)
+            // Before the attestor: a missing project must not reach Play Integrity, and FakeAppAttestor
+            // would otherwise skip the check the shipping classic path performs inside its resolver.
+            projects.require(environment)
 
             val registration =
                 client.register(

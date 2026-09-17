@@ -155,7 +155,7 @@ class ThrottleGateTest {
                 FakeClassicGateway(
                     onRequest = { _, _ -> throw IntegrityFailure(IntegrityErrorCode.TOO_MANY_REQUESTS) },
                 )
-            val attestor = ClassicAttestor(gateway, throttleGate = gate())
+            val attestor = ClassicAttestor(gateway, { FAKE_CLOUD_PROJECT }, throttleGate = gate())
 
             runCatching { attestor.attest(AttestationChallenge.classic("Zmlyc3QtY2xhc3NpYy1ub25jZQ")) }
             val second =
@@ -289,7 +289,7 @@ class ThrottleGateTest {
                 FakeClassicGateway(
                     onRequest = { _, _ -> throw IntegrityFailure(IntegrityErrorCode.NETWORK_ERROR) },
                 )
-            val attestor = ClassicAttestor(gateway, throttleGate = gate())
+            val attestor = ClassicAttestor(gateway, { FAKE_CLOUD_PROJECT }, throttleGate = gate())
 
             runCatching { attestor.attest(AttestationChallenge.classic("Zmlyc3QtY2xhc3NpYy1ub25jZQ")) }
             runCatching { attestor.attest(AttestationChallenge.classic("c2Vjb25kLWNsYXNzaWMtbm9uY2U")) }

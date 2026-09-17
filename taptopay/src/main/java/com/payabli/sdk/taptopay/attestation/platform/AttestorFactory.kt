@@ -33,12 +33,18 @@ internal object AttestorFactory {
     /**
      * A classic-request attestor.
      *
-     * [cloudProjectNumber] is optional here because the platform makes it optional: an app whose Play
-     * Console listing carries the linkage does not need to state it. Supply it where that linkage does not
-     * exist.
+     * [cloudProjectNumber] is resolved at each mint. The shipping path reads the number the service
+     * returned on challenge; a fixed value is for the live and instrumented tiers that name a project
+     * without going through that store.
      */
     fun classic(
         context: Context,
-        cloudProjectNumber: Long? = null,
+        cloudProjectNumber: suspend () -> Long,
     ): AppAttestor = ClassicAttestor(PlayClassicIntegrityGateway(context), cloudProjectNumber)
+
+    /** A classic-request attestor that always mints against [cloudProjectNumber]. */
+    fun classic(
+        context: Context,
+        cloudProjectNumber: Long,
+    ): AppAttestor = classic(context) { cloudProjectNumber }
 }

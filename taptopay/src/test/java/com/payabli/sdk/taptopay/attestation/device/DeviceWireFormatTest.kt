@@ -21,7 +21,7 @@ class DeviceWireFormatTest {
     fun `no request type prints anything it carries beyond the platform`() {
         val rendered =
             listOf(
-                ChallengeRequest(entry = "an-entrypoint").toString(),
+                ChallengeRequest(entry = "an-entrypoint", platform = DEVICE_PLATFORM).toString(),
                 RegisterRequest(
                     entry = "an-entrypoint",
                     hardwareId = SECRET_HARDWARE_ID,
