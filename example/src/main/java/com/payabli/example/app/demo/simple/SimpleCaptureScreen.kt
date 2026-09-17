@@ -49,6 +49,12 @@ import java.math.BigDecimal
  *
  * Holding the refused key instead means the next attempt is refused too, which is the honest outcome: the
  * payer's next move is to read the transaction back rather than to pay again.
+ *
+ * **There is always a key to hold by the time a refusal arrives here.** A form submission names no payment,
+ * so `RetryKey.reserve` never reuses a held key and sends either the one passed in or a fresh one; a `409`
+ * means the service has seen the key before, which on this screen only a key it already held can be. So an
+ * unresolved outcome that publishes no key cannot be the first thing this screen sees, and the branch that
+ * would return null for one is unreachable rather than a gap left open.
  */
 internal fun keyForNextAttempt(
     held: String?,
