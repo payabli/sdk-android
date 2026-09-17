@@ -50,13 +50,6 @@ class PayInSubmissionTest {
     private val stored = STORED_METHOD
     private val declined = DECLINED_TRANSACTION
 
-    /** An `E`, not a `D`: the service reporting a problem, having named the transaction it left behind. */
-    private val serviceErrorNamingTransaction =
-        """
-        {"code":"E0001","reason":"The processor did not answer","action":"retry",
-         "data":{"paymentTransId":"101-abc"}}
-        """.trimIndent()
-
     /** A 400 in the shape a field refusal arrives in, as measured against the platform. */
     private val refusedCardNumber =
         """
@@ -899,17 +892,14 @@ class PayInSubmissionTest {
     @Test
     fun `a service error that leaves the outcome open still names its transaction`() =
         runTest(timeout = timeout) {
-            val transport = FakePayInTransport.answering(serviceErrorNamingTransaction)
+            val transport = FakePayInTransport.answering(SERVICE_ERROR_NAMING_TRANSACTION)
             val submission = submissionOver(transport)
 
             submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
 
             val cause = failed(submission.state.value).cause
-            val named =
-                generateSequence(cause as Throwable?) { it.cause }
-                    .filterIsInstance<PayInException.ServiceError>()
-                    .firstOrNull()
-            assertEquals("101-abc", named?.failure?.paymentTransId)
+            assertTrue("$cause", cause is PayInException.Unsettled)
+            assertEquals("101-abc", (cause as PayInException.Unsettled).paymentTransId)
         }
 
     @Test

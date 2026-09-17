@@ -31,6 +31,17 @@ internal val APPROVED_TRANSACTION: String =
              "connectorName":"fiserv","payorId":7}}
     """.trimIndent()
 
+/**
+ * An `E`, not a `D`: the service reporting a problem rather than refusing the payment, having named the
+ * transaction it left behind. `SERVER_ERROR` leaves the outcome unknown, so this is the answer that both
+ * asks a caller to reconcile and tells it which transaction to reconcile.
+ */
+internal val SERVICE_ERROR_NAMING_TRANSACTION: String =
+    """
+    {"code":"E0001","reason":"The processor did not answer","action":"retry",
+     "data":{"paymentTransId":"101-abc"}}
+    """.trimIndent()
+
 /** A stored method, in the older envelope that route answers in. */
 internal val STORED_METHOD: String =
     """

@@ -211,6 +211,20 @@ public sealed class PayInException(
             detail = cause.reason,
             cause = cause.redactedOnce(),
         ) {
+        /**
+         * The payment this failure belongs to, or null where the service named none.
+         *
+         * Null is not proof that nothing was taken: a request whose answer was lost names nothing, and that
+         * is the case this type exists for. It is the only handle to a payment that exists, so a caller that
+         * means to reconcile one holds this.
+         *
+         * **Carried here because the cause cannot carry it.** The cause is a redaction, which keeps a type
+         * and its frames and no reference to what it stood for, so a failure that named its transaction
+         * would lose the name by being reported as unresolved — at the one moment this type tells a caller
+         * to read the transaction back.
+         */
+        public val paymentTransId: String? = cause.namedTransaction()
+
         override fun toString(): String = "PayInException.Unsettled(code=${code.wireName})"
     }
 
@@ -245,6 +259,20 @@ public sealed class PayInException(
  * here for the first time, naming the [PayabliException] rather than what it wrapped.
  */
 private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is RedactedFailure } ?: RedactedCause(this)
+
+/**
+ * The transaction this failure named, where it named one.
+ *
+ * The identifier only, and none of the rest of [PayInFailure]: `reason`, `explanation` and `action` are
+ * displayable and never loggable because they can quote what was submitted, and a type whose work is to
+ * withhold a message does not republish them in another slot.
+ */
+private fun PayabliException.namedTransaction(): String? =
+    when (this) {
+        is PayInException.ServiceError -> failure.paymentTransId
+        is PayInException.Refused -> failure.paymentTransId
+        else -> null
+    }
 
 /**
  * Carries a cause's type without its message.

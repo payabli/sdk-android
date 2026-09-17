@@ -370,6 +370,20 @@ class PayInPaymentFlowTest {
         }
 
     /**
+     * The same handle on the path that returns a `Result`, which never had it. A caller told to reconcile
+     * and handed no identifier has been given an instruction it cannot carry out.
+     */
+    @Test
+    fun `a result that leaves the outcome open still names the transaction to reconcile`() =
+        runTest(timeout = timeout) {
+            val flow = flowOver(FakePayInTransport.answering(SERVICE_ERROR_NAMING_TRANSACTION))
+
+            val cause = flow.voidTransaction("101-abc").exceptionOrNull() as PayInException.Unsettled
+
+            assertEquals("101-abc", cause.paymentTransId)
+        }
+
+    /**
      * A redaction happens once. Wrapping one that has already happened names this SDK's own stand-in and
      * carries the frames of the site that built it, so the type that failed is gone from what a host reads.
      */
