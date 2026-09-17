@@ -262,7 +262,10 @@ internal class PayabliAuth(
                 }
                 // Waiters were not cancelled, so they get a token failure; a foreign CancellationException
                 // would make their own scope look like it is unwinding.
-                finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_CANCELLED))
+                finish(
+                    shared,
+                    PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_REFRESH_CANCELLED),
+                )
                 throw cancellation
             } catch (failure: Exception) {
                 // Exception, not Throwable: an OutOfMemoryError or LinkageError is not a token failure.
@@ -270,25 +273,28 @@ internal class PayabliAuth(
             } catch (fatal: Throwable) {
                 // It still reaches the caller unchanged, but the claim cannot outlive it or every later
                 // reader waits on a deferred nobody owns. No cause attached: it would pin whatever died.
-                finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_FAILED))
+                finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_REFRESH_FAILED))
                 throw fatal
             }
 
         // Raised inside the try, this is caught below and re-wrapped, so the initiator would see a
         // different reason from the waiters.
         val fresh =
-            minted ?: fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_TIMEOUT))
+            minted ?: fail(
+                shared,
+                PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_PROVIDER_TIMEOUT),
+            )
 
         // A blank token cannot authenticate anything, so it is refused rather than installed. This is the
         // only place the rule holds, since nothing validates a token before it reaches here.
         if (fresh.isBlank()) {
-            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_BLANK_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_BLANK_TOKEN))
         }
 
         // A CR or LF here would be header injection, and the platform would throw an unchecked exception from
         // inside the transport rather than a PayabliException. Refused for the same reason blank is.
         if (!fresh.isHeaderSafe()) {
-            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_MALFORMED, REASON_UNUSABLE_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_UNUSABLE_TOKEN))
         }
 
         // The same credential the server just refused. Committing it would publish a rotation that did not
@@ -296,7 +302,7 @@ internal class PayabliAuth(
         // would be unchanged, the next rejection starts another provider call instead of taking the
         // already-rotated shortcut: one provider call per 401, for as long as the provider keeps doing it.
         if (fresh == rejectedToken) {
-            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_UNCHANGED_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_UNCHANGED_TOKEN))
         }
 
         // Emitted under the same lock that commits and releases, so a second refresh cannot publish its
@@ -326,7 +332,7 @@ internal class PayabliAuth(
     /** Anything the provider raised, redacted: it is host code, whatever type it chose to throw. */
     private fun providerFailure(failure: Throwable): PayabliGenericException =
         PayabliGenericException(
-            PayabliErrorCode.TOKEN_EXPIRED,
+            PayabliErrorCode.TOKEN_PROVIDER_FAILED,
             REASON_REFRESH_FAILED,
             cause = RedactedCause(failure),
         )
@@ -377,7 +383,10 @@ internal class PayabliAuth(
                 // was called to produce, and joining the claim would be joining itself, so it fails here
                 // rather than waiting for a token only this caller can supply.
                 currentToken
-                    ?: throw PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_PROVIDER_READ_UNMINTED)
+                    ?: throw PayabliGenericException(
+                        PayabliErrorCode.TOKEN_PROVIDER_FAILED,
+                        REASON_PROVIDER_READ_UNMINTED,
+                    )
             }
         }
     }

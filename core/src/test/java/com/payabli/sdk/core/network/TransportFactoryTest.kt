@@ -360,7 +360,7 @@ class TransportFactoryTest {
                         runCatching { tooTight.execute(ping()) }.exceptionOrNull()
                     }
                 assertTrue("expected a PayabliException, got $failure", failure is PayabliException)
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+                assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, (failure as PayabliException).code)
 
                 val roomy =
                     TransportFactory.authenticatedAgainst(
