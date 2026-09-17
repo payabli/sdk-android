@@ -394,6 +394,7 @@ class DeviceEnrollmentTest {
                         ),
                     store = fixture.store,
                     projects = fixture.projects,
+                    mintProject = fixture.mintProject,
                     environment = fixture.environment,
                     description = DeviceDescription(HARDWARE_ID, null, MODEL, OS_VERSION),
                     dispatcher = kotlinx.coroutines.test.UnconfinedTestDispatcher(),

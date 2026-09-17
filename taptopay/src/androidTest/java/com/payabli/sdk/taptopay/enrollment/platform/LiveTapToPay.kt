@@ -8,6 +8,7 @@ import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.taptopay.adapters.platform.looksEmulated
 import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
+import com.payabli.sdk.taptopay.attestation.MintProjectResolver
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
@@ -71,6 +72,7 @@ internal object LiveTapToPay {
         val trust = DeviceTrust.open(context)
         val projects = AttestationProjectStore(trust.store)
         val environment = LiveRunSettings.environment
+        val mintProject = MintProjectResolver { projects.require(environment) }
         return DeviceEnrollment(
             entry = LiveRunSettings.entry,
             appId = context.packageName,
@@ -78,11 +80,12 @@ internal object LiveTapToPay {
             // Classic, to match the challenge the enrollment path builds. A standard attestor refuses one.
             // The store is the shipping source; the Gradle number seeds it so a live run can point at a
             // project before the challenge answers, and a challenge that carries one overwrites it.
-            attestor = AttestorFactory.classic(context) { projects.require(environment) },
+            attestor = AttestorFactory.classic(context) { mintProject.resolve() },
             deviceKey = trust.key,
             signer = DeviceAssertionSigner(trust.key),
             store = AttestedDeviceStore(trust.store),
             projects = projects,
+            mintProject = mintProject,
             environment = environment,
             description = DeviceDescriptionFactory.create(context),
             dispatcher = Dispatchers.IO,

@@ -19,8 +19,10 @@ import kotlin.time.Duration
  * not an omission: a classic request reaches Google's servers every time by design, which is also why the
  * platform rates it for infrequent use and advises against caching what it returns.
  *
- * [cloudProjectNumber] is resolved at each mint. The shipping path supplies Payabli's project from the
- * challenge store; a missing number fails before this attestor is reached.
+ * [cloudProjectNumber] is resolved at each mint. The shipping path pins the number from the challenge
+ * that started this enrollment through that mint, and falls back to the environment store when nothing
+ * is pinned (a later mint with no response in hand). A missing number fails before this attestor is
+ * reached.
  */
 internal class ClassicAttestor(
     private val gateway: ClassicIntegrityGateway,

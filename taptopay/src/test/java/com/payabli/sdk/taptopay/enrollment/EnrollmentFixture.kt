@@ -6,6 +6,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
+import com.payabli.sdk.taptopay.attestation.MintProjectResolver
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.FakeDeviceTransport
@@ -153,6 +154,7 @@ internal class EnrollmentFixture(
     val store = AttestedDeviceStore(storage, logger)
     val projects = AttestationProjectStore(storage)
     val environment: PayabliEnvironment = PayabliEnvironment.SANDBOX
+    val mintProject = MintProjectResolver { projects.require(environment) }
 
     val client = DeviceServiceClient(transport, logger)
 
@@ -166,6 +168,7 @@ internal class EnrollmentFixture(
             signer = DeviceAssertionSigner(deviceKey, FIXED_CLOCK),
             store = store,
             projects = projects,
+            mintProject = mintProject,
             environment = environment,
             description =
                 DeviceDescription(
@@ -194,6 +197,7 @@ internal class EnrollmentFixture(
             signer = DeviceAssertionSigner(deviceKey, FIXED_CLOCK),
             store = store,
             projects = projects,
+            mintProject = mintProject,
             environment = environment,
             description =
                 DeviceDescription(

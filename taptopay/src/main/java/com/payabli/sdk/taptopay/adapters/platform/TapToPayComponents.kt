@@ -7,6 +7,7 @@ import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.TapToPayChargeRunner
 import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
+import com.payabli.sdk.taptopay.attestation.MintProjectResolver
 import com.payabli.sdk.taptopay.attestation.device.DeviceAssertionSigner
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.platform.AttestorFactory
@@ -33,20 +34,22 @@ internal object TapToPayComponents {
         val trust = DeviceTrust.open(application)
         val store = AttestedDeviceStore(trust.store)
         val projects = AttestationProjectStore(trust.store)
+        val mintProject = MintProjectResolver { projects.require(environment) }
         val deviceService = DeviceServiceClient(session.transport)
         val enrollment =
             DeviceEnrollment(
                 entry = entryPoint,
                 appId = application.packageName,
                 client = deviceService,
-                // Classic, to match the challenge the enrollment path builds. The project is Payabli's and
-                // comes from the challenge store: each mint resolves the number last received for this
-                // environment, and enrollment fails before Play Integrity when none has been received.
-                attestor = AttestorFactory.classic(application) { projects.require(environment) },
+                // Classic, to match the challenge the enrollment path builds. The project is Payabli's:
+                // enrollment pins the number from this challenge through its mint, and a later mint with
+                // no response in hand falls back to the environment's stored latest.
+                attestor = AttestorFactory.classic(application) { mintProject.resolve() },
                 deviceKey = trust.key,
                 signer = DeviceAssertionSigner(trust.key),
                 store = store,
                 projects = projects,
+                mintProject = mintProject,
                 environment = environment,
                 description = DeviceDescriptionFactory.create(application),
                 dispatcher = Dispatchers.IO,
