@@ -30,6 +30,7 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
+import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
@@ -48,6 +49,23 @@ import java.math.BigDecimal
  * `idempotencyKey` on the transaction options itself and persists it before submitting;
  * `payin/src/androidTest/PROCESS-DEATH.md` covers what is and is not recoverable.
  */
+/**
+ * The key the next attempt sends, from what this failure published and what is already held.
+ *
+ * **Whether a payment may still be outstanding is [PayInException.Unsettled]'s to say, and a key is the
+ * narrower question of whether the SDK has one to offer.** They come apart on a refused repeat: a `409`
+ * says the service has seen this key and nothing about whether the payment was taken, so it publishes no
+ * key while the payment is still unresolved. Reading the published key as the answer drops the one held
+ * here, and the next attempt mints a fresh one and starts a second payment for one that may already exist.
+ *
+ * Holding the refused key instead means the next attempt is refused too, which is the honest outcome: the
+ * payer's next move is to read the transaction back rather than to pay again.
+ */
+internal fun keyForNextAttempt(
+    held: String?,
+    outcome: PayInSubmissionState.Failed,
+): String? = outcome.retryKey ?: held.takeIf { outcome.cause is PayInException.Unsettled }
+
 class SimpleCaptureViewModel(
     sessionSource: PayInSessionSource,
     entryPoint: String,
@@ -69,7 +87,7 @@ class SimpleCaptureViewModel(
         private set
 
     fun failed(outcome: PayInSubmissionState.Failed) {
-        retryKey = outcome.retryKey
+        retryKey = keyForNextAttempt(retryKey, outcome)
     }
 
     fun succeeded() {

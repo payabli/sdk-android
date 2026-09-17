@@ -1,0 +1,59 @@
+package com.payabli.example.app.demo.simple
+
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.payment.PayInSubmissionState
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+/**
+ * Which key the simple sample's next attempt carries.
+ *
+ * This screen sets `idempotencyKey` from what it holds, so the value here decides whether the next tap is
+ * the same payment or another one. It keeps its own copy of the rule rather than reading the one in
+ * `sdk/PayInOutcome.kt`, because the screen is meant to be read end to end without following a boundary.
+ */
+class SimpleCaptureKeyTest {
+    @Test
+    fun `an unresolved attempt hands its key to the next one`() {
+        val dropped = failed(PayInException.Unsettled(network()), retryKey = "key-1")
+
+        assertEquals("key-1", keyForNextAttempt(held = null, outcome = dropped))
+    }
+
+    @Test
+    fun `a refused repeat keeps the key it was refused under`() {
+        // The sequence that charges twice without this. A dropped request publishes key-1; the retry under
+        // key-1 is answered 409, because the original had in fact succeeded; the SDK publishes no key,
+        // since the service has just refused the only one there would be to send. Taking that null drops
+        // key-1, and the next tap mints a fresh key and takes the payment a second time.
+        val conflict = failed(PayInException.Unsettled(conflict()), retryKey = null)
+
+        assertEquals("key-1", keyForNextAttempt(held = "key-1", outcome = conflict))
+    }
+
+    @Test
+    fun `an answered attempt spends its key`() {
+        // A decline settles the payment, so what the payer sends next is a different request and carrying
+        // the old key would ask the service to replay a refusal.
+        val declined = failed(SampleFailure(PayabliErrorCode.PAYMENT_DECLINED, "Insufficient funds"))
+
+        assertNull(keyForNextAttempt(held = "key-1", outcome = declined))
+    }
+
+    private fun failed(
+        cause: PayabliException,
+        retryKey: String? = null,
+    ) = PayInSubmissionState.Failed(cause, retryKey = retryKey)
+
+    private fun network() = SampleFailure(PayabliErrorCode.NETWORK_ERROR, "The request did not complete")
+
+    private fun conflict() = SampleFailure(PayabliErrorCode.CONFLICT, "The service has seen this key")
+}
+
+private class SampleFailure(
+    code: PayabliErrorCode,
+    reason: String,
+) : PayabliException(code, reason)
