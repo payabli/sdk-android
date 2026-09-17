@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.attestation
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -79,5 +80,51 @@ class AttestationProjectStoreTest {
             store.rememberFromChallenge(PayabliEnvironment.SANDBOX, null)
 
             assertEquals(424242L, store.require(PayabliEnvironment.SANDBOX))
+        }
+
+    @Test
+    fun `zero and negative wire values are not remembered`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, "0")
+            store.rememberFromChallenge(PayabliEnvironment.SANDBOX, "-1")
+
+            assertNull(store.numberFor(PayabliEnvironment.SANDBOX))
+        }
+
+    @Test
+    fun `a lost or unreadable store entry reads as nothing stored`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val lost =
+                AttestationProjectStore(
+                    FakeSecureStore(FakeSecureStore.failing("get", SecureStorageException.KeyInvalidated())),
+                )
+            val unreadable =
+                AttestationProjectStore(
+                    FakeSecureStore(FakeSecureStore.failing("get", SecureStorageException.ValueUnreadable())),
+                )
+
+            assertNull(lost.numberFor(PayabliEnvironment.SANDBOX))
+            assertNull(unreadable.numberFor(PayabliEnvironment.SANDBOX))
+            val failure =
+                runCatching { lost.require(PayabliEnvironment.SANDBOX) }.exceptionOrNull()
+                    as AttestationException.Misconfigured
+            assertEquals(AttestationProjectStore.MISSING_ATTESTATION_PROJECT, failure.message)
+        }
+
+    @Test
+    fun `a momentarily unavailable store is raised rather than read as no project`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store =
+                AttestationProjectStore(
+                    FakeSecureStore(
+                        FakeSecureStore.failing("get", SecureStorageException.StorageUnavailable()),
+                    ),
+                )
+
+            val failure = runCatching { store.require(PayabliEnvironment.SANDBOX) }.exceptionOrNull()
+
+            assertTrue(failure is SecureStorageException.StorageUnavailable)
         }
 }

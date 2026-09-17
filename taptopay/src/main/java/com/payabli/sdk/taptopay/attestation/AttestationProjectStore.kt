@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.attestation
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.storage.PayabliSecureStorage
+import com.payabli.sdk.core.storage.SecureStorageException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
@@ -32,6 +33,7 @@ internal class AttestationProjectStore(
         environment: PayabliEnvironment,
         number: Long,
     ) {
+        require(number > 0L) { "cloud project number must be positive" }
         lock.withLock {
             val held = load()
             store(held + (environment.name to number))
@@ -41,14 +43,15 @@ internal class AttestationProjectStore(
     /**
      * Records a challenge field when it names a project, and does nothing when it does not.
      *
-     * Absent, null, blank and non-numeric values are the same answer: nothing to remember. The next
-     * [require] still fails unless an earlier challenge already stored a number for [environment].
+     * Absent, null, blank, non-numeric and non-positive values are the same answer: nothing to remember.
+     * A later [require] still fails only when nothing has ever been stored for [environment] — an omit on
+     * this response does not clear an earlier number.
      */
     suspend fun rememberFromChallenge(
         environment: PayabliEnvironment,
         cloudProjectNumber: String?,
     ) {
-        val number = cloudProjectNumber?.trim()?.toLongOrNull() ?: return
+        val number = cloudProjectNumber?.trim()?.toLongOrNull()?.takeIf { it > 0L } ?: return
         remember(environment, number)
     }
 
@@ -70,21 +73,29 @@ internal class AttestationProjectStore(
             )
 
     private suspend fun load(): Map<String, Long> {
-        val bytes = storage.get(ENTRY) ?: return emptyMap()
+        val bytes =
+            try {
+                storage.get(ENTRY)
+            } catch (_: SecureStorageException.KeyInvalidated) {
+                // The entry is gone. Same answer as nothing stored.
+                return emptyMap()
+            } catch (_: SecureStorageException.ValueUnreadable) {
+                return emptyMap()
+            }
+                // CryptoUnavailable and StorageUnavailable propagate: a momentary unread must not be
+                // treated as "no project", or enroll would Misconfigure a paypoint that still holds one.
+                ?: return emptyMap()
+
         return try {
-            PayabliJson.format.decodeFromString(AttestationProjects.serializer(), bytes.decodeToString()).byEnvironment
+            PayabliJson.format
+                .decodeFromString(AttestationProjects.serializer(), bytes.decodeToString())
+                .byEnvironment
         } catch (_: SerializationException) {
-            emptyMap()
-        } catch (_: IllegalArgumentException) {
             emptyMap()
         }
     }
 
     private suspend fun store(byEnvironment: Map<String, Long>) {
-        if (byEnvironment.isEmpty()) {
-            storage.remove(ENTRY)
-            return
-        }
         storage.set(
             ENTRY,
             PayabliJson.format
