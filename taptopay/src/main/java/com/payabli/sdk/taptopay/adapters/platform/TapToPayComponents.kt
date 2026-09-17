@@ -1,8 +1,10 @@
 package com.payabli.sdk.taptopay.adapters.platform
 
 import android.content.Context
+import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
+import com.payabli.sdk.core.storage.PayabliSecureStorage
 import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.TapToPayChargeRunner
@@ -33,6 +35,7 @@ internal object TapToPayComponents {
         val environment = session.telemetry.environment
         val trust = DeviceTrust.open(application)
         val store = AttestedDeviceStore(trust.store)
+        forgetLegacyChargeKeys(trust.store)
         val projects = AttestationProjectStore(trust.store)
         val mintProject = MintProjectResolver { projects.require(environment) }
         val deviceService = DeviceServiceClient(session.transport)
@@ -80,10 +83,19 @@ internal object TapToPayComponents {
                     reader = reader,
                     client = TTPTransactionClient(session.transport),
                     store = store,
-                    // Over the same backing store as the bindings, so a key outlives the terminal that
-                    // reserved it and the process that held it.
-                    keys = ChargeKeyStore(trust.store),
+                    // Process-scoped: a screen rebuild reuses the key; a process death does not, matching
+                    // the token, the session and the pending-close handle.
+                    keys = ChargeKeyStore(elapsedRealtimeNanos = SystemClock::elapsedRealtimeNanos),
                 ),
         )
+    }
+
+    /**
+     * Drops encrypted entries an earlier build wrote for held keys. The store no longer reads them; this
+     * only clears dead blobs so they do not linger beside the device binding.
+     */
+    private suspend fun forgetLegacyChargeKeys(storage: PayabliSecureStorage) {
+        runCatching { storage.remove(ChargeKeyStore.LEGACY_ENTRY) }
+        runCatching { storage.remove(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY) }
     }
 }

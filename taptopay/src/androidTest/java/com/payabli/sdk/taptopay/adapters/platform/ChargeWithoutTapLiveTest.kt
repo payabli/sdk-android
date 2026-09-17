@@ -119,7 +119,7 @@ class ChargeWithoutTapLiveTest {
                         reader = StubReader(),
                         client = TTPTransactionClient(transport),
                         store = AttestedDeviceStore(DeviceTrust.open(context).store),
-                        keys = ChargeKeyStore(DeviceTrust.open(context).store),
+                        keys = ChargeKeyStore(elapsedRealtimeNanos = android.os.SystemClock::elapsedRealtimeNanos),
                     ).charge(
                         TapToPayPaymentDetails(AMOUNT),
                         LiveTapToPay.PAYER,

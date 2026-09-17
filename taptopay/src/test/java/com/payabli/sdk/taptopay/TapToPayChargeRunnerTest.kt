@@ -120,6 +120,9 @@ private class GatedCloseTransport(
  * to the session.
  */
 class TapToPayChargeRunnerTest {
+    @org.junit.Before
+    fun forgetHeldKeys() = ChargeKeyStore.forgetHeld()
+
     private fun runnerOver(
         fixture: SessionFixture,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
