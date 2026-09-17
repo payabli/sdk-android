@@ -1,0 +1,96 @@
+name: Mirror the card reader
+
+# Copies the vendor's card reader onto the SDK artifact origin, so integrators resolve it from us
+# rather than holding a credential for a third-party feed.
+#
+# Dispatch only. The reader ships on the vendor's schedule and on no relation to an SDK release, so a
+# tag trigger would mean cutting tags that exist to satisfy a trust policy and then mislead everyone
+# reading the history. A dispatch against an environment is the one subject that is neither a tag nor
+# every branch.
+#
+# That environment is the gate. The publishing role trusts exactly
+# `environment:card-reader-mirror` on this repository and nothing else, so a run cannot reach the
+# origin until a required reviewer approves it. Nobody holds an AWS credential for this.
+#
+# The version has to be pinned in mirror_card_reader.py before it can be dispatched. The list there
+# is the record of what each SDK release was certified against, and adding to it is the one decision
+# in this process worth reviewing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Card reader version to mirror, e.g. 1.1.4.1. Must already be pinned.'
+        required: true
+        type: string
+      fetch_only:
+        description: 'Fetch and print the digests without publishing'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  # For the OIDC role that authenticates to the bucket. No long-lived AWS key is stored anywhere,
+  # which is the reason this channel needs no credential in the repository at all.
+  id-token: write
+
+concurrency:
+  # One mirror run at a time, and never cancelled: the coordinates are write-once, so a run
+  # interrupted mid-upload leaves a partial set that the next run has to complete rather than
+  # replace. Waiting is cheap; a cancelled upload is not.
+  group: card-reader-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror ${{ inputs.version }}
+    runs-on: ubuntu-latest
+    environment: card-reader-mirror
+    steps:
+      - uses: actions/checkout@v7
+
+      # Variables rather than secrets, deliberately: a role ARN is not a credential, it is an
+      # identifier that only works alongside this repository's OIDC identity. Masking it as a secret
+      # would make every AccessDenied message unreadable, which is exactly the message worth reading.
+      - name: Check the mirror channel is provisioned
+        run: |
+          missing=
+          [ -n "$AWS_MIRROR_PUBLISH_ROLE_ARN" ] || missing="$missing AWS_MIRROR_PUBLISH_ROLE_ARN"
+          [ -n "$AWS_SDK_CDN_BUCKET" ] || missing="$missing AWS_SDK_CDN_BUCKET"
+          [ -n "$AWS_SDK_CDN_REGION" ] || missing="$missing AWS_SDK_CDN_REGION"
+          if [ -n "$missing" ]; then
+            echo "::error::unset repository variable(s):$missing"
+            exit 1
+          fi
+        env:
+          AWS_MIRROR_PUBLISH_ROLE_ARN: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+          AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      # The account the script refuses to publish outside is the account this run just assumed into,
+      # read off the role ARN rather than configured a second time. Two copies of an account id are
+      # two things to keep in step, and the one that drifts is the one further from the credential.
+      - name: Mirror the reader
+        env:
+          # Through the environment, never interpolated into the script body: a dispatch input is
+          # caller-supplied text, and `run:` interpolation would execute it.
+          VERSION: ${{ inputs.version }}
+          FETCH_ONLY: ${{ inputs.fetch_only }}
+          ROLE_ARN: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+        run: |
+          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
+          export AWS_SDK_CDN_ACCOUNT
+          if [ "$FETCH_ONLY" = "true" ]; then
+            python3 .github/scripts/mirror_card_reader.py --version "$VERSION" --fetch-only
+          else
+            python3 .github/scripts/mirror_card_reader.py --version "$VERSION"
+          fi
