@@ -51,19 +51,28 @@ public sealed class PayInSubmissionState {
     /**
      * It did not go through.
      *
-     * [cause] is the exception either client raised, so a decline, a validation failure and a network failure
-     * stay tellable apart. [fieldErrors] is what the refusal blamed, per field, and is empty when it blamed
+     * **[cause] is where the payment's outcome is reported, and [retryKey] is not.** Where a money-moving
+     * attempt may have been carried out, [cause] is a [PayInException.Unsettled] whose own cause is the
+     * exception a client raised; anywhere else it is that exception directly. [PayabliException.code] is the
+     * raised one's either way, so a decline, a validation failure and a network failure stay tellable apart
+     * without unwrapping. [fieldErrors] is what the refusal blamed, per field, and is empty when it blamed
      * none.
      *
-     * [retryKey] is the key to resend, on the two operations a form submits that move money and only where
-     * the outcome is unknown: a cancellation after the key was reserved, a network failure, a 5xx, a
-     * response that could not be decoded, and an unexpected error. The payment may already have been taken
-     * in each, and a retry carrying the key is recognized as the repeat rather than acting twice.
+     * [retryKey] answers a narrower question: whether there is a key worth sending again. It is set on the
+     * two operations a form submits that move money, where the outcome is unknown and the key can still be
+     * resent — a cancellation after the key was reserved, a network failure, a 5xx, a response that could
+     * not be decoded, and an unexpected error. A retry carrying it is recognized as the repeat rather than
+     * acting twice.
      *
      * It is null where the outcome is known, as a decline, a local refusal or a rejected credential is; for
      * a cancellation arriving before the key was reserved, nothing having been sent; and for storing a
      * payment method whatever the failure, a repeat not being recognizable there. A store whose outcome is
      * unknown is settled by reading the entry point's stored methods back.
+     *
+     * **And it is null for a conflict the caller's own key was refused under, where the outcome is not
+     * known.** That is the one case the two disagree, and it is why they are separate: the service has just
+     * refused the only value there would be to send, so there is no key to offer, while [cause] still
+     * reports the payment as unresolved. Read [cause] to decide whether a payment may be outstanding.
      *
      * **This state describes what a form submitted, and the calls on `PayabliPayIn` do not appear in it.**
      * Reversing a transaction and capturing an earlier authorization answer with their own results and keep

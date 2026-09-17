@@ -50,6 +50,13 @@ class PayInSubmissionTest {
     private val stored = STORED_METHOD
     private val declined = DECLINED_TRANSACTION
 
+    /** An `E`, not a `D`: the service reporting a problem, having named the transaction it left behind. */
+    private val serviceErrorNamingTransaction =
+        """
+        {"code":"E0001","reason":"The processor did not answer","action":"retry",
+         "data":{"paymentTransId":"101-abc"}}
+        """.trimIndent()
+
     /** A 400 in the shape a field refusal arrives in, as measured against the platform. */
     private val refusedCardNumber =
         """
@@ -885,11 +892,33 @@ class PayInSubmissionTest {
             assertEquals(PayabliErrorCode.USER_CANCELLED, state.cause.code)
         }
 
+    /**
+     * An unsettled outcome is exactly when a caller reconciles, and `PayInFailure.paymentTransId` is the
+     * only handle it has on the transaction to reconcile.
+     */
     @Test
-    fun `a cancellation that reserved no key reports itself, nothing having been sent`() =
+    fun `a service error that leaves the outcome open still names its transaction`() =
         runTest(timeout = timeout) {
-            // A store reserves none at all, which is the reachable form of "canceled before the key". Its
-            // outcome is known: no request carrying a key went out, so there is nothing to reconcile.
+            val transport = FakePayInTransport.answering(serviceErrorNamingTransaction)
+            val submission = submissionOver(transport)
+
+            submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
+
+            val cause = failed(submission.state.value).cause
+            val named =
+                generateSequence(cause as Throwable?) { it.cause }
+                    .filterIsInstance<PayInException.ServiceError>()
+                    .firstOrNull()
+            assertEquals("101-abc", named?.failure?.paymentTransId)
+        }
+
+    @Test
+    fun `a cancellation with no key reserved reports itself, nothing having been sent`() =
+        runTest(timeout = timeout) {
+            // A store is what reaches this arm today, and it reaches it twice over: it moves no money and it
+            // reserves no key. So this pins the published outcome and not which of the two conditions
+            // produced it — the money-moving attempt canceled in the window between Submitting and the
+            // reservation is the case neither this nor anything else drives.
             val transport = GatedPayInTransport.answering(stored)
             val submission = submissionOver(transport)
 

@@ -105,6 +105,11 @@ public sealed class PayabliPayIn {
      * **A key you set is the one sent, every time.** So repeating the call with it is the same attempt
      * rather than a second one, from any instance and after a restart.
      *
+     * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
+     * [PayInException.Unsettled] over [PayabliErrorCode.CONFLICT], which says a request under that key got
+     * past the service's check and nothing about whether the capture was applied. Repeating again is
+     * refused the same way, and a fresh key applies a second capture. Read the transaction back instead.
+     *
      * **A key the SDK minted is resent only while it still holds one** for this transaction, and how long
      * that is is not published. It holds none past the point where too many payments are unresolved at
      * once, none in a second instance and none after a restart. Where it holds none, repeating the call is

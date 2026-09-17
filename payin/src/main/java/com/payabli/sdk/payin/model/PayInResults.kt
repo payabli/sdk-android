@@ -239,9 +239,10 @@ public sealed class PayInException(
 /**
  * The redaction [PayabliException.cause] already is, or a new one standing in for the failure itself.
  *
- * A failure that reached here through a client has had its message taken off already, and that stand-in is
- * what names the type that actually failed. Redacting it a second time would name this SDK's own wrapper
- * and carry the frames of the site that built it.
+ * Where a failure arrived carrying a redaction, that stand-in is what names the type that actually failed,
+ * and redacting it a second time would name this SDK's own wrapper and carry the frames of the site that
+ * built it. Not every failure does: `:core` attaches a raw cause on some paths, and one of those is redacted
+ * here for the first time, naming the [PayabliException] rather than what it wrapped.
  */
 private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is RedactedFailure } ?: RedactedCause(this)
 

@@ -281,11 +281,13 @@ internal class PayInSubmission(
             //
             // The key is what says how far this got. Reserved, and the request may have been carried out, so
             // it reports the open outcome every other interrupted attempt does. Not reserved, and nothing was
-            // sent.
+            // sent. Gated on movesMoney as every other classification here is, so an operation that reserves
+            // a key without moving money would not start reporting an open payment.
             val interrupted = PayInException.Interrupted()
+            val unknown = movesMoney && retry.key != null
             outcome =
                 PayInSubmissionState.Failed(
-                    cause = if (retry.key != null) PayInException.Unsettled(interrupted) else interrupted,
+                    cause = if (unknown) PayInException.Unsettled(interrupted) else interrupted,
                     retryKey = retry.key,
                 )
             throw cancellation
