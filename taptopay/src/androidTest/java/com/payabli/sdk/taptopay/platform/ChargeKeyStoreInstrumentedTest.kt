@@ -37,11 +37,11 @@ class ChargeKeyStoreInstrumentedTest {
         runTest(timeout = TEST_TIMEOUT) {
             ChargeKeyStore.forgetHeld()
             val trust = DeviceTrust.open(context)
-            runCatching { trust.store.remove(ChargeKeyStore.LEGACY_ENTRY) }
-            runCatching { trust.store.remove(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY) }
+            trust.store.remove(ChargeKeyStore.LEGACY_ENTRY)
+            trust.store.remove(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY)
             // Force the encrypted file into existence so the no-blob assertion has something to read.
-            trust.store.set("pla-3026-probe", byteArrayOf(1))
-            trust.store.remove("pla-3026-probe")
+            trust.store.set("charge-key-probe", byteArrayOf(1))
+            trust.store.remove("charge-key-probe")
         }
 
     private fun storeOver(minted: String) =
