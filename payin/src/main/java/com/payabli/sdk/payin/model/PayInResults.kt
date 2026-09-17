@@ -175,10 +175,16 @@ public sealed class PayInException(
      * A `Result` call never receives this: cancellation is rethrown, so the call does not return. It reaches
      * a form through the state it publishes.
      *
-     * **What it says depends on how far the submission got, and the key is what marks the line.** Canceled
-     * after the key was reserved, the request may have been carried out, so the form publishes [Unsettled]
-     * carrying this as its cause and a held key is resent by the next call naming the same transaction.
-     * Canceled before that, nothing was sent and nothing is held, so this is the whole of the outcome.
+     * **On a submission that moves money, the key marks how far it got.** Canceled once the key was
+     * reserved, the request may have been carried out, so the form publishes [Unsettled] carrying this as
+     * its cause and a held key is resent by the next call naming the same transaction. Canceled before the
+     * reservation, nothing was sent and nothing is held, so this is the whole of the outcome.
+     *
+     * **Storing a method reserves no key, and this is the whole of the outcome there whenever it arrives.**
+     * A cancellation can follow a request that was already sent, so no key is not proof that nothing left
+     * the device. It is not reported as unresolved because a store moves no money: three identical bodies
+     * return three different identifiers, so a repeat is not recognizable and there is nothing for a key to
+     * settle. A store whose fate is in doubt is settled by reading the entry point's stored methods back.
      */
     public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"
@@ -266,6 +272,7 @@ private fun PayabliException.redactedOnce(): Throwable = cause?.takeIf { it is R
  * The identifier only, and none of the rest of [PayInFailure]: `reason`, `explanation` and `action` are
  * displayable and never loggable because they can quote what was submitted, and a type whose work is to
  * withhold a message does not republish them in another slot.
+ *
  */
 private fun PayabliException.namedTransaction(): String? =
     when (this) {
