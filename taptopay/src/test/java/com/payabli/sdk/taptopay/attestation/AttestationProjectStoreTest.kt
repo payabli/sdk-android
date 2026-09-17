@@ -40,6 +40,21 @@ class AttestationProjectStoreTest {
             val store = AttestationProjectStore(FakeSecureStore())
 
             store.remember(PayabliEnvironment.SANDBOX, 111L)
+            store.remember(PayabliEnvironment.PRODUCTION, 222L)
+
+            assertEquals(111L, store.numberFor(PayabliEnvironment.SANDBOX))
+            assertEquals(222L, store.numberFor(PayabliEnvironment.PRODUCTION))
+            store.remember(PayabliEnvironment.SANDBOX, 333L)
+            assertEquals(333L, store.require(PayabliEnvironment.SANDBOX))
+            assertEquals(222L, store.require(PayabliEnvironment.PRODUCTION))
+        }
+
+    @Test
+    fun `an environment with nothing stored fails as Misconfigured`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val store = AttestationProjectStore(FakeSecureStore())
+
+            store.remember(PayabliEnvironment.SANDBOX, 111L)
 
             assertNull(store.numberFor(PayabliEnvironment.PRODUCTION))
             val failure =
