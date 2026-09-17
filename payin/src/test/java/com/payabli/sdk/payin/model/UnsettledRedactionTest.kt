@@ -21,7 +21,12 @@ class UnsettledRedactionTest {
     @Test
     fun `a cause that has already been redacted is the one carried`() {
         val already = ForeignRedaction()
-        val failure = PayabliGenericException(PayabliErrorCode.SERVER_ERROR, "The service did not answer", cause = already)
+        val failure =
+            PayabliGenericException(
+                PayabliErrorCode.SERVER_ERROR,
+                "The service did not answer",
+                cause = already,
+            )
 
         assertSame(already, PayInException.Unsettled(failure).cause)
     }
