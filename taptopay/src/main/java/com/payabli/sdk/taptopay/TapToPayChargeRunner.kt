@@ -266,13 +266,15 @@ internal class TapToPayChargeRunner(
                 // there on is evidence the money did not move.
                 if (!askedForCard) {
                     val key = reserved
-                    if (key != null && resentKey && isConflict(failure)) {
-                        // A 409 on a resent key proves the earlier opening reached the service, so the
-                        // sweep must not drop it.
-                        keys.markArrived(entry, environment, key)
-                    }
-                    if (isAnswered(failure, resentKey)) {
-                        key?.let { keys.settle(entry, environment, it) }
+                    // Uncancellable: a withdrawn caller after a 409 must not skip the arrival mark and
+                    // leave the key ageable, and the same for a settle that says this opening is over.
+                    withContext(NonCancellable) {
+                        if (key != null && resentKey && isConflict(failure)) {
+                            keys.markArrived(entry, environment, key)
+                        }
+                        if (isAnswered(failure, resentKey)) {
+                            key?.let { keys.settle(entry, environment, it) }
+                        }
                     }
                 }
                 // Reported before it is wrapped: the report reads the failure's own type to decide what kind
