@@ -29,16 +29,19 @@ version is added when a release changes the reader and nothing is ever removed: 
 older SDK must still resolve the reader that version was certified with.
 
 That is why `--version` will not take a version this file does not carry. A dispatch naming an
-unpinned version fails and prints the block to add, which is a one-line pull request and a review of
-the one decision worth reviewing — that this version is the one we intend to certify against.
+unpinned version fails and prints the block to add. Adding it is a pull request, and a review of the
+one decision worth reviewing — that this version is the one we intend to certify against.
 Cross-check a new block against `gradle/libs.versions.toml`, which pins what the build consumes.
 
 WHY --if-none-match
 
 The condition makes S3 itself refuse a write whose key already exists, so a key already mirrored
-answers 412 PreconditionFailed. That is success — the bytes are there and are immutable — and is
-reported as `present`. Neither `aws s3 cp` nor `aws s3 sync` can set the header, which is why every
-upload is a single-part `put-object`; that is valid to 5 GB against a largest artifact of 8 MB.
+answers 412 PreconditionFailed. That says the key is occupied and nothing about what occupies it, so
+the object is read back and its digest compared before the run calls it `present`. A coordinate some
+bad run populated would otherwise report present for ever, and nothing here could put it right.
+
+Neither `aws s3 cp` nor `aws s3 sync` can set the header, which is why every upload is a single-part
+`put-object`; that is valid to 5 GB against a largest artifact of 8 MB.
 
 The publishing role's policy also denies an overwrite, but that binds the role and not the bucket, so
 an admin identity running this by hand is not subject to it. The header is then the only thing
@@ -56,6 +59,7 @@ this file: this repository is public, and a role ARN carries an AWS account id.
 """
 
 import argparse
+import contextlib
 import hashlib
 import os
 import pathlib
@@ -74,8 +78,13 @@ CACHE_CONTROL = "max-age=31536000, immutable"
 # The digests are what make a fetch verifiable. A key written here is immutable, so bytes that are
 # not what we mean to publish cannot be corrected afterwards by this tool or any other: the write is
 # refused, and every later run reports the key as already present. So the artifact is checked against
-# a digest recorded when the version was certified, rather than trusted because the transfer
-# returned. Take a new block's digests from a fetch-only run and read them before committing them.
+# a digest recorded when the version was certified, rather than trusted because the transfer returned.
+#
+# A digest may be recorded as None, which means the coordinate is known and its bytes are not yet.
+# `--fetch-only` accepts that and prints what it got; publishing refuses it. That is how a new version
+# is added without the recorded digest having to exist before anything can fetch the bytes it
+# describes: add the block with None, run --fetch-only, read the digests, commit them. Both halves are
+# reviewed, and no unverified byte reaches the origin in between.
 RELEASES = {
     "1.1.4.1": [
         ("com/fiserv/ch", "ttp-payment", "1.1.4.1", {
@@ -101,12 +110,13 @@ def coordinates(version: str):
         f"pinned: {known}\n\n"
         "Add it to RELEASES in this file first, cross-checked against gradle/libs.versions.toml:\n\n"
         f'    "{version}": [\n'
-        f'        ("com/fiserv/ch", "ttp-payment", "{version}", {{"pom": "<sha256>", '
-        '"aar": "<sha256>", "module": "<sha256>"}),\n'
-        '        ("com", "magiccube", "<its transitive version>", '
-        '{"pom": "<sha256>", "aar": "<sha256>"}),\n'
+        f'        ("com/fiserv/ch", "ttp-payment", "{version}", '
+        '{"pom": None, "aar": None, "module": None}),\n'
+        '        ("com", "magiccube", "<its transitive version>", {"pom": None, "aar": None}),\n'
         "    ],\n\n"
-        "Take the digests from a --fetch-only run against the new version.\n"
+        "Record the digests as None to begin with. --fetch-only will then run and print them;\n"
+        "publishing refuses a coordinate whose digest is still None. The transitive's version is\n"
+        "declared in the reader's own POM, which that first fetch-only run gives you.\n"
         "The list is the record of what each release was certified against, which is why adding a\n"
         "version is a reviewed change rather than a dispatch input."
     )
@@ -119,6 +129,26 @@ def keys(version: str):
             yield f"{group}/{artifact}/{ver}/{artifact}-{ver}.{ext}", want
 
 
+@contextlib.contextmanager
+def auth_config(tok: str):
+    """A 0600 curl config carrying the Authorization header, removed on the way out.
+
+    The header is not passed as an argument because a process's argv is readable by any other process
+    on the machine — `ps`, or /proc — and Actions' log masking does nothing about that. The by-hand
+    run this file documents is on a workstation, where that matters most.
+
+    curl is kept rather than urllib for one property: it drops the Authorization header on a redirect
+    to another host, and the registry redirects artifact bodies to backing storage.
+    """
+    fd, path = tempfile.mkstemp(prefix="mirror-auth-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(f'header = "Authorization: Bearer {tok}"\n')
+        yield path
+    finally:
+        os.unlink(path)
+
+
 def require(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
@@ -126,7 +156,7 @@ def require(name: str) -> str:
     return value
 
 
-def check_token(tok: str) -> None:
+def check_token(cfg: str) -> None:
     """Fail on a dead token here rather than as a 401 on every artifact.
 
     A dead token answers 401 on every path including artifacts that plainly exist, which reads as a
@@ -134,7 +164,7 @@ def check_token(tok: str) -> None:
     """
     code = subprocess.run(
         ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "20",
-         "-H", f"Authorization: Bearer {tok}", "https://api.github.com/user"],
+         "--config", cfg, "https://api.github.com/user"],
         capture_output=True, text=True,
     ).stdout.strip()
     if code in ("", "000"):
@@ -179,7 +209,7 @@ def check_aws(expect_account: str) -> str:
     return "/".join(parts[:2]) if parts[0] == "assumed-role" else resource
 
 
-def fetch(tok: str, version: str, out: pathlib.Path):
+def fetch(cfg: str, version: str, out: pathlib.Path):
     """Fetch every key for a version, and accept one only if its digest is the recorded one.
 
     `-f` so an HTTP refusal is never written to the file: curl exits 0 on a 404 or a 401 and would
@@ -187,9 +217,8 @@ def fetch(tok: str, version: str, out: pathlib.Path):
     from the artifact. The digest is what settles that, and a size threshold is not: small artifacts
     are ordinary, and a proxy's error page is not small.
 
-    The vendor token is in this argv, so nothing here raises on a non-zero exit — a CalledProcessError
-    would carry the whole command, token included, into a traceback. A by-hand run prints it in the
-    clear; only Actions masks a secret.
+    Nothing here raises on a non-zero exit: a CalledProcessError carries the whole command into a
+    traceback, and an argv is the wrong place for anything to end up that should not be read.
     """
     print(f"{'key':<62} {'bytes':>10}  sha256")
     print("-" * 96)
@@ -198,7 +227,7 @@ def fetch(tok: str, version: str, out: pathlib.Path):
         dest = out / "maven" / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         r = subprocess.run(
-            ["curl", "-sfL", "-H", f"Authorization: Bearer {tok}",
+            ["curl", "-sfL", "--config", cfg,
              "-o", str(dest), "--max-time", "300", "-w", "%{http_code}", f"{REGISTRY}/{rel}"],
             capture_output=True, text=True,
         )
@@ -212,6 +241,12 @@ def fetch(tok: str, version: str, out: pathlib.Path):
             continue
         data = dest.read_bytes()
         digest = hashlib.sha256(data).hexdigest()
+        if want is None:
+            # Recorded as unknown, so there is nothing to check against. Full digest, because this is
+            # the run whose output becomes the recorded value.
+            print(f"maven/{rel:<56} {len(data):>10}  {digest}  UNVERIFIED")
+            got.append((rel, dest, want))
+            continue
         if digest != want:
             # Both in full, on their own lines. Truncated they are unreadable in the case that
             # matters: two digests of the same artifact differ somewhere, and rarely in the first
@@ -222,12 +257,12 @@ def fetch(tok: str, version: str, out: pathlib.Path):
             dest.unlink(missing_ok=True)
             failed += 1
             continue
-        print(f"maven/{rel:<56} {len(data):>10}  {digest[:16]}…")
-        got.append((rel, dest))
+        print(f"maven/{rel:<56} {len(data):>10}  {digest}")
+        got.append((rel, dest, want))
     if failed:
         sys.exit(f"\n{failed} file(s) failed to fetch or did not match. Nothing was published.")
     print("-" * 96)
-    print(f"{sum(p.stat().st_size for _, p in got):,} bytes")
+    print(f"{sum(p.stat().st_size for _, p, _w in got):,} bytes")
     return got
 
 
@@ -243,11 +278,35 @@ def put(bucket: str, account: str, key: str, path: pathlib.Path):
     )
 
 
+def read_back(bucket: str, account: str, key: str):
+    """The sha256 of what is actually at a key, or None if it could not be read.
+
+    The publishing role is granted s3:GetObject on the vendor prefixes for exactly this.
+    """
+    with tempfile.TemporaryDirectory(prefix="mirror-readback-") as d:
+        dest = pathlib.Path(d) / "object"
+        r = subprocess.run(
+            ["aws", "s3api", "get-object", "--bucket", bucket, "--key", key,
+             "--expected-bucket-owner", account, str(dest)],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0 or not dest.exists():
+            return None
+        return hashlib.sha256(dest.read_bytes()).hexdigest()
+
+
 def publish(files, bucket: str, account: str) -> int:
+    unverified = [rel for rel, _, want in files if want is None]
+    if unverified:
+        sys.exit(
+            "these coordinates have no recorded digest, so their bytes were accepted unchecked:\n  "
+            + "\n  ".join(unverified)
+            + "\n\nRecord the digests printed above in RELEASES, then publish. Nothing was published."
+        )
     print(f"\n{'key':<62} result")
     print("-" * 96)
     uploaded = present = failed = 0
-    for rel, path in files:
+    for rel, path, _want in files:
         key = f"maven/{rel}"
         r = put(bucket, account, key, path)
         # `PreconditionFailed` alone, never the bare status: stderr carries the bucket, the region and
@@ -261,10 +320,22 @@ def publish(files, bucket: str, account: str) -> int:
             print(f"{key:<62} uploaded")
             uploaded += 1
         elif "PreconditionFailed" in r.stderr:
-            # Already mirrored, and these bytes are immutable, so this is the steady state on every
-            # run after the first rather than a failure.
-            print(f"{key:<62} present")
-            present += 1
+            # Already mirrored, which is the steady state on every run after the first. It says the
+            # key is occupied and nothing about what occupies it, so the bytes are read back and
+            # compared: a coordinate populated by a bad run or by hand would otherwise report present
+            # for ever, and --if-none-match means no later run can put it right.
+            remote = read_back(bucket, account, key)
+            if remote is None:
+                print(f"{key:<62} FAILED  present, and could not be read back to verify")
+                failed += 1
+            elif remote != _want:
+                print(f"{key:<62} FAILED  present with different bytes")
+                print(f"    at origin {remote}")
+                print(f"    recorded  {_want}")
+                failed += 1
+            else:
+                print(f"{key:<62} present")
+                present += 1
         else:
             tail = r.stderr.strip().splitlines()[-1][:58] if r.stderr.strip() else ""
             print(f"{key:<62} FAILED  {tail}")
@@ -293,9 +364,6 @@ def main() -> int:
     if not args.fetch_only:
         bucket = require("AWS_SDK_CDN_BUCKET")
         account = require("AWS_SDK_CDN_ACCOUNT")
-
-    check_token(tok)
-    if not args.fetch_only:
         # Before the download, so a wrong identity is not found after nine megabytes of transfer.
         print(f"publishing to {bucket} as {check_aws(account)}\n")
 
@@ -306,7 +374,9 @@ def main() -> int:
         out = pathlib.Path(tmp.name)
 
     try:
-        files = fetch(tok, args.version, out)
+        with auth_config(tok) as cfg:
+            check_token(cfg)
+            files = fetch(cfg, args.version, out)
         if args.fetch_only:
             # Only name a path that still exists afterwards. Without --out the tree is a temporary
             # directory this function removes, so naming it sends someone to look at nothing.
