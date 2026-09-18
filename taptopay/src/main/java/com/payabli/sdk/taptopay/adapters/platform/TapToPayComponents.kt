@@ -95,7 +95,8 @@ internal object TapToPayComponents {
      * Drops encrypted entries an earlier build wrote for held keys. The store no longer reads them; this
      * only clears dead blobs so they do not linger beside the device binding.
      */
-    private suspend fun forgetLegacyChargeKeys(storage: PayabliSecureStorage) {
+    @JvmSynthetic
+    internal suspend fun forgetLegacyChargeKeys(storage: PayabliSecureStorage) {
         try {
             storage.remove(ChargeKeyStore.LEGACY_ENTRY)
         } catch (_: SecureStorageException) {

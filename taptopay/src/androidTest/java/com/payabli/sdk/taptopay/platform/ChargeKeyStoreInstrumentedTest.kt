@@ -7,6 +7,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import com.payabli.sdk.taptopay.ChargeKeyStore
+import com.payabli.sdk.taptopay.adapters.platform.TapToPayComponents
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -94,20 +95,23 @@ class ChargeKeyStoreInstrumentedTest {
         }
 
     @Test
-    fun aLegacyBlobIsLeftUnreadAndCanBeRemoved() =
+    fun aLegacyBlobIsDroppedByTheWiringCleanup() =
         runTest(timeout = TEST_TIMEOUT) {
             val trust = DeviceTrust.open(context)
             trust.store.set(
                 ChargeKeyStore.LEGACY_ENTRY,
                 """{"attempts":[{"entry":"$ENTRY","key":"stale-from-disk","reservedAt":1}]}""".encodeToByteArray(),
             )
+            trust.store.set(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY, byteArrayOf(1))
 
             val reserved = storeOver("minted-1").reserve(ENTRY, PayabliEnvironment.SANDBOX)
-
             assertEquals("minted-1", reserved.key)
             assertFalse(reserved.reused)
-            trust.store.remove(ChargeKeyStore.LEGACY_ENTRY)
+
+            TapToPayComponents.forgetLegacyChargeKeys(trust.store)
+
             assertNull(trust.store.get(ChargeKeyStore.LEGACY_ENTRY))
+            assertNull(trust.store.get(ChargeKeyStore.LEGACY_PREVIOUS_ENTRY))
         }
 
     private companion object {
