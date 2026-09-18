@@ -93,7 +93,14 @@ class ChargeKeyStoreTest {
                     },
                     elapsedRealtimeNanos = clock::get,
                 )
-            val second = store()
+            val second =
+                ChargeKeyStore(
+                    newKey = {
+                        val n = racing.incrementAndGet()
+                        "key-$n"
+                    },
+                    elapsedRealtimeNanos = clock::get,
+                )
 
             val one = async { first.reserve(ENTRY, PayabliEnvironment.SANDBOX).key }
             mintStarted.await()
