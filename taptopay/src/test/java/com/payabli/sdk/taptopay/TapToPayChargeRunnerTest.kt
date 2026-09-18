@@ -1348,6 +1348,36 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a recovery that fails on a resent decline still reports unknown`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Same card answer as the fresh-key recovery, but the key names an earlier attempt. NOT_CHARGED
+            // would tell a host another charge is safe while that attempt is unresolved.
+            var closeFails = false
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 5) { closeFails })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = true
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(
+                "a decline on a resent opening was reported as taking no money by the recovery",
+                TapToPayCapture.UNKNOWN,
+                (failure as TapToPayException).capture,
+            )
+        }
+
+    @Test
     fun `closing a payment this terminal does not hold says unknown, never not-charged`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The state a host reaches after a restart, holding an identifier it persisted. Reporting it as

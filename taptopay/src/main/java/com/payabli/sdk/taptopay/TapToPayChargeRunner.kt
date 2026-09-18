@@ -207,14 +207,7 @@ internal class TapToPayChargeRunner(
                 // money; a refusal is an answer that none moved; anything else leaves it unknown, which is
                 // what it already was. A resent key never reports NOT_CHARGED: that answer is about this
                 // run, and the key names an earlier one whose money may have moved.
-                capture =
-                    captureOf(result.outcome).let { reported ->
-                        if (resentKey && reported == TapToPayCapture.NOT_CHARGED) {
-                            TapToPayCapture.UNKNOWN
-                        } else {
-                            reported
-                        }
-                    }
+                capture = captureOf(result.outcome, resentKey)
                 HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey, resentKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
@@ -401,8 +394,9 @@ internal class TapToPayChargeRunner(
                 throw withdrawn
             } catch (failure: Exception) {
                 TapToPayReports.closeFailed(failure, startedAt)
-                // Still held, so this can be tried again.
-                throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome))
+                // Still held, so this can be tried again. A resent key never reports NOT_CHARGED: that
+                // answer is about this run's card, and the key names an earlier attempt.
+                throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey))
             }
             TapToPayReports.closeSucceeded(startedAt)
         }
@@ -411,13 +405,25 @@ internal class TapToPayChargeRunner(
      * What the reader's answer says about the money, which is not the same as whether it answered.
      *
      * Read by the charge and by the recovery, so the two cannot disagree about a payment they both saw.
+     * [resentKey] clamps a refusal to unknown: the refusal is about this run, and the key names an earlier
+     * one.
      */
-    private fun captureOf(outcome: CardReadOutcome): TapToPayCapture =
-        when (outcome) {
-            CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
-            CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
-            CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
+    private fun captureOf(
+        outcome: CardReadOutcome,
+        resentKey: Boolean = false,
+    ): TapToPayCapture {
+        val reported =
+            when (outcome) {
+                CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
+                CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
+                CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
+            }
+        return if (resentKey && reported == TapToPayCapture.NOT_CHARGED) {
+            TapToPayCapture.UNKNOWN
+        } else {
+            reported
         }
+    }
 
     /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
     private fun failed(
