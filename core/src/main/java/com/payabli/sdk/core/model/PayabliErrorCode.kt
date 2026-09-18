@@ -35,9 +35,6 @@ public enum class PayabliErrorCode(
      * `RetryPolicy.RETRYABLE_CODES` for exactly that reason — so the hazard this code exists to avoid is a
      * *host's* retry or UI logic reading the code: one written for "the service refused this" would call a
      * deadlocked or misbehaving callback again on exactly that read.
-     *
-     * Ruled 2026-09-15, maintainer. Recorded in `documentation/features/public-interface.md`, "A
-     * misbehaving `tokenProvider` gets its own code". iOS carries the same agreement.
      */
     TOKEN_PROVIDER_FAILED("TOKEN_PROVIDER_FAILED"),
     INVALID_SIGNATURE("INVALID_SIGNATURE"),
