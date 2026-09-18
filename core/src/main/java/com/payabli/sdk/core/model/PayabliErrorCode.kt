@@ -24,17 +24,9 @@ public enum class PayabliErrorCode(
     TOKEN_MALFORMED("TOKEN_MALFORMED"),
 
     /**
-     * The host's `tokenProvider` did not do its job: it hung past the bound, threw, was cancelled, returned
-     * a blank or unusable token, returned the token the server had just rejected, or read the token it was
-     * called to mint. Every one of those means the same thing to a caller — fix the callback — so they
-     * share this code and are distinguished by reason rather than by a code each.
-     *
-     * Not [TOKEN_EXPIRED]: that is the service refusing a credential, which is a different answer about a
-     * different thing. Neither this SDK's own retry logic nor `AuthRecoveryPolicy` treats [TOKEN_EXPIRED]
-     * as worth repeating — both leave it terminal, and [TOKEN_EXPIRED] is absent from
-     * `RetryPolicy.RETRYABLE_CODES` for exactly that reason — so the hazard this code exists to avoid is a
-     * *host's* retry or UI logic reading the code: one written for "the service refused this" would call a
-     * deadlocked or misbehaving callback again on exactly that read.
+     * The host's `tokenProvider` returned no token the SDK could use. [PayabliException.reason] names
+     * the specific failure. The SDK does not retry on this code; a subsequent SDK call invokes the
+     * callback again.
      */
     TOKEN_PROVIDER_FAILED("TOKEN_PROVIDER_FAILED"),
     INVALID_SIGNATURE("INVALID_SIGNATURE"),
