@@ -1,0 +1,141 @@
+name: Mirror the card reader
+
+# Copies the vendor's card reader onto the SDK artifact origin, so integrators resolve it from us
+# rather than holding a credential for a third-party feed.
+#
+# Dispatch only. The reader ships on the vendor's schedule and on no relation to an SDK release, so a
+# tag trigger would mean cutting tags that exist to satisfy a trust policy and then mislead everyone
+# reading the history. A dispatch against an environment is the one subject that is neither a tag nor
+# every branch.
+#
+# That environment is the gate, and two of its three parts are repository settings rather than
+# anything in this file — so read them there before trusting the sentence above. It carries a
+# required reviewer, and its deployment branch policy admits protected branches only.
+#
+# The branch policy is the load-bearing half, because the OIDC subject for an environment carries no
+# ref: the publishing role trusts `environment:card-reader-mirror` from any ref that can reach the
+# environment. Without the policy a branch could carry its own edited copy of the script and dispatch
+# it, and the reviewer would be approving a deployment rather than a diff. With it, only a protected
+# branch can, which is the review the pinned list below is actually defended by.
+#
+# The version has to be pinned in mirror_card_reader.py before it can be dispatched. The list there
+# is the record of what each SDK release was certified against, and adding to it is the one decision
+# in this process worth reviewing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Card reader version to mirror, e.g. 1.1.4.1. Must already be pinned.'
+        required: true
+        type: string
+      fetch_only:
+        description: 'Fetch and print the digests without publishing'
+        required: false
+        default: false
+        type: boolean
+
+# Nothing at the top, because a grant here is inherited by every job that does not replace it, and the
+# whole point of the two jobs below is that one of them cannot reach the origin at all.
+permissions:
+  contents: read
+
+concurrency:
+  # One mirror run at a time, and never cancelled: the coordinates are write-once, so a run
+  # interrupted mid-upload leaves a partial set that the next run has to complete rather than
+  # replace. Waiting is cheap; a cancelled upload is not.
+  group: card-reader-mirror
+  cancel-in-progress: false
+
+# Two jobs for one process, because the authority differs and a permission is granted per job. A
+# fetch-only run reads the vendor feed, prints the digests and publishes nothing, so it has no use for a
+# credential that can write the origin — and withholding one is not something a step can do.
+#
+# An `if` on the credentials step is not that boundary. A job that skips `configure-aws-credentials` still
+# holds `id-token: write`, the role ARN and code from this repository, which is all it takes to request the
+# OIDC token directly and assume the role: the subject the role trusts is the environment, and that is
+# attached to the job whatever the input said. `id-token: none` is what leaves the fetch job unable to ask
+# for a token at all.
+#
+# Both jobs carry the environment. It is the required reviewer as well as the OIDC subject, and a fetch
+# outside it would still spend the vendor token on demand from any ref that can reach it.
+#
+# `verify.py`'s W11 holds every line of that.
+jobs:
+  fetch:
+    name: Fetch ${{ inputs.version }}
+    if: ${{ inputs.fetch_only }}
+    runs-on: ubuntu-latest
+    environment: card-reader-mirror
+    permissions:
+      contents: read
+      id-token: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Fetch the reader
+        env:
+          # Through the environment rather than interpolated, for the reason the publishing job gives.
+          VERSION: ${{ inputs.version }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+        run: python3 .github/scripts/mirror_card_reader.py --version "$VERSION" --fetch-only
+
+  mirror:
+    name: Mirror ${{ inputs.version }}
+    if: ${{ !inputs.fetch_only }}
+    runs-on: ubuntu-latest
+    environment: card-reader-mirror
+    permissions:
+      contents: read
+      # For the OIDC role that authenticates to the bucket. No long-lived AWS key is stored anywhere,
+      # which is the reason this channel needs no credential in the repository at all.
+      id-token: write
+    steps:
+      # SHA-pinned, as live-flows.yml pins every action it uses: this job holds GPR_TOKEN and
+      # mints an AWS publishing credential, and a mutable tag is resolved at run time by whoever
+      # controls it. The comment carries the tag so a bump is still readable.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Variables rather than secrets, deliberately: a role ARN is not a credential, it is an
+      # identifier that only works alongside this repository's OIDC identity. Masking it as a secret
+      # would make every AccessDenied message unreadable, which is exactly the message worth reading.
+      - name: Check the mirror channel is provisioned
+        run: |
+          missing=
+          [ -n "$AWS_MIRROR_PUBLISH_ROLE_ARN" ] || missing="$missing AWS_MIRROR_PUBLISH_ROLE_ARN"
+          [ -n "$AWS_SDK_CDN_BUCKET" ] || missing="$missing AWS_SDK_CDN_BUCKET"
+          [ -n "$AWS_SDK_CDN_REGION" ] || missing="$missing AWS_SDK_CDN_REGION"
+          if [ -n "$missing" ]; then
+            echo "::error::unset repository variable(s):$missing"
+            exit 1
+          fi
+        env:
+          AWS_MIRROR_PUBLISH_ROLE_ARN: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+          AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@cabfdba3510de1431bac9dba27511d97497fc100 # v5
+        with:
+          role-to-assume: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      # The account is read off the role ARN this run just assumed rather than configured a second
+      # time, so there is one copy of it rather than two that can drift.
+      #
+      # Derived that way it cannot disagree with the caller's own account, so it proves nothing about
+      # the caller. What it is for is the bucket: the script passes it as --expected-bucket-owner, so
+      # a mistyped bucket name that happens to resolve to somebody else's bucket is refused rather
+      # than written to. S3 names are global and not reserved to us.
+      - name: Mirror the reader
+        env:
+          # Through the environment, never interpolated into the script body: a dispatch input is
+          # caller-supplied text, and `run:` interpolation would execute it.
+          VERSION: ${{ inputs.version }}
+          ROLE_ARN: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+        run: |
+          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
+          export AWS_SDK_CDN_ACCOUNT
+          python3 .github/scripts/mirror_card_reader.py --version "$VERSION"

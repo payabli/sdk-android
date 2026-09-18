@@ -35,9 +35,12 @@ on:
       - '.github/workflows/scripts.yml'
       # The harness reads the live workflows, so they have to be here or its assertions would not run on the
       # change that broke them. The nightly is here for the same reason: W8 asserts on its liveness-owner
-      # expression, and a guard that does not run on the file it protects is not a guard.
+      # expression, and a guard that does not run on the file it protects is not a guard. W11 is the card
+      # reader mirror's, and what it holds is the job split that keeps the credential able to write the
+      # artifact origin out of a run that publishes nothing.
       - '.github/workflows/live-*.yml'
       - '.github/workflows/nightly.yml'
+      - '.github/workflows/card-reader-mirror.yml'
   push:
     branches: [main]
     paths:
@@ -45,6 +48,7 @@ on:
       - '.github/workflows/scripts.yml'
       - '.github/workflows/live-*.yml'
       - '.github/workflows/nightly.yml'
+      - '.github/workflows/card-reader-mirror.yml'
 
 concurrency:
   group: scripts-${{ github.ref }}
