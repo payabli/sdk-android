@@ -1897,6 +1897,10 @@ WORKFLOWS = Path(os.environ.get("NIGHTLY_WORKFLOWS", SDK / ".github/workflows"))
 
 LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 
+# The card reader mirror, which holds the vendor token and mints the credential that writes the artifact
+# origin. Named once, because three checks below and the path filter all have to mean the same file.
+MIRROR_WORKFLOW = "card-reader-mirror.yml"
+
 
 def workflow_text(name: str) -> str:
     """The file, or empty text after failing a check that says which file is missing.
@@ -2450,7 +2454,7 @@ def test_workflows():
     # every workflow asserted about above has to match one of those patterns, on both the pull request and
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
-    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml")
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
     for event in ("pull_request", "push"):
@@ -2609,7 +2613,9 @@ def test_workflows():
     # line, and Actions echoes the script it substituted into the log, so an expression parked behind a `#`
     # is interpolated just the same. Dropping comments is right where the emulator action drops them itself,
     # which is the check above, and wrong here.
-    for name in LIVE_WORKFLOWS:
+    # The mirror is held to this too. Its only input is a version typed into a dispatch form, and its own
+    # comment says that value reaches the script through the environment for exactly this reason.
+    for name in LIVE_WORKFLOWS + (MIRROR_WORKFLOW,):
         bodies = [str(step.get("run", "")) for step in steps_of(workflow_doc(name))]
         offending = [line.strip() for body in bodies for line in body.splitlines() if "${{" in line]
         check(f"W6 {name} interpolates no expression inside a run script",
@@ -2684,6 +2690,61 @@ def test_workflows():
               f"{unresolved}")
         check("W10 and the module list is exactly what those tasks imply", set(entries) == implied,
               f"named={sorted(entries)} implied={sorted(implied)}")
+
+    # W11 the mirror's two authorities, which is why it has two jobs. A fetch-only run reads the vendor feed
+    # and publishes nothing, so it has no use for a credential that can write the origin.
+    #
+    # A step cannot withhold it. A job that skips `configure-aws-credentials` behind an `if` still holds
+    # `id-token: write`, the role ARN and repository-controlled code, which is everything needed to request
+    # the OIDC token directly and assume the role the environment subject trusts. Permissions are granted
+    # per job, so the boundary is a job, and these checks are what say it still is.
+    mirror = workflow_doc(MIRROR_WORKFLOW)
+    jobs = {name: job for name, job in (mirror.get("jobs") or {}).items() if isinstance(job, dict)}
+    check(f"W11 {MIRROR_WORKFLOW} splits fetching from publishing", set(jobs) == {"fetch", "mirror"},
+          f"{sorted(jobs)}")
+
+    # A job that grants nothing inherits the workflow's grant, so a token at the top would reach both jobs
+    # and every check below would still pass.
+    top = mirror.get("permissions") or {}
+    check("W11 the workflow grants no OIDC token for a job to inherit",
+          str(top.get("id-token", "none")) == "none", f"{top}")
+
+    for name, want in (("fetch", "none"), ("mirror", "write")):
+        job = jobs.get(name) or {}
+        granted = job.get("permissions") or {}
+        check(f"W11 the {name} job grants id-token: {want}", str(granted.get("id-token")) == want,
+              f"{granted}")
+        # Both jobs, because the environment is the required reviewer as well as the OIDC subject, and a
+        # fetch that ran unapproved would still be spending the vendor token on demand from any ref.
+        check(f"W11 and the {name} job runs against the reviewed environment",
+              job.get("environment") == "card-reader-mirror", str(job.get("environment")))
+
+    conditions = {name: str(job.get("if", "")).replace("${{", "").replace("}}", "").strip()
+                  for name, job in jobs.items()}
+    check("W11 the fetch job runs only on a fetch-only dispatch",
+          conditions.get("fetch") == "inputs.fetch_only", conditions.get("fetch", ""))
+    check("W11 and the publishing job only when it is not one",
+          conditions.get("mirror") == "!inputs.fetch_only", conditions.get("mirror", ""))
+
+    # The input decides which job runs and nothing inside one. A step that branches on it grants nothing
+    # less, and reads as defence while the job around it carries the same authority.
+    stepwise = [str(step.get("name", step.get("uses", "?"))) for step in steps_of(mirror)
+                if "fetch_only" in str(step.get("if", ""))]
+    check("W11 no step decides on the input, since the job is what carries the authority",
+          not stepwise, " | ".join(stepwise))
+
+    # What the fetch job may not name. `--fetch-only` needs GPR_TOKEN and nothing else — the script reads no
+    # AWS variable on that path — so any of these appearing there is the credential coming back in.
+    fetch_text = "".join(step_text(step) for step in (jobs.get("fetch") or {}).get("steps") or [])
+    for forbidden in ("configure-aws-credentials", "ROLE_ARN", "AWS_"):
+        check(f"W11 the fetch job does not name {forbidden}", forbidden not in fetch_text,
+              next((line.strip() for line in fetch_text.splitlines() if forbidden in line), ""))
+
+    # And that each job runs the script the way its name says, so the two are not accidentally identical.
+    for name, wanted in (("fetch", True), ("mirror", False)):
+        runs = " ".join(str(step.get("run", "")) for step in (jobs.get(name) or {}).get("steps") or [])
+        check(f"W11 the {name} job invokes the publisher", "mirror_card_reader.py" in runs, runs[:120])
+        check(f"W11 and passes --fetch-only: {wanted}", ("--fetch-only" in runs) is wanted, runs[:200])
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")

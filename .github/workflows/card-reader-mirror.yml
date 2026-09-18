@@ -35,11 +35,10 @@ on:
         default: false
         type: boolean
 
+# Nothing at the top, because a grant here is inherited by every job that does not replace it, and the
+# whole point of the two jobs below is that one of them cannot reach the origin at all.
 permissions:
   contents: read
-  # For the OIDC role that authenticates to the bucket. No long-lived AWS key is stored anywhere,
-  # which is the reason this channel needs no credential in the repository at all.
-  id-token: write
 
 concurrency:
   # One mirror run at a time, and never cancelled: the coordinates are write-once, so a run
@@ -48,11 +47,49 @@ concurrency:
   group: card-reader-mirror
   cancel-in-progress: false
 
+# Two jobs for one process, because the authority differs and a permission is granted per job. A
+# fetch-only run reads the vendor feed, prints the digests and publishes nothing, so it has no use for a
+# credential that can write the origin — and withholding one is not something a step can do.
+#
+# An `if` on the credentials step is not that boundary. A job that skips `configure-aws-credentials` still
+# holds `id-token: write`, the role ARN and code from this repository, which is all it takes to request the
+# OIDC token directly and assume the role: the subject the role trusts is the environment, and that is
+# attached to the job whatever the input said. `id-token: none` is what leaves the fetch job unable to ask
+# for a token at all.
+#
+# Both jobs carry the environment. It is the required reviewer as well as the OIDC subject, and a fetch
+# outside it would still spend the vendor token on demand from any ref that can reach it.
+#
+# `verify.py`'s W11 holds every line of that.
 jobs:
-  mirror:
-    name: Mirror ${{ inputs.version }}
+  fetch:
+    name: Fetch ${{ inputs.version }}
+    if: ${{ inputs.fetch_only }}
     runs-on: ubuntu-latest
     environment: card-reader-mirror
+    permissions:
+      contents: read
+      id-token: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Fetch the reader
+        env:
+          # Through the environment rather than interpolated, for the reason the publishing job gives.
+          VERSION: ${{ inputs.version }}
+          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+        run: python3 .github/scripts/mirror_card_reader.py --version "$VERSION" --fetch-only
+
+  mirror:
+    name: Mirror ${{ inputs.version }}
+    if: ${{ !inputs.fetch_only }}
+    runs-on: ubuntu-latest
+    environment: card-reader-mirror
+    permissions:
+      contents: read
+      # For the OIDC role that authenticates to the bucket. No long-lived AWS key is stored anywhere,
+      # which is the reason this channel needs no credential in the repository at all.
+      id-token: write
     steps:
       # SHA-pinned, as live-flows.yml pins every action it uses: this job holds GPR_TOKEN and
       # mints an AWS publishing credential, and a mutable tag is resolved at run time by whoever
@@ -63,7 +100,6 @@ jobs:
       # identifier that only works alongside this repository's OIDC identity. Masking it as a secret
       # would make every AccessDenied message unreadable, which is exactly the message worth reading.
       - name: Check the mirror channel is provisioned
-        if: ${{ !inputs.fetch_only }}
         run: |
           missing=
           [ -n "$AWS_MIRROR_PUBLISH_ROLE_ARN" ] || missing="$missing AWS_MIRROR_PUBLISH_ROLE_ARN"
@@ -78,10 +114,7 @@ jobs:
           AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
           AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
 
-      # Not for a fetch-only run. That path publishes nothing, so handing it a credential that can
-      # write the origin gives it an authority it has no use for.
       - name: Authenticate to AWS
-        if: ${{ !inputs.fetch_only }}
         uses: aws-actions/configure-aws-credentials@cabfdba3510de1431bac9dba27511d97497fc100 # v5
         with:
           role-to-assume: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
@@ -99,15 +132,10 @@ jobs:
           # Through the environment, never interpolated into the script body: a dispatch input is
           # caller-supplied text, and `run:` interpolation would execute it.
           VERSION: ${{ inputs.version }}
-          FETCH_ONLY: ${{ inputs.fetch_only }}
           ROLE_ARN: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}
           GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
           AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
         run: |
           AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
           export AWS_SDK_CDN_ACCOUNT
-          if [ "$FETCH_ONLY" = "true" ]; then
-            python3 .github/scripts/mirror_card_reader.py --version "$VERSION" --fetch-only
-          else
-            python3 .github/scripts/mirror_card_reader.py --version "$VERSION"
-          fi
+          python3 .github/scripts/mirror_card_reader.py --version "$VERSION"

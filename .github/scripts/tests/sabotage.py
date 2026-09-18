@@ -63,6 +63,10 @@ LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
 SCRIPTS = WORKFLOW_DIR / "scripts.yml"
 # The nightly, for its liveness-owner expression alone. Nothing else here mutates it.
 NIGHTLY = WORKFLOW_DIR / "nightly.yml"
+# The card reader mirror, whose two jobs are the only thing keeping the credential that writes the artifact
+# origin out of a run that publishes nothing. Every mutation below widens that back, and none of them looks
+# like more than a tidy-up in a diff.
+MIRROR = WORKFLOW_DIR / "card-reader-mirror.yml"
 
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
@@ -84,6 +88,7 @@ SOURCE = {
     LIVE_SANDBOX: SDK / ".github/workflows/live-sandbox.yml",
     NIGHTLY: SDK / ".github/workflows/nightly.yml",
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
+    MIRROR: SDK / ".github/workflows/card-reader-mirror.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -514,14 +519,64 @@ MUTATIONS = [
     # The filter decides whether any of the above ever runs on the file it is about. Dropping a workflow from
     # it leaves every assertion in place and none of them reachable by the change that breaks them.
     # Anchored through the trailing `push:` because the two blocks are identical, and a mutation that
-    # matched both would be testing something else.
+    # matched both would be testing something else. That tail carries the mirror as well, so each anchor
+    # below names every line between the one it breaks and `push:`.
     ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/nightly.yml'\n  push:",
-     "      - '.github/workflows/nightly-disabled.yml'\n  push:"),
+     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n  push:",
+     "      - '.github/workflows/nightly-disabled.yml'\n"
+     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
 
     ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n  push:",
-     "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n  push:"),
+     "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n"
+     "      - '.github/workflows/card-reader-mirror.yml'\n  push:",
+     "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n"
+     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
+
+    ("The harness stops running when the card reader mirror changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/card-reader-mirror.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror-disabled.yml'\n  push:"),
+
+    # The mirror's permission split. The token is what turns repository-controlled code into an identity
+    # that can write the origin, and every one of these hands it to a run that publishes nothing.
+    ("The mirror grants the OIDC token at the top, so both jobs inherit it", MIRROR, "workflows",
+     "permissions:\n  contents: read\n\nconcurrency:",
+     "permissions:\n  contents: read\n  id-token: write\n\nconcurrency:"),
+
+    ("The fetch job is granted the token it has no use for", MIRROR, "workflows",
+     "      id-token: none", "      id-token: write"),
+
+    ("The publishing job's grant is dropped, so publishing cannot authenticate", MIRROR, "workflows",
+     "      id-token: write", "      id-token: none"),
+
+    # The jobs stop being alternatives, so a fetch-only dispatch publishes as well. It reads as a condition
+    # somebody simplified.
+    ("A fetch-only dispatch runs the publishing job too", MIRROR, "workflows",
+     "    if: ${{ !inputs.fetch_only }}", "    if: ${{ always() }}"),
+
+    ("The fetch job runs on every dispatch, including one that publishes", MIRROR, "workflows",
+     "    if: ${{ inputs.fetch_only }}", "    if: ${{ always() }}"),
+
+    # The role ARN in the job that cannot assume it. Harmless while the grant above stays `none`, which is
+    # what makes it the half of the pair that arrives quietly: the ARN sits beside the code waiting for a
+    # token grant to reach the same job.
+    ("The fetch job is handed the publishing role's ARN", MIRROR, "workflows",
+     "          VERSION: ${{ inputs.version }}\n          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}",
+     "          VERSION: ${{ inputs.version }}\n"
+     "          ROLE_ARN: ${{ vars.AWS_MIRROR_PUBLISH_ROLE_ARN }}\n"
+     "          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}"),
+
+    # A step deciding on the input, which reads as defence in depth while the job it sits in grants the
+    # token either way.
+    ("A step decides publishing on the input instead of the job", MIRROR, "workflows",
+     "      - name: Authenticate to AWS\n        uses:",
+     "      - name: Authenticate to AWS\n        if: ${{ !inputs.fetch_only }}\n        uses:"),
+
+    # The dispatch input interpolated into the script body. `--version` is text somebody typed into a form,
+    # and substitution happens before the shell runs, so a value that closes its own quote runs as a command
+    # in the job holding the vendor token and the publishing credential.
+    ("The version is interpolated into the publishing script", MIRROR, "workflows",
+     '\n          python3 .github/scripts/mirror_card_reader.py --version "$VERSION"\n',
+     '\n          python3 .github/scripts/mirror_card_reader.py --version "${{ inputs.version }}"\n'),
 
     # The live reporter's allowlist. Each of these widens what reaches a channel, and none of them looks
     # alarming in a diff, which is why they are covered rather than trusted.
