@@ -364,6 +364,12 @@ def main() -> int:
     if not args.fetch_only:
         bucket = require("AWS_SDK_CDN_BUCKET")
         account = require("AWS_SDK_CDN_ACCOUNT")
+        # Required here rather than left to the AWS CLI, because the two checks below do not need it and
+        # every upload does: `put` and `read_back` name no --region, so the region comes from the
+        # environment. STS is global, so check_aws passes without one and the whole fetch follows, and the
+        # first thing that reports a missing region is the first upload. The workflow's publishing job has
+        # it from configure-aws-credentials; a run by hand is what this catches.
+        require("AWS_REGION")
         # Before the download, so a wrong identity is not found after nine megabytes of transfer.
         print(f"publishing to {bucket} as {check_aws(account)}\n")
 
