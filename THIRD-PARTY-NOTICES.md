@@ -76,6 +76,18 @@ and are governed by their vendors' own agreements, not the Apache/MIT terms abov
 
 <!-- END FISERV LICENSE TEXT -->
 
+### MagicCube SoftPOS / PIN kernel
+
+- **Coordinates:** `com:magiccube`
+- **Scope:** Reached only through the `payabli-taptopay` module, as the component
+  above — and reached through that component rather than declared beside it, being a
+  transitive dependency of `com.fiserv.ch:ttp-payment` that appears nowhere in
+  `gradle/libs.versions.toml`.
+- **Terms:** The certified SoftPOS / PIN kernel, licensed by Fiserv and loaded at the
+  integrating application build.
+- **Copyright:** Not established. The attribution line has to come from the same
+  Fiserv CommerceHub agreement as the component above, and is owed alongside it.
+
 ---
 
 _Last updated: keep this file in sync when dependencies or their versions change._

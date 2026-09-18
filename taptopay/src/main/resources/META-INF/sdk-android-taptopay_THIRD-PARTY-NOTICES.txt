@@ -2,20 +2,20 @@ Payabli Android SDK — sdk-android-taptopay
 Third-Party Notices
 
 This module (card-present / Tap to Pay) is distributed under the PayabliSDK
-Commercial License and incorporates the proprietary component below, in addition
+Commercial License and incorporates the proprietary components below, in addition
 to the open-source dependencies enumerated in this module's CycloneDX SBOM
 (build/reports/cyclonedx/bom.json).
 
 ================================================================================
-PROPRIETARY COMPONENT
+PROPRIETARY COMPONENTS
 
 Fiserv CommerceHub Tap to Pay SDK  (com.fiserv.ch:ttp-payment)
 Copyright (c) Fiserv, Inc. All rights reserved. Used under license.
 
-The certified SoftPOS / PIN kernel (MagicCube) is licensed by Fiserv and loaded
-at the integrating application build; it is not redistributed by Payabli.
+MagicCube SoftPOS / PIN kernel  (com:magiccube)
+The certified SoftPOS / PIN kernel is licensed by Fiserv and loaded at the
+integrating application build.
 
- [FISERV LICENSE TEXT GOES HERE] //todo complete the license
 ================================================================================
 
 Google Play components: this module links the Play Integrity API
