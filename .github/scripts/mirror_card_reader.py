@@ -83,8 +83,10 @@ CACHE_CONTROL = "max-age=31536000, immutable"
 # A digest may be recorded as None, which means the coordinate is known and its bytes are not yet.
 # `--fetch-only` accepts that and prints what it got; publishing refuses it. That is how a new version
 # is added without the recorded digest having to exist before anything can fetch the bytes it
-# describes: add the block with None, run --fetch-only, read the digests, commit them. Both halves are
-# reviewed, and no unverified byte reaches the origin in between.
+# describes: add a coordinate with None, run --fetch-only, read the digests, commit them. Both halves
+# are reviewed, and no unverified byte reaches the origin in between. The order in full, including how
+# the private transitive's own version is discovered, is what an unpinned version prints, and that
+# refusal is the one copy of it.
 RELEASES = {
     "1.1.4.1": [
         ("com/fiserv/ch", "ttp-payment", "1.1.4.1", {
@@ -108,17 +110,28 @@ def coordinates(version: str):
     sys.exit(
         f"reader version {version} is not pinned, so there is nothing recorded to mirror.\n"
         f"pinned: {known}\n\n"
-        "Add it to RELEASES in this file first, cross-checked against gradle/libs.versions.toml:\n\n"
+        "Add it to RELEASES in this file, cross-checked against gradle/libs.versions.toml. The\n"
+        "reader's own coordinate goes in first and alone, with no digests:\n\n"
         f'    "{version}": [\n'
         f'        ("com/fiserv/ch", "ttp-payment", "{version}", '
         '{"pom": None, "aar": None, "module": None}),\n'
-        '        ("com", "magiccube", "<its transitive version>", {"pom": None, "aar": None}),\n'
         "    ],\n\n"
-        "Record the digests as None to begin with. --fetch-only will then run and print them;\n"
-        "publishing refuses a coordinate whose digest is still None. The transitive's version is\n"
-        "declared in the reader's own POM, which that first fetch-only run gives you.\n"
-        "The list is the record of what each release was certified against, which is why adding a\n"
-        "version is a reviewed change rather than a dispatch input."
+        "Then fetch it, keeping the tree:\n\n"
+        f"    --version {version} --fetch-only --out DIR\n\n"
+        "--out is required for this step rather than optional: without it the tree is a temporary\n"
+        "directory this script deletes, and the POM goes with it. That run prints the three digests\n"
+        "to record and writes the POM which declares the private transitive's version:\n\n"
+        f"    DIR/maven/com/fiserv/ch/ttp-payment/{version}/ttp-payment-{version}.pom\n\n"
+        "Add the transitive with the version read out of it, again with no digests:\n\n"
+        '        ("com", "magiccube", "<the version that POM declares>", '
+        '{"pom": None, "aar": None}),\n\n'
+        "A second --fetch-only prints its two. A coordinate naming a version the registry does not\n"
+        "carry answers 404 and fails the run, which is why the transitive is not guessed and not\n"
+        "left as a placeholder.\n\n"
+        "Publishing refuses any coordinate whose digest is still None, so both sets of recorded\n"
+        "values are committed before anything is uploaded, and no unverified byte reaches the\n"
+        "origin in between. The list is the record of what each release was certified against,\n"
+        "which is why adding a version is a reviewed change rather than a dispatch input."
     )
 
 
