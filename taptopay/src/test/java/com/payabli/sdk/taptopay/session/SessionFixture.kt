@@ -68,6 +68,7 @@ internal class SessionFixture(
     readerGate: (suspend () -> Unit)? = null,
     eligibilityFailure: Throwable? = null,
     readGate: (suspend () -> Unit)? = null,
+    elapsedRealtimeNanos: () -> Long = { System.nanoTime() },
 ) {
     val enrollment = EnrollmentFixture(script, firstReadGate = firstReadGate)
 
@@ -79,16 +80,14 @@ internal class SessionFixture(
     val minted: AtomicInteger = AtomicInteger()
 
     /**
-     * Over [EnrollmentFixture.storage], which is the one backing store a device has.
-     *
-     * A second fixture built on the same storage is what two terminals for one entry point look like, which
-     * is the shape the key has to survive.
+     * Process-scoped held keys. Counted rather than random, so a test can tell one reserved key from the
+     * next. Two fixtures in one process share the map, which is what two terminals for one entry point
+     * look like.
      */
     val keys =
         ChargeKeyStore(
-            enrollment.storage,
             newKey = { "$MINTED_KEY-${minted.incrementAndGet()}" },
-            logger = enrollment.logger,
+            elapsedRealtimeNanos = elapsedRealtimeNanos,
         )
 
     val coordinator =

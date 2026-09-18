@@ -11,6 +11,7 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
+import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -422,7 +423,9 @@ internal class PayInSubmission(
         now: Long,
     ): HeldKey? {
         // Every entry, not just this payment's: a flow meets many transactions and revisits few.
-        unresolved.values.removeAll { !it.arrived && now - it.reservedAt >= HELD_KEY_MAX_AGE_NANOS }
+        unresolved.values.removeAll {
+            !it.arrived && now - it.reservedAt >= IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds
+        }
         return unresolved[payment]
     }
 
@@ -629,17 +632,6 @@ internal class PayInSubmission(
 
     internal companion object {
         const val REASON_UNEXPECTED = "The payment could not be submitted"
-
-        /**
-         * How long a key is held, derived to land past the point the service stops recognising it: what
-         * the service holds, plus the transport's whole-call budget doubled for the one credential replay
-         * it may perform. This clock starts at reservation, which is earlier than the service's does.
-         *
-         * Erring long costs memory and nothing else, a forgotten key and an unseen one being executed
-         * alike, and [HELD_KEYS_MAX] is what bounds that. Erring short mints where a repeat would have
-         * been refused.
-         */
-        val HELD_KEY_MAX_AGE_NANOS: Long = TimeUnit.MINUTES.toNanos(3)
 
         /**
          * How many payments may hold a key at once.

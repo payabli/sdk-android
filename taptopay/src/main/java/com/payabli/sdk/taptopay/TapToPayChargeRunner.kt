@@ -7,6 +7,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.taptopay.adapters.CardReaderException
@@ -80,17 +81,19 @@ private class PendingClose(
     /**
      * The attempt this payment was opened under.
      *
-     * Settled once a close is confirmed and the reader's answer was definite. An outcome that was never
-     * definite keeps it, because the payment may have been taken and the attempt is what would name a
-     * repeat.
+     * Settled once a close is confirmed and the reader's answer was definite — and only when this
+     * payment was opened under a fresh key. A resent key names an earlier attempt; nothing this run
+     * learns settles it.
      */
     val idempotencyKey: String,
+    /** True when [idempotencyKey] was reused from an unsettled earlier attempt. */
+    val resentKey: Boolean,
 )
 
 /** One payment, end to end: open it at Payabli, tap, close it. */
 internal class TapToPayChargeRunner(
     private val entry: String,
-    environment: PayabliEnvironment,
+    private val environment: PayabliEnvironment,
     private val coordinator: TapToPaySessionCoordinator,
     private val manager: TapToPaySessionManager,
     private val reader: TapToPayProvider,
@@ -118,9 +121,10 @@ internal class TapToPayChargeRunner(
      * charge key by design. An instance mutex lets one settle that key while the other is mid-charge, after
      * which an ambiguous failure mints a fresh one and the payer can be charged twice.
      *
-     * **Broader than [scope], which is what a payment belongs to.** [ChargeKeyStore] holds one record per
-     * entry point, so a lock keyed on the environment as well is narrower than the record it guards and
-     * leaves two terminals for one paypoint on different environments unserialized over it.
+     * **Broader than [scope], which is what a payment belongs to.** The store matches on entry point
+     * plus environment, so two environments for one paypoint hold separate keys. The lock stays keyed
+     * on the entry point alone so two terminals for that paypoint cannot open, close or settle side by
+     * side — including across environments, where [HELD] and the session repair still share the paypoint.
      */
     private val region: Mutex get() = regionFor(entry)
 
@@ -169,7 +173,7 @@ internal class TapToPayChargeRunner(
                     }
                 // Reserved after the checks above, so a charge that never reaches the wire leaves no key
                 // behind, and held across a failure that leaves it unknown whether this opened anything.
-                val reservation = keys.reserve(entry)
+                val reservation = keys.reserve(entry, environment)
                 val idempotencyKey = reservation.key
                 reserved = idempotencyKey
                 resentKey = reservation.reused
@@ -201,9 +205,10 @@ internal class TapToPayChargeRunner(
 
                 // What the reader answered decides this, not the fact that it answered. An approval moved
                 // money; a refusal is an answer that none moved; anything else leaves it unknown, which is
-                // what it already was.
-                capture = captureOf(result.outcome)
-                HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey)
+                // what it already was. A resent key never reports NOT_CHARGED: that answer is about this
+                // run, and the key names an earlier one whose money may have moved.
+                capture = captureOf(result.outcome, resentKey)
+                HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey, resentKey)
 
                 // Uncancellable, for the same reason the failed-read close is: once `startReading` has
                 // returned, the processor has taken the card, and this is the only call that tells the
@@ -216,16 +221,18 @@ internal class TapToPayChargeRunner(
                 // payment that is already resolved. So is dropping the held payment, which would otherwise
                 // be offered for closing again after it had closed.
                 //
-                // What groups the three is cancellation, not success. `ChargeKeyStore.settle` never fails
-                // its caller by design, so a storage failure there leaves the key behind while the close and
-                // the drop stand. That key is stale rather than lost, and what it costs is written where
-                // that decision is.
+                // What groups the three is cancellation, not success. Settling a key only removes it from
+                // the process map, so it cannot fail the caller.
                 withContext(NonCancellable) {
                     client.update(paymentTransId, result)
-                    // Both an approval and a refusal are definitive, so the attempt is over and its key can
-                    // go. An outcome that is neither keeps it: the payment may have been taken, and the key
-                    // is what would let a repeat be recognised as one.
-                    if (result.outcome != CardReadOutcome.INDETERMINATE) keys.settle(entry, idempotencyKey)
+                    // Both an approval and a refusal are definitive for a fresh key, so the attempt is over
+                    // and its key can go. An outcome that is neither keeps it: the payment may have been
+                    // taken, and the key is what would let a repeat be recognised as one. A resent key is
+                    // never settled here: this run's answer is about a different opening than the one the
+                    // key names.
+                    if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
+                        keys.settle(entry, environment, idempotencyKey)
+                    }
                     // The close landed, so there is nothing left to recover for this payment,
                     // whatever the outcome was.
                     HELD.remove(scope)
@@ -250,7 +257,19 @@ internal class TapToPayChargeRunner(
                 // Only before the reader answered, and only for a failure that says nothing was opened.
                 // After the reader has answered the sale may be captured, so no failure arriving from
                 // there on is evidence the money did not move.
-                if (!askedForCard && isAnswered(failure, resentKey)) reserved?.let { keys.settle(entry, it) }
+                if (!askedForCard) {
+                    val key = reserved
+                    // Uncancellable: a withdrawn caller after a 409 must not skip the arrival mark and
+                    // leave the key ageable, and the same for a settle that says this opening is over.
+                    withContext(NonCancellable) {
+                        if (key != null && resentKey && isConflict(failure)) {
+                            keys.markArrived(entry, environment, key)
+                        }
+                        if (isAnswered(failure, resentKey)) {
+                            key?.let { keys.settle(entry, environment, it) }
+                        }
+                    }
+                }
                 // Reported before it is wrapped: the report reads the failure's own type to decide what kind
                 // of failure it was, and would classify every one of them alike once wrapped.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard)
@@ -362,8 +381,9 @@ internal class TapToPayChargeRunner(
                     // is kept for every outcome, because the transaction is open at the service whatever
                     // the card did, so a recovery can be closing one whose outcome was never definite.
                     // Settling that would drop the only handle on an attempt that may have taken money.
-                    if (pending.read.outcome != CardReadOutcome.INDETERMINATE) {
-                        keys.settle(entry, pending.idempotencyKey)
+                    // A resent key is never settled from what this close learns about a later opening.
+                    if (!pending.resentKey && pending.read.outcome != CardReadOutcome.INDETERMINATE) {
+                        keys.settle(entry, environment, pending.idempotencyKey)
                     }
                     // The close landed either way, so nothing is left to recover.
                     HELD.remove(scope)
@@ -375,7 +395,7 @@ internal class TapToPayChargeRunner(
             } catch (failure: Exception) {
                 TapToPayReports.closeFailed(failure, startedAt)
                 // Still held, so this can be tried again.
-                throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome))
+                throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey))
             }
             TapToPayReports.closeSucceeded(startedAt)
         }
@@ -384,13 +404,25 @@ internal class TapToPayChargeRunner(
      * What the reader's answer says about the money, which is not the same as whether it answered.
      *
      * Read by the charge and by the recovery, so the two cannot disagree about a payment they both saw.
+     * [resentKey] clamps a refusal to unknown: the refusal is about this run, and the key names an earlier
+     * one.
      */
-    private fun captureOf(outcome: CardReadOutcome): TapToPayCapture =
-        when (outcome) {
-            CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
-            CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
-            CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
+    private fun captureOf(
+        outcome: CardReadOutcome,
+        resentKey: Boolean = false,
+    ): TapToPayCapture {
+        val reported =
+            when (outcome) {
+                CardReadOutcome.APPROVED -> TapToPayCapture.CHARGED
+                CardReadOutcome.DECLINED -> TapToPayCapture.NOT_CHARGED
+                CardReadOutcome.INDETERMINATE -> TapToPayCapture.UNKNOWN
+            }
+        return if (resentKey && reported == TapToPayCapture.NOT_CHARGED) {
+            TapToPayCapture.UNKNOWN
+        } else {
+            reported
         }
+    }
 
     /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
     private fun failed(
@@ -465,4 +497,8 @@ internal class TapToPayChargeRunner(
                 is PayabliException -> !failure.code.leavesOutcomeUnknown
                 else -> false
             }
+
+    /** Whether [failure] is the service refusing a key it already holds. */
+    private fun isConflict(failure: Throwable): Boolean =
+        failure is PayabliException && failure.code == PayabliErrorCode.CONFLICT
 }

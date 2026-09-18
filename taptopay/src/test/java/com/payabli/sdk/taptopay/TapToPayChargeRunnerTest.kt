@@ -120,6 +120,10 @@ private class GatedCloseTransport(
  * to the session.
  */
 class TapToPayChargeRunnerTest {
+    @org.junit.Before
+    @org.junit.After
+    fun forgetHeldKeys() = ChargeKeyStore.forgetHeld()
+
     private fun runnerOver(
         fixture: SessionFixture,
         environment: PayabliEnvironment = PayabliEnvironment.SANDBOX,
@@ -413,6 +417,88 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a 409 on a resent key marks it arrived so it outlives the bound`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val clock =
+                java.util.concurrent.atomic
+                    .AtomicLong(1_000_000_000L)
+            var openings = 0
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(3) { "{}" },
+                        statusFor = { path -> if (path == INITIATE && ++openings == 2) 409 else 200 },
+                    ),
+                    elapsedRealtimeNanos = clock::get,
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            clock.addAndGet(com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
+            fixture.reader.answerReadWith(cardRead())
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals(
+                "an arrived key was swept after the bound",
+                "$MINTED_KEY-1",
+                fixture.keySent(2),
+            )
+        }
+
+    @Test
+    fun `a card decline after a resent opening still reports unknown`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Initiate accepts the resent key past the service window: a new opening. The decline of that
+            // opening must not claim the earlier attempt left no money, and must not settle the key the
+            // earlier attempt still owns.
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to List(3) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                        UPDATE to List(3) { "{}" },
+                    ),
+                ).also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(
+                "a decline on a resent opening was reported as taking no money",
+                TapToPayCapture.UNKNOWN,
+                (failure as TapToPayException).capture,
+            )
+            fixture.reader.answerReadWith(cardRead())
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            assertEquals(
+                "a decline on a resent opening settled the earlier attempt",
+                "$MINTED_KEY-1",
+                fixture.keySent(2),
+            )
+        }
+
+    @Test
     fun `an opening refused for any non-answer on a resent key keeps the attempt`() =
         runTest(timeout = TEST_TIMEOUT) {
             // A rate limit is refused before the idempotency check, so it says nothing about the opening
@@ -557,7 +643,7 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
-            assertEquals("a decline released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
+            assertEquals("a decline kept the earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
     @Test
@@ -1257,6 +1343,36 @@ class TapToPayChargeRunnerTest {
             assertEquals(
                 "a refused card was reported as charged by the recovery",
                 TapToPayCapture.NOT_CHARGED,
+                (failure as TapToPayException).capture,
+            )
+        }
+
+    @Test
+    fun `a recovery that fails on a resent decline still reports unknown`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Same card answer as the fresh-key recovery, but the key names an earlier attempt. NOT_CHARGED
+            // would tell a host another charge is safe while that attempt is unresolved.
+            var closeFails = false
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 5) { closeFails })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = true
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            val failure = runCatching { runner.closeCaptured(TRANS_ID) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(
+                "a decline on a resent opening was reported as taking no money by the recovery",
+                TapToPayCapture.UNKNOWN,
                 (failure as TapToPayException).capture,
             )
         }

@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.payment
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.client.FakePayInTransport
@@ -312,7 +313,7 @@ class PayInSubmissionTest {
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
 
-            clock.addAndGet(TimeUnit.MINUTES.toNanos(3))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
@@ -326,11 +327,11 @@ class PayInSubmissionTest {
             val request = PayInAuthorizedRequest("101-abc", testDetails())
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(100))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
 
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(100))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds / 2)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-2", transport.request?.headers?.get("idempotencyKey"))
@@ -345,7 +346,7 @@ class PayInSubmissionTest {
 
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
-            clock.addAndGet(TimeUnit.SECONDS.toNanos(179))
+            clock.addAndGet(IDEMPOTENCY_KEY_MAX_AGE.inWholeNanoseconds - 1)
             submission.captureAuthorized(TEST_ENTRY_POINT, request)
 
             assertEquals("$MINTED_KEY-1", transport.request?.headers?.get("idempotencyKey"))
