@@ -394,8 +394,7 @@ internal class TapToPayChargeRunner(
                 throw withdrawn
             } catch (failure: Exception) {
                 TapToPayReports.closeFailed(failure, startedAt)
-                // Still held, so this can be tried again. A resent key never reports NOT_CHARGED: that
-                // answer is about this run's card, and the key names an earlier attempt.
+                // Still held, so this can be tried again.
                 throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey))
             }
             TapToPayReports.closeSucceeded(startedAt)
