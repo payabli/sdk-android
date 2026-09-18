@@ -16,7 +16,19 @@ public enum class PayabliErrorCode(
 ) {
     MISSING_TOKEN("MISSING_TOKEN"),
     TOKEN_EXPIRED("TOKEN_EXPIRED"),
+
+    /**
+     * Nothing in this SDK raises this, on either platform. Published rather than removed: a host may still
+     * be matching on it, and retiring a public member is a larger, separate decision from this one.
+     */
     TOKEN_MALFORMED("TOKEN_MALFORMED"),
+
+    /**
+     * The host's `tokenProvider` returned no token the SDK could use. [PayabliException.reason] names
+     * the specific failure. The SDK does not retry on this code; a subsequent SDK call invokes the
+     * callback again.
+     */
+    TOKEN_PROVIDER_FAILED("TOKEN_PROVIDER_FAILED"),
     INVALID_SIGNATURE("INVALID_SIGNATURE"),
     PERMISSION_DENIED("PERMISSION_DENIED"),
     SESSION_BURNED("SESSION_BURNED"),
@@ -72,8 +84,14 @@ public enum class PayabliErrorCode(
  * answered; and an unexpected error is unexamined by definition.
  *
  * Known, so it is not: a decline and a validation refusal are answers, a rate limit is a refusal to act,
- * and a rejected credential never reached the operation. Keeping an attempt across any of those would
- * claim a repeat that the next request is not.
+ * and a rejected credential or a misbehaving provider never reached the operation. Keeping an attempt
+ * across any of those would claim a repeat that the next request is not.
+ *
+ * **A new member lands here by default, not by the compiler.** The `when` below ends `else -> false`, so
+ * nothing fails to compile if a member is left unclassified — only
+ * `LeavesOutcomeUnknownTest`'s comparison of its two lists against [PayabliErrorCode.entries] catches it,
+ * and the default it lands on is "known", which for an unclassified failure is the direction that
+ * double-charges.
  *
  * Here rather than in a capability module because both card-not-present and card-present decide this, and
  * the two answering differently is a difference nothing would report.

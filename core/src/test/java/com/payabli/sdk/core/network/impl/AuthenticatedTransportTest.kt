@@ -567,7 +567,7 @@ class AuthenticatedTransportTest {
         }
 
     @Test
-    fun `a failing provider is terminal, not retried, and does not leak its own message`() =
+    fun `a failing provider is not retried and does not leak its own message`() =
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 server.respondInOrder(UNAUTHORIZED to "")
@@ -576,7 +576,7 @@ class AuthenticatedTransportTest {
 
                 val failure = failureFrom { stack(server, auth).execute(ping()) }
 
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
                 assertEquals("the refresh failed, so no second attempt", 1, server.recorded.size)
                 assertFalse(
                     "the provider's own message must not reach the caller",

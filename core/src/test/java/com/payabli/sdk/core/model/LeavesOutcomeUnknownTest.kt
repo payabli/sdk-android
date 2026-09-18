@@ -30,6 +30,7 @@ class LeavesOutcomeUnknownTest {
             PayabliErrorCode.MISSING_TOKEN,
             PayabliErrorCode.TOKEN_EXPIRED,
             PayabliErrorCode.TOKEN_MALFORMED,
+            PayabliErrorCode.TOKEN_PROVIDER_FAILED,
             PayabliErrorCode.INVALID_SIGNATURE,
             PayabliErrorCode.PERMISSION_DENIED,
             PayabliErrorCode.SESSION_BURNED,

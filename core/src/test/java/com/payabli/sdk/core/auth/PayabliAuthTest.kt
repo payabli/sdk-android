@@ -196,7 +196,7 @@ class PayabliAuthTest {
 
             val failure = reentrant?.exceptionOrNull()
             assertTrue("expected a PayabliException, got $failure", failure is PayabliException)
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, (failure as PayabliException).code)
         }
 
     @Test
@@ -316,14 +316,14 @@ class PayabliAuthTest {
         }
 
     @Test
-    fun `a provider failure surfaces as token expired without its own message`() =
+    fun `a provider failure surfaces as token provider failed without its own message`() =
         runTest(timeout = TEST_TIMEOUT) {
             val sentinel = "SENTINEL-BACKEND-BODY"
             val subject = auth { throw IOException("host backend said: $sentinel") }
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
             assertFalse(
                 "the provider's message reached the caller",
                 failure.stackTraceToString().contains(sentinel),
@@ -350,7 +350,7 @@ class PayabliAuthTest {
             assertEquals("exactly one provider invocation", 1, calls.get())
             for (outcome in outcomes) {
                 assertTrue("got $outcome", outcome is PayabliException)
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (outcome as PayabliException).code)
+                assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, (outcome as PayabliException).code)
             }
         }
 
@@ -506,7 +506,7 @@ class PayabliAuthTest {
                 }
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
 
             // The claim was released, so the next attempt is not wedged behind the stuck one.
             assertEquals(
@@ -535,12 +535,12 @@ class PayabliAuthTest {
 
             val outcome = waiter.await().exceptionOrNull()
             assertTrue("got $outcome", outcome is PayabliException)
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (outcome as PayabliException).code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, (outcome as PayabliException).code)
             assertEquals("exactly one provider invocation", 1, calls.get())
         }
 
     @Test
-    fun `a provider error carrying another code still surfaces as token expired`() =
+    fun `a provider error carrying another code still surfaces as token provider failed`() =
         runTest(timeout = TEST_TIMEOUT) {
             val subject =
                 auth {
@@ -548,7 +548,7 @@ class PayabliAuthTest {
                 }
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
         }
 
     @Test
@@ -609,7 +609,7 @@ class PayabliAuthTest {
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
             assertEquals("the usable token is untouched", "initial-token", subject.accessToken())
         }
 
@@ -629,7 +629,7 @@ class PayabliAuthTest {
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
             assertEquals("the provider is called once, not once per rejection", 1, calls.get())
             assertEquals("no rotation happened, so none is published", emptyList<String>(), seen)
             collector.cancel()
@@ -650,7 +650,7 @@ class PayabliAuthTest {
 
                 val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
-                assertEquals("$bad should be malformed", PayabliErrorCode.TOKEN_MALFORMED, failure.code)
+                assertEquals("$bad should be a provider failure", PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
                 assertEquals("the usable token is untouched", "initial-token", subject.accessToken())
             }
         }
@@ -688,7 +688,7 @@ class PayabliAuthTest {
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
             assertFalse("the provider's reason reached the caller", failure.reason.contains(sentinel))
             assertFalse("it leaked through the chain", failure.stackTraceToString().contains(sentinel))
         }
@@ -728,7 +728,7 @@ class PayabliAuthTest {
             // The caller was never cancelled, so this must not masquerade as caller cancellation.
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
             assertEquals("token refresh failed", failure.reason)
         }
 
@@ -748,6 +748,7 @@ class PayabliAuthTest {
 
             val failure = failureFrom { subject.invalidateAndRefresh("initial-token") }
 
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
             assertEquals("the tokenProvider did not return in time", failure.reason)
         }
 
@@ -830,6 +831,33 @@ class PayabliAuthTest {
                     subject.invalidateAndRefresh("initial-token")
                 },
             )
+        }
+
+    @Test
+    fun `a waiter on a fatal error receives token provider failed, not the raw error`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gate = CompletableDeferred<Unit>()
+            val calls = AtomicInteger()
+            val subject =
+                auth {
+                    calls.incrementAndGet()
+                    gate.await()
+                    throw OutOfMemoryError("not a refresh problem")
+                }
+
+            val callers = List(2) { async { runCatching { subject.invalidateAndRefresh("initial-token") } } }
+            while (calls.get() == 0) yield()
+            gate.complete(Unit)
+
+            val outcomes = callers.map { it.await().exceptionOrNull() }
+            assertEquals("exactly one provider invocation", 1, calls.get())
+
+            // The initiator's own Error passes through unwrapped; whoever joined its claim gets the
+            // reclassified failure instead of a raw type this SDK never throws on its own.
+            assertEquals("exactly one caller sees the raw error", 1, outcomes.filterIsInstance<OutOfMemoryError>().size)
+            val joined = outcomes.filterIsInstance<PayabliException>()
+            assertEquals("exactly one caller is joined and wrapped", 1, joined.size)
+            assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, joined.single().code)
         }
 
     /**
