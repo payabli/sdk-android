@@ -25,8 +25,9 @@ name: Nightly
 # image: it fails with INSTALL_FAILED_NO_MATCHING_ABIS before a test runs. Card-present instrumented
 # coverage needs an arm64 runner or a wired handset, and it is waiting on a job of its own.
 #
-# That is also why the card reader credential reaches no third-party action here. It lives on one plain `run:`
-# step, which is the least privilege the split can offer while :taptopay resolves from a credentialed repository.
+# That is also why the card reader credential reaches no third-party action here. It lives on one plain
+# `run:` step, which is the least privilege the split can offer while :taptopay resolves from a
+# credentialed repository.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
@@ -144,11 +145,11 @@ jobs:
           :telemetry:createDebugUnitTestCoverageReport
           :testutils:createDebugUnitTestCoverageReport
 
-      # Separate because :taptopay resolves from the Fiserv GitHub Packages repo. Skipped rather than failed
+      # Separate because :taptopay resolves from a credentialed repository. Skipped rather than failed
       # when the credential is absent, matching the card-present job in ci.yml.
       #
-      # The credential is declared on this step and nowhere else. Job-level env would put a classic PAT with
-      # read:packages into the environment of every other step, including two invocations of a third-party
+      # The credential is declared on this step and nowhere else. Job-level env would put the card reader
+      # password into the environment of every other step, including two invocations of a third-party
       # action on a mutable @v2 tag that have no use for it. Least privilege matters more here than symmetry
       # with ci.yml, whose card-present work is a separate job with no third-party action in it.
       #
@@ -203,12 +204,13 @@ jobs:
       # with runner state and read the Slack webhook when the reporting step ran. The Slack half of that is
       # closed structurally: reporting is a separate job, so no Slack credential exists here at all.
       #
-      # The card reader credential used to reach this action the same way, and step scoping was not what stopped it. It bounds
-      # which step the variable is set in, not how long the value lives: settings.gradle.kts reads it during
-      # configuration into the card reader repository's credentials, the Gradle daemon holds those, and the daemon
-      # outlives its step - measured locally, `./gradlew --status` reports an IDLE daemon after the build
-      # returns. The card-present step runs `--no-daemon` for that reason, and no card-present task runs on
-      # this action at all, so there is no such JVM for it to inspect.
+      # The card reader credential used to reach this action the same way, and step scoping was not what
+      # stopped it. It bounds which step the variable is set in, not how long the value lives:
+      # settings.gradle.kts reads it during configuration into the card reader repository's credentials, the
+      # Gradle daemon holds those, and the daemon outlives its step - measured locally, `./gradlew --status`
+      # reports an IDLE daemon after the build returns. The card-present step runs `--no-daemon` for that
+      # reason, and no card-present task runs on this action at all, so there is no such JVM for it to
+      # inspect.
       #
       # What is not true, checked rather than assumed: the token does not reach disk. A build run with a
       # sentinel value leaves it in no file under .gradle, build or the Gradle home, so the configuration
