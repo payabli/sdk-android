@@ -2763,6 +2763,9 @@ def test_workflows():
     # sets the variable, not how long the value lives, and a surviving Gradle daemon is what carries it past.
     CREDENTIAL = "PAYABLI_MAVEN_PASSWORD"
     THIRD_PARTY = "android-emulator-runner"
+    # A value that is exactly a secret interpolation, which is how a secret reaches a step as a usable
+    # value. `${{ secrets.X != '' }}` and any other expression around the reference do not match.
+    BARE_SECRET = re.compile(r"^\$\{\{\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}$")
 
     def rendered_jobs(name: str) -> dict[str, tuple[dict, str]]:
         return {jn: (job, yaml.safe_dump(job, default_flow_style=False, sort_keys=False))
@@ -2801,6 +2804,26 @@ def test_workflows():
             for step in holding:
                 check("W12 and that step runs --no-daemon, so no daemon carries the value past it",
                       "--no-daemon" in str(step.get("run", "")), str(step.get("name", "?")))
+
+            # The step checks above are not the whole boundary, and on their own they are green for the
+            # exposure they exist to catch. A job-level `env:` is inherited by every step, so a credential
+            # put there reaches the emulator action while appearing in no step at all: the count above stays
+            # at one, and no emulator step names anything. Reported by review on this pull request and
+            # reproduced before it was fixed, which is the only reason it is known.
+            #
+            # So the rule is about the job rather than the credential, and it is deliberately not written in
+            # terms of a name. Any bare secret at job level in a job that runs a third-party action is the
+            # finding, whatever the variable is called - which also closes renaming the mapping to something
+            # this file does not know about. A comparison is not an exposure: `${{ secrets.X != '' }}`
+            # yields a boolean and is how a step decides whether to run at all, so only a value that is
+            # exactly a secret interpolation counts.
+            for job_name, (job, _) in jobs.items():
+                if THIRD_PARTY not in yaml.safe_dump(job, default_flow_style=False, sort_keys=False):
+                    continue
+                exposed = [key for key, value in (job.get("env") or {}).items()
+                           if BARE_SECRET.match(str(value).strip())]
+                check(f"W12 the {name} job running {THIRD_PARTY} exposes no secret at job level",
+                      not exposed, f"{job_name}: " + " | ".join(exposed))
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")
