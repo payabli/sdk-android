@@ -233,8 +233,8 @@ dependencies {
     "withTelemetryImplementation"(project(":telemetry"))
 
     // The SDK's card-present module, which the Tap to pay screen drives. It resolves from a credentialed
-    // repository, so every job that builds this app needs GPR_TOKEN; ci.yml puts it beside :taptopay for
-    // that reason.
+    // repository, so every job that builds this app needs that credential; ci.yml puts it beside :taptopay
+    // for that reason.
     implementation(project(":taptopay"))
 
     implementation(platform(libs.androidx.compose.bom))

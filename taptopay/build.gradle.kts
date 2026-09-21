@@ -100,8 +100,8 @@ android {
             // for every other library with an instrumented source set.
             //
             // Nothing runs this module's instrumented tier in CI, and nothing can until it has a job of its
-            // own: building it resolves the card reader from a private registry, so the job would hand
-            // GPR_TOKEN to the third-party emulator action, which is the exposure the nightly's job split
+            // own: building it resolves the card reader from a credentialed repository, so the job would hand
+            // that credential to the third-party emulator action, which is the exposure the nightly's job split
             // exists to prevent. So a build that passes that property for :core and :payin gets no
             // instrumentation it could ever read here. Turn it back on with that job.
             enableAndroidTestCoverage = false

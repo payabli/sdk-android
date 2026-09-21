@@ -68,6 +68,11 @@ NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # like more than a tidy-up in a diff.
 MIRROR = WORKFLOW_DIR / "card-reader-mirror.yml"
 
+# Per-pull-request CI, for the card reader credential alone. :taptopay resolves the reader from a
+# credentialed repository, and this file keeps that credential out of the job the third-party emulator
+# action runs in. The mutations below put it back, each as something that reads like a convenience.
+CI = WORKFLOW_DIR / "ci.yml"
+
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
@@ -89,6 +94,7 @@ SOURCE = {
     NIGHTLY: SDK / ".github/workflows/nightly.yml",
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
     MIRROR: SDK / ".github/workflows/card-reader-mirror.yml",
+    CI: SDK / ".github/workflows/ci.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -617,6 +623,33 @@ MUTATIONS = [
      '        shown = lines + ([f"_{hidden} further failure(s) not listed here; see the run._"] if hidden '
      'else [])',
      '        shown = lines'),
+
+    # W12, the card reader credential against the third-party emulator action. Three rows, because the two
+    # files hold the guarantee by different means and a row against one proves nothing about the other.
+
+    # Anchored on the instrumented step's own emulator options rather than on anything it shares with the
+    # AVD step above it, which the same text would otherwise match twice and report invalid.
+    ("The emulator step is handed the card reader credential", NIGHTLY, "workflows",
+     "          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect"
+     " -noaudio -no-boot-anim -camera-back none",
+     "          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect"
+     " -noaudio -no-boot-anim -camera-back none\n"
+     "        env:\n          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}"),
+
+    # The daemon is what carries the value past the step that set it, so dropping the flag reopens the hole
+    # step scoping does not close. It reads as removing a slow flag from a slow job.
+    ("The card-present step keeps a daemon alive holding the credential", NIGHTLY, "workflows",
+     "        run: ./gradlew --no-daemon --max-workers=1 :taptopay:createDebugUnitTestCoverageReport",
+     "        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport"),
+
+    # ci.yml holds the stronger property: the action runs in a job where the credential does not exist.
+    # Adding it to that job's env is what a session wanting :taptopay covered there would reach for first.
+    ("The instrumented job is given the card reader credential", CI, "workflows",
+     "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis",
+     "      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}\n"
+     "      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}\n"
+     "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis"),
+
 ]
 
 

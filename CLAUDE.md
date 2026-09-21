@@ -25,7 +25,7 @@
 - `./gradlew sonar` - Static analysis (needs `SONAR_TOKEN`; add `--dry-run` to check config only)
 - `./gradlew publishToMavenLocal` - Exercise the publish convention
 
-**Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `gpr.user` and `gpr.token` in `~/.gradle/gradle.properties` (never in this repo) for the card reader registry that `:taptopay` resolves from; it needs a classic PAT with `read:packages`. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
+**Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `payabli.maven.user` and `payabli.maven.password` in `~/.gradle/gradle.properties` (never in this repo) for the card reader repository that `:taptopay` resolves from; a maintainer supplies the pair. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
 
 **When to run which**, because running everything at every step costs more than it catches:
 
@@ -76,7 +76,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
   `payabli.sdk.extraEnvironments`, empty in a checkout. The setting **appends** and can do nothing else, the
   generator refuses anything that is not an https `payabli.com` origin with no path, and `payabli.publish`
   fails every publish task while it is set, so no released artifact can carry one. A machine that needs
-  another environment puts the setting in `~/.gradle/gradle.properties`, beside `gpr.*` and
+  another environment puts the setting in `~/.gradle/gradle.properties`, beside `payabli.maven.*` and
   `payabli.cloudProjectNumber`, which reaches every worktree and leaves nothing modified in any of them;
   `scripts/toolchain.sh` reports it as an advisory row. `:example` appends to its own two the same way,
   through `payabli.demo.extraEnvironments`, and a name the SDK was not built with is dropped rather than
@@ -375,11 +375,11 @@ reaches the branch under test.
   `-Ppayabli.instrumentedCoverage=true`, which runs the connected tests itself, and hands the coverage to the
   `sonar` job as an artifact. That property is off everywhere else on purpose: the instrumentation lands in
   the `debug` variant `:example` links, and it cost that module's dex merge more heap than CI's daemon has. That job holds no secret, which is
-  what allows the third-party emulator action in it; `sonar` holds `GPR_TOKEN` and `SONAR_TOKEN`, so the
+  what allows the third-party emulator action in it; `sonar` holds the card reader credential and `SONAR_TOKEN`, so the
   emulator cannot run there and the coverage cannot be produced in place. It runs for forks too, since it
   needs nothing they cannot have.
   - **`:taptopay` and `:example` are absent, for two different reasons.** Building `:taptopay` resolves the
-    card reader from a private registry, so including it would hand `GPR_TOKEN` to that action; its
+    card reader from a credentialed repository, so including it would hand that credential to that action; its
     instrumented tier waits on a job of its own, and `enableAndroidTestCoverage` is turned off at its own
     declaration to say so. `:example` is `isSkipProject` in the analysis, so its coverage is read by nothing.
     `:example`'s tests still run in the nightly. `:taptopay`'s run in no automated job at all, which is what
@@ -397,6 +397,6 @@ reaches the branch under test.
   nothing the emulator tier cannot, and there is none. Reading verdict *contents* needs a server-side decode
   through the same cloud project, which is separate work with no owner.
 - **The attestation instrumented tier does not run in the nightly, and the blocker is a credential, not
-  hardware.** Building `:taptopay` resolves the card reader from the Fiserv GitHub Packages repo, so running
-  its instrumented tests in the nightly would hand `GPR_TOKEN` to the third-party emulator action, which is
+  hardware.** Building `:taptopay` resolves the card reader from a credentialed repository, so running
+  its instrumented tests in the nightly would hand that credential to the third-party emulator action, which is
   the exposure the job split exists to prevent. It waits on `:taptopay` getting its own instrumented job.

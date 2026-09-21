@@ -25,8 +25,8 @@ name: Nightly
 # image: it fails with INSTALL_FAILED_NO_MATCHING_ABIS before a test runs. Card-present instrumented
 # coverage needs an arm64 runner or a wired handset, and it is waiting on a job of its own.
 #
-# That is also why GPR_TOKEN reaches no third-party action here. It lives on one plain `run:` step, which
-# is the least privilege the split can offer while :taptopay resolves from a private registry.
+# That is also why the card reader credential reaches no third-party action here. It lives on one plain `run:`
+# step, which is the least privilege the split can offer while :taptopay resolves from a credentialed repository.
 #
 # Why the instrumented half is not a required check: the call-budget test asserts elapsed wall-clock time
 # against a stalling server, and a hosted emulator is where that kind of assertion goes flaky. A flaky
@@ -99,7 +99,7 @@ jobs:
       EMULATOR_ARCH: x86_64
       # A boolean, not the credential. The token itself is scoped to the one step that needs it, but a step
       # `if:` cannot read the secrets context, so the presence check has to live here as a rendered string.
-      HAS_GPR_CREDENTIALS: ${{ secrets.GPR_TOKEN != '' }}
+      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PASSWORD != '' }}
     steps:
       # Full history, because the Slack report attributes each failure with `git log -1 -- <file>`. On the
       # action's default depth of 1 that does not merely come back empty: git attributes the single grafted
@@ -159,10 +159,10 @@ jobs:
         id: unit_card_present
         continue-on-error: true
         timeout-minutes: 10
-        if: env.HAS_GPR_CREDENTIALS == 'true'
+        if: env.HAS_READER_CREDENTIALS == 'true'
         env:
-          GPR_USER: ${{ secrets.GPR_USER }}
-          GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}
         run: ./gradlew --no-daemon --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
           :example:createWithTelemetryDebugUnitTestCoverageReport
 
@@ -203,9 +203,9 @@ jobs:
       # with runner state and read the Slack webhook when the reporting step ran. The Slack half of that is
       # closed structurally: reporting is a separate job, so no Slack credential exists here at all.
       #
-      # GPR_TOKEN used to reach this action the same way, and step scoping was not what stopped it. It bounds
+      # The card reader credential used to reach this action the same way, and step scoping was not what stopped it. It bounds
       # which step the variable is set in, not how long the value lives: settings.gradle.kts reads it during
-      # configuration into the Fiserv repository's credentials, the Gradle daemon holds those, and the daemon
+      # configuration into the card reader repository's credentials, the Gradle daemon holds those, and the daemon
       # outlives its step - measured locally, `./gradlew --status` reports an IDLE daemon after the build
       # returns. The card-present step runs `--no-daemon` for that reason, and no card-present task runs on
       # this action at all, so there is no such JVM for it to inspect.
@@ -242,7 +242,7 @@ jobs:
         # x86_64 and the card reader's AAR carries one native library, `jni/arm64-v8a/libmc3.so`, with no
         # 32-bit and no x86 build. So `:taptopay`'s test APK - and `:example`'s, which links it - fail to
         # install with INSTALL_FAILED_NO_MATCHING_ABIS before a test runs. Adding those tasks bought no
-        # coverage and handed GPR_TOKEN to the third-party emulator action for nothing.
+        # coverage and handed the card reader credential to the third-party emulator action for nothing.
         #
         # Card-present instrumented coverage needs an arm64 runner or a wired handset, which is the job it
         # is waiting on rather than something this one can be talked into.

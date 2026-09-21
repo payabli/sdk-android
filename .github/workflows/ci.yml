@@ -34,7 +34,7 @@ jobs:
 
       # Left on the moving tag, as nightly.yml is and for the reason recorded there: this job holds no
       # credential, and the action is the one most coupled to Android tooling churn. The two jobs below are
-      # pinned instead, because they hold GPR_USER and GPR_TOKEN.
+      # pinned instead, because they hold the card reader credential.
       - uses: gradle/actions/setup-gradle@v6
         with:
           # v6 moved caching into `gradle-actions-caching`, which is proprietary and not covered by the
@@ -132,11 +132,11 @@ jobs:
     # action here at all. nightly.yml's header has the full argument; the short version is that
     # step-scoping a secret does not isolate it from code that ran earlier in the same job, so the only
     # way the action cannot reach a token is for the token to live in another job. The `sonar` job holds
-    # GPR_TOKEN and SONAR_TOKEN, which is why the coverage this job produces reaches it as an artifact
+    # the card reader credential and SONAR_TOKEN, which is why the coverage this job produces reaches it as an artifact
     # rather than by running the emulator there.
     #
     # :taptopay is absent for that same reason and not because of hardware: building it resolves the card
-    # reader from a private registry, so including it would hand GPR_TOKEN to this action. :example is
+    # reader from a credentialed repository, so including it would hand that credential to this action. :example is
     # absent for a different one: the analysis skips that project outright, so its coverage is read by
     # nothing. Both are stated in taptopay/build.gradle.kts and build.gradle.kts respectively.
     timeout-minutes: 45
@@ -277,8 +277,8 @@ jobs:
       || (github.event.pull_request.head.repo.full_name == github.repository
           && github.event.pull_request.user.login != 'dependabot[bot]')
     env:
-      GPR_USER: ${{ secrets.GPR_USER }}
-      GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}
+      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -334,8 +334,8 @@ jobs:
       || (github.event.pull_request.head.repo.full_name == github.repository
           && github.event.pull_request.user.login != 'dependabot[bot]')
     env:
-      GPR_USER: ${{ secrets.GPR_USER }}
-      GPR_TOKEN: ${{ secrets.GPR_TOKEN }}
+      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}
+      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v7
@@ -372,15 +372,15 @@ jobs:
 
       # Card-present reports, only when the credential is available.
       - name: Produce card-present reports
-        if: env.GPR_TOKEN != ''
+        if: env.PAYABLI_MAVEN_PASSWORD != ''
         run: ./gradlew :taptopay:ktlintCheck :taptopay:lint
 
       - name: Produce card-present coverage report
-        if: env.GPR_TOKEN != ''
+        if: env.PAYABLI_MAVEN_PASSWORD != ''
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
 
       # Last, and after every step that writes into build/reports, so nothing this job regenerates lands
-      # on top of it. The emulator that produced this cannot run here: this job holds GPR_TOKEN and
+      # on top of it. The emulator that produced this cannot run here: this job holds the card reader credential and
       # SONAR_TOKEN, and the instrumented job holds neither, which is the whole reason the coverage
       # travels as an artifact. See that job for the argument.
       #

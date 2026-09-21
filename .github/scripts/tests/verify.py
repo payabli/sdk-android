@@ -2747,6 +2747,62 @@ def test_workflows():
         check(f"W11 and passes --fetch-only: {wanted}", ("--fetch-only" in runs) is wanted, runs[:200])
 
 
+    # W12 The card reader credential never reaches the third-party emulator action.
+    #
+    # :taptopay resolves the reader from a credentialed repository, so a job that builds it holds a
+    # credential an action in the same job can read. Nothing enforced this: the argument lived in four
+    # comments across three files and in the shape of the job list, which is the kind of guarantee that
+    # survives a review and dies to a rename. It is a check now because the credential was renamed in this
+    # change, and a rename is how an invariant kept only in prose stops being true with nothing going red.
+    #
+    # The two files hold it by different means, and the checks say which rather than asserting one property
+    # of both. ci.yml separates by job, so the action is in a job where no credential exists. nightly.yml
+    # cannot: its instrumented tier and its card-present unit tier are one job. What it holds instead is that
+    # no emulator step names the credential and that the step which does runs `--no-daemon` — because step
+    # scoping alone is not the boundary, as that file says where it explains the split. It bounds which step
+    # sets the variable, not how long the value lives, and a surviving Gradle daemon is what carries it past.
+    CREDENTIAL = "PAYABLI_MAVEN_PASSWORD"
+    THIRD_PARTY = "android-emulator-runner"
+
+    def rendered_jobs(name: str) -> dict[str, tuple[dict, str]]:
+        return {jn: (job, yaml.safe_dump(job, default_flow_style=False, sort_keys=False))
+                for jn, job in (workflow_doc(name).get("jobs") or {}).items() if isinstance(job, dict)}
+
+    for name in ("ci.yml", "nightly.yml"):
+        jobs = rendered_jobs(name)
+        # Guarded before it is read. A loop over no jobs runs no checks and reports a pass, which is the
+        # vacuous green this harness exists to refuse. Both halves are asserted present for the same reason:
+        # without them the checks below pass on a file that renamed the credential to something else.
+        check(f"W12 {name} has jobs to examine", bool(jobs), str(list(jobs)))
+        check(f"W12 {name} has a job holding the card reader credential",
+              any(CREDENTIAL in body for _, body in jobs.values()), str(list(jobs)))
+
+        # The universal half: whatever the file's structure, the action itself is never handed the value.
+        emulator_steps = [step for job, _ in jobs.values() for step in job.get("steps") or []
+                          if isinstance(step, dict) and THIRD_PARTY in str(step.get("uses", ""))]
+        for step in emulator_steps:
+            check(f"W12 no {name} emulator step names the credential",
+                  CREDENTIAL not in step_text(step), str(step.get("name", "?")))
+
+        if name == "ci.yml":
+            # The stronger property, and the one this file is arranged to hold: the action runs in a job
+            # where the credential does not exist at all, so no earlier step could have left it reachable.
+            overlap = sorted(jn for jn, (_, body) in jobs.items()
+                             if CREDENTIAL in body and THIRD_PARTY in body)
+            check(f"W12 no {name} job both holds the credential and runs {THIRD_PARTY}",
+                  not overlap, " | ".join(overlap))
+        else:
+            check(f"W12 {name} runs the third-party emulator action", bool(emulator_steps), str(list(jobs)))
+            # One job holds both, so what stops the value outliving its step is the daemon not surviving it.
+            holding = [step for job, _ in jobs.values() for step in job.get("steps") or []
+                       if isinstance(step, dict) and CREDENTIAL in step_text(step)]
+            check(f"W12 {name} names the credential on exactly one step", len(holding) == 1,
+                  " | ".join(str(step.get("name", "?")) for step in holding))
+            for step in holding:
+                check("W12 and that step runs --no-daemon, so no daemon carries the value past it",
+                      "--no-daemon" in str(step.get("run", "")), str(step.get("name", "?")))
+
+
 HALVES = ("both", "collector", "poster", "workflows", "live")
 
 
