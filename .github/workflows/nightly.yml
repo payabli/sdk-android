@@ -100,7 +100,7 @@ jobs:
       EMULATOR_ARCH: x86_64
       # A boolean, not the credential. The token itself is scoped to the one step that needs it, but a step
       # `if:` cannot read the secrets context, so the presence check has to live here as a rendered string.
-      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PASSWORD != '' }}
+      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_QA != '' }}
     steps:
       # Full history, because the Slack report attributes each failure with `git log -1 -- <file>`. On the
       # action's default depth of 1 that does not merely come back empty: git attributes the single grafted
@@ -162,8 +162,8 @@ jobs:
         timeout-minutes: 10
         if: env.HAS_READER_CREDENTIALS == 'true'
         env:
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_QA }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_QA }}
         run: ./gradlew --no-daemon --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
           :example:createWithTelemetryDebugUnitTestCoverageReport
 

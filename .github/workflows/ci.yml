@@ -277,8 +277,8 @@ jobs:
       || (github.event.pull_request.head.repo.full_name == github.repository
           && github.event.pull_request.user.login != 'dependabot[bot]')
     env:
-      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}
-      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}
+      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_QA }}
+      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_QA }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -334,8 +334,8 @@ jobs:
       || (github.event.pull_request.head.repo.full_name == github.repository
           && github.event.pull_request.user.login != 'dependabot[bot]')
     env:
-      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}
-      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}
+      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_QA }}
+      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_QA }}
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v7
@@ -370,6 +370,12 @@ jobs:
           :telemetry:createDebugUnitTestCoverageReport
           :testutils:createDebugUnitTestCoverageReport
 
+      # The QA identity, deliberately. Every read here is of the card reader mirror under /maven, which either
+      # identity can reach, so this takes the one that cannot also reach the release channel. A workflow that
+      # publishes a release takes PAYABLI_MAVEN_US_PROD / PAYABLI_MAVEN_PW_PROD instead; the build's own
+      # property names do not change, because which identity is right is a property of the run and not of the
+      # build.
+      #
       # Card-present reports, only when the credential is available.
       - name: Produce card-present reports
         if: env.PAYABLI_MAVEN_PASSWORD != ''
