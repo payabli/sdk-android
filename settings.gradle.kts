@@ -43,10 +43,13 @@ dependencyResolutionManagement {
     }
 }
 
-// Only :taptopay needs this, so say so rather than leaving a bare 401.
-if (providers.gradleProperty("payabli.maven.user").orNull.isNullOrBlank() &&
-    System.getenv("PAYABLI_MAVEN_USER").isNullOrBlank()
-) {
+// Only :taptopay needs this, so say so rather than leaving a bare 401. Both halves are tested, because
+// a password missing on its own reaches the same 401 this exists to explain.
+val payabliMavenUser = providers.gradleProperty("payabli.maven.user").orNull
+    ?: System.getenv("PAYABLI_MAVEN_USER")
+val payabliMavenPassword = providers.gradleProperty("payabli.maven.password").orNull
+    ?: System.getenv("PAYABLI_MAVEN_PASSWORD")
+if (payabliMavenUser.isNullOrBlank() || payabliMavenPassword.isNullOrBlank()) {
     logger.lifecycle(
         """
         Payabli: no credentials for the card reader repository. :taptopay will not resolve;
