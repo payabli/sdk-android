@@ -2787,6 +2787,20 @@ def test_workflows():
             check(f"W12 no {name} emulator step names the credential",
                   CREDENTIAL not in step_text(step), str(step.get("name", "?")))
 
+        # Both files, because this is about the job rather than about either file's arrangement. A
+        # job-level `env:` is inherited by every step, so a credential put there reaches the action while
+        # appearing in no step: the per-step checks above are green for exactly the exposure they exist to
+        # catch. Written about any bare secret rather than about a name, which also closes renaming the
+        # mapping to something this file does not know about. A comparison is not an exposure, because
+        # `${{ secrets.X != '' }}` yields a boolean and is how a step decides whether to run.
+        for job_name, (job, body) in jobs.items():
+            if THIRD_PARTY not in body:
+                continue
+            exposed = [key for key, value in (job.get("env") or {}).items()
+                       if BARE_SECRET.match(str(value).strip())]
+            check(f"W12 the {name} job running {THIRD_PARTY} exposes no secret at job level",
+                  not exposed, f"{job_name}: " + " | ".join(exposed))
+
         if name == "ci.yml":
             # The stronger property, and the one this file is arranged to hold: the action runs in a job
             # where the credential does not exist at all, so no earlier step could have left it reachable.
@@ -2817,13 +2831,7 @@ def test_workflows():
             # this file does not know about. A comparison is not an exposure: `${{ secrets.X != '' }}`
             # yields a boolean and is how a step decides whether to run at all, so only a value that is
             # exactly a secret interpolation counts.
-            for job_name, (job, _) in jobs.items():
-                if THIRD_PARTY not in yaml.safe_dump(job, default_flow_style=False, sort_keys=False):
-                    continue
-                exposed = [key for key, value in (job.get("env") or {}).items()
-                           if BARE_SECRET.match(str(value).strip())]
-                check(f"W12 the {name} job running {THIRD_PARTY} exposes no secret at job level",
-                      not exposed, f"{job_name}: " + " | ".join(exposed))
+
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")
