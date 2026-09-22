@@ -51,16 +51,32 @@ fun Project.publishedArtifactId(): String =
 
 publishing {
     repositories {
+        // A directory, not a server. Publishing sends this tree separately, so Gradle's job ends at
+        // writing a correct layout on disk and nothing here uploads.
         maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/payabli/sdk-android")
-            credentials {
-                // Local: -Pgpr.user / -Pgpr.token (or ~/.gradle/gradle.properties).
-                // CI: GITHUB_ACTOR / GITHUB_TOKEN (needs write:packages).
-                username = providers.gradleProperty("gpr.user")
-                    .orElse(providers.environmentVariable("GITHUB_ACTOR")).orNull
-                password = providers.gradleProperty("gpr.token")
-                    .orElse(providers.environmentVariable("GITHUB_TOKEN")).orNull
+            name = "Staging"
+            url = uri(rootProject.layout.buildDirectory.dir("staging-repo"))
+        }
+    }
+}
+
+// Only a file repository is allowed here, and the check exists because the alternative fails silently:
+// a remote one added back leaves every build green while artifacts go somewhere nothing reads. The
+// scheme is what is tested, so any host is refused and not only the registry this replaced.
+//
+// This refuses at configuration time where refusePublishingWithExtraEnvironments above refuses at task
+// time, and the difference is what each guards. A developer build legitimately sets an extra
+// environment, so refusing to configure would make the setting unusable; nothing legitimately declares
+// a remote publishing repository. publishToMavenLocal is outside this loop, since it targets .m2
+// rather than a declared repository, and the task-time guard covers it.
+afterEvaluate {
+    extensions.configure<PublishingExtension> {
+        repositories.withType(MavenArtifactRepository::class.java).configureEach {
+            val scheme = url.scheme
+            check(scheme == "file") {
+                "payabli.publish: publishing repository '$name' is $scheme, and only file is allowed. " +
+                    "Artifacts reach the origin through the publishing workflow, which uploads the " +
+                    "staging tree; Gradle writes that tree and does not send it."
             }
         }
     }
@@ -69,6 +85,21 @@ publishing {
 // A published artifact carries only the environments committed in PayabliEnvironment; the guard and its
 // reasoning are in ExtraEnvironments.kt.
 tasks.refusePublishingWithExtraEnvironments(extraEnvironmentsSetting(providers))
+
+// The CycloneDX plugin generates on demand and attaches to nothing, so a bill of materials reaches a
+// publication only through this. Both formats travel, because which one a scanner reads is not ours
+// to choose.
+fun MavenPublication.attachCycloneDxSbom(project: Project) {
+    val sbom = project.tasks.named("cyclonedxBom")
+    val reports = project.layout.buildDirectory.dir("reports/cyclonedx")
+    listOf("json", "xml").forEach { format ->
+        artifact(reports.map { it.file("bom.$format") }) {
+            classifier = "cyclonedx"
+            extension = format
+            builtBy(sbom)
+        }
+    }
+}
 
 // Android library modules -> "release" component.
 pluginManager.withPlugin("com.android.library") {
@@ -87,6 +118,7 @@ pluginManager.withPlugin("com.android.library") {
                     from(components["release"])
                     artifactId = publishedArtifactId()
                     applyPayabliPom()
+                    attachCycloneDxSbom(project)
                 }
             }
         }
@@ -102,6 +134,7 @@ pluginManager.withPlugin("java-platform") {
                     from(components["javaPlatform"])
                     artifactId = publishedArtifactId()
                     applyPayabliPom()
+                    attachCycloneDxSbom(project)
                 }
             }
         }

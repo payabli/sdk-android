@@ -25,7 +25,7 @@ plugins {
 // `payabli.publish` set this, and dropping the plugin dropped it with them.
 //
 // The group is not only a publishing coordinate. `@RestrictTo(LIBRARY_GROUP)` is enforced by Lint
-// against the Maven group of the two modules, so a module outside `io.github.payabli` cannot reach
+// against the Maven group of the two modules, so a module outside that group cannot reach
 // `:core`'s internal surface: `AttestedDeviceStore` reads `PayabliSecureStorage`, and without this the
 // build fails with RestrictedApi. `payabli.publish.gradle.kts:16` says so where it sets them.
 //

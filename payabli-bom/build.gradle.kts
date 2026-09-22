@@ -20,9 +20,9 @@ extra["payabliArtifactId"] = "sdk-android-bom"
 // that restores `id("payabli.publish")` in taptopay/build.gradle.kts.
 dependencies {
     constraints {
-        api("io.github.payabli:sdk-android-core:${project.version}")
-        api("io.github.payabli:sdk-android-payin:${project.version}")
-        api("io.github.payabli:sdk-android-telemetry:${project.version}")
-        api("io.github.payabli:sdk-android:${project.version}")
+        api("${project.group}:sdk-android-core:${project.version}")
+        api("${project.group}:sdk-android-payin:${project.version}")
+        api("${project.group}:sdk-android-telemetry:${project.version}")
+        api("${project.group}:sdk-android:${project.version}")
     }
 }

@@ -13,7 +13,7 @@ plugins {
 // The group, without the publishing that normally carries it. @RestrictTo(LIBRARY_GROUP) is enforced by
 // comparing Maven group ids, so a module that does not set one is outside every group and Lint refuses the
 // interfaces these fixtures implement. Measured: without this, `PayabliSecureStorage can only be accessed
-// from within the same library group (referenced groupId=io.github.payabli from groupId=PayabliSDK)`.
+// from within the same library group (referenced groupId=com.payabli from groupId=PayabliSDK)`.
 group = providers.gradleProperty("payabli.group").get()
 
 android {
