@@ -649,9 +649,9 @@ MUTATIONS = [
     # Named to something this harness does not know about, because a rule written around one variable
     # name is undone by renaming the mapping.
     ("The nightly job inherits the card reader credential from its own env", NIGHTLY, "workflows",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_QA != '' }}",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_QA != '' }}\n"
-     "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_QA }}"),
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
+     "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
     ("The instrumented job is given the card reader credential", CI, "workflows",
      "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis",
