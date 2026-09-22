@@ -40,6 +40,20 @@ public enum class PayInSecCode(
 }
 
 /**
+ * What a stored method stands for, lower case on the wire.
+ *
+ * An identifier does not say what is being charged, and a charge is well formed only when the method
+ * travels with it.
+ */
+public enum class PayInStoredMethodType(
+    public val wireName: String,
+) {
+    Card("card"),
+    BankAccount("ach"),
+    Wallet("wallet"),
+}
+
+/**
  * A card, as the payer entered it.
  *
  * [cardNumber] and [securityCode] are [SensitiveDigits] rather than strings, so the SDK holds no copy it
@@ -113,8 +127,9 @@ public sealed class PayInPaymentMethod {
         public val data: PayInAchData,
     ) : PayInPaymentMethod()
 
-    /** A method stored earlier, charged by its identifier. */
+    /** A method stored earlier, charged by its identifier and the method that identifier stands for. */
     public class Stored(
+        public val method: PayInStoredMethodType,
         public val storedMethodId: String,
     ) : PayInPaymentMethod()
 

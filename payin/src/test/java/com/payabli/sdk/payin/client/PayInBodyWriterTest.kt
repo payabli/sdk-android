@@ -5,6 +5,7 @@ import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInSecCode
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -73,9 +74,10 @@ class PayInBodyWriterTest {
 
     @Test
     fun `the four other methods carry only what they have`() {
+        val stored = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "tok-1")
         assertEquals(
             """{"method":"stored","storedMethodId":"tok-1"}""",
-            fragmentText(PayInBodyWriter.methodFragment(PayInPaymentMethod.Stored("tok-1"))),
+            fragmentText(PayInBodyWriter.methodFragment(stored)),
         )
         assertEquals(
             """{"method":"cloud","device":"device-1"}""",

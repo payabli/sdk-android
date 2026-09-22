@@ -8,6 +8,7 @@ import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
@@ -262,7 +263,7 @@ class MoneyInClientTest {
                     PayInPaymentMethod.BankAccount(testAccount()),
                     // Sent as its own method name rather than the method it stands for, which this route
                     // does not read. Refused here so the caller is not told by a round trip.
-                    PayInPaymentMethod.Stored("stored-1"),
+                    PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1"),
                     PayInPaymentMethod.Check("A Payer"),
                     PayInPaymentMethod.Cash,
                 )
