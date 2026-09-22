@@ -34,17 +34,18 @@ dependencyResolutionManagement {
                 password = providers.gradleProperty("payabli.maven.password").orNull
                     ?: System.getenv("PAYABLI_MAVEN_PASSWORD")
             }
-            // Gradle withholds Basic credentials until it is challenged unless this is declared, so
-            // every request would otherwise be sent twice: one 401 for each 200.
+            // Without this Gradle waits to be challenged, sending every request twice.
             authentication {
                 create<BasicAuthentication>("basic")
+            }
+            metadataSources {
+                mavenPom()
+                artifact()
             }
         }
     }
 }
 
-// Only :taptopay needs this, so say so rather than leaving a bare 401. Both halves are tested, because
-// a password missing on its own reaches the same 401 this exists to explain.
 val payabliMavenUser = providers.gradleProperty("payabli.maven.user").orNull
     ?: System.getenv("PAYABLI_MAVEN_USER")
 val payabliMavenPassword = providers.gradleProperty("payabli.maven.password").orNull

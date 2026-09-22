@@ -2749,18 +2749,10 @@ def test_workflows():
 
     # W12 The card reader credential never reaches the third-party emulator action.
     #
-    # :taptopay resolves the reader from a credentialed repository, so a job that builds it holds a
-    # credential an action in the same job can read. Nothing enforced this: the argument lived in four
-    # comments across three files and in the shape of the job list, which is the kind of guarantee that
-    # survives a review and dies to a rename. It is a check now because the credential was renamed in this
-    # change, and a rename is how an invariant kept only in prose stops being true with nothing going red.
-    #
-    # The two files hold it by different means, and the checks say which rather than asserting one property
-    # of both. ci.yml separates by job, so the action is in a job where no credential exists. nightly.yml
-    # cannot: its instrumented tier and its card-present unit tier are one job. What it holds instead is that
-    # no emulator step names the credential and that the step which does runs `--no-daemon` — because step
-    # scoping alone is not the boundary, as that file says where it explains the split. It bounds which step
-    # sets the variable, not how long the value lives, and a surviving Gradle daemon is what carries it past.
+    # The two files hold that differently and the checks say which. ci.yml separates by job, so the action
+    # runs where the credential does not exist. nightly.yml cannot, because its instrumented and card-present
+    # tiers are one job; it keeps the value off every emulator step and runs the step that holds it under
+    # `--no-daemon`, since a surviving Gradle daemon is what carries a value past the step that set it.
     CREDENTIAL = "PAYABLI_MAVEN_PASSWORD"
     THIRD_PARTY = "android-emulator-runner"
     # A value that is exactly a secret interpolation, which is how a secret reaches a step as a usable
@@ -2787,11 +2779,11 @@ def test_workflows():
             check(f"W12 no {name} emulator step names the credential",
                   CREDENTIAL not in step_text(step), str(step.get("name", "?")))
 
-        # Both files, because this is about the job rather than about either file's arrangement. A
+        # Both files, because the rule is about the job, not either file's arrangement. A
         # job-level `env:` is inherited by every step, so a credential put there reaches the action while
         # appearing in no step: the per-step checks above are green for exactly the exposure they exist to
-        # catch. Written about any bare secret rather than about a name, which also closes renaming the
-        # mapping to something this file does not know about. A comparison is not an exposure, because
+        # catch. Written about any bare secret, so renaming the mapping to a name this file does not
+        # know about is closed too. A comparison is not an exposure, because
         # `${{ secrets.X != '' }}` yields a boolean and is how a step decides whether to run.
         for job_name, (job, body) in jobs.items():
             if THIRD_PARTY not in body:
@@ -2818,19 +2810,6 @@ def test_workflows():
             for step in holding:
                 check("W12 and that step runs --no-daemon, so no daemon carries the value past it",
                       "--no-daemon" in str(step.get("run", "")), str(step.get("name", "?")))
-
-            # The step checks above are not the whole boundary, and on their own they are green for the
-            # exposure they exist to catch. A job-level `env:` is inherited by every step, so a credential
-            # put there reaches the emulator action while appearing in no step at all: the count above stays
-            # at one, and no emulator step names anything. Reported by review on this pull request and
-            # reproduced before it was fixed, which is the only reason it is known.
-            #
-            # So the rule is about the job rather than the credential, and it is deliberately not written in
-            # terms of a name. Any bare secret at job level in a job that runs a third-party action is the
-            # finding, whatever the variable is called - which also closes renaming the mapping to something
-            # this file does not know about. A comparison is not an exposure: `${{ secrets.X != '' }}`
-            # yields a boolean and is how a step decides whether to run at all, so only a value that is
-            # exactly a secret interpolation counts.
 
 
 

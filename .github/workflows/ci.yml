@@ -133,7 +133,7 @@ jobs:
     # step-scoping a secret does not isolate it from code that ran earlier in the same job, so the only
     # way the action cannot reach a token is for the token to live in another job. The `sonar` job holds
     # the card reader credential and SONAR_TOKEN, which is why the coverage this job produces reaches it
-    # as an artifact rather than by running the emulator there.
+    # as an artifact: the emulator cannot run here.
     #
     # :taptopay is absent for that same reason and not because of hardware: building it resolves the card
     # reader from a credentialed repository, so including it would hand that credential to this action.
@@ -372,7 +372,7 @@ jobs:
 
       # The release identity, because every build reads /maven whatever environment it targets. The QA pair
       # publishes QA binaries to /maven-qa and is not a reader anywhere. The build's own property names do not
-      # change, because which identity a run supplies is a property of the run rather than of the build.
+      # change, because the run supplies the identity and the build does not choose it.
       #
       # Card-present reports, only when the credential is available.
       - name: Produce card-present reports

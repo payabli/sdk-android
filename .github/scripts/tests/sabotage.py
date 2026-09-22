@@ -627,8 +627,8 @@ MUTATIONS = [
     # W12, the card reader credential against the third-party emulator action. Three rows, because the two
     # files hold the guarantee by different means and a row against one proves nothing about the other.
 
-    # Anchored on the instrumented step's own emulator options rather than on anything it shares with the
-    # AVD step above it, which the same text would otherwise match twice and report invalid.
+    # Anchored on the instrumented step's own emulator options. Text it shares with the AVD step above
+    # matches twice and reports itself invalid.
     ("The emulator step is handed the card reader credential", NIGHTLY, "workflows",
      "          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect"
      " -noaudio -no-boot-anim -camera-back none",
@@ -644,8 +644,8 @@ MUTATIONS = [
 
     # ci.yml holds the stronger property: the action runs in a job where the credential does not exist.
     # Adding it to that job's env is what a session wanting :taptopay covered there would reach for first.
-    # Job-level rather than step-level, which is the shape the step checks are blind to: every step
-    # inherits it, so the credential reaches the emulator action while appearing in no step at all.
+    # Job-level, which the step checks are blind to: every step inherits it, so the credential reaches
+    # the emulator action while appearing in no step.
     # Named to something this harness does not know about, because a rule written around one variable
     # name is undone by renaming the mapping.
     ("The nightly job inherits the card reader credential from its own env", NIGHTLY, "workflows",

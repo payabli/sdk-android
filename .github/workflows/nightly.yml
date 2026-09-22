@@ -216,10 +216,9 @@ jobs:
       # sentinel value leaves it in no file under .gradle, build or the Gradle home, so the configuration
       # cache is not serialising it. The exposure needs a live JVM, not a readable file.
       #
-      # Splitting card-present into its own job, as ci.yml does, would remove the question rather than
-      # bound it, and it remains the better shape. It is a real change rather than a line here, because the
-      # report collector globs results out of this workspace, so moving the build means passing the results
-      # between jobs.
+      # Splitting card-present into its own job, as ci.yml does, would remove the question and remains the
+      # better shape. It is a real change and not a line here: the report collector globs results out of
+      # this workspace, so moving the build means passing the results between jobs.
       - name: Create AVD and generate snapshot for caching
         if: steps.avd-cache.outputs.cache-hit != 'true'
         timeout-minutes: 15
