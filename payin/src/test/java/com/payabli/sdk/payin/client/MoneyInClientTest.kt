@@ -261,9 +261,9 @@ class MoneyInClientTest {
             val methods =
                 listOf(
                     PayInPaymentMethod.BankAccount(testAccount()),
-                    // Sent as its own method name rather than the method it stands for, which this route
-                    // does not read. Refused here so the caller is not told by a round trip.
-                    PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1"),
+                    // A stored bank account is an account, and the route takes no account however it is
+                    // reached. Refused here so the caller is not told by a round trip.
+                    PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "stored-1"),
                     PayInPaymentMethod.Check("A Payer"),
                     PayInPaymentMethod.Cash,
                 )
@@ -297,6 +297,31 @@ class MoneyInClientTest {
 
             assertEquals("A0000", result.code)
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+        }
+
+    /**
+     * A stored card and a stored wallet are held, a stored bank account is not.
+     *
+     * Which stored methods can be held is decided by what each one stands for rather than by its being
+     * stored, so the answer differs per method and the guard is a set rather than a card check.
+     */
+    @Test
+    fun `authorize sends the stored methods the route takes`() =
+        runTest(timeout = timeout) {
+            val held =
+                listOf(
+                    PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1"),
+                    PayInPaymentMethod.Stored(PayInStoredMethodType.Wallet, "stored-2"),
+                )
+
+            held.forEach { method ->
+                val transport = FakePayInTransport.answering(approved)
+
+                val result = MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(method))
+
+                assertEquals("A0000", result.code)
+                assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+            }
         }
 
     @Test

@@ -91,14 +91,17 @@ internal object PayInRoutes {
     const val FIELD_ACH_SEC_CODE: String = "achCode"
     const val FIELD_DEVICE: String = "device"
     const val FIELD_STORED_METHOD_ID: String = "storedMethodId"
+    const val FIELD_INITIATOR: String = "initiator"
     const val FIELD_CHECK_HOLDER: String = "checkHolder"
 
     const val METHOD_CARD: String = "card"
     const val METHOD_ACH: String = "ach"
-    const val METHOD_STORED: String = "stored"
     const val METHOD_CLOUD: String = "cloud"
     const val METHOD_CHECK: String = "check"
     const val METHOD_CASH: String = "cash"
+
+    /** Who started the charge. The payer is present for everything this SDK sends. */
+    const val INITIATOR_PAYOR: String = "payor"
 }
 
 /** What is being charged. The two amounts are unquoted numbers with two decimal places. */

@@ -72,13 +72,34 @@ class PayInBodyWriterTest {
         assertEquals(JsonPrimitive("device-1"), parsed["device"])
     }
 
+    /**
+     * The identifier says which stored method; the method says what it is, and both travel.
+     *
+     * The initiator is on every one of these because the payer is present for everything this SDK charges,
+     * and nothing else in the request says so.
+     */
     @Test
-    fun `the four other methods carry only what they have`() {
-        val stored = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "tok-1")
+    fun `a stored method carries the method it stands for, and a payor initiator`() {
+        val card = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "tok-1")
+        val account = PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "tok-2")
+        val wallet = PayInPaymentMethod.Stored(PayInStoredMethodType.Wallet, "tok-3")
+
         assertEquals(
-            """{"method":"stored","storedMethodId":"tok-1"}""",
-            fragmentText(PayInBodyWriter.methodFragment(stored)),
+            """{"method":"card","storedMethodId":"tok-1","initiator":"payor"}""",
+            fragmentText(PayInBodyWriter.methodFragment(card)),
         )
+        assertEquals(
+            """{"method":"ach","storedMethodId":"tok-2","initiator":"payor"}""",
+            fragmentText(PayInBodyWriter.methodFragment(account)),
+        )
+        assertEquals(
+            """{"method":"wallet","storedMethodId":"tok-3","initiator":"payor"}""",
+            fragmentText(PayInBodyWriter.methodFragment(wallet)),
+        )
+    }
+
+    @Test
+    fun `the other methods carry only what they have`() {
         assertEquals(
             """{"method":"cloud","device":"device-1"}""",
             fragmentText(PayInBodyWriter.methodFragment(PayInPaymentMethod.CloudDevice("device-1"))),
