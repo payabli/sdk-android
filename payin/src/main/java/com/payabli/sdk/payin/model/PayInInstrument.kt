@@ -40,6 +40,21 @@ public enum class PayInSecCode(
 }
 
 /**
+ * What the service calls each payment method.
+ *
+ * One definition, because three types spell these: the form's method, a stored method, and the request
+ * body. Two of them are public, so a name that drifted would be visible in one and not the other.
+ */
+internal object PayInMethodWireNames {
+    const val CARD: String = "card"
+    const val ACH: String = "ach"
+    const val WALLET: String = "wallet"
+    const val CLOUD: String = "cloud"
+    const val CHECK: String = "check"
+    const val CASH: String = "cash"
+}
+
+/**
  * What a stored method stands for, lower case on the wire.
  *
  * An identifier does not say what is being charged, and a charge is well formed only when the method
@@ -48,9 +63,9 @@ public enum class PayInSecCode(
 public enum class PayInStoredMethodType(
     public val wireName: String,
 ) {
-    Card("card"),
-    BankAccount("ach"),
-    Wallet("wallet"),
+    Card(PayInMethodWireNames.CARD),
+    BankAccount(PayInMethodWireNames.ACH),
+    Wallet(PayInMethodWireNames.WALLET),
 }
 
 /**

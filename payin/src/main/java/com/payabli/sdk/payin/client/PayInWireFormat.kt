@@ -6,6 +6,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PercentEncoding
+import com.payabli.sdk.payin.model.PayInMethodWireNames
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.InternalSerializationApi
 import kotlinx.serialization.Serializable
@@ -94,11 +95,11 @@ internal object PayInRoutes {
     const val FIELD_INITIATOR: String = "initiator"
     const val FIELD_CHECK_HOLDER: String = "checkHolder"
 
-    const val METHOD_CARD: String = "card"
-    const val METHOD_ACH: String = "ach"
-    const val METHOD_CLOUD: String = "cloud"
-    const val METHOD_CHECK: String = "check"
-    const val METHOD_CASH: String = "cash"
+    const val METHOD_CARD: String = PayInMethodWireNames.CARD
+    const val METHOD_ACH: String = PayInMethodWireNames.ACH
+    const val METHOD_CLOUD: String = PayInMethodWireNames.CLOUD
+    const val METHOD_CHECK: String = PayInMethodWireNames.CHECK
+    const val METHOD_CASH: String = PayInMethodWireNames.CASH
 
     /** Who started the charge. The payer is present for everything this SDK sends. */
     const val INITIATOR_PAYOR: String = "payor"
