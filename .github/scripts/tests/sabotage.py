@@ -685,6 +685,21 @@ MUTATIONS = [
      "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
 
+    # A comparison that is only the left half of the expression. The `&&` carries the secret itself as the
+    # right operand, so a rule asking whether a value contains `==` or `!=` reads this as the availability
+    # flag it is imitating.
+    ("The nightly job hides the credential behind its own availability check", NIGHTLY, "workflows",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
+     "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' && secrets.PAYABLI_MAVEN_PW_PROD }}"),
+
+    # Index notation, which the expression syntax offers alongside dot notation. The value is the same
+    # secret; only the way it is spelled differs.
+    ("The nightly job reads the credential by index rather than by name", NIGHTLY, "workflows",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
+     "      READER_PW: ${{ secrets['PAYABLI_MAVEN_PW_PROD'] }}"),
+
 ]
 
 

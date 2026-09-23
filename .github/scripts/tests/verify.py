@@ -2756,18 +2756,24 @@ def test_workflows():
     # `--no-daemon`, since a surviving Gradle daemon is what carries a value past the step that set it.
     CREDENTIAL = "PAYABLI_MAVEN_PASSWORD"
     THIRD_PARTY = "android-emulator-runner"
-    # Any reference to a secret, wherever it sits in the expression. Anchoring this to an expression that
-    # is *only* a reference reads as precision and is a hole: `${{ secrets.X || '' }}` yields the secret
-    # just as `${{ secrets.X }}` does, and would have passed. What is asked is whether the value can carry
-    # the secret, not whether it was written the shortest way.
-    SECRET_REF = re.compile(r"secrets\.[A-Za-z_][A-Za-z0-9_]*")
-    # The one shape that references a secret and cannot yield it: a comparison, which yields a boolean and
-    # is how a step decides whether to run. Anything else referencing a secret is treated as exposure,
-    # because enumerating the safe forms is the mistake this replaces.
-    COMPARISON = re.compile(r"(==|!=)")
+    # Any reference to a secret, in either form the expression syntax offers. Dot notation is the one
+    # everything here is written in; index notation is equally valid and was invisible to a pattern that
+    # only knew the first, so a mapping written `secrets['NAME']` read as holding no secret at all.
+    SECRET_REF = re.compile(r"secrets\s*(?:\.\s*[A-Za-z_][A-Za-z0-9_-]*|\[\s*['\"][^'\"]+['\"]\s*\])")
+    # The single shape a value may take while still referencing a secret: the whole expression is one
+    # comparison of a secret against a string literal, which is how a step decides whether to run.
+    #
+    # A whitelist, and that is the point. This began as "anything but a comparison", which asks whether an
+    # expression contains `==` or `!=` and answers yes for
+    # `${{ secrets.X != '' && secrets.X }}` — an expression that contains a comparison and can still come
+    # out as the secret. Naming what is allowed cannot fail that way: an expression doing anything beyond
+    # the one comparison does not match, whatever it does.
+    SAFE_COMPARISON = re.compile(
+        r"^\$\{\{\s*secrets\s*(?:\.\s*[A-Za-z_][A-Za-z0-9_-]*|\[\s*['\"][^'\"]+['\"]\s*\])"
+        r"\s*(?:==|!=)\s*(?:'[^']*'|\"[^\"]*\")\s*\}\}$")
 
     def exposes_secret(value: str) -> bool:
-        return bool(SECRET_REF.search(value)) and not COMPARISON.search(value)
+        return bool(SECRET_REF.search(value)) and not SAFE_COMPARISON.match(value.strip())
 
     def rendered_jobs(name: str) -> dict[str, tuple[dict, str]]:
         return {jn: (job, yaml.safe_dump(job, default_flow_style=False, sort_keys=False))
