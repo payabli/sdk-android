@@ -47,6 +47,7 @@ _sdk = os.environ.get("NIGHTLY_SDK")
 SDK = Path(_sdk) if _sdk else HERE.parents[2]
 COLLECTOR = Path(os.environ.get("NIGHTLY_COLLECTOR", SDK / ".github/scripts/nightly_report.py"))
 POSTER = Path(os.environ.get("NIGHTLY_POSTER", SDK / ".github/scripts/nightly_slack.py"))
+PACK = Path(os.environ.get("NIGHTLY_PACK", SDK / ".github/scripts/pack_results.sh"))
 ONLY = os.environ.get("NIGHTLY_ONLY", "both")
 
 # One scratch root for the whole run, removed on the way out. Every synthetic repository and every facts
@@ -2748,137 +2749,96 @@ def test_workflows():
         check(f"W11 and passes --fetch-only: {wanted}", ("--fetch-only" in runs) is wanted, runs[:200])
 
 
-    # W12 The card reader credential never reaches the third-party emulator action.
+    # W12 No secret reaches the third-party emulator action.
     #
-    # The two files hold that differently and the checks say which. ci.yml separates by job, so the action
-    # runs where the credential does not exist. nightly.yml cannot, because its instrumented and card-present
-    # tiers are one job; it keeps the value off every emulator step and runs the step that holds it under
-    # `--no-daemon`, since a surviving Gradle daemon is what carries a value past the step that set it.
-    CREDENTIAL = "PAYABLI_MAVEN_PASSWORD"
+    # Held by where the action runs, not by reading what each value evaluates to. Every earlier version of
+    # this check scanned expressions for ways of reaching a secret, and every round of review found another:
+    # a bare reference, index notation, `toJSON(secrets)`, a fallback, a quoted `}}` inside `format()`, and a
+    # value an earlier step exported to `$GITHUB_ENV`. That list has no end. What does have one is the job
+    # graph: the action runs only in a job that never mentions the secrets context, needs no job that does,
+    # and downloads nothing.
     THIRD_PARTY = "android-emulator-runner"
-    # Any use of the secrets context inside an expression, rather than any of the ways of reaching one
-    # value in it. Enumerating those ways has now failed three times in a row here: first the pattern knew
-    # only a bare `${{ secrets.X }}`, then only dot notation, and then `${{ toJSON(secrets) }}` -- which
-    # names no single secret and exports all of them -- matched neither. The context appearing at all is
-    # the question; which member is read, and whether one is named, is not.
-    EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.S)
     SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
+    PINNED = re.compile(r"^[^@]+@[0-9a-f]{40}(\s|$)")
 
-    def touches_secrets(value: str) -> bool:
-        return any(SECRETS_CONTEXT.search(body) for body in EXPRESSION.findall(value))
-    # The single shape a value may take while still referencing a secret: the whole expression is one
-    # comparison of a secret against a string literal, which is how a step decides whether to run.
-    #
-    # A whitelist, and that is the point. This began as "anything but a comparison", which asks whether an
-    # expression contains `==` or `!=` and answers yes for
-    # `${{ secrets.X != '' && secrets.X }}` — an expression that contains a comparison and can still come
-    # out as the secret. Naming what is allowed cannot fail that way: an expression doing anything beyond
-    # the one comparison does not match, whatever it does.
-    SAFE_COMPARISON = re.compile(
-        r"^\$\{\{\s*secrets\s*(?:\.\s*[A-Za-z_][A-Za-z0-9_-]*|\[\s*['\"][^'\"]+['\"]\s*\])"
-        r"\s*(?:==|!=)\s*(?:'[^']*'|\"[^\"]*\")\s*\}\}$")
+    def rendered(node) -> str:
+        return yaml.safe_dump(node or {}, default_flow_style=False, sort_keys=False)
 
-    def exposes_secret(value: str) -> bool:
-        return touches_secrets(value) and not SAFE_COMPARISON.match(value.strip())
-
-    def strings_in(node, path=""):
-        """Every string in a step, with the key path that reached it, so a failure names the route."""
-        if isinstance(node, str):
-            yield path or ".", node
-        elif isinstance(node, dict):
-            for key, value in node.items():
-                yield from strings_in(value, f"{path}.{key}" if path else str(key))
-        elif isinstance(node, list):
-            for index, value in enumerate(node):
-                yield from strings_in(value, f"{path}[{index}]")
-
-    def rendered_jobs(name: str) -> dict[str, tuple[dict, str]]:
-        return {jn: (job, yaml.safe_dump(job, default_flow_style=False, sort_keys=False))
-                for jn, job in (workflow_doc(name).get("jobs") or {}).items() if isinstance(job, dict)}
+    def needs_of(job: dict) -> list[str]:
+        needs = job.get("needs") or []
+        return [needs] if isinstance(needs, str) else [str(item) for item in needs]
 
     for name in ("ci.yml", "nightly.yml"):
-        jobs = rendered_jobs(name)
-        # Guarded before it is read. A loop over no jobs runs no checks and reports a pass, which is the
-        # vacuous green this harness exists to refuse. Both halves are asserted present for the same reason:
-        # without them the checks below pass on a file that renamed the credential to something else.
+        doc = workflow_doc(name)
+        jobs = {jn: job for jn, job in (doc.get("jobs") or {}).items() if isinstance(job, dict)}
+        # Guarded before it is read. A loop over no jobs runs no checks and reports a pass.
         check(f"W12 {name} has jobs to examine", bool(jobs), str(list(jobs)))
+        bodies = {jn: rendered(job) for jn, job in jobs.items()}
+        runners = sorted(jn for jn, body in bodies.items() if THIRD_PARTY in body)
+        holders = {jn for jn, body in bodies.items() if SECRETS_CONTEXT.search(body)}
+        # Both asserted present, or every rule below passes on a file that stopped running the action or
+        # renamed the credential.
+        check(f"W12 {name} runs the third-party emulator action", bool(runners), str(list(jobs)))
         check(f"W12 {name} has a job holding the card reader credential",
-              any(CREDENTIAL in body for _, body in jobs.values()), str(list(jobs)))
+              any("PAYABLI_MAVEN_PW_PROD" in bodies[jn] for jn in holders), str(sorted(holders)))
 
-        # The universal half: whatever the file's structure, the action itself is never handed the value.
-        emulator_steps = [step for job, _ in jobs.values() for step in job.get("steps") or []
-                          if isinstance(step, dict) and THIRD_PARTY in str(step.get("uses", ""))]
-        for step in emulator_steps:
-            check(f"W12 no {name} emulator step names the credential",
-                  CREDENTIAL not in step_text(step), str(step.get("name", "?")))
-            # And no secret anywhere in the step, under any name and through any key. The line above asks
-            # about one identifier; asking instead about `env:` alone was the next version of the same
-            # mistake, because an action takes inputs through `with:` and a secret reaches a `run:` by
-            # interpolation. Every string in the step is tested rather than a chosen key, so a route that
-            # does not exist yet is covered by the same rule.
-            step_exposed = [f"{path}={value}" for path, value in strings_in(step)
-                            if exposes_secret(value.strip())]
-            check(f"W12 no {name} emulator step carries a secret anywhere in it",
-                  not step_exposed, f"{step.get('name', '?')}: " + " | ".join(step_exposed))
+        # Inherited by every job while appearing in none of them.
+        workflow_env = rendered(doc.get("env"))
+        check(f"W12 {name} names no secret in its workflow-level env",
+              not SECRETS_CONTEXT.search(workflow_env), workflow_env.strip())
 
-        # Both files, because the rule is about the job, not either file's arrangement. A
-        # job-level `env:` is inherited by every step, so a credential put there reaches the action while
-        # appearing in no step: the per-step checks above are green for exactly the exposure they exist to
-        # catch. Written about any bare secret, so renaming the mapping to a name this file does not
-        # know about is closed too. A comparison is not an exposure, because
-        # `${{ secrets.X != '' }}` yields a boolean and is how a step decides whether to run.
-        # A workflow-level `env:` is inherited by every job, so it reaches the action while appearing in no
-        # job and no step. Read once and folded into each job's effective environment below, because a
-        # check that reads only where the value is usually written is a check about habits.
-        workflow_env = {key: value for key, value in (workflow_doc(name).get("env") or {}).items()}
-        for job_name, (job, body) in jobs.items():
-            if THIRD_PARTY not in body:
-                continue
-            effective = dict(workflow_env)
-            effective.update(job.get("env") or {})
-            exposed = [key for key, value in effective.items() if exposes_secret(str(value).strip())]
-            check(f"W12 the {name} job running {THIRD_PARTY} exposes no secret at job level",
-                  not exposed, f"{job_name}: " + " | ".join(exposed))
+        for jn in runners:
+            check(f"W12 the {name} job {jn}, which runs {THIRD_PARTY}, never mentions the secrets context",
+                  jn not in holders,
+                  " | ".join(line.strip() for line in bodies[jn].splitlines() if SECRETS_CONTEXT.search(line)))
+            upstream, pending = set(), list(needs_of(jobs[jn]))
+            while pending:
+                needed = pending.pop()
+                if needed not in upstream:
+                    upstream.add(needed)
+                    pending.extend(needs_of(jobs.get(needed) or {}))
+            check(f"W12 and {jn} needs no job that holds a secret, directly or through another",
+                  not upstream & holders, " | ".join(sorted(upstream & holders)))
+            downloads = [str(step.get("name") or step.get("uses")) for step in jobs[jn].get("steps") or []
+                         if isinstance(step, dict) and "download-artifact" in str(step.get("uses", ""))]
+            check(f"W12 and {jn} downloads no artifact", not downloads, " | ".join(downloads))
 
-        # A secret at job or workflow level is readable by everything that runs in the job, actions
-        # included, so the job's actions are part of who holds the credential. A moving tag there is a
-        # standing offer to whoever can retag: the code behind `@v7` is whatever that ref points at when
-        # the job runs. One unpinned action is the whole exposure back, which is why this asks about all
-        # of them rather than about the third-party one.
-        #
-        # Scoped to a job-level or workflow-level mapping on purpose. nightly.yml puts the credential on a
-        # single step's env, which the other steps' actions do not see, and it is checked by the step rules
-        # above and by --no-daemon rather than by this.
-        PINNED = re.compile(r"^[^@]+@[0-9a-f]{40}(\s|$)")
-        for job_name, (job, _) in jobs.items():
-            effective = dict(workflow_env)
-            effective.update(job.get("env") or {})
-            if not any(exposes_secret(str(value).strip()) for value in effective.values()):
-                continue
-            unpinned = [str(step.get("uses")).strip() for step in job.get("steps") or []
-                        if isinstance(step, dict) and step.get("uses")
-                        and not PINNED.match(str(step.get("uses")).strip())]
-            check(f"W12 every action in the {name} job {job_name} holding a secret is pinned to a commit",
+        # Everything that runs in a job holding a secret can reach what an earlier step leaves behind, so a
+        # moving tag there is a standing offer to whoever can retag. Asked of every job that mentions the
+        # context at all, including one that scopes its secret to a single step.
+        for jn in sorted(holders):
+            uses = [str(jobs[jn].get("uses"))] if jobs[jn].get("uses") else []
+            uses += [str(step.get("uses")).strip() for step in jobs[jn].get("steps") or []
+                     if isinstance(step, dict) and step.get("uses")]
+            unpinned = [ref for ref in uses if not PINNED.match(ref)]
+            check(f"W12 every action in the {name} job {jn}, which holds a secret, is pinned to a commit",
                   not unpinned, " | ".join(unpinned))
 
-        if name == "ci.yml":
-            # The stronger property, and the one this file is arranged to hold: the action runs in a job
-            # where the credential does not exist at all, so no earlier step could have left it reachable.
-            overlap = sorted(jn for jn, (_, body) in jobs.items()
-                             if CREDENTIAL in body and THIRD_PARTY in body)
-            check(f"W12 no {name} job both holds the credential and runs {THIRD_PARTY}",
-                  not overlap, " | ".join(overlap))
-        else:
-            check(f"W12 {name} runs the third-party emulator action", bool(emulator_steps), str(list(jobs)))
-            # One job holds both, so what stops the value outliving its step is the daemon not surviving it.
-            holding = [step for job, _ in jobs.values() for step in job.get("steps") or []
-                       if isinstance(step, dict) and CREDENTIAL in step_text(step)]
-            check(f"W12 {name} names the credential on exactly one step", len(holding) == 1,
-                  " | ".join(str(step.get("name", "?")) for step in holding))
-            for step in holding:
-                check("W12 and that step runs --no-daemon, so no daemon carries the value past it",
-                      "--no-daemon" in str(step.get("run", "")), str(step.get("name", "?")))
+    # W13 the results archive a test job hands to `verdict`. The collector globs module paths, so the archive
+    # has to keep them, and a job that wrote nothing still has to hand over an archive rather than fail.
+    tree = Path(tempfile.mkdtemp(dir=SCRATCH))
+    kept = ("core/build/test-results/testDebugUnitTest/TEST-a.xml",
+            "payin/build/outputs/androidTest-results/connected/debug/TEST-b.xml",
+            "taptopay/build/reports/jacoco/report.xml")
+    for rel in kept + (".gradle/build/reports/cache.xml",):
+        (tree / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tree / rel).write_text("x")
 
+    def packed(cwd: Path) -> tuple[subprocess.CompletedProcess, set[str]]:
+        archive = SCRATCH / f"{cwd.name}.tgz"
+        proc = subprocess.run(["bash", str(PACK), str(archive)], cwd=cwd, capture_output=True, text=True)
+        listing = subprocess.run(["tar", "-tzf", str(archive)], capture_output=True, text=True).stdout
+        return proc, {line.removeprefix("./") for line in listing.split()} if archive.exists() else set()
+
+    proc, names = packed(tree)
+    check("W13 the pack script exits zero", proc.returncode == 0, proc.stderr[-300:])
+    for rel in kept:
+        check(f"W13 the archive keeps {rel}", rel in names, str(sorted(names)))
+    check("W13 and leaves Gradle's own directory out", not any(n.startswith(".gradle") for n in names),
+          str(sorted(names)))
+    proc, names = packed(Path(tempfile.mkdtemp(dir=SCRATCH)))
+    check("W13 a job that wrote nothing still yields an archive", proc.returncode == 0 and names == set(),
+          proc.stderr[-300:] + str(sorted(names)))
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")

@@ -50,6 +50,8 @@ VERIFY = HERE / "verify.py"
 WORK = Path(tempfile.mkdtemp(prefix="nightly-sabotage-"))
 COLLECTOR = WORK / "nightly_report.py"
 POSTER = WORK / "nightly_slack.py"
+# The archive a nightly test job hands to `verdict`.
+PACK = WORK / "pack_results.sh"
 # The live workflows are mutated too, because what keeps a client credential out of the emulator step and out
 # of a fork's reach is how those files are written. A copy each, in the same scratch directory, so the same
 # guarantee holds: nothing here writes into the repository.
@@ -61,7 +63,7 @@ LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
 # The harness workflow, for its path filter alone: a check that never runs on the file it guards is not
 # a check, and the filter is what decides.
 SCRIPTS = WORKFLOW_DIR / "scripts.yml"
-# The nightly, for its liveness-owner expression alone. Nothing else here mutates it.
+# The nightly: its liveness owner, its module list, and where the emulator action may run.
 NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # The card reader mirror, whose two jobs are the only thing keeping the credential that writes the artifact
 # origin out of a run that publishes nothing. Every mutation below widens that back, and none of them looks
@@ -87,6 +89,7 @@ LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
     COLLECTOR: SDK / ".github/scripts/nightly_report.py",
     POSTER: SDK / ".github/scripts/nightly_slack.py",
+    PACK: SDK / ".github/scripts/pack_results.sh",
     LIVE_POSTER: SDK / ".github/scripts/live_slack.py",
     LIVE_FLOWS: SDK / ".github/workflows/live-flows.yml",
     LIVE_QA: SDK / ".github/workflows/live-qa.yml",
@@ -626,57 +629,81 @@ MUTATIONS = [
      'else [])',
      '        shown = lines'),
 
-    # W12, the card reader credential against the third-party emulator action. Three rows, because the two
-    # files hold the guarantee by different means and a row against one proves nothing about the other.
-
-    # Anchored on the instrumented step's own emulator options. Text it shares with the AVD step above
-    # matches twice and reports itself invalid.
-    ("The emulator step is handed the card reader credential", NIGHTLY, "workflows",
+    # W12, where the third-party emulator action is allowed to run. One row per route a secret takes into
+    # that job, because the rule is about the job graph and each row is a different edge of it. The last
+    # three spellings were each a review finding against the version of W12 that read expressions.
+    ("The emulator step is handed a secret through its env", NIGHTLY, "workflows",
      "          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect"
      " -noaudio -no-boot-anim -camera-back none",
      "          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect"
      " -noaudio -no-boot-anim -camera-back none\n"
-     "        env:\n          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}"),
+     "        env:\n          READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
-    # The daemon is what carries the value past the step that set it, so dropping the flag reopens the hole
-    # step scoping does not close. It reads as removing a slow flag from a slow job.
-    ("The card-present step keeps a daemon alive holding the credential", NIGHTLY, "workflows",
-     "        run: ./gradlew --no-daemon --max-workers=1 :taptopay:createDebugUnitTestCoverageReport",
-     "        run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport"),
+    ("The emulator action is handed a secret through its inputs", NIGHTLY, "workflows",
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
 
-    # ci.yml holds the stronger property: the action runs in a job where the credential does not exist.
-    # Adding it to that job's env is what a session wanting :taptopay covered there would reach for first.
-    # Job-level, which the step checks are blind to: every step inherits it, so the credential reaches
-    # the emulator action while appearing in no step.
-    # Named to something this harness does not know about, because a rule written around one variable
-    # name is undone by renaming the mapping.
-    ("The nightly job inherits the card reader credential from its own env", NIGHTLY, "workflows",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
-     "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
+    # Job level, which every step inherits while none of them names it.
+    ("The emulator job inherits a secret from its own env", NIGHTLY, "workflows",
+     '      EMULATOR_ARCH: x86_64\n    steps:\n',
+     "      EMULATOR_ARCH: x86_64\n      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n"),
 
     ("The instrumented job is given the card reader credential", CI, "workflows",
      "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis",
-     "      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_USER }}\n"
-     "      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}\n"
+     "      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis"),
 
-    # The same exposure written so that a check matching only a bare reference reads it as safe. The
-    # fallback changes nothing about what the value is: an empty default is reached only when the secret is
-    # absent, so every run that has the credential exports it.
-    ("The nightly job exposes the credential through a fallback expression", NIGHTLY, "workflows",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != \'\' }}",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != \'\' }}\n"
-     "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD || \'\' }}"),
-
-    # Workflow level, which is inherited by every job and appears in none of them. A check reading only
-    # each job's own env is green for exactly this.
+    # Workflow level, inherited by every job and appearing in none of them.
     ("The workflow-level env hands every ci.yml job the card reader credential", CI, "workflows",
      "env:\n  # Never --info or --debug here: verbose Gradle logs can print repository credentials.\n"
      "  GRADLE_OPTS: -Dorg.gradle.console=plain",
      "env:\n  # Never --info or --debug here: verbose Gradle logs can print repository credentials.\n"
      "  GRADLE_OPTS: -Dorg.gradle.console=plain\n"
-     "  READER_PW: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}"),
+     "  READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
+
+    # An earlier step in the same job exports the value, so the emulator step inherits it without naming it.
+    ("A step before the emulator exports a secret to the job's environment file", NIGHTLY, "workflows",
+     '      - name: Enable KVM group perms\n',
+     '      - name: Export\n        run: echo "READER_PW=${{ secrets.PAYABLI_MAVEN_PW_PROD }}" >> "$GITHUB_ENV"\n'
+     + '      - name: Enable KVM group perms\n'),
+
+    # GitHub's `format` escapes a brace by doubling it, so an expression reader that stops at the first
+    # `}}` never reaches the secret.
+    ("The emulator job's env hides a secret behind an escaped brace", NIGHTLY, "workflows",
+     '      EMULATOR_ARCH: x86_64\n    steps:\n',
+     "      EMULATOR_ARCH: x86_64\n"
+     "      READER_PW: ${{ format('{{Hello {0}!}}', secrets.PAYABLI_MAVEN_PW_PROD) }}\n    steps:\n"),
+
+    ("The emulator job exports the entire secrets context", NIGHTLY, "workflows",
+     '      EMULATOR_ARCH: x86_64\n    steps:\n',
+     "      EMULATOR_ARCH: x86_64\n      ALL_SECRETS: ${{ toJSON(secrets) }}\n    steps:\n"),
+
+    # The edges between jobs. Outputs and artifacts carry values across without the word appearing.
+    ("The emulator job waits on the job that holds the credential", NIGHTLY, "workflows",
+     "    name: Unit + instrumented tests\n",
+     "    name: Unit + instrumented tests\n    needs: card-present\n"),
+
+    ("The emulator job downloads an artifact", NIGHTLY, "workflows",
+     '      - name: Enable KVM group perms\n',
+     "      - uses: actions/download-artifact@v8\n        with:\n          name: nightly-results-card-present\n"
+     + '      - name: Enable KVM group perms\n'),
+
+    # A job holding a secret, even on one step, lets every earlier action write what that step reads.
+    ("An action in the nightly card-present job is left on a moving tag", NIGHTLY, "workflows",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n\n"
+     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
+     "      - uses: actions/checkout@v7\n\n"
+     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6"),
+
+    ("An action in the ci.yml card-present job is left on a moving tag", CI, "workflows",
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@v7'),
+
+    # W13. A results directory left out of the archive reaches `verdict` as a suite that wrote nothing.
+    ("The results archive leaves out the unit test results", PACK, "workflows",
+     "  \\( -path '*/build/test-results' -o -path '*/build/reports'",
+     "  \\( -path '*/build/reports'"),
 
     # W9, and the reason it exists: W12 reads ci.yml, so the harness has to run when ci.yml changes.
     # Dropping it from the filter leaves every W12 assertion about that file unreachable by the change
@@ -684,46 +711,6 @@ MUTATIONS = [
     ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
      "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
-
-    # A comparison that is only the left half of the expression. The `&&` carries the secret itself as the
-    # right operand, so a rule asking whether a value contains `==` or `!=` reads this as the availability
-    # flag it is imitating.
-    ("The nightly job hides the credential behind its own availability check", NIGHTLY, "workflows",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
-     "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' && secrets.PAYABLI_MAVEN_PW_PROD }}"),
-
-    # The whole context, which names no secret and carries every one of them. A rule built from the
-    # ways of reaching a single value reads this as mentioning none.
-    ("The nightly job exports the entire secrets context", NIGHTLY, "workflows",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n      ALL_SECRETS: ${{ toJSON(secrets) }}"),
-
-    # Through the action's inputs rather than its environment. `with:` is how an action is handed a
-    # value, so a rule reading only `env:` is green while the secret is passed straight in.
-    ("The emulator action is handed a secret through its inputs", NIGHTLY, "workflows",
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
-
-    # The emulator action handed the credential on its own step, under a name this file does not
-    # know. A rule asking whether the step mentions PAYABLI_MAVEN_PASSWORD reads it as clean.
-    ("The emulator step is handed a secret under another name", NIGHTLY, "workflows",
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
-     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        env:\n          READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        with:\n'),
-
-    # A job-level secret is readable by every action in the job, so one moving tag among the pins is
-    # the exposure back. Anchored through `steps:` because sonar carries the same two env lines and
-    # only card-present runs straight into its steps from them.
-    ("An action in the card-present job is left on a moving tag", CI, "workflows",
-     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
-     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@v7'),
-
-    # Index notation, which the expression syntax offers alongside dot notation. The value is the same
-    # secret; only the way it is spelled differs.
-    ("The nightly job reads the credential by index rather than by name", NIGHTLY, "workflows",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
-     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
-     "      READER_PW: ${{ secrets['PAYABLI_MAVEN_PW_PROD'] }}"),
 
 ]
 
@@ -745,6 +732,9 @@ def still_parses(path: Path) -> str:
         except py_compile.PyCompileError as error:
             return f"patched file does not compile: {error}"
         return ""
+    if path.suffix == ".sh":
+        proc = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+        return f"patched script does not parse: {proc.stderr.strip()}" if proc.returncode else ""
 
     try:
         document = yaml.safe_load(path.read_text())
@@ -762,7 +752,7 @@ def still_parses(path: Path) -> str:
 def run_verify(half: str) -> tuple[int, int, str]:
     # Aimed at the copies, so the harness reads what this run mutated rather than what the repository holds.
     env = {**os.environ, "NIGHTLY_ONLY": half,
-           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER),
+           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER), "NIGHTLY_PACK": str(PACK),
            "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
