@@ -77,7 +77,6 @@ class PayInBodyWriterTest {
     fun `a stored method carries the method it stands for, and a payor initiator`() {
         val card = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "tok-1")
         val account = PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "tok-2")
-        val wallet = PayInPaymentMethod.Stored(PayInStoredMethodType.Wallet, "tok-3")
 
         assertEquals(
             """{"method":"card","storedMethodId":"tok-1","initiator":"payor"}""",
@@ -86,10 +85,6 @@ class PayInBodyWriterTest {
         assertEquals(
             """{"method":"ach","storedMethodId":"tok-2","initiator":"payor"}""",
             fragmentText(PayInBodyWriter.methodFragment(account)),
-        )
-        assertEquals(
-            """{"method":"wallet","storedMethodId":"tok-3","initiator":"payor"}""",
-            fragmentText(PayInBodyWriter.methodFragment(wallet)),
         )
     }
 

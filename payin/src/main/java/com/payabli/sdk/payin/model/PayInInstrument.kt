@@ -43,7 +43,6 @@ public enum class PayInSecCode(
 internal object PayInMethodWireNames {
     const val CARD: String = "card"
     const val ACH: String = "ach"
-    const val WALLET: String = "wallet"
     const val CLOUD: String = "cloud"
     const val CHECK: String = "check"
     const val CASH: String = "cash"
@@ -59,7 +58,6 @@ public enum class PayInStoredMethodType(
 ) {
     Card(PayInMethodWireNames.CARD),
     BankAccount(PayInMethodWireNames.ACH),
-    Wallet(PayInMethodWireNames.WALLET),
 }
 
 /**

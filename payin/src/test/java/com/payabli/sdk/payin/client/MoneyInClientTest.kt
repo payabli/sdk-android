@@ -262,7 +262,6 @@ class MoneyInClientTest {
                 listOf(
                     PayInPaymentMethod.BankAccount(testAccount()),
                     PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "stored-1"),
-                    PayInPaymentMethod.Stored(PayInStoredMethodType.Wallet, "stored-2"),
                     PayInPaymentMethod.Check("A Payer"),
                     PayInPaymentMethod.Cash,
                 )
