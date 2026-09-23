@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Collect what the nightly run produced, and decide the verdict.
 
-This half holds no credential and posts nothing. It runs in the test job, where the build outputs and the
-full git history are, and it writes three things:
+This half holds no credential and posts nothing. It runs in the `verdict` job, which unpacks both test
+jobs' results and has the full git history, and it writes three things:
 
   * a facts file, JSON, uploaded as an artifact for `nightly_slack.py` to render and post
   * the stack traces, to `$GITHUB_STEP_SUMMARY`, so the report has something durable to link at. Long

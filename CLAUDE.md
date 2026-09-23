@@ -111,22 +111,34 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - **sonar** - analysis after `build`, producing the reports it consumes first.
 
 `.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
-required check. Two jobs, and the split is a security boundary rather than organisation:
+required check. Four jobs, and the split is a security boundary rather than organisation: the third-party
+emulator action runs only in a job that holds no secret and takes nothing from a job that does.
 
-- **nightly** - every unit test plus `:core`'s and `:payin`'s instrumented tests on an emulator. Runs the one third-party
-  action in the repository, so no Slack credential exists in it. Ends by deciding the verdict and gating on
-  it, so the run result never depends on the reporting job.
-- **report** - `needs: nightly`, holds the bot token, runs nothing third-party. Posts a summary to
+- **nightly** - every unit test that needs no credential, plus `:core`'s and `:payin`'s instrumented tests on
+  an emulator. Runs the one third-party action in the repository and holds no secret. Packs its results into
+  an artifact.
+- **card-present** - `:taptopay`'s and `:example`'s unit tests, holding the card reader credential on one
+  step. Runs no third-party action, and every action in it is pinned to a commit. Packs its results too.
+- **verdict** - `needs` both, unpacks their results, runs `.github/scripts/nightly_report.py` with the full
+  git history, uploads the facts and the `nightly-reports` artifact, and fails the run if a suite failed. So
+  the run result never depends on the reporting job.
+- **report** - `needs: verdict`, holds the bot token, runs nothing third-party. Posts a summary to
   `#mobile-sdk-nightly-build` and the failure detail in that message's thread. `if: ${{ !cancelled() }}`
   rather than `always()`, so a test job that timed out is still announced while a run superseded by
   `cancel-in-progress` stays quiet.
 
-The two halves talk through a `nightly-facts` artifact: `.github/scripts/nightly_report.py` parses the
-JUnit XML and writes the facts, the verdict and the stack traces (to the job summary, which is what
-Slack links; a trace over 4000 characters is trimmed in the middle and the unabridged JUnit XML stays in the
-`nightly-reports` artifact); `.github/scripts/nightly_slack.py` renders and posts them. Parsing has to stay in the test
-job because the build outputs and the git history the culprit lookup needs are both there, and the verdict
-has to be decided there because that is where the gate reads it.
+`verdict` and `report` talk through a `nightly-facts` artifact: `nightly_report.py` parses the JUnit XML and
+writes the facts, the verdict and the stack traces (to the job summary, which is what Slack links; a trace
+over 4000 characters is trimmed in the middle and the unabridged JUnit XML stays in the `nightly-reports`
+artifact); `.github/scripts/nightly_slack.py` renders and posts them. The verdict is decided in the job that
+gates on it, so the run and the notification cannot disagree. Each test job's results cross as one archive
+built by `.github/scripts/pack_results.sh`, because a glob upload roots the paths at whatever the matched
+files share.
+
+`verify.py`'s W12 holds the security half by structure: the emulator job never mentions the secrets context,
+needs no job that does and downloads no artifact, and every job that mentions it pins every action. It used
+to scan expressions for ways of reaching a secret, and review kept finding another; the job graph is the part
+that can be checked completely.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
 drives the collector as a subprocess inside a synthetic git repository, which is what
