@@ -8,11 +8,12 @@ import java.math.BigDecimal
 /**
  * A method the service stored, identified for later use.
  *
- * [storedMethodId] is what a later transaction charges, alongside the method it stands for. It is never
- * absent: a claimed success carrying none is refused as unreadable.
+ * A later transaction charges [storedMethodId] as [method], by passing both to [PayInPaymentMethod.Stored].
+ * [storedMethodId] is never absent: a claimed success carrying none is refused as unreadable.
  */
 public class PayInStoredMethod(
     public val storedMethodId: String,
+    public val method: PayInStoredMethodType,
     public val methodReferenceId: String?,
     public val customerId: Long?,
     public val resultCode: Int?,

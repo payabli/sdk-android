@@ -115,10 +115,15 @@ internal class ScriptedPayInTransport(
     var request: PayabliRequest? = null
         private set
 
+    /** The last request's body, copied before the client overwrites it. */
+    var recordedBody: ByteArray? = null
+        private set
+
     private var next = 0
 
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
         this.request = request
+        recordedBody = request.body?.copyOf()
         val step = steps[minOf(next, steps.lastIndex)]
         next++
         return step.getOrThrow()

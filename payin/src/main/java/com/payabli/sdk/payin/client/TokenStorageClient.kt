@@ -138,6 +138,7 @@ internal class TokenStorageClient(
         ) { "the method was stored" }
         return PayInStoredMethod(
             storedMethodId = storedMethodId,
+            method = instrument.storedMethodType,
             methodReferenceId = stored?.methodReferenceId,
             customerId = stored?.customerId,
             resultCode = stored?.resultCode,

@@ -5,6 +5,7 @@ import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInStoreOptions
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInVendorData
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
@@ -54,6 +55,7 @@ class TokenStorageClientTest {
             assertEquals("65960bf4-46ea-42dd-ac89-250b181b3584-225810", result.methodReferenceId)
             assertEquals(88L, result.customerId)
             assertEquals(1, result.resultCode)
+            assertEquals(PayInStoredMethodType.Card, result.method)
         }
 
     @Test
@@ -67,6 +69,7 @@ class TokenStorageClientTest {
 
             assertTrue(transport.bodyText().contains(""""achAccount":"$TEST_ACCOUNT""""))
             assertEquals("tok-77", result.storedMethodId)
+            assertEquals(PayInStoredMethodType.BankAccount, result.method)
         }
 
     @Test
