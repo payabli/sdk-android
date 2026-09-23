@@ -182,7 +182,6 @@ class PayInSubmissionTest {
             assertEquals(PayInSubmissionState.Idle, submission.state.value)
         }
 
-    /** Separate from the two above because it answers from another route, which a shared fake cannot serve. */
     @Test
     fun `a headless store publishes nothing to the state`() =
         runTest(timeout = timeout) {

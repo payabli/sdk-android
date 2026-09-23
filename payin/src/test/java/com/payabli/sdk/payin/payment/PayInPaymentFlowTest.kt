@@ -150,7 +150,6 @@ class PayInPaymentFlowTest {
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_ACCOUNT))
         }
 
-    /** A repeat is not recognizable on the store route, so a key there would claim a protection it lacks. */
     @Test
     fun `a direct store sends no idempotency key`() =
         runTest(timeout = timeout) {
