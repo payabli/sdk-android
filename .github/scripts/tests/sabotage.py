@@ -699,6 +699,12 @@ MUTATIONS = [
      "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
      "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n      ALL_SECRETS: ${{ toJSON(secrets) }}"),
 
+    # Through the action's inputs rather than its environment. `with:` is how an action is handed a
+    # value, so a rule reading only `env:` is green while the secret is passed straight in.
+    ("The emulator action is handed a secret through its inputs", NIGHTLY, "workflows",
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+
     # The emulator action handed the credential on its own step, under a name this file does not
     # know. A rule asking whether the step mentions PAYABLI_MAVEN_PASSWORD reads it as clean.
     ("The emulator step is handed a secret under another name", NIGHTLY, "workflows",

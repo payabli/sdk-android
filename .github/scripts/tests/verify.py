@@ -2781,6 +2781,17 @@ def test_workflows():
     def exposes_secret(value: str) -> bool:
         return touches_secrets(value) and not SAFE_COMPARISON.match(value.strip())
 
+    def strings_in(node, path=""):
+        """Every string in a step, with the key path that reached it, so a failure names the route."""
+        if isinstance(node, str):
+            yield path or ".", node
+        elif isinstance(node, dict):
+            for key, value in node.items():
+                yield from strings_in(value, f"{path}.{key}" if path else str(key))
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                yield from strings_in(value, f"{path}[{index}]")
+
     def rendered_jobs(name: str) -> dict[str, tuple[dict, str]]:
         return {jn: (job, yaml.safe_dump(job, default_flow_style=False, sort_keys=False))
                 for jn, job in (workflow_doc(name).get("jobs") or {}).items() if isinstance(job, dict)}
@@ -2800,13 +2811,14 @@ def test_workflows():
         for step in emulator_steps:
             check(f"W12 no {name} emulator step names the credential",
                   CREDENTIAL not in step_text(step), str(step.get("name", "?")))
-            # And no secret under any other name. The line above asks about one identifier, so a step
-            # mapping the same password to `READER_PW` passes it while handing the action the value. The
-            # job-level rule below was widened for that reason and this is the same widening one scope in:
-            # what is asked is whether a secret reaches the step, not whether a known name does.
-            step_exposed = [key for key, value in (step.get("env") or {}).items()
-                            if exposes_secret(str(value).strip())]
-            check(f"W12 no {name} emulator step maps a secret into its own env",
+            # And no secret anywhere in the step, under any name and through any key. The line above asks
+            # about one identifier; asking instead about `env:` alone was the next version of the same
+            # mistake, because an action takes inputs through `with:` and a secret reaches a `run:` by
+            # interpolation. Every string in the step is tested rather than a chosen key, so a route that
+            # does not exist yet is covered by the same rule.
+            step_exposed = [f"{path}={value}" for path, value in strings_in(step)
+                            if exposes_secret(value.strip())]
+            check(f"W12 no {name} emulator step carries a secret anywhere in it",
                   not step_exposed, f"{step.get('name', '?')}: " + " | ".join(step_exposed))
 
         # Both files, because the rule is about the job, not either file's arrangement. A
