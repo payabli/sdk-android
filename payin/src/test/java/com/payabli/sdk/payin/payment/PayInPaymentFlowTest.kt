@@ -190,8 +190,8 @@ class PayInPaymentFlowTest {
             flow.storeMethod(cardStoreRequest(cardData))
 
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
-            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
-            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
 
             cardData.cardNumber.close()
             cardData.securityCode.close()
@@ -275,8 +275,8 @@ class PayInPaymentFlowTest {
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
 
             // Both buffers, because a card carries two and wiping either one is the same defect.
-            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
-            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
 
             // Still the caller's to close, and closing them still works.
             cardData.cardNumber.close()
@@ -298,8 +298,8 @@ class PayInPaymentFlowTest {
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
             assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
 
-            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
-            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+            assertEquals(TEST_PAN, String(cardData.cardNumber.rawCopy()))
+            assertEquals(TEST_SECURITY_CODE, String(cardData.securityCode.rawCopy()))
 
             cardData.cardNumber.close()
             cardData.securityCode.close()
