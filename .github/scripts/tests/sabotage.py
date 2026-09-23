@@ -693,6 +693,13 @@ MUTATIONS = [
      "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
      "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' && secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
+    # A job-level secret is readable by every action in the job, so one moving tag among the pins is
+    # the exposure back. Anchored through `steps:` because sonar carries the same two env lines and
+    # only card-present runs straight into its steps from them.
+    ("An action in the card-present job is left on a moving tag", CI, "workflows",
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@v7'),
+
     # Index notation, which the expression syntax offers alongside dot notation. The value is the same
     # secret; only the way it is spelled differs.
     ("The nightly job reads the credential by index rather than by name", NIGHTLY, "workflows",

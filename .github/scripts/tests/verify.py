@@ -2814,6 +2814,27 @@ def test_workflows():
             check(f"W12 the {name} job running {THIRD_PARTY} exposes no secret at job level",
                   not exposed, f"{job_name}: " + " | ".join(exposed))
 
+        # A secret at job or workflow level is readable by everything that runs in the job, actions
+        # included, so the job's actions are part of who holds the credential. A moving tag there is a
+        # standing offer to whoever can retag: the code behind `@v7` is whatever that ref points at when
+        # the job runs. One unpinned action is the whole exposure back, which is why this asks about all
+        # of them rather than about the third-party one.
+        #
+        # Scoped to a job-level or workflow-level mapping on purpose. nightly.yml puts the credential on a
+        # single step's env, which the other steps' actions do not see, and it is checked by the step rules
+        # above and by --no-daemon rather than by this.
+        PINNED = re.compile(r"^[^@]+@[0-9a-f]{40}(\s|$)")
+        for job_name, (job, _) in jobs.items():
+            effective = dict(workflow_env)
+            effective.update(job.get("env") or {})
+            if not any(exposes_secret(str(value).strip()) for value in effective.values()):
+                continue
+            unpinned = [str(step.get("uses")).strip() for step in job.get("steps") or []
+                        if isinstance(step, dict) and step.get("uses")
+                        and not PINNED.match(str(step.get("uses")).strip())]
+            check(f"W12 every action in the {name} job {job_name} holding a secret is pinned to a commit",
+                  not unpinned, " | ".join(unpinned))
+
         if name == "ci.yml":
             # The stronger property, and the one this file is arranged to hold: the action runs in a job
             # where the credential does not exist at all, so no earlier step could have left it reachable.
