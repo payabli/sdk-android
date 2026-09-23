@@ -75,8 +75,9 @@ public sealed class PayabliPayIn {
     /**
      * Stores [request]'s instrument, so a later transaction charges it without the details again.
      *
-     * The failure and the buffers are on the same terms as [capture]. No idempotency key is sent, so calling
-     * again after a failure can store a second copy.
+     * The failure is a `PayabliException` and never [PayInException.Unsettled], because storing moves no money.
+     * The buffers are the caller's to close, as on [capture]. No idempotency key is sent, so calling again after
+     * a failure can store a second copy.
      */
     public abstract suspend fun storeMethod(request: PayInStoreRequest): Result<PayInStoredMethod>
 
