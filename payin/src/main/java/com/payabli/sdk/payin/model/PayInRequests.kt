@@ -155,6 +155,12 @@ public class PayInRequest(
     public val paymentDetails: PayInPaymentDetails get() = options.paymentDetails
 }
 
+/** A method to store: the instrument, and [PayInStoreOptions] for the rest. */
+public class PayInStoreRequest(
+    public val instrument: PayInInstrument,
+    public val options: PayInStoreOptions = PayInStoreOptions(),
+)
+
 /**
  * An authorization to capture, in full or in part.
  *

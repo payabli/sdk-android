@@ -1,6 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayInPaymentFlow
@@ -12,6 +13,8 @@ import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInInstrument
+import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -612,6 +615,18 @@ class PayInPaymentFlowTest {
             val failure = flow.storeMethod(cardForm()).exceptionOrNull()
 
             assertFalse("$failure", failure is PayInException.Unsettled)
+        }
+
+    @Test
+    fun `the declared store member refuses in the error taxonomy and sends nothing`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(STORED_METHOD)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val failure = flow.storeMethod(PayInStoreRequest(PayInInstrument.Card(testCardData()))).exceptionOrNull()
+
+            assertEquals(PayabliErrorCode.UNKNOWN, (failure as PayabliException).code)
+            assertEquals(0, transport.count)
         }
 
     private fun dropped(): PayabliGenericException =
