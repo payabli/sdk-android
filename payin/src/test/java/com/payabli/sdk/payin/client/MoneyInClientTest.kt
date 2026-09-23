@@ -92,6 +92,27 @@ class MoneyInClientTest {
             assertEquals(7L, result.transaction?.customerId)
         }
 
+    /**
+     * The capture route compares the method against the stored record, as the authorize route does
+     * separately, so each route is asserted on its own.
+     */
+    @Test
+    fun `a stored card is captured as a card, with its identifier`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val stored = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1")
+
+            val result = MoneyInClient(transport, RecordingSdkLogger()).capture("merchant-entry", cardRequest(stored))
+
+            assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
+            val body = transport.bodyText()
+            assertTrue(body, body.contains(""""method":"card""""))
+            assertTrue(body, body.contains(""""storedMethodId":"stored-1""""))
+            assertTrue(body, body.contains(""""initiator":"payor""""))
+            assertFalse(body, body.contains("storedMethodUsageType"))
+            assertEquals("A0000", result.code)
+        }
+
     @Test
     fun `a bank account sends the ach field names and defaults the authorization`() =
         runTest(timeout = timeout) {
