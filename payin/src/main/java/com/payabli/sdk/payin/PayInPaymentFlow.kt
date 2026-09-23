@@ -3,6 +3,8 @@ package com.payabli.sdk.payin
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -184,7 +186,7 @@ internal class PayInPaymentFlow private constructor(
         submission.capture(entryPoint, request).asPayment()
 
     override suspend fun storeMethod(request: PayInStoreRequest): Result<PayInStoredMethod> =
-        Result.failure(UnsupportedOperationException("storeMethod is not available yet"))
+        Result.failure(PayabliGenericException(PayabliErrorCode.UNKNOWN, "Storing a method is not available yet"))
 
     override suspend fun authorize(request: PayInRequest): Result<PayInResult> =
         submission.authorize(entryPoint, request).asPayment()
