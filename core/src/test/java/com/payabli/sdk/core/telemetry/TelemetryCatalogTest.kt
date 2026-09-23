@@ -72,6 +72,24 @@ class TelemetryCatalogTest {
     }
 
     @Test
+    fun everyPayInCompletionCarriesItsOrigin() {
+        listOf(
+            TelemetryEvents.PAYIN_CAPTURE_COMPLETED,
+            TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED,
+            TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED,
+            TelemetryEvents.PAYIN_VOID_COMPLETED,
+        ).forEach { event ->
+            val scrubbed =
+                TelemetryCatalog.scrub(
+                    event,
+                    mapOf(TelemetryProperty.ORIGIN.key to TelemetryProperties.Origin.DIRECT),
+                )
+
+            assertEquals(event, mapOf(TelemetryProperty.ORIGIN.key to TelemetryProperties.Origin.DIRECT), scrubbed)
+        }
+    }
+
+    @Test
     fun aValueTooLongIsDroppedRatherThanTruncated() {
         val scrubbed =
             TelemetryCatalog.scrub(

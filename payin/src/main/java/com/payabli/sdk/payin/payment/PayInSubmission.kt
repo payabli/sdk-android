@@ -272,7 +272,7 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_already_in_flight")) {
                 "a submission is already in flight, so this one was refused"
             }
-            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint)
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint, publishes)
             return null
         }
         // Starting here would overwrite an outcome nothing has read yet, and a taken payment would leave no
@@ -285,7 +285,7 @@ internal class PayInSubmission(
             logger.debug(LogField.safe("event", "payin_submission_outcome_unacknowledged")) {
                 "an outcome has not been acknowledged, so this submission was refused"
             }
-            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint)
+            report(event, TelemetryProperties.Outcome.REFUSED_LOCALLY, null, null, entryPoint, publishes)
             return null
         }
         onReserved(true)
@@ -321,7 +321,7 @@ internal class PayInSubmission(
                 val settled = if (payment != null) settle(payment, finished, retry) else finished
                 outcome = settled
                 if (publishes) sink.value = settled
-                report(event, outcomeOf(settled), codeOf(settled), startedAt, entryPoint)
+                report(event, outcomeOf(settled), codeOf(settled), startedAt, entryPoint, publishes)
             }
             inFlight.unlock()
         }
@@ -520,15 +520,16 @@ internal class PayInSubmission(
         code: String?,
         startedAt: Long?,
         entryPoint: String?,
+        fromForm: Boolean,
     ) {
         // The entry point the request was sent to, which a capability can be pointed at independently of the
         // one the session was configured with. Reporting the session's would file it under another merchant.
         val attributed = if (entryPoint == null) session else session?.forEntryPoint(entryPoint)
 
         if (attributed != null) {
-            TelemetryRecorders.recordFor(attributed, event) { measurements(outcome, code, startedAt) }
+            TelemetryRecorders.recordFor(attributed, event) { measurements(outcome, code, startedAt, fromForm) }
         } else {
-            TelemetryRecorders.record(event) { measurements(outcome, code, startedAt) }
+            TelemetryRecorders.record(event) { measurements(outcome, code, startedAt, fromForm) }
         }
     }
 
@@ -536,9 +537,14 @@ internal class PayInSubmission(
         outcome: String,
         code: String?,
         startedAt: Long?,
+        fromForm: Boolean,
     ): Map<String, String> =
         buildMap {
             put(TelemetryProperty.OUTCOME.key, outcome)
+            put(
+                TelemetryProperty.ORIGIN.key,
+                if (fromForm) TelemetryProperties.Origin.FORM else TelemetryProperties.Origin.DIRECT,
+            )
             code?.let { put(TelemetryProperty.CODE.key, it) }
             startedAt?.let {
                 put(
