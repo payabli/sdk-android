@@ -1,17 +1,23 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.payin.PayInPaymentFlow
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.PayInRoutes
+import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
+import com.payabli.sdk.payin.client.testAccount
+import com.payabli.sdk.payin.client.testCard
 import com.payabli.sdk.payin.client.testDetails
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInInstrument
+import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -117,6 +123,86 @@ class PayInPaymentFlowTest {
             assertEquals("A0000", outcome.getOrNull()?.code)
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
             assertEquals(PayInSubmissionState.Idle, flow.state.value)
+        }
+
+    @Test
+    fun `a host that collected the card stores it without drawing a form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(STORED_METHOD)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val outcome = flow.storeMethod(cardStoreRequest())
+
+            assertEquals("tok-77", outcome.getOrNull()?.storedMethodId)
+            assertEquals(PayInRoutes.STORE_METHOD, transport.request?.path)
+            assertEquals(PayInSubmissionState.Idle, flow.state.value)
+        }
+
+    @Test
+    fun `a host that collected a bank account stores it without drawing a form`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(STORED_METHOD)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val outcome = flow.storeMethod(PayInStoreRequest(PayInInstrument.BankAccount(testAccount())))
+
+            assertEquals("tok-77", outcome.getOrNull()?.storedMethodId)
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_ACCOUNT))
+        }
+
+    /** A repeat is not recognizable on the store route, so a key there would claim a protection it lacks. */
+    @Test
+    fun `a direct store sends no idempotency key`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(STORED_METHOD)
+
+            flowOver(transport).storeMethod(cardStoreRequest())
+
+            assertEquals(PayInRoutes.STORE_METHOD, transport.request?.path)
+            assertNull(transport.sentKey())
+        }
+
+    @Test
+    fun `a direct store leaves the caller's buffers intact`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(STORED_METHOD)
+            val flow: PayabliPayIn = flowOver(transport)
+            val cardData = testCardData()
+
+            flow.storeMethod(cardStoreRequest(cardData))
+
+            assertTrue(transport.bodyText(), transport.bodyText().contains(TEST_PAN))
+            assertEquals(TEST_PAN.length, cardData.cardNumber.length)
+            assertEquals(TEST_SECURITY_CODE.length, cardData.securityCode.length)
+
+            cardData.cardNumber.close()
+            cardData.securityCode.close()
+            assertEquals(0, cardData.cardNumber.length)
+            assertEquals(0, cardData.securityCode.length)
+        }
+
+    /** Storing moves no money, so a dropped link is the failure it is rather than an open outcome. */
+    @Test
+    fun `a direct store whose outcome is unknown is not reported as unsettled`() =
+        runTest(timeout = timeout) {
+            val flow: PayabliPayIn = flowOver(FakePayInTransport.failingWith(dropped()))
+
+            val failure = flow.storeMethod(cardStoreRequest()).exceptionOrNull()
+
+            assertEquals(PayabliErrorCode.NETWORK_ERROR, (failure as PayabliException).code)
+            assertFalse("$failure", failure is PayInException.Unsettled)
+        }
+
+    @Test
+    fun `a direct store of a card that fails its checksum sends nothing`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(STORED_METHOD)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val failure = flow.storeMethod(cardStoreRequest(testCard(pan = LUHN_FAILING_PAN))).exceptionOrNull()
+
+            assertEquals(PayabliErrorCode.VALIDATION_ERROR, (failure as PayabliException).code)
+            assertEquals(0, transport.count)
         }
 
     /**
@@ -632,5 +718,8 @@ class PayInPaymentFlowTest {
     private companion object {
         /** Stands in for text a real failure would carry from the wire, so a test can assert it is withheld. */
         const val DROPPED_DETAIL = "the link dropped"
+
+        /** Sixteen digits whose Luhn check fails. */
+        const val LUHN_FAILING_PAN = "4111111111111112"
     }
 }

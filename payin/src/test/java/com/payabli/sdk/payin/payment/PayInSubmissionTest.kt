@@ -170,7 +170,7 @@ class PayInSubmissionTest {
      * outcome published by a call nothing is drawing would strand the state at the first of them.
      */
     @Test
-    fun `neither headless call publishes anything to the state`() =
+    fun `no headless call publishes anything to the state`() =
         runTest(timeout = timeout) {
             val transport = FakePayInTransport.answering(approved)
             val submission = submissionOver(transport)
@@ -179,6 +179,19 @@ class PayInSubmissionTest {
             assertEquals(PayInSubmissionState.Idle, submission.state.value)
 
             submission.void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+            assertEquals(PayInSubmissionState.Idle, submission.state.value)
+        }
+
+    /** Separate from the two above because it answers from another route, which a shared fake cannot serve. */
+    @Test
+    fun `a headless store publishes nothing to the state`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(stored)
+            val submission = submissionOver(transport)
+
+            val outcome = submission.storeMethod(TEST_ENTRY_POINT, cardStoreRequest())
+
+            assertEquals("tok-77", (outcome as PayInSubmissionState.Succeeded.Method).storedMethod.storedMethodId)
             assertEquals(PayInSubmissionState.Idle, submission.state.value)
         }
 
@@ -692,6 +705,39 @@ class PayInSubmissionTest {
             assertEquals("a request reached the wire twice", 1, transport.sent.size)
             transport.release()
             voiding.join()
+        }
+
+    /** A store takes the same single flight, so it cannot run beside a payment the form started. */
+    @Test
+    fun `a store while a form submission is in flight is refused and sends nothing`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(approved)
+            val submission = submissionOver(transport)
+
+            val first = launch { submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()) }
+            transport.arrived.await()
+
+            assertNull(submission.storeMethod(TEST_ENTRY_POINT, cardStoreRequest()))
+
+            assertEquals("a request reached the wire twice", 1, transport.sent.size)
+            transport.release()
+            first.join()
+        }
+
+    @Test
+    fun `a form submission while a store is in flight is refused`() =
+        runTest(timeout = timeout) {
+            val transport = GatedPayInTransport.answering(stored)
+            val submission = submissionOver(transport)
+
+            val storing = launch { submission.storeMethod(TEST_ENTRY_POINT, cardStoreRequest()) }
+            transport.arrived.await()
+
+            assertNull(submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm()))
+
+            assertEquals("a request reached the wire twice", 1, transport.sent.size)
+            transport.release()
+            storing.join()
         }
 
     // --- one at a time ---

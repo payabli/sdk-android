@@ -26,6 +26,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.RedactedCause
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -179,6 +180,24 @@ internal class PayInSubmission(
             PayInSubmissionState.Succeeded.Payment(
                 moneyIn.authorize(entryPoint, request, PayInEnteredDetails.NONE, key),
             )
+        }
+
+    /**
+     * Stores the instrument in a request a caller built, on the same terms as [capture] for the buffers.
+     * Reads no form, and sends no idempotency key: the store route has none to read.
+     */
+    suspend fun storeMethod(
+        entryPoint: String,
+        request: PayInStoreRequest,
+    ): PayInSubmissionState? =
+        perform(
+            TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED,
+            entryPoint,
+            publishes = false,
+            movesMoney = false,
+            payment = null,
+        ) {
+            PayInSubmissionState.Succeeded.Method(storage.storeMethod(entryPoint, request.instrument, request.options))
         }
 
     /** Captures a transaction authorized earlier, in full or in part. Reads no form. */

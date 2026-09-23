@@ -3,8 +3,6 @@ package com.payabli.sdk.payin
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
-import com.payabli.sdk.core.model.PayabliErrorCode
-import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -177,16 +175,13 @@ internal class PayInPaymentFlow private constructor(
         values: PayInFormValues,
         options: PayInStoreOptions = PayInStoreOptions(),
     ): Result<PayInStoredMethod> =
-        when (val outcome = submission.submit(entryPoint, PayabliPayInOperation.StoreMethod(options), values)) {
-            is PayInSubmissionState.Succeeded.Method -> Result.success(outcome.storedMethod)
-            else -> Result.failure(outcome.asFailure())
-        }
+        submission.submit(entryPoint, PayabliPayInOperation.StoreMethod(options), values).asStoredMethod()
 
     override suspend fun capture(request: PayInRequest): Result<PayInResult> =
         submission.capture(entryPoint, request).asPayment()
 
     override suspend fun storeMethod(request: PayInStoreRequest): Result<PayInStoredMethod> =
-        Result.failure(PayabliGenericException(PayabliErrorCode.UNKNOWN, "Storing a method is not available yet"))
+        submission.storeMethod(entryPoint, request).asStoredMethod()
 
     override suspend fun authorize(request: PayInRequest): Result<PayInResult> =
         submission.authorize(entryPoint, request).asPayment()
@@ -207,6 +202,12 @@ internal class PayInPaymentFlow private constructor(
     private fun PayInSubmissionState?.asPayment(): Result<PayInResult> =
         when (this) {
             is PayInSubmissionState.Succeeded.Payment -> Result.success(result)
+            else -> Result.failure(asFailure())
+        }
+
+    private fun PayInSubmissionState?.asStoredMethod(): Result<PayInStoredMethod> =
+        when (this) {
+            is PayInSubmissionState.Succeeded.Method -> Result.success(storedMethod)
             else -> Result.failure(asFailure())
         }
 

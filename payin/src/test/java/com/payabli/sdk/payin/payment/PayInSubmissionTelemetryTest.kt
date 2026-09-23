@@ -86,6 +86,19 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED, recorded.single().first)
         }
 
+    @Test
+    fun `a headless store is reported under the store name, timed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(STORED_METHOD))
+
+            submission.storeMethod(TEST_ENTRY_POINT, cardStoreRequest())
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
+            assertTimed(properties)
+        }
+
     /** Publishing to no state does not mean counting nothing: the boundary is still measured. */
     @Test
     fun `a void is reported under its own name, timed`() =
