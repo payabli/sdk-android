@@ -525,22 +525,24 @@ MUTATIONS = [
     # The filter decides whether any of the above ever runs on the file it is about. Dropping a workflow from
     # it leaves every assertion in place and none of them reachable by the change that breaks them.
     # Anchored through the trailing `push:` because the two blocks are identical, and a mutation that
-    # matched both would be testing something else. That tail carries the mirror as well, so each anchor
-    # below names every line between the one it breaks and `push:`.
+    # matched both would be testing something else. That tail carries the mirror and ci.yml as well, so
+    # each anchor below names every line between the one it breaks and `push:`. Adding an entry to the
+    # filter therefore moves every anchor after it, and leaves them matching nothing.
     ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n  push:",
+     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
      "      - '.github/workflows/nightly-disabled.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:"),
 
     ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
      "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
      "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:"),
 
     ("The harness stops running when the card reader mirror changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:",
-     "      - '.github/workflows/card-reader-mirror-disabled.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror-disabled.yml'\n"
+     "      - '.github/workflows/ci.yml'\n  push:"),
 
     # The mirror's permission split. The token is what turns repository-controlled code into an identity
     # that can write the origin, and every one of these hands it to a run that publishes nothing.
@@ -680,8 +682,8 @@ MUTATIONS = [
     # Dropping it from the filter leaves every W12 assertion about that file unreachable by the change
     # that would break it, while the harness still reports a full pass on everything else.
     ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
-     "      - \'.github/workflows/card-reader-mirror.yml\'\n      - \'.github/workflows/ci.yml\'\n  push:",
-     "      - \'.github/workflows/card-reader-mirror.yml\'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
 
 ]
 
