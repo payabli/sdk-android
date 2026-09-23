@@ -14,6 +14,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoreOptions
+import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmission
@@ -181,6 +182,9 @@ internal class PayInPaymentFlow private constructor(
 
     override suspend fun capture(request: PayInRequest): Result<PayInResult> =
         submission.capture(entryPoint, request).asPayment()
+
+    override suspend fun storeMethod(request: PayInStoreRequest): Result<PayInStoredMethod> =
+        Result.failure(UnsupportedOperationException("storeMethod is not available yet"))
 
     override suspend fun authorize(request: PayInRequest): Result<PayInResult> =
         submission.authorize(entryPoint, request).asPayment()

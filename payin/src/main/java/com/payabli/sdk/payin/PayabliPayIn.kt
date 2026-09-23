@@ -4,6 +4,8 @@ import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInResult
+import com.payabli.sdk.payin.model.PayInStoreRequest
+import com.payabli.sdk.payin.model.PayInStoredMethod
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.CoroutineScope
@@ -69,6 +71,14 @@ public sealed class PayabliPayIn {
      * rather than a retry.
      */
     public abstract suspend fun capture(request: PayInRequest): Result<PayInResult>
+
+    /**
+     * Stores [request]'s instrument, so a later transaction charges it without the details again.
+     *
+     * The failure and the buffers are on the same terms as [capture]. No idempotency key is sent, so calling
+     * again after a failure can store a second copy.
+     */
+    public abstract suspend fun storeMethod(request: PayInStoreRequest): Result<PayInStoredMethod>
 
     /**
      * Places a hold without taking it, which [captureAuthorizedTransaction] later completes and
