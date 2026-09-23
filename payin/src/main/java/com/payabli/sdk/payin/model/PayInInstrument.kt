@@ -164,7 +164,7 @@ public sealed class PayInPaymentMethod {
         get() =
             when (this) {
                 is Card, is CloudDevice -> true
-                is Stored -> method == PayInStoredMethodType.Card || method == PayInStoredMethodType.Wallet
+                is Stored -> method == PayInStoredMethodType.Card
                 else -> false
             }
 }

@@ -262,6 +262,7 @@ class MoneyInClientTest {
                 listOf(
                     PayInPaymentMethod.BankAccount(testAccount()),
                     PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "stored-1"),
+                    PayInPaymentMethod.Stored(PayInStoredMethodType.Wallet, "stored-2"),
                     PayInPaymentMethod.Check("A Payer"),
                     PayInPaymentMethod.Cash,
                 )
@@ -297,24 +298,17 @@ class MoneyInClientTest {
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
         }
 
-    /** A stored card and a stored wallet reach the route; a stored bank account does not. */
+    /** A stored card is the one stored method the route is given. */
     @Test
-    fun `authorize sends the stored methods the route takes`() =
+    fun `authorize sends a stored card`() =
         runTest(timeout = timeout) {
-            val held =
-                listOf(
-                    PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1"),
-                    PayInPaymentMethod.Stored(PayInStoredMethodType.Wallet, "stored-2"),
-                )
+            val transport = FakePayInTransport.answering(approved)
+            val stored = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1")
 
-            held.forEach { method ->
-                val transport = FakePayInTransport.answering(approved)
+            val result = MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(stored))
 
-                val result = MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(method))
-
-                assertEquals("A0000", result.code)
-                assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
-            }
+            assertEquals("A0000", result.code)
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
         }
 
     @Test
