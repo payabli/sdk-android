@@ -2794,6 +2794,14 @@ def test_workflows():
         for step in emulator_steps:
             check(f"W12 no {name} emulator step names the credential",
                   CREDENTIAL not in step_text(step), str(step.get("name", "?")))
+            # And no secret under any other name. The line above asks about one identifier, so a step
+            # mapping the same password to `READER_PW` passes it while handing the action the value. The
+            # job-level rule below was widened for that reason and this is the same widening one scope in:
+            # what is asked is whether a secret reaches the step, not whether a known name does.
+            step_exposed = [key for key, value in (step.get("env") or {}).items()
+                            if exposes_secret(str(value).strip())]
+            check(f"W12 no {name} emulator step maps a secret into its own env",
+                  not step_exposed, f"{step.get('name', '?')}: " + " | ".join(step_exposed))
 
         # Both files, because the rule is about the job, not either file's arrangement. A
         # job-level `env:` is inherited by every step, so a credential put there reaches the action while

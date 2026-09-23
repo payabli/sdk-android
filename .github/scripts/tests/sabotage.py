@@ -693,6 +693,12 @@ MUTATIONS = [
      "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
      "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' && secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
+    # The emulator action handed the credential on its own step, under a name this file does not
+    # know. A rule asking whether the step mentions PAYABLI_MAVEN_PASSWORD reads it as clean.
+    ("The emulator step is handed a secret under another name", NIGHTLY, "workflows",
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        env:\n          READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        with:\n'),
+
     # A job-level secret is readable by every action in the job, so one moving tag among the pins is
     # the exposure back. Anchored through `steps:` because sonar carries the same two env lines and
     # only card-present runs straight into its steps from them.
