@@ -210,6 +210,28 @@ class PayInRedactionTest {
     }
 
     @Test
+    fun `a store request carries neither instrument nor its options`() {
+        val options =
+            PayInStoreOptions(
+                customerData = PayInCustomerData(firstName = "Ada", billingEmail = "ada@example.test"),
+                vendorData = PayInVendorData(ein = "12-3456789"),
+            )
+        val bank =
+            PayInAchData(
+                accountNumber = SensitiveDigits.ofString(account),
+                routingNumber = "122105278",
+                accountType = PayInAccountType.Checking,
+                holderName = "A Payer",
+            )
+        val rendered =
+            PayInStoreRequest(PayInInstrument.Card(card()), options).toString() + " " +
+                PayInStoreRequest(PayInInstrument.BankAccount(bank), options)
+
+        listOf(pan, securityCode, account, "A Payer", "Ada", "ada@example.test", "12-3456789")
+            .forEach { assertFalse("$it was rendered", rendered.contains(it)) }
+    }
+
+    @Test
     fun `an authorized capture carries neither its transaction nor its key`() {
         val rendered =
             PayInAuthorizedRequest(
