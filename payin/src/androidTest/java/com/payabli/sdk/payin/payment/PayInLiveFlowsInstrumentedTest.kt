@@ -26,7 +26,6 @@ import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInStoreRequest
-import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CoroutineScope
@@ -122,7 +121,7 @@ class PayInLiveFlowsInstrumentedTest {
             val stored = flow.storeMethod(card(), PayInStoreOptions()).orFail("storing a card to charge")
             assertTrue(flow.consume())
 
-            val method = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, stored.storedMethodId)
+            val method = PayInPaymentMethod.Stored(stored.method, stored.storedMethodId)
             val captured =
                 flow
                     .capture(PayInRequest(paymentMethod = method, options = transaction()))

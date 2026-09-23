@@ -7,6 +7,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.serialization.json.jsonPrimitive
@@ -96,6 +97,7 @@ class PayInOutcomesTest {
             PayInSubmissionState.Succeeded.Method(
                 PayInStoredMethod(
                     storedMethodId = "tok-1",
+                    method = PayInStoredMethodType.Card,
                     methodReferenceId = null,
                     customerId = null,
                     resultCode = null,

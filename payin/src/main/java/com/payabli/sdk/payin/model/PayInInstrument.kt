@@ -115,6 +115,14 @@ public sealed class PayInInstrument {
     public class BankAccount(
         public val data: PayInAchData,
     ) : PayInInstrument()
+
+    /** What this instrument is charged as once it is stored. */
+    internal val storedMethodType: PayInStoredMethodType
+        get() =
+            when (this) {
+                is Card -> PayInStoredMethodType.Card
+                is BankAccount -> PayInStoredMethodType.BankAccount
+            }
 }
 
 /**

@@ -14,9 +14,12 @@ import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.client.testAccount
 import com.payabli.sdk.payin.client.testCard
 import com.payabli.sdk.payin.client.testDetails
+import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
+import com.payabli.sdk.payin.model.PayInPaymentMethod
+import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +64,22 @@ class PayInPaymentFlowTest {
             val outcome = flow.storeMethod(cardForm())
 
             assertEquals("tok-77", outcome.getOrNull()?.storedMethodId)
+        }
+
+    @Test
+    fun `a card stored through the form charges without the host tracking what it was`() =
+        runTest(timeout = timeout) {
+            val body = storeThroughTheFormThenCharge(cardForm())
+
+            assertTrue(body, body.contains(""""method":"card","storedMethodId":"tok-77""""))
+        }
+
+    @Test
+    fun `a bank account stored through the form charges as the bank account the payer chose`() =
+        runTest(timeout = timeout) {
+            val body = storeThroughTheFormThenCharge(bankForm(accountType = "Checking"))
+
+            assertTrue(body, body.contains(""""method":"ach","storedMethodId":"tok-77""""))
         }
 
     @Test
@@ -701,6 +720,23 @@ class PayInPaymentFlowTest {
 
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
+
+    /** Stores [form] and charges the result as a host would, passing back only what it was handed. */
+    private suspend fun TestScope.storeThroughTheFormThenCharge(form: PayInFormValues): String {
+        val transport =
+            ScriptedPayInTransport(
+                listOf(
+                    ScriptedPayInTransport.answering(200, STORED_METHOD),
+                    ScriptedPayInTransport.answering(200, APPROVED_TRANSACTION),
+                ),
+            )
+        val flow = flowOver(transport)
+        val stored = flow.storeMethod(form).getOrThrow()
+
+        flow.capture(PayInRequest(PayInPaymentMethod.Stored(stored.method, stored.storedMethodId), testOptions()))
+
+        return transport.recordedBody?.toString(Charsets.UTF_8).orEmpty()
+    }
 
     private fun FakePayInTransport.sentKey(): String? = request?.headers?.get(PayInRoutes.HEADER_IDEMPOTENCY_KEY)
 
