@@ -1,15 +1,17 @@
 package com.payabli.sdk.payin.form
 
+import com.payabli.sdk.payin.model.PayInMethodWireNames
+
 /**
  * Which instrument a payer is entering.
  *
- * @param wireName what the API calls it. A payer's word for it is a string resource.
+ * The wire name is what the API calls it. A payer's word for it is a string resource.
  */
 public enum class PayInMethodType(
     public val wireName: String,
 ) {
-    Card("card"),
-    BankAccount("ach"),
+    Card(PayInMethodWireNames.CARD),
+    BankAccount(PayInMethodWireNames.ACH),
 }
 
 /**

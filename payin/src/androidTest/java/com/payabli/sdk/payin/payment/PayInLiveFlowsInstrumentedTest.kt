@@ -16,7 +16,10 @@ import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentDetails
+import com.payabli.sdk.payin.model.PayInPaymentMethod
+import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreOptions
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,10 +57,10 @@ import java.util.UUID
  * These are real transactions. The amounts are small and the instruments are the sample app's test values, which
  * is what the recorded walks used.
  *
- * **The set is what the public flow reaches, which is not every case the model declares.** Storing and capturing
- * take an entered card or bank account, an authorization takes a card, and an authorization is captured by its
- * identifier. Charging a method already stored is absent because `PayInFormInstrument` builds only `Card` and
- * `BankAccount` from a form, so `PayInPaymentMethod.Stored` is reachable from the internal client alone.
+ * **The set is what the public surface reaches.** Storing and capturing take an entered card or bank account,
+ * an authorization takes a card, an authorization is captured by its identifier, and a method stored earlier is
+ * charged through the `capture` that takes a request. The form builds only `Card` and `BankAccount`, so the
+ * last of those is reachable from the request-taking members alone.
  */
 @RunWith(AndroidJUnit4::class)
 @ManualDeviceTest
@@ -98,6 +101,26 @@ class PayInLiveFlowsInstrumentedTest {
             val stored = flow.storeMethod(bankAccount(), PayInStoreOptions()).orFail("storing a bank account")
 
             assertTrue("a stored method with no identifier: $stored", stored.storedMethodId.isNotBlank())
+        }
+
+    /**
+     * Stores a card and charges it by its identifier.
+     *
+     * Both halves run here because the identifier has to belong to this paypoint.
+     */
+    @Test
+    fun capturingACardStoredEarlier() =
+        runBlocking {
+            val stored = flow.storeMethod(card(), PayInStoreOptions()).orFail("storing a card to charge")
+            assertTrue(flow.consume())
+
+            val method = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, stored.storedMethodId)
+            val captured =
+                flow
+                    .capture(PayInRequest(paymentMethod = method, options = transaction()))
+                    .orFail("charging a card stored earlier")
+
+            assertApproved(captured.code)
         }
 
     @Test

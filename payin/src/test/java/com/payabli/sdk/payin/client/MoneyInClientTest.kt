@@ -8,6 +8,7 @@ import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.runTest
@@ -89,6 +90,27 @@ class MoneyInClientTest {
             assertEquals(BigDecimal("10.00"), result.transaction?.totalAmount)
             assertEquals(42L, result.transaction?.paypointId)
             assertEquals(7L, result.transaction?.customerId)
+        }
+
+    /**
+     * The capture route compares the method against the stored record, as the authorize route does
+     * separately, so each route is asserted on its own.
+     */
+    @Test
+    fun `a stored card is captured as a card, with its identifier`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val stored = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1")
+
+            val result = MoneyInClient(transport, RecordingSdkLogger()).capture("merchant-entry", cardRequest(stored))
+
+            assertEquals("/api/v2/MoneyIn/getpaid", transport.request?.path)
+            val body = transport.bodyText()
+            assertTrue(body, body.contains(""""method":"card""""))
+            assertTrue(body, body.contains(""""storedMethodId":"stored-1""""))
+            assertTrue(body, body.contains(""""initiator":"payor""""))
+            assertFalse(body, body.contains("storedMethodUsageType"))
+            assertEquals("A0000", result.code)
         }
 
     @Test
@@ -260,9 +282,7 @@ class MoneyInClientTest {
             val methods =
                 listOf(
                     PayInPaymentMethod.BankAccount(testAccount()),
-                    // Sent as its own method name rather than the method it stands for, which this route
-                    // does not read. Refused here so the caller is not told by a round trip.
-                    PayInPaymentMethod.Stored("stored-1"),
+                    PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "stored-1"),
                     PayInPaymentMethod.Check("A Payer"),
                     PayInPaymentMethod.Cash,
                 )
@@ -293,6 +313,19 @@ class MoneyInClientTest {
             val result =
                 MoneyInClient(transport, RecordingSdkLogger())
                     .authorize("e", cardRequest(PayInPaymentMethod.CloudDevice("device-1")))
+
+            assertEquals("A0000", result.code)
+            assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
+        }
+
+    /** A stored card is the one stored method the route is given. */
+    @Test
+    fun `authorize sends a stored card`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(approved)
+            val stored = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "stored-1")
+
+            val result = MoneyInClient(transport, RecordingSdkLogger()).authorize("e", cardRequest(stored))
 
             assertEquals("A0000", result.code)
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
