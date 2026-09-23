@@ -33,8 +33,11 @@ jobs:
           java-version: '21'
 
       # Left on the moving tag, as nightly.yml is and for the reason recorded there: this job holds no
-      # credential, and the action is the one most coupled to Android tooling churn. The two jobs below are
-      # pinned instead, because they hold the card reader credential.
+      # credential, and the action is the one most coupled to Android tooling churn. This action is pinned
+      # in the two jobs below, because they hold the card reader credential.
+      #
+      # That pin covers this action and not the whole job: checkout, setup-java and download-artifact run
+      # there on moving tags, so a retag reaches the credential through them.
       - uses: gradle/actions/setup-gradle@v6
         with:
           # v6 moved caching into `gradle-actions-caching`, which is proprietary and not covered by the
@@ -157,8 +160,8 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # Left on the moving tag for the reason the build job's is: this job holds no credential. The pins
-      # below in card-present and sonar are what having one buys.
+      # Left on the moving tag for the reason the build job's is: this job holds no credential. It is
+      # pinned in card-present and sonar, which hold one.
       - uses: gradle/actions/setup-gradle@v6
         with:
           # See the note on the first setup-gradle in this file.
