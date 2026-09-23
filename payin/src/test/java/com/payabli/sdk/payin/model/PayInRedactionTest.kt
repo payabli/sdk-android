@@ -89,7 +89,15 @@ class PayInRedactionTest {
     @Test
     fun `a stored method carries neither its identifier nor its text`() {
         // The identifier charges a card, so it is a credential rather than a label.
-        val rendered = PayInStoredMethod("tok-77", "tok-77-225810", 88L, 1, "Approved on file").toString()
+        val rendered =
+            PayInStoredMethod(
+                "tok-77",
+                PayInStoredMethodType.Card,
+                "tok-77-225810",
+                88L,
+                1,
+                "Approved on file",
+            ).toString()
 
         assertFalse(rendered.contains("Approved on file"))
         assertFalse(rendered.contains("tok-77"))

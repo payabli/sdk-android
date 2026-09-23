@@ -4,6 +4,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
 import com.payabli.sdk.payin.model.PayInResult
 import com.payabli.sdk.payin.model.PayInStoredMethod
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInTransaction
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import java.math.BigDecimal
@@ -18,6 +19,7 @@ internal fun storedMethodOutcome() =
         .Method(
             PayInStoredMethod(
                 storedMethodId = "tok-77",
+                method = PayInStoredMethodType.Card,
                 methodReferenceId = "tok-77-225810",
                 customerId = 88L,
                 resultCode = 1,
