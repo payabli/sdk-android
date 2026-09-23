@@ -15,8 +15,10 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInCardData
+import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
+import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CompletableDeferred
@@ -213,6 +215,10 @@ internal fun cardRequest(
     idempotencyKey: String? = null,
     cardData: PayInCardData = testCardData(),
 ): PayInRequest = PayInRequest(PayInPaymentMethod.Card(cardData), testOptions(idempotencyKey))
+
+/** A store request as a host that collected the card itself would build it; the caller owns the buffers. */
+internal fun cardStoreRequest(cardData: PayInCardData = testCardData()): PayInStoreRequest =
+    PayInStoreRequest(PayInInstrument.Card(cardData))
 
 /** The same card [cardForm] describes, in the public type a host builds. */
 internal fun testCardData(): PayInCardData =

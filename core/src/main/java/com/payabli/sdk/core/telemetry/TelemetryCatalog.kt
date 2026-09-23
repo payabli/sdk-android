@@ -45,6 +45,9 @@ public object TelemetryCatalog {
             TelemetryProperty.DURATION_MS.key,
         )
 
+    /** A money-path completion, which the form and a direct call both report under one name. */
+    private val PAYIN = TIMED_OUTCOME + TelemetryProperty.ORIGIN.key
+
     /**
      * The device routes carry no attempt, and cannot.
      *
@@ -105,10 +108,10 @@ public object TelemetryCatalog {
             // No attempt: nothing counts one.
             TelemetryEvents.TTP_ATTESTATION_QUOTA_EXHAUSTED to
                 setOf(TelemetryProperty.CODE.key, TelemetryProperty.REASON.key),
-            TelemetryEvents.PAYIN_CAPTURE_COMPLETED to TIMED_OUTCOME,
-            TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED to TIMED_OUTCOME,
-            TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED to TIMED_OUTCOME,
-            TelemetryEvents.PAYIN_VOID_COMPLETED to TIMED_OUTCOME,
+            TelemetryEvents.PAYIN_CAPTURE_COMPLETED to PAYIN,
+            TelemetryEvents.PAYIN_AUTHORIZE_COMPLETED to PAYIN,
+            TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED to PAYIN,
+            TelemetryEvents.PAYIN_VOID_COMPLETED to PAYIN,
             TelemetryEvents.SDK_INITIALIZE_STARTED to setOf(TelemetryProperty.STATE.key),
             TelemetryEvents.SDK_INITIALIZE_FAILED to
                 setOf(

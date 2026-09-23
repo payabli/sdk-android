@@ -86,6 +86,45 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED, recorded.single().first)
         }
 
+    @Test
+    fun `a headless store is reported under the store name, timed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(STORED_METHOD))
+
+            submission.storeMethod(TEST_ENTRY_POINT, cardStoreRequest())
+
+            val (event, properties) = recorded.single()
+            assertEquals(TelemetryEvents.PAYIN_STORE_METHOD_COMPLETED, event)
+            assertEquals(TelemetryProperties.Outcome.APPROVED, properties[TelemetryProperty.OUTCOME.key])
+            assertTimed(properties)
+        }
+
+    @Test
+    fun `a form submission is reported as coming from the form`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val submission = submissionOver(FakePayInTransport.answering(STORED_METHOD))
+
+            submission.submit(TEST_ENTRY_POINT, PayabliPayInOperation.StoreMethod(), cardForm())
+
+            assertEquals(TelemetryProperties.Origin.FORM, recorded.single().second[TelemetryProperty.ORIGIN.key])
+        }
+
+    /** The same event name from both paths, so only this key tells a direct store from a form one. */
+    @Test
+    fun `every direct call is reported as direct`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            submissionOver(FakePayInTransport.answering(STORED_METHOD))
+                .storeMethod(TEST_ENTRY_POINT, cardStoreRequest())
+            submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION)).capture(TEST_ENTRY_POINT, cardRequest())
+            submissionOver(FakePayInTransport.answering(APPROVED_TRANSACTION))
+                .void(TEST_ENTRY_POINT, "101-abc", idempotencyKey = null)
+
+            assertEquals(3, recorded.size)
+            recorded.forEach { (event, properties) ->
+                assertEquals(event, TelemetryProperties.Origin.DIRECT, properties[TelemetryProperty.ORIGIN.key])
+            }
+        }
+
     /** Publishing to no state does not mean counting nothing: the boundary is still measured. */
     @Test
     fun `a void is reported under its own name, timed`() =
@@ -139,6 +178,7 @@ class PayInSubmissionTelemetryTest {
             assertEquals(TelemetryEvents.PAYIN_CAPTURE_COMPLETED, event)
             assertEquals(TelemetryProperties.Outcome.REFUSED_LOCALLY, properties[TelemetryProperty.OUTCOME.key])
             assertTrue(properties[TelemetryProperty.DURATION_MS.key] == null)
+            assertEquals(TelemetryProperties.Origin.FORM, properties[TelemetryProperty.ORIGIN.key])
         }
 
     /**
@@ -316,7 +356,7 @@ class PayInSubmissionTelemetryTest {
 
             val reported = recorded.single().second
             assertEquals(
-                setOf(TelemetryProperty.OUTCOME.key, TelemetryProperty.DURATION_MS.key),
+                setOf(TelemetryProperty.OUTCOME.key, TelemetryProperty.ORIGIN.key, TelemetryProperty.DURATION_MS.key),
                 reported.keys,
             )
         }

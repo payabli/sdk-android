@@ -44,6 +44,9 @@ public enum class TelemetryProperty {
 
     /** Which input a form event is about, by name. Never what was typed into one. */
     FIELD,
+
+    /** Which path started a money-path operation. Values come from [TelemetryProperties.Origin]. */
+    ORIGIN,
     ;
 
     /** The key as it goes on the wire. */
@@ -84,5 +87,14 @@ public object TelemetryProperties {
 
         /** The outcomes that mean the operation did what it was asked. Everything else forces a send. */
         public val SUCCESSFUL: Set<String> = setOf(SUCCEEDED, APPROVED)
+    }
+
+    /** The values [ORIGIN] may take. */
+    public object Origin {
+        /** The SDK's payment form submitted it. */
+        public const val FORM: String = "form"
+
+        /** A host called the member directly. */
+        public const val DIRECT: String = "direct"
     }
 }

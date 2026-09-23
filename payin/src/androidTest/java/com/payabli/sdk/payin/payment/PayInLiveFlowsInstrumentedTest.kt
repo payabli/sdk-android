@@ -10,16 +10,24 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.payin.ManualDeviceTest
 import com.payabli.sdk.payin.PayInPaymentFlow
+import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInAccountType
+import com.payabli.sdk.payin.model.PayInAchData
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
+import com.payabli.sdk.payin.model.PayInCardData
+import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
+import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.PayInStoreOptions
+import com.payabli.sdk.payin.model.PayInStoreRequest
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -120,6 +128,39 @@ class PayInLiveFlowsInstrumentedTest {
                     .orFail("charging a card stored earlier")
 
             assertApproved(captured.code)
+        }
+
+    @Test
+    fun storingACardTheHostCollected() =
+        runBlocking {
+            val data = hostCard()
+            try {
+                val stored =
+                    flow
+                        .storeMethod(PayInStoreRequest(PayInInstrument.Card(data), hostStoreOptions()))
+                        .orFail("storing a card the host collected")
+
+                assertTrue("a stored method with no identifier: $stored", stored.storedMethodId.isNotBlank())
+            } finally {
+                data.cardNumber.close()
+                data.securityCode.close()
+            }
+        }
+
+    @Test
+    fun storingABankAccountTheHostCollected() =
+        runBlocking {
+            val data = hostBankAccount()
+            try {
+                val stored =
+                    flow
+                        .storeMethod(PayInStoreRequest(PayInInstrument.BankAccount(data), hostStoreOptions()))
+                        .orFail("storing a bank account the host collected")
+
+                assertTrue("a stored method with no identifier: $stored", stored.storedMethodId.isNotBlank())
+            } finally {
+                data.accountNumber.close()
+            }
         }
 
     @Test
@@ -271,6 +312,37 @@ class PayInLiveFlowsInstrumentedTest {
                 PayInField.CustomerNumber to "sample-tester-android",
                 PayInField.BillingEmail to "sample@example.com",
             ),
+        )
+
+    /** [card] as a host that collected it itself would build it. */
+    private fun hostCard() =
+        PayInCardData(
+            cardNumber = SensitiveDigits.ofString("4111111111111111"),
+            expiry = ExpiryValue(9, 2030),
+            securityCode = SensitiveDigits.ofString("999"),
+            holderName = "Sample Tester",
+            postalCode = "22039",
+        )
+
+    /** [bankAccount] as a host that collected it itself would build it. */
+    private fun hostBankAccount() =
+        PayInAchData(
+            accountNumber = SensitiveDigits.ofString("1234567890"),
+            routingNumber = "121000248",
+            accountType = PayInAccountType.Checking,
+            holderName = "Sample Tester",
+        )
+
+    /** The customer [card] and [bankAccount] type into the form, carried as options instead. */
+    private fun hostStoreOptions() =
+        PayInStoreOptions(
+            customerData =
+                PayInCustomerData(
+                    customerNumber = "sample-tester-android",
+                    firstName = "Sample",
+                    lastName = "Tester",
+                    billingEmail = "sample@example.com",
+                ),
         )
 
     /** A key per attempt, so a rerun is a second payment rather than a replay of the first. */
