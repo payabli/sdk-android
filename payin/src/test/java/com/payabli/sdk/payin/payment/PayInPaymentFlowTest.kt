@@ -699,6 +699,18 @@ class PayInPaymentFlowTest {
             assertFalse("$failure", failure is PayInException.Unsettled)
         }
 
+    @Test
+    fun `the declared store member refuses in the error taxonomy and sends nothing`() =
+        runTest(timeout = timeout) {
+            val transport = FakePayInTransport.answering(STORED_METHOD)
+            val flow: PayabliPayIn = flowOver(transport)
+
+            val failure = flow.storeMethod(PayInStoreRequest(PayInInstrument.Card(testCardData()))).exceptionOrNull()
+
+            assertEquals(PayabliErrorCode.UNKNOWN, (failure as PayabliException).code)
+            assertEquals(0, transport.count)
+        }
+
     private fun dropped(): PayabliGenericException =
         PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
 
