@@ -5,6 +5,7 @@ import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInSecCode
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.SensitiveDigits
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -71,12 +72,24 @@ class PayInBodyWriterTest {
         assertEquals(JsonPrimitive("device-1"), parsed["device"])
     }
 
+    /** A stored method sends the method it stands for, its identifier, and a `payor` initiator. */
     @Test
-    fun `the four other methods carry only what they have`() {
+    fun `a stored method carries the method it stands for, and a payor initiator`() {
+        val card = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "tok-1")
+        val account = PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "tok-2")
+
         assertEquals(
-            """{"method":"stored","storedMethodId":"tok-1"}""",
-            fragmentText(PayInBodyWriter.methodFragment(PayInPaymentMethod.Stored("tok-1"))),
+            """{"method":"card","storedMethodId":"tok-1","initiator":"payor"}""",
+            fragmentText(PayInBodyWriter.methodFragment(card)),
         )
+        assertEquals(
+            """{"method":"ach","storedMethodId":"tok-2","initiator":"payor"}""",
+            fragmentText(PayInBodyWriter.methodFragment(account)),
+        )
+    }
+
+    @Test
+    fun `the other methods carry only what they have`() {
         assertEquals(
             """{"method":"cloud","device":"device-1"}""",
             fragmentText(PayInBodyWriter.methodFragment(PayInPaymentMethod.CloudDevice("device-1"))),

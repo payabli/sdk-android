@@ -39,6 +39,27 @@ public enum class PayInSecCode(
     Boc("BOC"),
 }
 
+/** What the service calls each payment method. */
+internal object PayInMethodWireNames {
+    const val CARD: String = "card"
+    const val ACH: String = "ach"
+    const val CLOUD: String = "cloud"
+    const val CHECK: String = "check"
+    const val CASH: String = "cash"
+}
+
+/**
+ * What a stored method stands for, lower case on the wire.
+ *
+ * A charge carries this alongside the identifier.
+ */
+public enum class PayInStoredMethodType(
+    public val wireName: String,
+) {
+    Card(PayInMethodWireNames.CARD),
+    BankAccount(PayInMethodWireNames.ACH),
+}
+
 /**
  * A card, as the payer entered it.
  *
@@ -113,8 +134,9 @@ public sealed class PayInPaymentMethod {
         public val data: PayInAchData,
     ) : PayInPaymentMethod()
 
-    /** A method stored earlier, charged by its identifier. */
+    /** A method stored earlier, charged by its identifier and the method it stands for. */
     public class Stored(
+        public val method: PayInStoredMethodType,
         public val storedMethodId: String,
     ) : PayInPaymentMethod()
 
@@ -132,15 +154,15 @@ public sealed class PayInPaymentMethod {
     public object Cash : PayInPaymentMethod()
 
     /**
-     * True when this method can be authorized as well as captured.
+     * True if this method can be authorized as well as captured; false otherwise.
      *
-     * True for a card and a cloud device, false for an account, a check and cash. Read before anything is
-     * sent, so a caller is answered here rather than by a round trip.
-     *
-     * **[Stored] is absent because of how it is written here, not because a stored card cannot be held.** This
-     * type names a stored method as a kind of its own rather than naming the method it stands for, and an
-     * authorization is well formed only when that method travels with the identifier. This type has no way to
-     * say it, so the request cannot be built.
+     * Read before the request goes out, so the answer is local.
      */
-    internal val isAuthorizable: Boolean get() = this is Card || this is CloudDevice
+    internal val isAuthorizable: Boolean
+        get() =
+            when (this) {
+                is Card, is CloudDevice -> true
+                is Stored -> method == PayInStoredMethodType.Card
+                else -> false
+            }
 }

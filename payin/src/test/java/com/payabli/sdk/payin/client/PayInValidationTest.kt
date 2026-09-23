@@ -8,6 +8,7 @@ import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
+import com.payabli.sdk.payin.model.PayInStoredMethodType
 import com.payabli.sdk.payin.model.PayInValidationOptions
 import com.payabli.sdk.payin.model.SensitiveDigits
 import org.junit.Assert.assertEquals
@@ -338,7 +339,7 @@ class PayInValidationTest {
     fun `the other payment methods are refused when their one field is blank`() {
         val cases =
             listOf(
-                "paymentMethod.storedMethodId" to PayInPaymentMethod.Stored(" "),
+                "paymentMethod.storedMethodId" to PayInPaymentMethod.Stored(PayInStoredMethodType.Card, " "),
                 "paymentMethod.device" to PayInPaymentMethod.CloudDevice(""),
                 "paymentMethod.checkHolder" to PayInPaymentMethod.Check(" "),
             )

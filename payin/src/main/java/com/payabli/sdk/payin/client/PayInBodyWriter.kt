@@ -83,8 +83,9 @@ internal object PayInBodyWriter {
             is PayInPaymentMethod.BankAccount -> achFragment(method.data)
             is PayInPaymentMethod.Stored ->
                 fragment {
-                    field(PayInRoutes.FIELD_METHOD, PayInRoutes.METHOD_STORED)
+                    field(PayInRoutes.FIELD_METHOD, method.method.wireName)
                     field(PayInRoutes.FIELD_STORED_METHOD_ID, method.storedMethodId.trim())
+                    field(PayInRoutes.FIELD_INITIATOR, PayInRoutes.INITIATOR_PAYOR)
                 }
 
             is PayInPaymentMethod.CloudDevice ->

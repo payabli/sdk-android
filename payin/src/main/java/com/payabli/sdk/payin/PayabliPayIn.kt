@@ -84,12 +84,8 @@ public sealed class PayabliPayIn {
      * Places a hold without taking it, which [captureAuthorizedTransaction] later completes and
      * [voidTransaction] releases.
      *
-     * Takes a card or a cloud device. An account, a check, cash and a stored method are refused before
-     * anything is sent, because a round trip to learn that is worse than an answer now.
-     *
-     * A stored card is the one of those that can be held, and this SDK cannot ask for it yet: it names a
-     * stored method as a kind of its own rather than naming the method it stands for. Charge one with
-     * [capture] until the type can say it.
+     * Takes a card, a stored card, and a cloud device. Refuses every other method before sending the
+     * request.
      *
      * Everything [capture] says about the failure, the buffers and the idempotency key holds here too.
      */

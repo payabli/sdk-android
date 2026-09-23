@@ -267,7 +267,7 @@ class PayInRedactionTest {
     @Test
     fun `a stored payment method carries no token`() {
         // The identifier is what charges the method, so it is a credential in everything but name.
-        val rendered = PayInPaymentMethod.Stored("tok-77").toString()
+        val rendered = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "tok-77").toString()
 
         assertFalse(rendered.contains("tok-77"))
     }
