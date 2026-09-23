@@ -5,13 +5,13 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.RedactedFailure
 import java.math.BigDecimal
 
-/** A method the service stored, identified for later use. */
+/**
+ * A method the service stored, identified for later use.
+ *
+ * [storedMethodId] is what a later transaction charges, alongside the method it stands for. It is never
+ * absent: a claimed success carrying none is refused as unreadable.
+ */
 public class PayInStoredMethod(
-    /**
-     * The identifier a later transaction charges, alongside the method it stands for.
-     *
-     * Never absent: a claimed success carrying none is refused as unreadable rather than returned.
-     */
     public val storedMethodId: String,
     public val methodReferenceId: String?,
     public val customerId: Long?,

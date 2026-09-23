@@ -101,7 +101,7 @@ internal object PayInRoutes {
     const val METHOD_CHECK: String = PayInMethodWireNames.CHECK
     const val METHOD_CASH: String = PayInMethodWireNames.CASH
 
-    /** Who started the charge. The payer is present for everything this SDK sends. */
+    /** The initiator a payer-present charge carries. */
     const val INITIATOR_PAYOR: String = "payor"
 }
 

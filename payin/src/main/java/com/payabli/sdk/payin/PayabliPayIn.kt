@@ -74,9 +74,8 @@ public sealed class PayabliPayIn {
      * Places a hold without taking it, which [captureAuthorizedTransaction] later completes and
      * [voidTransaction] releases.
      *
-     * Takes a card, a cloud device, and a stored method standing for a card or a wallet. An account, a
-     * check and cash are refused before anything is sent, because a round trip to learn that is worse than
-     * an answer now.
+     * Takes a card, a cloud device, and a stored method standing for a card or a wallet. Refuses an
+     * account, a check, and cash before sending the request.
      *
      * Everything [capture] says about the failure, the buffers and the idempotency key holds here too.
      */

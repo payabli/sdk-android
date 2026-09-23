@@ -261,8 +261,6 @@ class MoneyInClientTest {
             val methods =
                 listOf(
                     PayInPaymentMethod.BankAccount(testAccount()),
-                    // A stored bank account is an account, and the route takes no account however it is
-                    // reached. Refused here so the caller is not told by a round trip.
                     PayInPaymentMethod.Stored(PayInStoredMethodType.BankAccount, "stored-1"),
                     PayInPaymentMethod.Check("A Payer"),
                     PayInPaymentMethod.Cash,
@@ -299,12 +297,7 @@ class MoneyInClientTest {
             assertEquals("/api/v2/MoneyIn/authorize", transport.request?.path)
         }
 
-    /**
-     * A stored card and a stored wallet are held, a stored bank account is not.
-     *
-     * Which stored methods can be held is decided by what each one stands for rather than by its being
-     * stored, so the answer differs per method and the guard is a set rather than a card check.
-     */
+    /** A stored card and a stored wallet reach the route; a stored bank account does not. */
     @Test
     fun `authorize sends the stored methods the route takes`() =
         runTest(timeout = timeout) {

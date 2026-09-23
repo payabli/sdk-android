@@ -85,8 +85,6 @@ internal object PayInBodyWriter {
                 fragment {
                     field(PayInRoutes.FIELD_METHOD, method.method.wireName)
                     field(PayInRoutes.FIELD_STORED_METHOD_ID, method.storedMethodId.trim())
-                    // Sent on every one of these, because the payer is present for everything this SDK
-                    // charges and nothing else can say so.
                     field(PayInRoutes.FIELD_INITIATOR, PayInRoutes.INITIATOR_PAYOR)
                 }
 

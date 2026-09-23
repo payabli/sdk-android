@@ -57,10 +57,10 @@ import java.util.UUID
  * These are real transactions. The amounts are small and the instruments are the sample app's test values, which
  * is what the recorded walks used.
  *
- * **The set is what the public surface reaches, which is not every case the model declares.** Storing and
- * capturing take an entered card or bank account, an authorization takes a card, an authorization is captured by
- * its identifier, and a method stored earlier is charged through the `capture` that takes a request. The form
- * builds only `Card` and `BankAccount`, so that last one is reachable from the request-taking members alone.
+ * **The set is what the public surface reaches.** Storing and capturing take an entered card or bank account,
+ * an authorization takes a card, an authorization is captured by its identifier, and a method stored earlier is
+ * charged through the `capture` that takes a request. The form builds only `Card` and `BankAccount`, so the
+ * last of those is reachable from the request-taking members alone.
  */
 @RunWith(AndroidJUnit4::class)
 @ManualDeviceTest
@@ -104,11 +104,9 @@ class PayInLiveFlowsInstrumentedTest {
         }
 
     /**
-     * A card stored and then charged by its identifier, which no other tier can answer.
+     * Stores a card and charges it by its identifier.
      *
-     * Both halves run here because the identifier has to belong to this paypoint, and one kept from an earlier
-     * run may have been removed since. `consume` clears what the store published; the charge is a request the
-     * form did not start, so nothing it does is published back.
+     * Both halves run here because the identifier has to belong to this paypoint.
      */
     @Test
     fun capturingACardStoredEarlier() =

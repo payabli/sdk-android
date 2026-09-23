@@ -39,12 +39,7 @@ public enum class PayInSecCode(
     Boc("BOC"),
 }
 
-/**
- * What the service calls each payment method.
- *
- * One definition, because three types spell these: the form's method, a stored method, and the request
- * body. Two of them are public, so a name that drifted would be visible in one and not the other.
- */
+/** What the service calls each payment method. */
 internal object PayInMethodWireNames {
     const val CARD: String = "card"
     const val ACH: String = "ach"
@@ -57,8 +52,7 @@ internal object PayInMethodWireNames {
 /**
  * What a stored method stands for, lower case on the wire.
  *
- * An identifier does not say what is being charged, and a charge is well formed only when the method
- * travels with it.
+ * A charge carries this alongside the identifier.
  */
 public enum class PayInStoredMethodType(
     public val wireName: String,
@@ -142,7 +136,7 @@ public sealed class PayInPaymentMethod {
         public val data: PayInAchData,
     ) : PayInPaymentMethod()
 
-    /** A method stored earlier, charged by its identifier and the method that identifier stands for. */
+    /** A method stored earlier, charged by its identifier and the method it stands for. */
     public class Stored(
         public val method: PayInStoredMethodType,
         public val storedMethodId: String,
@@ -162,10 +156,9 @@ public sealed class PayInPaymentMethod {
     public object Cash : PayInPaymentMethod()
 
     /**
-     * True when this method can be authorized as well as captured.
+     * True if this method can be authorized as well as captured; false otherwise.
      *
-     * A card, a cloud device, and a stored method standing for a card or a wallet. Read before anything is
-     * sent, so a caller is answered here rather than by a round trip.
+     * Read before the request goes out, so the answer is local.
      */
     internal val isAuthorizable: Boolean
         get() =

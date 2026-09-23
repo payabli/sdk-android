@@ -72,12 +72,7 @@ class PayInBodyWriterTest {
         assertEquals(JsonPrimitive("device-1"), parsed["device"])
     }
 
-    /**
-     * The identifier says which stored method; the method says what it is, and both travel.
-     *
-     * The initiator is on every one of these because the payer is present for everything this SDK charges,
-     * and nothing else in the request says so.
-     */
+    /** A stored method sends the method it stands for, its identifier, and a `payor` initiator. */
     @Test
     fun `a stored method carries the method it stands for, and a payor initiator`() {
         val card = PayInPaymentMethod.Stored(PayInStoredMethodType.Card, "tok-1")
