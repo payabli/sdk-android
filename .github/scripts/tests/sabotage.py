@@ -659,6 +659,30 @@ MUTATIONS = [
      "      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}\n"
      "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis"),
 
+    # The same exposure written so that a check matching only a bare reference reads it as safe. The
+    # fallback changes nothing about what the value is: an empty default is reached only when the secret is
+    # absent, so every run that has the credential exports it.
+    ("The nightly job exposes the credential through a fallback expression", NIGHTLY, "workflows",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != \'\' }}",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != \'\' }}\n"
+     "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD || \'\' }}"),
+
+    # Workflow level, which is inherited by every job and appears in none of them. A check reading only
+    # each job's own env is green for exactly this.
+    ("The workflow-level env hands every ci.yml job the card reader credential", CI, "workflows",
+     "env:\n  # Never --info or --debug here: verbose Gradle logs can print repository credentials.\n"
+     "  GRADLE_OPTS: -Dorg.gradle.console=plain",
+     "env:\n  # Never --info or --debug here: verbose Gradle logs can print repository credentials.\n"
+     "  GRADLE_OPTS: -Dorg.gradle.console=plain\n"
+     "  READER_PW: ${{ secrets.PAYABLI_MAVEN_PASSWORD }}"),
+
+    # W9, and the reason it exists: W12 reads ci.yml, so the harness has to run when ci.yml changes.
+    # Dropping it from the filter leaves every W12 assertion about that file unreachable by the change
+    # that would break it, while the harness still reports a full pass on everything else.
+    ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
+     "      - \'.github/workflows/card-reader-mirror.yml\'\n      - \'.github/workflows/ci.yml\'\n  push:",
+     "      - \'.github/workflows/card-reader-mirror.yml\'\n  push:"),
+
 ]
 
 

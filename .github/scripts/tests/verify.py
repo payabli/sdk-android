@@ -2454,7 +2454,8 @@ def test_workflows():
     # every workflow asserted about above has to match one of those patterns, on both the pull request and
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
-    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW)
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
+               "ci.yml")
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
     for event in ("pull_request", "push"):
@@ -2755,9 +2756,18 @@ def test_workflows():
     # `--no-daemon`, since a surviving Gradle daemon is what carries a value past the step that set it.
     CREDENTIAL = "PAYABLI_MAVEN_PASSWORD"
     THIRD_PARTY = "android-emulator-runner"
-    # A value that is exactly a secret interpolation, which is how a secret reaches a step as a usable
-    # value. `${{ secrets.X != '' }}` and any other expression around the reference do not match.
-    BARE_SECRET = re.compile(r"^\$\{\{\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}$")
+    # Any reference to a secret, wherever it sits in the expression. Anchoring this to an expression that
+    # is *only* a reference reads as precision and is a hole: `${{ secrets.X || '' }}` yields the secret
+    # just as `${{ secrets.X }}` does, and would have passed. What is asked is whether the value can carry
+    # the secret, not whether it was written the shortest way.
+    SECRET_REF = re.compile(r"secrets\.[A-Za-z_][A-Za-z0-9_]*")
+    # The one shape that references a secret and cannot yield it: a comparison, which yields a boolean and
+    # is how a step decides whether to run. Anything else referencing a secret is treated as exposure,
+    # because enumerating the safe forms is the mistake this replaces.
+    COMPARISON = re.compile(r"(==|!=)")
+
+    def exposes_secret(value: str) -> bool:
+        return bool(SECRET_REF.search(value)) and not COMPARISON.search(value)
 
     def rendered_jobs(name: str) -> dict[str, tuple[dict, str]]:
         return {jn: (job, yaml.safe_dump(job, default_flow_style=False, sort_keys=False))
@@ -2785,11 +2795,16 @@ def test_workflows():
         # catch. Written about any bare secret, so renaming the mapping to a name this file does not
         # know about is closed too. A comparison is not an exposure, because
         # `${{ secrets.X != '' }}` yields a boolean and is how a step decides whether to run.
+        # A workflow-level `env:` is inherited by every job, so it reaches the action while appearing in no
+        # job and no step. Read once and folded into each job's effective environment below, because a
+        # check that reads only where the value is usually written is a check about habits.
+        workflow_env = {key: value for key, value in (workflow_doc(name).get("env") or {}).items()}
         for job_name, (job, body) in jobs.items():
             if THIRD_PARTY not in body:
                 continue
-            exposed = [key for key, value in (job.get("env") or {}).items()
-                       if BARE_SECRET.match(str(value).strip())]
+            effective = dict(workflow_env)
+            effective.update(job.get("env") or {})
+            exposed = [key for key, value in effective.items() if exposes_secret(str(value).strip())]
             check(f"W12 the {name} job running {THIRD_PARTY} exposes no secret at job level",
                   not exposed, f"{job_name}: " + " | ".join(exposed))
 
