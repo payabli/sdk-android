@@ -693,6 +693,12 @@ MUTATIONS = [
      "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n"
      "      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' && secrets.PAYABLI_MAVEN_PW_PROD }}"),
 
+    # The whole context, which names no secret and carries every one of them. A rule built from the
+    # ways of reaching a single value reads this as mentioning none.
+    ("The nightly job exports the entire secrets context", NIGHTLY, "workflows",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}",
+     "      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}\n      ALL_SECRETS: ${{ toJSON(secrets) }}"),
+
     # The emulator action handed the credential on its own step, under a name this file does not
     # know. A rule asking whether the step mentions PAYABLI_MAVEN_PASSWORD reads it as clean.
     ("The emulator step is handed a secret under another name", NIGHTLY, "workflows",

@@ -2756,10 +2756,16 @@ def test_workflows():
     # `--no-daemon`, since a surviving Gradle daemon is what carries a value past the step that set it.
     CREDENTIAL = "PAYABLI_MAVEN_PASSWORD"
     THIRD_PARTY = "android-emulator-runner"
-    # Any reference to a secret, in either form the expression syntax offers. Dot notation is the one
-    # everything here is written in; index notation is equally valid and was invisible to a pattern that
-    # only knew the first, so a mapping written `secrets['NAME']` read as holding no secret at all.
-    SECRET_REF = re.compile(r"secrets\s*(?:\.\s*[A-Za-z_][A-Za-z0-9_-]*|\[\s*['\"][^'\"]+['\"]\s*\])")
+    # Any use of the secrets context inside an expression, rather than any of the ways of reaching one
+    # value in it. Enumerating those ways has now failed three times in a row here: first the pattern knew
+    # only a bare `${{ secrets.X }}`, then only dot notation, and then `${{ toJSON(secrets) }}` -- which
+    # names no single secret and exports all of them -- matched neither. The context appearing at all is
+    # the question; which member is read, and whether one is named, is not.
+    EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.S)
+    SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
+
+    def touches_secrets(value: str) -> bool:
+        return any(SECRETS_CONTEXT.search(body) for body in EXPRESSION.findall(value))
     # The single shape a value may take while still referencing a secret: the whole expression is one
     # comparison of a secret against a string literal, which is how a step decides whether to run.
     #
@@ -2773,7 +2779,7 @@ def test_workflows():
         r"\s*(?:==|!=)\s*(?:'[^']*'|\"[^\"]*\")\s*\}\}$")
 
     def exposes_secret(value: str) -> bool:
-        return bool(SECRET_REF.search(value)) and not SAFE_COMPARISON.match(value.strip())
+        return touches_secrets(value) and not SAFE_COMPARISON.match(value.strip())
 
     def rendered_jobs(name: str) -> dict[str, tuple[dict, str]]:
         return {jn: (job, yaml.safe_dump(job, default_flow_style=False, sort_keys=False))
