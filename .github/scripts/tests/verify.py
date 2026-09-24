@@ -2987,15 +2987,27 @@ def test_workflows():
     # Nothing publishes ahead of the suites, and nothing publishes off its own trigger. A trigger of its
     # own fires on the same push as CI and publishes whatever main held; this is called by CI, so the
     # dependency is `needs` rather than a second workflow guessing when the first finished.
-    check("W16 and it never publishes off a trigger of its own",
-          "push" not in qa_on and "workflow_run" not in qa_on, f"{sorted(qa_on)}")
-    check("W16 and CI can call it", "workflow_call" in qa_on, f"{sorted(qa_on)}")
+    # The whole set rather than the two triggers worth refusing: `pull_request`, `schedule` and
+    # `repository_dispatch` are each a run that is not a dispatch, so the suites step skips and the
+    # publish goes ahead with nothing waiting for CI.
+    check("W16 and it has no trigger but those two",
+          set(qa_on) == {"workflow_dispatch", "workflow_call"}, f"{sorted(qa_on)}")
 
     # A called workflow checks out the caller's commit, so naming a ref would be choosing a different
     # one from the revision CI is testing.
-    checkout = next((step for step in qa_steps if "actions/checkout" in str(step.get("uses", ""))), {})
-    check("W16 and it builds the commit it was called on",
-          not (checkout.get("with") or {}).get("ref"), str(checkout.get("with")))
+    checkouts = [step for step in qa_steps if "actions/checkout" in str(step.get("uses", ""))]
+    check("W16 it checks out once", len(checkouts) == 1, f"{len(checkouts)} checkout steps")
+    # Neither, and every one of them: a `repository:` without a `ref` takes that repository's default
+    # branch, and a second checkout can name a ref the first did not.
+    named = [str(step.get("with")) for step in checkouts
+             if (step.get("with") or {}).get("ref") or (step.get("with") or {}).get("repository")]
+    check("W16 and it builds the commit it was called on", not named, " | ".join(named))
+
+    # Every action in this file, because W12 reads ci.yml and nightly.yml and the `./` exemption it
+    # gained says only that the reference to this workflow needs no pin. The actions inside it do.
+    unpinned = [ref for ref in (str(step.get("uses")).strip() for step in qa_steps if step.get("uses"))
+                if not PINNED.match(ref)]
+    check("W16 and every action it runs is pinned to a commit", not unpinned, " | ".join(unpinned))
 
     # The caller, in ci.yml: the dependency, and what stops a pull request reaching it.
     ci_doc = workflow_doc("ci.yml")
@@ -3008,10 +3020,10 @@ def test_workflows():
         # them is the same list twice, and a job added to ci.yml would then be one the snapshot does not
         # wait for and nothing reports. sonar needs build and instrumented, so depending on it covers
         # three, and the closure is what says so rather than a comment claiming it.
-        graph = {name: list(job.get("needs") or [])
+        graph = {name: needs_of(job)
                  for name, job in (ci_doc.get("jobs") or {}).items() if isinstance(job, dict)}
         caller_name = next(name for name, job in (ci_doc.get("jobs") or {}).items() if job is caller)
-        waited, stack = set(), list(caller.get("needs") or [])
+        waited, stack = set(), needs_of(caller)
         while stack:
             job_name = stack.pop()
             if job_name in waited:
@@ -3020,6 +3032,18 @@ def test_workflows():
             stack.extend(graph.get(job_name, []))
         owed = set(graph) - {caller_name} - waited
         check("W16 and after every other job in ci.yml", not owed, f"does not wait for {sorted(owed)}")
+        # Cancelling reaches the jobs of a workflow this one called, and the publisher uploads one object
+        # at a time, so a merge landing mid-upload leaves a partial tree under an abandoned identifier.
+        # The called workflow's own group cannot refuse a cancellation the caller's group starts.
+        cancels = str((ci_doc.get("concurrency") or {}).get("cancel-in-progress", ""))
+        check("W16 and ci.yml does not cancel a run on main",
+              cancels != "true" and cancels.lower() != "true", cancels)
+
+        # A job with continue-on-error counts as succeeded for anything that needs it, so waiting for it
+        # and requiring it to have passed are different things.
+        soft = [name for name in sorted(waited)
+                if (ci_doc.get("jobs") or {}).get(name, {}).get("continue-on-error")]
+        check("W16 and every job it waits for can fail the run", not soft, f"{soft}")
         # A pull request runs CI too, including from a fork, and this job mints the publishing identity.
         gate = " ".join(str(caller.get("if", "")).split())
         check("W16 and only on a push to main",
@@ -3027,10 +3051,17 @@ def test_workflows():
         # A workflow-level grant is inherited by every job that does not replace it, so a job-level
         # answer alone is one a declaration one level up satisfies while the token reaches jobs that run
         # moving-tag actions. Both levels, and the workflow level is refused outright.
-        top = str((ci_doc.get("permissions") or {}).get("id-token", "none"))
-        check("W16 and ci.yml grants no token for a job to inherit", top == "none", f"{ci_doc.get('permissions')}")
+        # `permissions` is a mapping or the string `write-all`, which grants the token outright. Reading
+        # it as a mapping either way raises on the string, and a traceback carries no verdict.
+        def mints(value) -> bool:
+            if isinstance(value, str):
+                return value == "write-all"
+            return str((value or {}).get("id-token")) == "write"
+
+        check("W16 and ci.yml grants no token for a job to inherit",
+              not mints(ci_doc.get("permissions")), f"{ci_doc.get('permissions')}")
         minting = [name for name, job in (ci_doc.get("jobs") or {}).items()
-                   if isinstance(job, dict) and str((job.get("permissions") or {}).get("id-token")) == "write"]
+                   if isinstance(job, dict) and mints(job.get("permissions"))]
         check("W16 and it is the only job in ci.yml granted one",
               minting == [caller_name], f"{minting}")
 
@@ -3043,7 +3074,8 @@ def test_workflows():
               isinstance(passed, dict) and bool(declared) and set(passed) == declared,
               f"passed={sorted(passed) if isinstance(passed, dict) else passed} declared={sorted(declared)}")
 
-    # A dispatch answers to no CI run, so it carries the suites itself or it publishes untested code.
+    # A dispatch answers to no CI run, so it carries the unit suites itself. It does not carry the
+    # instrumented ones, ktlint or lint, and the workflow says so where it runs them.
     # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one
     # this never notices, and naming them twice is how the two lists drift.
     ci_runs = " ".join(str(step.get("run", "")) for step in steps_of(workflow_doc("ci.yml")))
@@ -3060,7 +3092,10 @@ def test_workflows():
         check("W16 and every suite ci.yml runs", not missing, f"missing={sorted(missing)}")
         # An included build, so no task in the main build reaches it and it needs its own invocation.
         check("W16 and the convention plugin tests", "-p build-logic test" in run, run[:200])
-        check("W16 and does so only when CI has not", "workflow_dispatch" in str(tested.get("if", "")),
+        # Exact: `!= 'workflow_dispatch'` contains the term, skips the step on a dispatch, and leaves
+        # the publish running behind it.
+        check("W16 and does so only when CI has not",
+              " ".join(str(tested.get("if", "")).split()) == "github.event_name == 'workflow_dispatch'",
               str(tested.get("if", "")))
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second

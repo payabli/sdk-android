@@ -139,8 +139,30 @@ MUTATIONS = [
     ("CI publishes without waiting for any job", CI, "workflows",
      "    needs: [card-present, sonar]\n", ""),
 
-    ("CI publishes before the instrumented suites and the quality gate finish", CI, "workflows",
+    ("CI publishes before the instrumented suites finish", CI, "workflows",
      "    needs: [card-present, sonar]", "    needs: [card-present, build]"),
+
+    ("A job CI waits for is allowed to fail without failing the run", CI, "workflows",
+     "  instrumented:\n", "  instrumented:\n    continue-on-error: true\n"),
+
+    ("CI cancels a run on main, and with it a publish part way through its upload", CI, "workflows",
+     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", "  cancel-in-progress: true"),
+
+    ("QA snapshot gains a trigger that is neither a dispatch nor a call", QA, "workflows",
+     "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
+
+    ("QA snapshot skips the suites on a dispatch while publishing anyway", QA, "workflows",
+     "        if: github.event_name == 'workflow_dispatch'\n",
+     "        if: github.event_name != 'workflow_dispatch'\n"),
+
+    ("QA snapshot checks out another repository's default branch", QA, "workflows",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          repository: other/repo\n"),
+
+    ("QA snapshot runs an action on a moving tag", QA, "workflows",
+     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1",
+     "      - uses: actions/setup-java@v6"),
 
     ("CI publishes from a pull request, including a fork's", CI, "workflows",
      "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n", "    if: always()\n"),
