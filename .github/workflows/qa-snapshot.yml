@@ -109,16 +109,20 @@ jobs:
           base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
           echo "version=${base}-QA.$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
 
-      # The credential is on this step alone: it resolves the card reader, and no other step here reads
-      # /maven. The release identity, because every build reads it whatever it publishes to.
-      # A dispatch answers to no CI run, so the suites run here. The workflow_run path skips them because
-      # the run that triggered it is the one that passed them.
+      # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,
+      # the OIDC check and the upload read nothing from /maven.
+      #
+      # A dispatch answers to no CI run, so it runs every suite CI runs. The workflow_run path skips them
+      # because the run that triggered it is the one that passed them. build-logic is an included build,
+      # so no task in the main build reaches its tests and it takes its own invocation.
       - name: Unit tests
         if: github.event_name == 'workflow_dispatch'
         env:
           PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
           PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test
+        run: |
+          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
+          ./gradlew -p build-logic test
 
       - name: Publish to the staging directory
         env:

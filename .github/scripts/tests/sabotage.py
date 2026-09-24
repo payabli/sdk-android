@@ -173,6 +173,12 @@ MUTATIONS = [
      "            ${{ github.event_name == 'workflow_run'\n                && github.event.workflow_run.head_sha || github.ref }}",
      "            ${{ github.ref }}"),
 
+    ("A dispatched QA snapshot skips the sample app's suite", QA, "workflows",
+     " :taptopay:test :example:test", " :taptopay:test"),
+
+    ("A dispatched QA snapshot skips the convention plugin tests", QA, "workflows",
+     "          ./gradlew -p build-logic test\n", ""),
+
     ("A dispatched QA snapshot publishes without running the suites", QA, "workflows",
      "      - name: Unit tests\n        if: github.event_name == 'workflow_dispatch'",
      "      - name: Unit tests\n        if: false"),

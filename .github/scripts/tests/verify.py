@@ -3006,11 +3006,22 @@ def test_workflows():
     check("W16 and it builds the commit CI passed", "workflow_run.head_sha" in ref, ref[:120])
 
     # A dispatch answers to no CI run, so it carries the suites itself or it publishes untested code.
+    # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one
+    # this never notices, and naming them twice is how the two lists drift.
+    ci_runs = " ".join(str(step.get("run", "")) for step in steps_of(workflow_doc("ci.yml")))
+    ci_suites = set(re.findall(r":([A-Za-z0-9_-]+):test\b", ci_runs))
+    check("W16 ci.yml names the suites to match", bool(ci_suites), ci_runs[:120])
+
     tested = next((step for step in qa_steps
-                   if ":core:test" in str(step.get("run", ""))), None)
+                   if re.search(r":[A-Za-z0-9_-]+:test\b", str(step.get("run", "")))), None)
     check("W16 a dispatch runs the suites", tested is not None,
           " | ".join(str(step.get("name", "")) for step in qa_steps))
     if tested is not None:
+        run = str(tested.get("run", ""))
+        missing = ci_suites - set(re.findall(r":([A-Za-z0-9_-]+):test\b", run))
+        check("W16 and every suite ci.yml runs", not missing, f"missing={sorted(missing)}")
+        # An included build, so no task in the main build reaches it and it needs its own invocation.
+        check("W16 and the convention plugin tests", "-p build-logic test" in run, run[:200])
         check("W16 and does so only when CI has not", "workflow_dispatch" in str(tested.get("if", "")),
               str(tested.get("if", "")))
 
@@ -3033,8 +3044,8 @@ def test_workflows():
     check("W16 and no AWS access key is named",
           "AWS_ACCESS_KEY_ID" not in qa_text and "AWS_SECRET_ACCESS_KEY" not in qa_text)
 
-    # The card reader credential belongs to the one step that reads /maven. Job-level it reaches every
-    # step, including the checkout and the upload, and a dispatched run carries branch-controlled code.
+    # The card reader credential belongs to the steps that resolve it. Job-level it reaches every step,
+    # including the checkout and the upload, and a dispatched run carries branch-controlled code.
     check("W16 no credential is declared for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
     holding = [step for step in qa_steps
