@@ -61,7 +61,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 **Core**: `:core` (`com.payabli.sdk.core`), session, token and transport foundation. Depends on nothing first-party; everything else depends on it.
 **Capabilities**: `:taptopay` (card-present) · `:payin` (card-not-present)
 **Opt-in**: `:telemetry`
-**Aggregate**: `:payabli-android` (umbrella AAR: `:core` + `:payin` + `:telemetry`) · `:payabli-bom` (version constraints)
+**Aggregate**: `:payabli-android` (umbrella AAR: `:core` + `:payin` + `:taptopay` + `:telemetry`) · `:payabli-bom` (version constraints)
 **Infra**: `:example` (sample app, `com.payabli.example.app`; see `example/README.md`), `build-logic` (convention plugins)
 
 **Key Patterns**
