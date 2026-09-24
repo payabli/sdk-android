@@ -24,10 +24,6 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    env:
-      # The release identity: every build reads /maven whatever it publishes to.
-      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -89,9 +85,13 @@ jobs:
           base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
           echo "version=${base}-QA.$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
 
+      # The credential is on this step alone: it resolves the card reader, and no other step here reads
+      # /maven. The release identity, because every build reads it whatever it publishes to.
       - name: Publish to the staging directory
         env:
           VERSION: ${{ steps.name.outputs.version }}
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
         run: ./gradlew publish -Ppayabli.version="$VERSION"
 
       - name: Authenticate to AWS
