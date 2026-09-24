@@ -9,9 +9,9 @@ demonstrates it.
 |---|---|---|
 | `:core` | Session, token and transport foundation. Depends on nothing first-party. | yes |
 | `:payin` | Card-not-present: the clients, the submission holder and the Compose payment form. | yes |
-| `:taptopay` | Card-present: attestation and the card reader. | **withheld** |
+| `:taptopay` | Card-present: attestation and the card reader. | yes |
 | `:telemetry` | Opt-in instrumentation. | yes |
-| `:payabli-android` | Umbrella AAR over `:core`, `:payin` and `:telemetry`. | yes |
+| `:payabli-android` | Umbrella AAR over `:core`, `:payin`, `:taptopay` and `:telemetry`. | yes |
 | `:payabli-bom` | Version constraints. | yes |
 | `:example` | The sample app. Not shipped, not depended on by anything. | **no** |
 | `build-logic` | Convention plugins. | no |
@@ -44,11 +44,11 @@ These are settled decisions. A finding that amounts to reversing one is not a fi
 - **Platform-native only.** `HttpURLConnection`, Keystore and `javax.crypto`, `kotlinx.serialization`,
   `kotlinx.coroutines`, Compose. No third-party HTTP client, crypto engine, DI framework, reflection-based
   JSON mapper or logging framework. Proposals to adopt one are out of scope by policy, not by oversight.
-- **A capability module never depends on a sibling capability**, and the umbrella deliberately omits
-  `:taptopay` so the card reader dependency stays opt-in.
-- **`minSdk` is per module.** `:taptopay` is 30 because its card reader dependency requires it; published
-  modules are 23; `:example` is 30, taking that floor because it links `:taptopay`. Aligning the published
-  modules to it is not an improvement.
+- **A capability module never depends on a sibling capability.** The umbrella re-exports every capability
+  module, so taking `sdk-android` takes the card reader.
+- **`minSdk` is per module.** `:taptopay` is 30 because its card reader dependency requires it, and
+  `:payabli-android` and `:example` are 30 because they link it. The card-not-present modules are 23, and
+  aligning them upward is not an improvement.
 - **The payment form names no colour or measurement of its own**, taking them from the host's
   `MaterialTheme`. A literal colour or size under `payin/.../ui` is a defect; the absence of one is not.
 - **Sensitive input lives in a zeroizable buffer**, never an immutable `String`, and is overwritten after

@@ -53,21 +53,24 @@ jobs:
 
       # :taptopay needs a credential fork PRs cannot have; see the card-present job. :example is there
       # too, and not here, because it links :taptopay for the Tap to pay screen and so resolves the card
-      # reader as well.
+      # reader as well. :payabli-android re-exports :taptopay, so it resolves the reader too.
       - name: Build
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
-          :payabli-android:assembleDebug :testutils:assembleDebug
+          :testutils:assembleDebug
 
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
 
+      # build-logic is an included build, so no task in the main build reaches its tests.
+      - name: Convention plugin tests
+        run: ./gradlew -p build-logic test
+
       - name: Format
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :testutils:ktlintCheck
+          :payabli-bom:ktlintCheck :testutils:ktlintCheck
 
       - name: Android Lint
-        run: ./gradlew :core:lint :payin:lint :telemetry:lint :payabli-android:lint
-          :testutils:lint
+        run: ./gradlew :core:lint :payin:lint :telemetry:lint :testutils:lint
 
       # The aggregate module has no tests, so no coverage task.
       #
@@ -302,7 +305,8 @@ jobs:
       # signs and it resolves a source set debug never compiles. A break there is invisible to every
       # other job: main has no release variant at all, and this branch found one the day it enabled it.
       - name: Build
-        run: ./gradlew :taptopay:assembleDebug :example:assembleWithTelemetryDebug
+        run: ./gradlew :taptopay:assembleDebug :payabli-android:assembleDebug
+          :example:assembleWithTelemetryDebug
           :example:assembleWithoutTelemetryDebug :example:assembleWithTelemetryRelease
 
       - name: Unit tests
@@ -316,10 +320,10 @@ jobs:
         run: ./gradlew :taptopay:assembleAndroidTest :example:assembleAndroidTest
 
       - name: Format
-        run: ./gradlew :taptopay:ktlintCheck :example:ktlintCheck
+        run: ./gradlew :taptopay:ktlintCheck :payabli-android:ktlintCheck :example:ktlintCheck
 
       - name: Android Lint
-        run: ./gradlew :taptopay:lint :example:lint
+        run: ./gradlew :taptopay:lint :payabli-android:lint :example:lint
 
       - name: Coverage
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
@@ -362,8 +366,8 @@ jobs:
       # lints and formats it.
       - name: Produce reports
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
-          :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :testutils:ktlintCheck
-          :core:lint :payin:lint :telemetry:lint :payabli-android:lint :testutils:lint
+          :payabli-bom:ktlintCheck :testutils:ktlintCheck
+          :core:lint :payin:lint :telemetry:lint :testutils:lint
 
       # Split from the step above so the serialising flag reaches the coverage tasks without also
       # serialising nine lint and format tasks. See the note in the build job.
@@ -382,6 +386,7 @@ jobs:
       - name: Produce card-present reports
         if: env.PAYABLI_MAVEN_PASSWORD != ''
         run: ./gradlew :taptopay:ktlintCheck :taptopay:lint
+          :payabli-android:ktlintCheck :payabli-android:lint
 
       - name: Produce card-present coverage report
         if: env.PAYABLI_MAVEN_PASSWORD != ''

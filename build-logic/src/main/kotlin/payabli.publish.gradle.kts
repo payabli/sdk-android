@@ -1,5 +1,6 @@
 import com.android.build.api.dsl.LibraryExtension
 import com.payabli.buildlogic.extraEnvironmentsSetting
+import com.payabli.buildlogic.refusePublishingToARemoteRepository
 import com.payabli.buildlogic.refusePublishingWithExtraEnvironments
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
@@ -35,7 +36,7 @@ fun MavenPublication.applyPayabliPom() = pom {
 plugins {
     `maven-publish`
     // Supply-chain SBOM: every publishable module emits a CycloneDX bill of
-    // materials (build/reports/bom.json + bom.xml) via the `cyclonedxBom` task.
+    // materials (build/reports/cyclonedx/bom.json + bom.xml) via the `cyclonedxBom` task.
     id("org.cyclonedx.bom")
 }
 
@@ -51,24 +52,35 @@ fun Project.publishedArtifactId(): String =
 
 publishing {
     repositories {
+        // A directory, not a server. Publishing sends this tree separately, so Gradle's job ends at
+        // writing a correct layout on disk and nothing here uploads.
         maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/payabli/sdk-android")
-            credentials {
-                // Local: -Pgpr.user / -Pgpr.token (or ~/.gradle/gradle.properties).
-                // CI: GITHUB_ACTOR / GITHUB_TOKEN (needs write:packages).
-                username = providers.gradleProperty("gpr.user")
-                    .orElse(providers.environmentVariable("GITHUB_ACTOR")).orNull
-                password = providers.gradleProperty("gpr.token")
-                    .orElse(providers.environmentVariable("GITHUB_TOKEN")).orNull
-            }
+            name = "Staging"
+            url = uri(rootProject.layout.buildDirectory.dir("staging-repo"))
         }
     }
 }
 
+// At task time, not configuration time: a configuration-time check passes and a later afterEvaluate can
+// still turn the repository remote. The guard and its message are in PublishRepositories.kt.
+tasks.refusePublishingToARemoteRepository()
+
 // A published artifact carries only the environments committed in PayabliEnvironment; the guard and its
 // reasoning are in ExtraEnvironments.kt.
 tasks.refusePublishingWithExtraEnvironments(extraEnvironmentsSetting(providers))
+
+// The plugin generates on demand and attaches to nothing.
+fun MavenPublication.attachCycloneDxSbom(project: Project) {
+    val sbom = project.tasks.named("cyclonedxBom")
+    val reports = project.layout.buildDirectory.dir("reports/cyclonedx")
+    listOf("json", "xml").forEach { format ->
+        artifact(reports.map { it.file("bom.$format") }) {
+            classifier = "cyclonedx"
+            extension = format
+            builtBy(sbom)
+        }
+    }
+}
 
 // Android library modules -> "release" component.
 pluginManager.withPlugin("com.android.library") {
@@ -87,6 +99,7 @@ pluginManager.withPlugin("com.android.library") {
                     from(components["release"])
                     artifactId = publishedArtifactId()
                     applyPayabliPom()
+                    attachCycloneDxSbom(project)
                 }
             }
         }
@@ -102,6 +115,7 @@ pluginManager.withPlugin("java-platform") {
                     from(components["javaPlatform"])
                     artifactId = publishedArtifactId()
                     applyPayabliPom()
+                    attachCycloneDxSbom(project)
                 }
             }
         }

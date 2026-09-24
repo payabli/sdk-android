@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import fnmatch
+import hashlib
 import importlib.util
 import io
 import json
@@ -1935,6 +1936,7 @@ LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 # The card reader mirror, which holds the vendor token and mints the credential that writes the artifact
 # origin. Named once, because three checks below and the path filter all have to mean the same file.
 MIRROR_WORKFLOW = "card-reader-mirror.yml"
+QA_WORKFLOW = "qa-snapshot.yml"
 
 
 def workflow_text(name: str) -> str:
@@ -2958,10 +2960,242 @@ def test_workflows():
               not broken, " | ".join(broken))
         check("W15 and the ones it cannot read stay few", len(unreadable) <= 4, " | ".join(unreadable))
 
+    # W16 the QA snapshot's properties, each of which is green while wrong.
+    #
+    # The channel, the trigger and the identifier are the three that cannot be caught downstream. A run
+    # that uploads a correct tree to the wrong prefix succeeds; one triggered by a tag fails at the
+    # assume with an error naming IAM; and one publishing the committed property rather than a unique
+    # identifier replaces the build somebody is testing, on the one prefix where overwrite is allowed.
+    qa = workflow_doc(QA_WORKFLOW)
+    qa_on = (qa.get(True) if True in qa else qa.get("on")) or {}
+    qa_jobs = {name: job for name, job in (qa.get("jobs") or {}).items() if isinstance(job, dict)}
+    check(f"W16 {QA_WORKFLOW} has one publishing job", len(qa_jobs) == 1, f"{sorted(qa_jobs)}")
+    qa_steps = steps_of(qa)
+    qa_text = workflow_text(QA_WORKFLOW)
+
+    # The snapshot role trusts refs/heads/* only, so a tag cannot assume it. A tags: entry here produces
+    # a run that fails at the assume rather than one that publishes to the wrong place.
+    check("W16 it never triggers on a tag",
+          not any("tags" in value for value in qa_on.values() if isinstance(value, dict)), f"{qa_on}")
+    # Separately, because either alone satisfies "triggers from a branch" while the other is gone: a
+    # dropped dispatch leaves no way to cut a candidate, and a push widened past main publishes from
+    # every branch anyone pushes.
+    check("W16 it can be dispatched", "workflow_dispatch" in qa_on, f"{sorted(qa_on)}")
+    push = (qa_on.get("push") or {}) if isinstance(qa_on.get("push"), dict) else {}
+    check("W16 and it publishes on a push to main only",
+          list(push.get("branches") or []) == ["main"], f"{qa_on.get('push')}")
+
+    # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
+    # against the same base reach one identifier, and the first writer keeps the coordinate.
+    group = str(((qa.get("concurrency") or {}) if isinstance(qa.get("concurrency"), dict)
+                 else {"group": qa.get("concurrency")}).get("group", ""))
+    check("W16 one publish runs at a time across refs", bool(group) and "${{" not in group, group)
+
+    # A role ARN is an identifier rather than a credential, and masking it makes every AccessDenied
+    # unreadable. Written inline it would put the AWS account id in a public repository instead.
+    # On the step that assumes it rather than on the file: the provisioning check names the same variable,
+    # so a file-wide search for `vars.` is satisfied while the assume reads a secret.
+    assume_with = next((step.get("with") or {} for step in qa_steps
+                        if "configure-aws-credentials" in str(step.get("uses", ""))), {})
+    role = str(assume_with.get("role-to-assume", ""))
+    check("W16 the role the run assumes comes from a variable",
+          "vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN" in role, role)
+    check("W16 and no role ARN is written inline", "arn:aws:iam:" not in qa_text)
+    check("W16 and no AWS access key is named",
+          "AWS_ACCESS_KEY_ID" not in qa_text and "AWS_SECRET_ACCESS_KEY" not in qa_text)
+
+    # The card reader credential belongs to the one step that reads /maven. Job-level it reaches every
+    # step, including the checkout and the upload, and a dispatched run carries branch-controlled code.
+    qa_job = next(iter(qa_jobs.values()), {})
+    check("W16 no credential is declared for the whole job", not (qa_job.get("env") or {}),
+          f"{sorted(qa_job.get('env') or {})}")
+    reading = [str(step.get("name", "")) for step in qa_steps
+               if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
+    check("W16 and one step reads it", len(reading) == 1, f"{reading}")
+
+    # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
+    # If-None-Match, which the bucket policy requires on every write.
+    upload = next((step for step in qa_steps if "publish_staging.py" in str(step.get("run", ""))), None)
+    check("W16 it uploads the staging tree with the publisher", upload is not None)
+    if upload is not None:
+        run = str(upload.get("run", ""))
+        check("W16 and it publishes to the QA prefix", "--prefix maven-qa" in run, run[:160])
+        check("W16 and never to the release prefix", "--prefix maven " not in run, run[:160])
+
+    naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in str(step.get("run", ""))), None)
+    check("W16 it stamps the identifier", naming is not None)
+
+    # The committed property names the version under development, so publishing it gives every build
+    # from every branch one coordinate and a tester cannot pin the build they tested. Overriding it with
+    # a literal does the same, so the override has to reach the stamp: the step's env maps a variable to
+    # the naming step's output, and the command interpolates that variable.
+    gradle = next((step for step in qa_steps if "gradlew publish" in str(step.get("run", ""))), None)
+    check("W16 it builds the staging tree", gradle is not None)
+    if gradle is not None and naming is not None:
+        run = str(gradle.get("run", ""))
+        stamped = {var for var, value in (gradle.get("env") or {}).items()
+                   if f"steps.{naming.get('id', '')}.outputs" in str(value)}
+        passed = re.search(r"""-Ppayabli\.version=["']?\$\{?([A-Za-z_][A-Za-z0-9_]*)""", run)
+        check("W16 and the version it publishes under is the stamp",
+              bool(stamped) and passed is not None and passed.group(1) in stamped,
+              f"env={sorted(stamped)} passed={passed.group(1) if passed else None} run={run[:120]}")
+    if naming is not None:
+        run = str(naming.get("run", ""))
+        # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
+        # not carry a leading zero, which a day-first stamp does on the first nine days of every month.
+        check("W16 and the stamp is UTC", "date -u" in run, run[:160])
+        check("W16 and the qualifier is the ruled one", "-QA." in run, run[:160])
+
+    # The setting that decides the subject lives in a different system from the trust policies that
+    # grant it, and a mismatch fails at the assume with an error naming IAM. Checked afterwards it would
+    # report the thing it exists to explain.
+    names = " | ".join(str(step.get("name", "")) for step in qa_steps)
+    subject = next((i for i, step in enumerate(qa_steps)
+                    if "ACTIONS_ID_TOKEN_REQUEST_URL" in step_text(step)), None)
+    assume = next((i for i, step in enumerate(qa_steps)
+                   if "configure-aws-credentials" in str(step.get("uses", ""))), None)
+    check("W16 it checks the OIDC subject it presents", subject is not None, names)
+    if subject is not None:
+        # The branch form and not the bare prefix. workflow_dispatch accepts a tag ref, whose subject
+        # shares the prefix, so a prefix match passes and the assume then fails naming IAM -- which is
+        # the failure this step exists to explain.
+        expected = str((qa_steps[subject].get("env") or {}).get("EXPECTED", ""))
+        check("W16 and the subject it expects is a branch", expected.endswith(":ref:refs/heads/"), expected)
+    check("W16 and it authenticates to AWS", assume is not None, names)
+    if subject is not None and assume is not None:
+        check("W16 and the subject check runs before the assume", subject < assume, f"{subject} vs {assume}")
 
 
 
-HALVES = ("both", "collector", "poster", "workflows", "live")
+
+
+def load_publisher():
+    """The uploader, imported from the working tree."""
+    source = Path(os.environ.get("NIGHTLY_PUBLISHER", SDK / ".github/scripts/publish_staging.py"))
+    spec = importlib.util.spec_from_file_location("publish_staging", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class FakeRun:
+    """What subprocess.run returns, as publish() reads it."""
+
+    def __init__(self, returncode=0, stderr=""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def test_publisher():
+    """publish()'s branches, which W16 cannot reach: it reads the workflow, never the uploader.
+
+    Every case here ends in a coordinate that is written, refused or reported present, and each is an
+    outcome the origin can produce. A 412 says the key is occupied and nothing about what occupies it,
+    so the digest decides, and a read that fails is not an answer.
+    """
+    pub = load_publisher()
+
+    root = Path(tempfile.mkdtemp(prefix="publisher-", dir=SCRATCH))
+    version = "0.1.0-QA.20260201143000"
+    artifact = root / "com/payabli/sdk-android-core" / version / f"sdk-android-core-{version}.pom"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("<project/>")
+    files = pub.collect(root, version)
+    check("U1 the tree collects one publishable file", len(files) == 1, f"{files}")
+
+    def refusal(staging, want):
+        """What collect() exits with, or None when it returned instead of refusing."""
+        out = io.StringIO()
+        try:
+            with redirect_stdout(out):
+                pub.collect(staging, want)
+        except SystemExit as stop:
+            return str(stop)
+        return None
+
+    # Gradle writes into this tree and never cleans it, so a failed build, or one at another version,
+    # leaves artifacts that would be published as though this run had produced them.
+    stale = root / "com/payabli/sdk-android-core/0.0.9/sdk-android-core-0.0.9.pom"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("<project/>")
+    said = refusal(root, version)
+    check("U9 a file at another version refuses the whole tree", said is not None and version in said,
+          f"{said}")
+    check("U9 and the refusal names the stray file", said is not None and "0.0.9" in said, f"{said}")
+    stale.unlink()
+
+    # Gradle writes a maven-metadata.xml per artifact and the uploader leaves it behind, so a tree
+    # holding nothing else has produced no artifact rather than a publishable one.
+    bare = Path(tempfile.mkdtemp(prefix="publisher-bare-", dir=SCRATCH))
+    metadata = bare / "com/payabli/sdk-android-core/maven-metadata.xml"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text("<metadata/>")
+    said = refusal(bare, version)
+    check("U10 a tree holding only maven-metadata is empty, not publishable",
+          said is not None and "is empty" in said, f"{said}")
+
+    said = refusal(bare / "absent", version)
+    check("U11 a staging tree that was never written refuses",
+          said is not None and "does not exist" in said, f"{said}")
+
+    def run_publish(put_results, remote_digest="__same__"):
+        """publish() against scripted put/read_back answers, returning (exit, printed)."""
+        calls = []
+        local = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+        def fake_put(bucket, account, key, path, cache_control):
+            calls.append(key)
+            return put_results[min(len(calls) - 1, len(put_results) - 1)]
+
+        def fake_read_back(bucket, account, key):
+            return local if remote_digest == "__same__" else remote_digest
+
+        pub.put, pub.read_back = fake_put, fake_read_back
+        out = io.StringIO()
+        try:
+            with redirect_stdout(out):
+                code = pub.publish(files, "bucket", "123456789012", "maven-qa")
+        except Exception as error:
+            # A raising uploader publishes nothing and reports nothing, so it is a failure rather than
+            # something for the caller's assertions to miss while the traceback escapes the harness.
+            return 1, f"{out.getvalue()}\nraised {type(error).__name__}: {error}", calls
+        return code, out.getvalue(), calls
+
+    code, out, calls = run_publish([FakeRun()])
+    check("U2 an ordinary upload succeeds", code == 0 and "uploaded" in out, f"{code} {out[-120:]}")
+    check("U2 and it puts once", len(calls) == 1, f"{calls}")
+
+    # The steady state of a re-run on the immutable prefix, and the one case that must not fail.
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (PreconditionFailed)")])
+    check("U3 a key already holding these bytes is present, not a failure",
+          code == 0 and "present" in out, f"{code} {out[-160:]}")
+
+    # A coordinate populated by a bad run. Reporting it present would leave it wrong for ever, because
+    # --if-none-match means no later run can replace it.
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (PreconditionFailed)")], remote_digest="beef")
+    check("U4 a key holding different bytes fails",
+          code == 1 and "present with different bytes" in out, f"{code} {out[-160:]}")
+
+    # The publishing role is granted GetObject for exactly this read. Without it the digest cannot be
+    # compared, and an unverified key is not a published one.
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (PreconditionFailed)")], remote_digest=None)
+    check("U5 a key that cannot be read back fails rather than passing",
+          code == 1 and "could not be read back" in out, f"{code} {out[-160:]}")
+
+    # S3 documents this as retryable, and it is reachable because a by-hand run is not serialised against
+    # the workflow's concurrency group.
+    code, out, calls = run_publish([FakeRun(1, "(ConditionalRequestConflict)"), FakeRun()])
+    check("U6 a concurrent write is retried once and then succeeds",
+          code == 0 and len(calls) == 2 and "uploaded" in out, f"{code} {calls} {out[-160:]}")
+
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (AccessDenied)")])
+    check("U7 an ordinary refusal fails the run", code == 1 and "FAILED" in out, f"{code} {out[-160:]}")
+
+    # A read-only identity in the right account passes the account check and then fails every upload, so
+    # a run that uploaded nothing must never exit 0.
+    check("U8 and a failed run never reports success", code != 0, f"{code}")
+
+HALVES = ("both", "collector", "poster", "workflows", "live", "publisher")
 
 
 def main():
@@ -2981,6 +3215,8 @@ def main():
             test_poster(load_poster(base))
         if ONLY in ("both", "workflows"):
             test_workflows()
+        if ONLY in ("both", "publisher"):
+            test_publisher()
         if ONLY in ("both", "live"):
             live = load_live_poster(base)
             test_live_summary(live)

@@ -1,0 +1,113 @@
+name: QA snapshot
+
+# Publishes a release candidate of every module to /maven-qa. Branch only: the snapshot role trusts
+# refs/heads/*, so a tag cannot assume it.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One group across every ref, not one per ref: two refs stamping in the same UTC second reach one
+  # identifier, and the first writer keeps the coordinate.
+  group: qa-snapshot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish a QA snapshot
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      # Variables rather than secrets: masking a role ARN makes every AccessDenied unreadable.
+      - name: Check the channel is provisioned
+        run: |
+          missing=
+          [ -n "$AWS_MAVEN_QA_PUBLISH_ROLE_ARN" ] || missing="$missing AWS_MAVEN_QA_PUBLISH_ROLE_ARN"
+          [ -n "$AWS_SDK_CDN_BUCKET" ] || missing="$missing AWS_SDK_CDN_BUCKET"
+          [ -n "$AWS_SDK_CDN_REGION" ] || missing="$missing AWS_SDK_CDN_REGION"
+          if [ -n "$missing" ]; then
+            echo "::error::unset repository variable(s):$missing"
+            exit 1
+          fi
+        env:
+          AWS_MAVEN_QA_PUBLISH_ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+          AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      # The subject setting is GitHub's and the trust policies are Terraform elsewhere, so the two can
+      # disagree and the assume then fails naming IAM. Reads the claim rather than the setting, which
+      # needs repository-admin scope.
+      - name: Check the OIDC subject the trust policies expect
+        env:
+          # The branch form: a dispatch can be started on a tag, whose subject shares the prefix.
+          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/
+        run: |
+          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |
+            python3 -c 'import base64,json,sys; t=json.load(sys.stdin)["value"].split(".")[1]; print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())')
+          sub=$(printf '%s' "$claims" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sub"])')
+          echo "subject presented: $sub"
+          case "$sub" in
+            "$EXPECTED"*) ;;
+            *)
+              echo "::error::this run presents '$sub', and the snapshot role grants '$EXPECTED*'."
+              echo "::error::Either this run is on a tag, which that role never trusts, or GitHub's"
+              echo "::error::immutable subject claim setting for this repository has moved. The trust"
+              echo "::error::policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
+              exit 1
+              ;;
+          esac
+
+      # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
+      # carry a leading zero.
+      - name: Name this build
+        id: name
+        run: |
+          base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
+          echo "version=${base}-QA.$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      # The credential is on this step alone: it resolves the card reader, and no other step here reads
+      # /maven. The release identity, because every build reads it whatever it publishes to.
+      - name: Publish to the staging directory
+        env:
+          VERSION: ${{ steps.name.outputs.version }}
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: ./gradlew publish -Ppayabli.version="$VERSION"
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      # The account comes off the role ARN, so there is one copy of it. The script passes it as
+      # --expected-bucket-owner, so a mistyped bucket that resolves to someone else's is refused.
+      - name: Upload the staging tree
+        env:
+          VERSION: ${{ steps.name.outputs.version }}
+          ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+        run: |
+          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
+          export AWS_SDK_CDN_ACCOUNT
+          python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"

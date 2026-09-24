@@ -37,8 +37,8 @@ Full transitive set: see each module's CycloneDX SBOM.
 
 **These are not open source, and they are not Apache-2.0.** Each carries a licence declared by Google in
 its own published POM, quoted below with the URL that POM gives. They reach `:taptopay` through the Play
-Integrity dependency; no other module links them, and the umbrella artifact omits `:taptopay`, so a
-card-not-present integrator receives none of them.
+Integrity dependency, and the umbrella artifact re-exports `:taptopay`, so an integrator taking
+`sdk-android` receives them. Taking `sdk-android-core` and `sdk-android-payin` by coordinate does not.
 
 | Component | Coordinates | Licence as declared in the artifact's POM |
 |---|---|---|
@@ -61,20 +61,11 @@ and are governed by their vendors' own agreements, not the Apache/MIT terms abov
 ### Fiserv CommerceHub Tap to Pay SDK
 
 - **Coordinates:** `com.fiserv.ch:ttp-payment`
-- **Scope:** Bundled/depended on **only** by the `payabli-taptopay` (card-present /
-  Tap to Pay) module. The `payabli-core`, `payabli-payin`, `payabli-telemetry`
-  modules and the `sdk-android` umbrella artifact do **not** include it.
+- **Scope:** Depended on by the `payabli-taptopay` (card-present / Tap to Pay)
+  module, and so by the `sdk-android` umbrella artifact, which re-exports it. The
+  `payabli-core`, `payabli-payin` and `payabli-telemetry` modules do **not**.
 - **Copyright:** © Fiserv, Inc. All rights reserved. Used under license.
 
-> ⚠️ **Fill in from your Fiserv agreement.** The Fiserv artifact ships no license
-> file and its POM declares no `<licenses>`, so the exact required attribution /
-> terms text must be taken from the Fiserv CommerceHub developer agreement and
-> pasted here (and kept in sync with the version you ship). Replace this block with
-> the verbatim notice Fiserv requires.
-
-<!-- BEGIN FISERV LICENSE TEXT (verbatim, from Fiserv agreement) -->
-
-<!-- END FISERV LICENSE TEXT -->
 
 ### MagicCube SoftPOS / PIN kernel
 
@@ -85,8 +76,7 @@ and are governed by their vendors' own agreements, not the Apache/MIT terms abov
   `gradle/libs.versions.toml`.
 - **Terms:** The certified SoftPOS / PIN kernel, licensed by Fiserv and loaded at the
   integrating application build.
-- **Copyright:** Not established. The attribution line has to come from the same
-  Fiserv CommerceHub agreement as the component above, and is owed alongside it.
+- **Copyright:** © Fiserv, Inc. All rights reserved. Used under license.
 
 ---
 
