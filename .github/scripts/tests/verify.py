@@ -228,6 +228,37 @@ def test_collector():
     }), INSTRUMENTED_MODULES="core,payin")
     check("C4c both modules present is green", "verdict=green" in r["output"], r["output"])
 
+    # C4d one card-present module wrote nothing while its sibling wrote plenty. Same shape as C4b, on the
+    # suite that now spans two modules: :taptopay's results make the total non-zero, so only the per-module
+    # list sees that :example ran and wrote none.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+        "taptopay/build/test-results/testDebugUnitTest/TEST-x.xml": junit("T", [("cp", None)]),
+    }), CARD_PRESENT_OUTCOME="success", CARD_PRESENT_MODULES="taptopay,example")
+    check("C4d a silent card-present module is red", "verdict=red" in r["output"], r["output"])
+    check("C4d names the silent module",
+          r["facts"]["suites"][2]["label"] == "no results written by example",
+          json.dumps(r["facts"]["suites"]))
+
+    # C4e and the same list must not redden a card-present suite where both modules wrote.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+        "taptopay/build/test-results/testDebugUnitTest/TEST-x.xml": junit("T", [("cp", None)]),
+        "example/build/test-results/testWithTelemetryDebugUnitTest/TEST-y.xml": junit("E", [("ex", None)]),
+    }), CARD_PRESENT_OUTCOME="success", CARD_PRESENT_MODULES="taptopay,example")
+    check("C4e both card-present modules present is green", "verdict=green" in r["output"], r["output"])
+
+    # C4f the unit suite spans four modules and had the same hole: :core alone kept the total non-zero.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+    }), UNIT_MODULES="core,payin")
+    check("C4f a silent unit module is red", "verdict=red" in r["output"], r["output"])
+    check("C4f names the silent module", r["facts"]["suites"][0]["label"] == "no results written by payin",
+          json.dumps(r["facts"]["suites"]))
+
     # C5 step outcome not success
     r = run_collector(make_repo({UNIT_XML: junit("S", [("a", None)]), INST_XML: junit("I", [("a", None)])}),
                       INSTRUMENTED_OUTCOME="failure")
@@ -2860,8 +2891,12 @@ def test_workflows():
           str(sorted(sets)))
 
     nightly_jobs = (workflow_doc("nightly.yml").get("jobs") or {})
-    for job_name, own, other in (("nightly", "unit_patterns", "card_patterns"),
-                                 ("card-present", "card_patterns", "unit_patterns")):
+    # The collector is also told which modules each step ran, so it can say a module wrote nothing where the
+    # suite total cannot. That is the same fact a third time, so it is held to the gradle command too --
+    # exactly, not by containment: a module missing from the list is one whose silence nobody notices.
+    collect_env = (collect.get("env") or {}) if collect is not None else {}
+    for job_name, own, other, named in (("nightly", "unit_patterns", "card_patterns", "UNIT_MODULES"),
+                                        ("card-present", "card_patterns", "unit_patterns", "CARD_PRESENT_MODULES")):
         runs = " ".join(str(step.get("run", "")) for step in (nightly_jobs.get(job_name) or {}).get("steps") or [])
         modules = set(re.findall(r":([A-Za-z0-9_-]+):[A-Za-z]", runs))
         check(f"W14 the {job_name} job names modules to count", bool(modules), runs[:120])
@@ -2869,6 +2904,9 @@ def test_workflows():
               modules <= sets.get(own, set()), " | ".join(sorted(modules - sets.get(own, set()))))
         check(f"W14 and none of them is counted under the other job",
               not (modules & sets.get(other, set())), " | ".join(sorted(modules & sets.get(other, set()))))
+        listed = {m.strip() for m in str(collect_env.get(named, "")).split(",") if m.strip()}
+        check(f"W14 {named} names exactly the modules {job_name} runs",
+              listed == modules, f"listed={sorted(listed)} runs={sorted(modules)}")
 
 
 

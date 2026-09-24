@@ -290,7 +290,11 @@ jobs:
     env:
       # A boolean, not the credential. A step `if:` cannot read the secrets context, so the presence check
       # is rendered here and the credential itself stays on the one step that uses it.
-      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' }}
+      # Both halves, because the step needs both. With only the password checked, a missing user
+      # name ran the step anyway and it failed authentication, which reads as a broken build
+      # rather than as the deliberate no-credential skip. settings.gradle.kts's preflight already
+      # treats either half missing as incomplete.
+      HAS_READER_CREDENTIALS: ${{ secrets.PAYABLI_MAVEN_PW_PROD != '' && secrets.PAYABLI_MAVEN_US_PROD != '' }}
     steps:
       # Pinned, because this job holds a secret and everything that runs in it can reach what an earlier
       # step leaves behind.
@@ -387,6 +391,12 @@ jobs:
           # If a flavoured module is ever listed here, what follows its colon is the results directory under
           # `connected/`, not a variant name: a flavoured module writes `<buildType>/flavors/<flavor>`.
           INSTRUMENTED_MODULES: core,payin
+          # The same question for the two unit suites, which each span several modules: a module
+          # that writes nothing is hidden by a sibling that wrote plenty, and the suite total is
+          # never zero. Each list is that job's gradle task list in a second place, and W10
+          # compares them.
+          UNIT_MODULES: core,payin,telemetry,testutils
+          CARD_PRESENT_MODULES: taptopay,example
         run: python3 .github/scripts/nightly_report.py "$RUNNER_TEMP/nightly-facts/nightly-facts.json"
 
       # Its own artifact and a single-file directory, so the path `report` downloads is the same every night.

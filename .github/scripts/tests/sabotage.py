@@ -710,6 +710,14 @@ MUTATIONS = [
     # that would break it, while the harness still reports a full pass on everything else.
     # :example runs in card-present and is counted there. Counting it as a unit module lets its results
     # stand in for a unit step that wrote none, which is the guard the two sets exist for.
+    ("A silent card-present module is hidden by its sibling", COLLECTOR, "collector",
+     'card_missing = card_step == "success" and (card_total == 0 or bool(card_silent))',
+     'card_missing = card_step == "success" and card_total == 0'),
+
+    ("A silent unit module is hidden by its sibling", COLLECTOR, "collector",
+     'unit_missing = unit_step == "success" and (unit_total == 0 or bool(unit_silent))',
+     'unit_missing = unit_step == "success" and unit_total == 0'),
+
     ("A card-present module is counted under the unit job", COLLECTOR, "workflows",
      'for module in ("taptopay", "example")',
      'for module in ("taptopay",)'),
