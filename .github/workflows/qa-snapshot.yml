@@ -1,14 +1,21 @@
 name: QA snapshot
 
-# Publishes a release candidate of every module to /maven-qa. Branch only: the snapshot role trusts
-# refs/heads/*, so a tag cannot assume it.
+# Publishes a release candidate of every module to /maven-qa. The snapshot role trusts refs/heads/*, so a
+# run on a tag is refused at the assume; the subject check below says so before it gets there.
 
 on:
   workflow_dispatch:
-  # Called by CI rather than triggered beside it. On its own push trigger this published whatever main
-  # held whether or not the suites passed; as a called workflow it is a job with `needs`, which is the
-  # dependency a separate workflow cannot express.
+  # No trigger of its own for main: as a called workflow it is a job with `needs`, which is how it
+  # waits for the suites rather than running beside them.
   workflow_call:
+    # Named, so a caller hands over these two and not the repository's other twelve. This job mints the
+    # publishing identity, and `secrets: inherit` would put the vendor registry token and the live
+    # client credentials in the same place.
+    secrets:
+      PAYABLI_MAVEN_US_PROD:
+        required: true
+      PAYABLI_MAVEN_PW_PROD:
+        required: true
 
 permissions:
   contents: read

@@ -343,7 +343,9 @@ jobs:
       # For the OIDC role that writes the bucket, on this job and no other in this file.
       id-token: write
     uses: ./.github/workflows/qa-snapshot.yml
-    secrets: inherit
+    secrets:
+      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+      PAYABLI_MAVEN_PW_PROD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
 
   sonar:
     name: SonarCloud
