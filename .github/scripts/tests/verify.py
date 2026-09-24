@@ -2018,6 +2018,32 @@ def run_commands(step: dict) -> str:
     return " ".join(words)
 
 
+def invocation(step: dict, program: str) -> list[str]:
+    """The words of the line in `step` that runs `program`, as a shell would split them.
+
+    `run_commands` flattens a step into one string, which answers whether a term appears anywhere in it
+    and not what any one command was given. A step carrying `echo --prefix maven-qa` on its own line
+    satisfies a search for that term while the command below it is given something else.
+    """
+    for line in str(step.get("run", "")).splitlines():
+        try:
+            words = shlex.split(line, comments=True)
+        except ValueError:
+            continue
+        if any(word.endswith(program) for word in words):
+            return words
+    return []
+
+
+def argument(words: list[str], flag: str) -> str | None:
+    """The value given to `flag`, written either as two words or joined by `=`."""
+    if flag in words:
+        index = words.index(flag) + 1
+        return words[index] if index < len(words) else None
+    joined = next((word for word in words if word.startswith(f"{flag}=")), None)
+    return joined.split("=", 1)[1] if joined else None
+
+
 def steps_of(doc: dict) -> list[dict]:
     """Every step of every job, as the mappings they are."""
     steps: list[dict] = []
@@ -3205,9 +3231,9 @@ def test_workflows():
     upload = next((step for step in qa_steps if "publish_staging.py" in run_commands(step)), None)
     check("W16 it uploads the staging tree with the publisher", upload is not None)
     if upload is not None:
-        run = run_commands(upload)
-        check("W16 and it publishes to the QA prefix", "--prefix maven-qa" in run, run[:160])
-        check("W16 and never to the release prefix", "--prefix maven " not in run, run[:160])
+        words = invocation(upload, "publish_staging.py")
+        check("W16 and it publishes to the QA prefix",
+              argument(words, "--prefix") == "maven-qa", " ".join(words) or str(upload.get("run"))[:160])
 
     naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
     check("W16 it stamps the identifier", naming is not None)
@@ -3219,13 +3245,13 @@ def test_workflows():
     gradle = next((step for step in qa_steps if "gradlew publish" in run_commands(step)), None)
     check("W16 it builds the staging tree", gradle is not None)
     if gradle is not None and naming is not None:
-        run = run_commands(gradle)
         stamped = {var for var, value in (gradle.get("env") or {}).items()
                    if f"steps.{naming.get('id', '')}.outputs" in str(value)}
-        passed = re.search(r"""-Ppayabli\.version=["']?\$\{?([A-Za-z_][A-Za-z0-9_]*)""", run)
+        given = argument(invocation(gradle, "gradlew"), "-Ppayabli.version")
+        passed = re.fullmatch(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", given or "")
         check("W16 and the version it publishes under is the stamp",
               bool(stamped) and passed is not None and passed.group(1) in stamped,
-              f"env={sorted(stamped)} passed={passed.group(1) if passed else None} run={run[:120]}")
+              f"env={sorted(stamped)} given={given}")
     if naming is not None:
         run = run_commands(naming)
         # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
