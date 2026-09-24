@@ -62,12 +62,17 @@ class PublishRepositoryGuardTest {
 
     // java-platform so the convention registers a publication, which is what gives the probe a publish
     // task to run. No Android plugin, so no SDK is needed.
+    //
+    // The configuration cache is on, as the real build has it. A probe writes its own gradle.properties
+    // and inherits nothing, and the guard is shaped around what that cache will serialize, so without
+    // this line the one failure mode the implementation exists to avoid cannot reach these tests.
     private fun writeProject(extra: String) {
         projectDir.newFile("settings.gradle.kts").writeText("""rootProject.name = "guard-probe"""")
         projectDir.newFile("gradle.properties").writeText(
             """
             payabli.group=com.payabli
             payabli.version=0.0.0-probe
+            org.gradle.configuration-cache=true
             """.trimIndent(),
         )
         projectDir.newFile("build.gradle.kts").writeText(
