@@ -1,8 +1,4 @@
-// Card-present. Publishes as sdk-android-taptopay.
-//
-// Published to the QA channel only for now: `.github/scripts/publish_staging.py` refuses this coordinate
-// on the release prefix, and lifting that is a deliberate edit there rather than something a release
-// workflow can do by default.
+// Card-present. Publishes as sdk-android-taptopay, and the umbrella re-exports it.
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
@@ -92,11 +88,9 @@ android {
 dependencies {
     // Capability modules depend on :core only, never on a sibling capability.
     api(project(":core"))
-    // Strict, not the ordinary dependency this would otherwise be. Gradle settles a version conflict by
-    // taking the highest, so an integrator whose graph reaches a newer reader would silently run a
-    // configuration card-present was never certified against; a strict constraint fails that build. It
-    // exists only in published module metadata, which is why it arrives with the publication. The mirror
-    // decides which versions exist, never which one a graph picks.
+    // Strict, and only published module metadata carries it. Gradle settles a version conflict by taking
+    // the highest, so a graph reaching a newer reader fails to resolve instead of running a version
+    // card-present is not certified against.
     implementation(libs.fiserv.ttp) {
         version { strictly(libs.versions.fiservTtp.get()) }
     }

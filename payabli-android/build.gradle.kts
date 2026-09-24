@@ -7,10 +7,9 @@ plugins {
 // Dev module is :payabli-android; it releases as the umbrella artifact "sdk-android".
 extra["payabliArtifactId"] = "sdk-android"
 
-// Thin aggregate ("umbrella") artifact: no code of its own, it re-exports the commonly
-// integrated modules so consumers can depend on a single coordinate. Card-present is
-// intentionally excluded and stays opt-in; consumers who need it add it explicitly
-// (its version is pinned by the BOM).
+// Thin aggregate ("umbrella") artifact: no code of its own, it re-exports every capability module so a
+// consumer can depend on a single coordinate. It carries the card reader, so its floor is API 30.
+// Card-not-present alone is sdk-android-core and sdk-android-payin, at API 23.
 //
 // :payin ships the Compose payment form, so this artifact carries the Compose runtime.
 android {
@@ -23,8 +22,8 @@ android {
     }
 
     defaultConfig {
-        // Card-not-present floor; see :core.
-        minSdk = 23
+        // Card-present floor, inherited from :taptopay and required by the card reader.
+        minSdk = 30
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -37,5 +36,6 @@ android {
 dependencies {
     api(project(":core"))
     api(project(":payin"))
+    api(project(":taptopay"))
     api(project(":telemetry"))
 }

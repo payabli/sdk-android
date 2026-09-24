@@ -6,12 +6,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * `payabli.publish` publishes to a directory, and a remote repository is refused.
- *
- * Nothing else can fail when that stops being true: a remote repository added back configures and
- * publishes green, and the artifacts go somewhere no consumer reads.
- */
+/** `payabli.publish` publishes to a directory, and refuses a repository with any other scheme. */
 class PublishRepositoryGuardTest {
     @get:Rule
     val projectDir: TemporaryFolder = TemporaryFolder()
@@ -42,18 +37,13 @@ class PublishRepositoryGuardTest {
 
         val result = runner().buildAndFail()
 
-        // On the message and not only on the failure: a configuration error for any other reason
-        // fails too, and would pass this test while the guard was gone.
+        // Any configuration failure satisfies buildAndFail, so the message is what identifies this one.
         assertTrue(result.output, result.output.contains("publishing repository 'Elsewhere' is https"))
         assertTrue(result.output, result.output.contains("only file is allowed"))
     }
 
-    /**
-     * A project applying `payabli.publish` and nothing else.
-     *
-     * No Android plugin, so the guard is reached without an SDK installed: it sits in the script body
-     * where the publication registrations sit behind `pluginManager.withPlugin`.
-     */
+    // No Android plugin, so no SDK is needed: the guard sits in the script body, where the publication
+    // registrations sit behind pluginManager.withPlugin.
     private fun writeProject(extra: String) {
         projectDir.newFile("settings.gradle.kts").writeText("""rootProject.name = "guard-probe"""")
         projectDir.newFile("gradle.properties").writeText(
