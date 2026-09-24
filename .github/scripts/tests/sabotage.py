@@ -123,6 +123,16 @@ MUTATIONS = [
     ("The uploader treats an unreadable key as published", PUBLISHER, "publisher",
      "            if remote is None:", "            if False:"),
 
+    ("The uploader publishes a tree left by another build", PUBLISHER, "publisher",
+     "    if stray:", "    if False:"),
+
+    ("The uploader accepts a tree holding no artifact", PUBLISHER, "publisher",
+     '        sys.exit(f"{staging} is empty. Run `./gradlew publish` first.")',
+     "        return []"),
+
+    ("The uploader accepts a staging tree that was never written", PUBLISHER, "publisher",
+     "    if not staging.is_dir():", "    if False:"),
+
     ("The uploader exits 0 with failures", PUBLISHER, "publisher",
      "    return 1 if failed else 0", "    return 0"),
 

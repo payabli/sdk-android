@@ -3103,6 +3103,41 @@ def test_publisher():
     files = pub.collect(root, version)
     check("U1 the tree collects one publishable file", len(files) == 1, f"{files}")
 
+    def refusal(staging, want):
+        """What collect() exits with, or None when it returned instead of refusing."""
+        out = io.StringIO()
+        try:
+            with redirect_stdout(out):
+                pub.collect(staging, want)
+        except SystemExit as stop:
+            return str(stop)
+        return None
+
+    # Gradle writes into this tree and never cleans it, so a failed build, or one at another version,
+    # leaves artifacts that would be published as though this run had produced them.
+    stale = root / "com/payabli/sdk-android-core/0.0.9/sdk-android-core-0.0.9.pom"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("<project/>")
+    said = refusal(root, version)
+    check("U9 a file at another version refuses the whole tree", said is not None and version in said,
+          f"{said}")
+    check("U9 and the refusal names the stray file", said is not None and "0.0.9" in said, f"{said}")
+    stale.unlink()
+
+    # Gradle writes a maven-metadata.xml per artifact and the uploader leaves it behind, so a tree
+    # holding nothing else has produced no artifact rather than a publishable one.
+    bare = Path(tempfile.mkdtemp(prefix="publisher-bare-", dir=SCRATCH))
+    metadata = bare / "com/payabli/sdk-android-core/maven-metadata.xml"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text("<metadata/>")
+    said = refusal(bare, version)
+    check("U10 a tree holding only maven-metadata is empty, not publishable",
+          said is not None and "is empty" in said, f"{said}")
+
+    said = refusal(bare / "absent", version)
+    check("U11 a staging tree that was never written refuses",
+          said is not None and "does not exist" in said, f"{said}")
+
     def run_publish(put_results, remote_digest="__same__"):
         """publish() against scripted put/read_back answers, returning (exit, printed)."""
         calls = []
