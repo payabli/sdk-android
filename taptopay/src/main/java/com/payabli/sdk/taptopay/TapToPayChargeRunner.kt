@@ -223,31 +223,49 @@ internal class TapToPayChargeRunner(
                 //
                 // What groups the three is cancellation, not success. Settling a key only removes it from
                 // the process map, so it cannot fail the caller.
-                withContext(NonCancellable) {
-                    client.update(paymentTransId, result)
-                    // Both an approval and a refusal are definitive for a fresh key, so the attempt is over
-                    // and its key can go. An outcome that is neither keeps it: the payment may have been
-                    // taken, and the key is what would let a repeat be recognised as one. A resent key is
-                    // never settled here: this run's answer is about a different opening than the one the
-                    // key names.
-                    if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
-                        keys.settle(entry, environment, idempotencyKey)
+                val closeFailure =
+                    withContext(NonCancellable) {
+                        try {
+                            client.update(paymentTransId, result)
+                        } catch (withdrawn: CancellationException) {
+                            throw withdrawn
+                        } catch (failure: Exception) {
+                            // Kept for the branch below, with the key and the held payment left in place.
+                            return@withContext failure
+                        }
+                        // Both an approval and a refusal are definitive for a fresh key, so the attempt is
+                        // over and its key can go. An outcome that is neither keeps it: the payment may have
+                        // been taken, and the key is what would let a repeat be recognised as one. A resent
+                        // key is never settled here: this run's answer is about a different opening than the
+                        // one the key names.
+                        if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
+                            keys.settle(entry, environment, idempotencyKey)
+                        }
+                        // The close landed, so there is nothing left to recover for this payment,
+                        // whatever the outcome was.
+                        HELD.remove(scope)
+                        null
                     }
-                    // The close landed, so there is nothing left to recover for this payment,
-                    // whatever the outcome was.
-                    HELD.remove(scope)
-                }
 
                 // The close is sent for every outcome above, and only an approval is a payment. A refused
                 // card reported as a completed one is the failure this branch exists to prevent.
+                //
+                // A failed close does not replace a refusal: the refusal is what the caller is told, and the
+                // close failure travels as a suppressed exception on it.
                 when (result.outcome) {
-                    CardReadOutcome.APPROVED ->
+                    CardReadOutcome.APPROVED -> {
+                        closeFailure?.let { throw it }
                         TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                             .also { TapToPayReports.chargeSucceeded(startedAt) }
+                    }
 
-                    CardReadOutcome.DECLINED -> throw TTPTransactionException.CardRefused(result.providerState)
+                    CardReadOutcome.DECLINED ->
+                        throw TTPTransactionException.CardRefused(result.providerState).apply {
+                            closeFailure?.let(::addSuppressed)
+                        }
 
-                    CardReadOutcome.INDETERMINATE -> throw TTPTransactionException.OutcomeUnknown(result.providerState)
+                    CardReadOutcome.INDETERMINATE ->
+                        throw closeFailure ?: TTPTransactionException.OutcomeUnknown(result.providerState)
                 }
             } catch (withdrawn: CancellationException) {
                 // `Throwable` covers CancellationException, and the facade states a withdrawn caller is

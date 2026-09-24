@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -1155,6 +1156,79 @@ class TapToPayChargeRunnerTest {
                 TapToPayCapture.CHARGED,
                 failure.capture,
             )
+        }
+
+    @Test
+    fun `a refused card whose close failed is still reported as refused`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The close records the outcome and changes nothing about it. A host told the transport failed
+            // retries a card that was declined.
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val refused = failure as TapToPayException
+            assertTrue(refused.cause.toString(), refused.cause is TTPTransactionException.CardRefused)
+            assertEquals(TapToPayCapture.NOT_CHARGED, refused.capture)
+            assertEquals(TRANS_ID, refused.paymentTransId)
+        }
+
+    @Test
+    fun `a refused card whose close failed still says the close failed, and can be closed again`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 4) { closeFails })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            val runner = runnerOver(fixture)
+
+            val failure =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            val suppressed = failure.cause?.suppressed.orEmpty()
+            assertTrue(
+                "the close failure was dropped: ${suppressed.toList()}",
+                suppressed.singleOrNull() is PayabliException,
+            )
+
+            closeFails = false
+            runner.closeCaptured(TRANS_ID)
+        }
+
+    @Test
+    fun `an unknown outcome whose close failed reports the close failure`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // No known answer to protect, so the close failure is the more specific thing to say.
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val unknown = failure as TapToPayException
+            assertTrue(unknown.cause.toString(), unknown.cause is PayabliException)
+            assertEquals(TapToPayCapture.UNKNOWN, unknown.capture)
         }
 
     @Test
