@@ -143,6 +143,10 @@ MUTATIONS = [
      "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish -Ppayabli.version=0.1.0"),
 
+    ("The card reader credential is job-level again, so every step receives it", QA, "workflows",
+     "      id-token: write\n    steps:",
+     "      id-token: write\n    env:\n      PAYABLI_MAVEN_USER: x\n      PAYABLI_MAVEN_PASSWORD: y\n    steps:"),
+
     ("QA snapshot publishes from every branch anyone pushes", QA, "workflows",
      "  push:\n    branches: [main]", "  push:\n    branches: ['**']"),
 

@@ -3004,6 +3004,15 @@ def test_workflows():
     check("W16 and no AWS access key is named",
           "AWS_ACCESS_KEY_ID" not in qa_text and "AWS_SECRET_ACCESS_KEY" not in qa_text)
 
+    # The card reader credential belongs to the one step that reads /maven. Job-level it reaches every
+    # step, including the checkout and the upload, and a dispatched run carries branch-controlled code.
+    qa_job = next(iter(qa_jobs.values()), {})
+    check("W16 no credential is declared for the whole job", not (qa_job.get("env") or {}),
+          f"{sorted(qa_job.get('env') or {})}")
+    reading = [str(step.get("name", "")) for step in qa_steps
+               if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
+    check("W16 and one step reads it", len(reading) == 1, f"{reading}")
+
     # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
     # If-None-Match, which the bucket policy requires on every write.
     upload = next((step for step in qa_steps if "publish_staging.py" in str(step.get("run", ""))), None)
