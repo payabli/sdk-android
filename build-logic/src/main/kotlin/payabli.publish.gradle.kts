@@ -60,8 +60,6 @@ publishing {
     }
 }
 
-// Tested on the scheme, so any host is refused and not only the registry this replaced.
-// publishToMavenLocal declares no repository, so it is outside this loop; the task-time guard covers it.
 afterEvaluate {
     extensions.configure<PublishingExtension> {
         repositories.withType(MavenArtifactRepository::class.java).configureEach {
