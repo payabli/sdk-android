@@ -2012,7 +2012,7 @@ def run_commands(step: dict) -> str:
     words = []
     for line in str(step.get("run", "")).splitlines():
         try:
-            words.extend(shlex.split(line, comments=True))
+            words.extend(shell_words(line))
         except ValueError:
             words.append(line)
     return " ".join(words)
@@ -2032,6 +2032,20 @@ def mints(value) -> bool:
     if isinstance(value, str):
         return value == "write-all"
     return str((value or {}).get("id-token")) == "write"
+
+
+def shell_words(line: str) -> list[str]:
+    """`line` split as a shell splits it, with its operators as words of their own.
+
+    `shlex.split` separates on whitespace only, so an operator written against the word beside it stays
+    inside that word: `--version "$V";python3 upload.py` yields `$V;python3`, and a reader looking for
+    `;` among the words never finds one. Two commands then read as one, and the second is where a
+    checked argument is replaced. `punctuation_chars` gives the operators back as tokens, keeps `&&`
+    and `||` whole, and still respects quoting, so the `&` inside a quoted query string is not one.
+    """
+    lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
 
 
 # One of these may stand before the program and still be running it.
@@ -2058,7 +2072,7 @@ def invocations(step: dict, program: str) -> list[list[str]]:
     found: list[list[str]] = []
     for line in str(step.get("run", "")).splitlines():
         try:
-            words = shlex.split(line, comments=True)
+            words = shell_words(line)
         except ValueError:
             continue
         command: list[str] = []

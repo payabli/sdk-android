@@ -273,6 +273,13 @@ MUTATIONS = [
      'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
      '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
 
+    # Whitespace is what a word-splitting reader separates on, so the operator written against the word
+    # beside it stays inside that word and the two commands read as one.
+    ("QA snapshot uploads again to the release prefix, behind an operator with no space", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION";'
+     'python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
     ("QA snapshot publishes the committed version, so every build shares one coordinate", QA, "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish"),
 
