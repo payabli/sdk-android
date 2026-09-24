@@ -261,12 +261,30 @@ MUTATIONS = [
     ("QA snapshot uploads to the release prefix", QA, "workflows",
      "--prefix maven-qa", "--prefix maven"),
 
+    # Every argument the checks read is still correct on the first of the two, so a check that reads one
+    # invocation is green while the release prefix is written beside the QA one.
+    ("QA snapshot uploads again to the release prefix, on a second line", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
+    ("QA snapshot uploads again to the release prefix, on the same line", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
+     '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
     ("QA snapshot publishes the committed version, so every build shares one coordinate", QA, "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish"),
 
     ("QA snapshot overrides the version with a literal, which shares a coordinate just as well", QA,
      "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish -Ppayabli.version=0.1.0"),
+
+    # The checked command is still there and still correct, and the committed coordinate is published
+    # beside the stamped one.
+    ("QA snapshot publishes the committed version too, on a second command", QA, "workflows",
+     'run: ./gradlew publish -Ppayabli.version="$VERSION"',
+     'run: ./gradlew publish -Ppayabli.version="$VERSION" && ./gradlew publish'),
 
     ("The card reader credential is job-level again, so every step receives it", QA, "workflows",
      "      id-token: write\n    steps:",

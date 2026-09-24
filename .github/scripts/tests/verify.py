@@ -2026,8 +2026,8 @@ INTERPRETERS = ("python3", "python", "bash", "sh", "env")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
-def invocation(step: dict, program: str) -> list[str]:
-    """The words a line of `step` passes to `program`, as a shell would split them.
+def invocations(step: dict, program: str) -> list[list[str]]:
+    """Every command in `step` that runs `program`, each split as a shell would split it.
 
     `run_commands` flattens a step into one string, which answers whether a term appears anywhere in it
     and not what any one command was given: `echo --prefix maven-qa` above the uploader satisfies a
@@ -2036,25 +2036,41 @@ def invocation(step: dict, program: str) -> list[str]:
     The program has to be the word being run, not a word being passed. `echo publish_staging.py
     --prefix maven-qa` mentions it in an argument, and reading that line's flags is reading the echo's.
     A leading `VAR=value` and one interpreter may stand in front of it, because `python3 x.py` runs x.py.
+
+    Every command and not the first: a caller that reads one is asking what a program was given while a
+    second run of it goes unread, and the second is where a checked argument is replaced. Each line is
+    cut at its shell operators first, so a command after `&&` is its own command rather than arguments
+    to the one before it.
     """
+    found: list[list[str]] = []
     for line in str(step.get("run", "")).splitlines():
         try:
             words = shlex.split(line, comments=True)
         except ValueError:
             continue
-        head = 0
-        while head < len(words) and ASSIGNMENT.match(words[head]):
-            head += 1
-        if head < len(words) and words[head].rsplit("/", 1)[-1] in INTERPRETERS:
-            head += 1
-        if head >= len(words) or not words[head].endswith(program):
-            continue
-        run = words[head:]
-        for index, word in enumerate(run):
-            if word in OPERATORS:
-                return run[:index]
-        return run
-    return []
+        command: list[str] = []
+        for word in [*words, ";"]:
+            if word not in OPERATORS:
+                command.append(word)
+                continue
+            head = 0
+            while head < len(command) and ASSIGNMENT.match(command[head]):
+                head += 1
+            if head < len(command) and command[head].rsplit("/", 1)[-1] in INTERPRETERS:
+                head += 1
+            if head < len(command) and command[head].endswith(program):
+                found.append(command[head:])
+            command = []
+    return found
+
+
+def invocation(step: dict, program: str) -> list[str]:
+    """The words the first command in `step` that runs `program` passes to it.
+
+    Ask `invocations` instead wherever a second run of the program would defeat what is being checked.
+    """
+    found = invocations(step, program)
+    return found[0] if found else []
 
 
 def argument(words: list[str], flag: str) -> str | None:
@@ -3262,7 +3278,12 @@ def test_workflows():
     upload = next((step for step in qa_steps if "publish_staging.py" in run_commands(step)), None)
     check("W16 it uploads the staging tree with the publisher", upload is not None)
     if upload is not None:
-        words = invocation(upload, "publish_staging.py")
+        uploads = invocations(upload, "publish_staging.py")
+        # Counted before the arguments are read. A step that uploads to the QA prefix and then runs the
+        # uploader again with the release one satisfies every check below on its first command, while
+        # /maven is written too and no argument anywhere is wrong.
+        check("W16 and it runs the uploader once", len(uploads) == 1, f"{len(uploads)} invocations")
+        words = uploads[0] if uploads else []
         check("W16 and it publishes to the QA prefix",
               argument(words, "--prefix") == "maven-qa", " ".join(words) or str(upload.get("run"))[:160])
 
@@ -3275,10 +3296,16 @@ def test_workflows():
     # the naming step's output, and the command interpolates that variable.
     gradle = next((step for step in qa_steps if "gradlew publish" in run_commands(step)), None)
     check("W16 it builds the staging tree", gradle is not None)
+    # The same shape as the uploader, and the reason the override is read off the publishing command
+    # rather than off the step's first Gradle line: a second `gradlew publish` carrying no override
+    # writes the committed coordinate, and both are true of a step whose first command is correct.
+    publishes = [words for step in qa_steps for words in invocations(step, "gradlew")
+                 if "publish" in words]
+    check("W16 and it runs the publish task once", len(publishes) == 1, f"{len(publishes)} invocations")
     if gradle is not None and naming is not None:
         stamped = {var for var, value in (gradle.get("env") or {}).items()
                    if f"steps.{naming.get('id', '')}.outputs" in str(value)}
-        given = argument(invocation(gradle, "gradlew"), "-Ppayabli.version")
+        given = argument(publishes[0] if publishes else [], "-Ppayabli.version")
         passed = re.fullmatch(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", given or "")
         check("W16 and the version it publishes under is the stamp",
               bool(stamped) and passed is not None and passed.group(1) in stamped,
