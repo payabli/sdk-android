@@ -116,6 +116,17 @@ MUTATIONS = [
     ("QA snapshot publishes the committed version, so every build shares one coordinate", QA, "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish"),
 
+    ("QA snapshot overrides the version with a literal, which shares a coordinate just as well", QA,
+     "workflows",
+     'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish -Ppayabli.version=0.1.0"),
+
+    ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
+     "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
+
+    ("QA subject check accepts a tag, whose role never grants the write", QA, "workflows",
+     "EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/",
+     "EXPECTED: repo:payabli@139794672/sdk-android@1311286517"),
+
     ("QA stamp taken in local time, so it stops sorting across a DST change", QA, "workflows",
      "date -u +%Y%m%d%H%M%S", "date +%d%m%y%H%M%S"),
 

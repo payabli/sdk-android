@@ -2979,6 +2979,12 @@ def test_workflows():
     check("W16 and it triggers from a branch", bool({"push", "workflow_dispatch"} & set(qa_on)),
           f"{sorted(qa_on)}")
 
+    # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
+    # against the same base reach one identifier, and the first writer keeps the coordinate.
+    group = str(((qa.get("concurrency") or {}) if isinstance(qa.get("concurrency"), dict)
+                 else {"group": qa.get("concurrency")}).get("group", ""))
+    check("W16 one publish runs at a time across refs", bool(group) and "${{" not in group, group)
+
     # A role ARN is an identifier rather than a credential, and masking it makes every AccessDenied
     # unreadable. Written inline it would put the AWS account id in a public repository instead.
     # On the step that assumes it rather than on the file: the provisioning check names the same variable,
@@ -3001,17 +3007,23 @@ def test_workflows():
         check("W16 and it publishes to the QA prefix", "--prefix maven-qa" in run, run[:160])
         check("W16 and never to the release prefix", "--prefix maven " not in run, run[:160])
 
-    # The committed property names the version under development. Publishing it verbatim gives every
-    # build from every branch one coordinate, and where overwrite is allowed the second replaces the
-    # first, so a tester cannot pin the build they tested.
-    gradle = next((step for step in qa_steps if "gradlew publish" in str(step.get("run", ""))), None)
-    check("W16 it builds the staging tree", gradle is not None)
-    if gradle is not None:
-        check("W16 and overrides the version rather than publishing the committed one",
-              "-Ppayabli.version" in str(gradle.get("run", "")), str(gradle.get("run", ""))[:160])
-
     naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in str(step.get("run", ""))), None)
     check("W16 it stamps the identifier", naming is not None)
+
+    # The committed property names the version under development, so publishing it gives every build
+    # from every branch one coordinate and a tester cannot pin the build they tested. Overriding it with
+    # a literal does the same, so the override has to reach the stamp: the step's env maps a variable to
+    # the naming step's output, and the command interpolates that variable.
+    gradle = next((step for step in qa_steps if "gradlew publish" in str(step.get("run", ""))), None)
+    check("W16 it builds the staging tree", gradle is not None)
+    if gradle is not None and naming is not None:
+        run = str(gradle.get("run", ""))
+        stamped = {var for var, value in (gradle.get("env") or {}).items()
+                   if f"steps.{naming.get('id', '')}.outputs" in str(value)}
+        passed = re.search(r"""-Ppayabli\.version=["']?\$\{?([A-Za-z_][A-Za-z0-9_]*)""", run)
+        check("W16 and the version it publishes under is the stamp",
+              bool(stamped) and passed is not None and passed.group(1) in stamped,
+              f"env={sorted(stamped)} passed={passed.group(1) if passed else None} run={run[:120]}")
     if naming is not None:
         run = str(naming.get("run", ""))
         # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
@@ -3028,6 +3040,12 @@ def test_workflows():
     assume = next((i for i, step in enumerate(qa_steps)
                    if "configure-aws-credentials" in str(step.get("uses", ""))), None)
     check("W16 it checks the OIDC subject it presents", subject is not None, names)
+    if subject is not None:
+        # The branch form and not the bare prefix. workflow_dispatch accepts a tag ref, whose subject
+        # shares the prefix, so a prefix match passes and the assume then fails naming IAM -- which is
+        # the failure this step exists to explain.
+        expected = str((qa_steps[subject].get("env") or {}).get("EXPECTED", ""))
+        check("W16 and the subject it expects is a branch", expected.endswith(":ref:refs/heads/"), expected)
     check("W16 and it authenticates to AWS", assume is not None, names)
     if subject is not None and assume is not None:
         check("W16 and the subject check runs before the assume", subject < assume, f"{subject} vs {assume}")

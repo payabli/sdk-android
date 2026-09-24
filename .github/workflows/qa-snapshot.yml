@@ -19,9 +19,13 @@ permissions:
   contents: read
 
 concurrency:
-  # Never cancelled: a run interrupted mid-upload leaves a partial set, and the next run completes it
-  # rather than replacing it.
-  group: qa-snapshot-${{ github.ref }}
+  # One publish at a time across every ref, not one per ref: two refs stamping in the same UTC second
+  # against the same base produce one identifier, and the first writer keeps the coordinate.
+  #
+  # Never cancelled. A run interrupted mid-upload leaves a partial tree under its own identifier, which
+  # the next run does not adopt because it stamps a new one; on a prunable channel that is litter rather
+  # than a coordinate anyone asked for.
+  group: qa-snapshot
   cancel-in-progress: false
 
 jobs:
@@ -79,7 +83,9 @@ jobs:
       # what the role matches on is the claim.
       - name: Check the OIDC subject the trust policies expect
         env:
-          EXPECTED: repo:payabli@139794672/sdk-android@1311286517
+          # The branch form, not the prefix: the snapshot role trusts refs/heads/* only, and a dispatch
+          # can be started on a tag, whose subject shares the prefix and fails at the assume.
+          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/
         run: |
           claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |
@@ -87,11 +93,12 @@ jobs:
           sub=$(printf '%s' "$claims" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sub"])')
           echo "subject presented: $sub"
           case "$sub" in
-            "$EXPECTED":*) ;;
+            "$EXPECTED"*) ;;
             *)
-              echo "::error::this run presents '$sub', and the AWS trust policies grant '$EXPECTED:*'."
-              echo "::error::GitHub's immutable subject claim setting for this repository has moved. The"
-              echo "::error::trust policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
+              echo "::error::this run presents '$sub', and the snapshot role grants '$EXPECTED*'."
+              echo "::error::Either this run is on a tag, which that role never trusts, or GitHub's"
+              echo "::error::immutable subject claim setting for this repository has moved. The trust"
+              echo "::error::policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
               exit 1
               ;;
           esac

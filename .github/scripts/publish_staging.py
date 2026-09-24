@@ -18,9 +18,12 @@ PreconditionFailed. That says the key is taken and nothing about what took it, s
 back and its digest compared before the run calls it `present`.
 
 On `/maven/*` that is the steady state of a re-run: the policy denies overwrite, coordinates are
-write-once, and a half-finished run has to be completable. On `/maven-qa/*` overwrite is permitted,
-but a 412 there still means two builds produced one identifier, which the timestamp exists to make
-impossible — so it is reported rather than overwritten.
+write-once, and a half-finished run is completed by running the same version again.
+
+`/maven-qa/*` permits overwrite and this never takes it: the header goes on every write, so a key
+already holding different bytes fails rather than being replaced. Two builds reach one identifier only
+by stamping in the same second, which the workflow's concurrency group is what prevents. A QA re-run
+stamps a new identifier instead of completing the old one, and leaves the partial tree behind.
 
 Neither `aws s3 cp` nor `aws s3 sync` can set the header, which is why every upload is a single-part
 `put-object`.
