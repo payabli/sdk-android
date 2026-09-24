@@ -87,8 +87,7 @@ afterEvaluate {
 tasks.refusePublishingWithExtraEnvironments(extraEnvironmentsSetting(providers))
 
 // The CycloneDX plugin generates on demand and attaches to nothing, so a bill of materials reaches a
-// publication only through this. Both formats travel, because which one a scanner reads is not ours
-// to choose.
+// publication only through this. Both formats travel, because a scanner reads one or the other.
 fun MavenPublication.attachCycloneDxSbom(project: Project) {
     val sbom = project.tasks.named("cyclonedxBom")
     val reports = project.layout.buildDirectory.dir("reports/cyclonedx")
