@@ -3024,12 +3024,24 @@ def test_workflows():
         gate = " ".join(str(caller.get("if", "")).split())
         check("W16 and only on a push to main",
               gate == "github.event_name == 'push' && github.ref == 'refs/heads/main'", gate)
-        granted = (caller.get("permissions") or {})
-        check("W16 and it is the only job in ci.yml granted a token",
-              [name for name, job in (ci_doc.get("jobs") or {}).items()
-               if isinstance(job, dict) and str((job.get("permissions") or {}).get("id-token")) == "write"]
-              == [name for name, job in (ci_doc.get("jobs") or {}).items() if job is caller],
-              f"{granted}")
+        # A workflow-level grant is inherited by every job that does not replace it, so a job-level
+        # answer alone is one a declaration one level up satisfies while the token reaches jobs that run
+        # moving-tag actions. Both levels, and the workflow level is refused outright.
+        top = str((ci_doc.get("permissions") or {}).get("id-token", "none"))
+        check("W16 and ci.yml grants no token for a job to inherit", top == "none", f"{ci_doc.get('permissions')}")
+        minting = [name for name, job in (ci_doc.get("jobs") or {}).items()
+                   if isinstance(job, dict) and str((job.get("permissions") or {}).get("id-token")) == "write"]
+        check("W16 and it is the only job in ci.yml granted one",
+              minting == [caller_name], f"{minting}")
+
+        # `secrets: inherit` hands over every secret the repository holds, into the one job that mints
+        # the publishing identity. Named, and named as exactly what the publisher declares it needs.
+        passed = caller.get("secrets")
+        check("W16 and it names the secrets it hands over", isinstance(passed, dict), f"{passed}")
+        declared = set((qa_on.get("workflow_call") or {}).get("secrets") or {})
+        check("W16 and hands over only what the publisher declares",
+              isinstance(passed, dict) and bool(declared) and set(passed) == declared,
+              f"passed={sorted(passed) if isinstance(passed, dict) else passed} declared={sorted(declared)}")
 
     # A dispatch answers to no CI run, so it carries the suites itself or it publishes untested code.
     # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one
@@ -3072,7 +3084,11 @@ def test_workflows():
 
     # The card reader credential belongs to the steps that resolve it. Job-level it reaches every step,
     # including the checkout and the upload, and a dispatched run carries branch-controlled code.
-    check("W16 no credential is declared for the whole job", not (qa_job.get("env") or {}),
+    # The same shape one level up: a workflow-level env reaches every step of every job, so asking only
+    # about the job leaves the declaration that does the damage unexamined.
+    check("W16 no credential is declared for the whole workflow", not (qa.get("env") or {}),
+          f"{sorted(qa.get('env') or {})}")
+    check("W16 nor for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
     holding = [step for step in qa_steps
                if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]

@@ -125,6 +125,17 @@ MUTATIONS = [
      "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: main\n"),
 
+    ("CI hands the publisher every secret the repository holds", CI, "workflows",
+     "    secrets:\n      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "      PAYABLI_MAVEN_PW_PROD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n",
+     "    secrets: inherit\n"),
+
+    ("CI grants the publishing token at the workflow level, so every job inherits it", CI, "workflows",
+     "permissions:\n  contents: read\n", "permissions:\n  contents: read\n  id-token: write\n"),
+
+    ("QA snapshot declares the card reader credential for the whole workflow", QA, "workflows",
+     "permissions:\n  contents: read\n", "env:\n  PAYABLI_MAVEN_USER: x\npermissions:\n  contents: read\n"),
+
     ("CI publishes without waiting for any job", CI, "workflows",
      "    needs: [card-present, sonar]\n", ""),
 
