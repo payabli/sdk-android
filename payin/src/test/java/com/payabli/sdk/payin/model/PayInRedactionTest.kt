@@ -58,7 +58,7 @@ class PayInRedactionTest {
         val rendered = data.toString()
 
         listOf(account, "A Payer").forEach { assertFalse(it, rendered.contains(it)) }
-        assertTrue(rendered.contains("Checking"))
+        assertEquals("PayInBankAccountData(accountType=Checking)", rendered)
     }
 
     @Test
