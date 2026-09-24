@@ -3174,6 +3174,14 @@ def test_workflows():
         check("W16 and hands over only what the publisher declares",
               isinstance(passed, dict) and bool(declared) and set(passed) == declared,
               f"passed={sorted(passed) if isinstance(passed, dict) else passed} declared={sorted(declared)}")
+        # The alias is what the publisher reads; the value is which repository secret arrives under it.
+        # Equal key sets leave both aliases free to carry any other secret the repository holds, and the
+        # sonar job's token is in reach, so each value is read against the secret of its own name.
+        if isinstance(passed, dict):
+            carried = {alias: " ".join(str(value).split()) for alias, value in passed.items()}
+            wrong = {alias: value for alias, value in carried.items()
+                     if value != "${{ secrets." + alias + " }}"}
+            check("W16 and each alias carries the repository secret of that name", not wrong, f"{wrong}")
 
     # A dispatch answers to no CI run, so it carries the unit suites itself. It does not carry the
     # instrumented ones, ktlint or lint, and the workflow says so where it runs them.

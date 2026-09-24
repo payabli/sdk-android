@@ -315,6 +315,12 @@ MUTATIONS = [
      "    environment: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}\n",
      "    environment: ${{ github.event_name == 'workflow_dispatch' && 'qa-snapshot' || 'release' }}\n"),
 
+    # The publisher declares these two names and reads them, so the aliases still match what it declares
+    # while the credential arriving under one of them is the analysis token.
+    ("CI hands the publisher a different secret under the name it declares", CI, "workflows",
+     "      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n",
+     "      PAYABLI_MAVEN_US_PROD: ${{ secrets.SONAR_TOKEN }}\n"),
+
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
 
