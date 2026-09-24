@@ -2085,10 +2085,11 @@ def invocations(step: dict, program: str) -> list[list[str]]:
             if word not in OPERATORS and word not in GROUPING:
                 command.append(word)
                 continue
+            # Every wrapper, not one of each: `env python3 upload.py` runs upload.py, and stopping after
+            # `env` reads `python3` as the program and finds no upload.py on the line at all.
             head = 0
-            while head < len(command) and ASSIGNMENT.match(command[head]):
-                head += 1
-            if head < len(command) and command[head].rsplit("/", 1)[-1] in INTERPRETERS:
+            while head < len(command) and (ASSIGNMENT.match(command[head])
+                                           or command[head].rsplit("/", 1)[-1] in INTERPRETERS):
                 head += 1
             if head < len(command) and command[head].endswith(program):
                 found.append(command[head:])

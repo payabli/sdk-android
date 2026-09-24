@@ -279,6 +279,13 @@ MUTATIONS = [
      'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
      '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
 
+    # Two wrappers where the reader skipped one, so the program name it lands on is the interpreter and
+    # the uploader on that line is not seen at all.
+    ("QA snapshot uploads again to the release prefix, behind a second command wrapper", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          env python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
     # A subshell is still a command. A reader that takes the opening bracket for the program name finds
     # no uploader in it and counts one invocation where the shell runs two.
     ("QA snapshot uploads again to the release prefix, inside a subshell", QA, "workflows",
