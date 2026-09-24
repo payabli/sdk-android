@@ -11,6 +11,7 @@ the four disciplines these checks are written under, and for how to prove a chec
 
 from __future__ import annotations
 
+import ast
 import fnmatch
 import importlib.util
 import io
@@ -47,6 +48,9 @@ _sdk = os.environ.get("NIGHTLY_SDK")
 SDK = Path(_sdk) if _sdk else HERE.parents[2]
 COLLECTOR = Path(os.environ.get("NIGHTLY_COLLECTOR", SDK / ".github/scripts/nightly_report.py"))
 POSTER = Path(os.environ.get("NIGHTLY_POSTER", SDK / ".github/scripts/nightly_slack.py"))
+PACK = Path(os.environ.get("NIGHTLY_PACK", SDK / ".github/scripts/pack_results.sh"))
+# The mutation set, read rather than run: W15 asks whether each row still anchors to its target.
+SABOTAGE = HERE / "sabotage.py"
 ONLY = os.environ.get("NIGHTLY_ONLY", "both")
 
 # One scratch root for the whole run, removed on the way out. Every synthetic repository and every facts
@@ -225,6 +229,37 @@ def test_collector():
         COV_XML: COVERAGE.format(bm=0, bc=1, lm=0, lc=1),
     }), INSTRUMENTED_MODULES="core,payin")
     check("C4c both modules present is green", "verdict=green" in r["output"], r["output"])
+
+    # C4d one card-present module wrote nothing while its sibling wrote plenty. Same shape as C4b, on the
+    # suite that now spans two modules: :taptopay's results make the total non-zero, so only the per-module
+    # list sees that :example ran and wrote none.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+        "taptopay/build/test-results/testDebugUnitTest/TEST-x.xml": junit("T", [("cp", None)]),
+    }), CARD_PRESENT_OUTCOME="success", CARD_PRESENT_MODULES="taptopay,example")
+    check("C4d a silent card-present module is red", "verdict=red" in r["output"], r["output"])
+    check("C4d names the silent module",
+          r["facts"]["suites"][2]["label"] == "no results written by example",
+          json.dumps(r["facts"]["suites"]))
+
+    # C4e and the same list must not redden a card-present suite where both modules wrote.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+        "taptopay/build/test-results/testDebugUnitTest/TEST-x.xml": junit("T", [("cp", None)]),
+        "example/build/test-results/testWithTelemetryDebugUnitTest/TEST-y.xml": junit("E", [("ex", None)]),
+    }), CARD_PRESENT_OUTCOME="success", CARD_PRESENT_MODULES="taptopay,example")
+    check("C4e both card-present modules present is green", "verdict=green" in r["output"], r["output"])
+
+    # C4f the unit suite spans four modules and had the same hole: :core alone kept the total non-zero.
+    r = run_collector(make_repo({
+        UNIT_XML: junit("S", [("a", None)]),
+        INST_XML: junit("I", [("a", None)]),
+    }), UNIT_MODULES="core,payin")
+    check("C4f a silent unit module is red", "verdict=red" in r["output"], r["output"])
+    check("C4f names the silent module", r["facts"]["suites"][0]["label"] == "no results written by payin",
+          json.dumps(r["facts"]["suites"]))
 
     # C5 step outcome not success
     r = run_collector(make_repo({UNIT_XML: junit("S", [("a", None)]), INST_XML: junit("I", [("a", None)])}),
@@ -2454,7 +2489,8 @@ def test_workflows():
     # every workflow asserted about above has to match one of those patterns, on both the pull request and
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
-    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW)
+    guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
+               "ci.yml")
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
     for event in ("pull_request", "push"):
@@ -2745,6 +2781,184 @@ def test_workflows():
         runs = " ".join(str(step.get("run", "")) for step in (jobs.get(name) or {}).get("steps") or [])
         check(f"W11 the {name} job invokes the publisher", "mirror_card_reader.py" in runs, runs[:120])
         check(f"W11 and passes --fetch-only: {wanted}", ("--fetch-only" in runs) is wanted, runs[:200])
+
+
+    # W12 No secret reaches the third-party emulator action.
+    #
+    # Held by where the action runs, not by reading what each value evaluates to. Every earlier version of
+    # this check scanned expressions for ways of reaching a secret, and every round of review found another:
+    # a bare reference, index notation, `toJSON(secrets)`, a fallback, a quoted `}}` inside `format()`, and a
+    # value an earlier step exported to `$GITHUB_ENV`. That list has no end. What does have one is the job
+    # graph: the action runs only in a job that never mentions the secrets context, needs no job that does,
+    # and downloads nothing.
+    THIRD_PARTY = "android-emulator-runner"
+    SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
+    PINNED = re.compile(r"^[^@]+@[0-9a-f]{40}(\s|$)")
+
+    def rendered(node) -> str:
+        return yaml.safe_dump(node or {}, default_flow_style=False, sort_keys=False)
+
+    def needs_of(job: dict) -> list[str]:
+        needs = job.get("needs") or []
+        return [needs] if isinstance(needs, str) else [str(item) for item in needs]
+
+    for name in ("ci.yml", "nightly.yml"):
+        doc = workflow_doc(name)
+        jobs = {jn: job for jn, job in (doc.get("jobs") or {}).items() if isinstance(job, dict)}
+        # Guarded before it is read. A loop over no jobs runs no checks and reports a pass.
+        check(f"W12 {name} has jobs to examine", bool(jobs), str(list(jobs)))
+        bodies = {jn: rendered(job) for jn, job in jobs.items()}
+        runners = sorted(jn for jn, body in bodies.items() if THIRD_PARTY in body)
+        holders = {jn for jn, body in bodies.items() if SECRETS_CONTEXT.search(body)}
+        # Both asserted present, or every rule below passes on a file that stopped running the action or
+        # renamed the credential.
+        check(f"W12 {name} runs the third-party emulator action", bool(runners), str(list(jobs)))
+        check(f"W12 {name} has a job holding the card reader credential",
+              any("PAYABLI_MAVEN_PW_PROD" in bodies[jn] for jn in holders), str(sorted(holders)))
+
+        # Inherited by every job while appearing in none of them.
+        workflow_env = rendered(doc.get("env"))
+        check(f"W12 {name} names no secret in its workflow-level env",
+              not SECRETS_CONTEXT.search(workflow_env), workflow_env.strip())
+
+        for jn in runners:
+            check(f"W12 the {name} job {jn}, which runs {THIRD_PARTY}, never mentions the secrets context",
+                  jn not in holders,
+                  " | ".join(line.strip() for line in bodies[jn].splitlines() if SECRETS_CONTEXT.search(line)))
+            upstream, pending = set(), list(needs_of(jobs[jn]))
+            while pending:
+                needed = pending.pop()
+                if needed not in upstream:
+                    upstream.add(needed)
+                    pending.extend(needs_of(jobs.get(needed) or {}))
+            check(f"W12 and {jn} needs no job that holds a secret, directly or through another",
+                  not upstream & holders, " | ".join(sorted(upstream & holders)))
+            downloads = [str(step.get("name") or step.get("uses")) for step in jobs[jn].get("steps") or []
+                         if isinstance(step, dict) and "download-artifact" in str(step.get("uses", ""))]
+            check(f"W12 and {jn} downloads no artifact", not downloads, " | ".join(downloads))
+
+        # Everything that runs in a job holding a secret can reach what an earlier step leaves behind, so a
+        # moving tag there is a standing offer to whoever can retag. Asked of every job that mentions the
+        # context at all, including one that scopes its secret to a single step.
+        for jn in sorted(holders):
+            uses = [str(jobs[jn].get("uses"))] if jobs[jn].get("uses") else []
+            uses += [str(step.get("uses")).strip() for step in jobs[jn].get("steps") or []
+                     if isinstance(step, dict) and step.get("uses")]
+            unpinned = [ref for ref in uses if not PINNED.match(ref)]
+            check(f"W12 every action in the {name} job {jn}, which holds a secret, is pinned to a commit",
+                  not unpinned, " | ".join(unpinned))
+
+    # W13 the results archive a test job hands to `verdict`. The collector globs module paths, so the archive
+    # has to keep them, and a job that wrote nothing still has to hand over an archive rather than fail.
+    tree = Path(tempfile.mkdtemp(dir=SCRATCH))
+    kept = ("core/build/test-results/testDebugUnitTest/TEST-a.xml",
+            "payin/build/outputs/androidTest-results/connected/debug/TEST-b.xml",
+            "taptopay/build/reports/jacoco/report.xml")
+    for rel in kept + (".gradle/build/reports/cache.xml",):
+        (tree / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tree / rel).write_text("x")
+
+    def packed(cwd: Path) -> tuple[subprocess.CompletedProcess, set[str]]:
+        archive = SCRATCH / f"{cwd.name}.tgz"
+        proc = subprocess.run(["bash", str(PACK), str(archive)], cwd=cwd, capture_output=True, text=True)
+        listing = subprocess.run(["tar", "-tzf", str(archive)], capture_output=True, text=True).stdout
+        return proc, {line.removeprefix("./") for line in listing.split()} if archive.exists() else set()
+
+    proc, names = packed(tree)
+    check("W13 the pack script exits zero", proc.returncode == 0, proc.stderr[-300:])
+    for rel in kept:
+        check(f"W13 the archive keeps {rel}", rel in names, str(sorted(names)))
+    check("W13 and leaves Gradle's own directory out", not any(n.startswith(".gradle") for n in names),
+          str(sorted(names)))
+    proc, names = packed(Path(tempfile.mkdtemp(dir=SCRATCH)))
+    check("W13 a job that wrote nothing still yields an archive", proc.returncode == 0 and names == set(),
+          proc.stderr[-300:] + str(sorted(names)))
+
+    # W14 Each module is counted under the job that runs it.
+    #
+    # The collector keeps one glob set per test job so that a job which wrote nothing is visible: results
+    # from another job cannot make its total non-zero. That only holds while the sets match the workflow,
+    # and nothing checked it -- :example moved into card-present with the job split and stayed in the unit
+    # set, where its results would have stood in for a unit step that wrote none.
+    #
+    # Containment rather than equality: a pattern for a module that writes no results is harmless, a module
+    # counted under a job that does not run it is not.
+    report_src = ast.parse(COLLECTOR.read_text())
+    sets = {name: {ast.literal_eval(elt) for elt in node.value.generators[0].iter.elts}
+            for node in ast.walk(report_src)
+            if isinstance(node, ast.Assign)
+            and (name := getattr(node.targets[0], "id", "")) in ("unit_patterns", "card_patterns")
+            and isinstance(node.value, ast.ListComp)}
+    check("W14 the collector defines a module set per test job", set(sets) == {"unit_patterns", "card_patterns"},
+          str(sorted(sets)))
+
+    nightly_jobs = (workflow_doc("nightly.yml").get("jobs") or {})
+    # The collector is also told which modules each step ran, so it can say a module wrote nothing where the
+    # suite total cannot. That is the same fact a third time, so it is held to the gradle command too --
+    # exactly, not by containment: a module missing from the list is one whose silence nobody notices.
+    collect_env = (collect.get("env") or {}) if collect is not None else {}
+    for job_name, own, other, named in (("nightly", "unit_patterns", "card_patterns", "UNIT_MODULES"),
+                                        ("card-present", "card_patterns", "unit_patterns", "CARD_PRESENT_MODULES")):
+        runs = " ".join(str(step.get("run", "")) for step in (nightly_jobs.get(job_name) or {}).get("steps") or [])
+        modules = set(re.findall(r":([A-Za-z0-9_-]+):[A-Za-z]", runs))
+        check(f"W14 the {job_name} job names modules to count", bool(modules), runs[:120])
+        check(f"W14 every module {job_name} runs is counted under it",
+              modules <= sets.get(own, set()), " | ".join(sorted(modules - sets.get(own, set()))))
+        check(f"W14 and none of them is counted under the other job",
+              not (modules & sets.get(other, set())), " | ".join(sorted(modules & sets.get(other, set()))))
+        listed = {m.strip() for m in str(collect_env.get(named, "")).split(",") if m.strip()}
+        check(f"W14 {named} names exactly the modules {job_name} runs",
+              listed == modules, f"listed={sorted(listed)} runs={sorted(modules)}")
+
+    # W15 Every mutation still anchors to the file it breaks.
+    #
+    # sabotage.py reports an anchor that matches nothing as INVALID, which is correct and costs a full
+    # sweep to learn: the rows that still match are all caught, so the run looks healthy until the summary.
+    # Editing the file a mutation quotes is what breaks one, and that is an ordinary thing to do -- three
+    # rows went invalid when the collector's per-module check moved into a shared helper, and three more
+    # when a path filter grew an entry. Asked here because it is a second's work and answers the same
+    # question.
+    sab = ast.parse(SABOTAGE.read_text())
+    sources = {}
+    for node in ast.walk(sab):
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "SOURCE" for t in node.targets):
+            for key, value in zip(node.value.keys, node.value.values):
+                if isinstance(key, ast.Name) and isinstance(value, ast.BinOp) and isinstance(value.right, ast.Constant):
+                    sources[key.id] = value.right.value
+    literals = {node.targets[0].id: node.value.value for node in ast.walk(sab)
+                if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)}
+
+    def text_of(node):
+        if isinstance(node, ast.Name):
+            return literals.get(node.id)
+        try:
+            return ast.literal_eval(node)
+        except ValueError:
+            return None
+
+    rows = next((n.value for n in ast.walk(sab)
+                 if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "MUTATIONS" for t in n.targets)), None)
+    check("W15 sabotage.py declares its mutations and their sources", rows is not None and bool(sources),
+          f"sources={sorted(sources)}")
+    if rows is not None and sources:
+        unreadable, broken = [], []
+        for row in rows.elts:
+            key = getattr(row.elts[1], "id", "")
+            desc, before, after = (text_of(row.elts[0]), text_of(row.elts[3]), text_of(row.elts[4]))
+            if key not in sources or before is None or after is None:
+                unreadable.append(desc or "<unnamed>")
+                continue
+            found = (SDK / sources[key]).read_text().count(before)
+            if found != 1 or before == after:
+                broken.append(f"{desc}: matched {found}x" + (" and changes nothing" if before == after else ""))
+        # Not fatal on its own: a row may build its anchor in a way this cannot read. It is reported so the
+        # number is visible rather than assumed, and so a growing one is noticed.
+        check("W15 every mutation this can read anchors exactly once, and changes something",
+              not broken, " | ".join(broken))
+        check("W15 and the ones it cannot read stay few", len(unreadable) <= 4, " | ".join(unreadable))
+
+
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")

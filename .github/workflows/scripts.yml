@@ -41,6 +41,7 @@ on:
       - '.github/workflows/live-*.yml'
       - '.github/workflows/nightly.yml'
       - '.github/workflows/card-reader-mirror.yml'
+      - '.github/workflows/ci.yml'
   push:
     branches: [main]
     paths:
@@ -49,6 +50,7 @@ on:
       - '.github/workflows/live-*.yml'
       - '.github/workflows/nightly.yml'
       - '.github/workflows/card-reader-mirror.yml'
+      - '.github/workflows/ci.yml'
 
 concurrency:
   group: scripts-${{ github.ref }}

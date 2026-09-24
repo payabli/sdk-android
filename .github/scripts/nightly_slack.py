@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Render the nightly facts into Slack: a summary in the channel, the failure detail in its thread.
 
-Runs in a job of its own that `needs` the test job, so the bot token never exists in a job that runs a
-third-party action. It reads the facts file `nightly_report.py` wrote and posts twice.
+Runs in a job of its own that `needs` the `verdict` job, so the bot token never exists in a job that runs
+a third-party action. It reads the facts file `nightly_report.py` wrote and posts twice.
 
 Why a bot token rather than the incoming webhook this replaced. Threading needs the parent message's `ts`
 as `thread_ts`, and a webhook's response body is the literal string `ok` with no `ts` and no channel, so a
@@ -18,7 +18,7 @@ and the coverage, so the channel keeps the actionable part and loses only the de
 be all or nothing, which on a red night means no message at all.
 
 Nothing here can fail the run. A Slack outage must not turn a green nightly red, and the suite gate in the
-test job owns the run result, so every path below warns and exits zero.
+`verdict` job owns the run result, so every path below warns and exits zero.
 
 Never prints the token, and never handles a stack trace: traces stay in the job summary and this links them.
 """
@@ -241,13 +241,13 @@ def summary_blocks(facts: dict, job_result: str = "success", since_green: dict |
     fails. Letting Slack's own affordance be the pointer keeps the parent true either way.
     """
     # The verdict is reconciled against the job result rather than trusted on its own, because the facts are
-    # uploaded two steps before the gate runs. If the test job hits its own timeout during `Upload reports` or
-    # during the gate, the artifact already holds a green verdict while the run is red, and posting that green
+    # uploaded two steps before the gate runs. If the `verdict` job hits its own timeout during `Upload reports`
+    # or during the gate, the artifact already holds a green verdict while the run is red, and posting that green
     # is exactly the run-versus-notification disagreement this workflow exists to prevent. A tampered
     # collector reaches the same place from the other direction: it can write `green` into the facts, but it
     # cannot make a failed step report success, so the gate still fails the job and the mismatch shows here.
     #
-    # Anything other than a successful test job means the run is not green, whatever the artifact says, and
+    # Anything other than a successful `verdict` job means the run is not green, whatever the artifact says, and
     # the run is the authority. The counts are still worth printing, so this corrects the headline rather than
     # discarding the message.
     claimed_red = facts["verdict"] == "red"
@@ -326,7 +326,7 @@ def summary_blocks(facts: dict, job_result: str = "success", since_green: dict |
         # Named explicitly, because "collected green, ran red" is the one combination a reader would otherwise
         # have to reconcile themselves, and the run is what to believe.
         lines.append(
-            f"_The collected results were green, but the test job ended `{mrkdwn(job_result)}`, so the run "
+            f"_The collected results were green, but the verdict job ended `{mrkdwn(job_result)}`, so the run "
             "did not finish. Believe the run._"
         )
 
@@ -814,20 +814,20 @@ def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
     a dead test job still gets announced.
 
     Two different situations reach here and the message must not merge them, because an absent facts file
-    does not prove the test job failed to write one. The upload and the download are both deliberately
+    does not prove the `verdict` job failed to write one. The upload and the download are both deliberately
     non-blocking, so a transient artifact-service error loses the report while the suite and the run stay
-    green. Saying "the test job ended success without writing a report" in that case is both wrong and
+    green. Saying "the verdict job ended success without writing a report" in that case is both wrong and
     self-contradictory, and a red circle over a green suite is a false alarm on the one channel that exists
     to be trusted.
 
-    The job result tells the two apart on its own. The gate lives in the test job and fails it on a red
+    The job result tells the two apart on its own. The gate lives in the `verdict` job and fails it on a red
     verdict, so `success` proves the suite passed and the results existed, which leaves the transfer as the
     only thing that can have gone wrong.
     """
     if job_result == "success":
         icon = ":warning:"
         cause = (
-            "The test job passed, its suite gate included, so the results existed and the suite was green. "
+            "The verdict job passed, its suite gate included, so the results existed and the suite was green. "
             "The facts file did not reach this job. The artifact upload and download are both non-blocking, "
             "so a transient artifact-service error loses the report without touching the run result."
         )
@@ -835,8 +835,8 @@ def unreported_blocks(job_result: str) -> tuple[list[dict], str]:
     else:
         icon = ":red_circle:"
         cause = (
-            f"The test job ended `{mrkdwn(job_result)}`, so it produced no usable report. A cancellation, a "
-            "job timeout, or a failure before the tests ran each end it this way."
+            f"The verdict job ended `{mrkdwn(job_result)}`, so it produced no usable report. A cancellation, a "
+            "job timeout, or a failure before it collected the results each end it this way."
         )
         fallback = f"{mrkdwn(platform_name())} nightly produced no report"
 

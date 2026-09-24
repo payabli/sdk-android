@@ -25,7 +25,7 @@
 - `./gradlew sonar` - Static analysis (needs `SONAR_TOKEN`; add `--dry-run` to check config only)
 - `./gradlew publishToMavenLocal` - Exercise the publish convention
 
-**Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `gpr.user` and `gpr.token` in `~/.gradle/gradle.properties` (never in this repo) for the card reader registry that `:taptopay` resolves from; it needs a classic PAT with `read:packages`. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
+**Setup**: three things a fresh clone lacks, in the order they break. `ANDROID_HOME`, or `sdk.dir` in the gitignored `local.properties`. Then `payabli.maven.user` and `payabli.maven.password` in `~/.gradle/gradle.properties` (never in this repo) for the card reader repository that `:taptopay` resolves from; a maintainer supplies the pair, and the one to ask for is the release identity, which is what every build reads `/maven` with. Only `:taptopay` needs it, and the build says so if it is missing. Then, for the attestation tests that make a real Play Integrity request, `payabli.cloudProjectNumber` in the same file: a Google Cloud project number with the Play Integrity API enabled, which a maintainer can supply. It is **not a secret** — every app shipping Play Integrity carries its project number in the binary — but it is environment-scoped and it is the shared daily quota target, so it is configured rather than hard-coded; `taptopay/build.gradle.kts` carries the full reasoning. Without it, `PlayIntegrityRealProjectTest` is filtered out of the run and everything else is unaffected.
 
 **When to run which**, because running everything at every step costs more than it catches:
 
@@ -76,7 +76,7 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
   `payabli.sdk.extraEnvironments`, empty in a checkout. The setting **appends** and can do nothing else, the
   generator refuses anything that is not an https `payabli.com` origin with no path, and `payabli.publish`
   fails every publish task while it is set, so no released artifact can carry one. A machine that needs
-  another environment puts the setting in `~/.gradle/gradle.properties`, beside `gpr.*` and
+  another environment puts the setting in `~/.gradle/gradle.properties`, beside `payabli.maven.*` and
   `payabli.cloudProjectNumber`, which reaches every worktree and leaves nothing modified in any of them;
   `scripts/toolchain.sh` reports it as an advisory row. `:example` appends to its own two the same way,
   through `payabli.demo.extraEnvironments`, and a name the SDK was not built with is dropped rather than
@@ -111,22 +111,34 @@ Multi-module Kotlin SDK for card-present and card-not-present payment acceptance
 - **sonar** - analysis after `build`, producing the reports it consumes first.
 
 `.github/workflows/nightly.yml`, on schedule and manual dispatch only, never on a pull request and not a
-required check. Two jobs, and the split is a security boundary rather than organisation:
+required check. Four jobs, and the split is a security boundary rather than organisation: the third-party
+emulator action runs only in a job that holds no secret and takes nothing from a job that does.
 
-- **nightly** - every unit test plus `:core`'s and `:payin`'s instrumented tests on an emulator. Runs the one third-party
-  action in the repository, so no Slack credential exists in it. Ends by deciding the verdict and gating on
-  it, so the run result never depends on the reporting job.
-- **report** - `needs: nightly`, holds the bot token, runs nothing third-party. Posts a summary to
+- **nightly** - every unit test that needs no credential, plus `:core`'s and `:payin`'s instrumented tests on
+  an emulator. Runs the one third-party action in the repository and holds no secret. Packs its results into
+  an artifact.
+- **card-present** - `:taptopay`'s and `:example`'s unit tests, holding the card reader credential on one
+  step. Runs no third-party action, and every action in it is pinned to a commit. Packs its results too.
+- **verdict** - `needs` both, unpacks their results, runs `.github/scripts/nightly_report.py` with the full
+  git history, uploads the facts and the `nightly-reports` artifact, and fails the run if a suite failed. So
+  the run result never depends on the reporting job.
+- **report** - `needs: verdict`, holds the bot token, runs nothing third-party. Posts a summary to
   `#mobile-sdk-nightly-build` and the failure detail in that message's thread. `if: ${{ !cancelled() }}`
   rather than `always()`, so a test job that timed out is still announced while a run superseded by
   `cancel-in-progress` stays quiet.
 
-The two halves talk through a `nightly-facts` artifact: `.github/scripts/nightly_report.py` parses the
-JUnit XML and writes the facts, the verdict and the stack traces (to the job summary, which is what
-Slack links; a trace over 4000 characters is trimmed in the middle and the unabridged JUnit XML stays in the
-`nightly-reports` artifact); `.github/scripts/nightly_slack.py` renders and posts them. Parsing has to stay in the test
-job because the build outputs and the git history the culprit lookup needs are both there, and the verdict
-has to be decided there because that is where the gate reads it.
+`verdict` and `report` talk through a `nightly-facts` artifact: `nightly_report.py` parses the JUnit XML and
+writes the facts, the verdict and the stack traces (to the job summary, which is what Slack links; a trace
+over 4000 characters is trimmed in the middle and the unabridged JUnit XML stays in the `nightly-reports`
+artifact); `.github/scripts/nightly_slack.py` renders and posts them. The verdict is decided in the job that
+gates on it, so the run and the notification cannot disagree. Each test job's results cross as one archive
+built by `.github/scripts/pack_results.sh`, because a glob upload roots the paths at whatever the matched
+files share.
+
+`verify.py`'s W12 holds the security half by structure: the emulator job never mentions the secrets context,
+needs no job that does and downloads no artifact, and every job that mentions it pins every action. It used
+to scan expressions for ways of reaching a secret, and review kept finding another; the job graph is the part
+that can be checked completely.
 
 **Both scripts are covered by `.github/scripts/tests/`, which needs only `python3` and `git`.** `verify.py`
 drives the collector as a subprocess inside a synthetic git repository, which is what
@@ -375,11 +387,11 @@ reaches the branch under test.
   `-Ppayabli.instrumentedCoverage=true`, which runs the connected tests itself, and hands the coverage to the
   `sonar` job as an artifact. That property is off everywhere else on purpose: the instrumentation lands in
   the `debug` variant `:example` links, and it cost that module's dex merge more heap than CI's daemon has. That job holds no secret, which is
-  what allows the third-party emulator action in it; `sonar` holds `GPR_TOKEN` and `SONAR_TOKEN`, so the
+  what allows the third-party emulator action in it; `sonar` holds the card reader credential and `SONAR_TOKEN`, so the
   emulator cannot run there and the coverage cannot be produced in place. It runs for forks too, since it
   needs nothing they cannot have.
   - **`:taptopay` and `:example` are absent, for two different reasons.** Building `:taptopay` resolves the
-    card reader from a private registry, so including it would hand `GPR_TOKEN` to that action; its
+    card reader from a credentialed repository, so including it would hand that credential to that action; its
     instrumented tier waits on a job of its own, and `enableAndroidTestCoverage` is turned off at its own
     declaration to say so. `:example` is `isSkipProject` in the analysis, so its coverage is read by nothing.
     `:example`'s tests still run in the nightly. `:taptopay`'s run in no automated job at all, which is what
@@ -397,6 +409,6 @@ reaches the branch under test.
   nothing the emulator tier cannot, and there is none. Reading verdict *contents* needs a server-side decode
   through the same cloud project, which is separate work with no owner.
 - **The attestation instrumented tier does not run in the nightly, and the blocker is a credential, not
-  hardware.** Building `:taptopay` resolves the card reader from the Fiserv GitHub Packages repo, so running
-  its instrumented tests in the nightly would hand `GPR_TOKEN` to the third-party emulator action, which is
+  hardware.** Building `:taptopay` resolves the card reader from a credentialed repository, so running
+  its instrumented tests in the nightly would hand that credential to the third-party emulator action, which is
   the exposure the job split exists to prevent. It waits on `:taptopay` getting its own instrumented job.

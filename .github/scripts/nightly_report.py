@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Collect what the nightly run produced, and decide the verdict.
 
-This half holds no credential and posts nothing. It runs in the test job, where the build outputs and the
-full git history are, and it writes three things:
+This half holds no credential and posts nothing. It runs in the `verdict` job, which unpacks both test
+jobs' results and has the full git history, and it writes three things:
 
   * a facts file, JSON, uploaded as an artifact for `nightly_slack.py` to render and post
   * the stack traces, to `$GITHUB_STEP_SUMMARY`, so the report has something durable to link at. Long
@@ -447,11 +447,19 @@ def main() -> int:
     # Sharing one glob let :taptopay results make the unit total non-zero when the unit step had written
     # nothing, which defeated the missing-results guard, and left no way to notice a card-present step that
     # succeeded while writing nothing.
+    #
+    # A module belongs to the set named after the job that runs it. :example moved to card-present when
+    # that job was split out, because it depends on :taptopay and so needs the reader credential; leaving
+    # it here would have let its results stand in for a unit step that wrote none, which is the exact
+    # failure the paragraph above describes. W14 asserts this against the workflow.
     unit_patterns = [
         f"{module}/build/test-results/test*UnitTest/TEST-*.xml"
-        for module in ("core", "payin", "telemetry", "example", "payabli-android", "testutils")
+        for module in ("core", "payin", "telemetry", "payabli-android", "testutils")
     ]
-    card_patterns = ["taptopay/build/test-results/test*UnitTest/TEST-*.xml"]
+    card_patterns = [
+        f"{module}/build/test-results/test*UnitTest/TEST-*.xml"
+        for module in ("taptopay", "example")
+    ]
     android_patterns = ["*/build/outputs/androidTest-results/connected/**/TEST-*.xml"]
 
     unit_total, unit_failed, unit_skipped, unit_details = parse_results(unit_patterns)
@@ -491,18 +499,26 @@ def main() -> int:
     # An entry may name a variant as `module:variant`, because a module with product flavors writes one
     # results directory per variant and `**` matches any of them: one variant that ran covers a sibling that
     # did not, which is the same hiding one level further down.
-    inst_expected = [m.strip() for m in os.environ.get("INSTRUMENTED_MODULES", "").split(",") if m.strip()]
-    inst_silent = []
-    for entry in inst_expected:
-        module, _, variant = entry.partition(":")
-        results = f"{module}/build/outputs/androidTest-results/connected/{variant or '**'}/TEST-*.xml"
-        if parse_results([results])[0] == 0:
-            inst_silent.append(entry)
+    # Every suite here spans more than one module, so all three ask the same question of the same list.
+    def silent(named: str, results: str) -> list[str]:
+        found = []
+        for entry in [m.strip() for m in os.environ.get(named, "").split(",") if m.strip()]:
+            module, _, variant = entry.partition(":")
+            if parse_results([results.format(module=module, variant=variant or "**")])[0] == 0:
+                found.append(entry)
+        return found
 
-    unit_missing = unit_step == "success" and unit_total == 0
+    UNIT_RESULTS = "{module}/build/test-results/test*UnitTest/TEST-*.xml"
+    inst_silent = silent("INSTRUMENTED_MODULES",
+                         "{module}/build/outputs/androidTest-results/connected/{variant}/TEST-*.xml")
+    unit_silent = silent("UNIT_MODULES", UNIT_RESULTS)
+    card_silent = silent("CARD_PRESENT_MODULES", UNIT_RESULTS)
+
+    unit_missing = unit_step == "success" and (unit_total == 0 or bool(unit_silent))
     inst_missing = inst_step == "success" and (inst_total == 0 or bool(inst_silent))
-    # A card-present step that ran and wrote nothing is as suspect as either of the required suites.
-    card_missing = card_step == "success" and card_total == 0
+    # A card-present step that ran and wrote nothing is as suspect as either of the required suites, and it
+    # runs two modules, so the suite total cannot answer it either.
+    card_missing = card_step == "success" and (card_total == 0 or bool(card_silent))
 
     red = (
         bool(unit_failed or inst_failed or card_failed)
@@ -517,12 +533,14 @@ def main() -> int:
     # channel, and a copy of this script that guesses would eventually guess wrong.
     platform = os.environ.get("PLATFORM", "").strip() or repo.rsplit("/", 1)[-1]
 
-    unit_label = suite_label(unit_failed, unit_skipped, unit_total, unit_step, unit_missing)
+    unit_label = suite_label(unit_failed, unit_skipped, unit_total, unit_step, unit_missing, ", ".join(unit_silent))
     inst_label = suite_label(inst_failed, inst_skipped, inst_total, inst_step, inst_missing, ", ".join(inst_silent))
     suites = [("Unit", unit_label), ("Instrumented", inst_label)]
     # Only worth a line when it is not the ordinary intentional skip.
     if card_step != "skipped":
-        suites.append(("Card-present unit", suite_label(card_failed, card_skipped, card_total, card_step, card_missing)))
+        suites.append(("Card-present unit",
+                       suite_label(card_failed, card_skipped, card_total, card_step, card_missing,
+                                   ", ".join(card_silent))))
 
     # Branch first, then line. Branch is the stricter number and the one that moves when a test stops
     # exercising a path, so it leads; line sits under it for the easier comparison against history.

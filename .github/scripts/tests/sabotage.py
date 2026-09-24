@@ -50,6 +50,8 @@ VERIFY = HERE / "verify.py"
 WORK = Path(tempfile.mkdtemp(prefix="nightly-sabotage-"))
 COLLECTOR = WORK / "nightly_report.py"
 POSTER = WORK / "nightly_slack.py"
+# The archive a nightly test job hands to `verdict`.
+PACK = WORK / "pack_results.sh"
 # The live workflows are mutated too, because what keeps a client credential out of the emulator step and out
 # of a fork's reach is how those files are written. A copy each, in the same scratch directory, so the same
 # guarantee holds: nothing here writes into the repository.
@@ -61,12 +63,17 @@ LIVE_SANDBOX = WORKFLOW_DIR / "live-sandbox.yml"
 # The harness workflow, for its path filter alone: a check that never runs on the file it guards is not
 # a check, and the filter is what decides.
 SCRIPTS = WORKFLOW_DIR / "scripts.yml"
-# The nightly, for its liveness-owner expression alone. Nothing else here mutates it.
+# The nightly: its liveness owner, its module list, and where the emulator action may run.
 NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # The card reader mirror, whose two jobs are the only thing keeping the credential that writes the artifact
 # origin out of a run that publishes nothing. Every mutation below widens that back, and none of them looks
 # like more than a tidy-up in a diff.
 MIRROR = WORKFLOW_DIR / "card-reader-mirror.yml"
+
+# Per-pull-request CI, for the card reader credential alone. :taptopay resolves the reader from a
+# credentialed repository, and this file keeps that credential out of the job the third-party emulator
+# action runs in. The mutations below put it back, each as something that reads like a convenience.
+CI = WORKFLOW_DIR / "ci.yml"
 
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
@@ -82,6 +89,7 @@ LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
     COLLECTOR: SDK / ".github/scripts/nightly_report.py",
     POSTER: SDK / ".github/scripts/nightly_slack.py",
+    PACK: SDK / ".github/scripts/pack_results.sh",
     LIVE_POSTER: SDK / ".github/scripts/live_slack.py",
     LIVE_FLOWS: SDK / ".github/workflows/live-flows.yml",
     LIVE_QA: SDK / ".github/workflows/live-qa.yml",
@@ -89,6 +97,7 @@ SOURCE = {
     NIGHTLY: SDK / ".github/workflows/nightly.yml",
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
     MIRROR: SDK / ".github/workflows/card-reader-mirror.yml",
+    CI: SDK / ".github/workflows/ci.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -229,14 +238,14 @@ MUTATIONS = [
     # The per-variant check, reduced to the module-wide glob it replaced. One flavor's results then cover a
     # flavor that stopped running, the suite total is never zero, and a whole tier goes missing green.
     ("The variant is ignored, so one flavor's results cover a flavor that stopped", COLLECTOR, "collector",
-     "        results = f\"{module}/build/outputs/androidTest-results/connected/{variant or '**'}/TEST-*.xml\"",
-     '        results = f"{module}/build/outputs/androidTest-results/connected/**/TEST-*.xml"'),
+     '            if parse_results([results.format(module=module, variant=variant or "**")])[0] == 0:',
+     '            if parse_results([results.format(module=module, variant="**")])[0] == 0:'),
 
     # The other direction, and the one a red verdict alone cannot tell apart: a path that matches nothing
     # reads as every variant being silent, which is red for a reason that has nothing to do with a flavor
     # stopping. Only the label distinguishes them, which is why C22 asserts what it names.
     ("Every variant path matches nothing, so a broken path reads as a silent flavor", COLLECTOR, "collector",
-     "connected/{variant or '**'}/TEST-*.xml", "connected/nowhere/{variant or '**'}/TEST-*.xml"),
+     "connected/{variant}/TEST-*.xml", "connected/nowhere/{variant}/TEST-*.xml"),
 
     ("Coverage phrases repeated per module again", POSTER, "poster",
      "            if shareable:\n                rendered.append(\", \".join(names) + f\" {phrase}\")\n            else:\n                rendered.extend(f\"{name} {phrase}\" for name in names)",
@@ -279,7 +288,7 @@ MUTATIONS = [
      'f"<pre>{trace}</pre>\\n\\n</details>\\n\\n"'),
 
     ("A suite that wrote no results counted as green", COLLECTOR, "collector",
-     "    unit_missing = unit_step == \"success\" and unit_total == 0",
+     '    unit_missing = unit_step == "success" and (unit_total == 0 or bool(unit_silent))',
      "    unit_missing = False"),
 
     ("An instrumented module that wrote no results hidden by its sibling", COLLECTOR, "collector",
@@ -519,22 +528,24 @@ MUTATIONS = [
     # The filter decides whether any of the above ever runs on the file it is about. Dropping a workflow from
     # it leaves every assertion in place and none of them reachable by the change that breaks them.
     # Anchored through the trailing `push:` because the two blocks are identical, and a mutation that
-    # matched both would be testing something else. That tail carries the mirror as well, so each anchor
-    # below names every line between the one it breaks and `push:`.
+    # matched both would be testing something else. That tail carries the mirror and ci.yml as well, so
+    # each anchor below names every line between the one it breaks and `push:`. Adding an entry to the
+    # filter therefore moves every anchor after it, and leaves them matching nothing.
     ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n  push:",
+     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
      "      - '.github/workflows/nightly-disabled.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:"),
 
     ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
      "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
      "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:"),
 
     ("The harness stops running when the card reader mirror changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n  push:",
-     "      - '.github/workflows/card-reader-mirror-disabled.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror-disabled.yml'\n"
+     "      - '.github/workflows/ci.yml'\n  push:"),
 
     # The mirror's permission split. The token is what turns repository-controlled code into an identity
     # that can write the origin, and every one of these hands it to a run that publishes nothing.
@@ -617,6 +628,104 @@ MUTATIONS = [
      '        shown = lines + ([f"_{hidden} further failure(s) not listed here; see the run._"] if hidden '
      'else [])',
      '        shown = lines'),
+
+    # W12, where the third-party emulator action is allowed to run. One row per route a secret takes into
+    # that job, because the rule is about the job graph and each row is a different edge of it. The last
+    # three spellings were each a review finding against the version of W12 that read expressions.
+    ("The emulator step is handed a secret through its env", NIGHTLY, "workflows",
+     "          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect"
+     " -noaudio -no-boot-anim -camera-back none",
+     "          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect"
+     " -noaudio -no-boot-anim -camera-back none\n"
+     "        env:\n          READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
+
+    ("The emulator action is handed a secret through its inputs", NIGHTLY, "workflows",
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n',
+     '        # is waiting on rather than something this one can be talked into.\n        uses: reactivecircus/android-emulator-runner@v2\n        with:\n          repository-password: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+
+    # Job level, which every step inherits while none of them names it.
+    ("The emulator job inherits a secret from its own env", NIGHTLY, "workflows",
+     '      EMULATOR_ARCH: x86_64\n    steps:\n',
+     "      EMULATOR_ARCH: x86_64\n      READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n"),
+
+    ("The instrumented job is given the card reader credential", CI, "workflows",
+     "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis",
+     "      PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
+     "      API_LEVEL: '34'\n      EMULATOR_TARGET: google_apis"),
+
+    # Workflow level, inherited by every job and appearing in none of them.
+    ("The workflow-level env hands every ci.yml job the card reader credential", CI, "workflows",
+     "env:\n  # Never --info or --debug here: verbose Gradle logs can print repository credentials.\n"
+     "  GRADLE_OPTS: -Dorg.gradle.console=plain",
+     "env:\n  # Never --info or --debug here: verbose Gradle logs can print repository credentials.\n"
+     "  GRADLE_OPTS: -Dorg.gradle.console=plain\n"
+     "  READER_PW: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}"),
+
+    # An earlier step in the same job exports the value, so the emulator step inherits it without naming it.
+    ("A step before the emulator exports a secret to the job's environment file", NIGHTLY, "workflows",
+     '      - name: Enable KVM group perms\n',
+     '      - name: Export\n        run: echo "READER_PW=${{ secrets.PAYABLI_MAVEN_PW_PROD }}" >> "$GITHUB_ENV"\n'
+     + '      - name: Enable KVM group perms\n'),
+
+    # GitHub's `format` escapes a brace by doubling it, so an expression reader that stops at the first
+    # `}}` never reaches the secret.
+    ("The emulator job's env hides a secret behind an escaped brace", NIGHTLY, "workflows",
+     '      EMULATOR_ARCH: x86_64\n    steps:\n',
+     "      EMULATOR_ARCH: x86_64\n"
+     "      READER_PW: ${{ format('{{Hello {0}!}}', secrets.PAYABLI_MAVEN_PW_PROD) }}\n    steps:\n"),
+
+    ("The emulator job exports the entire secrets context", NIGHTLY, "workflows",
+     '      EMULATOR_ARCH: x86_64\n    steps:\n',
+     "      EMULATOR_ARCH: x86_64\n      ALL_SECRETS: ${{ toJSON(secrets) }}\n    steps:\n"),
+
+    # The edges between jobs. Outputs and artifacts carry values across without the word appearing.
+    ("The emulator job waits on the job that holds the credential", NIGHTLY, "workflows",
+     "    name: Unit + instrumented tests\n",
+     "    name: Unit + instrumented tests\n    needs: card-present\n"),
+
+    ("The emulator job downloads an artifact", NIGHTLY, "workflows",
+     '      - name: Enable KVM group perms\n',
+     "      - uses: actions/download-artifact@v8\n        with:\n          name: nightly-results-card-present\n"
+     + '      - name: Enable KVM group perms\n'),
+
+    # A job holding a secret, even on one step, lets every earlier action write what that step reads.
+    ("An action in the nightly card-present job is left on a moving tag", NIGHTLY, "workflows",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n\n"
+     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6",
+     "      - uses: actions/checkout@v7\n\n"
+     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6"),
+
+    ("An action in the ci.yml card-present job is left on a moving tag", CI, "workflows",
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+     '      PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n    steps:\n      - uses: actions/checkout@v7'),
+
+    # W13. A results directory left out of the archive reaches `verdict` as a suite that wrote nothing.
+    ("The results archive leaves out the unit test results", PACK, "workflows",
+     "  \\( -path '*/build/test-results' -o -path '*/build/reports'",
+     "  \\( -path '*/build/reports'"),
+
+    # W9, and the reason it exists: W12 reads ci.yml, so the harness has to run when ci.yml changes.
+    # Dropping it from the filter leaves every W12 assertion about that file unreachable by the change
+    # that would break it, while the harness still reports a full pass on everything else.
+    # :example runs in card-present and is counted there. Counting it as a unit module lets its results
+    # stand in for a unit step that wrote none, which is the guard the two sets exist for.
+    ("A silent card-present module is hidden by its sibling", COLLECTOR, "collector",
+     'card_missing = card_step == "success" and (card_total == 0 or bool(card_silent))',
+     'card_missing = card_step == "success" and card_total == 0'),
+
+    ("A silent unit module is hidden by its sibling", COLLECTOR, "collector",
+     'unit_missing = unit_step == "success" and (unit_total == 0 or bool(unit_silent))',
+     'unit_missing = unit_step == "success" and unit_total == 0'),
+
+    ("A card-present module is counted under the unit job", COLLECTOR, "workflows",
+     'for module in ("taptopay", "example")',
+     'for module in ("taptopay",)'),
+
+    ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
+
 ]
 
 
@@ -637,6 +746,9 @@ def still_parses(path: Path) -> str:
         except py_compile.PyCompileError as error:
             return f"patched file does not compile: {error}"
         return ""
+    if path.suffix == ".sh":
+        proc = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+        return f"patched script does not parse: {proc.stderr.strip()}" if proc.returncode else ""
 
     try:
         document = yaml.safe_load(path.read_text())
@@ -654,7 +766,7 @@ def still_parses(path: Path) -> str:
 def run_verify(half: str) -> tuple[int, int, str]:
     # Aimed at the copies, so the harness reads what this run mutated rather than what the repository holds.
     env = {**os.environ, "NIGHTLY_ONLY": half,
-           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER),
+           "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER), "NIGHTLY_PACK": str(PACK),
            "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
