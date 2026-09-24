@@ -6,22 +6,22 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/** `payabli.publish` publishes to a directory, and refuses a repository with any other scheme. */
+/** `payabli.publish` publishes to a directory, and a task publishing anywhere else fails. */
 class PublishRepositoryGuardTest {
     @get:Rule
     val projectDir: TemporaryFolder = TemporaryFolder()
 
     @Test
-    fun `the staging directory configures`() {
+    fun `the staging directory publishes`() {
         writeProject(extra = "")
 
-        val result = runner().build()
+        val result = runner("publishBomPublicationToStagingRepository").build()
 
         assertTrue(result.output, result.output.contains("BUILD SUCCESSFUL"))
     }
 
     @Test
-    fun `a remote publishing repository is refused, and the message says why`() {
+    fun `a remote repository is refused, and the message says why`() {
         writeProject(
             extra = """
             publishing {
@@ -35,15 +35,33 @@ class PublishRepositoryGuardTest {
             """.trimIndent(),
         )
 
-        val result = runner().buildAndFail()
+        val result = runner("publishBomPublicationToElsewhereRepository").buildAndFail()
 
-        // Any configuration failure satisfies buildAndFail, so the message is what identifies this one.
+        // On the message: this task would also fail by being unable to reach the host, and that failure
+        // would satisfy buildAndFail while the guard was gone.
         assertTrue(result.output, result.output.contains("publishing repository 'Elsewhere' is https"))
         assertTrue(result.output, result.output.contains("only file is allowed"))
     }
 
-    // No Android plugin, so no SDK is needed: the guard sits in the script body, where the publication
-    // registrations sit behind pluginManager.withPlugin.
+    @Test
+    fun `a repository turned remote after configuration is refused`() {
+        writeProject(
+            extra = """
+            afterEvaluate {
+                publishing.repositories.withType(MavenArtifactRepository::class.java).configureEach {
+                    url = uri("https://example.invalid/repo")
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val result = runner("publishBomPublicationToStagingRepository").buildAndFail()
+
+        assertTrue(result.output, result.output.contains("only file is allowed"))
+    }
+
+    // java-platform so the convention registers a publication, which is what gives the probe a publish
+    // task to run. No Android plugin, so no SDK is needed.
     private fun writeProject(extra: String) {
         projectDir.newFile("settings.gradle.kts").writeText("""rootProject.name = "guard-probe"""")
         projectDir.newFile("gradle.properties").writeText(
@@ -54,7 +72,10 @@ class PublishRepositoryGuardTest {
         )
         projectDir.newFile("build.gradle.kts").writeText(
             """
+            import org.gradle.api.artifacts.repositories.MavenArtifactRepository
+
             plugins {
+                `java-platform`
                 id("payabli.publish")
             }
 
@@ -63,10 +84,9 @@ class PublishRepositoryGuardTest {
         )
     }
 
-    // `help` is enough: the guard runs in afterEvaluate, which every task invocation reaches.
-    private fun runner(): GradleRunner =
+    private fun runner(vararg args: String): GradleRunner =
         GradleRunner.create()
             .withProjectDir(projectDir.root)
             .withPluginClasspath()
-            .withArguments("help")
+            .withArguments(*args)
 }

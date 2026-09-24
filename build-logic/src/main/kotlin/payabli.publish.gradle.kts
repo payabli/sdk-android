@@ -1,5 +1,6 @@
 import com.android.build.api.dsl.LibraryExtension
 import com.payabli.buildlogic.extraEnvironmentsSetting
+import com.payabli.buildlogic.refusePublishingToARemoteRepository
 import com.payabli.buildlogic.refusePublishingWithExtraEnvironments
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
@@ -60,18 +61,9 @@ publishing {
     }
 }
 
-afterEvaluate {
-    extensions.configure<PublishingExtension> {
-        repositories.withType(MavenArtifactRepository::class.java).configureEach {
-            val scheme = url.scheme
-            check(scheme == "file") {
-                "payabli.publish: publishing repository '$name' is $scheme, and only file is allowed. " +
-                    "Artifacts reach the origin through the publishing workflow, which uploads the " +
-                    "staging tree; Gradle writes that tree and does not send it."
-            }
-        }
-    }
-}
+// At task time, not configuration time: a configuration-time check passes and a later afterEvaluate can
+// still turn the repository remote. The guard and its message are in PublishRepositories.kt.
+tasks.refusePublishingToARemoteRepository()
 
 // A published artifact carries only the environments committed in PayabliEnvironment; the guard and its
 // reasoning are in ExtraEnvironments.kt.
