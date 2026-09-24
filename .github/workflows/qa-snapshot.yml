@@ -1,14 +1,7 @@
 name: QA snapshot
 
-# Publishes a release candidate of every module to /maven-qa on the artifact origin.
-#
-# A QA snapshot and a release carry the same artifact. What differs is the version qualifier and the
-# channel's overwrite policy: an integrator selects SANDBOX or PRODUCTION at runtime, so there is no
-# build that reaches anything else, and `payabli.publish` refuses to publish while
-# payabli.sdk.extraEnvironments is set.
-#
-# Branch only. The snapshot role trusts refs/heads/*, so a tag cannot assume it, exactly as a branch
-# cannot assume the release role.
+# Publishes a release candidate of every module to /maven-qa. Branch only: the snapshot role trusts
+# refs/heads/*, so a tag cannot assume it.
 
 on:
   workflow_dispatch:
@@ -19,12 +12,8 @@ permissions:
   contents: read
 
 concurrency:
-  # One publish at a time across every ref, not one per ref: two refs stamping in the same UTC second
-  # against the same base produce one identifier, and the first writer keeps the coordinate.
-  #
-  # Never cancelled. A run interrupted mid-upload leaves a partial tree under its own identifier, which
-  # the next run does not adopt because it stamps a new one; on a prunable channel that is litter rather
-  # than a coordinate anyone asked for.
+  # One group across every ref, not one per ref: two refs stamping in the same UTC second reach one
+  # identifier, and the first writer keeps the coordinate.
   group: qa-snapshot
   cancel-in-progress: false
 
@@ -34,17 +23,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # For the OIDC role that writes the bucket. No long-lived AWS key exists in this repository.
       id-token: write
     env:
-      # The release identity, because every build reads /maven whatever it publishes to. The QA pair
-      # writes /maven-qa and reads nothing.
+      # The release identity: every build reads /maven whatever it publishes to.
       PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
       PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
     steps:
-      # SHA-pinned, as every workflow here pins what it uses: this job holds a repository credential
-      # and mints an AWS publishing credential, and a mutable tag is resolved at run time by whoever
-      # controls it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -57,8 +41,7 @@ jobs:
           # See the note on the first setup-gradle in ci.yml.
           cache-provider: basic
 
-      # Variables rather than secrets: a role ARN is an identifier that works only alongside this
-      # repository's OIDC identity, and masking it makes every AccessDenied unreadable.
+      # Variables rather than secrets: masking a role ARN makes every AccessDenied unreadable.
       - name: Check the channel is provisioned
         run: |
           missing=
@@ -74,17 +57,12 @@ jobs:
           AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
           AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
 
-      # Immutable subject claims are a repository setting that anyone can flip in either direction, and
-      # the trust policies live in another repository's Terraform, which will not notice. The two then
-      # disagree and the assume fails naming IAM, which is where it sends the reader — a dispatched run
-      # once spent an afternoon there. This compares the claim the run actually presents.
-      #
-      # The token is read here rather than the setting: the setting needs repository-admin scope, and
-      # what the role matches on is the claim.
+      # The subject setting is GitHub's and the trust policies are Terraform elsewhere, so the two can
+      # disagree and the assume then fails naming IAM. Reads the claim rather than the setting, which
+      # needs repository-admin scope.
       - name: Check the OIDC subject the trust policies expect
         env:
-          # The branch form, not the prefix: the snapshot role trusts refs/heads/* only, and a dispatch
-          # can be started on a tag, whose subject shares the prefix and fails at the assume.
+          # The branch form: a dispatch can be started on a tag, whose subject shares the prefix.
           EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/
         run: |
           claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
@@ -103,10 +81,8 @@ jobs:
               ;;
           esac
 
-      # The committed property names the version under development; the stamp makes each build's
-      # coordinate unique, so no two builds answer to one identifier and a tester can pin the one they
-      # tested. UTC, year-first, because a pre-release identifier of only digits is compared numerically
-      # and must not carry a leading zero.
+      # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
+      # carry a leading zero.
       - name: Name this build
         id: name
         run: |
@@ -124,9 +100,8 @@ jobs:
           role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_SDK_CDN_REGION }}
 
-      # The account comes off the role ARN this run assumed rather than being configured a second time,
-      # so there is one copy of it. The script passes it as --expected-bucket-owner, so a mistyped bucket
-      # name resolving to somebody else's bucket is refused rather than written to.
+      # The account comes off the role ARN, so there is one copy of it. The script passes it as
+      # --expected-bucket-owner, so a mistyped bucket that resolves to someone else's is refused.
       - name: Upload the staging tree
         env:
           VERSION: ${{ steps.name.outputs.version }}

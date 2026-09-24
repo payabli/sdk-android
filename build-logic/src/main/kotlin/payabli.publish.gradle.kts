@@ -60,15 +60,8 @@ publishing {
     }
 }
 
-// Only a file repository is allowed here, and the check exists because the alternative fails silently:
-// a remote one added back leaves every build green while artifacts go somewhere nothing reads. The
-// scheme is what is tested, so any host is refused and not only the registry this replaced.
-//
-// This refuses at configuration time where refusePublishingWithExtraEnvironments above refuses at task
-// time, and the difference is what each guards. A developer build legitimately sets an extra
-// environment, so refusing to configure would make the setting unusable; nothing legitimately declares
-// a remote publishing repository. publishToMavenLocal is outside this loop, since it targets .m2
-// rather than a declared repository, and the task-time guard covers it.
+// Tested on the scheme, so any host is refused and not only the registry this replaced.
+// publishToMavenLocal declares no repository, so it is outside this loop; the task-time guard covers it.
 afterEvaluate {
     extensions.configure<PublishingExtension> {
         repositories.withType(MavenArtifactRepository::class.java).configureEach {
@@ -86,8 +79,7 @@ afterEvaluate {
 // reasoning are in ExtraEnvironments.kt.
 tasks.refusePublishingWithExtraEnvironments(extraEnvironmentsSetting(providers))
 
-// The CycloneDX plugin generates on demand and attaches to nothing, so a bill of materials reaches a
-// publication only through this. Both formats travel, because a scanner reads one or the other.
+// The plugin generates on demand and attaches to nothing.
 fun MavenPublication.attachCycloneDxSbom(project: Project) {
     val sbom = project.tasks.named("cyclonedxBom")
     val reports = project.layout.buildDirectory.dir("reports/cyclonedx")
