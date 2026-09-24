@@ -88,9 +88,8 @@ android {
 dependencies {
     // Capability modules depend on :core only, never on a sibling capability.
     api(project(":core"))
-    // Strict, and only published module metadata carries it. Gradle settles a version conflict by taking
-    // the highest, so a graph reaching a newer reader fails to resolve instead of running a version
-    // card-present is not certified against.
+    // Strict, and it reaches a consumer only through published module metadata. Gradle takes the highest
+    // on a conflict, and card-present is certified against one reader version.
     implementation(libs.fiserv.ttp) {
         version { strictly(libs.versions.fiservTtp.get()) }
     }
