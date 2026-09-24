@@ -230,7 +230,9 @@ internal class TapToPayChargeRunner(
                         } catch (withdrawn: CancellationException) {
                             throw withdrawn
                         } catch (failure: Exception) {
-                            // Kept for the branch below, with the key and the held payment left in place.
+                            if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
+                                keys.settle(entry, environment, idempotencyKey)
+                            }
                             return@withContext failure
                         }
                         // Both an approval and a refusal are definitive for a fresh key, so the attempt is

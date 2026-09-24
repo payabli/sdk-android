@@ -1210,6 +1210,56 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a refused card whose close failed lets its attempt go, so the next card opens its own`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A refusal is definite whether or not the close landed. Holding the key sends the next card
+            // under the refused attempt, and a refusal on a resent key can only report unknown.
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 4) { closeFails })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = false
+            val next =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals("the next card reused the refused attempt", "$MINTED_KEY-2", fixture.keySent(1))
+            assertEquals(TapToPayCapture.NOT_CHARGED, next.capture)
+        }
+
+    @Test
+    fun `a refused card on a resent key whose close failed keeps the earlier attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var closeFails = false
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 3, closes = 5) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            closeFails = true
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            closeFails = false
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a refusal settled the earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
     fun `an unknown outcome whose close failed reports the close failure`() =
         runTest(timeout = TEST_TIMEOUT) {
             // No known answer to protect, so the close failure is the more specific thing to say.
