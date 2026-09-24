@@ -30,6 +30,12 @@ jobs:
   publish:
     name: Publish a QA snapshot
     runs-on: ubuntu-latest
+    # A dispatch answers to no CI run and any branch can start one, so it waits for the release
+    # environment, whose required reviewers are who may publish and which deploys from a protected branch
+    # only. A called run reached main through branch protection and waits here for every suite, so it is
+    # not held again. Both arms name an environment: a run referencing one that does not exist creates it,
+    # and an empty name is a value this key's behaviour is not documented for.
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}
     permissions:
       contents: read
       id-token: write

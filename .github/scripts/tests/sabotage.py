@@ -285,6 +285,18 @@ MUTATIONS = [
     ("QA snapshot cannot be dispatched, so no candidate can be cut on demand", QA, "workflows",
      "on:\n  workflow_dispatch:\n", "on:\n"),
 
+    ("A QA snapshot can be dispatched by anyone with write access, with nobody approving it", QA,
+     "workflows",
+     "    environment: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}\n",
+     ""),
+
+    # Both terms survive this, so a check asking whether the value names the release environment is green
+    # while every merge to main waits for an approver and a hand-run publish waits for nobody.
+    ("The QA gate is on the wrong arm, holding the automatic publish and freeing the dispatch", QA,
+     "workflows",
+     "    environment: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}\n",
+     "    environment: ${{ github.event_name == 'workflow_dispatch' && 'qa-snapshot' || 'release' }}\n"),
+
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
 

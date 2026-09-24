@@ -3183,6 +3183,15 @@ def test_workflows():
               " ".join(str(tested.get("if", "")).split()) == "github.event_name == 'workflow_dispatch'",
               str(tested.get("if", "")))
 
+    # Who may publish by hand. A dispatch is the one path no CI run waited for, and the snapshot role
+    # trusts refs/heads/*, so the branch is not a restriction either. The release environment is, and the
+    # whole value is compared rather than asked whether it names it: `'release' || 'qa-snapshot'` reversed
+    # gates the automatic path and frees the dispatch while both terms stay present.
+    check("W16 a dispatched publish waits for the release environment and a called one does not",
+          " ".join(str(qa_job.get("environment", "")).split())
+          == "${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}",
+          str(qa_job.get("environment", "")))
+
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
     group = str(((qa.get("concurrency") or {}) if isinstance(qa.get("concurrency"), dict)
