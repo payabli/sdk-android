@@ -148,6 +148,19 @@ MUTATIONS = [
     ("CI cancels a run on main, and with it a publish part way through its upload", CI, "workflows",
      "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", "  cancel-in-progress: true"),
 
+    ("CI cancels a run on main through an expression that is not the word true", CI, "workflows",
+     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
+     "  cancel-in-progress: ${{ github.ref == github.ref }}"),
+
+    ("QA snapshot names the QA prefix in a comment and publishes to the release one", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
+     "          # --prefix maven-qa\n"
+     "          python3 .github/scripts/publish_staging.py --prefix maven --version \"$VERSION\""),
+
+    ("QA snapshot reads the role from a secret, with the variable still named beside it", QA, "workflows",
+     "          role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}",
+     "          role-to-assume: ${{ secrets.ROLE || vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}"),
+
     ("QA snapshot gains a trigger that is neither a dispatch nor a call", QA, "workflows",
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
 

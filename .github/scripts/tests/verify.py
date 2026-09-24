@@ -1996,6 +1996,17 @@ def trigger_keys(doc: dict) -> list[str]:
     return []
 
 
+def run_commands(step: dict) -> str:
+    """A step's `run` with comment lines dropped.
+
+    Every check that asks what a step runs is a substring match, and a comment satisfies one while the
+    command beside it does something else. `# --prefix maven-qa` above `--prefix maven` passes both the
+    check that the QA prefix is used and the check that the release prefix is not.
+    """
+    return "\n".join(line for line in str(step.get("run", "")).splitlines()
+                      if not line.strip().startswith("#"))
+
+
 def steps_of(doc: dict) -> list[dict]:
     """Every step of every job, as the mappings they are."""
     steps: list[dict] = []
@@ -3035,9 +3046,15 @@ def test_workflows():
         # Cancelling reaches the jobs of a workflow this one called, and the publisher uploads one object
         # at a time, so a merge landing mid-upload leaves a partial tree under an abandoned identifier.
         # The called workflow's own group cannot refuse a cancellation the caller's group starts.
-        cancels = str((ci_doc.get("concurrency") or {}).get("cancel-in-progress", ""))
-        check("W16 and ci.yml does not cancel a run on main",
-              cancels != "true" and cancels.lower() != "true", cancels)
+        # The allowed expression, not "anything but the word true": `${{ true }}` and
+        # `${{ github.ref == github.ref }}` both cancel and both survive an inequality. `concurrency`
+        # may also be a bare string, which is a group with no cancellation to read.
+        concurrency = ci_doc.get("concurrency")
+        cancels = "" if isinstance(concurrency, str) else str(
+            (concurrency or {}).get("cancel-in-progress", ""))
+        check("W16 and ci.yml cancels no run on main",
+              " ".join(cancels.split()) in ("", "False", "${{ github.ref != 'refs/heads/main' }}"),
+              cancels)
 
         # A job with continue-on-error counts as succeeded for anything that needs it, so waiting for it
         # and requiring it to have passed are different things.
@@ -3078,16 +3095,16 @@ def test_workflows():
     # instrumented ones, ktlint or lint, and the workflow says so where it runs them.
     # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one
     # this never notices, and naming them twice is how the two lists drift.
-    ci_runs = " ".join(str(step.get("run", "")) for step in steps_of(workflow_doc("ci.yml")))
+    ci_runs = " ".join(run_commands(step) for step in steps_of(workflow_doc("ci.yml")))
     ci_suites = set(re.findall(r":([A-Za-z0-9_-]+):test\b", ci_runs))
     check("W16 ci.yml names the suites to match", bool(ci_suites), ci_runs[:120])
 
     tested = next((step for step in qa_steps
-                   if re.search(r":[A-Za-z0-9_-]+:test\b", str(step.get("run", "")))), None)
+                   if re.search(r":[A-Za-z0-9_-]+:test\b", run_commands(step))), None)
     check("W16 a dispatch runs the suites", tested is not None,
           " | ".join(str(step.get("name", "")) for step in qa_steps))
     if tested is not None:
-        run = str(tested.get("run", ""))
+        run = run_commands(tested)
         missing = ci_suites - set(re.findall(r":([A-Za-z0-9_-]+):test\b", run))
         check("W16 and every suite ci.yml runs", not missing, f"missing={sorted(missing)}")
         # An included build, so no task in the main build reaches it and it needs its own invocation.
@@ -3112,7 +3129,7 @@ def test_workflows():
                         if "configure-aws-credentials" in str(step.get("uses", ""))), {})
     role = str(assume_with.get("role-to-assume", ""))
     check("W16 the role the run assumes comes from a variable",
-          "vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN" in role, role)
+          " ".join(role.split()) == "${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}", role)
     check("W16 and no role ARN is written inline", "arn:aws:iam:" not in qa_text)
     check("W16 and no AWS access key is named",
           "AWS_ACCESS_KEY_ID" not in qa_text and "AWS_SECRET_ACCESS_KEY" not in qa_text)
@@ -3132,29 +3149,29 @@ def test_workflows():
     # Every step that carries it runs Gradle, which is what resolves the reader. Checkout, the OIDC
     # check and the upload read nothing from /maven and never hold it.
     check("W16 and only a step that runs Gradle does",
-          all("gradlew" in str(step.get("run", "")) for step in holding),
+          all("gradlew" in run_commands(step) for step in holding),
           " | ".join(str(step.get("name", "")) for step in holding))
 
     # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
     # If-None-Match, which the bucket policy requires on every write.
-    upload = next((step for step in qa_steps if "publish_staging.py" in str(step.get("run", ""))), None)
+    upload = next((step for step in qa_steps if "publish_staging.py" in run_commands(step)), None)
     check("W16 it uploads the staging tree with the publisher", upload is not None)
     if upload is not None:
-        run = str(upload.get("run", ""))
+        run = run_commands(upload)
         check("W16 and it publishes to the QA prefix", "--prefix maven-qa" in run, run[:160])
         check("W16 and never to the release prefix", "--prefix maven " not in run, run[:160])
 
-    naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in str(step.get("run", ""))), None)
+    naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
     check("W16 it stamps the identifier", naming is not None)
 
     # The committed property names the version under development, so publishing it gives every build
     # from every branch one coordinate and a tester cannot pin the build they tested. Overriding it with
     # a literal does the same, so the override has to reach the stamp: the step's env maps a variable to
     # the naming step's output, and the command interpolates that variable.
-    gradle = next((step for step in qa_steps if "gradlew publish" in str(step.get("run", ""))), None)
+    gradle = next((step for step in qa_steps if "gradlew publish" in run_commands(step)), None)
     check("W16 it builds the staging tree", gradle is not None)
     if gradle is not None and naming is not None:
-        run = str(gradle.get("run", ""))
+        run = run_commands(gradle)
         stamped = {var for var, value in (gradle.get("env") or {}).items()
                    if f"steps.{naming.get('id', '')}.outputs" in str(value)}
         passed = re.search(r"""-Ppayabli\.version=["']?\$\{?([A-Za-z_][A-Za-z0-9_]*)""", run)
@@ -3162,7 +3179,7 @@ def test_workflows():
               bool(stamped) and passed is not None and passed.group(1) in stamped,
               f"env={sorted(stamped)} passed={passed.group(1) if passed else None} run={run[:120]}")
     if naming is not None:
-        run = str(naming.get("run", ""))
+        run = run_commands(naming)
         # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
         # not carry a leading zero, which a day-first stamp does on the first nine days of every month.
         check("W16 and the stamp is UTC", "date -u" in run, run[:160])
