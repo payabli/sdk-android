@@ -53,7 +53,7 @@ class PayInBodyWriterTest {
     @Test
     fun `a bank fragment carries the values it was given`() {
         val data =
-            com.payabli.sdk.payin.model.PayInAchData(
+            com.payabli.sdk.payin.model.PayInBankAccountData(
                 accountNumber = SensitiveDigits.ofString(TEST_ACCOUNT),
                 routingNumber = TEST_ROUTING,
                 accountType = com.payabli.sdk.payin.model.PayInAccountType.Savings,

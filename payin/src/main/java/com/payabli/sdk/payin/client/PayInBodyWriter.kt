@@ -2,7 +2,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.payin.form.PayInFieldRules
-import com.payabli.sdk.payin.model.PayInAchData
+import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentMethod
@@ -117,7 +117,7 @@ internal object PayInBodyWriter {
             field(PayInRoutes.FIELD_CARD_POSTAL_CODE, data.postalCode.trim())
         }
 
-    private fun achFragment(data: PayInAchData): ByteArray =
+    private fun achFragment(data: PayInBankAccountData): ByteArray =
         fragment {
             field(PayInRoutes.FIELD_METHOD, PayInRoutes.METHOD_ACH)
             digits(PayInRoutes.FIELD_ACH_ACCOUNT, data.accountNumber)

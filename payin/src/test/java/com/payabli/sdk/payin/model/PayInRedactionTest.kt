@@ -48,7 +48,7 @@ class PayInRedactionTest {
     @Test
     fun `bank data carries no account number`() {
         val data =
-            PayInAchData(
+            PayInBankAccountData(
                 accountNumber = SensitiveDigits.ofString(account),
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,
@@ -225,7 +225,7 @@ class PayInRedactionTest {
                 vendorData = PayInVendorData(ein = "12-3456789"),
             )
         val bank =
-            PayInAchData(
+            PayInBankAccountData(
                 accountNumber = SensitiveDigits.ofString(account),
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,

@@ -6,7 +6,7 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAccountType
-import com.payabli.sdk.payin.model.PayInAchData
+import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.SensitiveDigits
@@ -125,8 +125,8 @@ internal fun testAccount(
     routing: String = TEST_ROUTING,
     holderName: String = "Integration Test",
     accountType: PayInAccountType = PayInAccountType.Checking,
-): PayInAchData =
-    PayInAchData(
+): PayInBankAccountData =
+    PayInBankAccountData(
         accountNumber = SensitiveDigits.ofString(account),
         routingNumber = routing,
         accountType = accountType,
