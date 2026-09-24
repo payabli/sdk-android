@@ -157,11 +157,22 @@ MUTATIONS = [
      "      id-token: write\n    steps:",
      "      id-token: write\n    env:\n      PAYABLI_MAVEN_USER: x\n      PAYABLI_MAVEN_PASSWORD: y\n    steps:"),
 
-    ("QA snapshot publishes from every branch anyone pushes", QA, "workflows",
-     "  push:\n    branches: [main]", "  push:\n    branches: ['**']"),
+    ("QA snapshot publishes off the push, beside CI rather than after it", QA, "workflows",
+     "  workflow_run:\n    workflows: [CI]", "  push:\n    branches: [main]\n  never_run:\n    workflows: [CI]"),
+
+    ("QA snapshot publishes whatever CI concluded", QA, "workflows",
+     "      || github.event.workflow_run.conclusion == 'success'", "      || true"),
+
+    ("QA snapshot builds the default branch rather than the commit CI passed", QA, "workflows",
+     "            ${{ github.event_name == 'workflow_run'\n                && github.event.workflow_run.head_sha || github.ref }}",
+     "            ${{ github.ref }}"),
+
+    ("A dispatched QA snapshot publishes without running the suites", QA, "workflows",
+     "      - name: Unit tests\n        if: github.event_name == 'workflow_dispatch'",
+     "      - name: Unit tests\n        if: false"),
 
     ("QA snapshot cannot be dispatched, so no candidate can be cut on demand", QA, "workflows",
-     "on:\n  workflow_dispatch:\n  push:", "on:\n  push:"),
+     "on:\n  workflow_dispatch:\n", "on:\n"),
 
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
@@ -178,7 +189,7 @@ MUTATIONS = [
      "role-to-assume: ${{ secrets.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}"),
 
     ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
-     "  push:\n    branches: [main]", "  push:\n    tags: ['*']"),
+     "  workflow_run:\n    workflows: [CI]", "  push:\n    tags: ['*']\n  never_run:\n    workflows: [CI]"),
 
     ("QA snapshot drops the OIDC subject check, so a moved setting reads as an IAM fault", QA, "workflows",
      '"$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |', '"" |'),
