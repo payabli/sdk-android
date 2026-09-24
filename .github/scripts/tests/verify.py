@@ -2846,7 +2846,10 @@ def test_workflows():
             uses = [str(jobs[jn].get("uses"))] if jobs[jn].get("uses") else []
             uses += [str(step.get("uses")).strip() for step in jobs[jn].get("steps") or []
                      if isinstance(step, dict) and step.get("uses")]
-            unpinned = [ref for ref in uses if not PINNED.match(ref)]
+            # A reference beginning `./` is a workflow in this repository, versioned with the commit that
+            # runs it. There is no tag to move and no third party to move it, so a SHA would name the
+            # commit it already is.
+            unpinned = [ref for ref in uses if not ref.startswith("./") and not PINNED.match(ref)]
             check(f"W12 every action in the {name} job {jn}, which holds a secret, is pinned to a commit",
                   not unpinned, " | ".join(unpinned))
 
@@ -2981,40 +2984,39 @@ def test_workflows():
     # Separately, because either alone satisfies "triggers from a branch" while the other is gone.
     check("W16 it can be dispatched", "workflow_dispatch" in qa_on, f"{sorted(qa_on)}")
 
-    # Nothing publishes ahead of the suites. A push trigger runs beside CI rather than after it, and
-    # `needs` does not reach across workflows, so main's path is a workflow_run on CI.
-    check("W16 and it never publishes straight off a push", "push" not in qa_on, f"{sorted(qa_on)}")
-    ran = (qa_on.get("workflow_run") or {}) if isinstance(qa_on.get("workflow_run"), dict) else {}
-    check("W16 and main publishes after CI", list(ran.get("workflows") or []) == ["CI"], f"{ran}")
-    check("W16 and only for main", list(ran.get("branches") or []) == ["main"], f"{ran}")
+    # Nothing publishes ahead of the suites, and nothing publishes off its own trigger. A trigger of its
+    # own fires on the same push as CI and publishes whatever main held; this is called by CI, so the
+    # dependency is `needs` rather than a second workflow guessing when the first finished.
+    check("W16 and it never publishes off a trigger of its own",
+          "push" not in qa_on and "workflow_run" not in qa_on, f"{sorted(qa_on)}")
+    check("W16 and CI can call it", "workflow_call" in qa_on, f"{sorted(qa_on)}")
 
-    # The whole condition, not the pieces. A substring test asks only whether a term is present, and a
-    # term stays present beside anything: `true ||` in front leaves all three readable while the gate
-    # decides nothing. The three terms are what they are for.
-    #
-    # workflow_run fires on completion whatever the conclusion, so without the first a red CI publishes.
-    # The `branches:` filter matches the upstream run's head branch by name and a fork can name one
-    # `main`, so without the other two that fork's commit is checked out and built here.
-    #
-    # Exact rather than parsed, so a reformat has to be looked at. The value is printed on failure, so a
-    # deliberate change is read once and copied.
-    allowed_gate = (
-        "github.event_name == 'workflow_dispatch' "
-        "|| (github.event.workflow_run.conclusion == 'success' "
-        "&& github.event.workflow_run.event == 'push' "
-        "&& github.event.workflow_run.head_repository.full_name == github.repository)"
-    )
-    gate = " ".join(str(qa_job.get("if", "")).split())
-    check("W16 and the gate is exactly the allowed condition", gate == allowed_gate, gate)
-
-    # A workflow_run job defaults to the default branch, so publishing the commit CI passed means naming
-    # it. Without this the tree could be built from a different revision than the one that went green,
-    # and the same reasoning as above makes this the whole expression rather than a term of it.
-    allowed_ref = ("${{ github.event_name == 'workflow_run' "
-                   "&& github.event.workflow_run.head_sha || github.ref }}")
+    # A called workflow checks out the caller's commit, so naming a ref would be choosing a different
+    # one from the revision CI is testing.
     checkout = next((step for step in qa_steps if "actions/checkout" in str(step.get("uses", ""))), {})
-    ref = " ".join(str((checkout.get("with") or {}).get("ref", "")).split())
-    check("W16 and it builds exactly the commit CI passed", ref == allowed_ref, ref)
+    check("W16 and it builds the commit it was called on",
+          not (checkout.get("with") or {}).get("ref"), str(checkout.get("with")))
+
+    # The caller, in ci.yml: the dependency, and what stops a pull request reaching it.
+    ci_doc = workflow_doc("ci.yml")
+    caller = next((job for job in (ci_doc.get("jobs") or {}).values()
+                   if isinstance(job, dict) and QA_WORKFLOW in str(job.get("uses", ""))), None)
+    check("W16 ci.yml calls the publisher", caller is not None,
+          f"{sorted((ci_doc.get('jobs') or {}))}")
+    if caller is not None:
+        needs = list(caller.get("needs") or [])
+        check("W16 and only after the jobs that run the suites",
+              {"build", "card-present"} <= set(needs), f"{needs}")
+        # A pull request runs CI too, including from a fork, and this job mints the publishing identity.
+        gate = " ".join(str(caller.get("if", "")).split())
+        check("W16 and only on a push to main",
+              gate == "github.event_name == 'push' && github.ref == 'refs/heads/main'", gate)
+        granted = (caller.get("permissions") or {})
+        check("W16 and it is the only job in ci.yml granted a token",
+              [name for name, job in (ci_doc.get("jobs") or {}).items()
+               if isinstance(job, dict) and str((job.get("permissions") or {}).get("id-token")) == "write"]
+              == [name for name, job in (ci_doc.get("jobs") or {}).items() if job is caller],
+              f"{granted}")
 
     # A dispatch answers to no CI run, so it carries the suites itself or it publishes untested code.
     # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one

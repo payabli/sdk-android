@@ -5,12 +5,10 @@ name: QA snapshot
 
 on:
   workflow_dispatch:
-  # After CI, not alongside it. Triggered by the push, this published whatever main held whether or not
-  # the suites passed, and `needs` does not reach across workflows.
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  # Called by CI rather than triggered beside it. On its own push trigger this published whatever main
+  # held whether or not the suites passed; as a called workflow it is a job with `needs`, which is the
+  # dependency a separate workflow cannot express.
+  workflow_call:
 
 permissions:
   contents: read
@@ -24,32 +22,13 @@ concurrency:
 jobs:
   publish:
     name: Publish a QA snapshot
-    # Three things about the upstream run, and dropping any one of them publishes something it should not.
-    #
-    # workflow_run fires on completion whatever the conclusion, so a red CI reaches here.
-    #
-    # The `branches:` filter above matches the upstream run's head branch by name, and a fork can name a
-    # branch `main`. Its pull request runs CI, that run's head branch is `main`, and this job would then
-    # check out the fork's commit and build it with the publishing identity. So the run has to have come
-    # from a push, which a fork cannot make to this repository, and from this repository rather than a
-    # fork of it. Either test closes it; both are here because neither is obvious to a later reader.
-    if: >-
-      github.event_name == 'workflow_dispatch'
-      || (github.event.workflow_run.conclusion == 'success'
-          && github.event.workflow_run.event == 'push'
-          && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
-      # A workflow_run job defaults to the default branch, so the commit CI actually passed is named
-      # rather than assumed. A dispatch keeps the ref it was started on.
+      # No ref: a called workflow checks out the caller's commit, which is the one CI is testing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: >-
-            ${{ github.event_name == 'workflow_run'
-                && github.event.workflow_run.head_sha || github.ref }}
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:

@@ -329,6 +329,19 @@ jobs:
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
           :example:createWithTelemetryDebugUnitTestCoverageReport
 
+  # A QA snapshot is published from main after the suites, never beside them. `needs` is what a separate
+  # workflow could not express: its own trigger fired on the same push and published whatever main held.
+  qa-snapshot:
+    name: QA snapshot
+    needs: [build, card-present]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      # For the OIDC role that writes the bucket, on this job and no other in this file.
+      id-token: write
+    uses: ./.github/workflows/qa-snapshot.yml
+    secrets: inherit
+
   sonar:
     name: SonarCloud
     runs-on: ubuntu-latest

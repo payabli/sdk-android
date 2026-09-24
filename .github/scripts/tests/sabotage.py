@@ -112,6 +112,30 @@ SOURCE = {
 
 # (description, target file, half to run, anchor, replacement)
 MUTATIONS = [
+    ("QA snapshot gains a trigger of its own, so it publishes beside CI rather than after it", QA,
+     "workflows",
+     "  workflow_call:\n", "  workflow_call:\n  push:\n    branches: [main]\n"),
+
+    ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
+     "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
+
+    ("QA snapshot names a checkout ref, so it builds something other than what CI tested", QA,
+     "workflows",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: main\n"),
+
+    ("CI publishes without waiting for the jobs that run the suites", CI, "workflows",
+     "    needs: [build, card-present]\n", ""),
+
+    ("CI publishes from a pull request, including a fork's", CI, "workflows",
+     "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n", "    if: always()\n"),
+
+    ("CI calls the publisher without granting it a token, so nothing here mints one deliberately", CI,
+     "workflows",
+     "      id-token: write\n    uses: ./.github/workflows/qa-snapshot.yml",
+     "    uses: ./.github/workflows/qa-snapshot.yml"),
+
 
     ("An occupied key holding the same bytes fails, so a half-finished run cannot be completed",
      PUBLISHER, "publisher",
@@ -157,26 +181,6 @@ MUTATIONS = [
      "      id-token: write\n    steps:",
      "      id-token: write\n    env:\n      PAYABLI_MAVEN_USER: x\n      PAYABLI_MAVEN_PASSWORD: y\n    steps:"),
 
-    ("QA snapshot publishes off the push, beside CI rather than after it", QA, "workflows",
-     "  workflow_run:\n    workflows: [CI]", "  push:\n    branches: [main]\n  never_run:\n    workflows: [CI]"),
-
-    ("QA snapshot's gate is short-circuited true, so every term still reads correct", QA, "workflows",
-     "    if: >-\n      github.event_name == 'workflow_dispatch'",
-     "    if: >-\n      true\n      || github.event_name == 'workflow_dispatch'"),
-
-    ("QA snapshot trusts a CI run a fork's pull request produced", QA, "workflows",
-     "&& github.event.workflow_run.event == 'push'", "&& true"),
-
-    ("QA snapshot trusts a CI run from a fork of this repository", QA, "workflows",
-     "&& github.event.workflow_run.head_repository.full_name == github.repository", "&& true"),
-
-    ("QA snapshot publishes whatever CI concluded", QA, "workflows",
-     "      || (github.event.workflow_run.conclusion == 'success'", "      || (true"),
-
-    ("QA snapshot builds the default branch rather than the commit CI passed", QA, "workflows",
-     "            ${{ github.event_name == 'workflow_run'\n                && github.event.workflow_run.head_sha || github.ref }}",
-     "            ${{ github.ref }}"),
-
     ("A dispatched QA snapshot skips the sample app's suite", QA, "workflows",
      " :taptopay:test :example:test", " :taptopay:test"),
 
@@ -203,9 +207,6 @@ MUTATIONS = [
     ("QA role ARN masked as a secret, making every AccessDenied unreadable", QA, "workflows",
      "role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}",
      "role-to-assume: ${{ secrets.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}"),
-
-    ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
-     "  workflow_run:\n    workflows: [CI]", "  push:\n    tags: ['*']\n  never_run:\n    workflows: [CI]"),
 
     ("QA snapshot drops the OIDC subject check, so a moved setting reads as an IAM fault", QA, "workflows",
      '"$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |', '"" |'),
