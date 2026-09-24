@@ -4,14 +4,10 @@ plugins {
     id("payabli.quality")
 }
 
-// Dev module is :payabli-android; it releases as the umbrella artifact "sdk-android".
 extra["payabliArtifactId"] = "sdk-android"
 
-// Thin aggregate ("umbrella") artifact: no code of its own, it re-exports every capability module so a
-// consumer can depend on a single coordinate. It carries the card reader, so its floor is API 30.
-// Card-not-present alone is sdk-android-core and sdk-android-payin, at API 23.
-//
-// :payin ships the Compose payment form, so this artifact carries the Compose runtime.
+// Thin aggregate: no code of its own, it re-exports every capability module so a consumer can depend on
+// one coordinate. :payin ships the Compose payment form, so this artifact carries the Compose runtime.
 android {
     namespace = "com.payabli.sdk.bundle"
     compileSdk {

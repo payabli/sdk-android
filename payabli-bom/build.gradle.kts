@@ -4,15 +4,10 @@ plugins {
     id("payabli.quality")
 }
 
-// Dev module is :payabli-bom; it releases as the BOM artifact "sdk-android-bom".
 extra["payabliArtifactId"] = "sdk-android-bom"
 
-// Version BOM: publishes a POM-only artifact that pins a mutually-compatible set
-// of Payabli SDK module versions (the Firebase BoM model). It manages versions
-// only — depending on the BOM pulls no code.
-// Coordinates are the published sdk-android-* family.
-//
-// A constraint advertises a coordinate, so a module named here is one that publishes.
+// A POM-only artifact pinning a mutually-compatible set of module versions: depending on it pulls no
+// code. A constraint advertises a coordinate, so a module named here is one that publishes.
 dependencies {
     constraints {
         api("${project.group}:sdk-android-core:${project.version}")
