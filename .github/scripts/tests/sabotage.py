@@ -279,6 +279,13 @@ MUTATIONS = [
      'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
      '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
 
+    # A subshell is still a command. A reader that takes the opening bracket for the program name finds
+    # no uploader in it and counts one invocation where the shell runs two.
+    ("QA snapshot uploads again to the release prefix, inside a subshell", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
+     '&& (python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION")\n'),
+
     # Nothing is masked in the command: the pipeline reports tee's status, and without pipefail the red
     # suite left of it is dropped. The suite names are all still there.
     ("CI runs its steps without pipefail, so a piped suite reports the pipe", CI, "workflows",

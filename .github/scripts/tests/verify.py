@@ -2021,6 +2021,11 @@ def run_commands(step: dict) -> str:
 # A shell word that runs something else, so what follows it is that command's arguments and not this
 # one's. `|| true` and friends are refused elsewhere; this is about where one command ends.
 OPERATORS = ("&&", "||", "|", ";", "&")
+# Punctuation that opens or closes a command rather than running one. A command inside it is still a
+# command: `&& (upload --prefix maven)` runs the uploader, and a reader that takes `(` for the program
+# name finds no uploader there and counts one invocation where the shell runs two. `$(` splits the same
+# way, so a substitution's contents are read as well.
+GROUPING = ("(", ")", "{", "}")
 
 
 def mints(value) -> bool:
@@ -2077,7 +2082,7 @@ def invocations(step: dict, program: str) -> list[list[str]]:
             continue
         command: list[str] = []
         for word in [*words, ";"]:
-            if word not in OPERATORS:
+            if word not in OPERATORS and word not in GROUPING:
                 command.append(word)
                 continue
             head = 0
@@ -2108,7 +2113,7 @@ def masked_commands(step: dict) -> list[str]:
             continue
         command: list[str] = []
         for word in [*words, ";"]:
-            if word not in OPERATORS:
+            if word not in OPERATORS and word not in GROUPING:
                 command.append(word)
                 continue
             if word == "||" and command and command[0] not in tests:
