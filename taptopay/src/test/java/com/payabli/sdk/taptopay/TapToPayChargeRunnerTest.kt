@@ -7,6 +7,8 @@ import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
@@ -1659,4 +1661,101 @@ class TapToPayChargeRunnerTest {
             assertTrue(refusal.toString(), refusal is TapToPayException)
             assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
         }
+
+    @Test
+    fun `a refused card whose close failed reports the close failure beside the refusal`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                val fixture =
+                    SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                        .also { it.coordinator.initialize() }
+                fixture.reader.answerReadWith(
+                    cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+                )
+
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_STARTED),
+                )
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_FAILED),
+                )
+                val charge = recorded.single { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
+                assertEquals(TelemetryProperties.Outcome.DECLINED, charge[TelemetryProperty.OUTCOME.key])
+            }
+        }
+
+    @Test
+    fun `a charge whose close landed reports the close under the charge's origin`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                val fixture = readyFixture()
+
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+                )
+            }
+        }
+
+    @Test
+    fun `a tap that failed reports the close it sent on the way out`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                val fixture = readyFixture()
+                fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+                )
+            }
+        }
+
+    @Test
+    fun `a host retrying a close reports it as a retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                var closeFails = true
+                val fixture =
+                    SessionFixture(scriptWithCloseControl(closes = 4) { closeFails })
+                        .also { it.coordinator.initialize() }
+                val runner = runnerOver(fixture)
+                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                closeFails = false
+                runner.closeCaptured(TRANS_ID)
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE, TelemetryProperties.Origin.RETRY),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_STARTED),
+                )
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.RETRY),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+                )
+            }
+        }
+
+    private inline fun <T> recording(block: (List<Pair<String, Map<String, String>>>) -> T): T {
+        val recorded = mutableListOf<Pair<String, Map<String, String>>>()
+        TelemetryRecorders.install { event, properties -> recorded += event to properties }
+        try {
+            return block(recorded)
+        } finally {
+            TelemetryRecorders.clear()
+        }
+    }
+
+    private fun originsOf(
+        recorded: List<Pair<String, Map<String, String>>>,
+        event: String,
+    ): List<String?> = recorded.filter { it.first == event }.map { it.second[TelemetryProperty.ORIGIN.key] }
 }

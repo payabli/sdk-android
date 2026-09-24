@@ -10,6 +10,7 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
+import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
@@ -225,16 +226,20 @@ internal class TapToPayChargeRunner(
                 // the process map, so it cannot fail the caller.
                 val closeFailure =
                     withContext(NonCancellable) {
+                        val closeStartedAt = System.nanoTime()
+                        TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
                         try {
                             client.update(paymentTransId, result)
                         } catch (withdrawn: CancellationException) {
                             throw withdrawn
                         } catch (failure: Exception) {
+                            TapToPayReports.closeFailed(failure, closeStartedAt, TelemetryProperties.Origin.CHARGE)
                             if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
                                 keys.settle(entry, environment, idempotencyKey)
                             }
                             return@withContext failure
                         }
+                        TapToPayReports.closeSucceeded(closeStartedAt, TelemetryProperties.Origin.CHARGE)
                         // Both an approval and a refusal are definitive for a fresh key, so the attempt is
                         // over and its key can go. An outcome that is neither keeps it: the payment may have
                         // been taken, and the key is what would let a repeat be recognised as one. A resent
@@ -393,7 +398,7 @@ internal class TapToPayChargeRunner(
                 )
             }
             val startedAt = System.nanoTime()
-            TapToPayReports.closeStarted()
+            TapToPayReports.closeStarted(TelemetryProperties.Origin.RETRY)
             try {
                 withContext(NonCancellable) {
                     client.update(pending.paymentTransId, pending.read)
@@ -413,11 +418,11 @@ internal class TapToPayChargeRunner(
                 // rethrow.
                 throw withdrawn
             } catch (failure: Exception) {
-                TapToPayReports.closeFailed(failure, startedAt)
+                TapToPayReports.closeFailed(failure, startedAt, TelemetryProperties.Origin.RETRY)
                 // Still held, so this can be tried again.
                 throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey))
             }
-            TapToPayReports.closeSucceeded(startedAt)
+            TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
         }
 
     /**
@@ -473,9 +478,13 @@ internal class TapToPayChargeRunner(
         paymentTransId: String,
         failure: Throwable,
     ) = withContext(NonCancellable) {
+        val startedAt = System.nanoTime()
+        TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
         try {
             client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
+            TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)
         } catch (failedClose: Throwable) {
+            TapToPayReports.closeFailed(failedClose, startedAt, TelemetryProperties.Origin.CHARGE)
             // `Throwable`, which is wider than this file catches anywhere else and is the width the caller
             // already uses. `readCard` catches `Throwable`, calls this, and rethrows what it caught, so a
             // failure raised *here* would replace the one being reported. An `Error` from the close would

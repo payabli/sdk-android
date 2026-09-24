@@ -67,9 +67,21 @@ internal object TapToPayReports {
         cardWasAsked: Boolean = false,
     ) = failed(TelemetryEvents.TTP_CHARGE_FAILED, failure, startedAt, canBeDeclined = !cardWasAsked)
 
-    fun closeStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_STARTED)
+    /** [origin] is [TelemetryProperties.Origin.CHARGE] or [TelemetryProperties.Origin.RETRY]. */
+    fun closeStarted(origin: String) =
+        TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_STARTED) {
+            mapOf(TelemetryProperty.ORIGIN.key to origin)
+        }
 
-    fun closeSucceeded(startedAt: Long) = timed(TelemetryEvents.TTP_CLOSE_SUCCEEDED, startedAt)
+    fun closeSucceeded(
+        startedAt: Long,
+        origin: String,
+    ) = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_SUCCEEDED) {
+        mapOf(
+            TelemetryProperty.DURATION_MS.key to elapsedMillis(startedAt).toString(),
+            TelemetryProperty.ORIGIN.key to origin,
+        )
+    }
 
     /**
      * A close that was not confirmed.
@@ -82,7 +94,10 @@ internal object TapToPayReports {
     fun closeFailed(
         failure: Throwable,
         startedAt: Long,
-    ) = failed(TelemetryEvents.TTP_CLOSE_FAILED, failure, startedAt, canBeDeclined = false)
+        origin: String,
+    ) = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_FAILED) {
+        failureProperties(failure, startedAt, canBeDeclined = false) + (TelemetryProperty.ORIGIN.key to origin)
+    }
 
     fun nfcStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_STARTED)
 
@@ -133,13 +148,18 @@ internal object TapToPayReports {
         failure: Throwable,
         startedAt: Long,
         canBeDeclined: Boolean = true,
-    ) = TelemetryRecorders.record(event) {
+    ) = TelemetryRecorders.record(event) { failureProperties(failure, startedAt, canBeDeclined) }
+
+    private fun failureProperties(
+        failure: Throwable,
+        startedAt: Long,
+        canBeDeclined: Boolean,
+    ): Map<String, String> =
         buildMap {
             put(TelemetryProperty.OUTCOME.key, outcomeOf(failure, canBeDeclined))
             put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
             codeOf(failure)?.let { put(TelemetryProperty.CODE.key, it) }
         }
-    }
 
     /**
      * `declined` means what the catalog says it means: **the payment was declined.** Everything else failed.
