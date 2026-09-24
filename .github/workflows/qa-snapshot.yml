@@ -91,9 +91,10 @@ jobs:
       # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,
       # the OIDC check and the upload read nothing from /maven.
       #
-      # A dispatch answers to no CI run, so it runs every suite CI runs. The workflow_run path skips them
-      # because the run that triggered it is the one that passed them. build-logic is an included build,
-      # so no task in the main build reaches its tests and it takes its own invocation.
+      # A dispatch answers to no CI run, so it runs the unit suites itself. Called by CI they are skipped,
+      # because the run calling it has already passed them and waits for the instrumented ones too, which
+      # this step does not carry. build-logic is an included build, so no task in the main build reaches
+      # its tests and it takes its own invocation.
       - name: Unit tests
         if: github.event_name == 'workflow_dispatch'
         env:
