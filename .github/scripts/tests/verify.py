@@ -3004,9 +3004,22 @@ def test_workflows():
     check("W16 ci.yml calls the publisher", caller is not None,
           f"{sorted((ci_doc.get('jobs') or {}))}")
     if caller is not None:
-        needs = list(caller.get("needs") or [])
-        check("W16 and only after the jobs that run the suites",
-              {"build", "card-present"} <= set(needs), f"{needs}")
+        # Every other job in this file, reached through the needs graph rather than named here: naming
+        # them is the same list twice, and a job added to ci.yml would then be one the snapshot does not
+        # wait for and nothing reports. sonar needs build and instrumented, so depending on it covers
+        # three, and the closure is what says so rather than a comment claiming it.
+        graph = {name: list(job.get("needs") or [])
+                 for name, job in (ci_doc.get("jobs") or {}).items() if isinstance(job, dict)}
+        caller_name = next(name for name, job in (ci_doc.get("jobs") or {}).items() if job is caller)
+        waited, stack = set(), list(caller.get("needs") or [])
+        while stack:
+            job_name = stack.pop()
+            if job_name in waited:
+                continue
+            waited.add(job_name)
+            stack.extend(graph.get(job_name, []))
+        owed = set(graph) - {caller_name} - waited
+        check("W16 and after every other job in ci.yml", not owed, f"does not wait for {sorted(owed)}")
         # A pull request runs CI too, including from a fork, and this job mints the publishing identity.
         gate = " ".join(str(caller.get("if", "")).split())
         check("W16 and only on a push to main",

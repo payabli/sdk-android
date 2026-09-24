@@ -333,7 +333,10 @@ jobs:
   # workflow could not express: its own trigger fired on the same push and published whatever main held.
   qa-snapshot:
     name: QA snapshot
-    needs: [build, card-present]
+    # sonar rather than build and instrumented directly: it already needs both, so naming it keeps one
+    # statement of the order. With card-present beside it every job in this file is waited for, and a
+    # failure in any of them arrives before anything is published rather than after.
+    needs: [card-present, sonar]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read

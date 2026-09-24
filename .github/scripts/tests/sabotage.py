@@ -125,8 +125,11 @@ MUTATIONS = [
      "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: main\n"),
 
-    ("CI publishes without waiting for the jobs that run the suites", CI, "workflows",
-     "    needs: [build, card-present]\n", ""),
+    ("CI publishes without waiting for any job", CI, "workflows",
+     "    needs: [card-present, sonar]\n", ""),
+
+    ("CI publishes before the instrumented suites and the quality gate finish", CI, "workflows",
+     "    needs: [card-present, sonar]", "    needs: [card-present, build]"),
 
     ("CI publishes from a pull request, including a fork's", CI, "workflows",
      "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n", "    if: always()\n"),
