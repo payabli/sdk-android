@@ -1935,6 +1935,7 @@ LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 # The card reader mirror, which holds the vendor token and mints the credential that writes the artifact
 # origin. Named once, because three checks below and the path filter all have to mean the same file.
 MIRROR_WORKFLOW = "card-reader-mirror.yml"
+QA_WORKFLOW = "qa-snapshot.yml"
 
 
 def workflow_text(name: str) -> str:
@@ -2957,6 +2958,79 @@ def test_workflows():
         check("W15 every mutation this can read anchors exactly once, and changes something",
               not broken, " | ".join(broken))
         check("W15 and the ones it cannot read stay few", len(unreadable) <= 4, " | ".join(unreadable))
+
+    # W16 the QA snapshot's properties, each of which is green while wrong.
+    #
+    # The channel, the trigger and the identifier are the three that cannot be caught downstream. A run
+    # that uploads a correct tree to the wrong prefix succeeds; one triggered by a tag fails at the
+    # assume with an error naming IAM; and one publishing the committed property rather than a unique
+    # identifier replaces the build somebody is testing, on the one prefix where overwrite is allowed.
+    qa = workflow_doc(QA_WORKFLOW)
+    qa_on = (qa.get(True) if True in qa else qa.get("on")) or {}
+    qa_jobs = {name: job for name, job in (qa.get("jobs") or {}).items() if isinstance(job, dict)}
+    check(f"W16 {QA_WORKFLOW} has one publishing job", len(qa_jobs) == 1, f"{sorted(qa_jobs)}")
+    qa_steps = steps_of(qa)
+    qa_text = workflow_text(QA_WORKFLOW)
+
+    # The snapshot role trusts refs/heads/* only, so a tag cannot assume it. A tags: entry here produces
+    # a run that fails at the assume rather than one that publishes to the wrong place.
+    check("W16 it never triggers on a tag",
+          not any("tags" in value for value in qa_on.values() if isinstance(value, dict)), f"{qa_on}")
+    check("W16 and it triggers from a branch", bool({"push", "workflow_dispatch"} & set(qa_on)),
+          f"{sorted(qa_on)}")
+
+    # A role ARN is an identifier rather than a credential, and masking it makes every AccessDenied
+    # unreadable. Written inline it would put the AWS account id in a public repository instead.
+    # On the step that assumes it rather than on the file: the provisioning check names the same variable,
+    # so a file-wide search for `vars.` is satisfied while the assume reads a secret.
+    assume_with = next((step.get("with") or {} for step in qa_steps
+                        if "configure-aws-credentials" in str(step.get("uses", ""))), {})
+    role = str(assume_with.get("role-to-assume", ""))
+    check("W16 the role the run assumes comes from a variable",
+          "vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN" in role, role)
+    check("W16 and no role ARN is written inline", "arn:aws:iam:" not in qa_text)
+    check("W16 and no AWS access key is named",
+          "AWS_ACCESS_KEY_ID" not in qa_text and "AWS_SECRET_ACCESS_KEY" not in qa_text)
+
+    # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
+    # If-None-Match, which the bucket policy requires on every write.
+    upload = next((step for step in qa_steps if "publish_staging.py" in str(step.get("run", ""))), None)
+    check("W16 it uploads the staging tree with the publisher", upload is not None)
+    if upload is not None:
+        run = str(upload.get("run", ""))
+        check("W16 and it publishes to the QA prefix", "--prefix maven-qa" in run, run[:160])
+        check("W16 and never to the release prefix", "--prefix maven " not in run, run[:160])
+
+    # The committed property names the version under development. Publishing it verbatim gives every
+    # build from every branch one coordinate, and where overwrite is allowed the second replaces the
+    # first, so a tester cannot pin the build they tested.
+    gradle = next((step for step in qa_steps if "gradlew publish" in str(step.get("run", ""))), None)
+    check("W16 it builds the staging tree", gradle is not None)
+    if gradle is not None:
+        check("W16 and overrides the version rather than publishing the committed one",
+              "-Ppayabli.version" in str(gradle.get("run", "")), str(gradle.get("run", ""))[:160])
+
+    naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in str(step.get("run", ""))), None)
+    check("W16 it stamps the identifier", naming is not None)
+    if naming is not None:
+        run = str(naming.get("run", ""))
+        # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
+        # not carry a leading zero, which a day-first stamp does on the first nine days of every month.
+        check("W16 and the stamp is UTC", "date -u" in run, run[:160])
+        check("W16 and the qualifier is the ruled one", "-QA." in run, run[:160])
+
+    # The setting that decides the subject lives in a different system from the trust policies that
+    # grant it, and a mismatch fails at the assume with an error naming IAM. Checked afterwards it would
+    # report the thing it exists to explain.
+    names = " | ".join(str(step.get("name", "")) for step in qa_steps)
+    subject = next((i for i, step in enumerate(qa_steps)
+                    if "ACTIONS_ID_TOKEN_REQUEST_URL" in step_text(step)), None)
+    assume = next((i for i, step in enumerate(qa_steps)
+                   if "configure-aws-credentials" in str(step.get("uses", ""))), None)
+    check("W16 it checks the OIDC subject it presents", subject is not None, names)
+    check("W16 and it authenticates to AWS", assume is not None, names)
+    if subject is not None and assume is not None:
+        check("W16 and the subject check runs before the assume", subject < assume, f"{subject} vs {assume}")
 
 
 

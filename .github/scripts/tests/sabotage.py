@@ -70,6 +70,10 @@ NIGHTLY = WORKFLOW_DIR / "nightly.yml"
 # like more than a tidy-up in a diff.
 MIRROR = WORKFLOW_DIR / "card-reader-mirror.yml"
 
+# The QA snapshot, whose channel, trigger and identifier are each green while wrong: a tree at the wrong
+# prefix uploads, a shared coordinate publishes, and a stamp that stops sorting still builds.
+QA = WORKFLOW_DIR / "qa-snapshot.yml"
+
 # Per-pull-request CI, for the card reader credential alone. :taptopay resolves the reader from a
 # credentialed repository, and this file keeps that credential out of the job the third-party emulator
 # action runs in. The mutations below put it back, each as something that reads like a convenience.
@@ -97,11 +101,33 @@ SOURCE = {
     NIGHTLY: SDK / ".github/workflows/nightly.yml",
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
     MIRROR: SDK / ".github/workflows/card-reader-mirror.yml",
+    QA: SDK / ".github/workflows/qa-snapshot.yml",
     CI: SDK / ".github/workflows/ci.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
 MUTATIONS = [
+
+    # The QA snapshot. Each of these publishes something: a tree at the wrong prefix, a coordinate every
+    # build shares, or a stamp that stops sorting. All three succeed, and the run is green.
+    ("QA snapshot uploads to the release prefix", QA, "workflows",
+     "--prefix maven-qa", "--prefix maven"),
+
+    ("QA snapshot publishes the committed version, so every build shares one coordinate", QA, "workflows",
+     'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish"),
+
+    ("QA stamp taken in local time, so it stops sorting across a DST change", QA, "workflows",
+     "date -u +%Y%m%d%H%M%S", "date +%d%m%y%H%M%S"),
+
+    ("QA role ARN masked as a secret, making every AccessDenied unreadable", QA, "workflows",
+     "role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}",
+     "role-to-assume: ${{ secrets.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}"),
+
+    ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
+     "  push:\n    branches: [main]", "  push:\n    tags: ['*']"),
+
+    ("QA snapshot drops the OIDC subject check, so a moved setting reads as an IAM fault", QA, "workflows",
+     '"$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |', '"" |'),
     ("Thread reply posted without thread_ts", POSTER, "poster",
      '"thread_ts": thread_ts,', '"_thread_ts_removed": thread_ts,'),
 
@@ -532,20 +558,20 @@ MUTATIONS = [
     # each anchor below names every line between the one it breaks and `push:`. Adding an entry to the
     # filter therefore moves every anchor after it, and leaves them matching nothing.
     ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
      "      - '.github/workflows/nightly-disabled.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:"),
 
     ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
      "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
      "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:"),
 
     ("The harness stops running when the card reader mirror changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror-disabled.yml'\n"
-     "      - '.github/workflows/ci.yml'\n  push:"),
+     "      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:"),
 
     # The mirror's permission split. The token is what turns repository-controlled code into an identity
     # that can write the origin, and every one of these hands it to a run that publishes nothing.
@@ -723,7 +749,7 @@ MUTATIONS = [
      'for module in ("taptopay",)'),
 
     ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
 
 ]
