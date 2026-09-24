@@ -19,6 +19,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1997,14 +1998,24 @@ def trigger_keys(doc: dict) -> list[str]:
 
 
 def run_commands(step: dict) -> str:
-    """A step's `run` with comment lines dropped.
+    """A step's `run` as the words a shell would execute: no comments, and quoting removed.
 
-    Every check that asks what a step runs is a substring match, and a comment satisfies one while the
-    command beside it does something else. `# --prefix maven-qa` above `--prefix maven` passes both the
-    check that the QA prefix is used and the check that the release prefix is not.
+    Every check that asks what a step runs is a substring match, and both halves of a shell line defeat
+    one. A comment satisfies a check while the command beside it does something else, and quoting hides
+    a word from it: `--prefix "maven" --version "$V"  # --prefix maven-qa` publishes to the release
+    prefix while passing the check that the QA prefix is used and the check that the release one is not.
+
+    Dropping whole lines starting `#` catches neither, because that comment is not on its own line and
+    the quotes are not a comment at all. `shlex` reads both the way the shell does; a line it cannot
+    parse, an unbalanced quote across a continuation, is kept whole rather than dropped.
     """
-    return "\n".join(line for line in str(step.get("run", "")).splitlines()
-                      if not line.strip().startswith("#"))
+    words = []
+    for line in str(step.get("run", "")).splitlines():
+        try:
+            words.extend(shlex.split(line, comments=True))
+        except ValueError:
+            words.append(line)
+    return " ".join(words)
 
 
 def steps_of(doc: dict) -> list[dict]:
@@ -3142,15 +3153,24 @@ def test_workflows():
           f"{sorted(qa.get('env') or {})}")
     check("W16 nor for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
+    wanted = {"PAYABLI_MAVEN_USER", "PAYABLI_MAVEN_PASSWORD"}
     holding = [step for step in qa_steps
                if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
+    gradle_steps = [step for step in qa_steps if "gradlew" in run_commands(step)]
     check("W16 and a step holds it", bool(holding),
           " | ".join(str(step.get("name", "")) for step in qa_steps))
-    # Every step that carries it runs Gradle, which is what resolves the reader. Checkout, the OIDC
-    # check and the upload read nothing from /maven and never hold it.
+
+    # Both ways. That every holder runs Gradle keeps it off the checkout, the OIDC check and the upload;
+    # that every Gradle step holds it is what stops one losing the credential and failing to resolve the
+    # card reader, which on a call is the publish rather than the suites the call skipped.
+    def named(steps):
+        return " | ".join(str(step.get("name", "")) for step in steps)
+
     check("W16 and only a step that runs Gradle does",
-          all("gradlew" in run_commands(step) for step in holding),
-          " | ".join(str(step.get("name", "")) for step in holding))
+          all("gradlew" in run_commands(step) for step in holding), named(holding))
+    check("W16 and every step that runs Gradle carries both names",
+          bool(gradle_steps) and all(wanted <= set(step.get("env") or {}) for step in gradle_steps),
+          named([step for step in gradle_steps if not wanted <= set(step.get("env") or {})]))
 
     # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
     # If-None-Match, which the bucket policy requires on every write.

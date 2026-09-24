@@ -152,6 +152,18 @@ MUTATIONS = [
      "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
      "  cancel-in-progress: ${{ github.ref == github.ref }}"),
 
+    ("QA snapshot quotes the release prefix and names the QA one in a trailing comment", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
+     "          python3 .github/scripts/publish_staging.py --prefix \"maven\" --version \"$VERSION\"  "
+     "# --prefix maven-qa"),
+
+    ("QA snapshot publishes without the credential that resolves the card reader", QA, "workflows",
+     "          VERSION: ${{ steps.name.outputs.version }}\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
+     "        run: ./gradlew publish",
+     "          VERSION: ${{ steps.name.outputs.version }}\n        run: ./gradlew publish"),
+
     ("QA snapshot names the QA prefix in a comment and publishes to the release one", QA, "workflows",
      "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
      "          # --prefix maven-qa\n"
