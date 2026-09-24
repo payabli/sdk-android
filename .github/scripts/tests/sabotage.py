@@ -152,6 +152,12 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # Nothing is declared: no continue-on-error, no shell override, and the command still exits 0 after
+    # a red suite. The job the publish waits for is green and the snapshot goes out behind it.
+    ("CI masks a failed unit suite with a command the publish never reads", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test || echo ignored\n"),
+
     ("A dispatched QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        if:", "      - name: Unit tests\n        shell: bash {0}\n        if:"),
 

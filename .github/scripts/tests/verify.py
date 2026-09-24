@@ -2091,6 +2091,56 @@ def invocations(step: dict, program: str) -> list[list[str]]:
     return found
 
 
+def masked_commands(step: dict) -> list[str]:
+    """The commands in `step` whose failure would not fail the step.
+
+    `a || b` runs b when a fails and carries on, so the `-e` in the default `bash -e` never sees a's
+    status. A test is the exception rather than the rule: `[ -n "$x" ] || missing=...` is asking a
+    question, and its non-zero answer is the answer. Reading the operator rather than a list of idioms
+    is what makes `|| true` and `|| echo ignored` the same finding, which as a list they are not.
+    """
+    tests = ("[", "[[", "test")
+    found = []
+    for line in str(step.get("run", "")).splitlines():
+        try:
+            words = shell_words(line)
+        except ValueError:
+            continue
+        command: list[str] = []
+        for word in [*words, ";"]:
+            if word not in OPERATORS:
+                command.append(word)
+                continue
+            if word == "||" and command and command[0] not in tests:
+                found.append(" ".join(command))
+            command = []
+    return found
+
+
+def unstoppable(steps, label: str = "") -> list[str]:
+    """The steps that can fail without failing their job, each with the reason it can.
+
+    A guard that reads task names asks what a step mentions, not whether failing it stops the job. This
+    is the other half, and it belongs to every job the publish waits for and not only to the publisher:
+    a suite masked in the workflow that calls this one is green by the time anything here is read.
+    """
+    found = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        why = [f"masks `{command}`" for command in masked_commands(step)]
+        if "set +e" in run_commands(step):
+            why.append("set +e")
+        if step.get("continue-on-error"):
+            why.append("continue-on-error")
+        if step.get("shell"):
+            why.append(f"shell: {step.get('shell')}")
+        if why:
+            named = step.get("name") or step.get("uses") or run_commands(step)[:30]
+            found.append(f"{label}{named} ({', '.join(why)})")
+    return found
+
+
 def invocation(step: dict, program: str) -> list[str]:
     """The words the first command in `step` that runs `program` passes to it.
 
@@ -3164,17 +3214,16 @@ def test_workflows():
 
         # A job with continue-on-error counts as succeeded for anything that needs it, so waiting for it
         # and requiring it to have passed are different things.
-        # On the steps as well as the job. `continue-on-error` on a unit-test step keeps its job green
-        # after a failure, so the job is waited for, reports success, and the snapshot publishes behind
-        # a suite that did not pass.
+        # On the steps as well as the job, and on what those steps run as well as on how they are
+        # declared. `continue-on-error` on a unit-test step keeps its job green after a failure, and so
+        # does `|| echo ignored` after the command, with nothing declared at all. Either way the job is
+        # waited for, reports success, and the snapshot publishes behind a suite that did not pass.
         soft = []
         for name in sorted(waited):
             job = (ci_doc.get("jobs") or {}).get(name) or {}
             if job.get("continue-on-error"):
                 soft.append(name)
-            soft.extend(f"{name}: {step.get('name') or step.get('uses')}"
-                        for step in (job.get("steps") or [])
-                        if isinstance(step, dict) and step.get("continue-on-error"))
+            soft.extend(unstoppable(job.get("steps") or [], f"{name}: "))
         check("W16 and nothing it waits for is allowed to fail", not soft, " | ".join(soft))
         # A pull request runs CI too, including from a fork, and this job mints the publishing identity.
         gate = " ".join(str(caller.get("if", "")).split())
@@ -3287,24 +3336,8 @@ def test_workflows():
           f"{sorted(qa.get('env') or {})}")
     check("W16 nor for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
-    # A guard that reads task names asks what a step mentions, not whether failing it stops the job.
-    # `|| true` after the suites leaves every name in place and publishes after a red run, and a `shell:`
-    # override drops the `-e` the default `bash -e` provides.
-    masking = ("|| true", "|| :", "set +e", "; true", "; :")
-    unstoppable = []
-    for step in qa_steps:
-        body = run_commands(step)
-        if not body:
-            continue
-        why = [token for token in masking if token in body]
-        if step.get("continue-on-error"):
-            why.append("continue-on-error")
-        if step.get("shell"):
-            why.append(f"shell: {step.get('shell')}")
-        if why:
-            unstoppable.append(f"{step.get('name') or body[:30]} ({', '.join(why)})")
-    check("W16 and no step of it can fail without failing the job", not unstoppable,
-          " | ".join(unstoppable))
+    masked = unstoppable(qa_steps)
+    check("W16 and no step of it can fail without failing the job", not masked, " | ".join(masked))
 
     wanted = {"PAYABLI_MAVEN_USER", "PAYABLI_MAVEN_PASSWORD"}
     holding = [step for step in qa_steps
