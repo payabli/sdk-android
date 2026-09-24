@@ -238,14 +238,14 @@ MUTATIONS = [
     # The per-variant check, reduced to the module-wide glob it replaced. One flavor's results then cover a
     # flavor that stopped running, the suite total is never zero, and a whole tier goes missing green.
     ("The variant is ignored, so one flavor's results cover a flavor that stopped", COLLECTOR, "collector",
-     "        results = f\"{module}/build/outputs/androidTest-results/connected/{variant or '**'}/TEST-*.xml\"",
-     '        results = f"{module}/build/outputs/androidTest-results/connected/**/TEST-*.xml"'),
+     '            if parse_results([results.format(module=module, variant=variant or "**")])[0] == 0:',
+     '            if parse_results([results.format(module=module, variant="**")])[0] == 0:'),
 
     # The other direction, and the one a red verdict alone cannot tell apart: a path that matches nothing
     # reads as every variant being silent, which is red for a reason that has nothing to do with a flavor
     # stopping. Only the label distinguishes them, which is why C22 asserts what it names.
     ("Every variant path matches nothing, so a broken path reads as a silent flavor", COLLECTOR, "collector",
-     "connected/{variant or '**'}/TEST-*.xml", "connected/nowhere/{variant or '**'}/TEST-*.xml"),
+     "connected/{variant}/TEST-*.xml", "connected/nowhere/{variant}/TEST-*.xml"),
 
     ("Coverage phrases repeated per module again", POSTER, "poster",
      "            if shareable:\n                rendered.append(\", \".join(names) + f\" {phrase}\")\n            else:\n                rendered.extend(f\"{name} {phrase}\" for name in names)",
@@ -288,7 +288,7 @@ MUTATIONS = [
      'f"<pre>{trace}</pre>\\n\\n</details>\\n\\n"'),
 
     ("A suite that wrote no results counted as green", COLLECTOR, "collector",
-     "    unit_missing = unit_step == \"success\" and unit_total == 0",
+     '    unit_missing = unit_step == "success" and (unit_total == 0 or bool(unit_silent))',
      "    unit_missing = False"),
 
     ("An instrumented module that wrote no results hidden by its sibling", COLLECTOR, "collector",

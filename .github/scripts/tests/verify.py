@@ -49,6 +49,8 @@ SDK = Path(_sdk) if _sdk else HERE.parents[2]
 COLLECTOR = Path(os.environ.get("NIGHTLY_COLLECTOR", SDK / ".github/scripts/nightly_report.py"))
 POSTER = Path(os.environ.get("NIGHTLY_POSTER", SDK / ".github/scripts/nightly_slack.py"))
 PACK = Path(os.environ.get("NIGHTLY_PACK", SDK / ".github/scripts/pack_results.sh"))
+# The mutation set, read rather than run: W15 asks whether each row still anchors to its target.
+SABOTAGE = HERE / "sabotage.py"
 ONLY = os.environ.get("NIGHTLY_ONLY", "both")
 
 # One scratch root for the whole run, removed on the way out. Every synthetic repository and every facts
@@ -2907,6 +2909,55 @@ def test_workflows():
         listed = {m.strip() for m in str(collect_env.get(named, "")).split(",") if m.strip()}
         check(f"W14 {named} names exactly the modules {job_name} runs",
               listed == modules, f"listed={sorted(listed)} runs={sorted(modules)}")
+
+    # W15 Every mutation still anchors to the file it breaks.
+    #
+    # sabotage.py reports an anchor that matches nothing as INVALID, which is correct and costs a full
+    # sweep to learn: the rows that still match are all caught, so the run looks healthy until the summary.
+    # Editing the file a mutation quotes is what breaks one, and that is an ordinary thing to do -- three
+    # rows went invalid when the collector's per-module check moved into a shared helper, and three more
+    # when a path filter grew an entry. Asked here because it is a second's work and answers the same
+    # question.
+    sab = ast.parse(SABOTAGE.read_text())
+    sources = {}
+    for node in ast.walk(sab):
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "SOURCE" for t in node.targets):
+            for key, value in zip(node.value.keys, node.value.values):
+                if isinstance(key, ast.Name) and isinstance(value, ast.BinOp) and isinstance(value.right, ast.Constant):
+                    sources[key.id] = value.right.value
+    literals = {node.targets[0].id: node.value.value for node in ast.walk(sab)
+                if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+                and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)}
+
+    def text_of(node):
+        if isinstance(node, ast.Name):
+            return literals.get(node.id)
+        try:
+            return ast.literal_eval(node)
+        except ValueError:
+            return None
+
+    rows = next((n.value for n in ast.walk(sab)
+                 if isinstance(n, ast.Assign) and any(getattr(t, "id", "") == "MUTATIONS" for t in n.targets)), None)
+    check("W15 sabotage.py declares its mutations and their sources", rows is not None and bool(sources),
+          f"sources={sorted(sources)}")
+    if rows is not None and sources:
+        unreadable, broken = [], []
+        for row in rows.elts:
+            key = getattr(row.elts[1], "id", "")
+            desc, before, after = (text_of(row.elts[0]), text_of(row.elts[3]), text_of(row.elts[4]))
+            if key not in sources or before is None or after is None:
+                unreadable.append(desc or "<unnamed>")
+                continue
+            found = (SDK / sources[key]).read_text().count(before)
+            if found != 1 or before == after:
+                broken.append(f"{desc}: matched {found}x" + (" and changes nothing" if before == after else ""))
+        # Not fatal on its own: a row may build its anchor in a way this cannot read. It is reported so the
+        # number is visible rather than assumed, and so a growing one is noticed.
+        check("W15 every mutation this can read anchors exactly once, and changes something",
+              not broken, " | ".join(broken))
+        check("W15 and the ones it cannot read stay few", len(unreadable) <= 4, " | ".join(unreadable))
+
 
 
 
