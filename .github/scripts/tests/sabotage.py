@@ -152,6 +152,16 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # Nothing follows the command at all: the shell inverts its status, so the red suite reports success
+    # and errexit does not apply to a command it negates. Every suite name is still there.
+    #
+    # Quoted, because unquoted it would not be this at all: a leading `!` in a plain scalar is YAML's tag
+    # indicator and the loader strips it, so the shell receives the command it always ran and the
+    # mutation would pass for a reason that has nothing to do with the check.
+    ("CI negates a unit suite, so a red one reports success", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     '        run: "! ./gradlew :core:test :payin:test :telemetry:test :testutils:test"\n'),
+
     # Nothing is declared: no continue-on-error, no shell override, and the command still exits 0 after
     # a red suite. The job the publish waits for is green and the snapshot goes out behind it.
     ("CI masks a failed unit suite with a command the publish never reads", CI, "workflows",

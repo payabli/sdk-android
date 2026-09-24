@@ -2104,6 +2104,9 @@ def masked_commands(step: dict) -> list[str]:
     status. A test is the exception rather than the rule: `[ -n "$x" ] || missing=...` is asking a
     question, and its non-zero answer is the answer. Reading the operator rather than a list of idioms
     is what makes `|| true` and `|| echo ignored` the same finding, which as a list they are not.
+
+    `! a` is the other way to the same place, and it needs nothing after it: the shell inverts a's
+    status, so a failure becomes a success, and `-e` is documented not to apply to a command it negates.
     """
     tests = ("[", "[[", "test")
     found = []
@@ -2117,7 +2120,9 @@ def masked_commands(step: dict) -> list[str]:
             if word not in OPERATORS and word not in GROUPING:
                 command.append(word)
                 continue
-            if word == "||" and command and command[0] not in tests:
+            if command and command[0] == "!":
+                found.append(" ".join(command))
+            elif word == "||" and command and command[0] not in tests:
                 found.append(" ".join(command))
             command = []
     return found
