@@ -160,8 +160,14 @@ MUTATIONS = [
     ("QA snapshot publishes off the push, beside CI rather than after it", QA, "workflows",
      "  workflow_run:\n    workflows: [CI]", "  push:\n    branches: [main]\n  never_run:\n    workflows: [CI]"),
 
+    ("QA snapshot trusts a CI run a fork's pull request produced", QA, "workflows",
+     "&& github.event.workflow_run.event == 'push'", "&& true"),
+
+    ("QA snapshot trusts a CI run from a fork of this repository", QA, "workflows",
+     "&& github.event.workflow_run.head_repository.full_name == github.repository", "&& true"),
+
     ("QA snapshot publishes whatever CI concluded", QA, "workflows",
-     "      || github.event.workflow_run.conclusion == 'success'", "      || true"),
+     "      || (github.event.workflow_run.conclusion == 'success'", "      || (true"),
 
     ("QA snapshot builds the default branch rather than the commit CI passed", QA, "workflows",
      "            ${{ github.event_name == 'workflow_run'\n                && github.event.workflow_run.head_sha || github.ref }}",

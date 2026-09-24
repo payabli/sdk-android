@@ -2992,6 +2992,13 @@ def test_workflows():
     gate = str(qa_job.get("if", ""))
     check("W16 and a failed CI is refused", "conclusion == 'success'" in gate, gate[:160])
 
+    # The branches: filter matches the upstream run's head branch by name, and a fork can name one main.
+    # Its pull request runs CI, and without these the fork's commit is checked out and built here.
+    check("W16 and a run that was not a push is refused",
+          "workflow_run.event == 'push'" in gate, gate[:200])
+    check("W16 and a run from a fork is refused",
+          "head_repository.full_name == github.repository" in gate, gate[:200])
+
     # A workflow_run job defaults to the default branch, so publishing the commit CI passed means naming
     # it. Without this the tree could be built from a different revision than the one that went green.
     checkout = next((step for step in qa_steps if "actions/checkout" in str(step.get("uses", ""))), {})

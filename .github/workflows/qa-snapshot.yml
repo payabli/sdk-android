@@ -24,10 +24,20 @@ concurrency:
 jobs:
   publish:
     name: Publish a QA snapshot
-    # workflow_run fires on completion whatever the conclusion, so a red CI reaches here and is refused.
+    # Three things about the upstream run, and dropping any one of them publishes something it should not.
+    #
+    # workflow_run fires on completion whatever the conclusion, so a red CI reaches here.
+    #
+    # The `branches:` filter above matches the upstream run's head branch by name, and a fork can name a
+    # branch `main`. Its pull request runs CI, that run's head branch is `main`, and this job would then
+    # check out the fork's commit and build it with the publishing identity. So the run has to have come
+    # from a push, which a fork cannot make to this repository, and from this repository rather than a
+    # fork of it. Either test closes it; both are here because neither is obvious to a later reader.
     if: >-
       github.event_name == 'workflow_dispatch'
-      || github.event.workflow_run.conclusion == 'success'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read
