@@ -160,6 +160,10 @@ MUTATIONS = [
     ("QA snapshot publishes off the push, beside CI rather than after it", QA, "workflows",
      "  workflow_run:\n    workflows: [CI]", "  push:\n    branches: [main]\n  never_run:\n    workflows: [CI]"),
 
+    ("QA snapshot's gate is short-circuited true, so every term still reads correct", QA, "workflows",
+     "    if: >-\n      github.event_name == 'workflow_dispatch'",
+     "    if: >-\n      true\n      || github.event_name == 'workflow_dispatch'"),
+
     ("QA snapshot trusts a CI run a fork's pull request produced", QA, "workflows",
      "&& github.event.workflow_run.event == 'push'", "&& true"),
 

@@ -2988,22 +2988,33 @@ def test_workflows():
     check("W16 and main publishes after CI", list(ran.get("workflows") or []) == ["CI"], f"{ran}")
     check("W16 and only for main", list(ran.get("branches") or []) == ["main"], f"{ran}")
 
-    # workflow_run fires on completion whatever the conclusion, so without this a red CI publishes.
-    gate = str(qa_job.get("if", ""))
-    check("W16 and a failed CI is refused", "conclusion == 'success'" in gate, gate[:160])
-
-    # The branches: filter matches the upstream run's head branch by name, and a fork can name one main.
-    # Its pull request runs CI, and without these the fork's commit is checked out and built here.
-    check("W16 and a run that was not a push is refused",
-          "workflow_run.event == 'push'" in gate, gate[:200])
-    check("W16 and a run from a fork is refused",
-          "head_repository.full_name == github.repository" in gate, gate[:200])
+    # The whole condition, not the pieces. A substring test asks only whether a term is present, and a
+    # term stays present beside anything: `true ||` in front leaves all three readable while the gate
+    # decides nothing. The three terms are what they are for.
+    #
+    # workflow_run fires on completion whatever the conclusion, so without the first a red CI publishes.
+    # The `branches:` filter matches the upstream run's head branch by name and a fork can name one
+    # `main`, so without the other two that fork's commit is checked out and built here.
+    #
+    # Exact rather than parsed, so a reformat has to be looked at. The value is printed on failure, so a
+    # deliberate change is read once and copied.
+    allowed_gate = (
+        "github.event_name == 'workflow_dispatch' "
+        "|| (github.event.workflow_run.conclusion == 'success' "
+        "&& github.event.workflow_run.event == 'push' "
+        "&& github.event.workflow_run.head_repository.full_name == github.repository)"
+    )
+    gate = " ".join(str(qa_job.get("if", "")).split())
+    check("W16 and the gate is exactly the allowed condition", gate == allowed_gate, gate)
 
     # A workflow_run job defaults to the default branch, so publishing the commit CI passed means naming
-    # it. Without this the tree could be built from a different revision than the one that went green.
+    # it. Without this the tree could be built from a different revision than the one that went green,
+    # and the same reasoning as above makes this the whole expression rather than a term of it.
+    allowed_ref = ("${{ github.event_name == 'workflow_run' "
+                   "&& github.event.workflow_run.head_sha || github.ref }}")
     checkout = next((step for step in qa_steps if "actions/checkout" in str(step.get("uses", ""))), {})
-    ref = str((checkout.get("with") or {}).get("ref", ""))
-    check("W16 and it builds the commit CI passed", "workflow_run.head_sha" in ref, ref[:120])
+    ref = " ".join(str((checkout.get("with") or {}).get("ref", "")).split())
+    check("W16 and it builds exactly the commit CI passed", ref == allowed_ref, ref)
 
     # A dispatch answers to no CI run, so it carries the suites itself or it publishes untested code.
     # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one
