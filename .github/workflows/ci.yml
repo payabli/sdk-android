@@ -8,7 +8,9 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Not on main: this workflow calls the publisher, and cancelling reaches the job of a workflow it
+  # called. A merge landing mid-upload would leave a partial tree under an abandoned identifier.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -334,8 +336,11 @@ jobs:
   qa-snapshot:
     name: QA snapshot
     # sonar rather than build and instrumented directly: it already needs both, so naming it keeps one
-    # statement of the order. With card-present beside it every job in this file is waited for, and a
-    # failure in any of them arrives before anything is published rather than after.
+    # statement of the order. With card-present beside it, every job in this file has finished before
+    # anything is published.
+    #
+    # A job failing blocks this one. SonarCloud's own gate does not: nothing sets
+    # `sonar.qualitygate.wait`, so `./gradlew sonar` succeeds whatever the gate decides.
     needs: [card-present, sonar]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
