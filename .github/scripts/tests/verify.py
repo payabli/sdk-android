@@ -2021,6 +2021,19 @@ def run_commands(step: dict) -> str:
 # A shell word that runs something else, so what follows it is that command's arguments and not this
 # one's. `|| true` and friends are refused elsewhere; this is about where one command ends.
 OPERATORS = ("&&", "||", "|", ";", "&")
+
+
+def mints(value) -> bool:
+    """Whether a `permissions` value grants the OIDC token.
+
+    It is a mapping or the string `write-all`, which grants it outright. Reading it as a mapping either
+    way raises on the string, and a traceback carries no verdict.
+    """
+    if isinstance(value, str):
+        return value == "write-all"
+    return str((value or {}).get("id-token")) == "write"
+
+
 # One of these may stand before the program and still be running it.
 INTERPRETERS = ("python3", "python", "bash", "sh", "env")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
@@ -3058,8 +3071,12 @@ def test_workflows():
     qa = workflow_doc(QA_WORKFLOW)
     qa_on = (qa.get(True) if True in qa else qa.get("on")) or {}
     qa_jobs = {name: job for name, job in (qa.get("jobs") or {}).items() if isinstance(job, dict)}
-    check(f"W16 {QA_WORKFLOW} has one publishing job", len(qa_jobs) == 1, f"{sorted(qa_jobs)}")
-    qa_job = next(iter(qa_jobs.values()), {})
+    # Named by what it is granted rather than by what it is called: the publishing job is the one that
+    # mints the identity that writes the bucket, and renaming a job must not move these checks off it.
+    publishing = {name: job for name, job in qa_jobs.items() if mints(job.get("permissions"))}
+    check(f"W16 {QA_WORKFLOW} has one publishing job", len(publishing) == 1, f"{sorted(publishing)}")
+    qa_job_name = next(iter(publishing), "")
+    qa_job = publishing.get(qa_job_name, {})
     qa_steps = steps_of(qa)
     qa_text = workflow_text(QA_WORKFLOW)
 
@@ -3152,13 +3169,6 @@ def test_workflows():
         # A workflow-level grant is inherited by every job that does not replace it, so a job-level
         # answer alone is one a declaration one level up satisfies while the token reaches jobs that run
         # moving-tag actions. Both levels, and the workflow level is refused outright.
-        # `permissions` is a mapping or the string `write-all`, which grants the token outright. Reading
-        # it as a mapping either way raises on the string, and a traceback carries no verdict.
-        def mints(value) -> bool:
-            if isinstance(value, str):
-                return value == "write-all"
-            return str((value or {}).get("id-token")) == "write"
-
         check("W16 and ci.yml grants no token for a job to inherit",
               not mints(ci_doc.get("permissions")), f"{ci_doc.get('permissions')}")
         minting = [name for name, job in (ci_doc.get("jobs") or {}).items()
@@ -3208,13 +3218,33 @@ def test_workflows():
               str(tested.get("if", "")))
 
     # Who may publish by hand. A dispatch is the one path no CI run waited for, and the snapshot role
-    # trusts refs/heads/*, so the branch is not a restriction either. The release environment is, and the
-    # whole value is compared rather than asked whether it names it: `'release' || 'qa-snapshot'` reversed
-    # gates the automatic path and frees the dispatch while both terms stay present.
-    check("W16 a dispatched publish waits for the release environment and a called one does not",
-          " ".join(str(qa_job.get("environment", "")).split())
-          == "${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}",
-          str(qa_job.get("environment", "")))
+    # trusts refs/heads/*, so the branch is not a restriction either. The release environment is, and it
+    # has to sit on a job that assumes nothing: the OIDC subject for a job with an environment carries
+    # `environment:<name>` and no ref, so naming one on the publishing job fails the subject check and
+    # then the assume. Three claims, because each is satisfied while another is gone.
+    gate = {name: job for name, job in qa_jobs.items()
+            if str(job.get("environment", "")) == "release"}
+    check("W16 a hand-run snapshot waits for the release environment", len(gate) == 1, f"{sorted(gate)}")
+    check("W16 and the publishing job names no environment, so its subject keeps the ref",
+          not qa_job.get("environment"), str(qa_job.get("environment", "")))
+    gate_name = next(iter(gate), "")
+    gate_job = gate.get(gate_name, {})
+    # Granted nothing, so the claim it presents is nobody's concern and it cannot publish on its own.
+    check("W16 and the gate mints no token", not mints(gate_job.get("permissions")),
+          f"{gate_job.get('permissions')}")
+    # Exact: `github.event_name != 'workflow_dispatch'` names the term and gates the opposite path,
+    # leaving every dispatch unreviewed and every called run waiting for somebody.
+    check("W16 and the gate runs on a dispatch and only on one",
+          " ".join(str(gate_job.get("if", "")).split()) == "github.event_name == 'workflow_dispatch'",
+          str(gate_job.get("if", "")))
+    # Waiting for the gate is what makes it a gate. `always()` publishes through a refusal, and reading
+    # `success()` would stop the called path, where a skipped gate is the correct outcome.
+    check("W16 and the publish waits for the gate",
+          gate_name in (qa_job.get("needs") or []), f"{qa_job.get('needs')}")
+    check("W16 and does not publish through a refused one",
+          " ".join(str(qa_job.get("if", "")).split())
+          == "${{ !cancelled() && needs." + gate_name + ".result != 'failure' }}",
+          str(qa_job.get("if", "")))
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.

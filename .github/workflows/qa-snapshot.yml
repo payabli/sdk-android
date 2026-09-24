@@ -27,15 +27,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The gate, and it publishes nothing. A dispatch answers to no CI run and any branch can start one, so
+  # it waits here for the release environment, whose required reviewers are who may publish and whose
+  # deployment branch policy admits protected branches only. A called run reached main through branch
+  # protection and waits for every suite, so it skips this and is not held again.
+  #
+  # A separate job because the environment cannot go on the one below. The OIDC subject for a job with an
+  # environment carries `environment:<name>` and no ref, as card-reader-mirror.yml records, and the
+  # snapshot role trusts `refs/heads/*`: naming an environment there fails the subject check and then the
+  # assume. This job requests no token, so the claim it presents is nobody's concern.
+  approve:
+    name: Approve a hand-run snapshot
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions: {}
+    steps:
+      - run: echo "approved for $GITHUB_REF"
+
   publish:
     name: Publish a QA snapshot
+    needs: [approve]
+    # A called run skips the gate, and a skipped dependency is not a failure. A dispatch that was refused
+    # leaves it failed or cancels the run, and neither publishes: `always()` in place of `!cancelled()`
+    # would publish through both.
+    if: ${{ !cancelled() && needs.approve.result != 'failure' }}
     runs-on: ubuntu-latest
-    # A dispatch answers to no CI run and any branch can start one, so it waits for the release
-    # environment, whose required reviewers are who may publish and which deploys from a protected branch
-    # only. A called run reached main through branch protection and waits here for every suite, so it is
-    # not held again. Both arms name an environment: a run referencing one that does not exist creates it,
-    # and an empty name is a value this key's behaviour is not documented for.
-    environment: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}
     permissions:
       contents: read
       id-token: write

@@ -304,16 +304,28 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n"),
 
     ("A QA snapshot can be dispatched by anyone with write access, with nobody approving it", QA,
-     "workflows",
-     "    environment: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}\n",
-     ""),
+     "workflows", "    environment: release\n", ""),
 
-    # Both terms survive this, so a check asking whether the value names the release environment is green
-    # while every merge to main waits for an approver and a hand-run publish waits for nobody.
-    ("The QA gate is on the wrong arm, holding the automatic publish and freeing the dispatch", QA,
+    # The environment is still named and the reviewers still approve. The subject the run presents is
+    # `environment:release` with no ref, which the snapshot role does not trust, so the publish fails at
+    # the assume instead of being gated.
+    ("The QA gate is put onto the job that assumes the role, losing the ref in its subject", QA,
      "workflows",
-     "    environment: ${{ github.event_name == 'workflow_dispatch' && 'release' || 'qa-snapshot' }}\n",
-     "    environment: ${{ github.event_name == 'workflow_dispatch' && 'qa-snapshot' || 'release' }}\n"),
+     "    permissions:\n      contents: read\n      id-token: write\n",
+     "    environment: release\n    permissions:\n      contents: read\n      id-token: write\n"),
+
+    ("The QA gate runs on the called path instead, holding every merge to main", QA, "workflows",
+     "    if: github.event_name == 'workflow_dispatch'\n    runs-on: ubuntu-latest\n"
+     "    environment: release\n",
+     "    if: github.event_name != 'workflow_dispatch'\n    runs-on: ubuntu-latest\n"
+     "    environment: release\n"),
+
+    # The gate still runs and the reviewers still approve, and the publish no longer waits for the answer.
+    ("A refused QA approval publishes anyway", QA, "workflows",
+     "    if: ${{ !cancelled() && needs.approve.result != 'failure' }}\n", "    if: ${{ always() }}\n"),
+
+    ("The QA publish stops waiting for the gate", QA, "workflows",
+     "    needs: [approve]\n", ""),
 
     # The publisher declares these two names and reads them, so the aliases still match what it declares
     # while the credential arriving under one of them is the analysis token.
