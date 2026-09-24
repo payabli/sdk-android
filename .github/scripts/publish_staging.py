@@ -7,9 +7,9 @@
 the IAM policy denies PutObject without `If-None-Match: *`, which Gradle's Maven publisher cannot
 set, so the upload is this separate step.
 
-Ordinarily nobody runs this by hand. `qa-snapshot.yml` and `release.yml` assume an AWS identity over
-OIDC, so no credential is held on anyone's machine, and the access portal grants ReadOnlyAccess on
-this account anyway.
+Ordinarily nobody runs this by hand. `qa-snapshot.yml` assumes an AWS identity over OIDC, so no
+credential is held on anyone's machine, and the access portal grants ReadOnlyAccess on this account
+anyway.
 
 WHY --if-none-match
 
