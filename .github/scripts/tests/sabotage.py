@@ -279,6 +279,14 @@ MUTATIONS = [
      'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
      '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
 
+    # Nothing is masked in the command: the pipeline reports tee's status, and without pipefail the red
+    # suite left of it is dropped. The suite names are all still there.
+    ("CI runs its steps without pipefail, so a piped suite reports the pipe", CI, "workflows",
+     "defaults:\n  run:\n    shell: bash\n", ""),
+
+    ("QA snapshot runs its steps without pipefail", QA, "workflows",
+     "defaults:\n  run:\n    shell: bash\n", ""),
+
     # Whitespace is what a word-splitting reader separates on, so the operator written against the word
     # beside it stays inside that word and the two commands read as one.
     ("QA snapshot uploads again to the release prefix, behind an operator with no space", QA, "workflows",

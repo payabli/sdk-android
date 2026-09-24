@@ -19,6 +19,13 @@ env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
   GRADLE_OPTS: -Dorg.gradle.console=plain
 
+# Naming bash is what turns `-o pipefail` on: an unset `shell:` runs `bash -e`, where a pipeline reports
+# the last command's status and `./gradlew test | tee log` is green after a red suite. This workflow is
+# what the snapshot waits for, so a suite masked here publishes.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     name: Build & Test

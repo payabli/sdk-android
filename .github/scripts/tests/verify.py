@@ -3339,6 +3339,14 @@ def test_workflows():
     masked = unstoppable(qa_steps)
     check("W16 and no step of it can fail without failing the job", not masked, " | ".join(masked))
 
+    # `bash` and not merely any value: an unset `shell:` runs `bash -e`, which leaves `-o pipefail` off,
+    # so a pipeline reports the last command's status and `./gradlew test | tee log` is green after a red
+    # suite. Naming bash is what turns it on. Both workflows, because defaults do not cross into a called
+    # one from its caller, and a suite masked in ci.yml is green by the time the publisher is read.
+    for name in (QA_WORKFLOW, "ci.yml"):
+        shell = ((workflow_doc(name).get("defaults") or {}).get("run") or {}).get("shell")
+        check(f"W16 and {name} runs its steps under a shell with pipefail", shell == "bash", f"{shell}")
+
     wanted = {"PAYABLI_MAVEN_USER", "PAYABLI_MAVEN_PASSWORD"}
     holding = [step for step in qa_steps
                if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
