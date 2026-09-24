@@ -708,6 +708,12 @@ MUTATIONS = [
     # W9, and the reason it exists: W12 reads ci.yml, so the harness has to run when ci.yml changes.
     # Dropping it from the filter leaves every W12 assertion about that file unreachable by the change
     # that would break it, while the harness still reports a full pass on everything else.
+    # :example runs in card-present and is counted there. Counting it as a unit module lets its results
+    # stand in for a unit step that wrote none, which is the guard the two sets exist for.
+    ("A card-present module is counted under the unit job", COLLECTOR, "workflows",
+     'for module in ("taptopay", "example")',
+     'for module in ("taptopay",)'),
+
     ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
      "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),

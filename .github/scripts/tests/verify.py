@@ -11,6 +11,7 @@ the four disciplines these checks are written under, and for how to prove a chec
 
 from __future__ import annotations
 
+import ast
 import fnmatch
 import importlib.util
 import io
@@ -2839,6 +2840,36 @@ def test_workflows():
     proc, names = packed(Path(tempfile.mkdtemp(dir=SCRATCH)))
     check("W13 a job that wrote nothing still yields an archive", proc.returncode == 0 and names == set(),
           proc.stderr[-300:] + str(sorted(names)))
+
+    # W14 Each module is counted under the job that runs it.
+    #
+    # The collector keeps one glob set per test job so that a job which wrote nothing is visible: results
+    # from another job cannot make its total non-zero. That only holds while the sets match the workflow,
+    # and nothing checked it -- :example moved into card-present with the job split and stayed in the unit
+    # set, where its results would have stood in for a unit step that wrote none.
+    #
+    # Containment rather than equality: a pattern for a module that writes no results is harmless, a module
+    # counted under a job that does not run it is not.
+    report_src = ast.parse(COLLECTOR.read_text())
+    sets = {name: {ast.literal_eval(elt) for elt in node.value.generators[0].iter.elts}
+            for node in ast.walk(report_src)
+            if isinstance(node, ast.Assign)
+            and (name := getattr(node.targets[0], "id", "")) in ("unit_patterns", "card_patterns")
+            and isinstance(node.value, ast.ListComp)}
+    check("W14 the collector defines a module set per test job", set(sets) == {"unit_patterns", "card_patterns"},
+          str(sorted(sets)))
+
+    nightly_jobs = (workflow_doc("nightly.yml").get("jobs") or {})
+    for job_name, own, other in (("nightly", "unit_patterns", "card_patterns"),
+                                 ("card-present", "card_patterns", "unit_patterns")):
+        runs = " ".join(str(step.get("run", "")) for step in (nightly_jobs.get(job_name) or {}).get("steps") or [])
+        modules = set(re.findall(r":([A-Za-z0-9_-]+):[A-Za-z]", runs))
+        check(f"W14 the {job_name} job names modules to count", bool(modules), runs[:120])
+        check(f"W14 every module {job_name} runs is counted under it",
+              modules <= sets.get(own, set()), " | ".join(sorted(modules - sets.get(own, set()))))
+        check(f"W14 and none of them is counted under the other job",
+              not (modules & sets.get(other, set())), " | ".join(sorted(modules & sets.get(other, set()))))
+
 
 
 HALVES = ("both", "collector", "poster", "workflows", "live")

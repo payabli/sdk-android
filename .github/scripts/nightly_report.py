@@ -447,11 +447,19 @@ def main() -> int:
     # Sharing one glob let :taptopay results make the unit total non-zero when the unit step had written
     # nothing, which defeated the missing-results guard, and left no way to notice a card-present step that
     # succeeded while writing nothing.
+    #
+    # A module belongs to the set named after the job that runs it. :example moved to card-present when
+    # that job was split out, because it depends on :taptopay and so needs the reader credential; leaving
+    # it here would have let its results stand in for a unit step that wrote none, which is the exact
+    # failure the paragraph above describes. W14 asserts this against the workflow.
     unit_patterns = [
         f"{module}/build/test-results/test*UnitTest/TEST-*.xml"
-        for module in ("core", "payin", "telemetry", "example", "payabli-android", "testutils")
+        for module in ("core", "payin", "telemetry", "payabli-android", "testutils")
     ]
-    card_patterns = ["taptopay/build/test-results/test*UnitTest/TEST-*.xml"]
+    card_patterns = [
+        f"{module}/build/test-results/test*UnitTest/TEST-*.xml"
+        for module in ("taptopay", "example")
+    ]
     android_patterns = ["*/build/outputs/androidTest-results/connected/**/TEST-*.xml"]
 
     unit_total, unit_failed, unit_skipped, unit_details = parse_results(unit_patterns)
