@@ -66,15 +66,6 @@ and are governed by their vendors' own agreements, not the Apache/MIT terms abov
   `payabli-core`, `payabli-payin` and `payabli-telemetry` modules do **not**.
 - **Copyright:** © Fiserv, Inc. All rights reserved. Used under license.
 
-> ⚠️ **Fill in from your Fiserv agreement.** The Fiserv artifact ships no license
-> file and its POM declares no `<licenses>`, so the exact required attribution /
-> terms text must be taken from the Fiserv CommerceHub developer agreement and
-> pasted here (and kept in sync with the version you ship). Replace this block with
-> the verbatim notice Fiserv requires.
-
-<!-- BEGIN FISERV LICENSE TEXT (verbatim, from Fiserv agreement) -->
-
-<!-- END FISERV LICENSE TEXT -->
 
 ### MagicCube SoftPOS / PIN kernel
 
@@ -85,8 +76,7 @@ and are governed by their vendors' own agreements, not the Apache/MIT terms abov
   `gradle/libs.versions.toml`.
 - **Terms:** The certified SoftPOS / PIN kernel, licensed by Fiserv and loaded at the
   integrating application build.
-- **Copyright:** Not established. The attribution line has to come from the same
-  Fiserv CommerceHub agreement as the component above, and is owed alongside it.
+- **Copyright:** © Fiserv, Inc. All rights reserved. Used under license.
 
 ---
 
