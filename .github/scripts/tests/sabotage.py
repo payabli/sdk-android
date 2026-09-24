@@ -294,6 +294,13 @@ MUTATIONS = [
     ("QA snapshot runs its steps without pipefail", QA, "workflows",
      "defaults:\n  run:\n    shell: bash\n", ""),
 
+    # The publishing job still serialises, and the gate is inside the group with it: a dispatch waiting
+    # for a reviewer holds the slot, and snapshots from main queue behind it or are replaced.
+    ("The QA gate waits for a reviewer while holding the publishing slot", QA, "workflows",
+     "defaults:\n  run:\n    shell: bash\n",
+     "concurrency:\n  group: qa-snapshot\n  cancel-in-progress: false\n\n"
+     "defaults:\n  run:\n    shell: bash\n"),
+
     # Whitespace is what a word-splitting reader separates on, so the operator written against the word
     # beside it stays inside that word and the two commands read as one.
     ("QA snapshot uploads again to the release prefix, behind an operator with no space", QA, "workflows",

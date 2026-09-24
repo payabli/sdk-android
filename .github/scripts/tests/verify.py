@@ -3316,9 +3316,17 @@ def test_workflows():
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
-    group = str(((qa.get("concurrency") or {}) if isinstance(qa.get("concurrency"), dict)
-                 else {"group": qa.get("concurrency")}).get("group", ""))
+    def group_of(value) -> str:
+        return str((value if isinstance(value, dict) else {"group": value} or {}).get("group", ""))
+
+    group = group_of(qa_job.get("concurrency"))
     check("W16 one publish runs at a time across refs", bool(group) and "${{" not in group, group)
+    # On the publishing job and not on the workflow, because the gate is a job of this workflow too. At
+    # the workflow level a dispatch waiting for a reviewer holds the only slot, and every snapshot from
+    # main queues behind it until somebody answers; a pending run is replaced when a newer one queues,
+    # so those runs are lost rather than late.
+    check("W16 and waiting for a reviewer holds no publishing slot",
+          not qa.get("concurrency"), f"{qa.get('concurrency')}")
 
     # A role ARN is an identifier rather than a credential, and masking it makes every AccessDenied
     # unreadable. Written inline it would put the AWS account id in a public repository instead.

@@ -20,12 +20,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  # One group across every ref, not one per ref: two refs stamping in the same UTC second reach one
-  # identifier, and the first writer keeps the coordinate.
-  group: qa-snapshot
-  cancel-in-progress: false
-
 # Naming bash is what turns `-o pipefail` on: an unset `shell:` runs `bash -e`, where a pipeline reports
 # the last command's status and the failure of anything left of a `|` is dropped. Defaults do not reach a
 # called workflow from its caller, so this is declared here as well as in ci.yml.
@@ -59,6 +53,14 @@ jobs:
     # leaves it failed or cancels the run, and neither publishes: `always()` in place of `!cancelled()`
     # would publish through both.
     if: ${{ !cancelled() && needs.approve.result != 'failure' }}
+    # On this job rather than on the workflow. One group across every ref, not one per ref: two refs
+    # stamping in the same UTC second reach one identifier, and the first writer keeps the coordinate.
+    # At the workflow level the gate above would sit inside the group, so a dispatch waiting for a
+    # reviewer holds the only slot and every snapshot from main queues behind it for as long as nobody
+    # answers. A pending run is also replaced when a newer one queues, so those would not merely be late.
+    concurrency:
+      group: qa-snapshot
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
