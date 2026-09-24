@@ -145,6 +145,16 @@ MUTATIONS = [
     ("A job CI waits for is allowed to fail without failing the run", CI, "workflows",
      "  instrumented:\n", "  instrumented:\n    continue-on-error: true\n"),
 
+    ("A step of a job CI waits for is allowed to fail, leaving the job green", CI, "workflows",
+     "      - name: Unit tests\n        run: ./gradlew :core:test",
+     "      - name: Unit tests\n        continue-on-error: true\n        run: ./gradlew :core:test"),
+
+    ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
+     ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
+
+    ("A dispatched QA snapshot runs the suites under a shell without -e", QA, "workflows",
+     "      - name: Unit tests\n        if:", "      - name: Unit tests\n        shell: bash {0}\n        if:"),
+
     ("CI cancels a run on main, and with it a publish part way through its upload", CI, "workflows",
      "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", "  cancel-in-progress: true"),
 

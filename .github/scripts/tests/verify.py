@@ -3069,9 +3069,18 @@ def test_workflows():
 
         # A job with continue-on-error counts as succeeded for anything that needs it, so waiting for it
         # and requiring it to have passed are different things.
-        soft = [name for name in sorted(waited)
-                if (ci_doc.get("jobs") or {}).get(name, {}).get("continue-on-error")]
-        check("W16 and every job it waits for can fail the run", not soft, f"{soft}")
+        # On the steps as well as the job. `continue-on-error` on a unit-test step keeps its job green
+        # after a failure, so the job is waited for, reports success, and the snapshot publishes behind
+        # a suite that did not pass.
+        soft = []
+        for name in sorted(waited):
+            job = (ci_doc.get("jobs") or {}).get(name) or {}
+            if job.get("continue-on-error"):
+                soft.append(name)
+            soft.extend(f"{name}: {step.get('name') or step.get('uses')}"
+                        for step in (job.get("steps") or [])
+                        if isinstance(step, dict) and step.get("continue-on-error"))
+        check("W16 and nothing it waits for is allowed to fail", not soft, " | ".join(soft))
         # A pull request runs CI too, including from a fork, and this job mints the publishing identity.
         gate = " ".join(str(caller.get("if", "")).split())
         check("W16 and only on a push to main",
@@ -3153,6 +3162,25 @@ def test_workflows():
           f"{sorted(qa.get('env') or {})}")
     check("W16 nor for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
+    # A guard that reads task names asks what a step mentions, not whether failing it stops the job.
+    # `|| true` after the suites leaves every name in place and publishes after a red run, and a `shell:`
+    # override drops the `-e` the default `bash -e` provides.
+    masking = ("|| true", "|| :", "set +e", "; true", "; :")
+    unstoppable = []
+    for step in qa_steps:
+        body = run_commands(step)
+        if not body:
+            continue
+        why = [token for token in masking if token in body]
+        if step.get("continue-on-error"):
+            why.append("continue-on-error")
+        if step.get("shell"):
+            why.append(f"shell: {step.get('shell')}")
+        if why:
+            unstoppable.append(f"{step.get('name') or body[:30]} ({', '.join(why)})")
+    check("W16 and no step of it can fail without failing the job", not unstoppable,
+          " | ".join(unstoppable))
+
     wanted = {"PAYABLI_MAVEN_USER", "PAYABLI_MAVEN_PASSWORD"}
     holding = [step for step in qa_steps
                if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
