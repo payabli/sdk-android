@@ -480,23 +480,26 @@ internal class TapToPayChargeRunner(
     ) = withContext(NonCancellable) {
         val startedAt = System.nanoTime()
         TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
-        try {
-            client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
-            TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)
-        } catch (failedClose: Throwable) {
-            TapToPayReports.closeFailed(failedClose, startedAt, TelemetryProperties.Origin.CHARGE)
-            // `Throwable`, which is wider than this file catches anywhere else and is the width the caller
-            // already uses. `readCard` catches `Throwable`, calls this, and rethrows what it caught, so a
-            // failure raised *here* would replace the one being reported. An `Error` from the close would
-            // then reach the host in place of the original, which is the opposite of the contract that a
-            // JVM error is rethrown unchanged. This is the cleanup, so it is never the authoritative
-            // failure.
-            logger.warn(
-                LogField.safe("event", "ttp_charge_close_failed"),
-                LogField.safe("phase", "update"),
-                LogField.safe("errorKind", failedClose.javaClass.simpleName),
-            ) { "an opened payment could not be closed after a failed tap" }
-        }
+        val closed =
+            try {
+                client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
+                true
+            } catch (failedClose: Throwable) {
+                TapToPayReports.closeFailed(failedClose, startedAt, TelemetryProperties.Origin.CHARGE)
+                // `Throwable`, which is wider than this file catches anywhere else and is the width the caller
+                // already uses. `readCard` catches `Throwable`, calls this, and rethrows what it caught, so a
+                // failure raised *here* would replace the one being reported. An `Error` from the close would
+                // then reach the host in place of the original, which is the opposite of the contract that a
+                // JVM error is rethrown unchanged. This is the cleanup, so it is never the authoritative
+                // failure.
+                logger.warn(
+                    LogField.safe("event", "ttp_charge_close_failed"),
+                    LogField.safe("phase", "update"),
+                    LogField.safe("errorKind", failedClose.javaClass.simpleName),
+                ) { "an opened payment could not be closed after a failed tap" }
+                false
+            }
+        if (closed) TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)
     }
 
     /**

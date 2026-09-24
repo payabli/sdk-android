@@ -1720,6 +1720,33 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a recorder error after a landed close is not reported as a failed close`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val recorded = mutableListOf<String>()
+            TelemetryRecorders.install { event, _ ->
+                if (event == TelemetryEvents.TTP_CLOSE_SUCCEEDED) throw OutOfMemoryError("the heap is gone")
+                recorded += event
+            }
+            try {
+                val fixture = readyFixture()
+                fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+                val failure =
+                    runCatching {
+                        runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    }.exceptionOrNull()
+
+                assertTrue(failure.toString(), failure is OutOfMemoryError)
+                assertFalse(
+                    "a landed close was reported as failed: $recorded",
+                    TelemetryEvents.TTP_CLOSE_FAILED in recorded,
+                )
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
     fun `a host retrying a close reports it as a retry`() =
         runTest(timeout = TEST_TIMEOUT) {
             recording { recorded ->
