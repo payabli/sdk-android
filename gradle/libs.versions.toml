@@ -31,6 +31,7 @@ androidxNavigation = "2.9.8"
 androidxLifecycle = "2.9.4"
 fiservTtp = "1.1.4.1"
 ktlintGradle = "14.2.0"
+cyclonedx = "3.3.0"
 sonarqube = "7.3.1.8318"
 # Newest releases of these three all require a kotlin-stdlib newer than AGP's built-in Kotlin
 # (2.2.10), and a 2.2 compiler cannot read 2.3 metadata. See reference/tooling.md.

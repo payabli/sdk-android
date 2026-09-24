@@ -35,7 +35,7 @@ fun MavenPublication.applyPayabliPom() = pom {
 plugins {
     `maven-publish`
     // Supply-chain SBOM: every publishable module emits a CycloneDX bill of
-    // materials (build/reports/bom.json + bom.xml) via the `cyclonedxBom` task.
+    // materials (build/reports/cyclonedx/bom.json + bom.xml) via the `cyclonedxBom` task.
     id("org.cyclonedx.bom")
 }
 

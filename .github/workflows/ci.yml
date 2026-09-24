@@ -61,6 +61,12 @@ jobs:
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
 
+      # Its own invocation because build-logic is an included build: no task in the main build reaches
+      # its tests, so they run here or nowhere. They need no credential, which is why they sit in this
+      # job rather than the card-present one.
+      - name: Convention plugin tests
+        run: ./gradlew -p build-logic test
+
       - name: Format
         run: ./gradlew :core:ktlintCheck :payin:ktlintCheck :telemetry:ktlintCheck
           :payabli-android:ktlintCheck :payabli-bom:ktlintCheck :testutils:ktlintCheck
