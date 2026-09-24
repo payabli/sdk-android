@@ -2018,20 +2018,42 @@ def run_commands(step: dict) -> str:
     return " ".join(words)
 
 
+# A shell word that runs something else, so what follows it is that command's arguments and not this
+# one's. `|| true` and friends are refused elsewhere; this is about where one command ends.
+OPERATORS = ("&&", "||", "|", ";", "&")
+# One of these may stand before the program and still be running it.
+INTERPRETERS = ("python3", "python", "bash", "sh", "env")
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
 def invocation(step: dict, program: str) -> list[str]:
-    """The words of the line in `step` that runs `program`, as a shell would split them.
+    """The words a line of `step` passes to `program`, as a shell would split them.
 
     `run_commands` flattens a step into one string, which answers whether a term appears anywhere in it
-    and not what any one command was given. A step carrying `echo --prefix maven-qa` on its own line
-    satisfies a search for that term while the command below it is given something else.
+    and not what any one command was given: `echo --prefix maven-qa` above the uploader satisfies a
+    search for that term while the uploader is handed something else.
+
+    The program has to be the word being run, not a word being passed. `echo publish_staging.py
+    --prefix maven-qa` mentions it in an argument, and reading that line's flags is reading the echo's.
+    A leading `VAR=value` and one interpreter may stand in front of it, because `python3 x.py` runs x.py.
     """
     for line in str(step.get("run", "")).splitlines():
         try:
             words = shlex.split(line, comments=True)
         except ValueError:
             continue
-        if any(word.endswith(program) for word in words):
-            return words
+        head = 0
+        while head < len(words) and ASSIGNMENT.match(words[head]):
+            head += 1
+        if head < len(words) and words[head].rsplit("/", 1)[-1] in INTERPRETERS:
+            head += 1
+        if head >= len(words) or not words[head].endswith(program):
+            continue
+        run = words[head:]
+        for index, word in enumerate(run):
+            if word in OPERATORS:
+                return run[:index]
+        return run
     return []
 
 

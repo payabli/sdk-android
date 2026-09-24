@@ -162,6 +162,16 @@ MUTATIONS = [
      "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
      "  cancel-in-progress: ${{ github.ref == github.ref }}"),
 
+    ("QA snapshot names the uploader in an echo, so its flags are read instead", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
+     "          echo publish_staging.py --prefix maven-qa\n"
+     "          python3 .github/scripts/publish_staging.py --prefix maven --version \"$VERSION\""),
+
+    ("QA snapshot names gradlew in an echo and publishes a fixed version", QA, "workflows",
+     '        run: ./gradlew publish -Ppayabli.version="$VERSION"',
+     '        run: |\n          echo gradlew -Ppayabli.version="$VERSION"\n'
+     '          ./gradlew publish -Ppayabli.version=0.1.0'),
+
     ("QA snapshot echoes the QA prefix and hands the uploader the release one", QA, "workflows",
      "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
      "          echo --prefix maven-qa\n"
