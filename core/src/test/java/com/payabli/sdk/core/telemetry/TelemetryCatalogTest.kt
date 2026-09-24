@@ -90,6 +90,23 @@ class TelemetryCatalogTest {
     }
 
     @Test
+    fun everyCloseEventCarriesItsOrigin() {
+        listOf(
+            TelemetryEvents.TTP_CLOSE_STARTED,
+            TelemetryEvents.TTP_CLOSE_SUCCEEDED,
+            TelemetryEvents.TTP_CLOSE_FAILED,
+        ).forEach { event ->
+            val scrubbed =
+                TelemetryCatalog.scrub(
+                    event,
+                    mapOf(TelemetryProperty.ORIGIN.key to TelemetryProperties.Origin.CHARGE),
+                )
+
+            assertEquals(event, mapOf(TelemetryProperty.ORIGIN.key to TelemetryProperties.Origin.CHARGE), scrubbed)
+        }
+    }
+
+    @Test
     fun aValueTooLongIsDroppedRatherThanTruncated() {
         val scrubbed =
             TelemetryCatalog.scrub(

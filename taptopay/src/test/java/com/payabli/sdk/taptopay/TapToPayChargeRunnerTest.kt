@@ -1,11 +1,14 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
 import com.payabli.sdk.core.telemetry.TelemetryEvents
+import com.payabli.sdk.core.telemetry.TelemetryProperties
+import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
@@ -1158,6 +1161,129 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
+    fun `a refused card whose close failed is still reported as refused`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The close records the outcome and changes nothing about it. A host told the transport failed
+            // retries a card that was declined.
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val refused = failure as TapToPayException
+            assertTrue(refused.cause.toString(), refused.cause is TTPTransactionException.CardRefused)
+            assertEquals(TapToPayCapture.NOT_CHARGED, refused.capture)
+            assertEquals(TRANS_ID, refused.paymentTransId)
+        }
+
+    @Test
+    fun `a refused card whose close failed still says the close failed, and can be closed again`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 4) { closeFails })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            val runner = runnerOver(fixture)
+
+            val failure =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            val suppressed = failure.cause?.suppressed.orEmpty()
+            assertTrue(
+                "the close failure was dropped: ${suppressed.toList()}",
+                suppressed.singleOrNull() is PayabliException,
+            )
+
+            closeFails = false
+            runner.closeCaptured(TRANS_ID)
+        }
+
+    @Test
+    fun `a refused card whose close failed lets its attempt go, so the next card opens its own`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A refusal is definite whether or not the close landed. Holding the key sends the next card
+            // under the refused attempt, and a refusal on a resent key can only report unknown.
+            var closeFails = true
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 2, closes = 4) { closeFails })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            closeFails = false
+            val next =
+                runCatching {
+                    runner.charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals("the next card reused the refused attempt", "$MINTED_KEY-2", fixture.keySent(1))
+            assertEquals(TapToPayCapture.NOT_CHARGED, next.capture)
+        }
+
+    @Test
+    fun `a refused card on a resent key whose close failed keeps the earlier attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var closeFails = false
+            val fixture =
+                SessionFixture(scriptWithCloseControl(opens = 3, closes = 5) { closeFails })
+                    .also { it.coordinator.initialize() }
+            val runner = runnerOver(fixture)
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            closeFails = true
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+            )
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            closeFails = false
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("a refusal settled the earlier attempt", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
+    fun `an unknown outcome whose close failed reports the close failure`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // No known answer to protect, so the close failure is the more specific thing to say.
+            val fixture =
+                SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                    .also { it.coordinator.initialize() }
+            fixture.reader.answerReadWith(
+                cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"),
+            )
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            val unknown = failure as TapToPayException
+            assertTrue(unknown.cause.toString(), unknown.cause is PayabliException)
+            assertEquals(TapToPayCapture.UNKNOWN, unknown.capture)
+        }
+
+    @Test
     fun `a captured payment is closed without a second tap or a second payment`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Three answers for the close that gives up, one for the close that lands.
@@ -1535,4 +1661,128 @@ class TapToPayChargeRunnerTest {
             assertTrue(refusal.toString(), refusal is TapToPayException)
             assertEquals(TapToPayCapture.UNKNOWN, (refusal as TapToPayException).capture)
         }
+
+    @Test
+    fun `a refused card whose close failed reports the close failure beside the refusal`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                val fixture =
+                    SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                        .also { it.coordinator.initialize() }
+                fixture.reader.answerReadWith(
+                    cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+                )
+
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_STARTED),
+                )
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_FAILED),
+                )
+                val charge = recorded.single { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
+                assertEquals(TelemetryProperties.Outcome.DECLINED, charge[TelemetryProperty.OUTCOME.key])
+            }
+        }
+
+    @Test
+    fun `a charge whose close landed reports the close under the charge's origin`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                val fixture = readyFixture()
+
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+                )
+            }
+        }
+
+    @Test
+    fun `a tap that failed reports the close it sent on the way out`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                val fixture = readyFixture()
+                fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+                )
+            }
+        }
+
+    @Test
+    fun `a recorder error after a landed close is not reported as a failed close`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val recorded = mutableListOf<String>()
+            TelemetryRecorders.install { event, _ ->
+                if (event == TelemetryEvents.TTP_CLOSE_SUCCEEDED) throw OutOfMemoryError("the heap is gone")
+                recorded += event
+            }
+            try {
+                val fixture = readyFixture()
+                fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+                val failure =
+                    runCatching {
+                        runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    }.exceptionOrNull()
+
+                assertTrue(failure.toString(), failure is OutOfMemoryError)
+                assertFalse(
+                    "a landed close was reported as failed: $recorded",
+                    TelemetryEvents.TTP_CLOSE_FAILED in recorded,
+                )
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
+    fun `a host retrying a close reports it as a retry`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            recording { recorded ->
+                var closeFails = true
+                val fixture =
+                    SessionFixture(scriptWithCloseControl(closes = 4) { closeFails })
+                        .also { it.coordinator.initialize() }
+                val runner = runnerOver(fixture)
+                runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+                closeFails = false
+                runner.closeCaptured(TRANS_ID)
+
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.CHARGE, TelemetryProperties.Origin.RETRY),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_STARTED),
+                )
+                assertEquals(
+                    listOf(TelemetryProperties.Origin.RETRY),
+                    originsOf(recorded, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
+                )
+            }
+        }
+
+    private inline fun <T> recording(block: (List<Pair<String, Map<String, String>>>) -> T): T {
+        val recorded = mutableListOf<Pair<String, Map<String, String>>>()
+        TelemetryRecorders.install { event, properties -> recorded += event to properties }
+        try {
+            return block(recorded)
+        } finally {
+            TelemetryRecorders.clear()
+        }
+    }
+
+    private fun originsOf(
+        recorded: List<Pair<String, Map<String, String>>>,
+        event: String,
+    ): List<String?> = recorded.filter { it.first == event }.map { it.second[TelemetryProperty.ORIGIN.key] }
 }

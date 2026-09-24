@@ -10,6 +10,7 @@ import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
+import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
@@ -223,31 +224,55 @@ internal class TapToPayChargeRunner(
                 //
                 // What groups the three is cancellation, not success. Settling a key only removes it from
                 // the process map, so it cannot fail the caller.
-                withContext(NonCancellable) {
-                    client.update(paymentTransId, result)
-                    // Both an approval and a refusal are definitive for a fresh key, so the attempt is over
-                    // and its key can go. An outcome that is neither keeps it: the payment may have been
-                    // taken, and the key is what would let a repeat be recognised as one. A resent key is
-                    // never settled here: this run's answer is about a different opening than the one the
-                    // key names.
-                    if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
-                        keys.settle(entry, environment, idempotencyKey)
+                val closeFailure =
+                    withContext(NonCancellable) {
+                        val closeStartedAt = System.nanoTime()
+                        TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
+                        try {
+                            client.update(paymentTransId, result)
+                        } catch (withdrawn: CancellationException) {
+                            throw withdrawn
+                        } catch (failure: Exception) {
+                            TapToPayReports.closeFailed(failure, closeStartedAt, TelemetryProperties.Origin.CHARGE)
+                            if (!resentKey && result.outcome == CardReadOutcome.DECLINED) {
+                                keys.settle(entry, environment, idempotencyKey)
+                            }
+                            return@withContext failure
+                        }
+                        TapToPayReports.closeSucceeded(closeStartedAt, TelemetryProperties.Origin.CHARGE)
+                        // Both an approval and a refusal are definitive for a fresh key, so the attempt is
+                        // over and its key can go. An outcome that is neither keeps it: the payment may have
+                        // been taken, and the key is what would let a repeat be recognised as one. A resent
+                        // key is never settled here: this run's answer is about a different opening than the
+                        // one the key names.
+                        if (!resentKey && result.outcome != CardReadOutcome.INDETERMINATE) {
+                            keys.settle(entry, environment, idempotencyKey)
+                        }
+                        // The close landed, so there is nothing left to recover for this payment,
+                        // whatever the outcome was.
+                        HELD.remove(scope)
+                        null
                     }
-                    // The close landed, so there is nothing left to recover for this payment,
-                    // whatever the outcome was.
-                    HELD.remove(scope)
-                }
 
                 // The close is sent for every outcome above, and only an approval is a payment. A refused
                 // card reported as a completed one is the failure this branch exists to prevent.
+                //
+                // A failed close does not replace a refusal: the refusal is what the caller is told, and the
+                // close failure travels as a suppressed exception on it.
                 when (result.outcome) {
-                    CardReadOutcome.APPROVED ->
+                    CardReadOutcome.APPROVED -> {
+                        closeFailure?.let { throw it }
                         TapToPayResult(paymentTransId = paymentTransId, cardNetwork = result.cardNetwork)
                             .also { TapToPayReports.chargeSucceeded(startedAt) }
+                    }
 
-                    CardReadOutcome.DECLINED -> throw TTPTransactionException.CardRefused(result.providerState)
+                    CardReadOutcome.DECLINED ->
+                        throw TTPTransactionException.CardRefused(result.providerState).apply {
+                            closeFailure?.let(::addSuppressed)
+                        }
 
-                    CardReadOutcome.INDETERMINATE -> throw TTPTransactionException.OutcomeUnknown(result.providerState)
+                    CardReadOutcome.INDETERMINATE ->
+                        throw closeFailure ?: TTPTransactionException.OutcomeUnknown(result.providerState)
                 }
             } catch (withdrawn: CancellationException) {
                 // `Throwable` covers CancellationException, and the facade states a withdrawn caller is
@@ -373,7 +398,7 @@ internal class TapToPayChargeRunner(
                 )
             }
             val startedAt = System.nanoTime()
-            TapToPayReports.closeStarted()
+            TapToPayReports.closeStarted(TelemetryProperties.Origin.RETRY)
             try {
                 withContext(NonCancellable) {
                     client.update(pending.paymentTransId, pending.read)
@@ -393,11 +418,11 @@ internal class TapToPayChargeRunner(
                 // rethrow.
                 throw withdrawn
             } catch (failure: Exception) {
-                TapToPayReports.closeFailed(failure, startedAt)
+                TapToPayReports.closeFailed(failure, startedAt, TelemetryProperties.Origin.RETRY)
                 // Still held, so this can be tried again.
                 throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey))
             }
-            TapToPayReports.closeSucceeded(startedAt)
+            TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
         }
 
     /**
@@ -453,21 +478,28 @@ internal class TapToPayChargeRunner(
         paymentTransId: String,
         failure: Throwable,
     ) = withContext(NonCancellable) {
-        try {
-            client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
-        } catch (failedClose: Throwable) {
-            // `Throwable`, which is wider than this file catches anywhere else and is the width the caller
-            // already uses. `readCard` catches `Throwable`, calls this, and rethrows what it caught, so a
-            // failure raised *here* would replace the one being reported. An `Error` from the close would
-            // then reach the host in place of the original, which is the opposite of the contract that a
-            // JVM error is rethrown unchanged. This is the cleanup, so it is never the authoritative
-            // failure.
-            logger.warn(
-                LogField.safe("event", "ttp_charge_close_failed"),
-                LogField.safe("phase", "update"),
-                LogField.safe("errorKind", failedClose.javaClass.simpleName),
-            ) { "an opened payment could not be closed after a failed tap" }
-        }
+        val startedAt = System.nanoTime()
+        TapToPayReports.closeStarted(TelemetryProperties.Origin.CHARGE)
+        val closed =
+            try {
+                client.updateAfterFailedRead(paymentTransId, failure.javaClass.simpleName)
+                true
+            } catch (failedClose: Throwable) {
+                TapToPayReports.closeFailed(failedClose, startedAt, TelemetryProperties.Origin.CHARGE)
+                // `Throwable`, which is wider than this file catches anywhere else and is the width the caller
+                // already uses. `readCard` catches `Throwable`, calls this, and rethrows what it caught, so a
+                // failure raised *here* would replace the one being reported. An `Error` from the close would
+                // then reach the host in place of the original, which is the opposite of the contract that a
+                // JVM error is rethrown unchanged. This is the cleanup, so it is never the authoritative
+                // failure.
+                logger.warn(
+                    LogField.safe("event", "ttp_charge_close_failed"),
+                    LogField.safe("phase", "update"),
+                    LogField.safe("errorKind", failedClose.javaClass.simpleName),
+                ) { "an opened payment could not be closed after a failed tap" }
+                false
+            }
+        if (closed) TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.CHARGE)
     }
 
     /**

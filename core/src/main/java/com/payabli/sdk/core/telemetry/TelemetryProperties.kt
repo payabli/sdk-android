@@ -45,7 +45,7 @@ public enum class TelemetryProperty {
     /** Which input a form event is about, by name. Never what was typed into one. */
     FIELD,
 
-    /** Which path started a money-path operation. Values come from [TelemetryProperties.Origin]. */
+    /** Which path started the operation. Values come from [TelemetryProperties.Origin], per event. */
     ORIGIN,
     ;
 
@@ -96,5 +96,11 @@ public object TelemetryProperties {
 
         /** A host called the member directly. */
         public const val DIRECT: String = "direct"
+
+        /** A card-present charge closed its own payment. */
+        public const val CHARGE: String = "charge"
+
+        /** A host retried a retained payment's close. */
+        public const val RETRY: String = "retry"
     }
 }
