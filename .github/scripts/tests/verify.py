@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import fnmatch
+import hashlib
 import importlib.util
 import io
 import json
@@ -2976,8 +2977,13 @@ def test_workflows():
     # a run that fails at the assume rather than one that publishes to the wrong place.
     check("W16 it never triggers on a tag",
           not any("tags" in value for value in qa_on.values() if isinstance(value, dict)), f"{qa_on}")
-    check("W16 and it triggers from a branch", bool({"push", "workflow_dispatch"} & set(qa_on)),
-          f"{sorted(qa_on)}")
+    # Separately, because either alone satisfies "triggers from a branch" while the other is gone: a
+    # dropped dispatch leaves no way to cut a candidate, and a push widened past main publishes from
+    # every branch anyone pushes.
+    check("W16 it can be dispatched", "workflow_dispatch" in qa_on, f"{sorted(qa_on)}")
+    push = (qa_on.get("push") or {}) if isinstance(qa_on.get("push"), dict) else {}
+    check("W16 and it publishes on a push to main only",
+          list(push.get("branches") or []) == ["main"], f"{qa_on.get('push')}")
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
@@ -3053,7 +3059,99 @@ def test_workflows():
 
 
 
-HALVES = ("both", "collector", "poster", "workflows", "live")
+
+def load_publisher():
+    """The uploader, imported from the working tree."""
+    source = Path(os.environ.get("NIGHTLY_PUBLISHER", SDK / ".github/scripts/publish_staging.py"))
+    spec = importlib.util.spec_from_file_location("publish_staging", source)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class FakeRun:
+    """What subprocess.run returns, as publish() reads it."""
+
+    def __init__(self, returncode=0, stderr=""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def test_publisher():
+    """publish()'s branches, which W16 cannot reach: it reads the workflow, never the uploader.
+
+    Every case here ends in a coordinate that is written, refused or reported present, and each is an
+    outcome the origin can produce. A 412 says the key is occupied and nothing about what occupies it,
+    so the digest decides, and a read that fails is not an answer.
+    """
+    pub = load_publisher()
+
+    root = Path(tempfile.mkdtemp(prefix="publisher-", dir=SCRATCH))
+    version = "0.1.0-QA.20260201143000"
+    artifact = root / "com/payabli/sdk-android-core" / version / f"sdk-android-core-{version}.pom"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("<project/>")
+    files = pub.collect(root, version)
+    check("U1 the tree collects one publishable file", len(files) == 1, f"{files}")
+
+    def run_publish(put_results, remote_digest="__same__"):
+        """publish() against scripted put/read_back answers, returning (exit, printed)."""
+        calls = []
+        local = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+        def fake_put(bucket, account, key, path, cache_control):
+            calls.append(key)
+            return put_results[min(len(calls) - 1, len(put_results) - 1)]
+
+        def fake_read_back(bucket, account, key):
+            return local if remote_digest == "__same__" else remote_digest
+
+        pub.put, pub.read_back = fake_put, fake_read_back
+        out = io.StringIO()
+        try:
+            with redirect_stdout(out):
+                code = pub.publish(files, "bucket", "123456789012", "maven-qa")
+        except Exception as error:
+            # A raising uploader publishes nothing and reports nothing, so it is a failure rather than
+            # something for the caller's assertions to miss while the traceback escapes the harness.
+            return 1, f"{out.getvalue()}\nraised {type(error).__name__}: {error}", calls
+        return code, out.getvalue(), calls
+
+    code, out, calls = run_publish([FakeRun()])
+    check("U2 an ordinary upload succeeds", code == 0 and "uploaded" in out, f"{code} {out[-120:]}")
+    check("U2 and it puts once", len(calls) == 1, f"{calls}")
+
+    # The steady state of a re-run on the immutable prefix, and the one case that must not fail.
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (PreconditionFailed)")])
+    check("U3 a key already holding these bytes is present, not a failure",
+          code == 0 and "present" in out, f"{code} {out[-160:]}")
+
+    # A coordinate populated by a bad run. Reporting it present would leave it wrong for ever, because
+    # --if-none-match means no later run can replace it.
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (PreconditionFailed)")], remote_digest="beef")
+    check("U4 a key holding different bytes fails",
+          code == 1 and "present with different bytes" in out, f"{code} {out[-160:]}")
+
+    # The publishing role is granted GetObject for exactly this read. Without it the digest cannot be
+    # compared, and an unverified key is not a published one.
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (PreconditionFailed)")], remote_digest=None)
+    check("U5 a key that cannot be read back fails rather than passing",
+          code == 1 and "could not be read back" in out, f"{code} {out[-160:]}")
+
+    # S3 documents this as retryable, and it is reachable because a by-hand run is not serialised against
+    # the workflow's concurrency group.
+    code, out, calls = run_publish([FakeRun(1, "(ConditionalRequestConflict)"), FakeRun()])
+    check("U6 a concurrent write is retried once and then succeeds",
+          code == 0 and len(calls) == 2 and "uploaded" in out, f"{code} {calls} {out[-160:]}")
+
+    code, out, _ = run_publish([FakeRun(1, "An error occurred (AccessDenied)")])
+    check("U7 an ordinary refusal fails the run", code == 1 and "FAILED" in out, f"{code} {out[-160:]}")
+
+    # A read-only identity in the right account passes the account check and then fails every upload, so
+    # a run that uploaded nothing must never exit 0.
+    check("U8 and a failed run never reports success", code != 0, f"{code}")
+
+HALVES = ("both", "collector", "poster", "workflows", "live", "publisher")
 
 
 def main():
@@ -3073,6 +3171,8 @@ def main():
             test_poster(load_poster(base))
         if ONLY in ("both", "workflows"):
             test_workflows()
+        if ONLY in ("both", "publisher"):
+            test_publisher()
         if ONLY in ("both", "live"):
             live = load_live_poster(base)
             test_live_summary(live)

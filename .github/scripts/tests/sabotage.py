@@ -74,6 +74,10 @@ MIRROR = WORKFLOW_DIR / "card-reader-mirror.yml"
 # prefix uploads, a shared coordinate publishes, and a stamp that stops sorting still builds.
 QA = WORKFLOW_DIR / "qa-snapshot.yml"
 
+# The uploader. Its branches decide whether a key already at the origin is accepted, and every wrong
+# answer is a publish that reports success.
+PUBLISHER = WORK / "publish_staging.py"
+
 # Per-pull-request CI, for the card reader credential alone. :taptopay resolves the reader from a
 # credentialed repository, and this file keeps that credential out of the job the third-party emulator
 # action runs in. The mutations below put it back, each as something that reads like a convenience.
@@ -102,11 +106,30 @@ SOURCE = {
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
     MIRROR: SDK / ".github/workflows/card-reader-mirror.yml",
     QA: SDK / ".github/workflows/qa-snapshot.yml",
+    PUBLISHER: SDK / ".github/scripts/publish_staging.py",
     CI: SDK / ".github/workflows/ci.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
 MUTATIONS = [
+
+    ("An occupied key holding the same bytes fails, so a half-finished run cannot be completed",
+     PUBLISHER, "publisher",
+     '        elif "PreconditionFailed" in r.stderr:', "        elif False:"),
+
+    ("The uploader accepts an occupied key holding different bytes", PUBLISHER, "publisher",
+     "            elif remote != local:", "            elif False:"),
+
+    ("The uploader treats an unreadable key as published", PUBLISHER, "publisher",
+     "            if remote is None:", "            if False:"),
+
+    ("The uploader exits 0 with failures", PUBLISHER, "publisher",
+     "    return 1 if failed else 0", "    return 0"),
+
+    ("A concurrent write is not retried, so a retryable conflict fails the publish", PUBLISHER,
+     "publisher",
+     '        if r.returncode != 0 and "ConditionalRequestConflict" in r.stderr:',
+     "        if False:"),
 
     # The QA snapshot. Each of these publishes something: a tree at the wrong prefix, a coordinate every
     # build shares, or a stamp that stops sorting. All three succeed, and the run is green.
@@ -119,6 +142,12 @@ MUTATIONS = [
     ("QA snapshot overrides the version with a literal, which shares a coordinate just as well", QA,
      "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish -Ppayabli.version=0.1.0"),
+
+    ("QA snapshot publishes from every branch anyone pushes", QA, "workflows",
+     "  push:\n    branches: [main]", "  push:\n    branches: ['**']"),
+
+    ("QA snapshot cannot be dispatched, so no candidate can be cut on demand", QA, "workflows",
+     "on:\n  workflow_dispatch:\n  push:", "on:\n  push:"),
 
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
@@ -804,7 +833,8 @@ def run_verify(half: str) -> tuple[int, int, str]:
     # Aimed at the copies, so the harness reads what this run mutated rather than what the repository holds.
     env = {**os.environ, "NIGHTLY_ONLY": half,
            "NIGHTLY_COLLECTOR": str(COLLECTOR), "NIGHTLY_POSTER": str(POSTER), "NIGHTLY_PACK": str(PACK),
-           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER)}
+           "NIGHTLY_WORKFLOWS": str(WORKFLOW_DIR), "NIGHTLY_LIVE_POSTER": str(LIVE_POSTER),
+           "NIGHTLY_PUBLISHER": str(PUBLISHER)}
     proc = subprocess.run([sys.executable, str(VERIFY)], capture_output=True, text=True, env=env)
     match = re.search(r"(\d+) passed, (\d+) failed", proc.stdout)
     if not match:
@@ -822,7 +852,7 @@ def main() -> int:
         shutil.copy(source, target)
 
     print("Baseline, unmodified:")
-    for half in ("collector", "poster", "workflows", "live"):
+    for half in ("collector", "poster", "workflows", "live", "publisher"):
         passed, failed, _ = run_verify(half)
         print(f"  {half}: {passed} passed, {failed} failed")
         if failed != 0:
