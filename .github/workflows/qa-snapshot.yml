@@ -5,7 +5,11 @@ name: QA snapshot
 
 on:
   workflow_dispatch:
-  push:
+  # After CI, not alongside it. Triggered by the push, this published whatever main held whether or not
+  # the suites passed, and `needs` does not reach across workflows.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -20,12 +24,22 @@ concurrency:
 jobs:
   publish:
     name: Publish a QA snapshot
+    # workflow_run fires on completion whatever the conclusion, so a red CI reaches here and is refused.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
+      # A workflow_run job defaults to the default branch, so the commit CI actually passed is named
+      # rather than assumed. A dispatch keeps the ref it was started on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: >-
+            ${{ github.event_name == 'workflow_run'
+                && github.event.workflow_run.head_sha || github.ref }}
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -87,6 +101,15 @@ jobs:
 
       # The credential is on this step alone: it resolves the card reader, and no other step here reads
       # /maven. The release identity, because every build reads it whatever it publishes to.
+      # A dispatch answers to no CI run, so the suites run here. The workflow_run path skips them because
+      # the run that triggered it is the one that passed them.
+      - name: Unit tests
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test
+
       - name: Publish to the staging directory
         env:
           VERSION: ${{ steps.name.outputs.version }}

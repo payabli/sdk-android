@@ -2970,6 +2970,7 @@ def test_workflows():
     qa_on = (qa.get(True) if True in qa else qa.get("on")) or {}
     qa_jobs = {name: job for name, job in (qa.get("jobs") or {}).items() if isinstance(job, dict)}
     check(f"W16 {QA_WORKFLOW} has one publishing job", len(qa_jobs) == 1, f"{sorted(qa_jobs)}")
+    qa_job = next(iter(qa_jobs.values()), {})
     qa_steps = steps_of(qa)
     qa_text = workflow_text(QA_WORKFLOW)
 
@@ -2977,13 +2978,34 @@ def test_workflows():
     # a run that fails at the assume rather than one that publishes to the wrong place.
     check("W16 it never triggers on a tag",
           not any("tags" in value for value in qa_on.values() if isinstance(value, dict)), f"{qa_on}")
-    # Separately, because either alone satisfies "triggers from a branch" while the other is gone: a
-    # dropped dispatch leaves no way to cut a candidate, and a push widened past main publishes from
-    # every branch anyone pushes.
+    # Separately, because either alone satisfies "triggers from a branch" while the other is gone.
     check("W16 it can be dispatched", "workflow_dispatch" in qa_on, f"{sorted(qa_on)}")
-    push = (qa_on.get("push") or {}) if isinstance(qa_on.get("push"), dict) else {}
-    check("W16 and it publishes on a push to main only",
-          list(push.get("branches") or []) == ["main"], f"{qa_on.get('push')}")
+
+    # Nothing publishes ahead of the suites. A push trigger runs beside CI rather than after it, and
+    # `needs` does not reach across workflows, so main's path is a workflow_run on CI.
+    check("W16 and it never publishes straight off a push", "push" not in qa_on, f"{sorted(qa_on)}")
+    ran = (qa_on.get("workflow_run") or {}) if isinstance(qa_on.get("workflow_run"), dict) else {}
+    check("W16 and main publishes after CI", list(ran.get("workflows") or []) == ["CI"], f"{ran}")
+    check("W16 and only for main", list(ran.get("branches") or []) == ["main"], f"{ran}")
+
+    # workflow_run fires on completion whatever the conclusion, so without this a red CI publishes.
+    gate = str(qa_job.get("if", ""))
+    check("W16 and a failed CI is refused", "conclusion == 'success'" in gate, gate[:160])
+
+    # A workflow_run job defaults to the default branch, so publishing the commit CI passed means naming
+    # it. Without this the tree could be built from a different revision than the one that went green.
+    checkout = next((step for step in qa_steps if "actions/checkout" in str(step.get("uses", ""))), {})
+    ref = str((checkout.get("with") or {}).get("ref", ""))
+    check("W16 and it builds the commit CI passed", "workflow_run.head_sha" in ref, ref[:120])
+
+    # A dispatch answers to no CI run, so it carries the suites itself or it publishes untested code.
+    tested = next((step for step in qa_steps
+                   if ":core:test" in str(step.get("run", ""))), None)
+    check("W16 a dispatch runs the suites", tested is not None,
+          " | ".join(str(step.get("name", "")) for step in qa_steps))
+    if tested is not None:
+        check("W16 and does so only when CI has not", "workflow_dispatch" in str(tested.get("if", "")),
+              str(tested.get("if", "")))
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
@@ -3006,12 +3028,17 @@ def test_workflows():
 
     # The card reader credential belongs to the one step that reads /maven. Job-level it reaches every
     # step, including the checkout and the upload, and a dispatched run carries branch-controlled code.
-    qa_job = next(iter(qa_jobs.values()), {})
     check("W16 no credential is declared for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
-    reading = [str(step.get("name", "")) for step in qa_steps
+    holding = [step for step in qa_steps
                if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
-    check("W16 and one step reads it", len(reading) == 1, f"{reading}")
+    check("W16 and a step holds it", bool(holding),
+          " | ".join(str(step.get("name", "")) for step in qa_steps))
+    # Every step that carries it runs Gradle, which is what resolves the reader. Checkout, the OIDC
+    # check and the upload read nothing from /maven and never hold it.
+    check("W16 and only a step that runs Gradle does",
+          all("gradlew" in str(step.get("run", "")) for step in holding),
+          " | ".join(str(step.get("name", "")) for step in holding))
 
     # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
     # If-None-Match, which the bucket policy requires on every write.
