@@ -48,7 +48,7 @@ class PayInRedactionTest {
     @Test
     fun `bank data carries no account number`() {
         val data =
-            PayInAchData(
+            PayInBankAccountData(
                 accountNumber = SensitiveDigits.ofString(account),
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,
@@ -58,7 +58,7 @@ class PayInRedactionTest {
         val rendered = data.toString()
 
         listOf(account, "A Payer").forEach { assertFalse(it, rendered.contains(it)) }
-        assertTrue(rendered.contains("Checking"))
+        assertEquals("PayInBankAccountData(accountType=Checking)", rendered)
     }
 
     @Test
@@ -225,7 +225,7 @@ class PayInRedactionTest {
                 vendorData = PayInVendorData(ein = "12-3456789"),
             )
         val bank =
-            PayInAchData(
+            PayInBankAccountData(
                 accountNumber = SensitiveDigits.ofString(account),
                 routingNumber = "122105278",
                 accountType = PayInAccountType.Checking,

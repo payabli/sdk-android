@@ -4,7 +4,7 @@ import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFieldRules
-import com.payabli.sdk.payin.model.PayInAchData
+import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -164,7 +164,7 @@ internal object PayInValidation {
     }
 
     private fun bankAccount(
-        data: PayInAchData,
+        data: PayInBankAccountData,
         options: PayInValidationOptions,
     ) {
         data.accountNumber.useDigits { account ->

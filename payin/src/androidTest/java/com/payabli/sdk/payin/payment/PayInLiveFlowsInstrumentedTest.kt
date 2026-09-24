@@ -15,8 +15,8 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInAccountType
-import com.payabli.sdk.payin.model.PayInAchData
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
+import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
@@ -326,7 +326,7 @@ class PayInLiveFlowsInstrumentedTest {
 
     /** [bankAccount] as a host that collected it itself would build it. */
     private fun hostBankAccount() =
-        PayInAchData(
+        PayInBankAccountData(
             accountNumber = SensitiveDigits.ofString("1234567890"),
             routingNumber = "121000248",
             accountType = PayInAccountType.Checking,

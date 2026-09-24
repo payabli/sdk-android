@@ -87,7 +87,7 @@ public class PayInCardData(
  * [accountNumber] is a [SensitiveDigits] and [routingNumber] is not: a routing number identifies a bank and
  * is published, so buffering it would suggest a secrecy it does not have.
  */
-public class PayInAchData(
+public class PayInBankAccountData(
     public val accountNumber: SensitiveDigits,
     public val routingNumber: String,
     public val accountType: PayInAccountType,
@@ -96,7 +96,7 @@ public class PayInAchData(
     public val secCode: PayInSecCode? = null,
     public val deviceId: String? = null,
 ) {
-    override fun toString(): String = "PayInAchData(accountType=$accountType)"
+    override fun toString(): String = "PayInBankAccountData(accountType=$accountType)"
 }
 
 /**
@@ -113,7 +113,7 @@ public sealed class PayInInstrument {
 
     /** A bank account the payer entered. */
     public class BankAccount(
-        public val data: PayInAchData,
+        public val data: PayInBankAccountData,
     ) : PayInInstrument()
 
     /** What this instrument is charged as once it is stored. */
@@ -139,7 +139,7 @@ public sealed class PayInPaymentMethod {
 
     /** A bank account the payer entered. */
     public class BankAccount(
-        public val data: PayInAchData,
+        public val data: PayInBankAccountData,
     ) : PayInPaymentMethod()
 
     /** A method stored earlier, charged by its identifier and the method it stands for. */

@@ -4,7 +4,7 @@ import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_PAN
 import com.payabli.sdk.payin.client.TEST_SECURITY_CODE
 import com.payabli.sdk.payin.form.PayInField
-import com.payabli.sdk.payin.model.PayInAchData
+import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -63,7 +63,7 @@ class PayInFormInstrumentTest {
     @Test
     fun `a bank account's buffer is overwritten too`() =
         runTest(timeout = timeout) {
-            var retained: PayInAchData? = null
+            var retained: PayInBankAccountData? = null
 
             PayInFormInstrument.useInstrument(bankForm()) { instrument ->
                 retained = (instrument as PayInInstrument.BankAccount).data

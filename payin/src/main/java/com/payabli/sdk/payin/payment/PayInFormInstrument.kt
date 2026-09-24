@@ -7,7 +7,7 @@ import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInAccountType
-import com.payabli.sdk.payin.model.PayInAchData
+import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -83,13 +83,13 @@ internal object PayInFormInstrument {
         )
     }
 
-    private fun Buffers.bankAccount(values: PayInFormValues): PayInAchData {
+    private fun Buffers.bankAccount(values: PayInFormValues): PayInBankAccountData {
         // The three choices first, as the card's expiry is: each can refuse the form, and a refusal before the
         // account number is buffered leaves nothing to clean up.
         val accountType = accountType(values[PayInField.AccountType])
         val holderType = holderType(values[PayInField.AccountHolderType])
         val secCode = secCode(values[PayInField.SecCode])
-        return PayInAchData(
+        return PayInBankAccountData(
             accountNumber = of(values[PayInField.AccountNumber]),
             routingNumber = values[PayInField.RoutingNumber],
             accountType = accountType,

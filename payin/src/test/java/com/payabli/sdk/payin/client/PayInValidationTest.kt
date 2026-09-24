@@ -2,7 +2,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAccountType
-import com.payabli.sdk.payin.model.PayInAchData
+import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -43,7 +43,7 @@ class PayInValidationTest {
         number: String = "00003400000",
         routing: String = "122105278",
         holderName: String = "A Payer",
-    ) = PayInAchData(
+    ) = PayInBankAccountData(
         accountNumber = SensitiveDigits.ofString(number),
         routingNumber = routing,
         accountType = PayInAccountType.Checking,
