@@ -1,5 +1,6 @@
 package com.payabli.example.app.demo.simple
 
+import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInException
@@ -41,6 +42,19 @@ class SimpleCaptureKeyTest {
         val declined = failed(SampleFailure(PayabliErrorCode.PAYMENT_DECLINED, "Insufficient funds"))
 
         assertNull(keyForNextAttempt(held = "key-1", outcome = declined))
+    }
+
+    @Test
+    fun `a store leaves the capture's held key in place`() {
+        val storeFailed = failed(SampleFailure(PayabliErrorCode.PAYMENT_DECLINED, "Refused"))
+
+        assertEquals("key-1", keyAfter("key-1", FormOperation.Tokenize, storeFailed))
+        assertEquals("key-1", keyAfter("key-1", FormOperation.Tokenize, outcome = null))
+    }
+
+    @Test
+    fun `a capture that succeeds spends the held key`() {
+        assertNull(keyAfter("key-1", FormOperation.Capture, outcome = null))
     }
 
     private fun failed(

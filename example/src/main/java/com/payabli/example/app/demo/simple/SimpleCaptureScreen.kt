@@ -64,6 +64,22 @@ internal fun keyForNextAttempt(
 ): String? = outcome.retryKey ?: held.takeIf { outcome.cause is PayInException.Unsettled }
 
 /**
+ * The key held once [submitted] has ended in [outcome], or in success when [outcome] is null.
+ *
+ * A store sends no key, so its outcome leaves a capture's held key in place.
+ */
+internal fun keyAfter(
+    held: String?,
+    submitted: FormOperation,
+    outcome: PayInSubmissionState.Failed?,
+): String? =
+    when {
+        submitted != FormOperation.Capture -> held
+        outcome == null -> null
+        else -> keyForNextAttempt(held, outcome)
+    }
+
+/**
  * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
  *
  * `PayabliPayInForm` states that retention is the flow's owner's: held in the composition, the form empties
@@ -100,12 +116,15 @@ class SimpleCaptureViewModel(
 
     var amountText by mutableStateOf(DEFAULT_AMOUNT)
 
-    fun failed(outcome: PayInSubmissionState.Failed) {
-        retryKey = keyForNextAttempt(retryKey, outcome)
+    fun failed(
+        submitted: FormOperation,
+        outcome: PayInSubmissionState.Failed,
+    ) {
+        retryKey = keyAfter(retryKey, submitted, outcome)
     }
 
-    fun succeeded() {
-        retryKey = null
+    fun succeeded(submitted: FormOperation) {
+        retryKey = keyAfter(retryKey, submitted, outcome = null)
     }
 
     init {
@@ -127,12 +146,15 @@ class SimpleCaptureViewModel(
     }
 }
 
-/** A positive amount with at most two decimal places, or null. */
+/** A positive amount written as digits with at most two decimal places, or null. */
 internal fun parseAmount(text: String): BigDecimal? =
     text
         .trim()
-        .toBigDecimalOrNull()
-        ?.takeIf { it.signum() > 0 && it.scale() <= 2 }
+        .takeIf { AMOUNT.matches(it) }
+        ?.toBigDecimal()
+        ?.takeIf { it.signum() > 0 }
+
+private val AMOUNT = Regex("""\d+(\.\d{1,2})?""")
 
 /**
  * Charging or storing a card with the fewest calls it takes: a token, a flow, a form.
@@ -218,12 +240,12 @@ fun SimpleCaptureScreen(
                             labels = FormCustomization.labels(settings, operation),
                             style = FormCustomization.style(settings.look),
                             onCompleted = {
-                                viewModel.succeeded()
+                                viewModel.succeeded(operation)
                                 val done = if (operation == FormOperation.Capture) "Payment approved" else "Card saved"
                                 Toast.makeText(context, done, Toast.LENGTH_LONG).show()
                             },
                             onFailed = {
-                                viewModel.failed(it)
+                                viewModel.failed(operation, it)
                                 val failed = if (operation == FormOperation.Capture) "Payment failed" else "Save failed"
                                 Toast.makeText(context, failed, Toast.LENGTH_LONG).show()
                             },

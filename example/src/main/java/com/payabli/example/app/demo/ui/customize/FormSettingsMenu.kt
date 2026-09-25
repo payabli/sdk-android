@@ -113,7 +113,7 @@ fun FormSettingsMenu(
         Toggle("Customer section first", settings.customerFirst, enabled = settings.customerSection) {
             pick(settings.copy(customerFirst = it))
         }
-        Toggle("Require a customer number", settings.requireCustomerNumber) {
+        Toggle("Require a customer number", settings.requireCustomerNumber, enabled = settings.customerSection) {
             pick(settings.copy(requireCustomerNumber = it))
         }
         Toggle("Amount summary", settings.summary) { pick(settings.copy(summary = it)) }
@@ -127,7 +127,11 @@ fun FormSettingsMenu(
 
         Group("iOS only")
         DropdownMenuItem(
-            text = { Text("Card brand icon, error message and input size are not in the Android SDK.") },
+            text = {
+                Text(
+                    "Card brand icon placement, error message placement and input sizing are not in the Android SDK.",
+                )
+            },
             onClick = {},
             enabled = false,
         )

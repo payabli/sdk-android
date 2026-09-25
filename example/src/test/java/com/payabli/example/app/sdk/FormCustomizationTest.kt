@@ -116,6 +116,12 @@ class FormCustomizationTest {
     }
 
     @Test
+    fun `a customer number is not required when the form has no customer section`() {
+        val configuration = configure(FormSettings(customerSection = false, requireCustomerNumber = true))
+        assertFalse(PayInField.CustomerNumber in configuration.requiredFields)
+    }
+
+    @Test
     fun `tokenizing asks for the customer number the store route identifies a customer by`() {
         val configuration = configure(FormSettings(), FormOperation.Tokenize)
         assertTrue(PayInField.CustomerNumber in configuration.inputFieldsFor(PayInMethodType.Card))
@@ -199,5 +205,8 @@ class FormCustomizationTest {
         assertNull(parseAmount("-1"))
         assertNull(parseAmount("1.234"))
         assertNull(parseAmount("abc"))
+        assertNull(parseAmount("1e2"))
+        assertNull(parseAmount("1E+2"))
+        assertNull(parseAmount("1.5e1"))
     }
 }

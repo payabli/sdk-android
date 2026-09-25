@@ -41,6 +41,7 @@ object FormCustomization {
         formattedAmount: String,
     ): PayInFormConfiguration {
         val customer = customerSection(settings, operation)
+        val requiresNumber = customer != null && settings.requireCustomerNumber
         val summary =
             PayInFormSection(
                 title = if (settings.customWording) "Order total" else null,
@@ -73,7 +74,7 @@ object FormCustomization {
                 },
             cardSections = arranged(cardDetails(settings)),
             bankSections = arranged(bankDetails(settings)),
-            requiredFields = setOfNotNull(PayInField.CustomerNumber.takeIf { settings.requireCustomerNumber }),
+            requiredFields = setOfNotNull(PayInField.CustomerNumber.takeIf { requiresNumber }),
             labelLayout = if (settings.labelsInside) PayInLabelLayout.Placeholder else PayInLabelLayout.External,
             hiddenFieldLabels = if (settings.hideLabels) PayInField.entries.toSet() else emptySet(),
             formatting =
