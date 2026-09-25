@@ -19,6 +19,7 @@ internal fun PayInPaymentDetails.toBody(): PaymentDetailsBody =
     PaymentDetailsBody(
         totalAmount = totalAmount,
         serviceFee = serviceFee,
+        surchargeFee = surchargeFee,
         currency = currency?.trimOrNull(),
         checkNumber = checkNumber?.trimOrNull(),
         checkUniqueId = checkUniqueId?.trimOrNull(),

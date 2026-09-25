@@ -624,7 +624,7 @@ class MoneyInClientTest {
                     paymentMethod = PayInPaymentMethod.Card(testCard()),
                     options =
                         PayInTransactionOptions(
-                            paymentDetails = testDetails(fee = "1.50"),
+                            paymentDetails = testDetails(fee = "1.50", surcharge = "0.3"),
                             customerData =
                                 PayInCustomerData(
                                     firstName = "Test",
@@ -658,6 +658,7 @@ class MoneyInClientTest {
             assertTrue(body, body.contains(""""orderDescription":"Two things""""))
             assertTrue(body, body.contains(""""subscriptionId":9"""))
             assertTrue(body, body.contains(""""serviceFee":1.50"""))
+            assertTrue(body, body.contains(""""surchargeFee":0.30"""))
             assertFalse(body, body.contains("company"))
         }
 

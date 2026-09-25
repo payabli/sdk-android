@@ -83,8 +83,8 @@ internal object PayInValidation {
      * The amounts, checked at the scale they will be sent at.
      *
      * `0.001` is more than zero and reaches the wire as `0.00`, so checking the value as supplied would pass a
-     * total the service is asked to take as nothing. Both are rounded here exactly as [PayInAmountSerializer]
-     * rounds them.
+     * total the service is asked to take as nothing. Each is rounded here exactly as [PayInAmountSerializer]
+     * rounds it.
      */
     fun paymentDetails(details: PayInPaymentDetails) {
         // Range before rounding. `BigDecimal` is unbounded and `setScale` throws on a value whose scale
@@ -104,6 +104,10 @@ internal object PayInValidation {
             }
         if (fee != null && fee < BigDecimal.ZERO) {
             throw PayInException.InvalidInput(FIELD_SERVICE_FEE, "A service fee cannot be negative")
+        }
+        details.surchargeFee?.let {
+            it.sendableOrNull()
+                ?: throw PayInException.InvalidInput(FIELD_SURCHARGE_FEE, "The surcharge is out of range")
         }
     }
 
@@ -259,6 +263,7 @@ internal object PayInValidation {
     internal val FIELD_ENTRY_POINT: String = PayInRoutes.FIELD_ENTRY_POINT
     internal val FIELD_TOTAL_AMOUNT: String = inPaymentDetails(PayInRoutes.FIELD_TOTAL_AMOUNT)
     internal val FIELD_SERVICE_FEE: String = inPaymentDetails(PayInRoutes.FIELD_SERVICE_FEE)
+    internal val FIELD_SURCHARGE_FEE: String = inPaymentDetails(PayInRoutes.FIELD_SURCHARGE_FEE)
     internal val FIELD_CARD_NUMBER: String = inPaymentMethod(PayInRoutes.FIELD_CARD_NUMBER)
     internal val FIELD_CARD_CVV: String = inPaymentMethod(PayInRoutes.FIELD_CARD_SECURITY_CODE)
     internal val FIELD_CARD_EXPIRY: String = inPaymentMethod(PayInRoutes.FIELD_CARD_EXPIRY)

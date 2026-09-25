@@ -249,6 +249,23 @@ class PayInValidationTest {
     }
 
     @Test
+    fun `a surcharge out of range is refused naming the surcharge`() {
+        assertEquals(
+            "paymentDetails.surchargeFee",
+            refusal {
+                PayInValidation.paymentDetails(
+                    PayInPaymentDetails(BigDecimal("10"), surchargeFee = BigDecimal("1E+2147483647")),
+                )
+            }?.field,
+        )
+        assertNull(
+            refusal {
+                PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("10"), surchargeFee = BigDecimal("0.31")))
+            },
+        )
+    }
+
+    @Test
     fun `an amount larger than a Double holds exactly is accepted`() {
         assertNull(refusal { PayInValidation.paymentDetails(PayInPaymentDetails(BigDecimal("12345678901234.56"))) })
     }
