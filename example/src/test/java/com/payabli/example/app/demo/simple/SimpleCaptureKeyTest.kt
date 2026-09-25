@@ -6,7 +6,9 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -78,6 +80,15 @@ class SimpleCaptureKeyTest {
             FormOperation.Tokenize,
             operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Idle),
         )
+    }
+
+    @Test
+    fun `the amount is locked while a retry key is held or a submission is in flight`() {
+        // A held key names one payment. Sending it with a different amount would retry that payment while the
+        // screen shows another.
+        assertFalse(amountEditable(PayInSubmissionState.Idle, retryKey = "key-1"))
+        assertFalse(amountEditable(PayInSubmissionState.Submitting, retryKey = null))
+        assertTrue(amountEditable(PayInSubmissionState.Idle, retryKey = null))
     }
 }
 

@@ -90,6 +90,12 @@ internal fun operationAfter(
     submission: PayInSubmissionState,
 ): FormOperation = if (submission is PayInSubmissionState.Submitting) current else requested
 
+/** The amount can change only between payments: not mid-flight, and not while a held key still names one. */
+internal fun amountEditable(
+    submission: PayInSubmissionState,
+    retryKey: String?,
+): Boolean = submission !is PayInSubmissionState.Submitting && retryKey == null
+
 /**
  * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
  *
@@ -210,11 +216,19 @@ fun SimpleCaptureScreen(
             if (operation == FormOperation.Capture) {
                 OutlinedTextField(
                     value = viewModel.amountText,
-                    enabled = !submitting,
-                    onValueChange = { viewModel.amountText = it },
+                    enabled = !submitting && viewModel.retryKey == null,
+                    onValueChange = {
+                        val submission = payInFlow?.state?.value ?: PayInSubmissionState.Idle
+                        if (amountEditable(submission, viewModel.retryKey)) viewModel.amountText = it
+                    },
                     label = { Text("Amount") },
                     isError = amount == null,
-                    supportingText = { if (amount == null) Text("A positive amount, up to two decimals.") },
+                    supportingText = {
+                        when {
+                            viewModel.retryKey != null -> Text("Locked until the previous payment is settled.")
+                            amount == null -> Text("A positive amount, up to two decimals.")
+                        }
+                    },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
