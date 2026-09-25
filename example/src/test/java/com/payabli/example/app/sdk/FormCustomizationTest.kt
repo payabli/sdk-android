@@ -100,8 +100,18 @@ class FormCustomizationTest {
     }
 
     @Test
+    fun `the default preset is the SDK's own default sections`() {
+        val configuration = configure(FormPreset.Default.settings)
+        val inputs = configuration.sectionsFor(PayInMethodType.Card).filter { it.style == PayInSectionStyle.Inputs }
+        assertEquals(PayInFormConfiguration.defaultCardSections().map { it.fields }, inputs.map { it.fields })
+    }
+
+    @Test
     fun `customer first puts the customer section before the card`() {
-        val sections = configure(FormSettings(customerFirst = true)).sectionsFor(PayInMethodType.Card)
+        val sections =
+            configure(
+                FormSettings(customerSection = true, customerFirst = true),
+            ).sectionsFor(PayInMethodType.Card)
         assertEquals(PayInField.FirstName, sections.first().fields.first())
         val default = configure(FormSettings()).sectionsFor(PayInMethodType.Card)
         assertEquals(PayInField.CardholderName, default.first().fields.first())
@@ -109,10 +119,13 @@ class FormCustomizationTest {
 
     @Test
     fun `a required customer number is on the form and required`() {
-        val configuration = configure(FormSettings(requireCustomerNumber = true))
+        val configuration = configure(FormSettings(customerSection = true, requireCustomerNumber = true))
         assertTrue(PayInField.CustomerNumber in configuration.inputFieldsFor(PayInMethodType.Card))
         assertTrue(configuration.isRequired(PayInField.CustomerNumber))
-        assertFalse(PayInField.CustomerNumber in configure(FormSettings()).inputFieldsFor(PayInMethodType.Card))
+        assertFalse(
+            PayInField.CustomerNumber in
+                configure(FormSettings(customerSection = true)).inputFieldsFor(PayInMethodType.Card),
+        )
     }
 
     @Test
@@ -123,7 +136,7 @@ class FormCustomizationTest {
 
     @Test
     fun `tokenizing asks for the customer number the store route identifies a customer by`() {
-        val configuration = configure(FormSettings(), FormOperation.Tokenize)
+        val configuration = configure(FormSettings(customerSection = true), FormOperation.Tokenize)
         assertTrue(PayInField.CustomerNumber in configuration.inputFieldsFor(PayInMethodType.Card))
     }
 
@@ -157,7 +170,13 @@ class FormCustomizationTest {
         assertNotNull((store as PayabliPayInOperation.StoreMethod).options.customerData?.customerNumber)
         assertFalse(PayInField.FirstName in configure(off).inputFieldsFor(PayInMethodType.Card))
 
-        val on = FormCustomization.operation(FormSettings(), FormOperation.Capture, BigDecimal.ONE, null)
+        val on =
+            FormCustomization.operation(
+                FormSettings(customerSection = true),
+                FormOperation.Capture,
+                BigDecimal.ONE,
+                null,
+            )
         assertNull((on as PayabliPayInOperation.Capture).options.customerData)
     }
 
