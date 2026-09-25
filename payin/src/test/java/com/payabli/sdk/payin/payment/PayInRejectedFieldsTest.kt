@@ -35,6 +35,7 @@ class PayInRejectedFieldsTest {
                 "paymentMethod.device" to PayInField.DeviceId,
                 "paymentDetails.totalAmount" to PayInField.Amount,
                 "paymentDetails.serviceFee" to PayInField.ServiceFee,
+                "paymentDetails.surchargeFee" to PayInField.SurchargeFee,
                 // The customer half, which the request started carrying with `PayInEnteredDetails`.
                 "customerData.firstName" to PayInField.FirstName,
                 "customerData.lastName" to PayInField.LastName,

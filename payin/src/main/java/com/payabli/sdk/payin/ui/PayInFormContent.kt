@@ -21,6 +21,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
@@ -35,8 +36,11 @@ import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
+import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
+import java.math.BigDecimal
+import java.util.Locale
 
 /**
  * The form itself, which knows a submission state and nothing about where one comes from.
@@ -58,6 +62,7 @@ internal fun PayInFormContent(
     configuration: PayInFormConfiguration,
     reports: PayInFormReports,
     modifier: Modifier = Modifier,
+    amounts: PayInPaymentDetails? = null,
     labels: PayInFormLabels = PayInFormLabels(),
     style: PayInFormStyle? = null,
     onSubmit: (PayInFormValues) -> Boolean = { false },
@@ -129,6 +134,7 @@ internal fun PayInFormContent(
             enabled = !isSubmitting,
             rejectedFields = draft.rejectedFields,
             refreshClock = { today = ExpiryValue.today() },
+            amounts = amounts,
         )
 
     val complete = !anyRejectedFieldStands(method) && configuration.isComplete(typed, method, today)
@@ -147,8 +153,8 @@ internal fun PayInFormContent(
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.section)) {
-            sections.forEach { section ->
-                FormSection(section, method, typed, context, draft::enter)
+            placeAmounts(sections, amounts).forEach { drawn ->
+                FormSection(drawn, method, typed, context, draft::enter)
             }
         }
 
@@ -266,18 +272,19 @@ private fun MethodSelector(
 
 @Composable
 private fun FormSection(
-    section: PayInFormSection,
+    drawn: DrawnSection,
     method: PayInMethodType,
     typed: Map<PayInField, String>,
     context: PayInFormContext,
     onValueChange: (PayInField, String) -> Unit,
 ) {
     val style = context.style
+    val section = drawn.section
     Column(verticalArrangement = Arrangement.spacedBy(style.spacing.sectionTitle)) {
         Text(text = section.title ?: defaultSectionTitle(section, method), style = style.sectionTitle)
 
         if (section.style == PayInSectionStyle.Summary) {
-            SummaryRows(section, context)
+            SummaryRows(drawn.amounts, context)
             return@Column
         }
 
@@ -330,17 +337,26 @@ private fun InputRows(
 
 @Composable
 private fun SummaryRows(
-    section: PayInFormSection,
+    rows: List<Pair<PayInField, BigDecimal>>,
     context: PayInFormContext,
 ) {
+    val locale = Locale.getDefault()
+    val currency = context.amounts?.currency
     Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.label)) {
-        section.fields.forEach { field ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        rows.forEach { (field, amount) ->
+            // Merged, so a screen reader announces the label and its figure as one row.
+            Row(
+                modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                // The label yields. Two unconstrained children let a long one take the row and
+                // leave the amount at zero width, which is the half a payer needs.
                 Text(
                     text = PayInStrings.label(field, context.labels),
                     style = context.style.label,
                     modifier = Modifier.weight(1f, fill = false),
                 )
+                Text(text = formatAmount(amount, currency, locale), style = context.style.supporting)
             }
         }
     }

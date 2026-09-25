@@ -61,6 +61,7 @@ internal object PayInRejectedFields {
             PayInRoutes.FIELD_DEVICE to PayInField.DeviceId,
             PayInRoutes.FIELD_TOTAL_AMOUNT to PayInField.Amount,
             PayInRoutes.FIELD_SERVICE_FEE to PayInField.ServiceFee,
+            PayInRoutes.FIELD_SURCHARGE_FEE to PayInField.SurchargeFee,
             // The customer half. The form collects these and the request carries them, so a refusal naming
             // one has a box to mark.
             PayInRoutes.FIELD_CUSTOMER_FIRST_NAME to PayInField.FirstName,

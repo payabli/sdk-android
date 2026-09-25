@@ -68,12 +68,6 @@ fun CaptureScreen(
         startOverText = "Take another payment",
         actions = actions,
         modifier = modifier,
-        formHeader = {
-            // The form's own rows read back the amount and the fee and never their sum, so the figure that
-            // leaves the payer's account appears nowhere else before the button. Rendered the way the result
-            // screen renders it, so the readout before and the readout after are the same string.
-            DetailRow(label = "Total", value = TransactionSummary.formatAmount(state.amount.toPlainString()))
-        },
     )
 }
 
