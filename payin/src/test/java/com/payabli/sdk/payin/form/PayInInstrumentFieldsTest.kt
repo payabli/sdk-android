@@ -97,17 +97,19 @@ class PayInInstrumentFieldsTest {
 
     @Test
     fun `an amount read back in a summary section is what a caller does instead`() {
-        PayInFormConfiguration(
-            allowedMethods = listOf(PayInMethodType.Card),
-            cardSections =
-                listOf(
-                    PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
-                    PayInFormSection(
-                        fields = listOf(PayInField.Amount, PayInField.ServiceFee),
-                        style = PayInSectionStyle.Summary,
+        val amounts = listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee)
+        val configuration =
+            PayInFormConfiguration(
+                allowedMethods = listOf(PayInMethodType.Card),
+                cardSections =
+                    listOf(
+                        PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
+                        PayInFormSection(fields = amounts, style = PayInSectionStyle.Summary),
                     ),
-                ),
-        )
+            )
+
+        val summary = configuration.sectionsFor(PayInMethodType.Card).single { it.style == PayInSectionStyle.Summary }
+        assertEquals(amounts, summary.fields)
     }
 
     @Test
