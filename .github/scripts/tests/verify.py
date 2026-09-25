@@ -3328,7 +3328,13 @@ def test_workflows():
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
     def group_of(value) -> str:
-        return str((value if isinstance(value, dict) else {"group": value} or {}).get("group", ""))
+        # An absent block is an absent group. `str(None)` is `"None"`, which is truthy and carries no
+        # `${{`, so a guard asking whether a group is there passed on the block having been deleted —
+        # which is the state it exists to refuse. The default never applied: the key was present and
+        # held null.
+        if isinstance(value, dict):
+            value = value.get("group")
+        return "" if value is None else str(value)
 
     group = group_of(qa_job.get("concurrency"))
     check("W16 one publish runs at a time across refs", bool(group) and "${{" not in group, group)

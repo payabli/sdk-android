@@ -426,6 +426,11 @@ MUTATIONS = [
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
 
+    # The one the guard was written for and the one it was never shown refusing: with no block at all,
+    # two runs stamp and upload at once, and whichever writes a key first keeps the coordinate.
+    ("QA snapshot serialises nothing, because the publish has no group", QA, "workflows",
+     "    concurrency:\n      group: qa-snapshot\n      cancel-in-progress: false\n", ""),
+
     ("QA subject check accepts a tag, whose role never grants the write", QA, "workflows",
      "EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/",
      "EXPECTED: repo:payabli@139794672/sdk-android@1311286517"),
