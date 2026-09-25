@@ -2183,7 +2183,7 @@ def masked_commands(step: dict) -> list[str]:
     return found
 
 
-def unstoppable(steps, label: str = "") -> list[str]:
+def unstoppable(steps, label: str = "", allowed_if: tuple[str, ...] = ()) -> list[str]:
     """The steps that can fail without failing their job, each with the reason it can.
 
     A guard that reads task names asks what a step mentions, not whether failing it stops the job. This
@@ -2212,6 +2212,14 @@ def unstoppable(steps, label: str = "") -> list[str]:
             gating = sorted({word for word in words if word in ("if", "while", "until", "case")})
             if gating:
                 why.append("runs Gradle under " + ", ".join(gating))
+            # The same thing one level up, where the condition is YAML rather than shell. `if: false` on
+            # a suite step leaves every task name in place, skips the step, and the job succeeds having
+            # run nothing. The deliberate skips are named rather than a shape being matched, because a
+            # shape is what an added condition satisfies: anything not on the list is a finding, and a
+            # new one is a line here for a reviewer to see.
+            condition = " ".join(str(step.get("if", "")).split())
+            if condition and condition not in allowed_if:
+                why.append(f"runs Gradle under if: {condition}")
         if "set +e" in text:
             why.append("set +e")
         if step.get("continue-on-error"):
@@ -3313,7 +3321,11 @@ def test_workflows():
             job = (ci_doc.get("jobs") or {}).get(name) or {}
             if job.get("continue-on-error"):
                 soft.append(name)
-            soft.extend(unstoppable(job.get("steps") or [], f"{name}: "))
+            # The one deliberate skip among the suites this waits for: the card-present reports need the
+            # card reader credential, which a fork's pull request never receives, so they are skipped
+            # there rather than failing on an authentication error.
+            soft.extend(unstoppable(job.get("steps") or [], f"{name}: ",
+                                    allowed_if=("env.PAYABLI_MAVEN_PASSWORD != ''",)))
         check("W16 and nothing it waits for is allowed to fail", not soft, " | ".join(soft))
         # A pull request runs CI too, including from a fork, and this job mints the publishing identity.
         gate = " ".join(str(caller.get("if", "")).split())
@@ -3445,7 +3457,9 @@ def test_workflows():
           f"{sorted(qa.get('env') or {})}")
     check("W16 nor for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
-    masked = unstoppable(qa_steps)
+    # A dispatch carries the suites itself and a called run skips them, which is the design and is
+    # pinned to that exact value by its own check above.
+    masked = unstoppable(qa_steps, allowed_if=("github.event_name == 'workflow_dispatch'",))
     check("W16 and no step of it can fail without failing the job", not masked, " | ".join(masked))
 
     # `bash` and not merely any value: an unset `shell:` runs `bash -e`, which leaves `-o pipefail` off,

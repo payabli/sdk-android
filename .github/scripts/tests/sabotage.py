@@ -152,6 +152,13 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # The condition is YAML rather than shell, so no command is masked and nothing is written into the
+    # script at all. The step is skipped, every task name stays where a reader sees them, and the job
+    # succeeds having run no unit suite.
+    ("CI skips the unit suites with a step condition", CI, "workflows",
+     "      - name: Unit tests\n        run: ./gradlew :core:test",
+     "      - name: Unit tests\n        if: false\n        run: ./gradlew :core:test"),
+
     # The condition is false, so the suites never run. Every task name is still where a reader looking
     # for them sees them, and the step exits 0 having tested nothing.
     ("CI wraps the unit suites in a condition that is never true", CI, "workflows",
