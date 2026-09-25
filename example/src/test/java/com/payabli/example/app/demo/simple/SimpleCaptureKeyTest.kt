@@ -65,6 +65,20 @@ class SimpleCaptureKeyTest {
     private fun network() = SampleFailure(PayabliErrorCode.NETWORK_ERROR, "The request did not complete")
 
     private fun conflict() = SampleFailure(PayabliErrorCode.CONFLICT, "The service has seen this key")
+
+    @Test
+    fun `the operation does not change while a submission is in flight`() {
+        // The outcome is classified by the operation on screen when it arrives, so a switch mid-flight would
+        // read a capture's outcome as a store's and drop the key a retry needs.
+        assertEquals(
+            FormOperation.Capture,
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Submitting),
+        )
+        assertEquals(
+            FormOperation.Tokenize,
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Idle),
+        )
+    }
 }
 
 private class SampleFailure(

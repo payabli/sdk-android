@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.example.app.demo.ui.components.DemoScreen
@@ -78,6 +79,16 @@ internal fun keyAfter(
         outcome == null -> null
         else -> keyForNextAttempt(held, outcome)
     }
+
+/**
+ * The operation after [requested] is chosen, which stays [current] while a submission is in flight: its outcome
+ * is read against the operation on screen when it arrives.
+ */
+internal fun operationAfter(
+    current: FormOperation,
+    requested: FormOperation,
+    submission: PayInSubmissionState,
+): FormOperation = if (submission is PayInSubmissionState.Submitting) current else requested
 
 /**
  * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
@@ -174,6 +185,8 @@ fun SimpleCaptureScreen(
     val settings = viewModel.settings
     val operation = viewModel.operation
     val amount = parseAmount(viewModel.amountText)
+    val submitting =
+        payInFlow?.let { it.state.collectAsStateWithLifecycle().value is PayInSubmissionState.Submitting } ?: false
 
     DemoScreen(
         title = "Simple Capture",
@@ -185,7 +198,11 @@ fun SimpleCaptureScreen(
                 FormOperation.entries.forEach { option ->
                     FilterChip(
                         selected = option == operation,
-                        onClick = { viewModel.operation = option },
+                        onClick = {
+                            val submission = payInFlow?.state?.value ?: PayInSubmissionState.Idle
+                            viewModel.operation = operationAfter(operation, option, submission)
+                        },
+                        enabled = !submitting,
                         label = { Text(option.label) },
                     )
                 }
@@ -193,6 +210,7 @@ fun SimpleCaptureScreen(
             if (operation == FormOperation.Capture) {
                 OutlinedTextField(
                     value = viewModel.amountText,
+                    enabled = !submitting,
                     onValueChange = { viewModel.amountText = it },
                     label = { Text("Amount") },
                     isError = amount == null,
