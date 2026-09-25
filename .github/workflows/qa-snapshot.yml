@@ -29,9 +29,19 @@ defaults:
 
 jobs:
   # The gate, and it publishes nothing. A dispatch answers to no CI run and any branch can start one, so
-  # it waits here for the release environment, whose required reviewers are who may publish and whose
-  # deployment branch policy admits protected branches only. A called run reached main through branch
+  # it waits here for the release environment's reviewers. A called run reached main through branch
   # protection and waits for every suite, so it skips this and is not held again.
+  #
+  # **This stops an unmodified dispatch and it is not an authorization boundary.** A dispatch runs the
+  # workflow file from the ref it names, so a branch copy with this job deleted publishes with nothing to
+  # approve: the job below still receives the repository's secrets and still presents a `refs/heads/*`
+  # subject the snapshot role trusts. Nothing written in this file can close that, because the file is
+  # what the attacker edits.
+  #
+  # What would close it is the role's trust policy, which is Terraform in payabli/infrastructure. iOS is
+  # not in this position for a reason worth copying: its deploy key lives inside its release environment,
+  # so a branch copy omitting the environment cannot read the credential at all. The equivalent here is a
+  # role trusted on `environment:` rather than on a ref, which is what card-reader-mirror already does.
   #
   # A separate job because the environment cannot go on the one below. The OIDC subject for a job with an
   # environment carries `environment:<name>` and no ref, as card-reader-mirror.yml records, and the
