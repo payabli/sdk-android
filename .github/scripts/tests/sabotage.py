@@ -338,6 +338,20 @@ MUTATIONS = [
      'run: ./gradlew publish -Ppayabli.version="$VERSION"',
      'run: ./gradlew publish -Ppayabli.version="$VERSION" && ./gradlew publish'),
 
+    # The name is the step's own, so a list keyed on PAYABLI_MAVEN does not see it and a non-Gradle step
+    # holds the registry credential while every check about which steps hold one stays green.
+    ("A non-Gradle QA step is handed the registry credential under another name", QA, "workflows",
+     "      - name: Authenticate to AWS\n",
+     "      - name: Authenticate to AWS\n        env:\n"
+     "          TOKEN: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"),
+
+    # The other half of the same rule: the expected name, and no secret referenced anywhere, because the
+    # credential is written in by hand.
+    ("A non-Gradle QA step carries the registry credential as a literal", QA, "workflows",
+     "      - name: Authenticate to AWS\n",
+     "      - name: Authenticate to AWS\n        env:\n"
+     "          PAYABLI_MAVEN_PASSWORD: written-in-by-hand\n"),
+
     ("The card reader credential is job-level again, so every step receives it", QA, "workflows",
      "      id-token: write\n    steps:",
      "      id-token: write\n    env:\n      PAYABLI_MAVEN_USER: x\n      PAYABLI_MAVEN_PASSWORD: y\n    steps:"),

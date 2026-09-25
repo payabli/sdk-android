@@ -3372,8 +3372,16 @@ def test_workflows():
         check(f"W16 and {name} runs its steps under a shell with pipefail", shell == "bash", f"{shell}")
 
     wanted = {"PAYABLI_MAVEN_USER", "PAYABLI_MAVEN_PASSWORD"}
-    holding = [step for step in qa_steps
-               if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
+    # By the name or by the value, because each misses what the other catches. A name the step chooses is
+    # the step's own, so reading names alone asks whether a holder declared itself one and `TOKEN: ${{
+    # secrets.… }}` on the upload is absent from a list keyed on `PAYABLI_MAVEN`. Reading values alone
+    # drops the credential written in by hand, which carries the expected name and references no secret.
+    def holds_credential(step: dict) -> bool:
+        env = step.get("env") or {}
+        return (any(str(var).startswith("PAYABLI_MAVEN") for var in env)
+                or any("secrets." in str(value) for value in env.values()))
+
+    holding = [step for step in qa_steps if holds_credential(step)]
     gradle_steps = [step for step in qa_steps if "gradlew" in run_commands(step)]
     check("W16 and a step holds it", bool(holding),
           " | ".join(str(step.get("name", "")) for step in qa_steps))
