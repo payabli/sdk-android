@@ -1,25 +1,17 @@
 package com.payabli.example.app.demo.ui.customize
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,8 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.payabli.example.app.demo.ui.components.DemoIcons
-import com.payabli.example.app.demo.ui.components.SwitchRow
-import com.payabli.example.app.demo.ui.theme.Dimens
 
 /**
  * The host app's theme, as a look.
@@ -71,138 +61,125 @@ fun FormLookTheme(
     }
 }
 
-/** The top bar's three-dots menu: a preset in one tap, or every setting in a sheet. */
+/**
+ * The top bar's three-dots menu: presets, then every setting in named groups.
+ *
+ * Each pick applies and closes the menu, so the whole form is on screen when it changes.
+ */
 @Composable
 fun FormSettingsMenu(
     settings: FormSettings,
     onSettingsChange: (FormSettings) -> Unit,
 ) {
-    var menuOpen by remember { mutableStateOf(false) }
-    var sheetOpen by remember { mutableStateOf(false) }
+    var open by remember { mutableStateOf(false) }
+    val pick: (FormSettings) -> Unit = {
+        onSettingsChange(it)
+        open = false
+    }
 
-    IconButton(onClick = { menuOpen = true }) {
+    IconButton(onClick = { open = true }) {
         Icon(DemoIcons.More, contentDescription = "Customize the form")
     }
-    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+    DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+        Group("Presets")
         FormPreset.entries.forEach { preset ->
-            DropdownMenuItem(
-                text = { Text(preset.label) },
-                leadingIcon = {
-                    if (preset.settings == settings) Icon(DemoIcons.Pass, contentDescription = "Selected")
-                },
-                onClick = {
-                    onSettingsChange(preset.settings)
-                    menuOpen = false
-                },
-            )
+            Option(preset.label, selected = preset.settings == settings) { pick(preset.settings) }
         }
-        HorizontalDivider()
+
+        Group("Look")
+        FormLook.entries.forEach { look ->
+            Option(look.label, selected = look == settings.look) { pick(settings.copy(look = look)) }
+        }
+
+        Group("Methods")
+        Caption("Payment methods")
+        FormMethods.entries.forEach { methods ->
+            Option(methods.label, selected = methods == settings.methods) { pick(settings.copy(methods = methods)) }
+        }
+        Caption("Start on")
+        FormStart.entries.forEach { start ->
+            Option(start.label, selected = start == settings.startOn, enabled = settings.methods == FormMethods.Both) {
+                pick(settings.copy(startOn = start))
+            }
+        }
+
+        Group("Labels")
+        Toggle("Labels inside the fields", settings.labelsInside) { pick(settings.copy(labelsInside = it)) }
+        Toggle("Hide labels", settings.hideLabels) { pick(settings.copy(hideLabels = it)) }
+        Toggle("Custom wording", settings.customWording) { pick(settings.copy(customWording = it)) }
+
+        Group("Sections")
+        Toggle("Customer section", settings.customerSection) { pick(settings.copy(customerSection = it)) }
+        Toggle("Customer section first", settings.customerFirst, enabled = settings.customerSection) {
+            pick(settings.copy(customerFirst = it))
+        }
+        Toggle("Require a customer number", settings.requireCustomerNumber) {
+            pick(settings.copy(requireCustomerNumber = it))
+        }
+        Toggle("Amount summary", settings.summary) { pick(settings.copy(summary = it)) }
+
+        Group("Formatting")
+        Toggle("Group the card number", settings.groupCardNumber) { pick(settings.copy(groupCardNumber = it)) }
+        Toggle("Dash between month and year", settings.dashExpirySeparator) {
+            pick(settings.copy(dashExpirySeparator = it))
+        }
+        Toggle("Mask the account number", settings.maskAccountNumber) { pick(settings.copy(maskAccountNumber = it)) }
+
+        Group("iOS only")
         DropdownMenuItem(
-            text = { Text("All settings…") },
-            onClick = {
-                menuOpen = false
-                sheetOpen = true
-            },
+            text = { Text("Card brand icon, error message and input size are not in the Android SDK.") },
+            onClick = {},
+            enabled = false,
         )
     }
-
-    if (sheetOpen) {
-        FormSettingsSheet(settings, onSettingsChange, onDismiss = { sheetOpen = false })
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FormSettingsSheet(
-    settings: FormSettings,
-    onSettingsChange: (FormSettings) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = Dimens.ScreenPadding)
-                    .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(Dimens.SectionSpacing),
-        ) {
-            Choice("Look", FormLook.entries, settings.look, { it.label }) {
-                onSettingsChange(settings.copy(look = it))
-            }
-            Choice("Payment methods", FormMethods.entries, settings.methods, { it.label }) {
-                onSettingsChange(settings.copy(methods = it))
-            }
-            Toggle("Labels inside the fields", "Floating labels instead of a line above.", settings.labelsInside) {
-                onSettingsChange(settings.copy(labelsInside = it))
-            }
-            Toggle("Hide labels", "Placeholders only.", settings.hideLabels) {
-                onSettingsChange(settings.copy(hideLabels = it))
-            }
-            Toggle("Custom wording", "Title, button, section and field names.", settings.customWording) {
-                onSettingsChange(settings.copy(customWording = it))
-            }
-            Toggle(
-                "Customer section",
-                "Off, the app supplies the customer instead of the payer.",
-                settings.customerSection,
-            ) { onSettingsChange(settings.copy(customerSection = it)) }
-            Toggle("Customer section first", "Reorders the sections.", settings.customerFirst) {
-                onSettingsChange(settings.copy(customerFirst = it))
-            }
-            Toggle(
-                "Require a customer number",
-                "Adds the field and refuses to submit without it.",
-                settings.requireCustomerNumber,
-            ) { onSettingsChange(settings.copy(requireCustomerNumber = it)) }
-            Toggle("Amount summary", "A read-only row the payer cannot edit.", settings.summary) {
-                onSettingsChange(settings.copy(summary = it))
-            }
-            Toggle("Group the card number", "Shows the digits in fours.", settings.groupCardNumber) {
-                onSettingsChange(settings.copy(groupCardNumber = it))
-            }
-            Toggle("Dash between month and year", "The expiry separator.", settings.dashExpirySeparator) {
-                onSettingsChange(settings.copy(dashExpirySeparator = it))
-            }
-            Toggle("Mask the account number", "Obscured as it is typed.", settings.maskAccountNumber) {
-                onSettingsChange(settings.copy(maskAccountNumber = it))
-            }
-        }
-    }
 }
 
 @Composable
-private fun <T> Choice(
+private fun Group(title: String) {
+    HorizontalDivider()
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun Caption(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun Option(
     label: String,
-    options: List<T>,
-    selected: T,
-    name: (T) -> String,
-    onSelect: (T) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = MaterialTheme.typography.titleSmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            options.forEach { option ->
-                FilterChip(
-                    selected = option == selected,
-                    onClick = { onSelect(option) },
-                    label = { Text(name(option)) },
-                )
-            }
-        }
-    }
-}
+    selected: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) = DropdownMenuItem(
+    text = { Text(label) },
+    leadingIcon = { RadioButton(selected = selected, onClick = null, enabled = enabled) },
+    onClick = onClick,
+    enabled = enabled,
+)
 
 @Composable
 private fun Toggle(
     label: String,
-    note: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
-) = SwitchRow(label = label, checked = checked, note = note, onCheckedChange = onCheckedChange)
+) = DropdownMenuItem(
+    text = { Text(label) },
+    leadingIcon = { Checkbox(checked = checked, onCheckedChange = null, enabled = enabled) },
+    onClick = { onCheckedChange(!checked) },
+    enabled = enabled,
+)
 
 private val BrandViolet = Color(0xFF6D28D9)
 private val BrandVioletLight = Color(0xFFEDE9FE)

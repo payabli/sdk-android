@@ -12,9 +12,17 @@ enum class FormOperation(
 enum class FormMethods(
     val label: String,
 ) {
+    Both("Card and bank"),
+    Card("Card only"),
+    Bank("Bank only"),
+}
+
+/** Which method the form opens on when it offers both. */
+enum class FormStart(
+    val label: String,
+) {
     Card("Card"),
     Bank("Bank"),
-    Both("Both"),
 }
 
 /** The visual theme the form is drawn in. */
@@ -34,6 +42,7 @@ enum class FormLook(
 data class FormSettings(
     val look: FormLook = FormLook.Default,
     val methods: FormMethods = FormMethods.Both,
+    val startOn: FormStart = FormStart.Card,
     val labelsInside: Boolean = false,
     val hideLabels: Boolean = false,
     val customWording: Boolean = false,

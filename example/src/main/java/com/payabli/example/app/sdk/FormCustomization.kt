@@ -13,6 +13,7 @@ import com.payabli.example.app.demo.ui.customize.FormLook
 import com.payabli.example.app.demo.ui.customize.FormMethods
 import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormSettings
+import com.payabli.example.app.demo.ui.customize.FormStart
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
@@ -61,6 +62,14 @@ object FormCustomization {
                     FormMethods.Card -> listOf(PayInMethodType.Card)
                     FormMethods.Bank -> listOf(PayInMethodType.BankAccount)
                     FormMethods.Both -> listOf(PayInMethodType.Card, PayInMethodType.BankAccount)
+                },
+            defaultMethod =
+                if (settings.startOn ==
+                    FormStart.Bank
+                ) {
+                    PayInMethodType.BankAccount
+                } else {
+                    PayInMethodType.Card
                 },
             cardSections = arranged(cardDetails(settings)),
             bankSections = arranged(bankDetails(settings)),

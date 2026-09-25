@@ -5,6 +5,7 @@ import com.payabli.example.app.demo.ui.customize.FormMethods
 import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormPreset
 import com.payabli.example.app.demo.ui.customize.FormSettings
+import com.payabli.example.app.demo.ui.customize.FormStart
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInLabelLayout
@@ -33,28 +34,31 @@ class FormCustomizationTest {
         for (bits in 0 until (1 shl 10)) {
             fun bit(i: Int) = bits and (1 shl i) != 0
             for (methods in FormMethods.entries) {
-                for (operation in FormOperation.entries) {
-                    val settings =
-                        FormSettings(
-                            methods = methods,
-                            labelsInside = bit(0),
-                            hideLabels = bit(1),
-                            customWording = bit(2),
-                            customerSection = bit(3),
-                            customerFirst = bit(4),
-                            requireCustomerNumber = bit(5),
-                            summary = bit(6),
-                            groupCardNumber = bit(7),
-                            dashExpirySeparator = bit(8),
-                            maskAccountNumber = bit(9),
-                        )
-                    configure(settings, operation)
-                    FormCustomization.labels(settings, operation)
-                    built++
+                for (start in FormStart.entries) {
+                    for (operation in FormOperation.entries) {
+                        val settings =
+                            FormSettings(
+                                methods = methods,
+                                startOn = start,
+                                labelsInside = bit(0),
+                                hideLabels = bit(1),
+                                customWording = bit(2),
+                                customerSection = bit(3),
+                                customerFirst = bit(4),
+                                requireCustomerNumber = bit(5),
+                                summary = bit(6),
+                                groupCardNumber = bit(7),
+                                dashExpirySeparator = bit(8),
+                                maskAccountNumber = bit(9),
+                            )
+                        configure(settings, operation)
+                        FormCustomization.labels(settings, operation)
+                        built++
+                    }
                 }
             }
         }
-        assertEquals(1024 * 3 * 2, built)
+        assertEquals(1024 * 3 * 2 * 2, built)
     }
 
     @Test
@@ -81,6 +85,12 @@ class FormCustomizationTest {
 
         val shown = configure(FormSettings())
         assertTrue(shown.inputFieldsFor(PayInMethodType.Card).all { shown.showsLabelFor(it) })
+    }
+
+    @Test
+    fun `start on bank opens the form on the bank account`() {
+        assertEquals(PayInMethodType.BankAccount, configure(FormSettings(startOn = FormStart.Bank)).startingMethod)
+        assertEquals(PayInMethodType.Card, configure(FormSettings()).startingMethod)
     }
 
     @Test
