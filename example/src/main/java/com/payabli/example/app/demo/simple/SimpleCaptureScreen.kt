@@ -96,6 +96,16 @@ internal fun amountEditable(
     retryKey: String?,
 ): Boolean = submission !is PayInSubmissionState.Submitting && retryKey == null
 
+/** What the screen says when [operation] ends, for either instrument. */
+internal fun outcomeMessage(
+    operation: FormOperation,
+    succeeded: Boolean,
+): String =
+    when (operation) {
+        FormOperation.Capture -> if (succeeded) "Payment approved" else "Payment failed"
+        FormOperation.Tokenize -> if (succeeded) "Payment method saved" else "Save failed"
+    }
+
 /**
  * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
  *
@@ -273,13 +283,21 @@ fun SimpleCaptureScreen(
                             style = FormCustomization.style(settings.look),
                             onCompleted = {
                                 viewModel.succeeded(operation)
-                                val done = if (operation == FormOperation.Capture) "Payment approved" else "Card saved"
-                                Toast.makeText(context, done, Toast.LENGTH_LONG).show()
+                                Toast
+                                    .makeText(
+                                        context,
+                                        outcomeMessage(operation, succeeded = true),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
                             },
                             onFailed = {
                                 viewModel.failed(operation, it)
-                                val failed = if (operation == FormOperation.Capture) "Payment failed" else "Save failed"
-                                Toast.makeText(context, failed, Toast.LENGTH_LONG).show()
+                                Toast
+                                    .makeText(
+                                        context,
+                                        outcomeMessage(operation, succeeded = false),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
                             },
                             onMethodChanged = {},
                         )

@@ -90,6 +90,12 @@ class SimpleCaptureKeyTest {
         assertFalse(amountEditable(PayInSubmissionState.Submitting, retryKey = null))
         assertTrue(amountEditable(PayInSubmissionState.Idle, retryKey = null))
     }
+
+    @Test
+    fun `a stored method is announced without naming the instrument`() {
+        assertEquals("Payment method saved", outcomeMessage(FormOperation.Tokenize, succeeded = true))
+        assertEquals("Payment approved", outcomeMessage(FormOperation.Capture, succeeded = true))
+    }
 }
 
 private class SampleFailure(
