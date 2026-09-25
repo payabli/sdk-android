@@ -124,17 +124,6 @@ fun FormSettingsMenu(
             pick(settings.copy(dashExpirySeparator = it))
         }
         Toggle("Mask the account number", settings.maskAccountNumber) { pick(settings.copy(maskAccountNumber = it)) }
-
-        Group("iOS only")
-        DropdownMenuItem(
-            text = {
-                Text(
-                    "Card brand icon placement, error message placement and input sizing are not in the Android SDK.",
-                )
-            },
-            onClick = {},
-            enabled = false,
-        )
     }
 }
 
