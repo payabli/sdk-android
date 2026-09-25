@@ -152,6 +152,14 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # Split across a continuation, so neither physical line is a finding on its own: the first is an
+    # unterminated escape that tokenises to nothing, and the second is an operator with no command in
+    # front of it. The shell runs one masked command.
+    ("CI masks a failed unit suite across a line continuation", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test \\\n"
+     "          || true\n"),
+
     # Nothing follows the command at all: the shell inverts its status, so the red suite reports success
     # and errexit does not apply to a command it negates. Every suite name is still there.
     #

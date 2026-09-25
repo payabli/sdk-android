@@ -2010,7 +2010,7 @@ def run_commands(step: dict) -> str:
     parse, an unbalanced quote across a continuation, is kept whole rather than dropped.
     """
     words = []
-    for line in str(step.get("run", "")).splitlines():
+    for line in logical_lines(str(step.get("run", ""))):
         try:
             words.extend(shell_words(line))
         except ValueError:
@@ -2037,6 +2037,31 @@ def mints(value) -> bool:
     if isinstance(value, str):
         return value == "write-all"
     return str((value or {}).get("id-token")) == "write"
+
+
+def logical_lines(text: str) -> list[str]:
+    """`text` split into the lines a shell reads, with a trailing backslash joining the next one.
+
+    A physical line is not a command. `./gradlew test \\` and `|| true` are one masked command, and read
+    separately the first is an unterminated escape, which tokenises to nothing, and the second is an
+    operator with no command in front of it. Neither half is a finding and the whole is, so the line a
+    reader is handed has to be the one the shell runs.
+
+    The backslash and the newline are removed and nothing is put in their place, which is what the shell
+    does, and what keeps `test\\` joined to `|| true` splitting on the operator rather than around it.
+    """
+    lines: list[str] = []
+    carried = ""
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if stripped.endswith("\\") and not stripped.endswith("\\\\"):
+            carried += stripped[:-1]
+            continue
+        lines.append(carried + line)
+        carried = ""
+    if carried:
+        lines.append(carried)
+    return lines
 
 
 def shell_words(line: str) -> list[str]:
@@ -2075,7 +2100,7 @@ def invocations(step: dict, program: str) -> list[list[str]]:
     to the one before it.
     """
     found: list[list[str]] = []
-    for line in str(step.get("run", "")).splitlines():
+    for line in logical_lines(str(step.get("run", ""))):
         try:
             words = shell_words(line)
         except ValueError:
@@ -2110,7 +2135,7 @@ def masked_commands(step: dict) -> list[str]:
     """
     tests = ("[", "[[", "test")
     found = []
-    for line in str(step.get("run", "")).splitlines():
+    for line in logical_lines(str(step.get("run", ""))):
         try:
             words = shell_words(line)
         except ValueError:
