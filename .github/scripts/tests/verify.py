@@ -2132,8 +2132,17 @@ def masked_commands(step: dict) -> list[str]:
 
     `! a` is the other way to the same place, and it needs nothing after it: the shell inverts a's
     status, so a failure becomes a success, and `-e` is documented not to apply to a command it negates.
+
+    `a && b` is the same exemption as `a || b` and reads like the opposite, so it is worth stating why.
+    `-e` does not apply to a command in an AND list other than the last, and measured under `bash -e`,
+    `false && echo passed` followed by any other line leaves the script running and exiting 0. It fails
+    only when the list is the script's last command, and a guarded step is not written on that promise.
+    An `if` or `while` condition is exempt for the same documented reason. Both are refused rather than
+    parsed: neither appears in a guarded run block today, and the narrower reading is one more grammar
+    rule to get right later.
     """
     tests = ("[", "[[", "test")
+    conditions = ("if", "while", "until")
     found = []
     for line in logical_lines(str(step.get("run", ""))):
         try:
@@ -2145,10 +2154,17 @@ def masked_commands(step: dict) -> list[str]:
             if word not in OPERATORS and word not in GROUPING:
                 command.append(word)
                 continue
-            if command and command[0] == "!":
-                found.append(" ".join(command))
-            elif word == "||" and command and command[0] not in tests:
-                found.append(" ".join(command))
+            if command:
+                head = command[0]
+                asked = command[1] if len(command) > 1 else ""
+                if head == "!" or head in conditions:
+                    # `if [ -n "$missing" ]` is a question, the same way `[ … ] || …` is. What the
+                    # exemption is for is `if ./gradlew test`, where a real command's failure is read
+                    # as an answer and the step carries on.
+                    if asked not in tests:
+                        found.append(" ".join(command))
+                elif word in ("||", "&&") and head not in tests:
+                    found.append(" ".join(command))
             command = []
     return found
 

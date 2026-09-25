@@ -152,6 +152,14 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # `-e` does not apply to a command in an AND list other than the last, so the suite's failure is read
+    # as an answer and the step carries on to the line after it. Nothing is declared and no idiom from any
+    # denylist appears.
+    ("CI masks a failed unit suite on the left of an AND list", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test"
+     " && echo passed\n          echo finished\n"),
+
     # Split across a continuation, so neither physical line is a finding on its own: the first is an
     # unterminated escape that tokenises to nothing, and the second is an operator with no command in
     # front of it. The shell runs one masked command.
