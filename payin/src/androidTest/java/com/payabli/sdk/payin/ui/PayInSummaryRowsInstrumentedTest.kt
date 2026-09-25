@@ -3,6 +3,7 @@ package com.payabli.sdk.payin.ui
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -51,6 +52,16 @@ class PayInSummaryRowsInstrumentedTest {
         rule.onNodeWithText(figure("12.34", "USD")).assertExists()
         rule.onNodeWithText(figure("0.10", "USD")).assertExists()
         rule.onNodeWithText(string(R.string.payabli_payin_field_surcharge_fee)).assertDoesNotExist()
+    }
+
+    @Test
+    fun aRowIsReadAsItsLabelAndFigureTogether() {
+        show(PayInPaymentDetails(BigDecimal("12.34"), currency = "USD"))
+
+        // One node carries both, which is what a screen reader announces as a row.
+        rule
+            .onNode(hasText(string(R.string.payabli_payin_field_amount)) and hasText(figure("12.34", "USD")))
+            .assertExists()
     }
 
     @Test
