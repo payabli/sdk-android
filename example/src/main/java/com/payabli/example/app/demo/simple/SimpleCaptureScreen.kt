@@ -3,13 +3,14 @@ package com.payabli.example.app.demo.simple
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,23 +19,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.demo.payment.TransactionSummary
+import com.payabli.example.app.demo.ui.components.DemoScreen
+import com.payabli.example.app.demo.ui.components.Owner
+import com.payabli.example.app.demo.ui.components.OwnerFrame
+import com.payabli.example.app.demo.ui.customize.FormLookTheme
+import com.payabli.example.app.demo.ui.customize.FormOperation
+import com.payabli.example.app.demo.ui.customize.FormSettings
+import com.payabli.example.app.demo.ui.customize.FormSettingsMenu
+import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
-import com.payabli.sdk.payin.form.PayInField
-import com.payabli.sdk.payin.form.PayInFormConfiguration
-import com.payabli.sdk.payin.form.PayInFormSection
-import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.model.PayInException
-import com.payabli.sdk.payin.model.PayInPaymentDetails
-import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
-import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
@@ -60,6 +63,48 @@ internal fun keyForNextAttempt(
     held: String?,
     outcome: PayInSubmissionState.Failed,
 ): String? = outcome.retryKey ?: held.takeIf { outcome.cause is PayInException.Unsettled }
+
+/**
+ * The key held once [submitted] has ended in [outcome], or in success when [outcome] is null.
+ *
+ * A store sends no key, so its outcome leaves a capture's held key in place.
+ */
+internal fun keyAfter(
+    held: String?,
+    submitted: FormOperation,
+    outcome: PayInSubmissionState.Failed?,
+): String? =
+    when {
+        submitted != FormOperation.Capture -> held
+        outcome == null -> null
+        else -> keyForNextAttempt(held, outcome)
+    }
+
+/**
+ * The operation after [requested] is chosen, which stays [current] while a submission is in flight: its outcome
+ * is read against the operation on screen when it arrives.
+ */
+internal fun operationAfter(
+    current: FormOperation,
+    requested: FormOperation,
+    submission: PayInSubmissionState,
+): FormOperation = if (submission is PayInSubmissionState.Submitting) current else requested
+
+/** The amount can change only between payments: not mid-flight, and not while a held key still names one. */
+internal fun amountEditable(
+    submission: PayInSubmissionState,
+    retryKey: String?,
+): Boolean = submission !is PayInSubmissionState.Submitting && retryKey == null
+
+/** What the screen says when [operation] ends, for either instrument. */
+internal fun outcomeMessage(
+    operation: FormOperation,
+    succeeded: Boolean,
+): String =
+    when (operation) {
+        FormOperation.Capture -> if (succeeded) "Payment approved" else "Payment failed"
+        FormOperation.Tokenize -> if (succeeded) "Payment method saved" else "Save failed"
+    }
 
 /**
  * Holds the flow, so a rotation keeps the submission in flight and everything the payer has typed.
@@ -92,12 +137,21 @@ class SimpleCaptureViewModel(
     var retryKey by mutableStateOf<String?>(null)
         private set
 
-    fun failed(outcome: PayInSubmissionState.Failed) {
-        retryKey = keyForNextAttempt(retryKey, outcome)
+    var settings by mutableStateOf(FormSettings())
+
+    var operation by mutableStateOf(FormOperation.Capture)
+
+    var amountText by mutableStateOf(DEFAULT_AMOUNT)
+
+    fun failed(
+        submitted: FormOperation,
+        outcome: PayInSubmissionState.Failed,
+    ) {
+        retryKey = keyAfter(retryKey, submitted, outcome)
     }
 
-    fun succeeded() {
-        retryKey = null
+    fun succeeded(submitted: FormOperation) {
+        retryKey = keyAfter(retryKey, submitted, outcome = null)
     }
 
     init {
@@ -113,89 +167,141 @@ class SimpleCaptureViewModel(
                 }.onFailure { failure = it.message ?: "The session could not be configured." }
         }
     }
+
+    private companion object {
+        const val DEFAULT_AMOUNT = "12.34"
+    }
 }
 
+/** A positive amount written as digits with at most two decimal places, or null. */
+internal fun parseAmount(text: String): BigDecimal? =
+    text
+        .trim()
+        .takeIf { AMOUNT.matches(it) }
+        ?.toBigDecimal()
+        ?.takeIf { it.signum() > 0 }
+
+private val AMOUNT = Regex("""\d+(\.\d{1,2})?""")
+
 /**
- * Charging a card with the fewest calls it takes: a token, a flow, a form.
+ * Charging or storing a card with the fewest calls it takes: a token, a flow, a form.
  *
  * Every other screen here is wrapped in this app's own types so that four capabilities can share them. This
- * one is not, so a reader can see what the SDK asks for and what belongs to the sample. Three calls, in
- * order, and nothing else on the screen.
+ * one calls the form directly, so a reader can see what the SDK asks for. The top bar's menu changes what the
+ * form is configured with, which `sdk/FormCustomization.kt` spells out in the SDK's own types.
  */
 @Composable
 fun SimpleCaptureScreen(
     viewModel: SimpleCaptureViewModel,
-    amount: BigDecimal,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val failure = viewModel.failure
-
     val payInFlow = viewModel.payInFlow
-    Box(modifier = modifier.fillMaxSize()) {
+    val settings = viewModel.settings
+    val operation = viewModel.operation
+    val amount = parseAmount(viewModel.amountText)
+    val submitting =
+        payInFlow?.let { it.state.collectAsStateWithLifecycle().value is PayInSubmissionState.Submitting } ?: false
+
+    DemoScreen(
+        title = "Simple Capture",
+        modifier = modifier,
+        actions = { FormSettingsMenu(settings) { viewModel.settings = it } },
+    ) {
+        OwnerFrame(Owner.App) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FormOperation.entries.forEach { option ->
+                    FilterChip(
+                        selected = option == operation,
+                        onClick = {
+                            val submission = payInFlow?.state?.value ?: PayInSubmissionState.Idle
+                            viewModel.operation = operationAfter(operation, option, submission)
+                        },
+                        enabled = !submitting,
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+            if (operation == FormOperation.Capture) {
+                OutlinedTextField(
+                    value = viewModel.amountText,
+                    enabled = !submitting && viewModel.retryKey == null,
+                    onValueChange = {
+                        val submission = payInFlow?.state?.value ?: PayInSubmissionState.Idle
+                        if (amountEditable(submission, viewModel.retryKey)) viewModel.amountText = it
+                    },
+                    label = { Text("Amount") },
+                    isError = amount == null,
+                    supportingText = {
+                        when {
+                            viewModel.retryKey != null -> Text("Locked until the previous payment is settled.")
+                            amount == null -> Text("A positive amount, up to two decimals.")
+                        }
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
         when {
             failure != null ->
                 Text(
-                    text = failure.orEmpty(),
+                    text = failure,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                    modifier = Modifier.padding(24.dp),
                 )
 
-            payInFlow == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+            payInFlow == null ->
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+
+            operation == FormOperation.Capture && amount == null -> Unit
 
             else ->
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-                ) {
-                    // 3. The form. It collects, validates and submits; the outcome arrives here.
-                    PayabliPayInForm(
-                        payIn = payInFlow,
-                        operation =
-                            PayabliPayInOperation.Capture(
-                                PayInTransactionOptions(
-                                    PayInPaymentDetails(totalAmount = amount),
-                                    idempotencyKey = viewModel.retryKey,
+                OwnerFrame(Owner.Sdk) {
+                    FormLookTheme(settings.look) {
+                        // 3. The form. It collects, validates and submits; the outcome arrives here.
+                        PayabliPayInForm(
+                            payIn = payInFlow,
+                            operation =
+                                FormCustomization.operation(
+                                    settings,
+                                    operation,
+                                    amount ?: BigDecimal.ZERO,
+                                    viewModel.retryKey,
                                 ),
-                            ),
-                        configuration =
-                            PayInFormConfiguration(
-                                allowedMethods = listOf(PayInMethodType.Card),
-                                // The amount is set on the operation and never collected, so this row reads
-                                // back the figure the request carries and the two cannot disagree.
-                                cardSections =
-                                    PayInFormConfiguration.defaultCardSections() +
-                                        // A capture with no customer is refused with 400 "Error in customer
-                                        // data", so the three the service needs are collected here.
-                                        PayInFormSection(
-                                            fields =
-                                                listOf(
-                                                    PayInField.FirstName,
-                                                    PayInField.LastName,
-                                                    PayInField.BillingEmail,
-                                                ),
-                                        ) +
-                                        PayInFormSection(
-                                            fields = listOf(PayInField.Amount),
-                                            style = PayInSectionStyle.Summary,
-                                        ),
-                                summaryValues =
-                                    mapOf(
-                                        PayInField.Amount to
-                                            TransactionSummary.formatAmount(amount.toPlainString()),
-                                    ),
-                            ),
-                        onCompleted = {
-                            viewModel.succeeded()
-                            Toast.makeText(context, "Payment approved", Toast.LENGTH_LONG).show()
-                        },
-                        onFailed = {
-                            viewModel.failed(it)
-                            Toast.makeText(context, "Payment failed", Toast.LENGTH_LONG).show()
-                        },
-                        onMethodChanged = {},
-                    )
+                            configuration =
+                                FormCustomization.configuration(
+                                    settings,
+                                    operation,
+                                    amount?.let { TransactionSummary.formatAmount(it.toPlainString()) }.orEmpty(),
+                                ),
+                            labels = FormCustomization.labels(settings, operation),
+                            style = FormCustomization.style(settings.look),
+                            onCompleted = {
+                                viewModel.succeeded(operation)
+                                Toast
+                                    .makeText(
+                                        context,
+                                        outcomeMessage(operation, succeeded = true),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                            },
+                            onFailed = {
+                                viewModel.failed(operation, it)
+                                Toast
+                                    .makeText(
+                                        context,
+                                        outcomeMessage(operation, succeeded = false),
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                            },
+                            onMethodChanged = {},
+                        )
+                    }
                 }
         }
     }

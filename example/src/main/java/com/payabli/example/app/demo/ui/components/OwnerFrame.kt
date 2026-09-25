@@ -1,0 +1,78 @@
+package com.payabli.example.app.demo.ui.components
+
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+import com.payabli.example.app.demo.ui.theme.Dimens
+
+/** Who draws what is inside a frame: this app, or the SDK. */
+enum class Owner(
+    val label: String,
+) {
+    App("Your app"),
+    Sdk("Payabli SDK"),
+}
+
+/**
+ * A frame naming who owns its content, so a screen shows where the app ends and the SDK begins. The label sits
+ * above the border and belongs to this app, whichever frame it names.
+ *
+ * The app's frame is solid and the SDK's is dashed, so the two read apart in a screenshot without colour.
+ */
+@Composable
+fun OwnerFrame(
+    owner: Owner,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val color = if (owner == Owner.Sdk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val shape = RoundedCornerShape(12.dp)
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Outside the border, so the label is never read as part of what the frame holds.
+        Text(
+            text = owner.label,
+            style = MaterialTheme.typography.labelMedium,
+            color = color,
+            modifier = Modifier.semantics { heading() },
+        )
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (owner == Owner.Sdk) Modifier.dashedBorder(color) else Modifier.border(1.dp, color, shape),
+                    ).padding(Dimens.CardPadding),
+            verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
+            content = content,
+        )
+    }
+}
+
+private fun Modifier.dashedBorder(color: Color): Modifier =
+    drawBehind {
+        drawRoundRect(
+            color = color,
+            cornerRadius = CornerRadius(12.dp.toPx()),
+            style =
+                Stroke(
+                    width = 2.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10.dp.toPx(), 6.dp.toPx())),
+                ),
+        )
+    }

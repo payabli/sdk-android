@@ -1,11 +1,14 @@
 package com.payabli.example.app.demo.simple
 
+import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -43,6 +46,19 @@ class SimpleCaptureKeyTest {
         assertNull(keyForNextAttempt(held = "key-1", outcome = declined))
     }
 
+    @Test
+    fun `a store leaves the capture's held key in place`() {
+        val storeFailed = failed(SampleFailure(PayabliErrorCode.PAYMENT_DECLINED, "Refused"))
+
+        assertEquals("key-1", keyAfter("key-1", FormOperation.Tokenize, storeFailed))
+        assertEquals("key-1", keyAfter("key-1", FormOperation.Tokenize, outcome = null))
+    }
+
+    @Test
+    fun `a capture that succeeds spends the held key`() {
+        assertNull(keyAfter("key-1", FormOperation.Capture, outcome = null))
+    }
+
     private fun failed(
         cause: PayabliException,
         retryKey: String? = null,
@@ -51,6 +67,35 @@ class SimpleCaptureKeyTest {
     private fun network() = SampleFailure(PayabliErrorCode.NETWORK_ERROR, "The request did not complete")
 
     private fun conflict() = SampleFailure(PayabliErrorCode.CONFLICT, "The service has seen this key")
+
+    @Test
+    fun `the operation does not change while a submission is in flight`() {
+        // The outcome is classified by the operation on screen when it arrives, so a switch mid-flight would
+        // read a capture's outcome as a store's and drop the key a retry needs.
+        assertEquals(
+            FormOperation.Capture,
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Submitting),
+        )
+        assertEquals(
+            FormOperation.Tokenize,
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Idle),
+        )
+    }
+
+    @Test
+    fun `the amount is locked while a retry key is held or a submission is in flight`() {
+        // A held key names one payment. Sending it with a different amount would retry that payment while the
+        // screen shows another.
+        assertFalse(amountEditable(PayInSubmissionState.Idle, retryKey = "key-1"))
+        assertFalse(amountEditable(PayInSubmissionState.Submitting, retryKey = null))
+        assertTrue(amountEditable(PayInSubmissionState.Idle, retryKey = null))
+    }
+
+    @Test
+    fun `a stored method is announced without naming the instrument`() {
+        assertEquals("Payment method saved", outcomeMessage(FormOperation.Tokenize, succeeded = true))
+        assertEquals("Payment approved", outcomeMessage(FormOperation.Capture, succeeded = true))
+    }
 }
 
 private class SampleFailure(

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.GppGood
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.MonitorHeart
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -48,6 +49,7 @@ object DemoIcons {
     val Reinitialize: ImageVector get() = Icons.Filled.Refresh
     val StartOver: ImageVector get() = Icons.Filled.RestartAlt
     val Void: ImageVector get() = Icons.Filled.Undo
+    val More: ImageVector get() = Icons.Filled.MoreVert
 
     // Status.
     // Steps. Pass and Fail are reused at either end, keeping the readiness card's vocabulary.
