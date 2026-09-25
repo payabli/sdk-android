@@ -43,6 +43,8 @@ public class PayInTransaction(
     public val totalAmount: BigDecimal?,
     /** What is left after fees, where the paypoint splits them out. */
     public val netAmount: BigDecimal?,
+    public val feeAmount: BigDecimal?,
+    public val surchargeFee: BigDecimal?,
     /** Which processor took it. */
     public val connectorName: String?,
     public val customerId: Long?,

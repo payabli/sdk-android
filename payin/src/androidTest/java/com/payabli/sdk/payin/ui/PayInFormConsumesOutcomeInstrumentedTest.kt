@@ -17,7 +17,6 @@ import com.payabli.sdk.payin.client.FakePayInTransport
 import com.payabli.sdk.payin.client.TEST_ACCOUNT
 import com.payabli.sdk.payin.client.TEST_ROUTING
 import com.payabli.sdk.payin.form.BANK_INSTRUMENT_FIELDS
-import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInLabelLayout
@@ -87,7 +86,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         // does not deliver is one nothing consumes, which refuses every later submission for the process.
         val transport = GatedPayInTransport.answering(APPROVED_TRANSACTION)
         val flow = flowOver(transport)
-        val configuration = mutableStateOf(bankForm(total = "1.10"))
+        val configuration = mutableStateOf(bankForm())
         var delivered: PayInSubmissionState.Succeeded? = null
 
         showForm(flow, configuration) { delivered = it }
@@ -95,7 +94,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
         submit()
         runBlocking { transport.arrived.await() }
 
-        rule.runOnUiThread { configuration.value = bankForm(total = "2.20") }
+        rule.runOnUiThread { configuration.value = bankForm(labelLayout = PayInLabelLayout.External) }
         rule.waitForIdle()
         transport.release()
 
@@ -118,14 +117,13 @@ class PayInFormConsumesOutcomeInstrumentedTest {
             logger = RecordingSdkLogger(),
         )
 
-    private fun bankForm(total: String? = null) =
+    private fun bankForm(labelLayout: PayInLabelLayout = PayInLabelLayout.Placeholder) =
         PayInFormConfiguration(
             allowedMethods = listOf(PayInMethodType.BankAccount),
             defaultMethod = PayInMethodType.BankAccount,
             cardSections = listOf(PayInFormSection(fields = BANK_INSTRUMENT_FIELDS)),
             bankSections = listOf(PayInFormSection(fields = BANK_INSTRUMENT_FIELDS)),
-            labelLayout = PayInLabelLayout.Placeholder,
-            summaryValues = total?.let { mapOf(PayInField.Amount to it) }.orEmpty(),
+            labelLayout = labelLayout,
         )
 
     private fun showForm(

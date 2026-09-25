@@ -224,6 +224,12 @@ internal class TransactionPayload(
     @JsonNames("netamount", "NetAmount")
     @Serializable(with = PayInAmountSerializer::class)
     val netAmount: BigDecimal? = null,
+    @JsonNames("feeamount", "FeeAmount")
+    @Serializable(with = PayInAmountSerializer::class)
+    val feeAmount: BigDecimal? = null,
+    @JsonNames("surchargefee", "SurchargeFee")
+    @Serializable(with = PayInAmountSerializer::class)
+    val surchargeFee: BigDecimal? = null,
     @JsonNames("connectorname", "ConnectorName")
     val connectorName: String? = null,
     @JsonNames("payorid", "PayorId")

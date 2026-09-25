@@ -343,7 +343,6 @@ private fun SummaryRows(
                     style = context.style.label,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                Text(text = context.configuration.summaryValueFor(field), style = context.style.supporting)
             }
         }
     }

@@ -64,6 +64,7 @@ public enum class PayInField(
 
     Amount(PayInFieldInput.Number),
     ServiceFee(PayInFieldInput.Number),
+    SurchargeFee(PayInFieldInput.Number),
     ;
 
     /** The wire name, which is the enum name with its first letter lowered. */

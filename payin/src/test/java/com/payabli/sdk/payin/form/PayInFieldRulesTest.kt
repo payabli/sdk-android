@@ -53,6 +53,7 @@ class PayInFieldRulesTest {
         // The caller fixes these, so an empty one is not the payer's omission.
         assertFalse(PayInFieldRules.missing(PayInField.Amount, ""))
         assertFalse(PayInFieldRules.missing(PayInField.ServiceFee, ""))
+        assertFalse(PayInFieldRules.missing(PayInField.SurchargeFee, ""))
         assertFalse(PayInFieldRules.missing(PayInField.MethodDescription, ""))
     }
 

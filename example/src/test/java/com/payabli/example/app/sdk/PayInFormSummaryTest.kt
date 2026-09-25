@@ -9,7 +9,6 @@ import com.payabli.sdk.payin.form.PayInMethodType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.math.BigDecimal
 
 /**
  * These tests exist for one property: the readout is derived, not transcribed.
@@ -24,8 +23,7 @@ class PayInFormSummaryTest {
 
     private val storeMethod get() = PayInForms.storePaymentMethod().configuration
 
-    /** The amount is fixed here: every assertion below is about which fields a form has, not what it charges. */
-    private val capture get() = PayInForms.capture(BigDecimal("1.10"))
+    private val capture get() = PayInForms.capture()
 
     @Test
     fun `the readout names every card field the form actually renders, in order`() {

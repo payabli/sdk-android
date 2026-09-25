@@ -142,7 +142,7 @@ private fun CaptureScreenPreview() {
         CaptureScreen(
             state =
                 CaptureUiState(
-                    setup = PayInForms.capture(amount),
+                    setup = PayInForms.capture(),
                     amount = amount,
                     sampleIdentity = identity,
                     operation =

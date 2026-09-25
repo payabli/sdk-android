@@ -81,7 +81,7 @@ class PayInInstrumentFieldsTest {
     fun `an amount a payer could type into is refused`() {
         // The amounts belong to the operation and nothing reads them back out of the form, so a box for one
         // would show a figure the request does not carry: the screen says $5 and the service takes $1.10.
-        listOf(PayInField.Amount, PayInField.ServiceFee).forEach { field ->
+        listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee).forEach { field ->
             val refusal =
                 runCatching {
                     PayInFormConfiguration(
@@ -107,7 +107,6 @@ class PayInInstrumentFieldsTest {
                         style = PayInSectionStyle.Summary,
                     ),
                 ),
-            summaryValues = mapOf(PayInField.Amount to "$ 1.10"),
         )
     }
 

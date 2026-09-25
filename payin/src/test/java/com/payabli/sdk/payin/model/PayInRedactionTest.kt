@@ -116,11 +116,13 @@ class PayInRedactionTest {
                 paypointId = 42L,
                 totalAmount = BigDecimal("1234.56"),
                 netAmount = BigDecimal("1200.00"),
+                feeAmount = BigDecimal("34.56"),
+                surchargeFee = BigDecimal("12.34"),
                 connectorName = "fiserv",
                 customerId = 88L,
             ).toString()
 
-        listOf("1234.56", "1200.00", "88").forEach { assertFalse(it, rendered.contains(it)) }
+        listOf("1234.56", "1200.00", "34.56", "12.34", "88").forEach { assertFalse(it, rendered.contains(it)) }
         assertTrue(rendered.contains("hasTransId=true"))
     }
 

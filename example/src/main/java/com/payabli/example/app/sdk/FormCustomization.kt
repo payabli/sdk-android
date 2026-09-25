@@ -38,7 +38,6 @@ object FormCustomization {
     fun configuration(
         settings: FormSettings,
         operation: FormOperation,
-        formattedAmount: String,
     ): PayInFormConfiguration {
         val customer = customerSection(settings, operation)
         val requiresNumber = customer != null && settings.requireCustomerNumber
@@ -83,7 +82,6 @@ object FormCustomization {
                     expirySeparator = if (settings.dashExpirySeparator) "-" else "/",
                     masksAccountNumber = settings.maskAccountNumber,
                 ),
-            summaryValues = mapOf(PayInField.Amount to formattedAmount),
         )
     }
 

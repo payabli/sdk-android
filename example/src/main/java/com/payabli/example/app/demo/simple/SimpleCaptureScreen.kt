@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.example.app.demo.ui.components.DemoScreen
 import com.payabli.example.app.demo.ui.components.Owner
 import com.payabli.example.app.demo.ui.components.OwnerFrame
@@ -274,11 +273,7 @@ fun SimpleCaptureScreen(
                                     viewModel.retryKey,
                                 ),
                             configuration =
-                                FormCustomization.configuration(
-                                    settings,
-                                    operation,
-                                    amount?.let { TransactionSummary.formatAmount(it.toPlainString()) }.orEmpty(),
-                                ),
+                                FormCustomization.configuration(settings, operation),
                             labels = FormCustomization.labels(settings, operation),
                             style = FormCustomization.style(settings.look),
                             onCompleted = {

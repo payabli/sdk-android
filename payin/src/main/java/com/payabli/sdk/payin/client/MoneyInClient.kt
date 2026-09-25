@@ -306,6 +306,8 @@ private fun TransactionPayload.toTransaction(): PayInTransaction =
         paypointId = paypointId,
         totalAmount = totalAmount,
         netAmount = netAmount,
+        feeAmount = feeAmount,
+        surchargeFee = surchargeFee,
         connectorName = connectorName,
         customerId = payorId,
     )
