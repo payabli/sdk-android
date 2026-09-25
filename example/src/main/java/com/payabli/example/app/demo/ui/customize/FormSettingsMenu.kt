@@ -123,7 +123,11 @@ fun FormSettingsMenu(
         Toggle("Dash between month and year", settings.dashExpirySeparator) {
             pick(settings.copy(dashExpirySeparator = it))
         }
-        Toggle("Mask the account number", settings.maskAccountNumber) { pick(settings.copy(maskAccountNumber = it)) }
+        Toggle(
+            "Mask the bank account number",
+            settings.maskAccountNumber,
+            enabled = settings.methods != FormMethods.Card,
+        ) { pick(settings.copy(maskAccountNumber = it)) }
     }
 }
 
