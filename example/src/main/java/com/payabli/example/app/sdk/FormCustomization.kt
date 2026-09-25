@@ -243,6 +243,7 @@ object FormCustomization {
             PayInField.AccountHolder to "Account holder",
             PayInField.RoutingNumber to "Routing number",
             PayInField.AccountNumber to "Account number",
+            PayInField.AccountType to "Account type",
             PayInField.FirstName to "First name",
             PayInField.LastName to "Last name",
             PayInField.CustomerNumber to "Customer number",

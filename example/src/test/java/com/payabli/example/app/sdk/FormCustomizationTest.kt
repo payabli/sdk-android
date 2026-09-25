@@ -83,6 +83,9 @@ class FormCustomizationTest {
             inputs.filter { it != PayInField.CardExpiration }.all { labels.placeholderFor(it) != null },
         )
 
+        val bank = configuration.inputFieldsFor(PayInMethodType.BankAccount)
+        assertTrue(bank.filter { it != PayInField.CardExpiration }.all { labels.placeholderFor(it) != null })
+
         val shown = configure(FormSettings())
         assertTrue(shown.inputFieldsFor(PayInMethodType.Card).all { shown.showsLabelFor(it) })
     }
