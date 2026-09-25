@@ -3643,6 +3643,14 @@ def test_workflows():
     unresolved = [command for step in qa_steps for command in unresolved_programs(step)]
     check("W16 and every command it runs names the program it runs",
           not unresolved, " | ".join(unresolved))
+    # Reading the command line is reading what the program receives only while the program accepts one
+    # spelling of each option. argparse abbreviates long options by default, so `--prefix maven-qa
+    # --pref maven` reaches `prefix=maven` and every check above still reports the QA prefix. The
+    # uploader turns that off; asserted here because turning it back on would quietly make those checks
+    # read something the program is not given.
+    check("W16 and the uploader accepts no abbreviated option",
+          "allow_abbrev=False" in (SDK / ".github/scripts/publish_staging.py").read_text(),
+          "publish_staging.py builds its parser without allow_abbrev=False")
     if gradle is not None and naming is not None:
         stamped = {var for var, value in (gradle.get("env") or {}).items()
                    if f"steps.{naming.get('id', '')}.outputs" in str(value)}

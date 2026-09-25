@@ -297,6 +297,13 @@ MUTATIONS = [
      "    uses: ./.github/workflows/qa-snapshot.yml"),
 
 
+    # With abbreviation back on, `--pref` reaches `--prefix` and the later spelling wins, so a command
+    # reading `--prefix maven-qa` publishes to the release prefix.
+    ("The uploader accepts an abbreviated option that overrides the one being checked", PUBLISHER,
+     "publisher",
+     "description=__doc__.splitlines()[0], allow_abbrev=False)",
+     "description=__doc__.splitlines()[0])"),
+
     ("An occupied key holding the same bytes fails, so a half-finished run cannot be completed",
      PUBLISHER, "publisher",
      '        elif "PreconditionFailed" in r.stderr:', "        elif False:"),
