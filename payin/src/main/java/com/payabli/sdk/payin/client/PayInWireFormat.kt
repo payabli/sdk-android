@@ -67,6 +67,7 @@ internal object PayInRoutes {
     const val FIELD_PAYMENT_DETAILS: String = "paymentDetails"
     const val FIELD_TOTAL_AMOUNT: String = "totalAmount"
     const val FIELD_SERVICE_FEE: String = "serviceFee"
+    const val FIELD_SURCHARGE_FEE: String = "surchargeFee"
 
     const val FIELD_ENTRY_POINT: String = "entryPoint"
 
@@ -105,13 +106,15 @@ internal object PayInRoutes {
     const val INITIATOR_PAYOR: String = "payor"
 }
 
-/** What is being charged. The two amounts are unquoted numbers with two decimal places. */
+/** What is being charged. The amounts are unquoted numbers with two decimal places. */
 @Serializable
 internal class PaymentDetailsBody(
     @Serializable(with = PayInAmountSerializer::class)
     val totalAmount: BigDecimal,
     @Serializable(with = PayInAmountSerializer::class)
     val serviceFee: BigDecimal? = null,
+    @Serializable(with = PayInAmountSerializer::class)
+    val surchargeFee: BigDecimal? = null,
     val currency: String? = null,
     val checkNumber: String? = null,
     val checkUniqueId: String? = null,
@@ -224,6 +227,12 @@ internal class TransactionPayload(
     @JsonNames("netamount", "NetAmount")
     @Serializable(with = PayInAmountSerializer::class)
     val netAmount: BigDecimal? = null,
+    @JsonNames("feeamount", "FeeAmount")
+    @Serializable(with = PayInAmountSerializer::class)
+    val feeAmount: BigDecimal? = null,
+    @JsonNames("surchargefee", "SurchargeFee")
+    @Serializable(with = PayInAmountSerializer::class)
+    val surchargeFee: BigDecimal? = null,
     @JsonNames("connectorname", "ConnectorName")
     val connectorName: String? = null,
     @JsonNames("payorid", "PayorId")

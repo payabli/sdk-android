@@ -7,7 +7,6 @@ import com.payabli.sdk.payin.form.PayInSectionStyle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.math.BigDecimal
 
 /**
  * The prefill has to fill the form the demo actually shows.
@@ -23,7 +22,7 @@ class PayInPrefillTest {
     private val setups =
         mapOf(
             "stored method" to PayInForms.storePaymentMethod(),
-            "capture" to PayInForms.capture(BigDecimal("1.10")),
+            "capture" to PayInForms.capture(),
         )
 
     @Test

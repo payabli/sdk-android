@@ -145,7 +145,7 @@ class CaptureViewModel(
     private fun attempt(amount: BigDecimal): Attempt =
         Attempt(
             amount = amount,
-            setup = PayInForms.capture(amount),
+            setup = PayInForms.capture(),
             operation =
                 capturePayment(
                     idempotencyKey = newIdempotencyKey(),

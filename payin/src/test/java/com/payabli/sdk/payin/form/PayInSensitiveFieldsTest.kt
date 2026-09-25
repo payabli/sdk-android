@@ -28,6 +28,7 @@ class PayInSensitiveFieldsTest {
             PayInField.BillingPostalCode,
             PayInField.Amount,
             PayInField.ServiceFee,
+            PayInField.SurchargeFee,
         )
 
     @Test

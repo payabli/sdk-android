@@ -107,6 +107,14 @@ class PayInApiBoundsTest {
     }
 
     @Test
+    fun `configurations that hide different labels are not equal`() {
+        val shown = PayInFormConfiguration()
+        val hidden = PayInFormConfiguration(hiddenFieldLabels = setOf(PayInField.CardNumber))
+
+        assertNotEquals("equal while one draws a label the other hides", shown, hidden)
+    }
+
+    @Test
     fun `labels built either side of a mutation are not equal`() {
         val shared = mutableMapOf(PayInField.CardNumber to "Card")
         val before = PayInFormLabels(fieldLabels = shared)

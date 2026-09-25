@@ -290,7 +290,6 @@ class PayInFormConfigurationTest {
         val methods = mutableListOf(PayInMethodType.Card)
         val required = mutableSetOf(PayInField.CustomerNumber)
         val hidden = mutableSetOf(PayInField.CardNumber)
-        val summary = mutableMapOf(PayInField.Amount to "$ 1.00")
         val sectionFields = CARD_INSTRUMENT_FIELDS.toMutableList()
 
         val configuration =
@@ -298,20 +297,17 @@ class PayInFormConfigurationTest {
                 allowedMethods = methods,
                 requiredFields = required,
                 hiddenFieldLabels = hidden,
-                summaryValues = summary,
                 cardSections = listOf(PayInFormSection(fields = sectionFields)),
             )
 
         methods += PayInMethodType.BankAccount
         required += PayInField.MethodDescription
         hidden.clear()
-        summary[PayInField.Amount] = "$ 999.00"
         sectionFields += PayInField.BillingEmail
 
         assertEquals(listOf(PayInMethodType.Card), configuration.methodsOffered)
         assertFalse(configuration.isRequired(PayInField.MethodDescription))
         assertFalse(configuration.showsLabelFor(PayInField.CardNumber))
-        assertEquals("$ 1.00", configuration.summaryValueFor(PayInField.Amount))
         assertEquals(
             CARD_INSTRUMENT_FIELDS,
             configuration.sectionsFor(PayInMethodType.Card).single().fields,

@@ -81,7 +81,7 @@ class PayInInstrumentFieldsTest {
     fun `an amount a payer could type into is refused`() {
         // The amounts belong to the operation and nothing reads them back out of the form, so a box for one
         // would show a figure the request does not carry: the screen says $5 and the service takes $1.10.
-        listOf(PayInField.Amount, PayInField.ServiceFee).forEach { field ->
+        listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee).forEach { field ->
             val refusal =
                 runCatching {
                     PayInFormConfiguration(
@@ -97,18 +97,19 @@ class PayInInstrumentFieldsTest {
 
     @Test
     fun `an amount read back in a summary section is what a caller does instead`() {
-        PayInFormConfiguration(
-            allowedMethods = listOf(PayInMethodType.Card),
-            cardSections =
-                listOf(
-                    PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
-                    PayInFormSection(
-                        fields = listOf(PayInField.Amount, PayInField.ServiceFee),
-                        style = PayInSectionStyle.Summary,
+        val amounts = listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee)
+        val configuration =
+            PayInFormConfiguration(
+                allowedMethods = listOf(PayInMethodType.Card),
+                cardSections =
+                    listOf(
+                        PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
+                        PayInFormSection(fields = amounts, style = PayInSectionStyle.Summary),
                     ),
-                ),
-            summaryValues = mapOf(PayInField.Amount to "$ 1.10"),
-        )
+            )
+
+        val summary = configuration.sectionsFor(PayInMethodType.Card).single { it.style == PayInSectionStyle.Summary }
+        assertEquals(amounts, summary.fields)
     }
 
     @Test

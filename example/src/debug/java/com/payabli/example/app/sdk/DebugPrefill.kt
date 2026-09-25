@@ -92,5 +92,6 @@ internal val PayInField.labelResource: Int
             PayInField.BillingPostalCode,
             PayInField.Amount,
             PayInField.ServiceFee,
+            PayInField.SurchargeFee,
             -> error("$this is not a box the prefill fills")
         }

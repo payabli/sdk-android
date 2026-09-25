@@ -130,4 +130,5 @@ internal val PayInField.labelResource: Int
             PayInField.BillingPostalCode -> R.string.payabli_payin_field_billing_postal_code
             PayInField.Amount -> R.string.payabli_payin_field_amount
             PayInField.ServiceFee -> R.string.payabli_payin_field_service_fee
+            PayInField.SurchargeFee -> R.string.payabli_payin_field_surcharge_fee
         }

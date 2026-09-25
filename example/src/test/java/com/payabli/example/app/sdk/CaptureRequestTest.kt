@@ -2,7 +2,6 @@ package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.sample.SampleAmount
 import com.payabli.example.app.demo.sample.SampleIdentity
-import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import org.junit.Assert.assertEquals
@@ -14,26 +13,18 @@ import kotlin.random.Random
 class CaptureRequestTest {
     private val identity = SampleIdentity.from("Google Pixel 7a")
 
-    /**
-     * The figure the form reads back is the figure the request charges.
-     *
-     * These were two hard-coded literals in two files, and they disagreed: the rows said one dollar while the
-     * request charged one dollar ten. A payer shown one amount and charged another is the failure this covers,
-     * and neither file could have caught it alone.
-     */
     @Test
-    fun `the rows add up to what is charged`() {
+    fun `the request charges the amount it was built from`() {
         val random = Random(seed = 3)
 
         repeat(500) {
             val total = SampleAmount.random(random)
-            val configuration = PayInForms.capture(total).configuration
 
-            val shown = dollars(configuration.summaryValueFor(PayInField.Amount))
-            val fee = dollars(configuration.summaryValueFor(PayInField.ServiceFee))
-
-            assertEquals("the rows do not add up to $total", total, shown + fee)
-            assertEquals("the request does not charge what the rows say", total, sent(total).paymentDetails.totalAmount)
+            assertEquals(
+                "the request does not charge the amount it was given",
+                total,
+                sent(total).paymentDetails.totalAmount,
+            )
         }
     }
 
@@ -90,9 +81,6 @@ class CaptureRequestTest {
                 suppliesDemoCustomer = suppliesDemoCustomer,
             ).operation as PayabliPayInOperation.Capture
         ).options
-
-    /** The rows are rendered for a reader, so the assertion has to read them back the same way. */
-    private fun dollars(row: String): BigDecimal = BigDecimal(row.removePrefix("$").trim())
 
     private companion object {
         /** Any fixed moment. The order identifier is built from it, so the assertion needs the same one. */

@@ -66,7 +66,6 @@ class HandedOutCollectionsTest {
                     ),
                 requiredFields = setOf(PayInField.CardNumber, PayInField.FirstName),
                 hiddenFieldLabels = setOf(PayInField.CardNumber, PayInField.FirstName),
-                summaryValues = mapOf(PayInField.Amount to "1.10", PayInField.ServiceFee to "0.10"),
             )
 
         assertRefusesClearing(configuration.allowedMethods)
@@ -74,7 +73,6 @@ class HandedOutCollectionsTest {
         assertRefusesClearing(configuration.bankSections)
         assertRefusesClearing(configuration.requiredFields)
         assertRefusesClearing(configuration.hiddenFieldLabels)
-        assertRefusesClearing(configuration.summaryValues)
         // Derived rather than copied, so this was the one handing back the field itself.
         assertRefusesClearing(configuration.methodsOffered)
         assertRefusesClearing(configuration.cardSections.first().fields)

@@ -38,6 +38,7 @@ class PayInFieldTelemetryNameTest {
                 "billing_postal_code",
                 "amount",
                 "service_fee",
+                "surcharge_fee",
             ),
             PayInField.entries.map { it.telemetryName },
         )

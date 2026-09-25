@@ -136,9 +136,11 @@ internal fun testAccount(
 internal fun testDetails(
     total: String = "10",
     fee: String? = null,
+    surcharge: String? = null,
 ): PayInPaymentDetails =
     PayInPaymentDetails(
         totalAmount = BigDecimal(total),
         serviceFee = fee?.let(::BigDecimal),
+        surchargeFee = surcharge?.let(::BigDecimal),
         currency = "USD",
     )

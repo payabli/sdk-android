@@ -101,15 +101,12 @@ public class PayInFormConfiguration(
     public val labelLayout: PayInLabelLayout = PayInLabelLayout.External,
     hiddenFieldLabels: Set<PayInField> = emptySet(),
     public val formatting: PayInFormatting = PayInFormatting(),
-    /** Values for a [PayInSectionStyle.Summary] section, already formatted by the caller. */
-    summaryValues: Map<PayInField, String> = emptyMap(),
 ) {
     public val allowedMethods: List<PayInMethodType> = Collections.unmodifiableList(allowedMethods.toList())
     public val cardSections: List<PayInFormSection> = Collections.unmodifiableList(cardSections.toList())
     public val bankSections: List<PayInFormSection> = Collections.unmodifiableList(bankSections.toList())
     public val requiredFields: Set<PayInField> = Collections.unmodifiableSet(requiredFields.toSet())
     public val hiddenFieldLabels: Set<PayInField> = Collections.unmodifiableSet(hiddenFieldLabels.toSet())
-    public val summaryValues: Map<PayInField, String> = Collections.unmodifiableMap(summaryValues.toMap())
 
     private val methods: List<PayInMethodType> =
         this.allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
@@ -146,9 +143,6 @@ public class PayInFormConfiguration(
     /** The starting method, always one of [methodsOffered]. */
     public val startingMethod: PayInMethodType
         get() = if (defaultMethod in methods) defaultMethod else methods.first()
-
-    /** What the caller fixed for a summary field, or empty when they fixed nothing. */
-    public fun summaryValueFor(field: PayInField): String = summaryValues[field].orEmpty()
 
     /** The sections for one instrument, with any field appearing twice dropped after its first use. */
     public fun sectionsFor(method: PayInMethodType): List<PayInFormSection> {
@@ -201,7 +195,6 @@ public class PayInFormConfiguration(
         labelLayout: PayInLabelLayout = this.labelLayout,
         hiddenFieldLabels: Set<PayInField> = this.hiddenFieldLabels,
         formatting: PayInFormatting = this.formatting,
-        summaryValues: Map<PayInField, String> = this.summaryValues,
     ): PayInFormConfiguration =
         PayInFormConfiguration(
             allowedMethods,
@@ -212,7 +205,6 @@ public class PayInFormConfiguration(
             labelLayout,
             hiddenFieldLabels,
             formatting,
-            summaryValues,
         )
 
     override fun equals(other: Any?): Boolean =
@@ -226,8 +218,7 @@ public class PayInFormConfiguration(
                     cardSections == other.cardSections &&
                     bankSections == other.bankSections &&
                     requiredFields == other.requiredFields &&
-                    hiddenFieldLabels == other.hiddenFieldLabels &&
-                    summaryValues == other.summaryValues
+                    hiddenFieldLabels == other.hiddenFieldLabels
             )
 
     override fun hashCode(): Int =
@@ -240,25 +231,21 @@ public class PayInFormConfiguration(
             bankSections,
             requiredFields,
             hiddenFieldLabels,
-            summaryValues,
         ).fold(0) { hash, part -> 31 * hash + part.hashCode() }
 
     override fun toString(): String =
         "PayInFormConfiguration(allowedMethods=$allowedMethods, defaultMethod=$defaultMethod, " +
             "cardSections=$cardSections, bankSections=$bankSections, requiredFields=$requiredFields, " +
-            "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting, " +
-            // Keys, never values. Nothing stops a caller putting a card field in here, and a
-            // toString reaches a log line and a crash report without anyone deciding it should.
-            "summaryValues=${summaryValues.keys})"
+            "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting)"
 
     public companion object {
         /**
          * Fields a form shows and never collects.
          *
-         * Both amounts are set on the operation, and nothing reads them back out of the form, so a box a
+         * The amounts are set on the operation, and nothing reads them back out of the form, so a box a
          * payer could type into would take a figure no request carries.
          */
-        private val READ_BACK_ONLY = setOf(PayInField.Amount, PayInField.ServiceFee)
+        private val READ_BACK_ONLY = setOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee)
 
         /** Card details, as a payer is asked for them. */
         public fun defaultCardSections(): List<PayInFormSection> =

@@ -50,6 +50,8 @@ internal fun capturedPaymentOutcome() =
                         paypointId = 42,
                         totalAmount = BigDecimal("1.10"),
                         netAmount = BigDecimal("1.00"),
+                        feeAmount = null,
+                        surchargeFee = null,
                         connectorName = "fiserv",
                         customerId = 7,
                     ),

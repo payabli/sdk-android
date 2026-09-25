@@ -33,7 +33,7 @@ class MoneyInClientTest {
         {"code":"A0000","reason":"Approved","explanation":"Transaction approved","action":"none",
          "data":{"paymentTransId":"101-abc","gatewayTransId":"gtw-9","orderId":"order-1","method":"card",
                  "transStatus":1,"paypointId":42,"totalAmount":10.00,"netAmount":9.71,
-                 "connectorName":"fiserv","payorId":7}}
+                 "feeAmount":0.29,"surchargeFee":0.31,"connectorName":"fiserv","payorId":7}}
         """.trimIndent()
 
     private fun cardRequest(
@@ -88,6 +88,8 @@ class MoneyInClientTest {
             assertEquals("none", result.action)
             assertEquals("101-abc", result.transaction?.paymentTransId)
             assertEquals(BigDecimal("10.00"), result.transaction?.totalAmount)
+            assertEquals(BigDecimal("0.29"), result.transaction?.feeAmount)
+            assertEquals(BigDecimal("0.31"), result.transaction?.surchargeFee)
             assertEquals(42L, result.transaction?.paypointId)
             assertEquals(7L, result.transaction?.customerId)
         }
@@ -622,7 +624,7 @@ class MoneyInClientTest {
                     paymentMethod = PayInPaymentMethod.Card(testCard()),
                     options =
                         PayInTransactionOptions(
-                            paymentDetails = testDetails(fee = "1.50"),
+                            paymentDetails = testDetails(fee = "1.50", surcharge = "0.3"),
                             customerData =
                                 PayInCustomerData(
                                     firstName = "Test",
@@ -656,6 +658,7 @@ class MoneyInClientTest {
             assertTrue(body, body.contains(""""orderDescription":"Two things""""))
             assertTrue(body, body.contains(""""subscriptionId":9"""))
             assertTrue(body, body.contains(""""serviceFee":1.50"""))
+            assertTrue(body, body.contains(""""surchargeFee":0.30"""))
             assertFalse(body, body.contains("company"))
         }
 

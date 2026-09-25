@@ -212,6 +212,8 @@ class PayInOutcomesTest {
                     paypointId = 42,
                     totalAmount = totalAmount,
                     netAmount = netAmount,
+                    feeAmount = null,
+                    surchargeFee = null,
                     connectorName = "fiserv",
                     customerId = 7,
                 ),

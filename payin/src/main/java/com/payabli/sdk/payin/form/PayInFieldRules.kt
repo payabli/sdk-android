@@ -29,6 +29,7 @@ public object PayInFieldRules {
         setOf(
             PayInField.Amount,
             PayInField.ServiceFee,
+            PayInField.SurchargeFee,
             PayInField.MethodDescription,
             PayInField.CustomerNumber,
             PayInField.DeviceId,

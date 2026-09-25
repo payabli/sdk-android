@@ -24,7 +24,7 @@ class FormCustomizationTest {
     private fun configure(
         settings: FormSettings,
         operation: FormOperation = FormOperation.Capture,
-    ): PayInFormConfiguration = FormCustomization.configuration(settings, operation, "$ 12.34")
+    ): PayInFormConfiguration = FormCustomization.configuration(settings, operation)
 
     @Test
     fun `every combination of settings is a configuration the SDK accepts`() {

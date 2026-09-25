@@ -23,7 +23,7 @@ class PayInWireFormatTest {
             transaction(
                 """
                 {"paymentTransId":"t-1","gatewayTransId":"g-1","orderId":"o-1","method":"card","transStatus":1,
-                 "paypointId":42,"totalAmount":10.00,"netAmount":9.71,"connectorName":"fiserv","payorId":7}
+                 "paypointId":42,"totalAmount":10.00,"netAmount":9.71,"feeAmount":0.29,"surchargeFee":0.31,"connectorName":"fiserv","payorId":7}
                 """.trimIndent(),
             )
 
@@ -35,8 +35,29 @@ class PayInWireFormatTest {
         assertEquals(42L, decoded.paypointId)
         assertEquals(BigDecimal("10.00"), decoded.totalAmount)
         assertEquals(BigDecimal("9.71"), decoded.netAmount)
+        assertEquals(BigDecimal("0.29"), decoded.feeAmount)
+        assertEquals(BigDecimal("0.31"), decoded.surchargeFee)
         assertEquals("fiserv", decoded.connectorName)
         assertEquals(7L, decoded.payorId)
+    }
+
+    @Test
+    fun `a record with no fee or surcharge decodes them as absent, not zero`() {
+        val decoded = transaction("""{"paymentTransId":"t-1","totalAmount":10.00}""")
+
+        assertNull(decoded.feeAmount)
+        assertNull(decoded.surchargeFee)
+    }
+
+    @Test
+    fun `payment details with no surcharge send none`() {
+        val body =
+            PayabliJson.format.encodeToString(
+                PaymentDetailsBody.serializer(),
+                PaymentDetailsBody(totalAmount = BigDecimal("10.00")),
+            )
+
+        assertEquals("""{"totalAmount":10.00}""", body)
     }
 
     @Test
@@ -45,7 +66,7 @@ class PayInWireFormatTest {
             transaction(
                 """
                 {"paymenttransid":"t-1","gatewaytransid":"g-1","orderid":"o-1","transstatus":1,"paypointid":42,
-                 "totalamount":10.00,"netamount":9.71,"connectorname":"fiserv","payorid":7}
+                 "totalamount":10.00,"netamount":9.71,"feeamount":0.29,"surchargefee":0.31,"connectorname":"fiserv","payorid":7}
                 """.trimIndent(),
             )
 
@@ -56,6 +77,8 @@ class PayInWireFormatTest {
         assertEquals(42L, decoded.paypointId)
         assertEquals(BigDecimal("10.00"), decoded.totalAmount)
         assertEquals(BigDecimal("9.71"), decoded.netAmount)
+        assertEquals(BigDecimal("0.29"), decoded.feeAmount)
+        assertEquals(BigDecimal("0.31"), decoded.surchargeFee)
         assertEquals("fiserv", decoded.connectorName)
         assertEquals(7L, decoded.payorId)
     }
@@ -66,12 +89,12 @@ class PayInWireFormatTest {
             transaction(
                 """
                 {"PaymentTransId":"t-1","GatewayTransId":"g-1","OrderId":"o-1","Method":"card","TransStatus":1,
-                 "PaypointId":42,"TotalAmount":10.00,"NetAmount":9.71,"ConnectorName":"fiserv","PayorId":7}
+                 "PaypointId":42,"TotalAmount":10.00,"NetAmount":9.71,"FeeAmount":0.29,"SurchargeFee":0.31,"ConnectorName":"fiserv","PayorId":7}
                 """.trimIndent(),
             )
 
-        // Every populated field, as the lower-case case does: asserting four of ten leaves six aliases able
-        // to regress silently, which is the failure this whole class exists to catch.
+        // Every populated field, as the lower-case case does: an alias left unasserted can regress silently,
+        // which is the failure this whole class exists to catch.
         assertEquals("t-1", decoded.paymentTransId)
         assertEquals("g-1", decoded.gatewayTransId)
         assertEquals("o-1", decoded.orderId)
@@ -80,6 +103,8 @@ class PayInWireFormatTest {
         assertEquals(42L, decoded.paypointId)
         assertEquals(BigDecimal("10.00"), decoded.totalAmount)
         assertEquals(BigDecimal("9.71"), decoded.netAmount)
+        assertEquals(BigDecimal("0.29"), decoded.feeAmount)
+        assertEquals(BigDecimal("0.31"), decoded.surchargeFee)
         assertEquals("fiserv", decoded.connectorName)
         assertEquals(7L, decoded.payorId)
     }
