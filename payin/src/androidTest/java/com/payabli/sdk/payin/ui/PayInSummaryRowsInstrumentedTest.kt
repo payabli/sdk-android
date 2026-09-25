@@ -26,7 +26,7 @@ import org.junit.runner.RunWith
 import java.math.BigDecimal
 import java.util.Locale
 
-/** The summary rows draw the operation's own figures, and only the ones above zero. */
+/** The summary rows draw the operation's own figures, and only the ones that are not zero. */
 @RunWith(AndroidJUnit4::class)
 class PayInSummaryRowsInstrumentedTest {
     @get:Rule
@@ -46,7 +46,7 @@ class PayInSummaryRowsInstrumentedTest {
         )
 
     @Test
-    fun eachAmountAboveZeroIsDrawnWithItsFigure() {
+    fun eachAmountThatIsNotZeroIsDrawnWithItsFigure() {
         show(PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("0.10"), currency = "USD"))
 
         rule.onNodeWithText(figure("12.34", "USD")).assertExists()

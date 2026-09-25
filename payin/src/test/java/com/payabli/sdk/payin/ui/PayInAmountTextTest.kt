@@ -38,7 +38,7 @@ class PayInAmountTextTest {
 
     @Test
     fun `an amount that is sent as zero draws no row`() {
-        // 0.001 is above zero as supplied and reaches the wire as 0.00.
+        // 0.001 is not zero as supplied and reaches the wire as 0.00.
         val tiny = PayInPaymentDetails(totalAmount = BigDecimal("12.34"), serviceFee = BigDecimal("0.001"))
 
         assertNull(tiny.shownAmount(PayInField.ServiceFee))
@@ -49,6 +49,14 @@ class PayInAmountTextTest {
         listOf("1E+2147483647", "1E-2147483647").forEach { extreme ->
             assertNull(extreme, PayInPaymentDetails(BigDecimal(extreme)).shownAmount(PayInField.Amount))
         }
+    }
+
+    @Test
+    fun `a negative amount that is sent is drawn as the minus figure it is`() {
+        val credit = PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-0.31"))
+
+        assertEquals(BigDecimal("-0.31"), credit.shownAmount(PayInField.SurchargeFee))
+        assertEquals("-$0.31", formatAmount(BigDecimal("-0.31"), "USD", Locale.US))
     }
 
     @Test
@@ -77,7 +85,7 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `a summary that lists only the amount still shows every figure above zero`() {
+    fun `a summary that lists only the amount still shows every figure that is not zero`() {
         val drawn = placeAmounts(listOf(card, summary(PayInField.Amount)), details)
 
         assertEquals(
@@ -106,7 +114,7 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `nothing above zero, or nothing charged, draws no summary`() {
+    fun `nothing but zero, or nothing charged, draws no summary`() {
         val zero = PayInPaymentDetails(totalAmount = BigDecimal.ZERO)
 
         assertEquals(listOf(card), placeAmounts(listOf(card, summary(PayInField.Amount)), zero).map { it.section })

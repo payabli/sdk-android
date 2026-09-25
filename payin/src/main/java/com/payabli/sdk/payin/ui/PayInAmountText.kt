@@ -15,7 +15,7 @@ import java.util.Locale
 /**
  * The figure a summary row shows for [field], or null when the row is not drawn.
  *
- * Read at the scale the amount is sent at, so a row appears exactly when a figure above zero is charged. An
+ * Read at the scale the amount is sent at, so a row appears exactly when a figure other than zero is sent. An
  * amount too large or too precise to send draws none, since submitting it is refused.
  */
 internal fun PayInPaymentDetails.shownAmount(field: PayInField): BigDecimal? {
@@ -27,7 +27,7 @@ internal fun PayInPaymentDetails.shownAmount(field: PayInField): BigDecimal? {
             else -> null
         }
     val sendable = amount?.let { with(PayInValidation) { it.sendableOrNull() } }
-    return sendable?.takeIf { it > BigDecimal.ZERO }
+    return sendable?.takeIf { it.signum() != 0 }
 }
 
 /** A section as it is drawn, with the figures it shows when it is the summary. */
@@ -37,11 +37,11 @@ internal class DrawnSection(
 )
 
 /**
- * [sections] with every amount above zero placed in one summary.
+ * [sections] with every amount other than zero placed in one summary.
  *
  * A host's summary section decides where the figures go and what the section is called, never which figures
  * appear: they are in the order it lists them, then any it left out. With no summary section one is appended
- * after the rest. With nothing above zero to show, no summary is drawn.
+ * after the rest. With nothing but zero to show, no summary is drawn.
  */
 internal fun placeAmounts(
     sections: List<PayInFormSection>,
