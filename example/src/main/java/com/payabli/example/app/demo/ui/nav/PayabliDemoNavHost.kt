@@ -42,7 +42,6 @@ import com.payabli.example.app.demo.ui.setup.SetupViewModel
 import com.payabli.example.app.demo.ui.taptopay.TapToPayActions
 import com.payabli.example.app.demo.ui.taptopay.TapToPayScreen
 import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
-import java.math.BigDecimal
 
 /**
  * The whole navigation graph: four capability areas, each with its own back stack, and an optional fifth for
@@ -159,7 +158,6 @@ private fun NavGraphBuilder.captureGraph(navController: NavHostController) {
                     navController.graphViewModel<SimpleCaptureGraph, SimpleCaptureViewModel>(entry) {
                         SimpleCaptureViewModel(it.sessionSource, it.configuration.entryPoint)
                     },
-                amount = SIMPLE_CAPTURE_AMOUNT,
             )
         }
     }
@@ -257,6 +255,3 @@ private fun NavHostController.switchTo(destination: TopLevelDestination) {
         restoreState = true
     }
 }
-
-/** What the Simple Capture screen charges. Fixed, because that screen collects nothing but a card. */
-private val SIMPLE_CAPTURE_AMOUNT: BigDecimal = BigDecimal("12.34")

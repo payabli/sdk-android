@@ -3,13 +3,14 @@ package com.payabli.example.app.demo.simple
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,23 +19,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.demo.payment.TransactionSummary
+import com.payabli.example.app.demo.ui.components.DemoScreen
+import com.payabli.example.app.demo.ui.customize.FormLookTheme
+import com.payabli.example.app.demo.ui.customize.FormOperation
+import com.payabli.example.app.demo.ui.customize.FormSettings
+import com.payabli.example.app.demo.ui.customize.FormSettingsMenu
+import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
-import com.payabli.sdk.payin.form.PayInField
-import com.payabli.sdk.payin.form.PayInFormConfiguration
-import com.payabli.sdk.payin.form.PayInFormSection
-import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.model.PayInException
-import com.payabli.sdk.payin.model.PayInPaymentDetails
-import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayInSubmissionState
-import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
 
@@ -92,6 +92,12 @@ class SimpleCaptureViewModel(
     var retryKey by mutableStateOf<String?>(null)
         private set
 
+    var settings by mutableStateOf(FormSettings())
+
+    var operation by mutableStateOf(FormOperation.Capture)
+
+    var amountText by mutableStateOf(DEFAULT_AMOUNT)
+
     fun failed(outcome: PayInSubmissionState.Failed) {
         retryKey = keyForNextAttempt(retryKey, outcome)
     }
@@ -113,86 +119,108 @@ class SimpleCaptureViewModel(
                 }.onFailure { failure = it.message ?: "The session could not be configured." }
         }
     }
+
+    private companion object {
+        const val DEFAULT_AMOUNT = "12.34"
+    }
 }
 
+/** A positive amount with at most two decimal places, or null. */
+internal fun parseAmount(text: String): BigDecimal? =
+    text
+        .trim()
+        .toBigDecimalOrNull()
+        ?.takeIf { it.signum() > 0 && it.scale() <= 2 }
+
 /**
- * Charging a card with the fewest calls it takes: a token, a flow, a form.
+ * Charging or storing a card with the fewest calls it takes: a token, a flow, a form.
  *
  * Every other screen here is wrapped in this app's own types so that four capabilities can share them. This
- * one is not, so a reader can see what the SDK asks for and what belongs to the sample. Three calls, in
- * order, and nothing else on the screen.
+ * one calls the form directly, so a reader can see what the SDK asks for. The top bar's menu changes what the
+ * form is configured with, which `sdk/FormCustomization.kt` spells out in the SDK's own types.
  */
 @Composable
 fun SimpleCaptureScreen(
     viewModel: SimpleCaptureViewModel,
-    amount: BigDecimal,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val failure = viewModel.failure
-
     val payInFlow = viewModel.payInFlow
-    Box(modifier = modifier.fillMaxSize()) {
+    val settings = viewModel.settings
+    val operation = viewModel.operation
+    val amount = parseAmount(viewModel.amountText)
+
+    DemoScreen(
+        title = "Simple Capture",
+        modifier = modifier,
+        actions = { FormSettingsMenu(settings) { viewModel.settings = it } },
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FormOperation.entries.forEach { option ->
+                FilterChip(
+                    selected = option == operation,
+                    onClick = { viewModel.operation = option },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+        if (operation == FormOperation.Capture) {
+            OutlinedTextField(
+                value = viewModel.amountText,
+                onValueChange = { viewModel.amountText = it },
+                label = { Text("Amount") },
+                isError = amount == null,
+                supportingText = { if (amount == null) Text("A positive amount, up to two decimals.") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+
         when {
             failure != null ->
                 Text(
-                    text = failure.orEmpty(),
+                    text = failure,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
+                    modifier = Modifier.padding(24.dp),
                 )
 
-            payInFlow == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+            payInFlow == null ->
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+
+            operation == FormOperation.Capture && amount == null -> Unit
 
             else ->
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-                ) {
+                FormLookTheme(settings.look) {
                     // 3. The form. It collects, validates and submits; the outcome arrives here.
                     PayabliPayInForm(
                         payIn = payInFlow,
                         operation =
-                            PayabliPayInOperation.Capture(
-                                PayInTransactionOptions(
-                                    PayInPaymentDetails(totalAmount = amount),
-                                    idempotencyKey = viewModel.retryKey,
-                                ),
+                            FormCustomization.operation(
+                                settings,
+                                operation,
+                                amount ?: BigDecimal.ZERO,
+                                viewModel.retryKey,
                             ),
                         configuration =
-                            PayInFormConfiguration(
-                                allowedMethods = listOf(PayInMethodType.Card),
-                                // The amount is set on the operation and never collected, so this row reads
-                                // back the figure the request carries and the two cannot disagree.
-                                cardSections =
-                                    PayInFormConfiguration.defaultCardSections() +
-                                        // A capture with no customer is refused with 400 "Error in customer
-                                        // data", so the three the service needs are collected here.
-                                        PayInFormSection(
-                                            fields =
-                                                listOf(
-                                                    PayInField.FirstName,
-                                                    PayInField.LastName,
-                                                    PayInField.BillingEmail,
-                                                ),
-                                        ) +
-                                        PayInFormSection(
-                                            fields = listOf(PayInField.Amount),
-                                            style = PayInSectionStyle.Summary,
-                                        ),
-                                summaryValues =
-                                    mapOf(
-                                        PayInField.Amount to
-                                            TransactionSummary.formatAmount(amount.toPlainString()),
-                                    ),
+                            FormCustomization.configuration(
+                                settings,
+                                operation,
+                                amount?.let { TransactionSummary.formatAmount(it.toPlainString()) }.orEmpty(),
                             ),
+                        labels = FormCustomization.labels(settings, operation),
+                        style = FormCustomization.style(settings.look),
                         onCompleted = {
                             viewModel.succeeded()
-                            Toast.makeText(context, "Payment approved", Toast.LENGTH_LONG).show()
+                            val done = if (operation == FormOperation.Capture) "Payment approved" else "Card saved"
+                            Toast.makeText(context, done, Toast.LENGTH_LONG).show()
                         },
                         onFailed = {
                             viewModel.failed(it)
-                            Toast.makeText(context, "Payment failed", Toast.LENGTH_LONG).show()
+                            val failed = if (operation == FormOperation.Capture) "Payment failed" else "Save failed"
+                            Toast.makeText(context, failed, Toast.LENGTH_LONG).show()
                         },
                         onMethodChanged = {},
                     )
