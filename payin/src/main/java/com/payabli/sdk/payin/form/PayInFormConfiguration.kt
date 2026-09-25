@@ -144,13 +144,17 @@ public class PayInFormConfiguration(
     public val startingMethod: PayInMethodType
         get() = if (defaultMethod in methods) defaultMethod else methods.first()
 
-    /** The sections for one instrument, with any field appearing twice dropped after its first use. */
+    /**
+     * The sections for one instrument, with any field appearing twice dropped after its first use.
+     *
+     * An input section left with no fields is dropped. A summary section is kept, since it places the amounts.
+     */
     public fun sectionsFor(method: PayInMethodType): List<PayInFormSection> {
         val sections = if (method == PayInMethodType.Card) cardSections else bankSections
         val seen = mutableSetOf<PayInField>()
         return sections
             .map { section -> section.copy(fields = section.fields.filter { seen.add(it) }) }
-            .filter { it.fields.isNotEmpty() }
+            .filter { it.fields.isNotEmpty() || it.style == PayInSectionStyle.Summary }
     }
 
     /** Every field a payer types into for one instrument, in the order they are rendered. */

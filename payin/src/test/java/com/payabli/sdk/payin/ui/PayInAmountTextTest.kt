@@ -2,7 +2,9 @@ package com.payabli.sdk.payin.ui
 
 import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
+import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import org.junit.Assert.assertEquals
@@ -103,6 +105,25 @@ class PayInAmountTextTest {
         assertEquals(
             listOf(PayInField.SurchargeFee, PayInField.Amount, PayInField.ServiceFee),
             drawn[1].amounts.map { it.first },
+        )
+    }
+
+    @Test
+    fun `a summary section listing no fields still places the amounts under its title`() {
+        val empty = PayInFormSection(fields = emptyList(), title = "Order", style = PayInSectionStyle.Summary)
+        val configuration =
+            PayInFormConfiguration(allowedMethods = listOf(PayInMethodType.Card), cardSections = listOf(empty, card))
+
+        val drawn = placeAmounts(configuration.sectionsFor(PayInMethodType.Card), details)
+
+        assertEquals(listOf("Order", null), drawn.map { it.section.title })
+        assertEquals(
+            PayInField.Amount,
+            drawn
+                .first()
+                .amounts
+                .first()
+                .first,
         )
     }
 
