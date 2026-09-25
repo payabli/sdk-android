@@ -299,8 +299,11 @@ MUTATIONS = [
 
     # With abbreviation back on, `--pref` reaches `--prefix` and the later spelling wins, so a command
     # reading `--prefix maven-qa` publishes to the release prefix.
+    # Mutates the uploader and is answered by a workflow check, because what it breaks is the reading of
+    # the upload command rather than anything the uploader does when it runs. The half names the checks
+    # that run, not the file that is edited.
     ("The uploader accepts an abbreviated option that overrides the one being checked", PUBLISHER,
-     "publisher",
+     "workflows",
      "description=__doc__.splitlines()[0], allow_abbrev=False)",
      "description=__doc__.splitlines()[0])"),
 
