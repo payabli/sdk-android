@@ -123,18 +123,11 @@ fun FormSettingsMenu(
         Toggle("Dash between month and year", settings.dashExpirySeparator) {
             pick(settings.copy(dashExpirySeparator = it))
         }
-        Toggle("Mask the account number", settings.maskAccountNumber) { pick(settings.copy(maskAccountNumber = it)) }
-
-        Group("iOS only")
-        DropdownMenuItem(
-            text = {
-                Text(
-                    "Card brand icon placement, error message placement and input sizing are not in the Android SDK.",
-                )
-            },
-            onClick = {},
-            enabled = false,
-        )
+        Toggle(
+            "Mask the bank account number",
+            settings.maskAccountNumber,
+            enabled = settings.methods != FormMethods.Card,
+        ) { pick(settings.copy(maskAccountNumber = it)) }
     }
 }
 
