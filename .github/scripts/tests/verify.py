@@ -3408,6 +3408,14 @@ def test_workflows():
         # uploader again with the release one satisfies every check below on its first command, while
         # /maven is written too and no argument anywhere is wrong.
         check("W16 and it runs the uploader once", len(uploads) == 1, f"{len(uploads)} invocations")
+        # The same claim without reading shell grammar, and the reason the count above is not asked to
+        # carry it alone. Each round of this found another form that parses as one command — an operator
+        # written against a word, a subshell, a second wrapper, a wrapper's own options — and each fix
+        # closed that form rather than the class. Naming the script is what a second upload cannot avoid,
+        # whatever runs it, so this holds while the grammar is still incomplete.
+        mentions = [word for step in qa_steps for word in run_commands(step).split()
+                    if word.endswith("publish_staging.py")]
+        check("W16 and the uploader is named once in the whole job", len(mentions) == 1, f"{mentions}")
         words = uploads[0] if uploads else []
         check("W16 and it publishes to the QA prefix",
               argument(words, "--prefix") == "maven-qa", " ".join(words) or str(upload.get("run"))[:160])

@@ -289,6 +289,14 @@ MUTATIONS = [
      'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
      '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
 
+    # A wrapper carrying its own options, which the executable-position scan stops on. The mention count
+    # is what refuses this, since the second upload still names the script.
+    ("QA snapshot uploads again to the release prefix, behind a wrapper with options", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          env -i /usr/bin/python3 .github/scripts/publish_staging.py --prefix maven'
+     ' --version "$VERSION"\n'),
+
     # Two wrappers where the reader skipped one, so the program name it lands on is the interpreter and
     # the uploader on that line is not seen at all.
     ("QA snapshot uploads again to the release prefix, behind a second command wrapper", QA, "workflows",
