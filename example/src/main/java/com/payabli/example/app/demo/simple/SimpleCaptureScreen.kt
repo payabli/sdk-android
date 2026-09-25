@@ -25,6 +25,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.payabli.example.app.demo.payment.TransactionSummary
 import com.payabli.example.app.demo.ui.components.DemoScreen
+import com.payabli.example.app.demo.ui.components.Owner
+import com.payabli.example.app.demo.ui.components.OwnerFrame
 import com.payabli.example.app.demo.ui.customize.FormLookTheme
 import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.example.app.demo.ui.customize.FormSettings
@@ -156,26 +158,28 @@ fun SimpleCaptureScreen(
         modifier = modifier,
         actions = { FormSettingsMenu(settings) { viewModel.settings = it } },
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FormOperation.entries.forEach { option ->
-                FilterChip(
-                    selected = option == operation,
-                    onClick = { viewModel.operation = option },
-                    label = { Text(option.label) },
+        OwnerFrame(Owner.App) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FormOperation.entries.forEach { option ->
+                    FilterChip(
+                        selected = option == operation,
+                        onClick = { viewModel.operation = option },
+                        label = { Text(option.label) },
+                    )
+                }
+            }
+            if (operation == FormOperation.Capture) {
+                OutlinedTextField(
+                    value = viewModel.amountText,
+                    onValueChange = { viewModel.amountText = it },
+                    label = { Text("Amount") },
+                    isError = amount == null,
+                    supportingText = { if (amount == null) Text("A positive amount, up to two decimals.") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
-        if (operation == FormOperation.Capture) {
-            OutlinedTextField(
-                value = viewModel.amountText,
-                onValueChange = { viewModel.amountText = it },
-                label = { Text("Amount") },
-                isError = amount == null,
-                supportingText = { if (amount == null) Text("A positive amount, up to two decimals.") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
 
         when {
@@ -193,37 +197,39 @@ fun SimpleCaptureScreen(
             operation == FormOperation.Capture && amount == null -> Unit
 
             else ->
-                FormLookTheme(settings.look) {
-                    // 3. The form. It collects, validates and submits; the outcome arrives here.
-                    PayabliPayInForm(
-                        payIn = payInFlow,
-                        operation =
-                            FormCustomization.operation(
-                                settings,
-                                operation,
-                                amount ?: BigDecimal.ZERO,
-                                viewModel.retryKey,
-                            ),
-                        configuration =
-                            FormCustomization.configuration(
-                                settings,
-                                operation,
-                                amount?.let { TransactionSummary.formatAmount(it.toPlainString()) }.orEmpty(),
-                            ),
-                        labels = FormCustomization.labels(settings, operation),
-                        style = FormCustomization.style(settings.look),
-                        onCompleted = {
-                            viewModel.succeeded()
-                            val done = if (operation == FormOperation.Capture) "Payment approved" else "Card saved"
-                            Toast.makeText(context, done, Toast.LENGTH_LONG).show()
-                        },
-                        onFailed = {
-                            viewModel.failed(it)
-                            val failed = if (operation == FormOperation.Capture) "Payment failed" else "Save failed"
-                            Toast.makeText(context, failed, Toast.LENGTH_LONG).show()
-                        },
-                        onMethodChanged = {},
-                    )
+                OwnerFrame(Owner.Sdk) {
+                    FormLookTheme(settings.look) {
+                        // 3. The form. It collects, validates and submits; the outcome arrives here.
+                        PayabliPayInForm(
+                            payIn = payInFlow,
+                            operation =
+                                FormCustomization.operation(
+                                    settings,
+                                    operation,
+                                    amount ?: BigDecimal.ZERO,
+                                    viewModel.retryKey,
+                                ),
+                            configuration =
+                                FormCustomization.configuration(
+                                    settings,
+                                    operation,
+                                    amount?.let { TransactionSummary.formatAmount(it.toPlainString()) }.orEmpty(),
+                                ),
+                            labels = FormCustomization.labels(settings, operation),
+                            style = FormCustomization.style(settings.look),
+                            onCompleted = {
+                                viewModel.succeeded()
+                                val done = if (operation == FormOperation.Capture) "Payment approved" else "Card saved"
+                                Toast.makeText(context, done, Toast.LENGTH_LONG).show()
+                            },
+                            onFailed = {
+                                viewModel.failed(it)
+                                val failed = if (operation == FormOperation.Capture) "Payment failed" else "Save failed"
+                                Toast.makeText(context, failed, Toast.LENGTH_LONG).show()
+                            },
+                            onMethodChanged = {},
+                        )
+                    }
                 }
         }
     }
