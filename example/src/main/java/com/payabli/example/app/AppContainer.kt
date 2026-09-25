@@ -124,7 +124,13 @@ class AppContainer(
     val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
 
     /** Whether the Simple Capture tab is shown. Off until the Config screen turns it on. */
-    val simpleCapture: SimpleCaptureSetting = SimpleCaptureSetting()
+    val simpleCapture: SimpleCaptureSetting =
+        appContext.getSharedPreferences(DEMO_SETTINGS, Context.MODE_PRIVATE).let { prefs ->
+            SimpleCaptureSetting(
+                initial = prefs.getBoolean(SIMPLE_CAPTURE_SHOWN, false),
+                save = { prefs.edit().putBoolean(SIMPLE_CAPTURE_SHOWN, it).apply() },
+            )
+        }
 
     /**
      * Step one for both payment screens: the token server, then the SDK.
@@ -186,3 +192,6 @@ class AppContainer(
             defaults = TokenHostDefaults.fromBuildConfig(),
         )
 }
+
+private const val DEMO_SETTINGS = "demo-settings"
+private const val SIMPLE_CAPTURE_SHOWN = "simple-capture-shown"

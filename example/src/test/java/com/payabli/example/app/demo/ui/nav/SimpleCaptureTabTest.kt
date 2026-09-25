@@ -59,5 +59,17 @@ class SimpleCaptureTabTest {
         assertTrue(setting.shown.value)
     }
 
+    @Test
+    fun `the setting starts from what was saved and saves every change`() {
+        val saved = mutableListOf<Boolean>()
+        val setting = SimpleCaptureSetting(initial = true, save = { saved += it })
+
+        assertTrue(setting.shown.value)
+        setting.setShown(false)
+
+        assertFalse(setting.shown.value)
+        assertEquals(listOf(false), saved)
+    }
+
     private fun shown(simpleCaptureOn: Boolean) = shownDestinations(simpleCaptureShown = simpleCaptureOn)
 }
