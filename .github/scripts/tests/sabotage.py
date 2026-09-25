@@ -369,6 +369,13 @@ MUTATIONS = [
      "      - name: Authenticate to AWS\n        env:\n"
      "          TOKEN: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"),
 
+    # No environment variable is declared at all: the secret is expanded straight into the command line
+    # of a step that assumes the publishing role, which a rule reading only `env` cannot see.
+    ("A non-Gradle QA step takes the registry credential in its command", QA, "workflows",
+     "          AWS_SDK_CDN_ACCOUNT=$(echo \"$ROLE_ARN\" | cut -d: -f5)\n",
+     "          AWS_SDK_CDN_ACCOUNT=$(echo \"$ROLE_ARN\" | cut -d: -f5)\n"
+     "          echo \"${{ secrets.PAYABLI_MAVEN_PW_PROD }}\" > /dev/null\n"),
+
     # The other half of the same rule: the expected name, and no secret referenced anywhere, because the
     # credential is written in by hand.
     ("A non-Gradle QA step carries the registry credential as a literal", QA, "workflows",

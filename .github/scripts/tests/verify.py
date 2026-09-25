@@ -3423,10 +3423,14 @@ def test_workflows():
     # the step's own, so reading names alone asks whether a holder declared itself one and `TOKEN: ${{
     # secrets.… }}` on the upload is absent from a list keyed on `PAYABLI_MAVEN`. Reading values alone
     # drops the credential written in by hand, which carries the expected name and references no secret.
+    #
+    # And the whole step rather than its `env`, because `env` is one of three ways in. A secret expanded
+    # straight into a `run:` line reaches the same process, and one handed to a pinned action through
+    # `with:` reaches that action; neither declares an environment variable at all.
     def holds_credential(step: dict) -> bool:
         env = step.get("env") or {}
         return (any(str(var).startswith("PAYABLI_MAVEN") for var in env)
-                or any("secrets." in str(value) for value in env.values()))
+                or "secrets." in json.dumps(step, default=str))
 
     holding = [step for step in qa_steps if holds_credential(step)]
     gradle_steps = [step for step in qa_steps if "gradlew" in run_commands(step)]
