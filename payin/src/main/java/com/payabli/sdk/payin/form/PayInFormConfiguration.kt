@@ -105,6 +105,7 @@ public class PayInFormConfiguration(
     public val labelLayout: PayInLabelLayout = PayInLabelLayout.External,
     hiddenFieldLabels: Set<PayInField> = emptySet(),
     public val formatting: PayInFormatting = PayInFormatting(),
+    public val showsBaseAmount: Boolean = true,
 ) {
     public val allowedMethods: List<PayInMethodType> = Collections.unmodifiableList(allowedMethods.toList())
     public val cardSections: List<PayInFormSection> = Collections.unmodifiableList(cardSections.toList())
@@ -203,6 +204,7 @@ public class PayInFormConfiguration(
         labelLayout: PayInLabelLayout = this.labelLayout,
         hiddenFieldLabels: Set<PayInField> = this.hiddenFieldLabels,
         formatting: PayInFormatting = this.formatting,
+        showsBaseAmount: Boolean = this.showsBaseAmount,
     ): PayInFormConfiguration =
         PayInFormConfiguration(
             allowedMethods,
@@ -213,6 +215,7 @@ public class PayInFormConfiguration(
             labelLayout,
             hiddenFieldLabels,
             formatting,
+            showsBaseAmount,
         )
 
     override fun equals(other: Any?): Boolean =
@@ -222,6 +225,7 @@ public class PayInFormConfiguration(
                     defaultMethod == other.defaultMethod &&
                     labelLayout == other.labelLayout &&
                     formatting == other.formatting &&
+                    showsBaseAmount == other.showsBaseAmount &&
                     allowedMethods == other.allowedMethods &&
                     cardSections == other.cardSections &&
                     bankSections == other.bankSections &&
@@ -234,6 +238,7 @@ public class PayInFormConfiguration(
             defaultMethod,
             labelLayout,
             formatting,
+            showsBaseAmount,
             allowedMethods,
             cardSections,
             bankSections,
@@ -244,7 +249,8 @@ public class PayInFormConfiguration(
     override fun toString(): String =
         "PayInFormConfiguration(allowedMethods=$allowedMethods, defaultMethod=$defaultMethod, " +
             "cardSections=$cardSections, bankSections=$bankSections, requiredFields=$requiredFields, " +
-            "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting)"
+            "labelLayout=$labelLayout, hiddenFieldLabels=$hiddenFieldLabels, formatting=$formatting, " +
+            "showsBaseAmount=$showsBaseAmount)"
 
     public companion object {
         /**

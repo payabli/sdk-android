@@ -115,6 +115,11 @@ class PayInApiBoundsTest {
     }
 
     @Test
+    fun `configurations that differ on the base amount row are not equal`() {
+        assertNotEquals(PayInFormConfiguration(showsBaseAmount = true), PayInFormConfiguration(showsBaseAmount = false))
+    }
+
+    @Test
     fun `labels built either side of a mutation are not equal`() {
         val shared = mutableMapOf(PayInField.CardNumber to "Card")
         val before = PayInFormLabels(fieldLabels = shared)
