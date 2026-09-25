@@ -112,6 +112,200 @@ SOURCE = {
 
 # (description, target file, half to run, anchor, replacement)
 MUTATIONS = [
+    ("QA snapshot gains a trigger of its own, so it publishes beside CI rather than after it", QA,
+     "workflows",
+     "  workflow_call:\n", "  workflow_call:\n  push:\n    branches: [main]\n"),
+
+    ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
+     "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
+
+    ("QA snapshot names a checkout ref, so it builds something other than what CI tested", QA,
+     "workflows",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: main\n"),
+
+    ("CI hands the publisher every secret the repository holds", CI, "workflows",
+     "    secrets:\n      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "      PAYABLI_MAVEN_PW_PROD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n",
+     "    secrets: inherit\n"),
+
+    ("CI grants the publishing token at the workflow level, so every job inherits it", CI, "workflows",
+     "permissions:\n  contents: read\n", "permissions:\n  contents: read\n  id-token: write\n"),
+
+    ("QA snapshot declares the card reader credential for the whole workflow", QA, "workflows",
+     "permissions:\n  contents: read\n", "env:\n  PAYABLI_MAVEN_USER: x\npermissions:\n  contents: read\n"),
+
+    ("CI publishes without waiting for any job", CI, "workflows",
+     "    needs: [card-present, sonar]\n", ""),
+
+    ("CI publishes before the instrumented suites finish", CI, "workflows",
+     "    needs: [card-present, sonar]", "    needs: [card-present, build]"),
+
+    ("A job CI waits for is allowed to fail without failing the run", CI, "workflows",
+     "  instrumented:\n", "  instrumented:\n    continue-on-error: true\n"),
+
+    ("A step of a job CI waits for is allowed to fail, leaving the job green", CI, "workflows",
+     "      - name: Unit tests\n        run: ./gradlew :core:test",
+     "      - name: Unit tests\n        continue-on-error: true\n        run: ./gradlew :core:test"),
+
+    ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
+     ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
+
+    # Three trailing backslashes are a literal backslash and an escaped newline, so the shell joins the
+    # lines and reads one masked command. A test for one backslash that refuses two does not.
+    ("CI masks a failed unit suite across an odd run of backslashes", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test \\\\\\\n"
+     "          || true\n"),
+
+    # Nothing waits for the suite, so its status is never read at all: the step reports that the job
+    # started and the runner tears the process down at the end of the step.
+    ("CI backgrounds the unit suites, so nothing reads their status", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test &\n"
+     "          echo started\n"),
+
+    # The condition is YAML rather than shell, so no command is masked and nothing is written into the
+    # script at all. The step is skipped, every task name stays where a reader sees them, and the job
+    # succeeds having run no unit suite.
+    ("CI skips the unit suites with a step condition", CI, "workflows",
+     "      - name: Unit tests\n        run: ./gradlew :core:test",
+     "      - name: Unit tests\n        if: false\n        run: ./gradlew :core:test"),
+
+    # The condition is false, so the suites never run. Every task name is still where a reader looking
+    # for them sees them, and the step exits 0 having tested nothing.
+    ("CI wraps the unit suites in a condition that is never true", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          if [ -n \"\" ]; then\n"
+     "            ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n          fi\n"),
+
+    # The instrumented suite is not in a `run:` at all: the emulator action takes it as an input, so a
+    # reader that knows only about `run:` finds nothing to object to and the snapshot publishes behind a
+    # red device suite.
+    ("CI masks the instrumented suite inside the emulator action's script", CI, "workflows",
+     "            -Pandroid.testInstrumentationRunnerArguments.notAnnotation="
+     "com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest\n",
+     "            -Pandroid.testInstrumentationRunnerArguments.notAnnotation="
+     "com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest || true\n"),
+
+    # `-e` does not apply to a command in an AND list other than the last, so the suite's failure is read
+    # as an answer and the step carries on to the line after it. Nothing is declared and no idiom from any
+    # denylist appears.
+    ("CI masks a failed unit suite on the left of an AND list", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test"
+     " && echo passed\n          echo finished\n"),
+
+    # Split across a continuation, so neither physical line is a finding on its own: the first is an
+    # unterminated escape that tokenises to nothing, and the second is an operator with no command in
+    # front of it. The shell runs one masked command.
+    ("CI masks a failed unit suite across a line continuation", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test \\\n"
+     "          || true\n"),
+
+    # Nothing follows the command at all: the shell inverts its status, so the red suite reports success
+    # and errexit does not apply to a command it negates. Every suite name is still there.
+    #
+    # Quoted, because unquoted it would not be this at all: a leading `!` in a plain scalar is YAML's tag
+    # indicator and the loader strips it, so the shell receives the command it always ran and the
+    # mutation would pass for a reason that has nothing to do with the check.
+    ("CI negates a unit suite, so a red one reports success", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     '        run: "! ./gradlew :core:test :payin:test :telemetry:test :testutils:test"\n'),
+
+    # Nothing is declared: no continue-on-error, no shell override, and the command still exits 0 after
+    # a red suite. The job the publish waits for is green and the snapshot goes out behind it.
+    ("CI masks a failed unit suite with a command the publish never reads", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test || echo ignored\n"),
+
+    ("A dispatched QA snapshot runs the suites under a shell without -e", QA, "workflows",
+     "      - name: Unit tests\n        if:", "      - name: Unit tests\n        shell: bash {0}\n        if:"),
+
+    ("CI cancels a run on main, and with it a publish part way through its upload", CI, "workflows",
+     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", "  cancel-in-progress: true"),
+
+    ("CI cancels a run on main through an expression that is not the word true", CI, "workflows",
+     "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
+     "  cancel-in-progress: ${{ github.ref == github.ref }}"),
+
+    ("QA snapshot names the uploader in an echo, so its flags are read instead", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
+     "          echo publish_staging.py --prefix maven-qa\n"
+     "          python3 .github/scripts/publish_staging.py --prefix maven --version \"$VERSION\""),
+
+    ("QA snapshot names gradlew in an echo and publishes a fixed version", QA, "workflows",
+     '        run: ./gradlew publish -Ppayabli.version="$VERSION"',
+     '        run: |\n          echo gradlew -Ppayabli.version="$VERSION"\n'
+     '          ./gradlew publish -Ppayabli.version=0.1.0'),
+
+    ("QA snapshot echoes the QA prefix and hands the uploader the release one", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
+     "          echo --prefix maven-qa\n"
+     "          python3 .github/scripts/publish_staging.py --version \"$VERSION\" --prefix maven"),
+
+    ("QA snapshot publishes a version the workflow fixed rather than the stamp", QA, "workflows",
+     'run: ./gradlew publish -Ppayabli.version="$VERSION"',
+     'run: |\n          echo -Ppayabli.version=$VERSION\n'
+     '          ./gradlew publish -Ppayabli.version=0.1.0'),
+
+    ("QA snapshot quotes the release prefix and names the QA one in a trailing comment", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
+     "          python3 .github/scripts/publish_staging.py --prefix \"maven\" --version \"$VERSION\"  "
+     "# --prefix maven-qa"),
+
+    ("QA snapshot publishes without the credential that resolves the card reader", QA, "workflows",
+     "          VERSION: ${{ steps.name.outputs.version }}\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
+     "        run: ./gradlew publish",
+     "          VERSION: ${{ steps.name.outputs.version }}\n        run: ./gradlew publish"),
+
+    ("QA snapshot names the QA prefix in a comment and publishes to the release one", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
+     "          # --prefix maven-qa\n"
+     "          python3 .github/scripts/publish_staging.py --prefix maven --version \"$VERSION\""),
+
+    ("QA snapshot reads the role from a secret, with the variable still named beside it", QA, "workflows",
+     "          role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}",
+     "          role-to-assume: ${{ secrets.ROLE || vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}"),
+
+    ("QA snapshot gains a trigger that is neither a dispatch nor a call", QA, "workflows",
+     "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
+
+    ("QA snapshot skips the suites on a dispatch while publishing anyway", QA, "workflows",
+     "        if: github.event_name == 'workflow_dispatch'\n",
+     "        if: github.event_name != 'workflow_dispatch'\n"),
+
+    ("QA snapshot checks out another repository's default branch", QA, "workflows",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          repository: other/repo\n"),
+
+    ("QA snapshot runs an action on a moving tag", QA, "workflows",
+     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1",
+     "      - uses: actions/setup-java@v6"),
+
+    ("CI publishes from a pull request, including a fork's", CI, "workflows",
+     "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n", "    if: always()\n"),
+
+    ("CI calls the publisher without granting it a token, so nothing here mints one deliberately", CI,
+     "workflows",
+     "      id-token: write\n    uses: ./.github/workflows/qa-snapshot.yml",
+     "    uses: ./.github/workflows/qa-snapshot.yml"),
+
+
+    # With abbreviation back on, `--pref` reaches `--prefix` and the later spelling wins, so a command
+    # reading `--prefix maven-qa` publishes to the release prefix.
+    # Mutates the uploader and is answered by a workflow check, because what it breaks is the reading of
+    # the upload command rather than anything the uploader does when it runs. The half names the checks
+    # that run, not the file that is edited.
+    ("The uploader accepts an abbreviated option that overrides the one being checked", PUBLISHER,
+     "workflows",
+     "description=__doc__.splitlines()[0], allow_abbrev=False)",
+     "description=__doc__.splitlines()[0])"),
 
     ("An occupied key holding the same bytes fails, so a half-finished run cannot be completed",
      PUBLISHER, "publisher",
@@ -146,6 +340,74 @@ MUTATIONS = [
     ("QA snapshot uploads to the release prefix", QA, "workflows",
      "--prefix maven-qa", "--prefix maven"),
 
+    # Every argument the checks read is still correct on the first of the two, so a check that reads one
+    # invocation is green while the release prefix is written beside the QA one.
+    ("QA snapshot uploads again to the release prefix, on a second line", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
+    ("QA snapshot uploads again to the release prefix, on the same line", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
+     '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
+    # Both prefixes are given to one command, and argparse keeps the last, so the tree goes to /maven
+    # while a reader taking the first reports maven-qa and every check on it passes.
+    ("QA snapshot gives the release prefix after the QA one, on the same command", QA, "workflows",
+     "--prefix maven-qa --version", "--prefix maven-qa --prefix maven --version"),
+
+    # The program is not written down, so neither count sees an uploader: the pattern matches the one
+    # file in that directory when the step runs, and the tree goes to /maven.
+    ("QA snapshot uploads again to the release prefix, behind a pattern", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          python3 .github/scripts/publish_*.py --prefix maven --version "$VERSION"\n'),
+
+    # A wrapper carrying its own options, which the executable-position scan stops on. The mention count
+    # is what refuses this, since the second upload still names the script.
+    ("QA snapshot uploads again to the release prefix, behind a wrapper with options", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          env -i /usr/bin/python3 .github/scripts/publish_staging.py --prefix maven'
+     ' --version "$VERSION"\n'),
+
+    # Two wrappers where the reader skipped one, so the program name it lands on is the interpreter and
+    # the uploader on that line is not seen at all.
+    ("QA snapshot uploads again to the release prefix, behind a second command wrapper", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          env python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
+    # A subshell is still a command. A reader that takes the opening bracket for the program name finds
+    # no uploader in it and counts one invocation where the shell runs two.
+    ("QA snapshot uploads again to the release prefix, inside a subshell", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
+     '&& (python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION")\n'),
+
+    # Nothing is masked in the command: the pipeline reports tee's status, and without pipefail the red
+    # suite left of it is dropped. The suite names are all still there.
+    ("CI runs its steps without pipefail, so a piped suite reports the pipe", CI, "workflows",
+     "defaults:\n  run:\n    shell: bash\n", ""),
+
+    ("QA snapshot runs its steps without pipefail", QA, "workflows",
+     "defaults:\n  run:\n    shell: bash\n", ""),
+
+    # The publishing job still serialises, and the gate is inside the group with it: a dispatch waiting
+    # for a reviewer holds the slot, and snapshots from main queue behind it or are replaced.
+    ("The QA gate waits for a reviewer while holding the publishing slot", QA, "workflows",
+     "defaults:\n  run:\n    shell: bash\n",
+     "concurrency:\n  group: qa-snapshot\n  cancel-in-progress: false\n\n"
+     "defaults:\n  run:\n    shell: bash\n"),
+
+    # Whitespace is what a word-splitting reader separates on, so the operator written against the word
+    # beside it stays inside that word and the two commands read as one.
+    ("QA snapshot uploads again to the release prefix, behind an operator with no space", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION";'
+     'python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
+
     ("QA snapshot publishes the committed version, so every build shares one coordinate", QA, "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish"),
 
@@ -153,18 +415,140 @@ MUTATIONS = [
      "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish -Ppayabli.version=0.1.0"),
 
+    # A wrapper carrying its own command, which the executable-position scan stops at. The checked
+    # command is untouched and an unstamped publication runs beside it.
+    ("QA snapshot publishes the committed version too, inside a wrapper's command", QA, "workflows",
+     'run: ./gradlew publish -Ppayabli.version="$VERSION"',
+     'run: |\n          ./gradlew publish -Ppayabli.version="$VERSION"\n'
+     "          bash -c './gradlew publish'"),
+
+    # The checked command is still there and still correct, and the committed coordinate is published
+    # beside the stamped one.
+    ("QA snapshot publishes the committed version too, on a second command", QA, "workflows",
+     'run: ./gradlew publish -Ppayabli.version="$VERSION"',
+     'run: ./gradlew publish -Ppayabli.version="$VERSION" && ./gradlew publish'),
+
+    # The name is the step's own, so a list keyed on PAYABLI_MAVEN does not see it and a non-Gradle step
+    # holds the registry credential while every check about which steps hold one stays green.
+    ("A non-Gradle QA step is handed the registry credential under another name", QA, "workflows",
+     "      - name: Authenticate to AWS\n",
+     "      - name: Authenticate to AWS\n        env:\n"
+     "          TOKEN: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"),
+
+    # No environment variable is declared at all: the secret is expanded straight into the command line
+    # of a step that assumes the publishing role, which a rule reading only `env` cannot see.
+    ("A non-Gradle QA step takes the registry credential in its command", QA, "workflows",
+     "          AWS_SDK_CDN_ACCOUNT=$(echo \"$ROLE_ARN\" | cut -d: -f5)\n",
+     "          AWS_SDK_CDN_ACCOUNT=$(echo \"$ROLE_ARN\" | cut -d: -f5)\n"
+     "          echo \"${{ secrets.PAYABLI_MAVEN_PW_PROD }}\" > /dev/null\n"),
+
+    # Index notation rather than a dot, which is the same reach into the same context and carries
+    # neither the expected variable name nor the spelling a search for `secrets.` looks for.
+    ("A non-Gradle QA step is handed the registry credential by index", QA, "workflows",
+     "      - name: Authenticate to AWS\n",
+     "      - name: Authenticate to AWS\n        env:\n"
+     "          TOKEN: ${{ secrets['PAYABLI_MAVEN_PW_PROD'] }}\n"),
+
+    # The other half of the same rule: the expected name, and no secret referenced anywhere, because the
+    # credential is written in by hand.
+    ("A non-Gradle QA step carries the registry credential as a literal", QA, "workflows",
+     "      - name: Authenticate to AWS\n",
+     "      - name: Authenticate to AWS\n        env:\n"
+     "          PAYABLI_MAVEN_PASSWORD: written-in-by-hand\n"),
+
     ("The card reader credential is job-level again, so every step receives it", QA, "workflows",
      "      id-token: write\n    steps:",
      "      id-token: write\n    env:\n      PAYABLI_MAVEN_USER: x\n      PAYABLI_MAVEN_PASSWORD: y\n    steps:"),
 
-    ("QA snapshot publishes from every branch anyone pushes", QA, "workflows",
-     "  push:\n    branches: [main]", "  push:\n    branches: ['**']"),
+    ("A dispatched QA snapshot skips the sample app's suite", QA, "workflows",
+     " :taptopay:test :example:test", " :taptopay:test"),
+
+    # Every task name stays exactly where a search for them finds them, as the argument of an echo, and
+    # the build runs nothing at all.
+    ("A dispatched QA snapshot echoes its suites instead of running them", QA, "workflows",
+     "          ./gradlew :core:test :payin:test", "          echo ./gradlew :core:test :payin:test"),
+
+    ("A dispatched QA snapshot skips the convention plugin tests", QA, "workflows",
+     "          ./gradlew -p build-logic test\n", ""),
+
+    ("A dispatched QA snapshot publishes without running the suites", QA, "workflows",
+     "      - name: Unit tests\n        if: github.event_name == 'workflow_dispatch'",
+     "      - name: Unit tests\n        if: false"),
 
     ("QA snapshot cannot be dispatched, so no candidate can be cut on demand", QA, "workflows",
-     "on:\n  workflow_dispatch:\n  push:", "on:\n  push:"),
+     "on:\n  workflow_dispatch:\n", "on:\n"),
+
+    ("A QA snapshot can be dispatched by anyone with write access, with nobody approving it", QA,
+     "workflows", "    environment: release\n", ""),
+
+    # The environment is still named and the reviewers still approve. The subject the run presents is
+    # `environment:release` with no ref, which the snapshot role does not trust, so the publish fails at
+    # the assume instead of being gated.
+    ("The QA gate is put onto the job that assumes the role, losing the ref in its subject", QA,
+     "workflows",
+     "    permissions:\n      contents: read\n      id-token: write\n",
+     "    environment: release\n    permissions:\n      contents: read\n      id-token: write\n"),
+
+    ("The QA gate runs on the called path instead, holding every merge to main", QA, "workflows",
+     "    if: github.event_name == 'workflow_dispatch'\n    runs-on: ubuntu-latest\n"
+     "    environment: release\n",
+     "    if: github.event_name != 'workflow_dispatch'\n    runs-on: ubuntu-latest\n"
+     "    environment: release\n"),
+
+    # The gate still runs and the reviewers still approve, and the publish no longer waits for the answer.
+    ("A refused QA approval publishes anyway", QA, "workflows",
+     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
+     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
+     "    if: ${{ always() }}\n"),
+
+    # A skipped gate is not a failure, so this accepts every caller that skipped it. Any workflow in the
+    # repository can call this one, and one added on a feature branch publishes with no CI and no
+    # approval while presenting a subject the role trusts.
+    ("The QA publish accepts any caller that skipped the gate", QA, "workflows",
+     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
+     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
+     "    if: ${{ !cancelled() && needs.approve.result != 'failure' }}\n"),
+
+    # The approval half alone, which refuses the automatic run from main rather than the feature branch.
+    ("The QA publish requires an approval the called path can never get", QA, "workflows",
+     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
+     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
+     "    if: ${{ !cancelled() && needs.approve.result == 'success' }}\n"),
+
+    ("The QA publish stops waiting for the gate", QA, "workflows",
+     "    needs: [approve]\n", ""),
+
+    # The publisher declares these two names and reads them, so the aliases still match what it declares
+    # while the credential arriving under one of them is the analysis token.
+    ("CI hands the publisher a different secret under the name it declares", CI, "workflows",
+     "      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n",
+     "      PAYABLI_MAVEN_US_PROD: ${{ secrets.SONAR_TOKEN }}\n"),
 
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
+
+    # The group is still there and still one across every ref. A newer run now replaces a running one
+    # mid-upload, and the keys already written stay written, so a partial tree is stranded under an
+    # identifier nothing will complete.
+    ("QA snapshot lets a queued run cancel one mid-upload", QA, "workflows",
+     "      group: qa-snapshot\n      cancel-in-progress: false\n",
+     "      group: qa-snapshot\n      cancel-in-progress: true\n"),
+
+    # Out of the publishing job, which is the only one holding the token and the staging tree. Removed
+    # and relocated are one state as far as this is concerned: either way the job that uploads has no
+    # build, and a called run skips whatever job the build was moved to.
+    ("The staging tree is never built in the publishing job", QA, "workflows",
+     '      - name: Publish to the staging directory\n        env:\n'
+     '          VERSION: ${{ steps.name.outputs.version }}\n'
+     '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
+     '        run: ./gradlew publish -Ppayabli.version="$VERSION"\n',
+     ''),
+
+    # The one the guard was written for and the one it was never shown refusing: with no block at all,
+    # two runs stamp and upload at once, and whichever writes a key first keeps the coordinate.
+    ("QA snapshot serialises nothing, because the publish has no group", QA, "workflows",
+     "    concurrency:\n      group: qa-snapshot\n      cancel-in-progress: false\n", ""),
 
     ("QA subject check accepts a tag, whose role never grants the write", QA, "workflows",
      "EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/",
@@ -176,9 +560,6 @@ MUTATIONS = [
     ("QA role ARN masked as a secret, making every AccessDenied unreadable", QA, "workflows",
      "role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}",
      "role-to-assume: ${{ secrets.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}"),
-
-    ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
-     "  push:\n    branches: [main]", "  push:\n    tags: ['*']"),
 
     ("QA snapshot drops the OIDC subject check, so a moved setting reads as an IAM fault", QA, "workflows",
      '"$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |', '"" |'),

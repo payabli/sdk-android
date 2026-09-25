@@ -19,6 +19,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1996,6 +1997,358 @@ def trigger_keys(doc: dict) -> list[str]:
     return []
 
 
+def run_commands(step: dict) -> str:
+    """A step's `run` as the words a shell would execute: no comments, and quoting removed.
+
+    Every check that asks what a step runs is a substring match, and both halves of a shell line defeat
+    one. A comment satisfies a check while the command beside it does something else, and quoting hides
+    a word from it: `--prefix "maven" --version "$V"  # --prefix maven-qa` publishes to the release
+    prefix while passing the check that the QA prefix is used and the check that the release one is not.
+
+    Dropping whole lines starting `#` catches neither, because that comment is not on its own line and
+    the quotes are not a comment at all. `shlex` reads both the way the shell does; a line it cannot
+    parse, an unbalanced quote across a continuation, is kept whole rather than dropped.
+    """
+    words = []
+    for line in logical_lines(str(step.get("run", ""))):
+        try:
+            words.extend(shell_words(line))
+        except ValueError:
+            words.append(line)
+    return " ".join(words)
+
+
+# A shell word that runs something else, so what follows it is that command's arguments and not this
+# one's. `|| true` and friends are refused elsewhere; this is about where one command ends.
+OPERATORS = ("&&", "||", "|", ";", "&")
+# Punctuation that opens or closes a command rather than running one. A command inside it is still a
+# command: `&& (upload --prefix maven)` runs the uploader, and a reader that takes `(` for the program
+# name finds no uploader there and counts one invocation where the shell runs two. `$(` splits the same
+# way, so a substitution's contents are read as well.
+GROUPING = ("(", ")", "{", "}")
+
+
+# The word, not one way of writing what follows it. `secrets.NAME`, `secrets['NAME']`,
+# `toJSON(secrets)` and a `format()` around any of them are all reaches into the same context and all
+# contain it; a matcher for one spelling is a list with no end, which W12's header records being learnt
+# one round at a time.
+SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
+
+
+def publisher_source() -> Path:
+    """Where the uploader being tested is, which is the harness's copy while the harness is driving.
+
+    `sabotage.py` mutates a copy and names it here, so a check reading the repository's own file is
+    reading something this run is not testing and passes whatever was done to the copy. One definition
+    of the path, because every reader of it has to be the same reader.
+    """
+    return Path(os.environ.get("NIGHTLY_PUBLISHER", SDK / ".github/scripts/publish_staging.py"))
+
+
+def mints(value) -> bool:
+    """Whether a `permissions` value grants the OIDC token.
+
+    It is a mapping or the string `write-all`, which grants it outright. Reading it as a mapping either
+    way raises on the string, and a traceback carries no verdict.
+    """
+    if isinstance(value, str):
+        return value == "write-all"
+    return str((value or {}).get("id-token")) == "write"
+
+
+def shell_of(step: dict) -> str:
+    """Every line of shell a step runs, whether it is the step's own or an action's input.
+
+    `run:` is not the only place a suite is invoked. `reactivecircus/android-emulator-runner` takes the
+    commands to run on the device as `with.script`, which is where this repository's instrumented suites
+    live, and a reader that only knows about `run:` finds nothing there to object to.
+    """
+    parts = [str(step.get("run", ""))]
+    given = step.get("with") or {}
+    if isinstance(given, dict):
+        parts.extend(str(given[key]) for key in ("script", "run", "cmd") if key in given)
+    return "\n".join(part for part in parts if part)
+
+
+def logical_lines(text: str) -> list[str]:
+    """`text` split into the lines a shell reads, with a trailing backslash joining the next one.
+
+    A physical line is not a command. `./gradlew test \\` and `|| true` are one masked command, and read
+    separately the first is an unterminated escape, which tokenises to nothing, and the second is an
+    operator with no command in front of it. Neither half is a finding and the whole is, so the line a
+    reader is handed has to be the one the shell runs.
+
+    The backslash and the newline are removed and nothing is put in their place, which is what the shell
+    does, and what keeps `test\\` joined to `|| true` splitting on the operator rather than around it.
+
+    Whether the newline is escaped is the parity of the run before it, not whether that run is one. Each
+    pair is a literal backslash and an odd one is left over to escape the newline, so three continue the
+    line where two do not. Testing for one and refusing two answers only the shortest two cases.
+    """
+    lines: list[str] = []
+    carried = ""
+    for line in text.splitlines():
+        stripped = line.rstrip()
+        if (len(stripped) - len(stripped.rstrip("\\"))) % 2:
+            carried += stripped[:-1]
+            continue
+        lines.append(carried + line)
+        carried = ""
+    if carried:
+        lines.append(carried)
+    return lines
+
+
+def shell_words(line: str) -> list[str]:
+    """`line` split as a shell splits it, with its operators as words of their own.
+
+    `shlex.split` separates on whitespace only, so an operator written against the word beside it stays
+    inside that word: `--version "$V";python3 upload.py` yields `$V;python3`, and a reader looking for
+    `;` among the words never finds one. Two commands then read as one, and the second is where a
+    checked argument is replaced. `punctuation_chars` gives the operators back as tokens, keeps `&&`
+    and `||` whole, and still respects quoting, so the `&` inside a quoted query string is not one.
+    """
+    lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+# One of these may stand before the program and still be running it.
+INTERPRETERS = ("python3", "python", "bash", "sh", "env")
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def program_index(command: list[str]) -> int:
+    """Where the program stands in `command`, past anything that only sets up running it.
+
+    Every wrapper, not one of each: `env python3 upload.py` runs upload.py, and stopping after `env`
+    reads `python3` as the program and finds no upload.py on the line at all.
+    """
+    head = 0
+    while head < len(command) and (ASSIGNMENT.match(command[head])
+                                   or command[head].rsplit("/", 1)[-1] in INTERPRETERS):
+        head += 1
+    return head
+
+
+def commands_of(step: dict) -> list[list[str]]:
+    """Every command `step` runs, from its program word onward, split as a shell would split it.
+
+    One definition of where a command begins, because the questions asked of it are the same question:
+    which commands run a named program, and whether every program can be named at all.
+    """
+    found: list[list[str]] = []
+    for line in logical_lines(str(step.get("run", ""))):
+        try:
+            words = shell_words(line)
+        except ValueError:
+            continue
+        command: list[str] = []
+        for word in [*words, ";"]:
+            if word not in OPERATORS and word not in GROUPING:
+                command.append(word)
+                continue
+            head = program_index(command)
+            if head < len(command):
+                found.append(command[head:])
+            command = []
+    return found
+
+
+def invocations(step: dict, program: str) -> list[list[str]]:
+    """Every command in `step` that runs `program`, each split as a shell would split it.
+
+    `run_commands` flattens a step into one string, which answers whether a term appears anywhere in it
+    and not what any one command was given: `echo --prefix maven-qa` above the uploader satisfies a
+    search for that term while the uploader is handed something else.
+
+    The program has to be the word being run, not a word being passed. `echo publish_staging.py
+    --prefix maven-qa` mentions it in an argument, and reading that line's flags is reading the echo's.
+    A leading `VAR=value` and one interpreter may stand in front of it, because `python3 x.py` runs x.py.
+
+    Every command and not the first: a caller that reads one is asking what a program was given while a
+    second run of it goes unread, and the second is where a checked argument is replaced. Each line is
+    cut at its shell operators first, so a command after `&&` is its own command rather than arguments
+    to the one before it.
+    """
+    return [command for command in commands_of(step) if command[0].endswith(program)]
+
+
+# A program word a reader cannot resolve. A glob, a variable or a substitution in that position names
+# whatever it happens to expand to at run time, so a second run of a checked program hides behind any
+# of them, and `eval` hides the command entirely. Teaching the reader to expand them is the list with
+# no end that W12's header describes; requiring the program to be written down has an end.
+UNRESOLVED = re.compile(r"[*?$`]")
+
+
+def unresolved_programs(step: dict) -> list[str]:
+    """The commands in `step` whose program is not a literal a reader can name.
+
+    A `case` arm's pattern is not a command and is written in exactly the characters this objects to,
+    so the one construct that produces them is tracked: between `case` and `esac`, a run of words
+    closed by `)` is a pattern. Bounded, unlike expanding what a glob or a variable resolves to, and
+    not an exemption for the step: a command written anywhere in it is still read.
+    """
+    found = []
+    matching = False
+    for line in logical_lines(str(step.get("run", ""))):
+        try:
+            words = shell_words(line)
+        except ValueError:
+            continue
+        command: list[str] = []
+        for word in [*words, ";"]:
+            if word == "case":
+                matching = True
+            elif word == "esac":
+                matching = False
+            if word not in OPERATORS and word not in GROUPING:
+                command.append(word)
+                continue
+            head = program_index(command)
+            if head < len(command) and not (matching and word == ")"):
+                program = command[head]
+                if UNRESOLVED.search(program) or program.rsplit("/", 1)[-1] == "eval":
+                    found.append(" ".join(command[head:]))
+            command = []
+    return found
+
+
+def gradle_arguments(step: dict) -> str:
+    """Every word `step` hands to Gradle, joined, and nothing a step merely mentions.
+
+    A task name in a step's text is not a task the build runs: `echo ./gradlew :core:test` names the
+    suite where a search for it finds it, and runs nothing, because the names are the echo's arguments.
+    Taking them from the commands that run gradlew is what makes the difference legible.
+    """
+    return " ".join(" ".join(words) for words in invocations(step, "gradlew"))
+
+
+def masked_commands(step: dict) -> list[str]:
+    """The commands in `step` whose failure would not fail the step.
+
+    `a || b` runs b when a fails and carries on, so the `-e` in the default `bash -e` never sees a's
+    status. A test is the exception rather than the rule: `[ -n "$x" ] || missing=...` is asking a
+    question, and its non-zero answer is the answer. Reading the operator rather than a list of idioms
+    is what makes `|| true` and `|| echo ignored` the same finding, which as a list they are not.
+
+    `! a` is the other way to the same place, and it needs nothing after it: the shell inverts a's
+    status, so a failure becomes a success, and `-e` is documented not to apply to a command it negates.
+
+    `a && b` is the same exemption as `a || b` and reads like the opposite, so it is worth stating why.
+    `-e` does not apply to a command in an AND list other than the last, and measured under `bash -e`,
+    `false && echo passed` followed by any other line leaves the script running and exiting 0. It fails
+    only when the list is the script's last command, and a guarded step is not written on that promise.
+    An `if` or `while` condition is exempt for the same documented reason. Both are refused rather than
+    parsed: neither appears in a guarded run block today, and the narrower reading is one more grammar
+    rule to get right later.
+
+    `a &` reaches the same place by not waiting at all. An asynchronous list reports the status of
+    starting the job and not of running it, so measured under `bash -e`, `false &` followed by another
+    line exits 0. The suite's own status is never anybody's, since nothing waits for it.
+    """
+    tests = ("[", "[[", "test")
+    conditions = ("if", "while", "until")
+    found = []
+    for line in logical_lines(shell_of(step)):
+        try:
+            words = shell_words(line)
+        except ValueError:
+            continue
+        command: list[str] = []
+        for word in [*words, ";"]:
+            if word not in OPERATORS and word not in GROUPING:
+                command.append(word)
+                continue
+            if command:
+                head = command[0]
+                asked = command[1] if len(command) > 1 else ""
+                if head == "!" or head in conditions:
+                    # `if [ -n "$missing" ]` is a question, the same way `[ … ] || …` is. What the
+                    # exemption is for is `if ./gradlew test`, where a real command's failure is read
+                    # as an answer and the step carries on.
+                    if asked not in tests:
+                        found.append(" ".join(command))
+                elif word in ("||", "&&", "&") and head not in tests:
+                    found.append(" ".join(command))
+            command = []
+    return found
+
+
+def unstoppable(steps, label: str = "", allowed_if: tuple[str, ...] = ()) -> list[str]:
+    """The steps that can fail without failing their job, each with the reason it can.
+
+    A guard that reads task names asks what a step mentions, not whether failing it stops the job. This
+    is the other half, and it belongs to every job the publish waits for and not only to the publisher:
+    a suite masked in the workflow that calls this one is green by the time anything here is read.
+    """
+    found = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        why = [f"masks `{command}`" for command in masked_commands(step)]
+        text = shell_of(step)
+        # A suite that never runs is not a suite that passed, and a conditional is how it never runs.
+        # `if [ -n "" ]; then ./gradlew :core:test; fi` leaves every task name where a reader looking
+        # for them sees them, exits 0, and runs none of them. The test exemption in `masked_commands`
+        # is what makes that invisible: the condition is a question, so nothing is reported, and the
+        # body is never read. So a step that runs Gradle carries no conditional at all, which is a
+        # rule about where a suite may be written rather than one more thing to parse.
+        if "gradlew" in text:
+            words = []
+            for line in logical_lines(text):
+                try:
+                    words.extend(shell_words(line))
+                except ValueError:
+                    continue
+            gating = sorted({word for word in words if word in ("if", "while", "until", "case")})
+            if gating:
+                why.append("runs Gradle under " + ", ".join(gating))
+            # The same thing one level up, where the condition is YAML rather than shell. `if: false` on
+            # a suite step leaves every task name in place, skips the step, and the job succeeds having
+            # run nothing. The deliberate skips are named rather than a shape being matched, because a
+            # shape is what an added condition satisfies: anything not on the list is a finding, and a
+            # new one is a line here for a reviewer to see.
+            condition = " ".join(str(step.get("if", "")).split())
+            if condition and condition not in allowed_if:
+                why.append(f"runs Gradle under if: {condition}")
+        if "set +e" in text:
+            why.append("set +e")
+        if step.get("continue-on-error"):
+            why.append("continue-on-error")
+        if step.get("shell"):
+            why.append(f"shell: {step.get('shell')}")
+        if why:
+            named = step.get("name") or step.get("uses") or run_commands(step)[:30]
+            found.append(f"{label}{named} ({', '.join(why)})")
+    return found
+
+
+def invocation(step: dict, program: str) -> list[str]:
+    """The words the first command in `step` that runs `program` passes to it.
+
+    Ask `invocations` instead wherever a second run of the program would defeat what is being checked.
+    """
+    found = invocations(step, program)
+    return found[0] if found else []
+
+
+def argument(words: list[str], flag: str) -> str | None:
+    """The value given to `flag`, written either as two words or joined by `=`.
+
+    The last occurrence and not the first, because that is the one the program receives. `argparse`
+    stores each occurrence over the one before it, so `--prefix maven-qa --prefix maven` uploads to the
+    release prefix while a reader taking the first reports the QA one and every check on it passes.
+    """
+    value = None
+    for index, word in enumerate(words):
+        if word == flag:
+            value = words[index + 1] if index + 1 < len(words) else None
+        elif word.startswith(f"{flag}="):
+            value = word.split("=", 1)[1]
+    return value
+
+
 def steps_of(doc: dict) -> list[dict]:
     """Every step of every job, as the mappings they are."""
     steps: list[dict] = []
@@ -2794,7 +3147,6 @@ def test_workflows():
     # graph: the action runs only in a job that never mentions the secrets context, needs no job that does,
     # and downloads nothing.
     THIRD_PARTY = "android-emulator-runner"
-    SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
     PINNED = re.compile(r"^[^@]+@[0-9a-f]{40}(\s|$)")
 
     def rendered(node) -> str:
@@ -2846,7 +3198,10 @@ def test_workflows():
             uses = [str(jobs[jn].get("uses"))] if jobs[jn].get("uses") else []
             uses += [str(step.get("uses")).strip() for step in jobs[jn].get("steps") or []
                      if isinstance(step, dict) and step.get("uses")]
-            unpinned = [ref for ref in uses if not PINNED.match(ref)]
+            # A reference beginning `./` is a workflow in this repository, versioned with the commit that
+            # runs it. There is no tag to move and no third party to move it, so a SHA would name the
+            # commit it already is.
+            unpinned = [ref for ref in uses if not ref.startswith("./") and not PINNED.match(ref)]
             check(f"W12 every action in the {name} job {jn}, which holds a secret, is pinned to a commit",
                   not unpinned, " | ".join(unpinned))
 
@@ -2969,27 +3324,228 @@ def test_workflows():
     qa = workflow_doc(QA_WORKFLOW)
     qa_on = (qa.get(True) if True in qa else qa.get("on")) or {}
     qa_jobs = {name: job for name, job in (qa.get("jobs") or {}).items() if isinstance(job, dict)}
-    check(f"W16 {QA_WORKFLOW} has one publishing job", len(qa_jobs) == 1, f"{sorted(qa_jobs)}")
+    # Named by what it is granted rather than by what it is called: the publishing job is the one that
+    # mints the identity that writes the bucket, and renaming a job must not move these checks off it.
+    publishing = {name: job for name, job in qa_jobs.items() if mints(job.get("permissions"))}
+    check(f"W16 {QA_WORKFLOW} has one publishing job", len(publishing) == 1, f"{sorted(publishing)}")
+    qa_job_name = next(iter(publishing), "")
+    qa_job = publishing.get(qa_job_name, {})
+    # Two lists, because the questions differ. `qa_steps` is every step of every job in this workflow and
+    # is what a "nothing anywhere does this" check reads: a credential held by the gate job, or a command
+    # masked there, is as much a finding as one here. `publishing_steps` is the publishing job's own, and
+    # is what finds the build and the upload, because a step that does either has to be in the job that
+    # holds the token and the staging tree. Since the gate became a job of this workflow, a build moved
+    # into it satisfied every search over all the steps while the publishing runner had no tree to upload
+    # and a called run skipped it entirely.
     qa_steps = steps_of(qa)
+    publishing_steps = [step for step in (qa_job.get("steps") or []) if isinstance(step, dict)]
     qa_text = workflow_text(QA_WORKFLOW)
 
     # The snapshot role trusts refs/heads/* only, so a tag cannot assume it. A tags: entry here produces
     # a run that fails at the assume rather than one that publishes to the wrong place.
     check("W16 it never triggers on a tag",
           not any("tags" in value for value in qa_on.values() if isinstance(value, dict)), f"{qa_on}")
-    # Separately, because either alone satisfies "triggers from a branch" while the other is gone: a
-    # dropped dispatch leaves no way to cut a candidate, and a push widened past main publishes from
-    # every branch anyone pushes.
+    # Separately, because either alone satisfies "triggers from a branch" while the other is gone.
     check("W16 it can be dispatched", "workflow_dispatch" in qa_on, f"{sorted(qa_on)}")
-    push = (qa_on.get("push") or {}) if isinstance(qa_on.get("push"), dict) else {}
-    check("W16 and it publishes on a push to main only",
-          list(push.get("branches") or []) == ["main"], f"{qa_on.get('push')}")
+
+    # Nothing publishes ahead of the suites, and nothing publishes off its own trigger. A trigger of its
+    # own fires on the same push as CI and publishes whatever main held; this is called by CI, so the
+    # dependency is `needs` rather than a second workflow guessing when the first finished.
+    # The whole set rather than the two triggers worth refusing: `pull_request`, `schedule` and
+    # `repository_dispatch` are each a run that is not a dispatch, so the suites step skips and the
+    # publish goes ahead with nothing waiting for CI.
+    check("W16 and it has no trigger but those two",
+          set(qa_on) == {"workflow_dispatch", "workflow_call"}, f"{sorted(qa_on)}")
+
+    # A called workflow checks out the caller's commit, so naming a ref would be choosing a different
+    # one from the revision CI is testing.
+    checkouts = [step for step in qa_steps if "actions/checkout" in str(step.get("uses", ""))]
+    check("W16 it checks out once", len(checkouts) == 1, f"{len(checkouts)} checkout steps")
+    # Neither, and every one of them: a `repository:` without a `ref` takes that repository's default
+    # branch, and a second checkout can name a ref the first did not.
+    named = [str(step.get("with")) for step in checkouts
+             if (step.get("with") or {}).get("ref") or (step.get("with") or {}).get("repository")]
+    check("W16 and it builds the commit it was called on", not named, " | ".join(named))
+
+    # Every action in this file, because W12 reads ci.yml and nightly.yml and the `./` exemption it
+    # gained says only that the reference to this workflow needs no pin. The actions inside it do.
+    unpinned = [ref for ref in (str(step.get("uses")).strip() for step in qa_steps if step.get("uses"))
+                if not PINNED.match(ref)]
+    check("W16 and every action it runs is pinned to a commit", not unpinned, " | ".join(unpinned))
+
+    # The caller, in ci.yml: the dependency, and what stops a pull request reaching it.
+    ci_doc = workflow_doc("ci.yml")
+    caller = next((job for job in (ci_doc.get("jobs") or {}).values()
+                   if isinstance(job, dict) and QA_WORKFLOW in str(job.get("uses", ""))), None)
+    check("W16 ci.yml calls the publisher", caller is not None,
+          f"{sorted((ci_doc.get('jobs') or {}))}")
+    if caller is not None:
+        # Every other job in this file, reached through the needs graph rather than named here: naming
+        # them is the same list twice, and a job added to ci.yml would then be one the snapshot does not
+        # wait for and nothing reports. sonar needs build and instrumented, so depending on it covers
+        # three, and the closure is what says so rather than a comment claiming it.
+        graph = {name: needs_of(job)
+                 for name, job in (ci_doc.get("jobs") or {}).items() if isinstance(job, dict)}
+        caller_name = next(name for name, job in (ci_doc.get("jobs") or {}).items() if job is caller)
+        waited, stack = set(), needs_of(caller)
+        while stack:
+            job_name = stack.pop()
+            if job_name in waited:
+                continue
+            waited.add(job_name)
+            stack.extend(graph.get(job_name, []))
+        owed = set(graph) - {caller_name} - waited
+        check("W16 and after every other job in ci.yml", not owed, f"does not wait for {sorted(owed)}")
+        # Cancelling reaches the jobs of a workflow this one called, and the publisher uploads one object
+        # at a time, so a merge landing mid-upload leaves a partial tree under an abandoned identifier.
+        # The called workflow's own group cannot refuse a cancellation the caller's group starts.
+        # The allowed expression, not "anything but the word true": `${{ true }}` and
+        # `${{ github.ref == github.ref }}` both cancel and both survive an inequality. `concurrency`
+        # may also be a bare string, which is a group with no cancellation to read.
+        concurrency = ci_doc.get("concurrency")
+        cancels = "" if isinstance(concurrency, str) else str(
+            (concurrency or {}).get("cancel-in-progress", ""))
+        check("W16 and ci.yml cancels no run on main",
+              " ".join(cancels.split()) in ("", "False", "${{ github.ref != 'refs/heads/main' }}"),
+              cancels)
+
+        # A job with continue-on-error counts as succeeded for anything that needs it, so waiting for it
+        # and requiring it to have passed are different things.
+        # On the steps as well as the job, and on what those steps run as well as on how they are
+        # declared. `continue-on-error` on a unit-test step keeps its job green after a failure, and so
+        # does `|| echo ignored` after the command, with nothing declared at all. Either way the job is
+        # waited for, reports success, and the snapshot publishes behind a suite that did not pass.
+        soft = []
+        for name in sorted(waited):
+            job = (ci_doc.get("jobs") or {}).get(name) or {}
+            if job.get("continue-on-error"):
+                soft.append(name)
+            # The one deliberate skip among the suites this waits for: the card-present reports need the
+            # card reader credential, which a fork's pull request never receives, so they are skipped
+            # there rather than failing on an authentication error.
+            soft.extend(unstoppable(job.get("steps") or [], f"{name}: ",
+                                    allowed_if=("env.PAYABLI_MAVEN_PASSWORD != ''",)))
+        check("W16 and nothing it waits for is allowed to fail", not soft, " | ".join(soft))
+        # A pull request runs CI too, including from a fork, and this job mints the publishing identity.
+        gate = " ".join(str(caller.get("if", "")).split())
+        check("W16 and only on a push to main",
+              gate == "github.event_name == 'push' && github.ref == 'refs/heads/main'", gate)
+        # A workflow-level grant is inherited by every job that does not replace it, so a job-level
+        # answer alone is one a declaration one level up satisfies while the token reaches jobs that run
+        # moving-tag actions. Both levels, and the workflow level is refused outright.
+        check("W16 and ci.yml grants no token for a job to inherit",
+              not mints(ci_doc.get("permissions")), f"{ci_doc.get('permissions')}")
+        minting = [name for name, job in (ci_doc.get("jobs") or {}).items()
+                   if isinstance(job, dict) and mints(job.get("permissions"))]
+        check("W16 and it is the only job in ci.yml granted one",
+              minting == [caller_name], f"{minting}")
+
+        # `secrets: inherit` hands over every secret the repository holds, into the one job that mints
+        # the publishing identity. Named, and named as exactly what the publisher declares it needs.
+        passed = caller.get("secrets")
+        check("W16 and it names the secrets it hands over", isinstance(passed, dict), f"{passed}")
+        declared = set((qa_on.get("workflow_call") or {}).get("secrets") or {})
+        check("W16 and hands over only what the publisher declares",
+              isinstance(passed, dict) and bool(declared) and set(passed) == declared,
+              f"passed={sorted(passed) if isinstance(passed, dict) else passed} declared={sorted(declared)}")
+        # The alias is what the publisher reads; the value is which repository secret arrives under it.
+        # Equal key sets leave both aliases free to carry any other secret the repository holds, and the
+        # sonar job's token is in reach, so each value is read against the secret of its own name.
+        if isinstance(passed, dict):
+            carried = {alias: " ".join(str(value).split()) for alias, value in passed.items()}
+            wrong = {alias: value for alias, value in carried.items()
+                     if value != "${{ secrets." + alias + " }}"}
+            check("W16 and each alias carries the repository secret of that name", not wrong, f"{wrong}")
+
+    # A dispatch answers to no CI run, so it carries the unit suites itself. It does not carry the
+    # instrumented ones, ktlint or lint, and the workflow says so where it runs them.
+    # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one
+    # this never notices, and naming them twice is how the two lists drift.
+    # Off what Gradle is given, not off what the step mentions. `run_commands` flattens a step, so
+    # `echo ./gradlew :core:test` puts every task name where a search for them finds them while the
+    # suites run nowhere: the names are the argument of an echo. Reading the words handed to gradlew
+    # asks the question the check is named for.
+    ci_runs = " ".join(gradle_arguments(step) for step in steps_of(workflow_doc("ci.yml")))
+    ci_suites = set(re.findall(r":([A-Za-z0-9_-]+):test\b", ci_runs))
+    check("W16 ci.yml names the suites to match", bool(ci_suites), ci_runs[:120])
+
+    tested = next((step for step in publishing_steps
+                   if re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step))), None)
+    check("W16 a dispatch runs the suites", tested is not None,
+          " | ".join(str(step.get("name", "")) for step in qa_steps))
+    if tested is not None:
+        run = gradle_arguments(tested)
+        missing = ci_suites - set(re.findall(r":([A-Za-z0-9_-]+):test\b", run))
+        check("W16 and every suite ci.yml runs", not missing, f"missing={sorted(missing)}")
+        # An included build, so no task in the main build reaches it and it needs its own invocation.
+        check("W16 and the convention plugin tests", "-p build-logic test" in run, run[:200])
+        # Exact: `!= 'workflow_dispatch'` contains the term, skips the step on a dispatch, and leaves
+        # the publish running behind it.
+        check("W16 and does so only when CI has not",
+              " ".join(str(tested.get("if", "")).split()) == "github.event_name == 'workflow_dispatch'",
+              str(tested.get("if", "")))
+
+    # Who may publish by hand. A dispatch is the one path no CI run waited for, and the snapshot role
+    # trusts refs/heads/*, so the branch is not a restriction either. The release environment is, and it
+    # has to sit on a job that assumes nothing: the OIDC subject for a job with an environment carries
+    # `environment:<name>` and no ref, so naming one on the publishing job fails the subject check and
+    # then the assume. Three claims, because each is satisfied while another is gone.
+    gate = {name: job for name, job in qa_jobs.items()
+            if str(job.get("environment", "")) == "release"}
+    check("W16 a hand-run snapshot waits for the release environment", len(gate) == 1, f"{sorted(gate)}")
+    check("W16 and the publishing job names no environment, so its subject keeps the ref",
+          not qa_job.get("environment"), str(qa_job.get("environment", "")))
+    gate_name = next(iter(gate), "")
+    gate_job = gate.get(gate_name, {})
+    # Granted nothing, so the claim it presents is nobody's concern and it cannot publish on its own.
+    check("W16 and the gate mints no token", not mints(gate_job.get("permissions")),
+          f"{gate_job.get('permissions')}")
+    # Exact: `github.event_name != 'workflow_dispatch'` names the term and gates the opposite path,
+    # leaving every dispatch unreviewed and every called run waiting for somebody.
+    check("W16 and the gate runs on a dispatch and only on one",
+          " ".join(str(gate_job.get("if", "")).split()) == "github.event_name == 'workflow_dispatch'",
+          str(gate_job.get("if", "")))
+    # Waiting for the gate is what makes it a gate. `always()` publishes through a refusal, and reading
+    # `success()` would stop the called path, where a skipped gate is the correct outcome.
+    check("W16 and the publish waits for the gate",
+          gate_name in (qa_job.get("needs") or []), f"{qa_job.get('needs')}")
+    # A skipped gate is not a failure, so a condition that only refuses failure accepts every caller that
+    # skipped it, and any workflow in the repository can call this one. The whole value, because each
+    # half is satisfied while the other is gone: the approval alone refuses the automatic run, and the
+    # push-to-main pair alone lets a refused dispatch through.
+    check("W16 and publishes only behind the gate or a push to main",
+          " ".join(str(qa_job.get("if", "")).split())
+          == ("${{ !cancelled() && (needs." + gate_name + ".result == 'success' "
+              "|| (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}"),
+          str(qa_job.get("if", "")))
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
-    group = str(((qa.get("concurrency") or {}) if isinstance(qa.get("concurrency"), dict)
-                 else {"group": qa.get("concurrency")}).get("group", ""))
+    def group_of(value) -> str:
+        # An absent block is an absent group. `str(None)` is `"None"`, which is truthy and carries no
+        # `${{`, so a guard asking whether a group is there passed on the block having been deleted —
+        # which is the state it exists to refuse. The default never applied: the key was present and
+        # held null.
+        if isinstance(value, dict):
+            value = value.get("group")
+        return "" if value is None else str(value)
+
+    group = group_of(qa_job.get("concurrency"))
     check("W16 one publish runs at a time across refs", bool(group) and "${{" not in group, group)
+    # And the queued run waits rather than replacing the running one. The upload is object by object and
+    # the keys it has already written stay written, so cancelling one mid-flight strands a partial tree
+    # under an identifier nothing will complete. Written out rather than left to the default, because a
+    # group is edited by someone reading this file and not GitHub's table of defaults.
+    cancels = qa_job.get("concurrency")
+    cancels = "" if isinstance(cancels, str) else str((cancels or {}).get("cancel-in-progress", ""))
+    check("W16 and a queued one waits rather than cancelling it",
+          " ".join(cancels.split()) == "False", cancels or "not set")
+    # On the publishing job and not on the workflow, because the gate is a job of this workflow too. At
+    # the workflow level a dispatch waiting for a reviewer holds the only slot, and every snapshot from
+    # main queues behind it until somebody answers; a pending run is replaced when a newer one queues,
+    # so those runs are lost rather than late.
+    check("W16 and waiting for a reviewer holds no publishing slot",
+          not qa.get("concurrency"), f"{qa.get('concurrency')}")
 
     # A role ARN is an identifier rather than a credential, and masking it makes every AccessDenied
     # unreadable. Written inline it would put the AWS account id in a public repository instead.
@@ -2999,48 +3555,138 @@ def test_workflows():
                         if "configure-aws-credentials" in str(step.get("uses", ""))), {})
     role = str(assume_with.get("role-to-assume", ""))
     check("W16 the role the run assumes comes from a variable",
-          "vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN" in role, role)
+          " ".join(role.split()) == "${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}", role)
     check("W16 and no role ARN is written inline", "arn:aws:iam:" not in qa_text)
     check("W16 and no AWS access key is named",
           "AWS_ACCESS_KEY_ID" not in qa_text and "AWS_SECRET_ACCESS_KEY" not in qa_text)
 
-    # The card reader credential belongs to the one step that reads /maven. Job-level it reaches every
-    # step, including the checkout and the upload, and a dispatched run carries branch-controlled code.
-    qa_job = next(iter(qa_jobs.values()), {})
-    check("W16 no credential is declared for the whole job", not (qa_job.get("env") or {}),
+    # The card reader credential belongs to the steps that resolve it. Job-level it reaches every step,
+    # including the checkout and the upload, and a dispatched run carries branch-controlled code.
+    # The same shape one level up: a workflow-level env reaches every step of every job, so asking only
+    # about the job leaves the declaration that does the damage unexamined.
+    check("W16 no credential is declared for the whole workflow", not (qa.get("env") or {}),
+          f"{sorted(qa.get('env') or {})}")
+    check("W16 nor for the whole job", not (qa_job.get("env") or {}),
           f"{sorted(qa_job.get('env') or {})}")
-    reading = [str(step.get("name", "")) for step in qa_steps
-               if any(var.startswith("PAYABLI_MAVEN") for var in (step.get("env") or {}))]
-    check("W16 and one step reads it", len(reading) == 1, f"{reading}")
+    # A dispatch carries the suites itself and a called run skips them, which is the design and is
+    # pinned to that exact value by its own check above.
+    masked = unstoppable(qa_steps, allowed_if=("github.event_name == 'workflow_dispatch'",))
+    check("W16 and no step of it can fail without failing the job", not masked, " | ".join(masked))
+
+    # `bash` and not merely any value: an unset `shell:` runs `bash -e`, which leaves `-o pipefail` off,
+    # so a pipeline reports the last command's status and `./gradlew test | tee log` is green after a red
+    # suite. Naming bash is what turns it on. Both workflows, because defaults do not cross into a called
+    # one from its caller, and a suite masked in ci.yml is green by the time the publisher is read.
+    for name in (QA_WORKFLOW, "ci.yml"):
+        shell = ((workflow_doc(name).get("defaults") or {}).get("run") or {}).get("shell")
+        check(f"W16 and {name} runs its steps under a shell with pipefail", shell == "bash", f"{shell}")
+
+    wanted = {"PAYABLI_MAVEN_USER", "PAYABLI_MAVEN_PASSWORD"}
+    # By the name or by the value, because each misses what the other catches. A name the step chooses is
+    # the step's own, so reading names alone asks whether a holder declared itself one and `TOKEN: ${{
+    # secrets.… }}` on the upload is absent from a list keyed on `PAYABLI_MAVEN`. Reading values alone
+    # drops the credential written in by hand, which carries the expected name and references no secret.
+    #
+    # And the whole step rather than its `env`, because `env` is one of three ways in. A secret expanded
+    # straight into a `run:` line reaches the same process, and one handed to a pinned action through
+    # `with:` reaches that action; neither declares an environment variable at all.
+    #
+    # Matched on the word rather than on `secrets.`, which is one spelling of it: `secrets['NAME']` is
+    # the same reach and carries no dot. The same matcher the job-graph check uses, for the reason its
+    # header gives.
+    def holds_credential(step: dict) -> bool:
+        env = step.get("env") or {}
+        return (any(str(var).startswith("PAYABLI_MAVEN") for var in env)
+                or bool(SECRETS_CONTEXT.search(json.dumps(step, default=str))))
+
+    holding = [step for step in qa_steps if holds_credential(step)]
+    gradle_steps = [step for step in qa_steps if "gradlew" in run_commands(step)]
+    check("W16 and a step holds it", bool(holding),
+          " | ".join(str(step.get("name", "")) for step in qa_steps))
+
+    # Both ways. That every holder runs Gradle keeps it off the checkout, the OIDC check and the upload;
+    # that every Gradle step holds it is what stops one losing the credential and failing to resolve the
+    # card reader, which on a call is the publish rather than the suites the call skipped.
+    def named(steps):
+        return " | ".join(str(step.get("name", "")) for step in steps)
+
+    check("W16 and only a step that runs Gradle does",
+          all("gradlew" in run_commands(step) for step in holding), named(holding))
+    check("W16 and every step that runs Gradle carries both names",
+          bool(gradle_steps) and all(wanted <= set(step.get("env") or {}) for step in gradle_steps),
+          named([step for step in gradle_steps if not wanted <= set(step.get("env") or {})]))
 
     # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
     # If-None-Match, which the bucket policy requires on every write.
-    upload = next((step for step in qa_steps if "publish_staging.py" in str(step.get("run", ""))), None)
+    upload = next((step for step in publishing_steps if "publish_staging.py" in run_commands(step)), None)
     check("W16 it uploads the staging tree with the publisher", upload is not None)
     if upload is not None:
-        run = str(upload.get("run", ""))
-        check("W16 and it publishes to the QA prefix", "--prefix maven-qa" in run, run[:160])
-        check("W16 and never to the release prefix", "--prefix maven " not in run, run[:160])
+        uploads = invocations(upload, "publish_staging.py")
+        # Counted before the arguments are read. A step that uploads to the QA prefix and then runs the
+        # uploader again with the release one satisfies every check below on its first command, while
+        # /maven is written too and no argument anywhere is wrong.
+        check("W16 and it runs the uploader once", len(uploads) == 1, f"{len(uploads)} invocations")
+        # The same claim without reading shell grammar, and the reason the count above is not asked to
+        # carry it alone. Each round of this found another form that parses as one command — an operator
+        # written against a word, a subshell, a second wrapper, a wrapper's own options — and each fix
+        # closed that form rather than the class. Naming the script is what a second upload cannot avoid,
+        # whatever runs it, so this holds while the grammar is still incomplete.
+        mentions = [word for step in qa_steps for word in run_commands(step).split()
+                    if word.endswith("publish_staging.py")]
+        check("W16 and the uploader is named once in the whole job", len(mentions) == 1, f"{mentions}")
+        words = uploads[0] if uploads else []
+        check("W16 and it publishes to the QA prefix",
+              argument(words, "--prefix") == "maven-qa", " ".join(words) or str(upload.get("run"))[:160])
 
-    naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in str(step.get("run", ""))), None)
+    naming = next((step for step in publishing_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
     check("W16 it stamps the identifier", naming is not None)
 
     # The committed property names the version under development, so publishing it gives every build
     # from every branch one coordinate and a tester cannot pin the build they tested. Overriding it with
     # a literal does the same, so the override has to reach the stamp: the step's env maps a variable to
     # the naming step's output, and the command interpolates that variable.
-    gradle = next((step for step in qa_steps if "gradlew publish" in str(step.get("run", ""))), None)
+    gradle = next((step for step in publishing_steps if "gradlew publish" in run_commands(step)), None)
     check("W16 it builds the staging tree", gradle is not None)
+    # The same shape as the uploader, and the reason the override is read off the publishing command
+    # rather than off the step's first Gradle line: a second `gradlew publish` carrying no override
+    # writes the committed coordinate, and both are true of a step whose first command is correct.
+    publishes = [words for step in qa_steps for words in invocations(step, "gradlew")
+                 if "publish" in words]
+    check("W16 and it runs the publish task once", len(publishes) == 1, f"{len(publishes)} invocations")
+    # The same backstop the uploader has, and for the same reason: the count above reads the executable
+    # position, which a wrapper carrying its own command defeats. `bash -c './gradlew publish'` runs a
+    # second, unstamped publication and the scan stops at `-c`. Naming the task is what a second publish
+    # cannot avoid, so it is counted directly. `publish` is a whole word, which `publish_staging.py` is
+    # not, so the uploader's own line is not one of these.
+    named_publish = [word for step in qa_steps for word in run_commands(step).split() if word == "publish"]
+    check("W16 and the publish task is named once in the whole job",
+          len(named_publish) == 1, f"{named_publish}")
+    # Every count above can only be as good as the reader's ability to name the program being run, and
+    # a program written as a glob, a variable or a substitution names whatever it resolves to at run
+    # time: `publish_*.py` matches the one file in that directory, and neither the invocation count nor
+    # the name count sees an uploader. Expanding those is the list with no end again, so the
+    # requirement is the other way round and every program in this job is written down.
+    unresolved = [command for step in qa_steps for command in unresolved_programs(step)]
+    check("W16 and every command it runs names the program it runs",
+          not unresolved, " | ".join(unresolved))
+    # Reading the command line is reading what the program receives only while the program accepts one
+    # spelling of each option. argparse abbreviates long options by default, so `--prefix maven-qa
+    # --pref maven` reaches `prefix=maven` and every check above still reports the QA prefix. The
+    # uploader turns that off; asserted here because turning it back on would quietly make those checks
+    # read something the program is not given.
+    check("W16 and the uploader accepts no abbreviated option",
+          "allow_abbrev=False" in publisher_source().read_text(),
+          "publish_staging.py builds its parser without allow_abbrev=False")
     if gradle is not None and naming is not None:
-        run = str(gradle.get("run", ""))
         stamped = {var for var, value in (gradle.get("env") or {}).items()
                    if f"steps.{naming.get('id', '')}.outputs" in str(value)}
-        passed = re.search(r"""-Ppayabli\.version=["']?\$\{?([A-Za-z_][A-Za-z0-9_]*)""", run)
+        given = argument(publishes[0] if publishes else [], "-Ppayabli.version")
+        passed = re.fullmatch(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", given or "")
         check("W16 and the version it publishes under is the stamp",
               bool(stamped) and passed is not None and passed.group(1) in stamped,
-              f"env={sorted(stamped)} passed={passed.group(1) if passed else None} run={run[:120]}")
+              f"env={sorted(stamped)} given={given}")
     if naming is not None:
-        run = str(naming.get("run", ""))
+        run = run_commands(naming)
         # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
         # not carry a leading zero, which a day-first stamp does on the first nine days of every month.
         check("W16 and the stamp is UTC", "date -u" in run, run[:160])
@@ -3071,7 +3717,7 @@ def test_workflows():
 
 def load_publisher():
     """The uploader, imported from the working tree."""
-    source = Path(os.environ.get("NIGHTLY_PUBLISHER", SDK / ".github/scripts/publish_staging.py"))
+    source = publisher_source()
     spec = importlib.util.spec_from_file_location("publish_staging", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

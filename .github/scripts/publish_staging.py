@@ -181,7 +181,11 @@ def publish(files, bucket: str, account: str, prefix: str) -> int:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # Abbreviation off: by default `--pref` reaches `--prefix`, and a second, abbreviated spelling of an
+    # option overrides the first, so a command can carry `--prefix maven-qa` and still publish to the
+    # release prefix. Every caller writes the options out in full, and a reader of the command line is
+    # then reading what this receives.
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0], allow_abbrev=False)
     # A choice rather than free text: a mistyped prefix writes a tree to a path the distribution does
     # not serve, and nothing downstream would report it.
     ap.add_argument("--prefix", required=True, choices=sorted(CACHE_CONTROL),

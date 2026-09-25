@@ -8,7 +8,9 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Not on main: this workflow calls the publisher, and cancelling reaches the job of a workflow it
+  # called. A merge landing mid-upload would leave a partial tree under an abandoned identifier.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -16,6 +18,13 @@ permissions:
 env:
   # Never --info or --debug here: verbose Gradle logs can print repository credentials.
   GRADLE_OPTS: -Dorg.gradle.console=plain
+
+# Naming bash is what turns `-o pipefail` on: an unset `shell:` runs `bash -e`, where a pipeline reports
+# the last command's status and `./gradlew test | tee log` is green after a red suite. This workflow is
+# what the snapshot waits for, so a suite masked here publishes.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   build:
@@ -328,6 +337,27 @@ jobs:
       - name: Coverage
         run: ./gradlew --max-workers=1 :taptopay:createDebugUnitTestCoverageReport
           :example:createWithTelemetryDebugUnitTestCoverageReport
+
+  # A QA snapshot is published from main after the suites, never beside them. `needs` is what a separate
+  # workflow could not express: its own trigger fired on the same push and published whatever main held.
+  qa-snapshot:
+    name: QA snapshot
+    # sonar rather than build and instrumented directly: it already needs both, so naming it keeps one
+    # statement of the order. With card-present beside it, every job in this file has finished before
+    # anything is published.
+    #
+    # A job failing blocks this one. SonarCloud's own gate does not: nothing sets
+    # `sonar.qualitygate.wait`, so `./gradlew sonar` succeeds whatever the gate decides.
+    needs: [card-present, sonar]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      # For the OIDC role that writes the bucket, on this job and no other in this file.
+      id-token: write
+    uses: ./.github/workflows/qa-snapshot.yml
+    secrets:
+      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+      PAYABLI_MAVEN_PW_PROD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
 
   sonar:
     name: SonarCloud
