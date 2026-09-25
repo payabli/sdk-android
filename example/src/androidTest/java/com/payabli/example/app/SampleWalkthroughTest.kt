@@ -146,10 +146,10 @@ class SampleWalkthroughTest {
         // The form's own row for what the request charges. Seeing it after the button that spends it is the
         // same omission as not seeing it: a figure under the button is one a payer reaches only by scrolling
         // past the control it qualifies.
-        val amount = topOf(AMOUNT)
+        val total = topOf(TOTAL)
         val submit = topOf(CAPTURE)
-        assertTrue("the amount sits at $amount, below the submit button at $submit", amount < submit)
-        compose.onNodeWithText(AMOUNT).performScrollTo().assertIsDisplayed()
+        assertTrue("the total sits at $total, below the submit button at $submit", total < submit)
+        compose.onNodeWithText(TOTAL).performScrollTo().assertIsDisplayed()
 
         prefill()
         pickTheExpiry()
@@ -338,7 +338,7 @@ class SampleWalkthroughTest {
         const val CAPTURE = "Submit payment"
 
         /** The form's own label for the row showing what the request charges. */
-        const val AMOUNT = "Amount"
+        const val TOTAL = "Total"
         const val VOID = "Void this transaction"
 
         /** What the capture step shows once the service has reversed the transaction. */

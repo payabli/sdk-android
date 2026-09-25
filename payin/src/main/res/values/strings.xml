@@ -32,6 +32,7 @@
     <string name="payabli_payin_field_amount">Amount</string>
     <string name="payabli_payin_field_service_fee">Fee</string>
     <string name="payabli_payin_field_surcharge_fee">Surcharge</string>
+    <string name="payabli_payin_summary_total">Total</string>
 
     <!-- Section headings, used when a section carries no title of its own. -->
     <string name="payabli_payin_section_card">Card details</string>

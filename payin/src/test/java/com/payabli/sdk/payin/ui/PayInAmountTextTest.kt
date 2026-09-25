@@ -142,6 +142,87 @@ class PayInAmountTextTest {
         assertEquals(listOf(card), placeAmounts(listOf(card, summary(PayInField.Amount)), null).map { it.section })
     }
 
+    private fun summaryOf(
+        details: PayInPaymentDetails,
+        showsBaseAmount: Boolean,
+    ) = placeAmounts(listOf(card), details, showsBaseAmount).last()
+
+    @Test
+    fun `the amount is the charge less the service fee, and the total adds the surcharge`() {
+        val drawn = summaryOf(details, showsBaseAmount = true)
+
+        assertEquals(
+            listOf(
+                PayInField.Amount to BigDecimal("12.24"),
+                PayInField.ServiceFee to BigDecimal("0.10"),
+                PayInField.SurchargeFee to BigDecimal("0.31"),
+            ),
+            drawn.amounts,
+        )
+        assertEquals(BigDecimal("12.65"), drawn.total)
+    }
+
+    @Test
+    fun `on a fee-only charge the fee sits inside the total`() {
+        val drawn =
+            summaryOf(
+                PayInPaymentDetails(totalAmount = BigDecimal("1.10"), serviceFee = BigDecimal("0.10")),
+                showsBaseAmount = true,
+            )
+
+        assertEquals(
+            listOf(PayInField.Amount to BigDecimal("1.00"), PayInField.ServiceFee to BigDecimal("0.10")),
+            drawn.amounts,
+        )
+        assertEquals(BigDecimal("1.10"), drawn.total)
+    }
+
+    @Test
+    fun `on a surcharged charge the amount is what was sent and the total adds the surcharge`() {
+        val drawn =
+            summaryOf(
+                PayInPaymentDetails(totalAmount = BigDecimal("1.00"), surchargeFee = BigDecimal("0.03")),
+                showsBaseAmount = true,
+            )
+
+        assertEquals(
+            listOf(PayInField.Amount to BigDecimal("1.00"), PayInField.SurchargeFee to BigDecimal("0.03")),
+            drawn.amounts,
+        )
+        assertEquals(BigDecimal("1.03"), drawn.total)
+    }
+
+    @Test
+    fun `with nothing taken out of the charge, only the total is drawn`() {
+        val drawn = summaryOf(PayInPaymentDetails(totalAmount = BigDecimal("12.34")), showsBaseAmount = true)
+
+        assertEquals(emptyList<Pair<PayInField, BigDecimal>>(), drawn.amounts)
+        assertEquals(BigDecimal("12.34"), drawn.total)
+    }
+
+    @Test
+    fun `a charge that is all fee draws the fee and the total, and no amount`() {
+        val drawn =
+            summaryOf(
+                PayInPaymentDetails(totalAmount = BigDecimal("0.10"), serviceFee = BigDecimal("0.10")),
+                showsBaseAmount = true,
+            )
+
+        assertEquals(listOf(PayInField.ServiceFee to BigDecimal("0.10")), drawn.amounts)
+        assertEquals(BigDecimal("0.10"), drawn.total)
+    }
+
+    @Test
+    fun `with the base amount off, the fee, the surcharge and the total are drawn`() {
+        val drawn = summaryOf(details, showsBaseAmount = false)
+
+        assertEquals(
+            listOf(PayInField.ServiceFee to BigDecimal("0.10"), PayInField.SurchargeFee to BigDecimal("0.31")),
+            drawn.amounts,
+        )
+        assertEquals(BigDecimal("12.65"), drawn.total)
+    }
+
     @Test
     fun `the figure is the one sent, at two places`() {
         assertEquals("$12.35", formatAmount(BigDecimal("12.345"), "USD", Locale.US))
