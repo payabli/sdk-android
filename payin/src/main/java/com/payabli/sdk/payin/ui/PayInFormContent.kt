@@ -78,7 +78,7 @@ internal fun PayInFormContent(
     var today by remember { mutableStateOf(ExpiryValue.today()) }
 
     // Before anything below reads the draft, and on every composition: a caller replacing the configuration
-    // starts the form again, and re-entering a composition with the same one keeps what the payer typed.
+    // restyles the form and keeps what the payer typed wherever the new one still has a box for it.
     draft.seed(configuration)
 
     val method = draft.method
