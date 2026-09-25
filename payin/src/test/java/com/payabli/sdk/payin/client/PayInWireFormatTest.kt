@@ -42,6 +42,25 @@ class PayInWireFormatTest {
     }
 
     @Test
+    fun `a record with no fee or surcharge decodes them as absent, not zero`() {
+        val decoded = transaction("""{"paymentTransId":"t-1","totalAmount":10.00}""")
+
+        assertNull(decoded.feeAmount)
+        assertNull(decoded.surchargeFee)
+    }
+
+    @Test
+    fun `payment details with no surcharge send none`() {
+        val body =
+            PayabliJson.format.encodeToString(
+                PaymentDetailsBody.serializer(),
+                PaymentDetailsBody(totalAmount = BigDecimal("10.00")),
+            )
+
+        assertEquals("""{"totalAmount":10.00}""", body)
+    }
+
+    @Test
     fun `all lower case decodes`() {
         val decoded =
             transaction(

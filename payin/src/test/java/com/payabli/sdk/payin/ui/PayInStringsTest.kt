@@ -53,6 +53,17 @@ class PayInStringsTest {
     }
 
     @Test
+    fun `the mapping gives every field a resource of its own`() {
+        val resources = PayInField.entries.associateWith { it.labelResource }
+
+        assertEquals(
+            "two fields are drawn with one label: $resources",
+            PayInField.entries.size,
+            resources.values.toSet().size,
+        )
+    }
+
+    @Test
     fun `every field has a label resource`() {
         val missing =
             PayInField.entries.filterNot { field ->
