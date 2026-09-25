@@ -77,6 +77,22 @@ class PayInSummaryRowsInstrumentedTest {
             .onNode(
                 hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.65", "USD")),
             ).assertExists()
+
+        val surcharge =
+            rule
+                .onNode(
+                    hasText(string(R.string.payabli_payin_field_surcharge_fee)) and
+                        hasText(figure("0.31", "USD")),
+                ).getBoundsInRoot()
+        val total =
+            rule
+                .onNode(
+                    hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.65", "USD")),
+                ).getBoundsInRoot()
+        assertTrue(
+            "the total must sit below the surcharge row: ${total.top} vs ${surcharge.top}",
+            total.top > surcharge.top,
+        )
     }
 
     @Test
