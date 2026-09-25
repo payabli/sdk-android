@@ -340,6 +340,13 @@ MUTATIONS = [
     ("QA snapshot gives the release prefix after the QA one, on the same command", QA, "workflows",
      "--prefix maven-qa --version", "--prefix maven-qa --prefix maven --version"),
 
+    # The program is not written down, so neither count sees an uploader: the pattern matches the one
+    # file in that directory when the step runs, and the tree goes to /maven.
+    ("QA snapshot uploads again to the release prefix, behind a pattern", QA, "workflows",
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n',
+     'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+     '          python3 .github/scripts/publish_*.py --prefix maven --version "$VERSION"\n'),
+
     # A wrapper carrying its own options, which the executable-position scan stops on. The mention count
     # is what refuses this, since the second upload still names the script.
     ("QA snapshot uploads again to the release prefix, behind a wrapper with options", QA, "workflows",

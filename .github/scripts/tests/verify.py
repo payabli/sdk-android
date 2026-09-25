@@ -2104,6 +2104,43 @@ INTERPRETERS = ("python3", "python", "bash", "sh", "env")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 
 
+def program_index(command: list[str]) -> int:
+    """Where the program stands in `command`, past anything that only sets up running it.
+
+    Every wrapper, not one of each: `env python3 upload.py` runs upload.py, and stopping after `env`
+    reads `python3` as the program and finds no upload.py on the line at all.
+    """
+    head = 0
+    while head < len(command) and (ASSIGNMENT.match(command[head])
+                                   or command[head].rsplit("/", 1)[-1] in INTERPRETERS):
+        head += 1
+    return head
+
+
+def commands_of(step: dict) -> list[list[str]]:
+    """Every command `step` runs, from its program word onward, split as a shell would split it.
+
+    One definition of where a command begins, because the questions asked of it are the same question:
+    which commands run a named program, and whether every program can be named at all.
+    """
+    found: list[list[str]] = []
+    for line in logical_lines(str(step.get("run", ""))):
+        try:
+            words = shell_words(line)
+        except ValueError:
+            continue
+        command: list[str] = []
+        for word in [*words, ";"]:
+            if word not in OPERATORS and word not in GROUPING:
+                command.append(word)
+                continue
+            head = program_index(command)
+            if head < len(command):
+                found.append(command[head:])
+            command = []
+    return found
+
+
 def invocations(step: dict, program: str) -> list[list[str]]:
     """Every command in `step` that runs `program`, each split as a shell would split it.
 
@@ -2120,7 +2157,26 @@ def invocations(step: dict, program: str) -> list[list[str]]:
     cut at its shell operators first, so a command after `&&` is its own command rather than arguments
     to the one before it.
     """
-    found: list[list[str]] = []
+    return [command for command in commands_of(step) if command[0].endswith(program)]
+
+
+# A program word a reader cannot resolve. A glob, a variable or a substitution in that position names
+# whatever it happens to expand to at run time, so a second run of a checked program hides behind any
+# of them, and `eval` hides the command entirely. Teaching the reader to expand them is the list with
+# no end that W12's header describes; requiring the program to be written down has an end.
+UNRESOLVED = re.compile(r"[*?$`]")
+
+
+def unresolved_programs(step: dict) -> list[str]:
+    """The commands in `step` whose program is not a literal a reader can name.
+
+    A `case` arm's pattern is not a command and is written in exactly the characters this objects to,
+    so the one construct that produces them is tracked: between `case` and `esac`, a run of words
+    closed by `)` is a pattern. Bounded, unlike expanding what a glob or a variable resolves to, and
+    not an exemption for the step: a command written anywhere in it is still read.
+    """
+    found = []
+    matching = False
     for line in logical_lines(str(step.get("run", ""))):
         try:
             words = shell_words(line)
@@ -2128,17 +2184,18 @@ def invocations(step: dict, program: str) -> list[list[str]]:
             continue
         command: list[str] = []
         for word in [*words, ";"]:
+            if word == "case":
+                matching = True
+            elif word == "esac":
+                matching = False
             if word not in OPERATORS and word not in GROUPING:
                 command.append(word)
                 continue
-            # Every wrapper, not one of each: `env python3 upload.py` runs upload.py, and stopping after
-            # `env` reads `python3` as the program and finds no upload.py on the line at all.
-            head = 0
-            while head < len(command) and (ASSIGNMENT.match(command[head])
-                                           or command[head].rsplit("/", 1)[-1] in INTERPRETERS):
-                head += 1
-            if head < len(command) and command[head].endswith(program):
-                found.append(command[head:])
+            head = program_index(command)
+            if head < len(command) and not (matching and word == ")"):
+                program = command[head]
+                if UNRESOLVED.search(program) or program.rsplit("/", 1)[-1] == "eval":
+                    found.append(" ".join(command[head:]))
             command = []
     return found
 
@@ -3574,6 +3631,14 @@ def test_workflows():
     named_publish = [word for step in qa_steps for word in run_commands(step).split() if word == "publish"]
     check("W16 and the publish task is named once in the whole job",
           len(named_publish) == 1, f"{named_publish}")
+    # Every count above can only be as good as the reader's ability to name the program being run, and
+    # a program written as a glob, a variable or a substitution names whatever it resolves to at run
+    # time: `publish_*.py` matches the one file in that directory, and neither the invocation count nor
+    # the name count sees an uploader. Expanding those is the list with no end again, so the
+    # requirement is the other way round and every program in this job is written down.
+    unresolved = [command for step in qa_steps for command in unresolved_programs(step)]
+    check("W16 and every command it runs names the program it runs",
+          not unresolved, " | ".join(unresolved))
     if gradle is not None and naming is not None:
         stamped = {var for var, value in (gradle.get("env") or {}).items()
                    if f"steps.{naming.get('id', '')}.outputs" in str(value)}
