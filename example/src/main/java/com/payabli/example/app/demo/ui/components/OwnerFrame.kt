@@ -24,10 +24,9 @@ import com.payabli.example.app.demo.ui.theme.Dimens
 /** Who draws what is inside a frame: this app, or the SDK. */
 enum class Owner(
     val label: String,
-    val note: String,
 ) {
-    App("Your app", "Written by the integrator."),
-    Sdk("Payabli SDK", "Drawn by PayabliPayInForm."),
+    App("Your app"),
+    Sdk("Payabli SDK"),
 }
 
 /**
@@ -47,7 +46,7 @@ fun OwnerFrame(
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // Outside the border, so the label is never read as part of what the frame holds.
         Text(
-            text = "${owner.label} · ${owner.note}",
+            text = owner.label,
             style = MaterialTheme.typography.labelMedium,
             color = color,
             modifier = Modifier.semantics { heading() },
