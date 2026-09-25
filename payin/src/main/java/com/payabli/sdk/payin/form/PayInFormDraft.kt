@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * What a payer has entered, held outside the composition that draws it.
@@ -17,9 +18,12 @@ import androidx.compose.runtime.setValue
  * the card. A form reopened after process death is an empty form.
  */
 internal class PayInFormDraft {
-    /** What this was last started from, so re-entering a composition does not empty it. */
-    @Volatile
-    private var seededFrom: PayInFormConfiguration? = null
+    /**
+     * What this was last started from, so re-entering a composition does not empty it.
+     *
+     * Read and replaced in one step, because [clear] can run on another thread between the two.
+     */
+    private val seededFrom = AtomicReference<PayInFormConfiguration?>(null)
 
     private val entered = mutableStateMapOf<PayInField, String>()
 
@@ -61,9 +65,9 @@ internal class PayInFormDraft {
      * composition then reads, so the form recomposes without ever settling.
      */
     fun seed(configuration: PayInFormConfiguration) {
-        if (seededFrom == configuration) return
-        val started = seededFrom != null
-        seededFrom = configuration
+        val previous = seededFrom.getAndSet(configuration)
+        if (previous == configuration) return
+        val started = previous != null
 
         if (started) {
             chosen = chosen?.takeIf { it in configuration.methodsOffered } ?: configuration.startingMethod
@@ -113,7 +117,7 @@ internal class PayInFormDraft {
      * is not the payer's data, and the next [seed] sets it before anything reads it.
      */
     fun clear() {
-        seededFrom = null
+        seededFrom.set(null)
         entered.clear()
         rejectedFields = emptyMap()
         submissionPending = false
