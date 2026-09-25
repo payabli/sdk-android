@@ -418,6 +418,13 @@ MUTATIONS = [
      "          AWS_SDK_CDN_ACCOUNT=$(echo \"$ROLE_ARN\" | cut -d: -f5)\n"
      "          echo \"${{ secrets.PAYABLI_MAVEN_PW_PROD }}\" > /dev/null\n"),
 
+    # Index notation rather than a dot, which is the same reach into the same context and carries
+    # neither the expected variable name nor the spelling a search for `secrets.` looks for.
+    ("A non-Gradle QA step is handed the registry credential by index", QA, "workflows",
+     "      - name: Authenticate to AWS\n",
+     "      - name: Authenticate to AWS\n        env:\n"
+     "          TOKEN: ${{ secrets['PAYABLI_MAVEN_PW_PROD'] }}\n"),
+
     # The other half of the same rule: the expected name, and no secret referenced anywhere, because the
     # credential is written in by hand.
     ("A non-Gradle QA step carries the registry credential as a literal", QA, "workflows",

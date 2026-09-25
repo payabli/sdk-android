@@ -2028,6 +2028,13 @@ OPERATORS = ("&&", "||", "|", ";", "&")
 GROUPING = ("(", ")", "{", "}")
 
 
+# The word, not one way of writing what follows it. `secrets.NAME`, `secrets['NAME']`,
+# `toJSON(secrets)` and a `format()` around any of them are all reaches into the same context and all
+# contain it; a matcher for one spelling is a list with no end, which W12's header records being learnt
+# one round at a time.
+SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
+
+
 def mints(value) -> bool:
     """Whether a `permissions` value grants the OIDC token.
 
@@ -3069,7 +3076,6 @@ def test_workflows():
     # graph: the action runs only in a job that never mentions the secrets context, needs no job that does,
     # and downloads nothing.
     THIRD_PARTY = "android-emulator-runner"
-    SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
     PINNED = re.compile(r"^[^@]+@[0-9a-f]{40}(\s|$)")
 
     def rendered(node) -> str:
@@ -3497,10 +3503,14 @@ def test_workflows():
     # And the whole step rather than its `env`, because `env` is one of three ways in. A secret expanded
     # straight into a `run:` line reaches the same process, and one handed to a pinned action through
     # `with:` reaches that action; neither declares an environment variable at all.
+    #
+    # Matched on the word rather than on `secrets.`, which is one spelling of it: `secrets['NAME']` is
+    # the same reach and carries no dot. The same matcher the job-graph check uses, for the reason its
+    # header gives.
     def holds_credential(step: dict) -> bool:
         env = step.get("env") or {}
         return (any(str(var).startswith("PAYABLI_MAVEN") for var in env)
-                or "secrets." in json.dumps(step, default=str))
+                or bool(SECRETS_CONTEXT.search(json.dumps(step, default=str))))
 
     holding = [step for step in qa_steps if holds_credential(step)]
     gradle_steps = [step for step in qa_steps if "gradlew" in run_commands(step)]
