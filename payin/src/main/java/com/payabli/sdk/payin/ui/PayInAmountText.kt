@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.ui
 
+import com.payabli.sdk.payin.client.PayInValidation
 import com.payabli.sdk.payin.client.atWireScale
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormSection
@@ -14,7 +15,8 @@ import java.util.Locale
 /**
  * The figure a summary row shows for [field], or null when the row is not drawn.
  *
- * Read at the scale the amount is sent at, so a row appears exactly when a figure above zero is charged.
+ * Read at the scale the amount is sent at, so a row appears exactly when a figure above zero is charged. An
+ * amount too large or too precise to send draws none, since submitting it is refused.
  */
 internal fun PayInPaymentDetails.shownAmount(field: PayInField): BigDecimal? {
     val amount =
@@ -24,7 +26,8 @@ internal fun PayInPaymentDetails.shownAmount(field: PayInField): BigDecimal? {
             PayInField.SurchargeFee -> surchargeFee
             else -> null
         }
-    return amount?.atWireScale()?.takeIf { it > BigDecimal.ZERO }
+    val sendable = amount?.let { with(PayInValidation) { it.sendableOrNull() } }
+    return sendable?.takeIf { it > BigDecimal.ZERO }
 }
 
 /** A section as it is drawn, with the figures it shows when it is the summary. */

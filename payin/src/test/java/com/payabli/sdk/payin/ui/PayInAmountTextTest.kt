@@ -45,6 +45,13 @@ class PayInAmountTextTest {
     }
 
     @Test
+    fun `an amount too large or too precise to send draws no row rather than failing the form`() {
+        listOf("1E+2147483647", "1E-2147483647").forEach { extreme ->
+            assertNull(extreme, PayInPaymentDetails(BigDecimal(extreme)).shownAmount(PayInField.Amount))
+        }
+    }
+
+    @Test
     fun `a field that is not an amount draws no row`() {
         assertNull(details.shownAmount(PayInField.CardholderName))
     }

@@ -210,7 +210,7 @@ internal object PayInValidation {
      * `ArithmeticException` at both extremes of the exponent. Both read `precision` and `scale` rather than
      * the expanded value, so an absurd one costs nothing to refuse.
      */
-    private fun BigDecimal.sendableOrNull(): BigDecimal? {
+    internal fun BigDecimal.sendableOrNull(): BigDecimal? {
         // Zero rescales at any scale: rounding `BigDecimal.ZERO.setScale(Int.MAX_VALUE)` to two places
         // answers 0.00 without expanding, because zero short-circuits. The guards below would otherwise
         // refuse a fee of zero written with an extreme scale, and a fee of zero is a sendable value.
