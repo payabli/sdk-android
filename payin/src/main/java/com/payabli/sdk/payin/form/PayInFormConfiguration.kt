@@ -7,7 +7,10 @@ import java.util.Collections
 public enum class PayInSectionStyle {
     Inputs,
 
-    /** Values the caller fixed. A payer reads them; the form has no box for them. */
+    /**
+     * Where the operation's amounts are drawn, and under what title. Every amount that is not zero is drawn,
+     * in the order [PayInFormSection.fields] lists them and then the rest. A form with no summary gets one.
+     */
     Summary,
 }
 
