@@ -86,8 +86,9 @@ public data class PayInFormatting(
 /**
  * What the form collects and how it is arranged. Colors, type and spacing are [PayInFormStyle]'s.
  *
- * The summary ends with a Total row carrying what is charged. With [showsBaseAmount] on and a fee or a
- * surcharge to show, an Amount row carries the amount before them.
+ * The summary ends with a Total row carrying what is charged, drawn whenever that charge is not zero.
+ * With [showsBaseAmount] on and a fee or a surcharge to show, an Amount row carries the amount before
+ * them, drawn whenever that amount is not zero.
  *
  * [allowedMethods] and [defaultMethod] are what a caller passed, unchanged. Two corrections apply to
  * what the form reads instead: [methodsOffered] drops duplicates and is never empty, and
