@@ -152,6 +152,15 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # The instrumented suite is not in a `run:` at all: the emulator action takes it as an input, so a
+    # reader that knows only about `run:` finds nothing to object to and the snapshot publishes behind a
+    # red device suite.
+    ("CI masks the instrumented suite inside the emulator action's script", CI, "workflows",
+     "            -Pandroid.testInstrumentationRunnerArguments.notAnnotation="
+     "com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest\n",
+     "            -Pandroid.testInstrumentationRunnerArguments.notAnnotation="
+     "com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest || true\n"),
+
     # `-e` does not apply to a command in an AND list other than the last, so the suite's failure is read
     # as an answer and the step carries on to the line after it. Nothing is declared and no idiom from any
     # denylist appears.

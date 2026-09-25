@@ -2039,6 +2039,20 @@ def mints(value) -> bool:
     return str((value or {}).get("id-token")) == "write"
 
 
+def shell_of(step: dict) -> str:
+    """Every line of shell a step runs, whether it is the step's own or an action's input.
+
+    `run:` is not the only place a suite is invoked. `reactivecircus/android-emulator-runner` takes the
+    commands to run on the device as `with.script`, which is where this repository's instrumented suites
+    live, and a reader that only knows about `run:` finds nothing there to object to.
+    """
+    parts = [str(step.get("run", ""))]
+    given = step.get("with") or {}
+    if isinstance(given, dict):
+        parts.extend(str(given[key]) for key in ("script", "run", "cmd") if key in given)
+    return "\n".join(part for part in parts if part)
+
+
 def logical_lines(text: str) -> list[str]:
     """`text` split into the lines a shell reads, with a trailing backslash joining the next one.
 
@@ -2144,7 +2158,7 @@ def masked_commands(step: dict) -> list[str]:
     tests = ("[", "[[", "test")
     conditions = ("if", "while", "until")
     found = []
-    for line in logical_lines(str(step.get("run", ""))):
+    for line in logical_lines(shell_of(step)):
         try:
             words = shell_words(line)
         except ValueError:
@@ -2181,7 +2195,7 @@ def unstoppable(steps, label: str = "") -> list[str]:
         if not isinstance(step, dict):
             continue
         why = [f"masks `{command}`" for command in masked_commands(step)]
-        if "set +e" in run_commands(step):
+        if "set +e" in shell_of(step):
             why.append("set +e")
         if step.get("continue-on-error"):
             why.append("continue-on-error")
