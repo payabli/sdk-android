@@ -2203,12 +2203,19 @@ def invocation(step: dict, program: str) -> list[str]:
 
 
 def argument(words: list[str], flag: str) -> str | None:
-    """The value given to `flag`, written either as two words or joined by `=`."""
-    if flag in words:
-        index = words.index(flag) + 1
-        return words[index] if index < len(words) else None
-    joined = next((word for word in words if word.startswith(f"{flag}=")), None)
-    return joined.split("=", 1)[1] if joined else None
+    """The value given to `flag`, written either as two words or joined by `=`.
+
+    The last occurrence and not the first, because that is the one the program receives. `argparse`
+    stores each occurrence over the one before it, so `--prefix maven-qa --prefix maven` uploads to the
+    release prefix while a reader taking the first reports the QA one and every check on it passes.
+    """
+    value = None
+    for index, word in enumerate(words):
+        if word == flag:
+            value = words[index + 1] if index + 1 < len(words) else None
+        elif word.startswith(f"{flag}="):
+            value = word.split("=", 1)[1]
+    return value
 
 
 def steps_of(doc: dict) -> list[dict]:

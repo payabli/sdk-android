@@ -305,6 +305,11 @@ MUTATIONS = [
      'python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION" '
      '&& python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'),
 
+    # Both prefixes are given to one command, and argparse keeps the last, so the tree goes to /maven
+    # while a reader taking the first reports maven-qa and every check on it passes.
+    ("QA snapshot gives the release prefix after the QA one, on the same command", QA, "workflows",
+     "--prefix maven-qa --version", "--prefix maven-qa --prefix maven --version"),
+
     # A wrapper carrying its own options, which the executable-position scan stops on. The mention count
     # is what refuses this, since the second upload still names the script.
     ("QA snapshot uploads again to the release prefix, behind a wrapper with options", QA, "workflows",
