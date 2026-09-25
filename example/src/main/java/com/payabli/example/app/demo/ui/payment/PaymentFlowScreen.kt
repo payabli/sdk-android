@@ -124,11 +124,6 @@ fun PaymentFlowScreen(
     startOverText: String,
     actions: PaymentFlowActions,
     modifier: Modifier = Modifier,
-    // Above the form, in the sheet as well as inline. The form's own summary reads back the fields the SDK
-    // knows, and what a payer is charged is not one of them, so a screen with a figure to add supplies it.
-    // Above rather than below because the form's last child is its submit button: under it, the figure sits
-    // past the control it qualifies and a payer can submit without having scrolled to it.
-    formHeader: @Composable () -> Unit = {},
 ) {
     val offersPrefill = BuildConfig.DEBUG && state.prefillEnabled
 
@@ -167,7 +162,6 @@ fun PaymentFlowScreen(
                 }
                 // Only once the session exists. Until then the step above is what the screen offers.
                 payments?.let { handle ->
-                    formHeader()
                     PaymentFormHost(
                         setup = state.setup,
                         payments = handle,
@@ -219,7 +213,6 @@ fun PaymentFlowScreen(
             operation = operation,
             isSubmitting = isSubmitting,
             offersPrefill = offersPrefill,
-            formHeader = formHeader,
         )
     }
 }
@@ -239,7 +232,6 @@ private fun FormSheet(
     operation: PayInOperation,
     isSubmitting: Boolean,
     offersPrefill: Boolean,
-    formHeader: @Composable () -> Unit,
 ) {
     // Both halves, because a swipe and a back press take different routes to the same place:
     // the form holds what was typed in `remember`, and dismissing disposes it mid-submission.
@@ -278,7 +270,6 @@ private fun FormSheet(
                 if (offersPrefill) {
                     PrefillButton(identity = state.sampleIdentity, enabled = !isSubmitting)
                 }
-                formHeader()
                 PaymentFormHost(
                     setup = state.setup,
                     payments = handle,

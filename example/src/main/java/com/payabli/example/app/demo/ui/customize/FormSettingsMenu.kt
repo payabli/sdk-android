@@ -116,7 +116,6 @@ fun FormSettingsMenu(
         Toggle("Require a customer number", settings.requireCustomerNumber, enabled = settings.customerSection) {
             pick(settings.copy(requireCustomerNumber = it))
         }
-        Toggle("Amount summary", settings.summary) { pick(settings.copy(summary = it)) }
 
         Group("Formatting")
         Toggle("Group the card number", settings.groupCardNumber) { pick(settings.copy(groupCardNumber = it)) }

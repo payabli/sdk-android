@@ -47,7 +47,7 @@ internal fun PayInResult.toPaymentResult(): PaymentResult =
                     // As the API returned them. A payment amount reformatted on its way to a screen is how a
                     // display comes to disagree with the response beside it.
                     totalAmount = it.totalAmount?.toPlainString(),
-                    feeAmount = it.netAmount?.let { net -> it.totalAmount?.subtract(net)?.toPlainString() },
+                    feeAmount = it.feeAmount?.toPlainString(),
                     source = it.connectorName,
                 )
             },

@@ -4,6 +4,7 @@ import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInStoreOptions
 import com.payabli.sdk.payin.model.PayInTransactionOptions
 
@@ -46,6 +47,15 @@ public sealed class PayabliPayInOperation {
                 is Capture, is StoreMethod -> PayInMethodType.entries.toSet()
             }
 }
+
+/** What this operation charges, which the form's summary rows show. Storing a method charges nothing. */
+internal val PayabliPayInOperation.paymentDetails: PayInPaymentDetails?
+    get() =
+        when (this) {
+            is PayabliPayInOperation.StoreMethod -> null
+            is PayabliPayInOperation.Capture -> options.paymentDetails
+            is PayabliPayInOperation.Authorize -> options.paymentDetails
+        }
 
 /**
  * The event this operation is counted under.

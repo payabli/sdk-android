@@ -23,12 +23,7 @@ class PayInOperation internal constructor(
             }
 }
 
-/**
- * The fee this app puts on a payment, and the reason the form's amount row is not the charge.
- *
- * `totalAmount` includes it, so the row reads the part before it. Read by both the request and the form, which
- * is what keeps the figure a payer is shown equal to the one being charged.
- */
+/** The fee this app puts on a payment. `totalAmount` includes it. */
 internal val DEMO_SERVICE_FEE: BigDecimal = BigDecimal("0.10")
 
 /**

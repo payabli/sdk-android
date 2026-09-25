@@ -14,6 +14,7 @@ import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import com.payabli.sdk.payin.payment.narrowingKey
 import com.payabli.sdk.payin.payment.offering
+import com.payabli.sdk.payin.payment.paymentDetails
 import com.payabli.sdk.payin.payment.step
 import com.payabli.sdk.payin.ui.PayInFormContent
 
@@ -101,6 +102,7 @@ public fun PayabliPayInForm(
         draft = impl.draft,
         configuration = offered,
         reports = impl.reports,
+        amounts = operation.paymentDetails,
         modifier = modifier,
         labels = labels,
         style = style,

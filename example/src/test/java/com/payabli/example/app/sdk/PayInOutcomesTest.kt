@@ -51,14 +51,14 @@ class PayInOutcomesTest {
     }
 
     @Test
-    fun `the fee is the difference, and is absent when either half is`() {
-        // Derived, because the service reports a total and a net. Without both there is no fee to state, and
-        // showing zero would claim the paypoint took none.
-        val netOnly = payment(totalAmount = null, netAmount = BigDecimal("1.00"))
-        val totalOnly = payment(totalAmount = BigDecimal("1.10"), netAmount = null)
+    fun `the fee is the one the service reported, and absent when it reported none`() {
+        // Showing zero for an absent fee would claim the paypoint took none.
+        val reported =
+            payment(totalAmount = BigDecimal("1.10"), netAmount = BigDecimal("1.00"), feeAmount = BigDecimal("0.07"))
+        val unreported = payment(totalAmount = BigDecimal("1.10"), netAmount = BigDecimal("1.00"))
 
-        assertNull(netOnly.toPaymentResult().transaction?.feeAmount)
-        assertNull(totalOnly.toPaymentResult().transaction?.feeAmount)
+        assertEquals("0.07", reported.toPaymentResult().transaction?.feeAmount)
+        assertNull(unreported.toPaymentResult().transaction?.feeAmount)
     }
 
     @Test
@@ -196,6 +196,7 @@ class PayInOutcomesTest {
         totalAmount: BigDecimal?,
         netAmount: BigDecimal?,
         gatewayTransId: String? = "gtw-9",
+        feeAmount: BigDecimal? = null,
     ) = PayInSubmissionState.Succeeded.Payment(
         PayInResult(
             code = "A0000",
@@ -212,7 +213,7 @@ class PayInOutcomesTest {
                     paypointId = 42,
                     totalAmount = totalAmount,
                     netAmount = netAmount,
-                    feeAmount = null,
+                    feeAmount = feeAmount,
                     surchargeFee = null,
                     connectorName = "fiserv",
                     customerId = 7,

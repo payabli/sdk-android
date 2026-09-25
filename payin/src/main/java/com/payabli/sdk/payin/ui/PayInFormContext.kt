@@ -7,6 +7,7 @@ import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.model.PayInPaymentDetails
 
 /**
  * What every part of the form reads, and what none of it changes.
@@ -16,6 +17,8 @@ import com.payabli.sdk.payin.form.PayInFormStyle
  *
  * [rejectedFields] is what the service objected to on the last submission. The rules answer for the value in the box;
  * this answers for the value that was sent.
+ *
+ * [amounts] is what the operation charges, and null when it charges nothing.
  */
 @Immutable
 internal data class PayInFormContext(
@@ -26,4 +29,5 @@ internal data class PayInFormContext(
     val enabled: Boolean,
     val rejectedFields: Map<PayInField, PayInFieldError>,
     val refreshClock: () -> Unit,
+    val amounts: PayInPaymentDetails? = null,
 )

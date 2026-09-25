@@ -36,6 +36,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.math.BigDecimal
+import java.util.Locale
 
 /**
  * The form consumes an outcome once it has delivered it.
@@ -77,6 +79,13 @@ class PayInFormConsumesOutcomeInstrumentedTest {
 
         rule.waitForIdle()
         assertEquals("a throwing caller stranded the outcome", PayInSubmissionState.Idle, flow.state.value)
+    }
+
+    @Test
+    fun theFormShowsWhatItsOperationCharges() {
+        showForm(flowAnswering()) {}
+
+        rule.onNodeWithText(formatAmount(BigDecimal("10"), "USD", Locale.getDefault())).assertExists()
     }
 
     @Test
