@@ -374,7 +374,23 @@ MUTATIONS = [
 
     # The gate still runs and the reviewers still approve, and the publish no longer waits for the answer.
     ("A refused QA approval publishes anyway", QA, "workflows",
-     "    if: ${{ !cancelled() && needs.approve.result != 'failure' }}\n", "    if: ${{ always() }}\n"),
+     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
+     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
+     "    if: ${{ always() }}\n"),
+
+    # A skipped gate is not a failure, so this accepts every caller that skipped it. Any workflow in the
+    # repository can call this one, and one added on a feature branch publishes with no CI and no
+    # approval while presenting a subject the role trusts.
+    ("The QA publish accepts any caller that skipped the gate", QA, "workflows",
+     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
+     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
+     "    if: ${{ !cancelled() && needs.approve.result != 'failure' }}\n"),
+
+    # The approval half alone, which refuses the automatic run from main rather than the feature branch.
+    ("The QA publish requires an approval the called path can never get", QA, "workflows",
+     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
+     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
+     "    if: ${{ !cancelled() && needs.approve.result == 'success' }}\n"),
 
     ("The QA publish stops waiting for the gate", QA, "workflows",
      "    needs: [approve]\n", ""),

@@ -49,10 +49,16 @@ jobs:
   publish:
     name: Publish a QA snapshot
     needs: [approve]
-    # A called run skips the gate, and a skipped dependency is not a failure. A dispatch that was refused
-    # leaves it failed or cancels the run, and neither publishes: `always()` in place of `!cancelled()`
-    # would publish through both.
-    if: ${{ !cancelled() && needs.approve.result != 'failure' }}
+    # Either the gate passed, or this is the one call that is allowed to skip it. A skipped dependency is
+    # not a failure, so reading only `!= 'failure'` accepted every caller that skipped the gate, and the
+    # caller is not only ci.yml: any workflow in the repository can call this one, and a push-triggered
+    # one added on a feature branch would hand over the secrets, present a `refs/heads/*` subject the
+    # role trusts, and publish with no CI and no approval. Naming the event and the ref is what refuses
+    # that, and both are the caller's. `always()` in place of `!cancelled()` would publish through a
+    # refusal as well.
+    if: >-
+      ${{ !cancelled() && (needs.approve.result == 'success'
+      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     # On this job rather than on the workflow. One group across every ref, not one per ref: two refs
     # stamping in the same UTC second reach one identifier, and the first writer keeps the coordinate.
     # At the workflow level the gate above would sit inside the group, so a dispatch waiting for a

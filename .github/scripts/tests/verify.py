@@ -3315,9 +3315,14 @@ def test_workflows():
     # `success()` would stop the called path, where a skipped gate is the correct outcome.
     check("W16 and the publish waits for the gate",
           gate_name in (qa_job.get("needs") or []), f"{qa_job.get('needs')}")
-    check("W16 and does not publish through a refused one",
+    # A skipped gate is not a failure, so a condition that only refuses failure accepts every caller that
+    # skipped it, and any workflow in the repository can call this one. The whole value, because each
+    # half is satisfied while the other is gone: the approval alone refuses the automatic run, and the
+    # push-to-main pair alone lets a refused dispatch through.
+    check("W16 and publishes only behind the gate or a push to main",
           " ".join(str(qa_job.get("if", "")).split())
-          == "${{ !cancelled() && needs." + gate_name + ".result != 'failure' }}",
+          == ("${{ !cancelled() && (needs." + gate_name + ".result == 'success' "
+              "|| (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}"),
           str(qa_job.get("if", "")))
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
