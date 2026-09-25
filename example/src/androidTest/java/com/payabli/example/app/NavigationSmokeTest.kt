@@ -120,7 +120,10 @@ class NavigationSmokeTest {
         // constructed and the screen drew past its spinner.
         open(TopLevelDestination.SimpleCapture)
         awaitExists(SIMPLE_CAPTURE_SUBMIT)
-        assertReachable(SIMPLE_CAPTURE_AMOUNT)
+        compose
+            .onNode(hasText(SIMPLE_CAPTURE_LABEL) and hasText(SIMPLE_CAPTURE_AMOUNT) and !hasSetTextAction())
+            .performScrollTo()
+            .assertIsDisplayed()
 
         open(TopLevelDestination.Setup)
         compose.onNodeWithText(SIMPLE_CAPTURE_SWITCH).performScrollTo().performClick()
@@ -234,8 +237,12 @@ class NavigationSmokeTest {
         /** The form's own default label, since this screen passes no labels of its own. */
         const val SIMPLE_CAPTURE_SUBMIT = "Submit"
 
-        /** Read back from the operation rather than typed, so it also proves the summary row. */
-        const val SIMPLE_CAPTURE_AMOUNT = "$ 12.34"
+        /**
+         * The summary row, read back from the operation rather than typed, so it also proves the row. The
+         * screen names no currency, so the figure carries no symbol, and the box it was typed into is not it.
+         */
+        const val SIMPLE_CAPTURE_LABEL = "Amount"
+        const val SIMPLE_CAPTURE_AMOUNT = "12.34"
     }
 }
 
