@@ -347,14 +347,14 @@ private fun SummaryRows(
             // Merged, so a screen reader announces the label and its figure as one row.
             Row(
                 modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(context.style.spacing.pairedField),
             ) {
                 // The label yields. Two unconstrained children let a long one take the row and
                 // leave the amount at zero width, which is the half a payer needs.
                 Text(
                     text = PayInStrings.label(field, context.labels),
                     style = context.style.label,
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f),
                 )
                 Text(text = formatAmount(amount, currency, locale), style = context.style.supporting)
             }

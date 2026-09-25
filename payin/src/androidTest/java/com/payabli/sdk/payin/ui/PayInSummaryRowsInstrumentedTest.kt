@@ -3,9 +3,11 @@ package com.payabli.sdk.payin.ui
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.payin.R
@@ -13,6 +15,7 @@ import com.payabli.sdk.payin.form.CARD_INSTRUMENT_FIELDS
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormDraft
+import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
@@ -20,6 +23,7 @@ import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,6 +66,28 @@ class PayInSummaryRowsInstrumentedTest {
         rule
             .onNode(hasText(string(R.string.payabli_payin_field_amount)) and hasText(figure("12.34", "USD")))
             .assertExists()
+    }
+
+    @Test
+    fun aLongLabelLeavesAGapBeforeTheFigure() {
+        val label = "An amount label long enough to take every bit of the row it is given"
+        val draft = PayInFormDraft()
+        rule.setContent {
+            MaterialTheme {
+                PayInFormContent(
+                    submission = PayInSubmissionState.Idle,
+                    draft = draft,
+                    configuration = configuration,
+                    reports = PayInFormReports.None,
+                    labels = PayInFormLabels(fieldLabels = mapOf(PayInField.Amount to label)),
+                    amounts = PayInPaymentDetails(BigDecimal("12.34"), currency = "USD"),
+                )
+            }
+        }
+
+        val labelEnd = rule.onNodeWithText(label, useUnmergedTree = true).getBoundsInRoot().right
+        val figureStart = rule.onNodeWithText(figure("12.34", "USD"), useUnmergedTree = true).getBoundsInRoot().left
+        assertTrue("the label runs to $labelEnd and the figure starts at $figureStart", figureStart - labelEnd >= 12.dp)
     }
 
     @Test
