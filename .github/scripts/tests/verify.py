@@ -2035,6 +2035,16 @@ GROUPING = ("(", ")", "{", "}")
 SECRETS_CONTEXT = re.compile(r"\bsecrets\b")
 
 
+def publisher_source() -> Path:
+    """Where the uploader being tested is, which is the harness's copy while the harness is driving.
+
+    `sabotage.py` mutates a copy and names it here, so a check reading the repository's own file is
+    reading something this run is not testing and passes whatever was done to the copy. One definition
+    of the path, because every reader of it has to be the same reader.
+    """
+    return Path(os.environ.get("NIGHTLY_PUBLISHER", SDK / ".github/scripts/publish_staging.py"))
+
+
 def mints(value) -> bool:
     """Whether a `permissions` value grants the OIDC token.
 
@@ -3649,7 +3659,7 @@ def test_workflows():
     # uploader turns that off; asserted here because turning it back on would quietly make those checks
     # read something the program is not given.
     check("W16 and the uploader accepts no abbreviated option",
-          "allow_abbrev=False" in (SDK / ".github/scripts/publish_staging.py").read_text(),
+          "allow_abbrev=False" in publisher_source().read_text(),
           "publish_staging.py builds its parser without allow_abbrev=False")
     if gradle is not None and naming is not None:
         stamped = {var for var, value in (gradle.get("env") or {}).items()
@@ -3691,7 +3701,7 @@ def test_workflows():
 
 def load_publisher():
     """The uploader, imported from the working tree."""
-    source = Path(os.environ.get("NIGHTLY_PUBLISHER", SDK / ".github/scripts/publish_staging.py"))
+    source = publisher_source()
     spec = importlib.util.spec_from_file_location("publish_staging", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
