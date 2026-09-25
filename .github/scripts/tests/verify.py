@@ -3532,6 +3532,14 @@ def test_workflows():
 
     group = group_of(qa_job.get("concurrency"))
     check("W16 one publish runs at a time across refs", bool(group) and "${{" not in group, group)
+    # And the queued run waits rather than replacing the running one. The upload is object by object and
+    # the keys it has already written stay written, so cancelling one mid-flight strands a partial tree
+    # under an identifier nothing will complete. Written out rather than left to the default, because a
+    # group is edited by someone reading this file and not GitHub's table of defaults.
+    cancels = qa_job.get("concurrency")
+    cancels = "" if isinstance(cancels, str) else str((cancels or {}).get("cancel-in-progress", ""))
+    check("W16 and a queued one waits rather than cancelling it",
+          " ".join(cancels.split()) == "False", cancels or "not set")
     # On the publishing job and not on the workflow, because the gate is a job of this workflow too. At
     # the workflow level a dispatch waiting for a reviewer holds the only slot, and every snapshot from
     # main queues behind it until somebody answers; a pending run is replaced when a newer one queues,

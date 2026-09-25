@@ -527,6 +527,13 @@ MUTATIONS = [
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
 
+    # The group is still there and still one across every ref. A newer run now replaces a running one
+    # mid-upload, and the keys already written stay written, so a partial tree is stranded under an
+    # identifier nothing will complete.
+    ("QA snapshot lets a queued run cancel one mid-upload", QA, "workflows",
+     "      group: qa-snapshot\n      cancel-in-progress: false\n",
+     "      group: qa-snapshot\n      cancel-in-progress: true\n"),
+
     # Out of the publishing job, which is the only one holding the token and the staging tree. Removed
     # and relocated are one state as far as this is concerned: either way the job that uploads has no
     # build, and a called run skips whatever job the build was moved to.
