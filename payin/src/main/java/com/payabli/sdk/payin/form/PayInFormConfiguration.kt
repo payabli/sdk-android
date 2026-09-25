@@ -8,8 +8,9 @@ public enum class PayInSectionStyle {
     Inputs,
 
     /**
-     * Where the operation's amounts are drawn, and under what title. Every amount that is not zero is drawn,
-     * in the order [PayInFormSection.fields] lists them and then the rest. A form with no summary gets one.
+     * Where the operation's amounts are drawn, and under what title. Each amount that is sendable and not zero
+     * at two decimal places is drawn, in the order [PayInFormSection.fields] lists them and then the rest. A form
+     * with such an amount and no summary gets one.
      */
     Summary,
 }
