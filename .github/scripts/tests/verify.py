@@ -2136,6 +2136,16 @@ def invocations(step: dict, program: str) -> list[list[str]]:
     return found
 
 
+def gradle_arguments(step: dict) -> str:
+    """Every word `step` hands to Gradle, joined, and nothing a step merely mentions.
+
+    A task name in a step's text is not a task the build runs: `echo ./gradlew :core:test` names the
+    suite where a search for it finds it, and runs nothing, because the names are the echo's arguments.
+    Taking them from the commands that run gradlew is what makes the difference legible.
+    """
+    return " ".join(" ".join(words) for words in invocations(step, "gradlew"))
+
+
 def masked_commands(step: dict) -> list[str]:
     """The commands in `step` whose failure would not fail the step.
 
@@ -3366,16 +3376,20 @@ def test_workflows():
     # instrumented ones, ktlint or lint, and the workflow says so where it runs them.
     # Read off ci.yml rather than listed here: a suite added there and not here would otherwise be one
     # this never notices, and naming them twice is how the two lists drift.
-    ci_runs = " ".join(run_commands(step) for step in steps_of(workflow_doc("ci.yml")))
+    # Off what Gradle is given, not off what the step mentions. `run_commands` flattens a step, so
+    # `echo ./gradlew :core:test` puts every task name where a search for them finds them while the
+    # suites run nowhere: the names are the argument of an echo. Reading the words handed to gradlew
+    # asks the question the check is named for.
+    ci_runs = " ".join(gradle_arguments(step) for step in steps_of(workflow_doc("ci.yml")))
     ci_suites = set(re.findall(r":([A-Za-z0-9_-]+):test\b", ci_runs))
     check("W16 ci.yml names the suites to match", bool(ci_suites), ci_runs[:120])
 
     tested = next((step for step in qa_steps
-                   if re.search(r":[A-Za-z0-9_-]+:test\b", run_commands(step))), None)
+                   if re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step))), None)
     check("W16 a dispatch runs the suites", tested is not None,
           " | ".join(str(step.get("name", "")) for step in qa_steps))
     if tested is not None:
-        run = run_commands(tested)
+        run = gradle_arguments(tested)
         missing = ci_suites - set(re.findall(r":([A-Za-z0-9_-]+):test\b", run))
         check("W16 and every suite ci.yml runs", not missing, f"missing={sorted(missing)}")
         # An included build, so no task in the main build reaches it and it needs its own invocation.

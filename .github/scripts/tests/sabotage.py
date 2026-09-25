@@ -432,6 +432,11 @@ MUTATIONS = [
     ("A dispatched QA snapshot skips the sample app's suite", QA, "workflows",
      " :taptopay:test :example:test", " :taptopay:test"),
 
+    # Every task name stays exactly where a search for them finds them, as the argument of an echo, and
+    # the build runs nothing at all.
+    ("A dispatched QA snapshot echoes its suites instead of running them", QA, "workflows",
+     "          ./gradlew :core:test :payin:test", "          echo ./gradlew :core:test :payin:test"),
+
     ("A dispatched QA snapshot skips the convention plugin tests", QA, "workflows",
      "          ./gradlew -p build-logic test\n", ""),
 
