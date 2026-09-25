@@ -31,7 +31,8 @@ enum class Owner(
 }
 
 /**
- * A labelled frame naming who owns its content, so a screen shows where the app ends and the SDK begins.
+ * A frame naming who owns its content, so a screen shows where the app ends and the SDK begins. The label sits
+ * above the border and belongs to this app, whichever frame it names.
  *
  * The app's frame is solid and the SDK's is dashed, so the two read apart in a screenshot without colour.
  */
@@ -43,21 +44,24 @@ fun OwnerFrame(
 ) {
     val color = if (owner == Owner.Sdk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     val shape = RoundedCornerShape(12.dp)
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .then(if (owner == Owner.Sdk) Modifier.dashedBorder(color) else Modifier.border(1.dp, color, shape))
-                .padding(Dimens.CardPadding),
-        verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
-    ) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Outside the border, so the label is never read as part of what the frame holds.
         Text(
             text = "${owner.label} · ${owner.note}",
             style = MaterialTheme.typography.labelMedium,
             color = color,
             modifier = Modifier.semantics { heading() },
         )
-        content()
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (owner == Owner.Sdk) Modifier.dashedBorder(color) else Modifier.border(1.dp, color, shape),
+                    ).padding(Dimens.CardPadding),
+            verticalArrangement = Arrangement.spacedBy(Dimens.ItemSpacing),
+            content = content,
+        )
     }
 }
 
