@@ -2070,12 +2070,16 @@ def logical_lines(text: str) -> list[str]:
 
     The backslash and the newline are removed and nothing is put in their place, which is what the shell
     does, and what keeps `test\\` joined to `|| true` splitting on the operator rather than around it.
+
+    Whether the newline is escaped is the parity of the run before it, not whether that run is one. Each
+    pair is a literal backslash and an odd one is left over to escape the newline, so three continue the
+    line where two do not. Testing for one and refusing two answers only the shortest two cases.
     """
     lines: list[str] = []
     carried = ""
     for line in text.splitlines():
         stripped = line.rstrip()
-        if stripped.endswith("\\") and not stripped.endswith("\\\\"):
+        if (len(stripped) - len(stripped.rstrip("\\"))) % 2:
             carried += stripped[:-1]
             continue
         lines.append(carried + line)

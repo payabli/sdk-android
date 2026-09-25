@@ -152,6 +152,13 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # Three trailing backslashes are a literal backslash and an escaped newline, so the shell joins the
+    # lines and reads one masked command. A test for one backslash that refuses two does not.
+    ("CI masks a failed unit suite across an odd run of backslashes", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test \\\\\\\n"
+     "          || true\n"),
+
     # Nothing waits for the suite, so its status is never read at all: the step reports that the job
     # started and the runner tears the process down at the end of the step.
     ("CI backgrounds the unit suites, so nothing reads their status", CI, "workflows",
