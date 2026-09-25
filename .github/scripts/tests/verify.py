@@ -2154,6 +2154,10 @@ def masked_commands(step: dict) -> list[str]:
     An `if` or `while` condition is exempt for the same documented reason. Both are refused rather than
     parsed: neither appears in a guarded run block today, and the narrower reading is one more grammar
     rule to get right later.
+
+    `a &` reaches the same place by not waiting at all. An asynchronous list reports the status of
+    starting the job and not of running it, so measured under `bash -e`, `false &` followed by another
+    line exits 0. The suite's own status is never anybody's, since nothing waits for it.
     """
     tests = ("[", "[[", "test")
     conditions = ("if", "while", "until")
@@ -2177,7 +2181,7 @@ def masked_commands(step: dict) -> list[str]:
                     # as an answer and the step carries on.
                     if asked not in tests:
                         found.append(" ".join(command))
-                elif word in ("||", "&&") and head not in tests:
+                elif word in ("||", "&&", "&") and head not in tests:
                     found.append(" ".join(command))
             command = []
     return found
