@@ -2195,7 +2195,24 @@ def unstoppable(steps, label: str = "") -> list[str]:
         if not isinstance(step, dict):
             continue
         why = [f"masks `{command}`" for command in masked_commands(step)]
-        if "set +e" in shell_of(step):
+        text = shell_of(step)
+        # A suite that never runs is not a suite that passed, and a conditional is how it never runs.
+        # `if [ -n "" ]; then ./gradlew :core:test; fi` leaves every task name where a reader looking
+        # for them sees them, exits 0, and runs none of them. The test exemption in `masked_commands`
+        # is what makes that invisible: the condition is a question, so nothing is reported, and the
+        # body is never read. So a step that runs Gradle carries no conditional at all, which is a
+        # rule about where a suite may be written rather than one more thing to parse.
+        if "gradlew" in text:
+            words = []
+            for line in logical_lines(text):
+                try:
+                    words.extend(shell_words(line))
+                except ValueError:
+                    continue
+            gating = sorted({word for word in words if word in ("if", "while", "until", "case")})
+            if gating:
+                why.append("runs Gradle under " + ", ".join(gating))
+        if "set +e" in text:
             why.append("set +e")
         if step.get("continue-on-error"):
             why.append("continue-on-error")

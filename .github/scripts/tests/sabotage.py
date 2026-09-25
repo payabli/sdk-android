@@ -152,6 +152,13 @@ MUTATIONS = [
     ("A dispatched QA snapshot masks a failed suite with || true", QA, "workflows",
      ":taptopay:test :example:test", ":taptopay:test :example:test || true"),
 
+    # The condition is false, so the suites never run. Every task name is still where a reader looking
+    # for them sees them, and the step exits 0 having tested nothing.
+    ("CI wraps the unit suites in a condition that is never true", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          if [ -n \"\" ]; then\n"
+     "            ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n          fi\n"),
+
     # The instrumented suite is not in a `run:` at all: the emulator action takes it as an input, so a
     # reader that knows only about `run:` finds nothing to object to and the snapshot publishes behind a
     # red device suite.
