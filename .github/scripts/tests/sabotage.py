@@ -527,6 +527,17 @@ MUTATIONS = [
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
 
+    # Out of the publishing job, which is the only one holding the token and the staging tree. Removed
+    # and relocated are one state as far as this is concerned: either way the job that uploads has no
+    # build, and a called run skips whatever job the build was moved to.
+    ("The staging tree is never built in the publishing job", QA, "workflows",
+     '      - name: Publish to the staging directory\n        env:\n'
+     '          VERSION: ${{ steps.name.outputs.version }}\n'
+     '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
+     '        run: ./gradlew publish -Ppayabli.version="$VERSION"\n',
+     ''),
+
     # The one the guard was written for and the one it was never shown refusing: with no block at all,
     # two runs stamp and upload at once, and whichever writes a key first keeps the coordinate.
     ("QA snapshot serialises nothing, because the publish has no group", QA, "workflows",

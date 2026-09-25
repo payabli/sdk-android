@@ -3330,7 +3330,15 @@ def test_workflows():
     check(f"W16 {QA_WORKFLOW} has one publishing job", len(publishing) == 1, f"{sorted(publishing)}")
     qa_job_name = next(iter(publishing), "")
     qa_job = publishing.get(qa_job_name, {})
+    # Two lists, because the questions differ. `qa_steps` is every step of every job in this workflow and
+    # is what a "nothing anywhere does this" check reads: a credential held by the gate job, or a command
+    # masked there, is as much a finding as one here. `publishing_steps` is the publishing job's own, and
+    # is what finds the build and the upload, because a step that does either has to be in the job that
+    # holds the token and the staging tree. Since the gate became a job of this workflow, a build moved
+    # into it satisfied every search over all the steps while the publishing runner had no tree to upload
+    # and a called run skipped it entirely.
     qa_steps = steps_of(qa)
+    publishing_steps = [step for step in (qa_job.get("steps") or []) if isinstance(step, dict)]
     qa_text = workflow_text(QA_WORKFLOW)
 
     # The snapshot role trusts refs/heads/* only, so a tag cannot assume it. A tags: entry here produces
@@ -3461,7 +3469,7 @@ def test_workflows():
     ci_suites = set(re.findall(r":([A-Za-z0-9_-]+):test\b", ci_runs))
     check("W16 ci.yml names the suites to match", bool(ci_suites), ci_runs[:120])
 
-    tested = next((step for step in qa_steps
+    tested = next((step for step in publishing_steps
                    if re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step))), None)
     check("W16 a dispatch runs the suites", tested is not None,
           " | ".join(str(step.get("name", "")) for step in qa_steps))
@@ -3602,7 +3610,7 @@ def test_workflows():
 
     # The publish and the upload are separate steps because Gradle's Maven publisher cannot set
     # If-None-Match, which the bucket policy requires on every write.
-    upload = next((step for step in qa_steps if "publish_staging.py" in run_commands(step)), None)
+    upload = next((step for step in publishing_steps if "publish_staging.py" in run_commands(step)), None)
     check("W16 it uploads the staging tree with the publisher", upload is not None)
     if upload is not None:
         uploads = invocations(upload, "publish_staging.py")
@@ -3622,14 +3630,14 @@ def test_workflows():
         check("W16 and it publishes to the QA prefix",
               argument(words, "--prefix") == "maven-qa", " ".join(words) or str(upload.get("run"))[:160])
 
-    naming = next((step for step in qa_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
+    naming = next((step for step in publishing_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
     check("W16 it stamps the identifier", naming is not None)
 
     # The committed property names the version under development, so publishing it gives every build
     # from every branch one coordinate and a tester cannot pin the build they tested. Overriding it with
     # a literal does the same, so the override has to reach the stamp: the step's env maps a variable to
     # the naming step's output, and the command interpolates that variable.
-    gradle = next((step for step in qa_steps if "gradlew publish" in run_commands(step)), None)
+    gradle = next((step for step in publishing_steps if "gradlew publish" in run_commands(step)), None)
     check("W16 it builds the staging tree", gradle is not None)
     # The same shape as the uploader, and the reason the override is read off the publishing command
     # rather than off the step's first Gradle line: a second `gradlew publish` carrying no override
