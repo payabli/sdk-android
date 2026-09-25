@@ -143,14 +143,13 @@ class SampleWalkthroughTest {
     fun capturingACardThePayerEntered() {
         openTheForm(TopLevelDestination.Capture, submit = CAPTURE)
 
-        // The figure the request carries, beside a form whose own summary reads back an amount and a fee and
-        // never their sum. A payer sees what leaves the account or the screen is lying by omission, and seeing
-        // it after the button that spends it is the same omission: the form's last child is its submit button,
-        // so a total under the form is a total a payer reaches only by scrolling past the control it qualifies.
-        val total = topOf("Total")
+        // The form's own row for what the request charges. Seeing it after the button that spends it is the
+        // same omission as not seeing it: a figure under the button is one a payer reaches only by scrolling
+        // past the control it qualifies.
+        val amount = topOf(AMOUNT)
         val submit = topOf(CAPTURE)
-        assertTrue("Total sits at $total, below the submit button at $submit", total < submit)
-        compose.onNodeWithText("Total").performScrollTo().assertIsDisplayed()
+        assertTrue("the amount sits at $amount, below the submit button at $submit", amount < submit)
+        compose.onNodeWithText(AMOUNT).performScrollTo().assertIsDisplayed()
 
         prefill()
         pickTheExpiry()
@@ -337,6 +336,9 @@ class SampleWalkthroughTest {
 
         const val SAVE = "Save payment method"
         const val CAPTURE = "Submit payment"
+
+        /** The form's own label for the row showing what the request charges. */
+        const val AMOUNT = "Amount"
         const val VOID = "Void this transaction"
 
         /** What the capture step shows once the service has reversed the transaction. */
