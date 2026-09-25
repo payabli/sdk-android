@@ -148,7 +148,7 @@ class SampleWalkthroughTest {
         // past the control it qualifies.
         val total = topOf(TOTAL)
         val submit = topOf(CAPTURE)
-        assertTrue("the total sits at $total, below the submit button at $submit", total < submit)
+        assertTrue("the total must sit above the submit button: $total vs $submit", total < submit)
         compose.onNodeWithText(TOTAL).performScrollTo().assertIsDisplayed()
 
         prefill()
