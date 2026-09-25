@@ -51,23 +51,29 @@ internal class PayInFormDraft {
     var submissionPending: Boolean by mutableStateOf(false)
 
     /**
-     * Starts the form the first time, and again whenever the caller hands over a different configuration.
+     * Starts the form the first time, and applies a different configuration without starting it again.
      *
-     * Called on every composition and compares what it was last started from, so a form that leaves the
-     * composition and comes back keeps what the payer typed. [PayInFormConfiguration] compares by value, so a
-     * caller rebuilding an equal one after a rotation is not handing over a new one.
+     * A new configuration keeps the method, the values the payer entered and the service's marks on them,
+     * dropping only what it no longer offers a box for.
      *
-     * The comparison has to be here rather than at the call site: a `remember` key belongs to a composition and
-     * is gone with it, and emptying on every composition writes state that the same composition then reads, so
-     * the form recomposes without ever settling.
+     * Called on every composition. The comparison has to be here rather than at the call site: a `remember` key
+     * belongs to a composition and is gone with it, and writing on every composition writes state that the same
+     * composition then reads, so the form recomposes without ever settling.
      */
     fun seed(configuration: PayInFormConfiguration) {
         if (seededFrom == configuration) return
+        val started = seededFrom != null
         seededFrom = configuration
 
-        chosen = configuration.startingMethod
-        entered.clear()
-        rejectedFields = emptyMap()
+        if (started) {
+            chosen = chosen?.takeIf { it in configuration.methodsOffered } ?: configuration.startingMethod
+            keepOnlyWhatHasABox(configuration)
+            rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, method)
+        } else {
+            chosen = configuration.startingMethod
+            entered.clear()
+            rejectedFields = emptyMap()
+        }
     }
 
     /** A keystroke. The box no longer holds what the service rejected, so its mark goes. */
@@ -87,8 +93,12 @@ internal class PayInFormDraft {
         chosen = method
         // A card number typed under the card tab is not sent with a bank payment, and is not kept out of sight
         // either.
-        entered.keys.retainAll(configuration.inputFieldsFor(method).toSet())
+        keepOnlyWhatHasABox(configuration)
         rejectedFields = configuration.rejectedFieldsOnScreen(rejectedFields, method)
+    }
+
+    private fun keepOnlyWhatHasABox(configuration: PayInFormConfiguration) {
+        entered.keys.retainAll(configuration.inputFieldsFor(method).toSet())
     }
 
     /** The instrument goes once the submission has an outcome, approved or refused. */

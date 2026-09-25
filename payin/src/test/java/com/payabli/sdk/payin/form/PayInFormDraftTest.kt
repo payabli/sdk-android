@@ -8,9 +8,8 @@ import org.junit.Test
 /**
  * When the draft empties itself, which is the whole of whether a payer keeps what they typed.
  *
- * A composition calls [PayInFormDraft.seed] every time it runs, so the question each of these asks is which
- * calls are the same call. Too eager and a rotation empties the form; too lazy and a caller handing over a
- * different form draws the one before it.
+ * A composition calls [PayInFormDraft.seed] every time it runs. A changed configuration restyles the form and
+ * never restarts it, so a value goes only when the new configuration has no box left for it.
  */
 class PayInFormDraftTest {
     private val configuration =
@@ -44,13 +43,73 @@ class PayInFormDraftTest {
     }
 
     @Test
-    fun aChangedConfigurationStartsTheFormAgain() {
+    fun aDisplaySettingChangeKeepsWhatWasTypedAndTheChosenMethod() {
+        // Masking is a display setting, which says nothing about what the payer has done.
+        draft.seed(configuration)
+        draft.switchTo(PayInMethodType.BankAccount, configuration)
+        draft.enter(PayInField.AccountNumber, "000123456789")
+
+        draft.seed(configuration.copy(formatting = PayInFormatting(masksAccountNumber = false)))
+
+        assertEquals(PayInMethodType.BankAccount, draft.method)
+        assertEquals("000123456789", draft.typed[PayInField.AccountNumber])
+    }
+
+    @Test
+    fun withdrawingTheChosenMethodDropsItsFieldsAndKeepsTheSharedOnes() {
+        val both = configuration.copy(cardSections = cardWithBillingEmail(), bankSections = withBillingEmail())
+        draft.seed(both)
+        draft.switchTo(PayInMethodType.BankAccount, both)
+        draft.enter(PayInField.AccountNumber, "000123456789")
+        draft.enter(PayInField.BillingEmail, "ada@example.com")
+
+        draft.seed(both.copy(allowedMethods = listOf(PayInMethodType.Card)))
+
+        assertEquals(PayInMethodType.Card, draft.method)
+        assertFalse("a bank account number was kept behind a card form", PayInField.AccountNumber in draft.typed)
+        assertEquals("ada@example.com", draft.typed[PayInField.BillingEmail])
+    }
+
+    @Test
+    fun removingAFilledFieldDropsThatFieldAndNothingElse() {
+        val withEmail = configuration.copy(cardSections = cardWithBillingEmail())
+        draft.seed(withEmail)
+        draft.enter(PayInField.CardholderName, "Ada Lovelace")
+        draft.enter(PayInField.BillingEmail, "ada@example.com")
+
+        draft.seed(configuration)
+
+        assertFalse(PayInField.BillingEmail in draft.typed)
+        assertEquals("Ada Lovelace", draft.typed[PayInField.CardholderName])
+    }
+
+    @Test
+    fun aRejectionStaysOnABoxTheNewConfigurationStillDraws() {
+        // The refused value is still in the box, so lifting the mark would let the same value be sent again.
         draft.seed(configuration)
         draft.enter(PayInField.CardholderName, "Ada Lovelace")
+        draft.rejectedFields = mapOf(PayInField.CardholderName to PayInFieldError.NotAccepted)
 
-        draft.seed(configuration.copy(allowedMethods = listOf(PayInMethodType.Card)))
+        draft.seed(configuration.copy(formatting = PayInFormatting(groupsCardNumber = false)))
 
-        assertFalse(PayInField.CardholderName in draft.typed)
+        assertEquals(PayInFieldError.NotAccepted, draft.rejectedFields[PayInField.CardholderName])
+    }
+
+    @Test
+    fun aRejectionGoesWithTheBoxTheNewConfigurationRemoves() {
+        val withEmail = configuration.copy(cardSections = cardWithBillingEmail())
+        draft.seed(withEmail)
+        draft.enter(PayInField.BillingEmail, "ada@example.com")
+        draft.rejectedFields =
+            mapOf(
+                PayInField.BillingEmail to PayInFieldError.NotAccepted,
+                PayInField.CardholderName to PayInFieldError.NotAccepted,
+            )
+
+        draft.seed(configuration)
+
+        assertFalse(PayInField.BillingEmail in draft.rejectedFields)
+        assertEquals(PayInFieldError.NotAccepted, draft.rejectedFields[PayInField.CardholderName])
     }
 
     @Test
@@ -133,6 +192,9 @@ class PayInFormDraftTest {
 
         assertTrue("an unseeded draft answered $thrown", thrown is IllegalStateException)
     }
+
+    private fun cardWithBillingEmail(): List<PayInFormSection> =
+        PayInFormConfiguration.defaultCardSections().map { it.copy(fields = it.fields + PayInField.BillingEmail) }
 
     private fun withBillingEmail(): List<PayInFormSection> =
         listOf(
