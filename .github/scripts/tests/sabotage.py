@@ -370,6 +370,13 @@ MUTATIONS = [
      "workflows",
      'run: ./gradlew publish -Ppayabli.version="$VERSION"', "run: ./gradlew publish -Ppayabli.version=0.1.0"),
 
+    # A wrapper carrying its own command, which the executable-position scan stops at. The checked
+    # command is untouched and an unstamped publication runs beside it.
+    ("QA snapshot publishes the committed version too, inside a wrapper's command", QA, "workflows",
+     'run: ./gradlew publish -Ppayabli.version="$VERSION"',
+     'run: |\n          ./gradlew publish -Ppayabli.version="$VERSION"\n'
+     "          bash -c './gradlew publish'"),
+
     # The checked command is still there and still correct, and the committed coordinate is published
     # beside the stamped one.
     ("QA snapshot publishes the committed version too, on a second command", QA, "workflows",

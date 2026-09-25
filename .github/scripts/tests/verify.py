@@ -3507,6 +3507,14 @@ def test_workflows():
     publishes = [words for step in qa_steps for words in invocations(step, "gradlew")
                  if "publish" in words]
     check("W16 and it runs the publish task once", len(publishes) == 1, f"{len(publishes)} invocations")
+    # The same backstop the uploader has, and for the same reason: the count above reads the executable
+    # position, which a wrapper carrying its own command defeats. `bash -c './gradlew publish'` runs a
+    # second, unstamped publication and the scan stops at `-c`. Naming the task is what a second publish
+    # cannot avoid, so it is counted directly. `publish` is a whole word, which `publish_staging.py` is
+    # not, so the uploader's own line is not one of these.
+    named_publish = [word for step in qa_steps for word in run_commands(step).split() if word == "publish"]
+    check("W16 and the publish task is named once in the whole job",
+          len(named_publish) == 1, f"{named_publish}")
     if gradle is not None and naming is not None:
         stamped = {var for var, value in (gradle.get("env") or {}).items()
                    if f"steps.{naming.get('id', '')}.outputs" in str(value)}
