@@ -46,7 +46,7 @@ object FormCustomization {
                 title = if (settings.customWording) "Order total" else null,
                 fields = listOf(PayInField.Amount),
                 style = PayInSectionStyle.Summary,
-            ).takeIf { settings.summary && operation == FormOperation.Capture }
+            ).takeIf { operation == FormOperation.Capture }
 
         fun arranged(details: PayInFormSection) =
             listOfNotNull(

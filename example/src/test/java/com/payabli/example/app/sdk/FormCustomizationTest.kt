@@ -31,7 +31,7 @@ class FormCustomizationTest {
         // The SDK refuses a configuration it cannot submit, at construction. A switch that produced one would
         // crash the screen the moment it was flipped.
         var built = 0
-        for (bits in 0 until (1 shl 10)) {
+        for (bits in 0 until (1 shl 9)) {
             fun bit(i: Int) = bits and (1 shl i) != 0
             for (methods in FormMethods.entries) {
                 for (start in FormStart.entries) {
@@ -46,10 +46,9 @@ class FormCustomizationTest {
                                 customerSection = bit(3),
                                 customerFirst = bit(4),
                                 requireCustomerNumber = bit(5),
-                                summary = bit(6),
-                                groupCardNumber = bit(7),
-                                dashExpirySeparator = bit(8),
-                                maskAccountNumber = bit(9),
+                                groupCardNumber = bit(6),
+                                dashExpirySeparator = bit(7),
+                                maskAccountNumber = bit(8),
                             )
                         configure(settings, operation)
                         FormCustomization.labels(settings, operation)
@@ -58,7 +57,7 @@ class FormCustomizationTest {
                 }
             }
         }
-        assertEquals(1024 * 3 * 2 * 2, built)
+        assertEquals(512 * 3 * 2 * 2, built)
     }
 
     @Test
@@ -144,12 +143,11 @@ class FormCustomizationTest {
     }
 
     @Test
-    fun `the amount summary is shown only on a capture that asks for it`() {
+    fun `a capture places its own summary section, and tokenizing has none`() {
         fun hasSummary(configuration: PayInFormConfiguration) =
             configuration.sectionsFor(PayInMethodType.Card).any { it.style == PayInSectionStyle.Summary }
 
         assertTrue(hasSummary(configure(FormSettings())))
-        assertFalse(hasSummary(configure(FormSettings(summary = false))))
         assertFalse(hasSummary(configure(FormSettings(), FormOperation.Tokenize)))
     }
 
@@ -213,7 +211,6 @@ class FormCustomizationTest {
                     preset.settings.customWording != default.customWording,
                     preset.settings.customerSection != default.customerSection,
                     preset.settings.customerFirst != default.customerFirst,
-                    preset.settings.summary != default.summary,
                     preset.settings.groupCardNumber != default.groupCardNumber,
                 ).count { it }
             assertTrue("${preset.label} changes only $changed settings", changed >= 4)
