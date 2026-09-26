@@ -153,7 +153,7 @@ internal fun PayInFormContent(
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.section)) {
-            placeAmounts(sections, amounts).forEach { drawn ->
+            placeAmounts(sections, amounts, configuration.showsBaseAmount).forEach { drawn ->
                 FormSection(drawn, method, typed, context, draft::enter)
             }
         }
@@ -284,7 +284,7 @@ private fun FormSection(
         Text(text = section.title ?: defaultSectionTitle(section, method), style = style.sectionTitle)
 
         if (section.style == PayInSectionStyle.Summary) {
-            SummaryRows(drawn.amounts, context)
+            SummaryRows(drawn.amounts, drawn.total, context)
             return@Column
         }
 
@@ -338,27 +338,33 @@ private fun InputRows(
 @Composable
 private fun SummaryRows(
     rows: List<Pair<PayInField, BigDecimal>>,
+    total: BigDecimal?,
     context: PayInFormContext,
 ) {
-    val locale = Locale.getDefault()
-    val currency = context.amounts?.currency
     Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.label)) {
-        rows.forEach { (field, amount) ->
-            // Merged, so a screen reader announces the label and its figure as one row.
-            Row(
-                modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
-                horizontalArrangement = Arrangement.spacedBy(context.style.spacing.pairedField),
-            ) {
-                // The label yields. Two unconstrained children let a long one take the row and
-                // leave the amount at zero width, which is the half a payer needs.
-                Text(
-                    text = PayInStrings.label(field, context.labels),
-                    style = context.style.label,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(text = formatAmount(amount, currency, locale), style = context.style.supporting)
-            }
-        }
+        rows.forEach { (field, amount) -> SummaryRow(PayInStrings.label(field, context.labels), amount, context) }
+        total?.let { SummaryRow(stringResource(R.string.payabli_payin_summary_total), it, context) }
+    }
+}
+
+@Composable
+private fun SummaryRow(
+    label: String,
+    amount: BigDecimal,
+    context: PayInFormContext,
+) {
+    // Merged, so a screen reader announces the label and its figure as one row.
+    Row(
+        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(context.style.spacing.pairedField),
+    ) {
+        // The label yields. Two unconstrained children let a long one take the row and
+        // leave the amount at zero width, which is the half a payer needs.
+        Text(text = label, style = context.style.label, modifier = Modifier.weight(1f))
+        Text(
+            text = formatAmount(amount, context.amounts?.currency, Locale.getDefault()),
+            style = context.style.supporting,
+        )
     }
 }
 
