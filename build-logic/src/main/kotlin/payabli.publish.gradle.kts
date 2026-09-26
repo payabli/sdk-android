@@ -91,6 +91,12 @@ pluginManager.withPlugin("com.android.library") {
                 withJavadocJar()
             }
         }
+
+        defaultConfig {
+            aarMetadata {
+                minCompileSdk = 31
+            }
+        }
     }
     afterEvaluate {
         extensions.configure<PublishingExtension> {
