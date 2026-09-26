@@ -123,7 +123,7 @@ class AppContainer(
      */
     val sessionSource by lazy { PayInSessionSource(appContext, { tokenClient }, configuration) }
 
-    /** Whether the Simple Capture tab is shown. Off until the Config screen turns it on. */
+    /** Whether the Simple Capture tab is shown. Starts from the saved choice, and off on a first launch. */
     val simpleCapture: SimpleCaptureSetting =
         appContext.getSharedPreferences(DEMO_SETTINGS, Context.MODE_PRIVATE).let { prefs ->
             SimpleCaptureSetting(
