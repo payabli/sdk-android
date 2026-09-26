@@ -327,9 +327,13 @@ class PayInApiBoundsTest {
     @Test
     fun `copy carries the switches it is given`() {
         val configuration = PayInFormConfiguration()
+        val hidden = PayInFormConfiguration(hiddenFieldLabels = setOf(PayInField.CardNumber))
         val withoutTheRow = configuration.copy(showsBaseAmount = false)
+        val copiedWithoutTheRow = PayInFormConfiguration(showsBaseAmount = false).copy()
 
         assertFalse("the copy kept the source's base amount row", withoutTheRow.showsBaseAmount)
+        assertFalse("the copy reset the source's hidden row", copiedWithoutTheRow.showsBaseAmount)
+        assertEquals("the copy dropped the source's hidden labels", hidden, hidden.copy())
         assertNotEquals(
             "the copy kept the source's hidden labels",
             configuration,
