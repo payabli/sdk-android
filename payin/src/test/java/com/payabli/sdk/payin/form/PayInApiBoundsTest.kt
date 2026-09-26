@@ -117,9 +117,10 @@ class PayInApiBoundsTest {
 
     @Test
     fun `configurations that differ on the base amount row are not equal`() {
-        val shown = PayInFormConfiguration(showsBaseAmount = true)
+        val shown = PayInFormConfiguration()
         val hidden = PayInFormConfiguration(showsBaseAmount = false)
 
+        assertTrue("the declared default stopped showing the base amount row", shown.showsBaseAmount)
         assertNotEquals("equal while one draws a row the other hides", shown, hidden)
         assertNotEquals(shown.hashCode(), hidden.hashCode())
     }
