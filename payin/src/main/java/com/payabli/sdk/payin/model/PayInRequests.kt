@@ -3,7 +3,8 @@ package com.payabli.sdk.payin.model
 import java.math.BigDecimal
 
 /**
- * What is being charged, and any fee on top of it.
+ * What is being charged: [totalAmount] with [serviceFee] counted inside it, and any [surchargeFee] on top
+ * of it.
  *
  * [totalAmount] is a [BigDecimal] because a payment amount in binary floating point cannot hold `0.10`. It
  * reaches the wire as an unquoted number with two decimal places.
