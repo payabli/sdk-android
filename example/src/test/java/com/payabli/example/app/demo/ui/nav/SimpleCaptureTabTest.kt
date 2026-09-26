@@ -67,8 +67,10 @@ class SimpleCaptureTabTest {
         assertTrue(setting.shown.value)
         setting.setShown(false)
 
-        assertFalse(setting.shown.value)
-        assertEquals(listOf(false), saved)
+        setting.setShown(true)
+
+        assertTrue(setting.shown.value)
+        assertEquals(listOf(false, true), saved)
     }
 
     private fun shown(simpleCaptureOn: Boolean) = shownDestinations(simpleCaptureShown = simpleCaptureOn)
