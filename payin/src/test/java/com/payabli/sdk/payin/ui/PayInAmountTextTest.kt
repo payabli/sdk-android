@@ -201,6 +201,21 @@ class PayInAmountTextTest {
     }
 
     @Test
+    fun `a negative surcharge that cancels the charge draws the rows and no total`() {
+        val drawn =
+            summaryOf(
+                PayInPaymentDetails(totalAmount = BigDecimal("12.34"), surchargeFee = BigDecimal("-12.34")),
+                showsBaseAmount = true,
+            )
+
+        assertEquals(
+            listOf(PayInField.Amount to BigDecimal("12.34"), PayInField.SurchargeFee to BigDecimal("-12.34")),
+            drawn.amounts,
+        )
+        assertNull(drawn.total)
+    }
+
+    @Test
     fun `a charge that is all fee draws the fee and the total, and no amount`() {
         val drawn =
             summaryOf(
