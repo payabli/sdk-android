@@ -175,7 +175,7 @@ or "voided":
 
 | Method | What it does |
 |---|---|
-| `capture(request)` | Charges a card, bank account or stored payment method |
+| `capture(request)` | Charges a card, bank account, stored payment method, cloud device, check or cash |
 | `authorize(request)` | Authorizes a card |
 | `captureAuthorizedTransaction(request)` | Captures an earlier authorization |
 | `voidTransaction(transId)` | Voids a transaction that hasn't settled |
