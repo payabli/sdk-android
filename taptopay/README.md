@@ -162,7 +162,7 @@ println("Charged: ${result.paymentTransId}")
 
 | Parameter | Type | Notes |
 |---|---|---|
-| `paymentDetails` | `TapToPayPaymentDetails` | `amount` is required. `serviceFee` defaults to zero. Leave `currency` out to charge in the paypoint's currency. `paymentDescription` is optional. |
+| `paymentDetails` | `TapToPayPaymentDetails` | `amount`, the total charged, is required. `serviceFee` defaults to zero. `serviceFee` is part of `amount`, not added to it: the card is charged `amount`. Leave `currency` out to charge in the paypoint's currency. `paymentDescription` is optional. |
 | `customer` | `TapToPayCustomerData` | Required. Name the payer with at least one of `firstName`, `lastName`, `customerNumber` or `customerId`; a charge that names nobody is refused before the card is read. The other fields are optional. |
 | `invoice` | `TapToPayInvoiceData` | Optional. `invoiceNumber`. |
 | `orderDescription` | `String?` | Optional. |
