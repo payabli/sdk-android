@@ -74,7 +74,8 @@ the bearer token. `friendlyName` is optional. Calling it again with the same
 values is safe. Register each package name you ship, including a debug suffix or a flavour.
 
 The entry must match the package name of the installed app. An app that isn't on the allowlist is refused
-when the device attests.
+when the device attests, and the session lands on `PendingActivation`, the same state as a phone that needs
+a code.
 
 ## Create the Tap to Pay session
 
@@ -100,7 +101,7 @@ try {
     ttp.initialize()
 } catch (failure: TapToPayException) {
     if (ttp.sessionState.value == TapToPaySessionState.PendingActivation) {
-        // The phone needs an activation code. See Activate a phone.
+        // The phone needs an activation code, or the app isn't on the allowlist. See Activate a phone.
     } else {
         throw failure
     }
@@ -119,7 +120,9 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 - One install can hold activations for up to four paypoints. Activating a fifth drops the one used least
   recently, which then needs to be set up again the next time it's used.
 
-Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`.
+Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`. The same state
+follows when the installed package isn't on the paypoint's allowlist, so check the allowlist before issuing
+a code.
 
 1. Issue a code for the phone. In the Payabli portal, under **Device Management**, the waiting device's
    options include **Activate device**. The code is valid for 30 minutes, and asking again before it expires
@@ -194,7 +197,7 @@ for this entry point in this process; for anything else, reconcile with the tran
 | `Idle` | Not started, or activated and waiting for `initialize()`. |
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
 | `Ready` | Ready to charge. |
-| `PendingActivation` | The phone needs an activation code. |
+| `PendingActivation` | The phone needs an activation code, or the app isn't on the paypoint's allowlist. |
 | `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
 | `Reinitializing` | The session is being refreshed. |
 | `Failed(reason)` | The session stopped. `reason` says what to do. |
@@ -202,7 +205,7 @@ for this entry point in this process; for anything else, reconcile with the tran
 | `TapToPayFailureReason` | What to do |
 |---|---|
 | `CONFIGURATION_REJECTED` | The paypoint, the device or its setup is missing something. Retrying won't help; contact Payabli. |
-| `ATTESTATION_REQUIRED` | The device's identity was refused. Check the allowlist and that the app came from Google Play, then initialize again. |
+| `ATTESTATION_REQUIRED` | The device's attestation was refused or revoked. Check that the app came from Google Play, then initialize again. |
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone before trying another one. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
