@@ -132,8 +132,9 @@ retry. Don't resend a charge whose outcome is unknown. Find the transaction firs
 
 ## Outcomes and errors
 
-Every call returns a `Result`, and a form reports through `onCompleted` and `onFailed`, whose argument's
-`cause` is the exception. The outcomes are the ones in the root README's
+Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
+`CancellationException`. A form reports through `onCompleted` and `onFailed`, whose argument's `cause` is
+the exception. The outcomes are the ones in the root README's
 [Handle the outcome](../README.md#handle-the-outcome):
 
 | Result | Outcome | What to do |
@@ -143,7 +144,7 @@ Every call returns a `Result`, and a form reports through `onCompleted` and `onF
 | `PayInException.InvalidInput` | Not charged; the request was refused before it was sent | Fix the named field |
 | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | Unknown | Look the transaction up before charging again. `Unsettled.paymentTransId` names it when there is one |
 | `PayInException.AlreadySubmitting` | Not charged; a submission is already running | Wait for it |
-| `PayInException.ServiceError`, `PayInException.Undecodable` | The service answered with an error, or its answer couldn't be read | Look the transaction up before charging again |
+| `PayInException.ServiceError`, `PayInException.Undecodable`, on `storeMethod` | The service answered with an error, or its answer couldn't be read | Read the stored methods back before storing again. On a charge, these arrive as `Unsettled` |
 | `PayInException.Interrupted` (form only) | Cancelled before anything was sent | You can retry |
 
 ## Reference
