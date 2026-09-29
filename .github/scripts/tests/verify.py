@@ -3750,7 +3750,8 @@ def test_workflows():
     check("W17 and it runs no Gradle and sets up no toolchain",
           not any(term in gate_body for term in ("gradlew", "setup-java", "setup-gradle")))
     check("W17 and it mints no token", not mints(gate_job.get("permissions")), f"{gate_job.get('permissions')}")
-    pushed = " ".join(run_commands(step) for step in gate_steps)
+    pushed = " ".join(run_commands(step) for step in gate_steps
+                      if "git tag -a" in run_commands(step) or "gh workflow run" in run_commands(step))
     check("W17 and it pushes the tag with the key, verifying GitHub's host keys",
           "git push" in pushed and "refs/tags/" in pushed and "StrictHostKeyChecking=yes" in pushed
           and "gh api meta" in pushed, pushed[:200])
@@ -3763,16 +3764,20 @@ def test_workflows():
         return " ".join(str((step.get("env") or {}).get(var, "")).split())
 
     approved = "${{ needs.check.outputs.commit }}"
+    approved_version = "${{ needs.check.outputs.version }}"
     tagging = [step for step in gate_steps if "git tag -a" in run_commands(step)]
     starting = [step for step in gate_steps if "gh workflow run" in run_commands(step)]
-    check("W17 and it tags the commit the check approved, not the run's",
+    tag_run = run_commands(tagging[0]) if len(tagging) == 1 else ""
+    check("W17 and it tags the commit and version the check approved, not the run's",
           len(tagging) == 1 and env_of(tagging[0], "COMMIT") == approved
-          and "$COMMIT" in run_commands(tagging[0]) and "GITHUB_SHA" not in run_commands(tagging[0]),
-          f"{[env_of(step, 'COMMIT') for step in tagging]}")
-    check("W17 and it hands the tag run that same commit",
+          and env_of(tagging[0], "VERSION") == approved_version
+          and "git tag -a $VERSION" in tag_run and "$COMMIT" in tag_run and "GITHUB_SHA" not in tag_run,
+          f"{[(env_of(step, 'COMMIT'), env_of(step, 'VERSION')) for step in tagging]}")
+    check("W17 and it hands the tag run that same commit and version",
           len(starting) == 1 and env_of(starting[0], "COMMIT") == approved
-          and "-f commit=$COMMIT" in run_commands(starting[0]),
-          f"{[env_of(step, 'COMMIT') for step in starting]}")
+          and env_of(starting[0], "VERSION") == approved_version
+          and "--ref $VERSION" in run_commands(starting[0]) and "-f commit=$COMMIT" in run_commands(starting[0]),
+          f"{[(env_of(step, 'COMMIT'), env_of(step, 'VERSION')) for step in starting]}")
     check("W17 and it starts the run on the tag",
           "gh workflow run release.yml" in pushed and "--ref" in pushed, pushed[-200:])
 
@@ -3861,7 +3866,10 @@ def test_workflows():
           "(0|[1-9][0-9]*)" in first and "$GITHUB_REF_NAME =~" in first and "exit 1" in first, first[:200])
     # Asked again on the tag, because anyone who can dispatch can dispatch on an existing tag.
     ci_gate = ci_gated(build_steps)
-    check("W17 the build refuses a commit that has not passed CI on main", ci_gate is not None)
+    # The run's own commit here, which is the tag's, and nothing written in by hand.
+    check("W17 the build refuses a commit that has not passed CI on main",
+          ci_gate is not None and env_of(build_steps[ci_gate], "SHA") == "${{ github.sha }}",
+          env_of(build_steps[ci_gate], "SHA") if ci_gate is not None else "")
     first_gradle = next((i for i, step in enumerate(build_steps) if "gradlew" in run_commands(step)), None)
     checked = tag_check(build_steps)
     if ci_gate is not None and first_gradle is not None:

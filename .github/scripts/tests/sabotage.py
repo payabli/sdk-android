@@ -1200,6 +1200,18 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release tags a version other than the one the check read', RELEASE, "workflows",
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY',
+     '          VERSION: 0.0.1\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY'),
+
+    ('Release starts the tag run on a version other than the one the check read', RELEASE, "workflows",
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN',
+     '          VERSION: 0.0.1\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN'),
+
+    ("Release asks CI about a commit written in by hand rather than the tag's", RELEASE, "workflows",
+     '          SHA: ${{ github.sha }}\n',
+     '          SHA: a37642a360f698d6b244ade14041ebe457f0974b\n'),
+
     ('Release builds on any tag whose name matches the version, a candidate included', RELEASE, "workflows",
      '          release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$GITHUB_REF_NAME" =~ $release ]]; then\n            echo "::error::$GITHUB_REF_NAME is not <major>.<minor>.<patch>, so it is not a release tag."\n            exit 1\n          fi\n',
      ''),
