@@ -31,7 +31,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # To read the CI runs for this commit.
+      actions: read
     steps:
+      # The suites below are the unit tier only. CI on main is what ran the instrumented tests, lint and
+      # formatting, so a tag names a commit that passed it there or publishes nothing.
+      - name: Check CI passed on main for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
+            --branch main --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::no successful CI run on main for $SHA. Tag a commit that has passed CI on main."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Check the tag names the committed version

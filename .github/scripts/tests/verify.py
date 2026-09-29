@@ -3776,8 +3776,19 @@ def test_workflows():
                      and "exit 1" in run_commands(step)), None)
 
     build_steps = job_steps(rel_jobs.get(builder, {}))
+    # The unit tier is all this workflow runs, so the rest of what CI proves has to have passed for the
+    # tagged commit on main. Asked before anything is built, and the run has to have succeeded.
+    ci_gate = next((i for i, step in enumerate(build_steps)
+                    if "gh run list" in run_commands(step) and "--workflow ci.yml" in run_commands(step)), None)
+    ci_run = run_commands(build_steps[ci_gate]) if ci_gate is not None else ""
+    check("W17 the build refuses a commit that has not passed CI on main",
+          ci_gate is not None and all(term in ci_run for term in
+                                      ("--commit", "--event push", "--branch main", 'conclusion == "success"', "exit 1")),
+          ci_run[:200])
     first_gradle = next((i for i, step in enumerate(build_steps) if "gradlew" in run_commands(step)), None)
     checked = tag_check(build_steps)
+    if ci_gate is not None and first_gradle is not None:
+        check("W17 and asks before anything is built", ci_gate < first_gradle, f"{ci_gate} vs {first_gradle}")
     check("W17 the build refuses a tag that is not the committed version",
           checked is not None and first_gradle is not None and checked < first_gradle,
           f"check={checked} first gradle={first_gradle}")

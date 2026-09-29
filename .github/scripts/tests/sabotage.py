@@ -1199,6 +1199,14 @@ MUTATIONS = [
      ":testutils:test :taptopay:test :example:test\n          ./gradlew -p build-logic test",
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
+    ("Release publishes a commit whatever CI said about it", RELEASE, "workflows",
+     "--jq '[.[] | select(.conclusion == \"success\")] | length')",
+     "--jq 'length')"),
+
+    ("Release accepts a CI run from any branch", RELEASE, "workflows",
+     " \\\n            --branch main --json conclusion",
+     " \\\n            --json conclusion"),
+
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
     ('Release can be dispatched, so it runs with a branch subject and no tag', RELEASE, "workflows",
      'on:\n  push:\n',
