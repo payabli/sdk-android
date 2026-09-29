@@ -1,39 +1,40 @@
 # Tap to Pay on Android
 
 The `taptopay` module lets your app take a contactless card, phone or watch payment on an Android phone,
-with no external reader. Set up the session, your configuration and your token endpoint first, as the
+with no external reader. Set up the package, your configuration and your token endpoint first, as the
 [root README](../README.md) describes. This guide covers what Tap to Pay adds.
 
 ## Requirements
 
-Your app:
+### Your app
 
 - `minSdk` 30 or higher.
-- The `packaging` setting below, in your **application** module.
-- The 64-bit `arm64-v8a` ABI. The card reader has no 32-bit build, so a 32-bit-only phone can't take Tap
-  to Pay payments.
+- The `packaging` setting in [Unpack the card reader's native library](#unpack-the-card-readers-native-library),
+  in your **application** module.
+- The 64-bit `arm64-v8a` ABI. The card reader has no 32-bit build.
 
-The phone:
+### The phone
 
 - Android 12 (API 31) or later, with NFC. An app with `minSdk` 30 installs on Android 11, but Tap to Pay
   isn't available there. NFC must be switched on in Settings; no app can switch it on.
+- A 64-bit phone. A 32-bit-only phone can't take Tap to Pay payments.
 - Developer options and USB debugging switched off, and the phone **restarted** after switching them off.
   The card reader refuses a phone it considers to be in developer mode until it restarts.
-- In production, your app installed from Google Play. Ask Payabli whether your sandbox paypoint accepts
-  a build installed another way. A build installed with `adb install` can be refused by the card reader.
-
-Your account:
-
-- A paypoint with Tap to Pay enabled. Ask your Payabli representative.
-- OAuth2 credentials with the `tools_init`, `pos_create` and `inboundpayments_create` permissions.
+- In production, your app installed from Google Play. Ask Payabli whether your sandbox paypoint accepts a
+  build installed another way. A build installed with `adb install` can be refused by the card reader.
 
 `PayabliTTP.isSupported(context)` checks what the phone reports about itself, without a session or a
 network call. `false` is reliable. `true` doesn't guarantee a payment, since it can't see the paypoint or
 the card reader's own checks.
 
-## Before you write code
+### Your account
 
-### 1. Unpack the card reader's native library
+- A paypoint with Tap to Pay enabled. Ask your Payabli representative.
+- OAuth2 credentials with the `tools_init`, `pos_create` and `inboundpayments_create` permissions.
+
+## Before you start
+
+### Unpack the card reader's native library
 
 Add this to your **application** module's `build.gradle.kts`. The library module can't set it for you:
 
@@ -49,15 +50,15 @@ android {
 
 An app built without it installs and runs, and is refused when it is submitted for enrolment.
 
-### 2. Have your app enrolled
+### Have your app enrolled
 
 The card reader accepts an app only when its **package name and signing certificate** are enrolled as a
 pair. Send Payabli your package name and the SHA-256 digest of each certificate that signs a build that
 takes payments. A debug key, a release key and a CI key are three certificates. With Play App Signing,
-the installed app is signed with Google Play's app signing certificate. An app signed with a
-certificate that isn't enrolled is refused when the reader arms.
+the installed app is signed with Google Play's app signing certificate. An app signed with a certificate
+that isn't enrolled is refused when the reader arms.
 
-### 3. Register your app on the paypoint's allowlist
+### Register your app on the allowlist
 
 The allowlist entry for Android is your app's **package name**. Register it once per paypoint, from your
 backend:
@@ -69,13 +70,14 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
   -d '{ "deviceOs": "android", "appId": "com.example.checkout", "friendlyName": "Checkout" }'
 ```
 
-The call needs the `pos_create` permission. An API token in the `requestToken` header works in place of
-the bearer token. `friendlyName` is optional. Calling it again with the same
-values is safe. Register each package name you ship, including a debug suffix or a flavour.
+- The call needs the `pos_create` permission. An API token in the `requestToken` header works in place of
+  the bearer token.
+- `friendlyName` is optional. Calling it again with the same values is safe.
+- Register each package name you ship, including a debug suffix or a flavour. The entry must match the
+  package name of the installed app.
 
-The entry must match the package name of the installed app. An app that isn't on the allowlist is refused
-when the device attests, and the session lands on `PendingActivation`, the same state as a phone that needs
-a code.
+An app that isn't on the allowlist is refused when the device attests. `initialize()` fails, and
+`sessionState` is `PendingActivation`, the same state as a phone that needs a code.
 
 ## Create the Tap to Pay session
 
@@ -87,9 +89,12 @@ import com.payabli.sdk.taptopay.PayabliTTP
 val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 ```
 
-`sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` a `StateFlow<Boolean>`. Collect them
-to drive your UI. `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions; call them
-from a coroutine.
+- `sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` a `StateFlow<Boolean>`. Collect them
+  to drive your UI.
+- `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions;
+  call them from a coroutine.
+- **One paypoint per session.** There is one session per app process, and it has one entry point.
+  `PayabliSession.initialize` with a different entry point fails while the session is live.
 
 ## Initialize
 
@@ -120,13 +125,12 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 - One install can hold activations for up to four paypoints. Activating a fifth drops the one used least
   recently, which then needs to be set up again the next time it's used.
 
-Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`. The same state
-follows when the installed package isn't on the paypoint's allowlist, so check the allowlist before issuing
-a code.
+Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`. An app that
+isn't on the allowlist lands in the same state, so check the allowlist before issuing a code.
 
 1. Issue a code for the phone. In the Payabli portal, under **Device Management**, the waiting device's
-   options include **Activate device**. The code is valid for 30 minutes, and asking again before it expires
-   returns the same code. The API route,
+   options include **Activate device**. The code is valid for 30 minutes, and asking again before it
+   expires returns the same code. The API route,
    [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge),
    takes the device's ID, which the SDK doesn't return, so issue codes from the portal.
 
@@ -139,15 +143,9 @@ ttp.activateDevice(code)
 ttp.initialize()
 ```
 
-## One paypoint per session
-
-There is one session per app process, and it has one entry point. `PayabliSession.initialize` with a
-different entry point fails while the session is live, so an app takes Tap to Pay payments for one
-paypoint per session.
-
 ## Charge
 
-When `sessionState` is `Ready`, or `SessionExpired`, which `charge` repairs before it reads the card:
+When `sessionState` is `Ready`, or `SessionExpired`, which `charge` refreshes before it reads the card:
 
 ```kotlin
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
@@ -184,15 +182,17 @@ A `TapToPayException` carries `capture` and `paymentTransId`:
 | `capture` | Meaning | What to do |
 |---|---|---|
 | `NOT_CHARGED` | The card wasn't charged. | You can retry. |
-| `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. |
+| `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. When there's no ID, find the transaction in the Payabli portal. |
 | `CHARGED` | The card was charged, but the step that confirms it didn't complete. | Don't charge again. Call `closeCapturedCharge(paymentTransId)`, which confirms it without reading the card again. |
 
 `closeCapturedCharge` is safe to call more than once. It works only for the payment most recently taken
 for this entry point in this process; for anything else, reconcile with the transaction lookup.
 
-## Session states
+## Session states and events
 
-| `TapToPaySessionState` | Meaning |
+`sessionState` is a `TapToPaySessionState`:
+
+| State | Meaning |
 |---|---|
 | `Idle` | Not started, or activated and waiting for `initialize()`. |
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
@@ -209,6 +209,10 @@ for this entry point in this process; for anything else, reconcile with the tran
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone before trying another one. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
+
+### Events
+
+The Android SDK has no event stream. Collect `sessionState` to follow progress.
 
 ## Go live
 
