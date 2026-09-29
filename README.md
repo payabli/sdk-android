@@ -36,8 +36,9 @@ requirements, listed in [`taptopay/README.md`](taptopay/README.md#requirements).
    enabled if you plan to use it.
 2. **Create OAuth2 credentials.** Provision a client ID and client secret for the sandbox. See
    [OAuth authentication](https://docs.payabli.com/developers/oauth-authentication). Tap to Pay needs the
-   `tools_init`, `pos_create` and `inboundpayments_create` permissions. Card-not-present needs permission to create
-   transactions and to store payment methods; confirm the permission names with your Payabli representative.
+   `tools_init`, `pos_create` and `inboundpayments_create` permissions. Card-not-present needs `inboundpayments_create`
+   to charge, authorize and capture, `inboundpayments_void` to void, and `tokens_create` to store a payment
+   method.
 3. **Build your token endpoint.** See [Build your token endpoint](#build-your-token-endpoint).
 4. **Declare the `INTERNET` permission.** The SDK doesn't declare it. Add it to your app's manifest:
 
@@ -67,8 +68,11 @@ from source into your local Maven repository:
 ```bash
 git clone https://github.com/payabli/sdk-android.git
 cd sdk-android
-./gradlew publishToMavenLocal
+./gradlew publishToMavenLocal                            # every module
+./gradlew :core:publishToMavenLocal :payin:publishToMavenLocal  # card-not-present only
 ```
+
+The build needs the Android SDK, through `ANDROID_HOME` or `sdk.dir` in `local.properties`.
 
 Then add `mavenLocal()` to your repositories and depend on the version the build published, which is set by
 `payabli.version` in [`gradle.properties`](gradle.properties):
@@ -80,8 +84,8 @@ dependencies {
 }
 ```
 
-Building `taptopay` needs the card reader repository credentials described below, in
-`~/.gradle/gradle.properties`.
+Building `taptopay`, and so publishing every module, needs the card reader repository credentials
+described below, in `~/.gradle/gradle.properties`.
 
 Tap to Pay depends on a card reader library served from Payabli's own repository, which needs
 credentials that Payabli issues. Declare it scoped to the two groups it serves, so Gradle asks it for
@@ -116,7 +120,8 @@ Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store,
 Your backend holds the client ID and client secret. It calls `POST /api/v2/token/serverside` with them
 and returns the access token to your app. The client secret never reaches the device.
 
-This Node.js and Express example returns the token as `{ "accessToken": "..." }`:
+This example needs Node.js 18 or later and `"type": "module"` in `package.json`. It returns the token as
+`{ "accessToken": "..." }`:
 
 ```js
 // server.js
@@ -306,7 +311,7 @@ When the outcome is unknown, look the transaction up from your backend with
 [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction)
 before you charge again. `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
 look up when there is one. When there isn't, find the transaction in the Payabli portal before you charge
-again; setting `orderId` on each request lets you find it by your own reference. Store the transaction ID with your order every time you get one.
+again. On card-not-present, setting `orderId` on each request lets you find it by your own reference. Store the transaction ID with your order every time you get one.
 
 ## Sample app
 

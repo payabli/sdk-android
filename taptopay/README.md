@@ -73,8 +73,8 @@ The call needs the `pos_create` permission. An API token in the `requestToken` h
 the bearer token. `friendlyName` is optional. Calling it again with the same
 values is safe. Register each package name you ship, including a debug suffix or a flavour.
 
-Payabli reads the package name from Google Play Integrity's signed verdict, not from your request. An app
-that isn't on the allowlist, or that Google Play doesn't recognize, is refused when the device attests.
+The entry must match the package name of the installed app. An app that isn't on the allowlist is refused
+when the device attests.
 
 ## Create the Tap to Pay session
 
@@ -87,7 +87,7 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 ```
 
 `sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` a `StateFlow<Boolean>`. Collect them
-to drive your UI. `create`, `initialize`, `activateDevice` and `charge` are `suspend` functions; call them
+to drive your UI. `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions; call them
 from a coroutine.
 
 ## Initialize
@@ -121,12 +121,11 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 
 Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`.
 
-1. Your backend requests a code with
+1. Issue a code for the phone. In the Payabli portal, under **Device Management**, the waiting device's
+   options include **Activate device**. The code is valid for 30 minutes, and asking again before it expires
+   returns the same code. The API route,
    [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge),
-   `POST /api/v2/device/taptopay/activate/challenge`, which takes the entry point and the device's ID. The
-   code is valid for 30 minutes. Asking again before it expires returns the same code. The SDK doesn't
-   return the device's ID. In the Payabli portal, under **Device Management**, the waiting device's
-   options include **Activate device**, which issues its code.
+   takes the device's ID, which the SDK doesn't return, so issue codes from the portal.
 
    The code is six digits and can start with zero, so keep it as a string.
 2. Deliver the code to the person holding the phone, and have your app ask for it.
