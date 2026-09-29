@@ -72,12 +72,14 @@ jobs:
           PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
         run: ./gradlew publish
 
+      # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only
+      # one a half-finished upload can be completed from.
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: staging-repo
           path: build/staging-repo
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 90
 
   # The environment cannot go on the upload job: a job with one presents `environment:<name>` as its OIDC
   # subject and no ref, and the release role trusts `refs/tags/*`. So the review is a job of its own,
