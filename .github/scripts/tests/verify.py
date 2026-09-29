@@ -3757,11 +3757,22 @@ def test_workflows():
     # A tag already on another commit is a spent number, and pushing over it is refused.
     check("W17 and it refuses a version already tagged on another commit",
           "$tagged != $COMMIT" in pushed and "already names" in pushed and "exit 1" in pushed, pushed[:200])
-    # The named commit, never the run's own: the run's is main's head when the dispatch was made.
-    tag_env = {var: " ".join(str(value).split()) for step in gate_steps for var, value in (step.get("env") or {}).items()}
+    # The named commit, never the run's own: the run's is main's head when the dispatch was made. Each
+    # step's own env, because one step's correct value would otherwise stand in for another's.
+    def env_of(step: dict, var: str) -> str:
+        return " ".join(str((step.get("env") or {}).get(var, "")).split())
+
+    approved = "${{ needs.check.outputs.commit }}"
+    tagging = [step for step in gate_steps if "git tag -a" in run_commands(step)]
+    starting = [step for step in gate_steps if "gh workflow run" in run_commands(step)]
     check("W17 and it tags the commit the check approved, not the run's",
-          tag_env.get("COMMIT") == "${{ needs.check.outputs.commit }}" and "GITHUB_SHA" not in pushed
-          and "-f commit=$COMMIT" in pushed, f"COMMIT={tag_env.get('COMMIT')}")
+          len(tagging) == 1 and env_of(tagging[0], "COMMIT") == approved
+          and "$COMMIT" in run_commands(tagging[0]) and "GITHUB_SHA" not in run_commands(tagging[0]),
+          f"{[env_of(step, 'COMMIT') for step in tagging]}")
+    check("W17 and it hands the tag run that same commit",
+          len(starting) == 1 and env_of(starting[0], "COMMIT") == approved
+          and "-f commit=$COMMIT" in run_commands(starting[0]),
+          f"{[env_of(step, 'COMMIT') for step in starting]}")
     check("W17 and it starts the run on the tag",
           "gh workflow run release.yml" in pushed and "--ref" in pushed, pushed[-200:])
 
@@ -3785,9 +3796,14 @@ def test_workflows():
           gated is not None
           and " ".join(str((checker_steps[gated].get("env") or {}).get("SHA", "")).split()) == "${{ inputs.commit }}",
           str(checker_steps[gated].get("env")) if gated is not None else "")
-    checker_runs = " ".join(run_commands(step) for step in checker_steps)
-    check("W17 and a commit named in full", "^[0-9a-f]{40}$" in checker_runs, checker_runs[:160])
-    check("W17 and one that is on main", "git merge-base $COMMIT origin/main" in checker_runs, checker_runs[-300:])
+    named = "${{ inputs.commit }}"
+    in_full = [step for step in checker_steps if "^[0-9a-f]{40}$" in run_commands(step)]
+    on_main = [step for step in checker_steps if "git merge-base $COMMIT origin/main" in run_commands(step)]
+    check("W17 and a commit named in full",
+          len(in_full) == 1 and env_of(in_full[0], "COMMIT") == named and "$COMMIT =~" in run_commands(in_full[0]),
+          f"{[env_of(step, 'COMMIT') for step in in_full]}")
+    check("W17 and one that is on main", len(on_main) == 1 and env_of(on_main[0], "COMMIT") == named,
+          f"{[env_of(step, 'COMMIT') for step in on_main]}")
     checked_out = [step.get("with") or {} for step in checker_steps if "actions/checkout" in str(step.get("uses", ""))]
     check("W17 and it reads the version at that commit",
           bool(checked_out) and " ".join(str(checked_out[0].get("ref", "")).split()) == "${{ inputs.commit }}",

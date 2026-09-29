@@ -1204,6 +1204,22 @@ MUTATIONS = [
      '          release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$GITHUB_REF_NAME" =~ $release ]]; then\n            echo "::error::$GITHUB_REF_NAME is not <major>.<minor>.<patch>, so it is not a release tag."\n            exit 1\n          fi\n',
      ''),
 
+    ("Release tags main's head through the tag step's own env", RELEASE, "workflows",
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY',
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ github.sha }}\n          RELEASE_DEPLOY_KEY'),
+
+    ("Release hands the tag run main's head", RELEASE, "workflows",
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run',
+     '          COMMIT: ${{ github.sha }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run'),
+
+    ("Release checks main's head is named in full rather than the named commit", RELEASE, "workflows",
+     '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+
+    ("Release checks main's head is on main rather than the named commit", RELEASE, "workflows",
+     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+
     ("Release takes main's head when no commit is named", RELEASE, "workflows",
      '        required: true\n        type: string\n',
      '        required: false\n        type: string\n'),
