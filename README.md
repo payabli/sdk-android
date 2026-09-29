@@ -132,8 +132,9 @@ const app = express();
 const PAYABLI_URL = process.env.PAYABLI_URL ?? "https://api-sandbox.payabli.com/api";
 
 app.post("/payabli/token", async (req, res) => {
-  // Replace with your app's own authentication. Never return a token to an unauthenticated caller.
-  if (!req.headers.authorization) {
+  // authenticateUser is your app's own check of the caller's session. Never return a token without it.
+  const user = await authenticateUser(req);
+  if (!user) {
     return res.status(401).json({ error: "unauthenticated" });
   }
   const upstream = await fetch(`${PAYABLI_URL}/v2/token/serverside`, {
@@ -175,7 +176,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 val config = PayabliConfig(
     entryPoint = "your-entry-point",
     environment = PayabliEnvironment.SANDBOX,
-    tokenProvider = { backend.fetchPayabliAccessToken() },
+    tokenProvider = { backend.fetchPayabliAccessToken() }, // sends your app's own session credential
 )
 
 val session: PayabliSession =
