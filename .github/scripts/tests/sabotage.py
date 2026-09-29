@@ -1200,6 +1200,34 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ("Release takes main's head when no commit is named", RELEASE, "workflows",
+     '        required: true\n        type: string\n',
+     '        required: false\n        type: string\n'),
+
+    ('Release accepts a short SHA, which can resolve to another commit', RELEASE, "workflows",
+     '^[0-9a-f]{40}$',
+     '^[0-9a-f]+$'),
+
+    ('Release tags a commit that is not on main', RELEASE, "workflows",
+     'git merge-base "$COMMIT" origin/main',
+     'git merge-base "$COMMIT" HEAD'),
+
+    ("Release checks CI for main's head rather than the named commit", RELEASE, "workflows",
+     '          SHA: ${{ inputs.commit }}\n',
+     '          SHA: ${{ github.sha }}\n'),
+
+    ("Release reads the version at main's head", RELEASE, "workflows",
+     '          ref: ${{ inputs.commit }}\n          fetch-depth: 0\n',
+     '          fetch-depth: 0\n'),
+
+    ("Release tags main's head rather than the approved commit", RELEASE, "workflows",
+     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"',
+     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$GITHUB_SHA"'),
+
+    ('Release builds from a tag that names another commit', RELEASE, "workflows",
+     '          if [ "$GITHUB_SHA" != "$COMMIT" ]; then\n            echo "::error::$GITHUB_REF_NAME',
+     '          if [ "$GITHUB_SHA" = "$GITHUB_SHA" ] && false; then\n            echo "::error::$GITHUB_REF_NAME'),
+
     ('Release starts on a tag push, so a person creates the release', RELEASE, "workflows",
      'on:\n  workflow_dispatch:\n',
      "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
@@ -1233,11 +1261,11 @@ MUTATIONS = [
      '-o StrictHostKeyChecking=no'),
 
     ('Release pushes over a version already tagged on another commit', RELEASE, "workflows",
-     '[ "$tagged" != "$GITHUB_SHA" ]',
-     '[ "$tagged" = "$GITHUB_SHA" ]'),
+     '[ "$tagged" != "$COMMIT" ]',
+     '[ "$tagged" = "$COMMIT" ]'),
 
     ('Release tags and never starts the run that publishes', RELEASE, "workflows",
-     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION"\n',
+     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
      '        run: echo "tagged $VERSION"\n'),
 
     ('Release upload runs through a skipped build', RELEASE, "workflows",

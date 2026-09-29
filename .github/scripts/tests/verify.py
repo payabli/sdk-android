@@ -3731,6 +3731,11 @@ def test_workflows():
     # pull request is a run nobody cut.
     check(f"W17 {RELEASE_WORKFLOW} is dispatched and has no other trigger",
           set(rel_on) == {"workflow_dispatch"}, f"{rel_on}")
+    # The commit is named by whoever dispatches, so a merge between the decision and the click is not what
+    # is released.
+    named_commit = (((rel_on.get("workflow_dispatch") or {}).get("inputs") or {}).get("commit")) or {}
+    check("W17 and the dispatch names the commit to release",
+          named_commit.get("required") is True, f"{named_commit}")
 
     # The cut: on main, a job that checks, then the release environment's job that tags. The environment
     # is who may release, and it is the only place the deploy key can be read.
@@ -3751,7 +3756,12 @@ def test_workflows():
           and "gh api meta" in pushed, pushed[:200])
     # A tag already on another commit is a spent number, and pushing over it is refused.
     check("W17 and it refuses a version already tagged on another commit",
-          "$tagged != $GITHUB_SHA" in pushed and "already names" in pushed and "exit 1" in pushed, pushed[:200])
+          "$tagged != $COMMIT" in pushed and "already names" in pushed and "exit 1" in pushed, pushed[:200])
+    # The named commit, never the run's own: the run's is main's head when the dispatch was made.
+    tag_env = {var: " ".join(str(value).split()) for step in gate_steps for var, value in (step.get("env") or {}).items()}
+    check("W17 and it tags the commit the check approved, not the run's",
+          tag_env.get("COMMIT") == "${{ needs.check.outputs.commit }}" and "GITHUB_SHA" not in pushed
+          and "-f commit=$COMMIT" in pushed, f"COMMIT={tag_env.get('COMMIT')}")
     check("W17 and it starts the run on the tag",
           "gh workflow run release.yml" in pushed and "--ref" in pushed, pushed[-200:])
 
@@ -3769,8 +3779,19 @@ def test_workflows():
                             ("gh run list", "--workflow ci.yml", "--commit", "--event push", "--branch main",
                              'conclusion == "success"', "exit 1"))), None)
 
+    checker_steps = job_steps(checker)
+    gated = ci_gated(checker_steps)
     check("W17 and the check refuses a commit that has not passed CI on main",
-          ci_gated(job_steps(checker)) is not None)
+          gated is not None
+          and " ".join(str((checker_steps[gated].get("env") or {}).get("SHA", "")).split()) == "${{ inputs.commit }}",
+          str(checker_steps[gated].get("env")) if gated is not None else "")
+    checker_runs = " ".join(run_commands(step) for step in checker_steps)
+    check("W17 and a commit named in full", "^[0-9a-f]{40}$" in checker_runs, checker_runs[:160])
+    check("W17 and one that is on main", "git merge-base $COMMIT origin/main" in checker_runs, checker_runs[-300:])
+    checked_out = [step.get("with") or {} for step in checker_steps if "actions/checkout" in str(step.get("uses", ""))]
+    check("W17 and it reads the version at that commit",
+          bool(checked_out) and " ".join(str(checked_out[0].get("ref", "")).split()) == "${{ inputs.commit }}",
+          f"{checked_out}")
     versioned = " ".join(run_commands(step) for step in job_steps(checker))
     # A release version only: a candidate belongs on the mutable channel.
     check("W17 and it reads the version as <major>.<minor>.<patch> and nothing else",
@@ -3813,6 +3834,11 @@ def test_workflows():
                      and "exit 1" in run_commands(step)), None)
 
     build_steps = job_steps(rel_jobs.get(builder, {}))
+    same = next((i for i, step in enumerate(build_steps)
+                 if "$GITHUB_SHA != $COMMIT" in run_commands(step)
+                 and (step.get("env") or {}).get("COMMIT") == "${{ inputs.commit }}"), None)
+    check("W17 the build refuses a tag that does not name the commit it was given",
+          same is not None and all("gradlew" not in run_commands(step) for step in build_steps[:same]), f"{same}")
     # Asked again on the tag, because anyone who can dispatch can dispatch on an existing tag.
     ci_gate = ci_gated(build_steps)
     check("W17 the build refuses a commit that has not passed CI on main", ci_gate is not None)

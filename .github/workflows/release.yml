@@ -4,14 +4,21 @@ name: Release
 # opens a GitHub Release at the tag carrying notes and no assets. The artifacts are resolved from the Maven
 # origin only.
 #
-# Dispatched from main, and in two runs. The run on main checks that CI passed for the commit and reads
-# `payabli.version`. Then a job in the `release` environment, the only job holding the deploy key the tag
+# Dispatched from main, naming the commit to release, and in two runs. The run on main checks that the
+# commit is on main and passed CI there, and reads its `payabli.version`. Then a job in the `release` environment, the only job holding the deploy key the tag
 # ruleset admits, creates the tag and dispatches this workflow on it. The run on the tag builds, uploads and
 # writes the notes, because the role that writes /maven trusts a tag ref and nothing else. No person creates
 # a release tag.
 
 on:
   workflow_dispatch:
+    inputs:
+      # Named rather than taken from main's head, so a merge landing between the decision and the dispatch
+      # is not what gets released.
+      commit:
+        description: "Full 40-character SHA of the commit on main to release"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -33,13 +40,24 @@ jobs:
       actions: read
     outputs:
       version: ${{ steps.version.outputs.version }}
+      commit: ${{ inputs.commit }}
     steps:
+      # A full SHA and nothing shorter, so the commit approved is not a prefix that resolves to another.
+      - name: Check the commit is named in full
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::a release names the full 40-character commit SHA, not '$COMMIT'."
+            exit 1
+          fi
+
       # The tag run executes the unit tier only. CI on main is what ran the instrumented tests, lint and
       # formatting, so a release names a commit that passed it there or nothing is tagged.
       - name: Check CI passed on main for this commit
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.sha }}
+          SHA: ${{ inputs.commit }}
         run: |
           passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
             --branch main --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
@@ -48,7 +66,20 @@ jobs:
             exit 1
           fi
 
+      # All of history, so the check below can see main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - name: Check the commit is on main
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then
+            echo "::error::$COMMIT is not on main."
+            exit 1
+          fi
 
       # A release version and nothing else. A candidate carries a qualifier and belongs on the mutable
       # channel; the role the tag run assumes would write it where it can never be replaced.
@@ -62,6 +93,12 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          # On the run's page, so the approver sees what the approval releases.
+          {
+            echo "Releasing \`$version\` from \`$(git rev-parse HEAD)\`:"
+            echo
+            echo "> $(git log -1 --format=%s HEAD)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The approval. Its required reviewers are who may release, it deploys from main only, and it is the only
   # job that can read the deploy key. It runs no file from the checkout.
@@ -94,6 +131,7 @@ jobs:
       - name: Create the tag
         env:
           VERSION: ${{ needs.check.outputs.version }}
+          COMMIT: ${{ needs.check.outputs.commit }}
           RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -101,8 +139,8 @@ jobs:
           if [ -n "$(git tag --list "$VERSION")" ]; then
             tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")
           fi
-          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
-            echo "::error::tag $VERSION already names $tagged, not $GITHUB_SHA. Take the next version."
+          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then
+            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."
             exit 1
           fi
           if [ -z "$tagged" ]; then
@@ -116,7 +154,7 @@ jobs:
             gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$hosts"
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$GITHUB_SHA"
+            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"
             GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \
               git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"
           fi
@@ -126,8 +164,9 @@ jobs:
       - name: Start the tag run
         env:
           VERSION: ${{ needs.check.outputs.version }}
+          COMMIT: ${{ needs.check.outputs.commit }}
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION"
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"
 
   # Gradle, the suites and the card reader credential, and no identity that can write the origin. The
   # upload runs on a fresh runner, so nothing a build script or a dependency leaves behind runs beside
@@ -141,6 +180,16 @@ jobs:
       # To read the CI runs for this commit.
       actions: read
     steps:
+      # The tag has to name the commit this run was given, or it is not the release that was approved.
+      - name: Check the tag names the commit
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [ "$GITHUB_SHA" != "$COMMIT" ]; then
+            echo "::error::$GITHUB_REF_NAME names $GITHUB_SHA, not $COMMIT."
+            exit 1
+          fi
+
       # Asked again here, because anyone who can dispatch can dispatch on an existing tag.
       - name: Check CI passed on main for this commit
         env:
