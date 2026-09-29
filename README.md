@@ -50,7 +50,7 @@ token in memory while the session runs.
 
 ### Add the SDK
 
-No version is published, so build the SDK from source into your local Maven repository:
+No version has been released, so build the SDK from source into your local Maven repository:
 
 ```bash
 git clone https://github.com/payabli/sdk-android.git
