@@ -185,8 +185,10 @@ A `TapToPayException` carries `capture` and `paymentTransId`:
 | `UNKNOWN` | The outcome isn't known. | Look up `paymentTransId` with [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction) before charging again. When there's no ID, find the transaction in the Payabli portal. |
 | `CHARGED` | The card was charged, but the step that confirms it didn't complete. | Don't charge again. Call `closeCapturedCharge(paymentTransId)`, which confirms it without reading the card again. |
 
-`closeCapturedCharge` is safe to call more than once. It works only for the payment most recently taken
-for this entry point in this process; for anything else, reconcile with the transaction lookup.
+Call `closeCapturedCharge` again only while the close is unconfirmed. Once one succeeds, the SDK no longer
+holds the payment, and a further call fails with `capture` `UNKNOWN`. It works only for the payment most
+recently taken for this entry point in this process; for anything else, reconcile with the transaction
+lookup.
 
 ## Session states and events
 
