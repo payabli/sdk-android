@@ -97,6 +97,18 @@ internal fun amountEditable(
     retryKey: String?,
 ): Boolean = submission !is PayInSubmissionState.Submitting && retryKey == null
 
+/**
+ * The method a held key is priced as, so a retry carries the total that key names.
+ *
+ * A key already priced keeps its method: one key, one total. A key with no method yet takes the one on
+ * screen, and a key that is gone takes its price with it.
+ */
+internal fun pricedMethodAfter(
+    heldKey: String?,
+    pricedBefore: PayInMethodType?,
+    onScreen: PayInMethodType?,
+): PayInMethodType? = heldKey?.let { pricedBefore ?: onScreen }
+
 /** What the screen says when [operation] ends, for either instrument. */
 internal fun outcomeMessage(
     operation: FormOperation,
@@ -163,12 +175,12 @@ class SimpleCaptureViewModel(
         outcome: PayInSubmissionState.Failed,
     ) {
         retryKey = keyAfter(retryKey, submitted, outcome)
-        keyedMethod = retryKey?.let { method }
+        keyedMethod = pricedMethodAfter(retryKey, keyedMethod, method)
     }
 
     fun succeeded(submitted: FormOperation) {
         retryKey = keyAfter(retryKey, submitted, outcome = null)
-        keyedMethod = null
+        keyedMethod = pricedMethodAfter(retryKey, keyedMethod, method)
     }
 
     init {
@@ -224,7 +236,13 @@ fun SimpleCaptureScreen(
     DemoScreen(
         title = "Simple Capture",
         modifier = modifier,
-        actions = { FormSettingsMenu(settings) { viewModel.settings = it } },
+        actions = {
+            FormSettingsMenu(
+                settings,
+                onSettingsChange = { viewModel.settings = it },
+                enabled = !submitting,
+            )
+        },
     ) {
         OwnerFrame(Owner.App) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
