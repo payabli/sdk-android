@@ -76,8 +76,9 @@ PayabliPayInForm(
 
 ### Call the API from your own UI
 
-Card numbers and security codes travel in `SensitiveDigits` buffers. Close the ones you build once the
-call returns; `use` does that.
+Card numbers and security codes travel in `SensitiveDigits` buffers. Collect them into `CharArray`s, never
+`String`s, which can't be erased. `SensitiveDigits.of` copies the array, so wipe yours once the buffer is
+built, and close the `SensitiveDigits` once the call returns; `use` does that.
 
 ```kotlin
 import com.payabli.sdk.payin.form.ExpiryValue
@@ -89,9 +90,13 @@ import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.model.SensitiveDigits
 import java.math.BigDecimal
 
+// numberChars and cvvChars are CharArrays your UI filled.
+val number = SensitiveDigits.of(numberChars).also { numberChars.fill('0') }
+val cvv = SensitiveDigits.of(cvvChars).also { cvvChars.fill('0') }
+
 val result =
-    SensitiveDigits.ofString("4012000098765439").use { number ->
-        SensitiveDigits.ofString("999").use { cvv ->
+    number.use { number ->
+        cvv.use { cvv ->
             payIn.capture(
                 PayInRequest(
                     paymentMethod = PayInPaymentMethod.Card(
