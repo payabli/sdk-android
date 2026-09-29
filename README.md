@@ -238,6 +238,7 @@ import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInTransactionOptions
+import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import java.math.BigDecimal
 
@@ -249,7 +250,12 @@ PayabliPayInForm(
         PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
     ),
     configuration = PayInFormConfiguration(),
-    onCompleted = { succeeded -> /* store the transaction ID from succeeded; don't log it */ },
+    onCompleted = { succeeded ->
+        when (succeeded) { // store the ID; don't log it
+            is PayInSubmissionState.Succeeded.Payment -> order.paymentTransId = succeeded.result.transaction?.paymentTransId
+            is PayInSubmissionState.Succeeded.Method -> order.storedMethodId = succeeded.storedMethod.storedMethodId
+        }
+    },
     onFailed = { failed -> /* failed.cause says why; see Handle the outcome */ },
     onMethodChanged = { },
 )
