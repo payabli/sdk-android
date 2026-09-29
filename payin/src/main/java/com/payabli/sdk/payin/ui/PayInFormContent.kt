@@ -71,9 +71,11 @@ internal fun PayInFormContent(
     onMethodChanged: (PayInMethodType) -> Unit = {},
 ) {
     // The newest lambdas without re-registering anything. A host that writes them inline passes new objects
-    // on every recomposition, and the effect below is keyed on the submission rather than on them.
+    // on every recomposition, and the effects below are keyed on the submission and the method rather than
+    // on them.
     val completed by rememberUpdatedState(onCompleted)
     val failed by rememberUpdatedState(onFailed)
+    val methodChanged by rememberUpdatedState(onMethodChanged)
 
     val isSubmitting = submission is PayInSubmissionState.Submitting
 
@@ -88,6 +90,16 @@ internal fun PayInFormContent(
 
     val method = draft.method
     val typed = draft.typed
+
+    // The method this composition has already told the host about. It is held here rather than in the
+    // draft because it dies with the composition: an opening and a rotation are a first sight of the
+    // method, and neither is news.
+    var toldMethod by remember { mutableStateOf<PayInMethodType?>(null) }
+    LaunchedEffect(method) {
+        val previous = toldMethod
+        toldMethod = method
+        if (previous != null && previous != method) methodChanged(method)
+    }
 
     // `enabled` only stops the second tap once the state has reached Submitting and the button has recomposed,
     // which is a frame away. Two taps inside that frame are two payments. The latch clears itself on the next
@@ -148,7 +160,6 @@ internal fun PayInFormContent(
         if (configuration.methodsOffered.size > 1) {
             MethodSelector(configuration.methodsOffered, method, isSubmitting) { chosen ->
                 draft.switchTo(chosen, configuration)
-                onMethodChanged(chosen)
             }
         }
 
