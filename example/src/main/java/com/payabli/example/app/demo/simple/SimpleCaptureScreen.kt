@@ -146,19 +146,29 @@ class SimpleCaptureViewModel(
 
     /**
      * The instrument the form last said is on screen, which is the one this app prices a fee for.
-     * Seeded from the configuration once the flow appears, and moved only by the form after that.
+     * Seeded from the configuration when the form first appears, and moved only by the form after
+     * that.
      */
     var method by mutableStateOf<PayInMethodType?>(null)
+
+    /**
+     * The method a held key's attempt is priced as, so a retry carries the total that key names.
+     * Set exactly while [retryKey] is.
+     */
+    var keyedMethod by mutableStateOf<PayInMethodType?>(null)
+        private set
 
     fun failed(
         submitted: FormOperation,
         outcome: PayInSubmissionState.Failed,
     ) {
         retryKey = keyAfter(retryKey, submitted, outcome)
+        keyedMethod = retryKey?.let { method }
     }
 
     fun succeeded(submitted: FormOperation) {
         retryKey = keyAfter(retryKey, submitted, outcome = null)
+        keyedMethod = null
     }
 
     init {
@@ -210,13 +220,6 @@ fun SimpleCaptureScreen(
     val amount = parseAmount(viewModel.amountText)
     val submitting =
         payInFlow?.let { it.state.collectAsStateWithLifecycle().value is PayInSubmissionState.Submitting } ?: false
-
-    // The form opens silently, so the method starts as the one the configuration opens on, read once
-    // when the flow appears. Every move after that is the form's to report.
-    LaunchedEffect(payInFlow) {
-        payInFlow ?: return@LaunchedEffect
-        viewModel.method = FormCustomization.configuration(viewModel.settings, operation).startingMethod
-    }
 
     DemoScreen(
         title = "Simple Capture",
@@ -278,9 +281,17 @@ fun SimpleCaptureScreen(
                 OwnerFrame(Owner.Sdk) {
                     FormLookTheme(settings.look) {
                         val form = FormCustomization.configuration(settings, operation)
-                        // The form opens silently, so the method on screen starts as the one this
-                        // configuration opens on.
-                        val method = viewModel.method ?: form.startingMethod
+
+                        // The form opens silently, so the method starts as the one this configuration
+                        // opens on, taken once: the screen is rebuilt across a rotation while the
+                        // draft's choice survives it.
+                        LaunchedEffect(payInFlow) {
+                            viewModel.method = viewModel.method ?: form.startingMethod
+                        }
+
+                        // A held key names one total, so the method it was priced as stands while it
+                        // is held.
+                        val method = viewModel.keyedMethod ?: viewModel.method ?: form.startingMethod
 
                         // 3. The form. It collects, validates and submits; the outcome arrives here.
                         PayabliPayInForm(

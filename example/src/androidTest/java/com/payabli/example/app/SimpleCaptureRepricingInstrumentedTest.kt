@@ -87,6 +87,31 @@ class SimpleCaptureRepricingInstrumentedTest {
         compose.onNode(hasText(FEE) and hasText("0.30")).assertDoesNotExist()
     }
 
+    @Test
+    fun theFeeSurvivesATripAwayFromTheScreen() {
+        compose.setContent {
+            PayabliDemoTheme {
+                PayabliDemoNavHost()
+            }
+        }
+
+        compose.onNodeWithTag(TopLevelDestination.Setup.testTag).performClick()
+        compose.onNodeWithText(SHOW_SIMPLE_CAPTURE).performScrollTo().performClick()
+        compose.onNodeWithTag(TopLevelDestination.SimpleCapture.testTag).performClick()
+        awaitExists(SUBMIT)
+        compose.onNode(hasClickAction() and hasText(BANK_TAB)).performClick()
+        feeRow("0.10").performScrollTo().assertIsDisplayed()
+
+        // A trip to another tab rebuilds the screen while the flow and its draft survive, which is
+        // also what a rotation does.
+        compose.onNodeWithTag(TopLevelDestination.Setup.testTag).performClick()
+        compose.onNodeWithTag(TopLevelDestination.SimpleCapture.testTag).performClick()
+        awaitExists(SUBMIT)
+
+        feeRow("0.10").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText(FEE) and hasText("0.30")).assertDoesNotExist()
+    }
+
     /** The summary row for the fee, read back from the operation rather than typed. */
     private fun feeRow(figure: String) = compose.onNode(hasText(FEE) and hasText(figure) and !hasSetTextAction())
 
