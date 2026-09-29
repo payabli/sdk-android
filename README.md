@@ -26,8 +26,9 @@ token from your backend, and the SDK calls it when it needs one.
 | `core`, `payin`, `telemetry` | 23 |
 | `taptopay` | 30 |
 
-The modules are built against `compileSdk` 36. Tap to Pay has further requirements, listed in
-[`taptopay/README.md`](taptopay/README.md#requirements).
+Compile your app with `compileSdk` 31 or higher. The `payin` module's Compose dependencies require a
+higher `compileSdk` of their own, and Gradle names it if yours is lower. Tap to Pay has further
+requirements, listed in [`taptopay/README.md`](taptopay/README.md#requirements).
 
 ## Before you write code
 
@@ -35,7 +36,8 @@ The modules are built against `compileSdk` 36. Tap to Pay has further requiremen
    enabled if you plan to use it.
 2. **Create OAuth2 credentials.** Provision a client ID and client secret for the sandbox. See
    [OAuth authentication](https://docs.payabli.com/developers/oauth-authentication). Tap to Pay needs the
-   `tools_init`, `pos_create` and `inboundpayments_create` permissions.
+   `tools_init`, `pos_create` and `inboundpayments_create` permissions. Card-not-present needs permission to create
+   transactions and to store payment methods; confirm the permission names with your Payabli representative.
 3. **Build your token endpoint.** See [Build your token endpoint](#build-your-token-endpoint).
 4. **Declare the `INTERNET` permission.** The SDK doesn't declare it. Add it to your app's manifest:
 
@@ -59,7 +61,27 @@ The modules are built against `compileSdk` 36. Tap to Pay has further requiremen
 | `com.payabli:sdk-android` | All four |
 | `com.payabli:sdk-android-bom` | A bill of materials that pins the versions above |
 
-This section gives the repository and the version once a release exists.
+This section gives the repository and the version once a release exists. Until then, you can build the SDK
+from source into your local Maven repository:
+
+```bash
+git clone https://github.com/payabli/sdk-android.git
+cd sdk-android
+./gradlew publishToMavenLocal
+```
+
+Then add `mavenLocal()` to your repositories and depend on the version the build published, which is set by
+`payabli.version` in [`gradle.properties`](gradle.properties):
+
+```kotlin
+dependencies {
+    implementation("com.payabli:sdk-android-payin:0.1.0")
+    implementation("com.payabli:sdk-android-taptopay:0.1.0") // for Tap to Pay
+}
+```
+
+Building `taptopay` needs the card reader repository credentials described below, in
+`~/.gradle/gradle.properties`.
 
 Tap to Pay depends on a card reader library served from Payabli's own repository, which needs
 credentials that Payabli issues. Declare it scoped to the two groups it serves, so Gradle asks it for
@@ -132,7 +154,8 @@ The sample app ships a complete token server in [`example-server/`](example-serv
 ## Configure the SDK
 
 Both modules run on one `PayabliSession`, built from your entry point, the environment and a token
-provider:
+provider. `initialize` is a `suspend` function, as are the SDK calls below, so call them from a coroutine,
+for example in `viewModelScope.launch { }`:
 
 ```kotlin
 import com.payabli.sdk.core.HostBindings
@@ -198,7 +221,8 @@ PayabliPayInForm(
     ),
     configuration = PayInFormConfiguration(),
     onCompleted = { succeeded -> /* charged, or saved */ },
-    onFailed = { failed -> /* see Outcomes */ },
+    onFailed = { failed -> /* failed.cause says why; see Outcomes */ },
+    onMethodChanged = { },
 )
 ```
 
@@ -227,7 +251,7 @@ import com.payabli.sdk.payin.model.PayInRequest
 import com.payabli.sdk.payin.model.SensitiveDigits
 
 val result =
-    SensitiveDigits.ofString("4111111111111111").use { number ->
+    SensitiveDigits.ofString("4012000098765439").use { number ->
         SensitiveDigits.ofString("999").use { cvv ->
             payIn.capture(
                 PayInRequest(
@@ -253,8 +277,8 @@ Use Payabli's sandbox [test cards](https://docs.payabli.com/guides/test-accounts
 | `voidTransaction(transId)` | Voids a transaction that hasn't settled. |
 | `storeMethod(request)` | Saves a payment method and returns its stored ID. |
 
-Every method returns a `Result`. To charge a saved method, pass `PayInPaymentMethod.Stored(...)` with its
-stored ID.
+Every method returns a `Result`. To charge a saved method, pass
+`PayInPaymentMethod.Stored(PayInStoredMethodType.Card, storedMethodId)` as the payment method.
 
 `capture` always sends an idempotency key. The SDK mints one per call when you don't set
 `PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
@@ -274,11 +298,15 @@ Every charge ends in one of three outcomes. Only one of them is safe to retry.
 | **Charged** | `Result.success` | `charge` returns a `TapToPayResult` | No |
 | **Not charged** | a failure such as `PayInException.Refused`, a decline | a `TapToPayException` whose `capture` is `NOT_CHARGED` | Yes |
 | **Unknown** | `PayInException.Unsettled` | a `TapToPayException` whose `capture` is `UNKNOWN` | Not until you've checked |
+| **Charged, not confirmed** | — | a `TapToPayException` whose `capture` is `CHARGED` | No. Call `closeCapturedCharge` |
+
+On card-not-present, a form reports these through `onFailed`, whose argument's `cause` is the exception.
 
 When the outcome is unknown, look the transaction up from your backend with
 [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction)
 before you charge again. `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
-look up. Store the transaction ID with your order every time you get one.
+look up when there is one. When there isn't, find the transaction in the Payabli portal before you charge
+again. Store the transaction ID with your order every time you get one.
 
 ## Sample app
 

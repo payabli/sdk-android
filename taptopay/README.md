@@ -15,7 +15,8 @@ Your app:
 
 The phone:
 
-- Android 11 (API 30) or later, with NFC. NFC must be switched on in Settings; no app can switch it on.
+- Android 12 (API 31) or later, with NFC. An app with `minSdk` 30 installs on Android 11, but Tap to Pay
+  isn't available there. NFC must be switched on in Settings; no app can switch it on.
 - Developer options and USB debugging switched off, and the phone **restarted** after switching them off.
   The card reader refuses a phone it considers to be in developer mode until it restarts.
 - In production, your app installed from Google Play. Ask Payabli whether your sandbox paypoint accepts
@@ -68,7 +69,8 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
   -d '{ "deviceOs": "android", "appId": "com.example.checkout", "friendlyName": "Checkout" }'
 ```
 
-The call needs the `pos_create` permission. `friendlyName` is optional. Calling it again with the same
+The call needs the `pos_create` permission. An API token in the `requestToken` header works in place of
+the bearer token. `friendlyName` is optional. Calling it again with the same
 values is safe. Register each package name you ship, including a debug suffix or a flavour.
 
 Payabli reads the package name from Google Play Integrity's signed verdict, not from your request. An app
@@ -85,7 +87,8 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 ```
 
 `sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` a `StateFlow<Boolean>`. Collect them
-to drive your UI.
+to drive your UI. `create`, `initialize`, `activateDevice` and `charge` are `suspend` functions; call them
+from a coroutine.
 
 ## Initialize
 
@@ -120,8 +123,10 @@ Until the phone is activated, `initialize()` fails and `sessionState` is `Pendin
 
 1. Your backend requests a code with
    [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge),
-   `POST /api/v2/device/taptopay/activate/challenge`. The code is valid for 30 minutes. Asking again
-   before it expires returns the same code.
+   `POST /api/v2/device/taptopay/activate/challenge`, which takes the entry point and the device's ID. The
+   code is valid for 30 minutes. Asking again before it expires returns the same code. The SDK doesn't
+   return the device's ID. A device waiting for activation, and its code, are shown in the Payabli portal
+   under **Devices**.
 2. Deliver the code to the person holding the phone, and have your app ask for it.
 3. Activate, then initialize again:
 
@@ -138,7 +143,7 @@ paypoint per session.
 
 ## Charge
 
-When `isReady` is `true`:
+When `sessionState` is `Ready`, or `SessionExpired`, which `charge` repairs before it reads the card:
 
 ```kotlin
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
@@ -186,7 +191,8 @@ for this entry point in this process; for anything else, reconcile with the tran
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
 | `Ready` | Ready to charge. |
 | `PendingActivation` | The phone needs an activation code. |
-| `SessionExpired`, `Reinitializing` | The session is being refreshed. |
+| `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
+| `Reinitializing` | The session is being refreshed. |
 | `Failed(reason)` | The session stopped. `reason` says what to do. |
 
 | `TapToPayFailureReason` | What to do |
