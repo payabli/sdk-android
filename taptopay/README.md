@@ -158,7 +158,7 @@ val result = ttp.charge(
     customer = TapToPayCustomerData(firstName = "Jane", lastName = "Doe"),
     invoice = TapToPayInvoiceData(invoiceNumber = "INV-9001"),
 )
-println("Charged: ${result.paymentTransId}")
+order.paymentTransId = result.paymentTransId // store it; don't log it
 ```
 
 | Parameter | Type | Notes |

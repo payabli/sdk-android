@@ -282,7 +282,7 @@ val result =
         }
     }
 
-result.onSuccess { println("Charged: ${it.transaction?.paymentTransId}") }
+result.onSuccess { order.paymentTransId = it.transaction?.paymentTransId } // store it; don't log it
 ```
 
 Use Payabli's sandbox [test cards](https://docs.payabli.com/guides/test-accounts-reference) in sandbox.
