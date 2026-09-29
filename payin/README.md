@@ -39,8 +39,9 @@ import com.payabli.sdk.payin.PayabliPayIn
 val payIn = PayabliPayIn(session, entryPoint = "your-entry-point", scope = viewModelScope)
 ```
 
-Pass a scope that outlives a configuration change, such as `viewModelScope`, so a submission's outcome
-still arrives after a rotation. Every call is a `suspend` function.
+Create `PayabliPayIn` in a `ViewModel` and pass its `viewModelScope`, so the instance, and a submission's
+outcome, survive a rotation. A form collects only the instance it was given, so an instance recreated with
+the activity misses the outcome. Every call is a `suspend` function.
 
 ## Take a payment
 

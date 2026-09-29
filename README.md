@@ -248,6 +248,7 @@ import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import java.math.BigDecimal
 
+// In a ViewModel, so the instance survives a rotation.
 val payIn = PayabliPayIn(session, entryPoint = "your-entry-point", scope = viewModelScope)
 
 PayabliPayInForm(
