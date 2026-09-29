@@ -307,7 +307,7 @@ Every charge ends in one of these outcomes. Only **not charged** is safe to retr
 |---|---|---|---|
 | **Charged** | `Result.success` | `charge` returns a `TapToPayResult` | No |
 | **Not charged** | a failure such as `PayInException.Refused`, a decline | a `TapToPayException` whose `capture` is `NOT_CHARGED` | Yes |
-| **Unknown** | `PayInException.Unsettled` | a `TapToPayException` whose `capture` is `UNKNOWN` | Not until you've checked |
+| **Unknown** | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | a `TapToPayException` whose `capture` is `UNKNOWN` | Not until you've checked |
 | **Charged, not confirmed** | — | a `TapToPayException` whose `capture` is `CHARGED` | No. Call `closeCapturedCharge` |
 
 On card-not-present, a form reports these through `onFailed`, whose argument's `cause` is the exception.
