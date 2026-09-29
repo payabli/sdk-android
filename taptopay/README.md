@@ -112,7 +112,8 @@ try {
     ttp.initialize()
 } catch (failure: TapToPayException) {
     if (ttp.sessionState.value == TapToPaySessionState.PendingActivation) {
-        // The phone needs an activation code, or the app isn't on the allowlist. See Activate a phone.
+        // The phone needs an activation code, the app isn't on the allowlist, or the credentials lack a
+        // Tap to Pay permission. See Activate a phone.
     } else {
         throw failure
     }
@@ -132,7 +133,8 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
   recently, which then needs to be set up again the next time it's used.
 
 Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`. An app that
-isn't on the allowlist lands in the same state, so check the allowlist before issuing a code.
+isn't on the allowlist, or credentials without the Tap to Pay permissions, land in the same state, so check
+both before issuing a code.
 
 1. Issue a code for the phone. In the Payabli portal, under **Device Management**, the waiting device's
    options include **Activate device**. The code is valid for 30 minutes, and asking again before it
@@ -207,7 +209,7 @@ lookup.
 | `Idle` | Not started, or activated and waiting for `initialize()`. |
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
 | `Ready` | Ready to charge. |
-| `PendingActivation` | The phone needs an activation code, or the app isn't on the paypoint's allowlist. |
+| `PendingActivation` | The phone needs an activation code, the app isn't on the paypoint's allowlist, or the credentials lack a Tap to Pay permission. |
 | `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
 | `Reinitializing` | The session is being refreshed. |
 | `Failed(reason)` | The session stopped. `reason` says what to do. |
