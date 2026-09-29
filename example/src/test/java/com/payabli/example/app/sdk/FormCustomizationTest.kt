@@ -144,11 +144,20 @@ class FormCustomizationTest {
 
     @Test
     fun `a capture places its own summary section, and tokenizing has none`() {
-        fun hasSummary(configuration: PayInFormConfiguration) =
-            configuration.sectionsFor(PayInMethodType.Card).any { it.style == PayInSectionStyle.Summary }
+        fun summaryFields(configuration: PayInFormConfiguration) =
+            configuration
+                .sectionsFor(PayInMethodType.Card)
+                .first { it.style == PayInSectionStyle.Summary }
+                .fields
 
-        assertTrue(hasSummary(configure(FormSettings())))
-        assertFalse(hasSummary(configure(FormSettings(), FormOperation.Tokenize)))
+        assertTrue(
+            summaryFields(configure(FormSettings())).containsAll(listOf(PayInField.Amount, PayInField.ServiceFee)),
+        )
+        assertFalse(
+            configure(FormSettings(), FormOperation.Tokenize)
+                .sectionsFor(PayInMethodType.Card)
+                .any { it.style == PayInSectionStyle.Summary },
+        )
     }
 
     @Test
@@ -164,8 +173,15 @@ class FormCustomizationTest {
     @Test
     fun `with the customer section off the app supplies the customer`() {
         val off = FormSettings(customerSection = false)
-        val capture = FormCustomization.operation(off, FormOperation.Capture, BigDecimal.ONE, null)
-        val store = FormCustomization.operation(off, FormOperation.Tokenize, BigDecimal.ONE, null)
+        val capture =
+            FormCustomization.operation(
+                off,
+                FormOperation.Capture,
+                BigDecimal.ONE,
+                null,
+                PayInMethodType.Card,
+            )
+        val store = FormCustomization.operation(off, FormOperation.Tokenize, BigDecimal.ONE, null, PayInMethodType.Card)
 
         assertNotNull((capture as PayabliPayInOperation.Capture).options.customerData)
         assertNotNull((store as PayabliPayInOperation.StoreMethod).options.customerData?.customerNumber)
@@ -177,6 +193,7 @@ class FormCustomizationTest {
                 FormOperation.Capture,
                 BigDecimal.ONE,
                 null,
+                PayInMethodType.Card,
             )
         assertNull((on as PayabliPayInOperation.Capture).options.customerData)
     }
@@ -184,10 +201,28 @@ class FormCustomizationTest {
     @Test
     fun `a capture carries the amount and the held retry key`() {
         val capture =
-            FormCustomization.operation(FormSettings(), FormOperation.Capture, BigDecimal("5.00"), "held-key")
+            FormCustomization.operation(
+                FormSettings(),
+                FormOperation.Capture,
+                BigDecimal("5.00"),
+                "held-key",
+                PayInMethodType.Card,
+            )
                 as PayabliPayInOperation.Capture
-        assertEquals(BigDecimal("5.00"), capture.options.paymentDetails.totalAmount)
+        assertEquals(BigDecimal("5.30"), capture.options.paymentDetails.totalAmount)
         assertEquals("held-key", capture.options.idempotencyKey)
+    }
+
+    @Test
+    fun `the fee follows the instrument on screen and rides inside the total`() {
+        fun capture(method: PayInMethodType): PayabliPayInOperation.Capture =
+            FormCustomization.operation(FormSettings(), FormOperation.Capture, BigDecimal("5.00"), null, method)
+                as PayabliPayInOperation.Capture
+
+        assertEquals(BigDecimal("0.30"), capture(PayInMethodType.Card).options.paymentDetails.serviceFee)
+        assertEquals(BigDecimal("5.30"), capture(PayInMethodType.Card).options.paymentDetails.totalAmount)
+        assertEquals(BigDecimal("0.10"), capture(PayInMethodType.BankAccount).options.paymentDetails.serviceFee)
+        assertEquals(BigDecimal("5.10"), capture(PayInMethodType.BankAccount).options.paymentDetails.totalAmount)
     }
 
     @Test
