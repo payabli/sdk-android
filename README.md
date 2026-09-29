@@ -208,8 +208,9 @@ val session: PayabliSession =
 | `PayabliEnvironment.PRODUCTION` | `https://api.payabli.com` |
 
 - `PayabliConfig` throws when the entry point is blank.
-- There is one session per app process, for one paypoint. Calling `initialize` again with the same
-  configuration returns the same session. Calling it with a different configuration while the session is
+- There is one session per app process, for one paypoint. Calling `initialize` again with the same entry
+  point, environment and `telemetryEnabled` returns the same session, which keeps its original token
+  provider. Calling it with a different entry point, environment or `telemetryEnabled` while the session is
   live fails.
 
 The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
