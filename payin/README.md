@@ -141,13 +141,14 @@ A success means what the call did, which depends on the call:
 | Call | A success means | A failure means |
 |---|---|---|
 | `capture` | The payment was charged. With `isAsync = true`, only that the service accepted it: look the transaction up before you fulfill the order | See the table below |
-| `authorize` | An amount is held on the card. Nothing is charged until you capture it | No hold was placed |
-| `captureAuthorizedTransaction` | The held amount was charged | The hold wasn't captured |
-| `voidTransaction` | The transaction was voided | The void was refused. It doesn't mean the original payment wasn't charged |
-| `storeMethod` | The method was saved | The method wasn't saved |
+| `authorize` | An amount is held on the card. Nothing is charged until you capture it | See the table below |
+| `captureAuthorizedTransaction` | The held amount was charged | See the table below |
+| `voidTransaction` | The transaction was voided | See the table below. A refused void doesn't mean the original payment wasn't charged |
+| `storeMethod` | The method was saved | See the table below |
 
-For a charge, the outcomes are the ones in the root README's
-[Handle the outcome](../README.md#handle-the-outcome):
+The outcomes are the ones in the root README's [Handle the outcome](../README.md#handle-the-outcome). For
+`authorize`, `captureAuthorizedTransaction` and `voidTransaction`, read "charged" as "held", "captured"
+or "voided":
 
 | Result | Outcome | What to do |
 |---|---|---|
