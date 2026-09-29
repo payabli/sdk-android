@@ -244,7 +244,7 @@ PayabliPayInForm(
         PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
     ),
     configuration = PayInFormConfiguration(),
-    onCompleted = { succeeded -> /* charged */ },
+    onCompleted = { succeeded -> /* store the transaction ID from succeeded; don't log it */ },
     onFailed = { failed -> /* failed.cause says why; see Handle the outcome */ },
     onMethodChanged = { },
 )
@@ -270,6 +270,7 @@ val result = ttp.charge(
     paymentDetails = TapToPayPaymentDetails(BigDecimal("9.99")),
     customer = TapToPayCustomerData(firstName = "Jane", lastName = "Doe"),
 )
+order.paymentTransId = result.paymentTransId // store it; don't log it
 ```
 
 The guide covers the phone and build requirements, enrolment, the allowlist, activating a phone, and the
