@@ -158,7 +158,7 @@ or "voided":
 | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | Unknown | Look the transaction up before charging again. `Unsettled.paymentTransId` names it when there is one |
 | `PayInException.AlreadySubmitting` | Not charged; a submission is already running | Wait for it |
 | `PayInException.ServiceError`, `PayInException.Undecodable`, on `storeMethod` | The service answered with an error, or its answer couldn't be read | Read the stored methods back before storing again. On a charge, these arrive as `Unsettled` |
-| `PayInException.Interrupted` (form only) | Cancelled before anything was sent | You can retry |
+| `PayInException.Interrupted` (form only) | On a charge, cancelled before anything was sent. On `StoreMethod`, the method may have been saved | Retry a charge. Read the stored methods back before storing again |
 
 ## Reference
 
