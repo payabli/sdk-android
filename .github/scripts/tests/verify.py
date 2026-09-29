@@ -3839,6 +3839,10 @@ def test_workflows():
                  and (step.get("env") or {}).get("COMMIT") == "${{ inputs.commit }}"), None)
     check("W17 the build refuses a tag that does not name the commit it was given",
           same is not None and all("gradlew" not in run_commands(step) for step in build_steps[:same]), f"{same}")
+    # The tag's own name, before anything else: a dispatch can name any tag the ruleset let exist.
+    first = run_commands(build_steps[0]) if build_steps else ""
+    check("W17 and the first thing it does is refuse a tag that is not a release version",
+          "(0|[1-9][0-9]*)" in first and "$GITHUB_REF_NAME =~" in first and "exit 1" in first, first[:200])
     # Asked again on the tag, because anyone who can dispatch can dispatch on an existing tag.
     ci_gate = ci_gated(build_steps)
     check("W17 the build refuses a commit that has not passed CI on main", ci_gate is not None)

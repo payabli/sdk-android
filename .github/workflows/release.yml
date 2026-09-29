@@ -180,11 +180,17 @@ jobs:
       # To read the CI runs for this commit.
       actions: read
     steps:
-      # The tag has to name the commit this run was given, or it is not the release that was approved.
+      # A release version, and the commit this run was given. The ruleset keeps other tags from being
+      # created, and that is a setting; this refuses them anyway before anything is built or assumed.
       - name: Check the tag names the commit
         env:
           COMMIT: ${{ inputs.commit }}
         run: |
+          release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$GITHUB_REF_NAME" =~ $release ]]; then
+            echo "::error::$GITHUB_REF_NAME is not <major>.<minor>.<patch>, so it is not a release tag."
+            exit 1
+          fi
           if [ "$GITHUB_SHA" != "$COMMIT" ]; then
             echo "::error::$GITHUB_REF_NAME names $GITHUB_SHA, not $COMMIT."
             exit 1

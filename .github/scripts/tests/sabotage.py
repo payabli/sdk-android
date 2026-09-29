@@ -1200,6 +1200,10 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release builds on any tag whose name matches the version, a candidate included', RELEASE, "workflows",
+     '          release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$GITHUB_REF_NAME" =~ $release ]]; then\n            echo "::error::$GITHUB_REF_NAME is not <major>.<minor>.<patch>, so it is not a release tag."\n            exit 1\n          fi\n',
+     ''),
+
     ("Release takes main's head when no commit is named", RELEASE, "workflows",
      '        required: true\n        type: string\n',
      '        required: false\n        type: string\n'),
