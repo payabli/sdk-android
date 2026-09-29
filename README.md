@@ -158,7 +158,7 @@ app.post("/payabli/token", async (req, res) => {
     return res.status(401).json({ error: "unauthenticated" });
   }
   // mayTakePayments is your app's own rule for who may take payments for this paypoint.
-  if (!mayTakePayments(user)) {
+  if (!(await mayTakePayments(user))) {
     return res.status(403).json({ error: "forbidden" });
   }
   let accessToken;
