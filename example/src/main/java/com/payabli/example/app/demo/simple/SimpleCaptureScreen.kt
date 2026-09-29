@@ -35,6 +35,7 @@ import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.launch
@@ -141,6 +142,12 @@ class SimpleCaptureViewModel(
     var operation by mutableStateOf(FormOperation.Capture)
 
     var amountText by mutableStateOf(DEFAULT_AMOUNT)
+
+    /**
+     * The instrument the form last said is on screen, which is the one this app prices a fee for. Null
+     * until the first change, because the form opens silently.
+     */
+    var method by mutableStateOf<PayInMethodType?>(null)
 
     fun failed(
         submitted: FormOperation,
@@ -262,6 +269,11 @@ fun SimpleCaptureScreen(
             else ->
                 OwnerFrame(Owner.Sdk) {
                     FormLookTheme(settings.look) {
+                        val form = FormCustomization.configuration(settings, operation)
+                        // The form opens silently, so the method on screen starts as the one this
+                        // configuration opens on.
+                        val method = viewModel.method ?: form.startingMethod
+
                         // 3. The form. It collects, validates and submits; the outcome arrives here.
                         PayabliPayInForm(
                             payIn = payInFlow,
@@ -271,9 +283,9 @@ fun SimpleCaptureScreen(
                                     operation,
                                     amount ?: BigDecimal.ZERO,
                                     viewModel.retryKey,
+                                    method,
                                 ),
-                            configuration =
-                                FormCustomization.configuration(settings, operation),
+                            configuration = form,
                             labels = FormCustomization.labels(settings, operation),
                             style = FormCustomization.style(settings.look),
                             onCompleted = {
@@ -294,7 +306,7 @@ fun SimpleCaptureScreen(
                                         Toast.LENGTH_LONG,
                                     ).show()
                             },
-                            onMethodChanged = {},
+                            onMethodChanged = { viewModel.method = it },
                         )
                     }
                 }
