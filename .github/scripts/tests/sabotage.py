@@ -1199,22 +1199,54 @@ MUTATIONS = [
      ":testutils:test :taptopay:test :example:test\n          ./gradlew -p build-logic test",
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
-    ("Release publishes a commit whatever CI said about it", RELEASE, "workflows",
-     "--jq '[.[] | select(.conclusion == \"success\")] | length')",
-     "--jq 'length')"),
-
-    ("Release accepts a CI run from any branch", RELEASE, "workflows",
-     " \\\n            --branch main --json conclusion",
-     " \\\n            --json conclusion"),
-
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
-    ('Release can be dispatched, so it runs with a branch subject and no tag', RELEASE, "workflows",
-     'on:\n  push:\n',
-     'on:\n  workflow_dispatch:\n  push:\n'),
+    ('Release starts on a tag push, so a person creates the release', RELEASE, "workflows",
+     'on:\n  workflow_dispatch:\n',
+     "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
-    ('Release triggers on a candidate tag, which would land on the immutable prefix', RELEASE, "workflows",
-     "      - '[0-9]+.[0-9]+.[0-9]+'\n",
-     "      - '*.*.*'\n"),
+    ('Release tags a commit whatever CI said about it', RELEASE, "workflows",
+     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ('Release tags a commit whose CI ran on any branch', RELEASE, "workflows",
+     ' \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ('Release builds on a tag whatever CI said about it', RELEASE, "workflows",
+     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n',
+     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n'),
+
+    ('Release tags from any branch', RELEASE, "workflows",
+     "    if: github.ref == 'refs/heads/main'\n",
+     ''),
+
+    ('Release builds on a branch ref, where the release role never grants the write', RELEASE, "workflows",
+     "    if: startsWith(github.ref, 'refs/tags/')\n",
+     ''),
+
+    ('Release hands the deploy key to the build', RELEASE, "workflows",
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        run: ./gradlew publish\n',
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n          KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n        run: ./gradlew publish\n'),
+
+    ("Release trusts GitHub's host key on first use", RELEASE, "workflows",
+     '-o StrictHostKeyChecking=yes',
+     '-o StrictHostKeyChecking=no'),
+
+    ('Release pushes over a version already tagged on another commit', RELEASE, "workflows",
+     '[ "$tagged" != "$GITHUB_SHA" ]',
+     '[ "$tagged" = "$GITHUB_SHA" ]'),
+
+    ('Release tags and never starts the run that publishes', RELEASE, "workflows",
+     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION"\n',
+     '        run: echo "tagged $VERSION"\n'),
+
+    ('Release upload runs through a skipped build', RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build]\n    if: always()\n'),
+
+    ('Release tags without the check having run', RELEASE, "workflows",
+     '    name: Tag the release\n    needs: [check]\n',
+     '    name: Tag the release\n    needs: [check]\n    if: always()\n'),
 
     ('Release builds without checking the tag against the committed version', RELEASE, "workflows",
      '      - name: Check the tag names the committed version\n        env:\n          TAG: ${{ github.ref_name }}\n        run: |\n          # Empty rather than a failed grep when the line is missing, so the refusal below says why.\n          version=$(sed -n \'s/^payabli.version=//p\' gradle.properties)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
@@ -1227,10 +1259,6 @@ MUTATIONS = [
     ('Release uploads with nobody approving it', RELEASE, "workflows",
      '    environment: release\n',
      ''),
-
-    ('Release upload skips the gate', RELEASE, "workflows",
-     '    needs: [approve]\n',
-     '    needs: [build]\n'),
 
     ('Release upload names the environment, so its subject loses the tag', RELEASE, "workflows",
      '    name: Upload to /maven\n',

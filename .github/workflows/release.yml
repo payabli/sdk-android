@@ -1,18 +1,17 @@
 name: Release
 
-# Publishes a tagged release of every module to /maven, where a key is written once and never replaced,
-# then opens a GitHub Release at the tag carrying notes and no assets. The artifacts are resolved from the
-# Maven origin only.
+# Publishes a release of every module to /maven, where a key is written once and never replaced, then
+# opens a GitHub Release at the tag carrying notes and no assets. The artifacts are resolved from the Maven
+# origin only.
 #
-# The tag is the trigger and `payabli.version` is the version. A tag naming anything else is refused
-# before anything is built, because a wrong coordinate on this prefix cannot be taken back.
+# Dispatched from main, and in two runs. The run on main checks that CI passed for the commit and reads
+# `payabli.version`. Then a job in the `release` environment, the only job holding the deploy key the tag
+# ruleset admits, creates the tag and dispatches this workflow on it. The run on the tag builds, uploads and
+# writes the notes, because the role that writes /maven trusts a tag ref and nothing else. No person creates
+# a release tag.
 
 on:
-  push:
-    tags:
-      # A release version and nothing else. A candidate carries a qualifier and belongs on the mutable
-      # channel; the role this assumes would write it where it can never be replaced.
-      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,19 +22,20 @@ defaults:
     shell: bash
 
 jobs:
-  # Gradle, the suites and the card reader credential, and no identity that can write the origin. The
-  # upload runs on a fresh runner, so nothing a build script or a dependency leaves behind runs beside
-  # the token.
-  build:
-    name: Build the release
+  # Run on main. Reads the commit and the property, and holds nothing that can tag or publish.
+  check:
+    name: Check the commit can be released
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       # To read the CI runs for this commit.
       actions: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      # The suites below are the unit tier only. CI on main is what ran the instrumented tests, lint and
-      # formatting, so a tag names a commit that passed it there or publishes nothing.
+      # The tag run executes the unit tier only. CI on main is what ran the instrumented tests, lint and
+      # formatting, so a release names a commit that passed it there or nothing is tagged.
       - name: Check CI passed on main for this commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -44,7 +44,113 @@ jobs:
           passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
             --branch main --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
           if [ "$passed" -lt 1 ]; then
-            echo "::error::no successful CI run on main for $SHA. Tag a commit that has passed CI on main."
+            echo "::error::no successful CI run on main for $SHA. Dispatch once CI on main has passed."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # A release version and nothing else. A candidate carries a qualifier and belongs on the mutable
+      # channel; the role the tag run assumes would write it where it can never be replaced.
+      - name: Read the version
+        id: version
+        run: |
+          version=$(sed -n 's/^payabli.version=//p' gradle.properties)
+          release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$version" =~ $release ]]; then
+            echo "::error::payabli.version is '$version', which is not <major>.<minor>.<patch>."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # The approval. Its required reviewers are who may release, it deploys from main only, and it is the only
+  # job that can read the deploy key. It runs no file from the checkout.
+  tag:
+    name: Tag the release
+    needs: [check]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      # To dispatch the tag run.
+      actions: write
+    steps:
+      - name: Check the release key is provisioned
+        env:
+          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$RELEASE_DEPLOY_KEY" ]; then
+            echo "::error::the release environment has no RELEASE_DEPLOY_KEY secret"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is
+      # a number already spent.
+      - name: Create the tag
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tagged=
+          if [ -n "$(git tag --list "$VERSION")" ]; then
+            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")
+          fi
+          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::tag $VERSION already names $tagged, not $GITHUB_SHA. Take the next version."
+            exit 1
+          fi
+          if [ -z "$tagged" ]; then
+            # GitHub's host keys come from its API over HTTPS, so the SSH connection is verified rather
+            # than trusted on first use.
+            umask 077
+            key="$RUNNER_TEMP/release-key"
+            hosts="$RUNNER_TEMP/github-known-hosts"
+            trap 'rm -f "$key"' EXIT
+            printf '%s\n' "$RELEASE_DEPLOY_KEY" > "$key"
+            gh api meta --jq '.ssh_keys[] | "github.com " + .' > "$hosts"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$GITHUB_SHA"
+            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \
+              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"
+          fi
+
+      # A dispatch always creates a run, including one started with this job's token, and a run on the tag
+      # presents the subject the release role trusts.
+      - name: Start the tag run
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION"
+
+  # Gradle, the suites and the card reader credential, and no identity that can write the origin. The
+  # upload runs on a fresh runner, so nothing a build script or a dependency leaves behind runs beside
+  # the token.
+  build:
+    name: Build the release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # To read the CI runs for this commit.
+      actions: read
+    steps:
+      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.
+      - name: Check CI passed on main for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
+            --branch main --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::no successful CI run on main for $SHA."
             exit 1
           fi
 
@@ -97,21 +203,9 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  # The environment cannot go on the upload job: a job with one presents `environment:<name>` as its OIDC
-  # subject and no ref, and the release role trusts `refs/tags/*`. So the review is a job of its own,
-  # granted nothing, entered after the build has passed.
-  approve:
-    name: Approve the release
-    needs: [build]
-    runs-on: ubuntu-latest
-    environment: release
-    permissions: {}
-    steps:
-      - run: echo "approved for $GITHUB_REF"
-
   upload:
     name: Upload to /maven
-    needs: [approve]
+    needs: [build]
     # One release upload at a time, and a running one is never cancelled: the keys it has written stay
     # written. GitHub holds one pending run per group, so a third tag queued behind two replaces the
     # second, which then shows as cancelled and is re-run.

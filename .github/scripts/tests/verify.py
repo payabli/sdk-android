@@ -3713,8 +3713,8 @@ def test_workflows():
         check("W16 and the subject check runs before the assume", subject < assume, f"{subject} vs {assume}")
 
     # W17 the release's properties. A key under /maven is written once, so each of these is a mistake
-    # that cannot be taken back once a tag has run: a wrong version, a candidate on the immutable prefix,
-    # a token beside Gradle, or an upload nobody reviewed.
+    # that cannot be taken back once it has run: a wrong version, a candidate on the immutable prefix, a
+    # token beside Gradle, or a tag that nobody approved.
     rel = workflow_doc(RELEASE_WORKFLOW)
     rel_on = (rel.get(True) if True in rel else rel.get("on")) or {}
     rel_jobs = {name: job for name, job in (rel.get("jobs") or {}).items() if isinstance(job, dict)}
@@ -3724,14 +3724,58 @@ def test_workflows():
     def job_steps(job: dict) -> list[dict]:
         return [step for step in (job.get("steps") or []) if isinstance(step, dict)]
 
-    # A dispatch presents a branch subject and names no tag, and a schedule or a pull request is a run
-    # nobody cut. A tag push is the act.
-    check(f"W17 {RELEASE_WORKFLOW} triggers on a tag push and nothing else",
-          set(rel_on) == {"push"} and set(rel_on.get("push") or {}) == {"tags"}, f"{rel_on}")
-    # The whole pattern: `*` or `*.*.*` also takes `0.1.0-rc.1`, which belongs on the mutable channel.
-    tags = (rel_on.get("push") or {}).get("tags") or []
-    check("W17 and only on a release version, never a candidate",
-          tags == ["[0-9]+.[0-9]+.[0-9]+"], f"{tags}")
+    def condition(job: dict) -> str:
+        return " ".join(str(job.get("if", "")).split())
+
+    # Dispatched and nothing else. A tag push would be a person creating the release, and a schedule or a
+    # pull request is a run nobody cut.
+    check(f"W17 {RELEASE_WORKFLOW} is dispatched and has no other trigger",
+          set(rel_on) == {"workflow_dispatch"}, f"{rel_on}")
+
+    # The cut: on main, a job that checks, then the release environment's job that tags. The environment
+    # is who may release, and it is the only place the deploy key can be read.
+    gate = {name: job for name, job in rel_jobs.items() if str(job.get("environment", "")) == "release"}
+    check("W17 exactly one job runs in the release environment", len(gate) == 1, f"{sorted(gate)}")
+    gate_name = next(iter(gate), "")
+    gate_job = gate.get(gate_name, {})
+    gate_steps = job_steps(gate_job)
+    key_readers = sorted(name for name, job in rel_jobs.items() if "RELEASE_DEPLOY_KEY" in yaml.safe_dump(job))
+    check("W17 and only that job reads the deploy key", key_readers == [gate_name], f"{key_readers}")
+    gate_body = " ".join(step_text(step) for step in gate_steps)
+    check("W17 and it runs no Gradle and sets up no toolchain",
+          not any(term in gate_body for term in ("gradlew", "setup-java", "setup-gradle")))
+    check("W17 and it mints no token", not mints(gate_job.get("permissions")), f"{gate_job.get('permissions')}")
+    pushed = " ".join(run_commands(step) for step in gate_steps)
+    check("W17 and it pushes the tag with the key, verifying GitHub's host keys",
+          "git push" in pushed and "refs/tags/" in pushed and "StrictHostKeyChecking=yes" in pushed
+          and "gh api meta" in pushed, pushed[:200])
+    # A tag already on another commit is a spent number, and pushing over it is refused.
+    check("W17 and it refuses a version already tagged on another commit",
+          "$tagged != $GITHUB_SHA" in pushed and "already names" in pushed and "exit 1" in pushed, pushed[:200])
+    check("W17 and it starts the run on the tag",
+          "gh workflow run release.yml" in pushed and "--ref" in pushed, pushed[-200:])
+
+    checker_name = next((name for name in needs_of(gate_job)), "")
+    checker = rel_jobs.get(checker_name, {})
+    check("W17 and it needs a job that runs only on main",
+          bool(checker) and condition(checker) == "github.ref == 'refs/heads/main'",
+          f"{checker_name}: {condition(checker)}")
+    check("W17 and it carries no condition of its own, so it cannot run without the check",
+          not gate_job.get("if"), condition(gate_job))
+
+    def ci_gated(steps) -> int | None:
+        return next((i for i, step in enumerate(steps)
+                     if all(term in run_commands(step) for term in
+                            ("gh run list", "--workflow ci.yml", "--commit", "--event push", "--branch main",
+                             'conclusion == "success"', "exit 1"))), None)
+
+    check("W17 and the check refuses a commit that has not passed CI on main",
+          ci_gated(job_steps(checker)) is not None)
+    versioned = " ".join(run_commands(step) for step in job_steps(checker))
+    # A release version only: a candidate belongs on the mutable channel.
+    check("W17 and it reads the version as <major>.<minor>.<patch> and nothing else",
+          "payabli.version=" in versioned and "(0|[1-9][0-9]*)" in versioned and "exit 1" in versioned,
+          versioned[-200:])
 
     uploading = {name: job for name, job in rel_jobs.items() if mints(job.get("permissions"))}
     check("W17 exactly one job mints the publishing identity", len(uploading) == 1, f"{sorted(uploading)}")
@@ -3748,25 +3792,18 @@ def test_workflows():
     check("W17 and sets up no toolchain",
           not any(tool in upload_body for tool in ("setup-java", "setup-gradle")))
     check("W17 and mentions no secret", not SECRETS_CONTEXT.search(yaml.safe_dump(upload_job)))
-
-    # The review, which cannot sit on the uploading job without changing its subject.
-    gate = {name: job for name, job in rel_jobs.items() if str(job.get("environment", "")) == "release"}
-    check("W17 the upload waits for the release environment", len(gate) == 1, f"{sorted(gate)}")
-    gate_name = next(iter(gate), "")
-    gate_job = gate.get(gate_name, {})
-    check("W17 and the uploading job names no environment, so its subject keeps the tag",
+    check("W17 and names no environment, so its subject keeps the tag",
           not upload_job.get("environment"), str(upload_job.get("environment", "")))
-    check("W17 and the gate mints no token", not mints(gate_job.get("permissions")),
-          f"{gate_job.get('permissions')}")
-    check("W17 and the upload needs the gate", gate_name in needs_of(upload_job), f"{upload_job.get('needs')}")
-    # Entered after the build has passed, so a reviewer approves a tested tree rather than a start.
+
+    # The publish half runs on the tag ref, which only the release environment's job can create.
     builder = next((name for name, job in rel_jobs.items()
                     if any("gradlew publish" in run_commands(step) for step in job_steps(job))), "")
-    check("W17 and the gate needs the build", bool(builder) and builder in needs_of(gate_job),
-          f"build={builder} needs={gate_job.get('needs')}")
-    # A job condition is how a gate is stepped around: `always()` uploads through a refusal.
-    conditioned = [name for name in (upload_name, gate_name) if rel_jobs.get(name, {}).get("if")]
-    check("W17 and neither the gate nor the upload carries a condition", not conditioned, f"{conditioned}")
+    check("W17 the build runs only on a tag ref",
+          condition(rel_jobs.get(builder, {})) == "startsWith(github.ref, 'refs/tags/')",
+          f"{builder}: {condition(rel_jobs.get(builder, {}))}")
+    check("W17 and the upload needs the build", builder in needs_of(upload_job), f"{upload_job.get('needs')}")
+    # A condition on the upload is how the build's is stepped around: `always()` uploads through a skip.
+    check("W17 and the upload carries no condition of its own", not upload_job.get("if"), condition(upload_job))
 
     # The tag is checked against the property in the job that builds and in the job that uploads, and
     # before either does anything. The build's Gradle carries no override, so the property is the version.
@@ -3776,15 +3813,9 @@ def test_workflows():
                      and "exit 1" in run_commands(step)), None)
 
     build_steps = job_steps(rel_jobs.get(builder, {}))
-    # The unit tier is all this workflow runs, so the rest of what CI proves has to have passed for the
-    # tagged commit on main. Asked before anything is built, and the run has to have succeeded.
-    ci_gate = next((i for i, step in enumerate(build_steps)
-                    if "gh run list" in run_commands(step) and "--workflow ci.yml" in run_commands(step)), None)
-    ci_run = run_commands(build_steps[ci_gate]) if ci_gate is not None else ""
-    check("W17 the build refuses a commit that has not passed CI on main",
-          ci_gate is not None and all(term in ci_run for term in
-                                      ("--commit", "--event push", "--branch main", 'conclusion == "success"', "exit 1")),
-          ci_run[:200])
+    # Asked again on the tag, because anyone who can dispatch can dispatch on an existing tag.
+    ci_gate = ci_gated(build_steps)
+    check("W17 the build refuses a commit that has not passed CI on main", ci_gate is not None)
     first_gradle = next((i for i, step in enumerate(build_steps) if "gradlew" in run_commands(step)), None)
     checked = tag_check(build_steps)
     if ci_gate is not None and first_gradle is not None:
@@ -3884,11 +3915,15 @@ def test_workflows():
     check("W17 no step of it can fail without failing the job", not masked, " | ".join(masked))
     shell = ((rel.get("defaults") or {}).get("run") or {}).get("shell")
     check("W17 it runs its steps under a shell with pipefail", shell == "bash", f"{shell}")
-    # The card reader credential goes to the steps that run Gradle and nowhere else.
-    holding = [step for step in rel_steps if SECRETS_CONTEXT.search(json.dumps(step, default=str))]
-    check("W17 only a step that runs Gradle holds a secret",
-          bool(holding) and all("gradlew" in run_commands(step) for step in holding),
-          " | ".join(str(step.get("name", "")) for step in holding))
+    # The card reader credential goes to the steps that run Gradle, and the deploy key to the release
+    # environment's job. Nothing else holds a secret.
+    holding = [(name, step) for name, job in rel_jobs.items() for step in job_steps(job)
+               if SECRETS_CONTEXT.search(json.dumps(step, default=str))]
+    stray = [str(step.get("name", "")) for name, step in holding
+             if not ("gradlew" in run_commands(step)
+                     or (name == gate_name and set(re.findall(r"secrets\.(\w+)", json.dumps(step))) == {"RELEASE_DEPLOY_KEY"}))]
+    check("W17 only a Gradle step or the release job's key holds a secret", bool(holding) and not stray,
+          " | ".join(stray))
     check("W17 no credential is declared for the whole workflow", not (rel.get("env") or {}),
           f"{sorted(rel.get('env') or {})}")
 
