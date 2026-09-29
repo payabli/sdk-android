@@ -72,7 +72,8 @@ which `payabli.version` in [`gradle.properties`](gradle.properties) sets:
 | `com.payabli:sdk-android` | Both, with error and usage reporting |
 | `com.payabli:sdk-android-bom` | A bill of materials that pins the versions of the others |
 
-Each includes `com.payabli:sdk-android-core`, which holds the session and the configuration.
+Each library includes `com.payabli:sdk-android-core`, which holds the session and the configuration. The
+BOM holds versions only and adds no library: add it with `platform(...)`, beside the libraries you use.
 
 ```kotlin
 dependencies {
