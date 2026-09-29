@@ -172,8 +172,11 @@ println("Charged: ${result.paymentTransId}")
 
 ## Outcomes and errors
 
-Every failure is a `TapToPayException`, apart from a coroutine cancellation. It carries `capture` and
-`paymentTransId`:
+Every failure is a `TapToPayException`, apart from a coroutine cancellation. A cancellation is rethrown
+as `CancellationException` and carries no transaction ID. Cancelling after the card was presented doesn't
+mean nothing was charged: find the transaction before charging again.
+
+A `TapToPayException` carries `capture` and `paymentTransId`:
 
 | `capture` | Meaning | What to do |
 |---|---|---|
