@@ -3842,12 +3842,12 @@ def test_workflows():
           probe is not None and assume is not None and uploader is not None and assume < probe < uploader,
           f"assume={assume} probe={probe} upload={uploader}")
 
-    # One upload at a time, and a queued one waits: the keys a run has written stay written.
+    # One upload at a time, and a running one is not cancelled: the keys it has written stay written.
     concurrency = upload_job.get("concurrency")
     group = str((concurrency or {}).get("group", "")) if isinstance(concurrency, dict) else str(concurrency or "")
     check("W17 one upload runs at a time across tags", bool(group) and "${{" not in group, group)
     cancels = str((concurrency or {}).get("cancel-in-progress", "")) if isinstance(concurrency, dict) else ""
-    check("W17 and a queued one waits rather than cancelling it", cancels == "False", cancels or "not set")
+    check("W17 and a running upload is never cancelled", cancels == "False", cancels or "not set")
 
     # The release's write is for the notes and nothing else, so no other job is granted one.
     writers = sorted(name for name, job in rel_jobs.items()

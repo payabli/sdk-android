@@ -38,7 +38,8 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          version=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
+          # Empty rather than a failed grep when the line is missing, so the refusal below says why.
+          version=$(sed -n 's/^payabli.version=//p' gradle.properties)
           if [ "$TAG" != "$version" ]; then
             echo "::error::tag '$TAG' does not match payabli.version '$version' in gradle.properties."
             exit 1
@@ -93,8 +94,9 @@ jobs:
   upload:
     name: Upload to /maven
     needs: [approve]
-    # One release upload at a time, and a queued one waits rather than cancelling a run mid-upload: the
-    # keys already written stay written.
+    # One release upload at a time, and a running one is never cancelled: the keys it has written stay
+    # written. GitHub holds one pending run per group, so a third tag queued behind two replaces the
+    # second, which then shows as cancelled and is re-run.
     concurrency:
       group: maven-release
       cancel-in-progress: false
@@ -113,7 +115,8 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          version=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
+          # Empty rather than a failed grep when the line is missing, so the refusal below says why.
+          version=$(sed -n 's/^payabli.version=//p' gradle.properties)
           if [ "$TAG" != "$version" ]; then
             echo "::error::tag '$TAG' does not match payabli.version '$version' in gradle.properties."
             exit 1

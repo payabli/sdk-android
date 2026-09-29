@@ -1209,7 +1209,7 @@ MUTATIONS = [
      "      - '*.*.*'\n"),
 
     ('Release builds without checking the tag against the committed version', RELEASE, "workflows",
-     '      - name: Check the tag names the committed version\n        env:\n          TAG: ${{ github.ref_name }}\n        run: |\n          version=$(grep \'^payabli.version=\' gradle.properties | cut -d= -f2)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
+     '      - name: Check the tag names the committed version\n        env:\n          TAG: ${{ github.ref_name }}\n        run: |\n          # Empty rather than a failed grep when the line is missing, so the refusal below says why.\n          version=$(sed -n \'s/^payabli.version=//p\' gradle.properties)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
      '      - uses: actions/setup-java'),
 
     ('Release publishes a version other than the committed one', RELEASE, "workflows",
