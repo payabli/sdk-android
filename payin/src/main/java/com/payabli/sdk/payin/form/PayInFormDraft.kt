@@ -30,6 +30,12 @@ internal class PayInFormDraft {
     private var chosen: PayInMethodType? by mutableStateOf(null)
 
     /**
+     * The method the host was last told is on screen. Null until the form first names one, so a draft's
+     * first showing opens silently and every move after it is told, however and whenever it happened.
+     */
+    var toldMethod: PayInMethodType? = null
+
+    /**
      * The instrument on screen.
      *
      * Read rather than captured, so the submit button's second check at the tap sees what the payer chose

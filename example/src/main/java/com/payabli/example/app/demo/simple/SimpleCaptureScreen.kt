@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -144,8 +145,8 @@ class SimpleCaptureViewModel(
     var amountText by mutableStateOf(DEFAULT_AMOUNT)
 
     /**
-     * The instrument the form last said is on screen, which is the one this app prices a fee for. Null
-     * until the first change, because the form opens silently.
+     * The instrument the form last said is on screen, which is the one this app prices a fee for.
+     * Seeded from the configuration once the flow appears, and moved only by the form after that.
      */
     var method by mutableStateOf<PayInMethodType?>(null)
 
@@ -209,6 +210,13 @@ fun SimpleCaptureScreen(
     val amount = parseAmount(viewModel.amountText)
     val submitting =
         payInFlow?.let { it.state.collectAsStateWithLifecycle().value is PayInSubmissionState.Submitting } ?: false
+
+    // The form opens silently, so the method starts as the one the configuration opens on, read once
+    // when the flow appears. Every move after that is the form's to report.
+    LaunchedEffect(payInFlow) {
+        payInFlow ?: return@LaunchedEffect
+        viewModel.method = FormCustomization.configuration(viewModel.settings, operation).startingMethod
+    }
 
     DemoScreen(
         title = "Simple Capture",

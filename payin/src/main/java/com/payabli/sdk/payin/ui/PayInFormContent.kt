@@ -91,13 +91,11 @@ internal fun PayInFormContent(
     val method = draft.method
     val typed = draft.typed
 
-    // The method this composition has already told the host about. It is held here rather than in the
-    // draft because it dies with the composition: an opening and a rotation are a first sight of the
-    // method, and neither is news.
-    var toldMethod by remember { mutableStateOf<PayInMethodType?>(null) }
+    // The draft holds what the host was last told, not this composition: the method can move while no
+    // form is composed, so the next showing has to read a move as a change rather than as an opening.
     LaunchedEffect(method) {
-        val previous = toldMethod
-        toldMethod = method
+        val previous = draft.toldMethod
+        draft.toldMethod = method
         if (previous != null && previous != method) methodChanged(method)
     }
 
