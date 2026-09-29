@@ -13,7 +13,10 @@ token in memory while the session runs.
 [Card-not-present guide](payin/README.md) · [Tap to Pay guide](taptopay/README.md) ·
 [Sample app](example/README.md)
 
-> **No version has been published yet.** See [Versioning and support](#versioning-and-support).
+> [!WARNING]
+> **This SDK is in beta and under active development.** Its public interface can change in ways that
+> aren't backward compatible, including the names, parameters and behavior of its types and methods.
+> No stable version has been released. See [Versioning and support](#versioning-and-support).
 
 ## How it works
 
@@ -339,9 +342,14 @@ and sends nothing.
 
 ## Versioning and support
 
-No version of the SDK has been published. Until one is, build from `main` as
-[Installation](#installation) describes. `main` changes without notice, so record the commit you built.
-This section gives the published coordinates and the version once a release exists.
+> [!WARNING]
+> **This SDK is in beta.** Until a stable version is released, expect changes to the public interface that
+> aren't backward compatible, and read the changes on `main` before you update.
+
+- **No version has been published.** Build from `main` as [Installation](#installation) describes.
+- **`main` changes without notice.** Record the commit you built, and build the same commit to reproduce a
+  build.
+- **When a stable version is published,** this section gives its coordinates and version.
 
 ## Support
 
