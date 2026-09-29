@@ -282,7 +282,7 @@ Every method returns a `Result`. To charge a saved method, pass
 
 `capture` always sends an idempotency key. The SDK mints one per call when you don't set
 `PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
-retry. Set your own key to retry a payment safely.
+retry. Don't resend a charge whose outcome is unknown. Find the transaction first.
 
 ## Tap to Pay payments
 
@@ -291,7 +291,7 @@ activation, charging and errors.
 
 ## Outcomes
 
-Every charge ends in one of three outcomes. Only one of them is safe to retry.
+Every charge ends in one of these outcomes. Only **not charged** is safe to retry.
 
 | Outcome | Card-not-present | Tap to Pay | Retry? |
 |---|---|---|---|
@@ -306,7 +306,7 @@ When the outcome is unknown, look the transaction up from your backend with
 [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction)
 before you charge again. `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
 look up when there is one. When there isn't, find the transaction in the Payabli portal before you charge
-again. Store the transaction ID with your order every time you get one.
+again; setting `orderId` on each request lets you find it by your own reference. Store the transaction ID with your order every time you get one.
 
 ## Sample app
 

@@ -125,8 +125,10 @@ Until the phone is activated, `initialize()` fails and `sessionState` is `Pendin
    [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge),
    `POST /api/v2/device/taptopay/activate/challenge`, which takes the entry point and the device's ID. The
    code is valid for 30 minutes. Asking again before it expires returns the same code. The SDK doesn't
-   return the device's ID. A device waiting for activation, and its code, are shown in the Payabli portal
-   under **Devices**.
+   return the device's ID. In the Payabli portal, under **Device Management**, the waiting device's
+   options include **Activate device**, which issues its code.
+
+   The code is six digits and can start with zero, so keep it as a string.
 2. Deliver the code to the person holding the phone, and have your app ask for it.
 3. Activate, then initialize again:
 
