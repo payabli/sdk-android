@@ -343,15 +343,13 @@ and sends nothing.
 ## Versioning and support
 
 > [!WARNING]
-> **The Payabli iOS and Android SDKs are both in beta.** Until a stable version is released, expect changes
-> to the public interface that aren't backward compatible, on either platform, and read the changes on
-> `main` before you update.
+> **The Payabli Android SDK is in beta.** Until a stable version is released, expect changes to the public
+> interface that aren't backward compatible, and read the changes on `main` before you update.
 
-- **No version has been released on either platform.** Build from `main` as [Installation](#installation) describes.
+- **No version has been released.** Build from `main` as [Installation](#installation) describes.
 - **`main` changes without notice.** Record the commit you built, and build the same commit to reproduce a
   build.
-- **When a stable version is released,** it is released for both platforms, and this section gives the
-  version to depend on.
+- **When a stable version is released,** this section gives the version to depend on.
 
 ## Support
 
