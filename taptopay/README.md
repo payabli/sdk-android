@@ -1,8 +1,8 @@
 # Tap to Pay on Android
 
 The `taptopay` module lets your app take a contactless card, phone or watch payment on an Android phone,
-with no external reader. Set up the package, your configuration and your token endpoint first, as the
-[root README](../README.md) describes. This guide covers what Tap to Pay adds.
+with no external reader. This guide is part of the [Payabli Android SDK](../README.md); set up the SDK and
+its session there first.
 
 ## Requirements
 
@@ -79,7 +79,7 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
 An app that isn't on the allowlist is refused when the device attests. `initialize()` fails, and
 `sessionState` is `PendingActivation`, the same state as a phone that needs a code.
 
-## Create the Tap to Pay session
+## Set up
 
 `PayabliTTP` runs on the session you built for the whole SDK, and uses that session's entry point:
 
@@ -96,7 +96,9 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 - **One paypoint per session.** There is one session per app process, and it has one entry point.
   `PayabliSession.initialize` with a different entry point fails while the session is live.
 
-## Initialize
+## Take a payment
+
+### Initialize
 
 ```kotlin
 import com.payabli.sdk.taptopay.TapToPayException
@@ -116,7 +118,7 @@ try {
 `initialize()` attests the device, fetches its configuration and prepares the reader. It is safe to call
 again at any time. The first run on a phone takes longer than later ones.
 
-## Activate a phone
+### Activate a phone
 
 A phone takes Tap to Pay payments for a paypoint only after it is activated with a 6-digit code.
 
@@ -143,7 +145,7 @@ ttp.activateDevice(code)
 ttp.initialize()
 ```
 
-## Charge
+### Charge
 
 When `sessionState` is `Ready`, or `SessionExpired`, which `charge` refreshes before it reads the card:
 
@@ -190,7 +192,9 @@ holds the payment, and a further call fails with `capture` `UNKNOWN`. It works o
 recently taken for this entry point in this process; for anything else, reconcile with the transaction
 lookup.
 
-## Session states and events
+## Reference
+
+### Session states
 
 `sessionState` is a `TapToPaySessionState`:
 
@@ -203,6 +207,8 @@ lookup.
 | `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
 | `Reinitializing` | The session is being refreshed. |
 | `Failed(reason)` | The session stopped. `reason` says what to do. |
+
+### Failure reasons
 
 | `TapToPayFailureReason` | What to do |
 |---|---|
@@ -222,3 +228,10 @@ The Android SDK has no event stream. Collect `sessionState` to follow progress.
 - Your release package name on your **production** paypoint's allowlist.
 - Your app installed from Google Play on a phone that meets the [requirements](#requirements).
 - One phone activated and one payment approved end to end, then looked up by its transaction ID.
+
+## Related docs
+
+- [Payabli Android SDK](../README.md): setup, the token endpoint, outcomes and go-live
+- [Card-not-present payments on Android](../payin/README.md)
+- [Sample app](../example/README.md)
+- [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)

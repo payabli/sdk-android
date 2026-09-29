@@ -1,22 +1,32 @@
 # Payabli Android SDK
 
-The Payabli Android SDK lets an Android app take payments through Payabli in two ways:
-
-- **Card-not-present.** Your app collects card or bank account details, in the SDK's Compose form or in
-  your own UI, and the SDK stores them as a payment method or charges them.
-- **Tap to Pay.** The payer taps a contactless card, phone or watch on the Android phone, with no external
-  reader.
+The Payabli Android SDK lets your app take payments through Payabli. Set it up once, and take a payment
+either way on the same session: **card-not-present**, with card or bank account details entered in the
+SDK's Compose form or in your own UI, or **Tap to Pay**, with a contactless card, phone or watch tapped
+on the phone.
 
 Your app never holds your Payabli client ID or client secret. It supplies a function that fetches a
 short-lived access token from your backend, and the SDK calls it when it needs one. The SDK holds that
 token in memory while the session runs.
 
-[Payabli developer documentation](https://docs.payabli.com) · [Tap to Pay guide](taptopay/README.md) ·
+[Payabli developer documentation](https://docs.payabli.com) ·
+[Card-not-present guide](payin/README.md) · [Tap to Pay guide](taptopay/README.md) ·
 [Sample app](example/README.md)
 
 > **No version has been published yet.** See [Versioning and support](#versioning-and-support).
 
-## Key terms
+## How it works
+
+1. **Your backend** exchanges your Payabli client ID and client secret for a short-lived access token,
+   through a token endpoint you build.
+2. **Your app** creates one `PayabliSession` with your entry point, the environment and a token provider
+   that calls that endpoint.
+3. **On that session**, your app takes a payment card-not-present with `PayabliPayIn`, or card-present
+   with `PayabliTTP`.
+4. **Every charge ends in an outcome** your app acts on: charged, not charged, or unknown and to be
+   reconciled.
+
+### Key terms
 
 | Term | Meaning |
 |---|---|
@@ -25,37 +35,13 @@ token in memory while the session runs.
 | **Token endpoint** | A route on your own backend that exchanges your Payabli client ID and client secret for a short-lived access token and returns the token to your app. |
 | **Allowlist** | The list of apps a paypoint accepts Tap to Pay requests from. |
 
-## Modules
-
-| Artifact | Use it for | Guide |
-|---|---|---|
-| `com.payabli:sdk-android-payin` | Card-not-present | [Card-not-present payments](#card-not-present-payments) |
-| `com.payabli:sdk-android-taptopay` | Tap to Pay | [`taptopay/README.md`](taptopay/README.md) |
-| `com.payabli:sdk-android-core` | Configuration, the session and the token provider. Both modules include it | [Get started](#get-started) |
-| `com.payabli:sdk-android-telemetry` | Error and usage reporting to Payabli | [Privacy and data collection](#privacy-and-data-collection) |
-| `com.payabli:sdk-android` | All four | |
-| `com.payabli:sdk-android-bom` | A bill of materials that pins the versions above | |
-
 ## Requirements
 
 | | Requirement |
 |---|---|
-| `minSdk` | 23 for `core`, `payin` and `telemetry`. 30 for `taptopay` |
-| `compileSdk` | 31 or higher. The `payin` module's Compose dependencies require a higher `compileSdk` of their own, and Gradle names it if yours is lower |
-| Tap to Pay | Android 12 on a 64-bit phone with NFC. See [`taptopay/README.md`](taptopay/README.md#requirements) |
-
-## Before you start
-
-1. **Get a sandbox paypoint.** Ask your Payabli representative for a sandbox entry point, with Tap to Pay
-   enabled if you plan to use it.
-2. **Create OAuth2 credentials.** Provision a client ID and client secret for the sandbox. See
-   [OAuth authentication](https://docs.payabli.com/developers/oauth-authentication).
-   - Card-not-present needs `inboundpayments_create` to charge, authorize and capture,
-     `inboundpayments_void` to void, and `tokens_create` to store a payment method.
-   - Tap to Pay needs `tools_init`, `pos_create` and `inboundpayments_create`.
-3. **Build your token endpoint.** See [Build your token endpoint](#build-your-token-endpoint).
-4. **For Tap to Pay only:** have your app's package and signing certificate enrolled, and register the
-   app on the paypoint's allowlist. See [`taptopay/README.md`](taptopay/README.md#before-you-start).
+| `minSdk` | 23. Tap to Pay needs 30 |
+| `compileSdk` | 31 or higher. The card-not-present form's Compose dependencies require a higher `compileSdk` of their own, and Gradle names it if yours is lower |
+| Tap to Pay | Android 12 on a 64-bit phone with NFC. See the [Tap to Pay guide](taptopay/README.md#requirements) |
 
 ## Installation
 
@@ -66,20 +52,29 @@ No version is published, so build the SDK from source into your local Maven repo
 ```bash
 git clone https://github.com/payabli/sdk-android.git
 cd sdk-android
-./gradlew publishToMavenLocal                                    # every module
+./gradlew publishToMavenLocal                                    # everything
 ./gradlew :core:publishToMavenLocal :payin:publishToMavenLocal  # card-not-present only
 ```
 
-The build needs the Android SDK, through `ANDROID_HOME` or `sdk.dir` in `local.properties`. Building
-`taptopay`, and so publishing every module, also needs the card reader repository credentials below.
+The build needs the Android SDK, through `ANDROID_HOME` or `sdk.dir` in `local.properties`. Building Tap
+to Pay also needs the [card reader repository](#card-reader-repository) credentials.
 
-Add `mavenLocal()` to your repositories and depend on the version the build published, which is set by
-`payabli.version` in [`gradle.properties`](gradle.properties):
+Add `mavenLocal()` to your repositories and depend on what you use, at the version the build published,
+which `payabli.version` in [`gradle.properties`](gradle.properties) sets:
+
+| Artifact | Adds |
+|---|---|
+| `com.payabli:sdk-android-payin` | Card-not-present |
+| `com.payabli:sdk-android-taptopay` | Tap to Pay |
+| `com.payabli:sdk-android` | Both, with error and usage reporting |
+| `com.payabli:sdk-android-bom` | A bill of materials that pins the versions of the others |
+
+Each includes `com.payabli:sdk-android-core`, which holds the session and the configuration.
 
 ```kotlin
 dependencies {
     implementation("com.payabli:sdk-android-payin:0.1.0")
-    implementation("com.payabli:sdk-android-taptopay:0.1.0") // for Tap to Pay
+    implementation("com.payabli:sdk-android-taptopay:0.1.0")
 }
 ```
 
@@ -91,7 +86,7 @@ The SDK doesn't declare the `INTERNET` permission. Add it to your app's manifest
 <uses-permission android:name="android.permission.INTERNET" />
 ```
 
-Tap to Pay adds build settings of its own, in [`taptopay/README.md`](taptopay/README.md#before-you-start).
+Tap to Pay adds build settings of its own, in the [Tap to Pay guide](taptopay/README.md#before-you-start).
 
 ### Card reader repository
 
@@ -123,7 +118,19 @@ dependencyResolutionManagement {
 
 Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store, never in the repository.
 
-## Get started
+## Set up the SDK
+
+### Prepare your Payabli account
+
+1. **Get a sandbox paypoint.** Ask your Payabli representative for a sandbox entry point, with Tap to Pay
+   enabled if you plan to use it.
+2. **Create OAuth2 credentials.** Provision a client ID and client secret for the sandbox. See
+   [OAuth authentication](https://docs.payabli.com/developers/oauth-authentication).
+   - Card-not-present needs `inboundpayments_create` to charge, authorize and capture,
+     `inboundpayments_void` to void, and `tokens_create` to store a payment method.
+   - Tap to Pay needs `tools_init`, `pos_create` and `inboundpayments_create`.
+3. **For Tap to Pay**, have your app enrolled and registered on the paypoint's allowlist, as the
+   [Tap to Pay guide](taptopay/README.md#before-you-start) describes.
 
 ### Build your token endpoint
 
@@ -171,9 +178,8 @@ the rest of your app does. The sample app ships a complete token server in
 
 ### Configure the SDK
 
-Both modules run on one `PayabliSession`, built from your entry point, the environment and a token
-provider. `initialize` is a `suspend` function, as are the SDK calls below, so call them from a coroutine,
-for example in `viewModelScope.launch { }`:
+Create the session once. `initialize` is a `suspend` function, as are the SDK's other calls, so call them
+from a coroutine, for example in `viewModelScope.launch { }`:
 
 ```kotlin
 import com.payabli.sdk.core.HostBindings
@@ -197,11 +203,12 @@ val session: PayabliSession =
 | `PayabliEnvironment.PRODUCTION` | `https://api.payabli.com` |
 
 - `PayabliConfig` throws when the entry point is blank.
-- There is one session per app process. Calling `initialize` again with the same configuration returns
-  the same session. Calling it with a different configuration while the session is live fails.
+- There is one session per app process, for one paypoint. Calling `initialize` again with the same
+  configuration returns the same session. Calling it with a different configuration while the session is
+  live fails.
 
-The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token
-from your token endpoint:
+The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
+your token endpoint:
 
 - The SDK calls it before its first request, and again when a token is rejected. Return a newly minted
   token each time, not a cached one.
@@ -209,22 +216,14 @@ from your token endpoint:
   with `PayabliErrorCode.TOKEN_PROVIDER_FAILED`.
 - Let cancellation through. Don't catch `CancellationException`.
 
-## Card-not-present payments
+## Take a payment
+
+### Card-not-present
+
+`PayabliPayIn` runs on the session. Show its form, or call it from your own UI:
 
 ```kotlin
 import com.payabli.sdk.payin.PayabliPayIn
-
-val payIn = PayabliPayIn(session, entryPoint = "your-entry-point", scope = viewModelScope)
-```
-
-Pass a scope that outlives a configuration change, such as `viewModelScope`, so a submission's outcome
-still arrives after a rotation.
-
-### Use the SDK's form
-
-`PayabliPayInForm` is a Composable card and bank account form. `operation` says what a submission does:
-
-```kotlin
 import com.payabli.sdk.payin.PayabliPayInForm
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.model.PayInPaymentDetails
@@ -232,80 +231,27 @@ import com.payabli.sdk.payin.model.PayInTransactionOptions
 import com.payabli.sdk.payin.payment.PayabliPayInOperation
 import java.math.BigDecimal
 
+val payIn = PayabliPayIn(session, entryPoint = "your-entry-point", scope = viewModelScope)
+
 PayabliPayInForm(
     payIn = payIn,
     operation = PayabliPayInOperation.Capture(
         PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
     ),
     configuration = PayInFormConfiguration(),
-    onCompleted = { succeeded -> /* charged, or saved */ },
-    onFailed = { failed -> /* failed.cause says why; see Outcomes */ },
+    onCompleted = { succeeded -> /* charged */ },
+    onFailed = { failed -> /* failed.cause says why; see Handle the outcome */ },
     onMethodChanged = { },
 )
 ```
 
-| Operation | What happens |
-|---|---|
-| `PayabliPayInOperation.StoreMethod()` | Saves the card or bank account as a stored payment method. |
-| `PayabliPayInOperation.Capture(options)` | Charges the payment method. |
-| `PayabliPayInOperation.Authorize(options)` | Authorizes a card without capturing it. |
+The [card-not-present guide](payin/README.md) covers the direct API, storing and charging a saved method,
+authorizing and capturing, voiding, and the form's configuration and styling.
 
-`PayInFormConfiguration` chooses the payment methods and fields, `labels` sets the wording, and `style`
-sets the look.
+### Tap to Pay
 
-### Call the API from your own UI
-
-Card numbers and security codes travel in `SensitiveDigits` buffers. Close the ones you build once the
-call returns; `use` does that.
-
-```kotlin
-import com.payabli.sdk.payin.form.ExpiryValue
-import com.payabli.sdk.payin.model.PayInCardData
-import com.payabli.sdk.payin.model.PayInPaymentDetails
-import com.payabli.sdk.payin.model.PayInPaymentMethod
-import com.payabli.sdk.payin.model.PayInRequest
-import com.payabli.sdk.payin.model.PayInTransactionOptions
-import com.payabli.sdk.payin.model.SensitiveDigits
-import java.math.BigDecimal
-
-val result =
-    SensitiveDigits.ofString("4012000098765439").use { number ->
-        SensitiveDigits.ofString("999").use { cvv ->
-            payIn.capture(
-                PayInRequest(
-                    paymentMethod = PayInPaymentMethod.Card(
-                        PayInCardData(number, ExpiryValue(12, 2030), cvv, "Jane Doe", "12345"),
-                    ),
-                    options = PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
-                ),
-            )
-        }
-    }
-
-result.onSuccess { order.paymentTransId = it.transaction?.paymentTransId } // store it; don't log it
-```
-
-Use Payabli's sandbox [test cards](https://docs.payabli.com/guides/test-accounts-reference) in sandbox.
-
-| Method | What it does |
-|---|---|
-| `capture(request)` | Charges a card, bank account or stored payment method. |
-| `authorize(request)` | Authorizes a card. |
-| `captureAuthorizedTransaction(request)` | Captures an earlier authorization. |
-| `voidTransaction(transId)` | Voids a transaction that hasn't settled. |
-| `storeMethod(request)` | Saves a payment method and returns its stored ID. |
-
-Every method returns a `Result`. To charge a saved method, pass
-`PayInPaymentMethod.Stored(PayInStoredMethodType.Card, storedMethodId)` as the payment method.
-
-A charge always sends an idempotency key. The SDK mints one per call when you don't set
-`PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
-retry. Don't resend a charge whose outcome is unknown. Find the transaction first.
-
-## Tap to Pay payments
-
-`PayabliTTP` runs on the same session. After the setup in [`taptopay/README.md`](taptopay/README.md), a
-payment takes three calls:
+`PayabliTTP` runs on the same session. After the one-time setup in the
+[Tap to Pay guide](taptopay/README.md), a payment takes three calls:
 
 ```kotlin
 import com.payabli.sdk.taptopay.PayabliTTP
@@ -321,11 +267,13 @@ val result = ttp.charge(
 )
 ```
 
-The guide covers the build settings, enrolment, the allowlist, activating a phone, charging and errors.
+The guide covers the phone and build requirements, enrolment, the allowlist, activating a phone, and the
+session states.
 
-## Outcomes
+## Handle the outcome
 
-Every charge ends in one of these outcomes. Only **not charged** is safe to retry.
+Every charge ends in one of these outcomes, whichever way it was taken. Only **not charged** is safe to
+retry.
 
 | Outcome | Card-not-present | Tap to Pay | Retry? |
 |---|---|---|---|
@@ -334,8 +282,6 @@ Every charge ends in one of these outcomes. Only **not charged** is safe to retr
 | **Unknown** | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | a `TapToPayException` whose `capture` is `UNKNOWN` | Not until you've checked |
 | **Charged, not confirmed** | — | a `TapToPayException` whose `capture` is `CHARGED` | No. Call `closeCapturedCharge` |
 
-On card-not-present, a form reports these through `onFailed`, whose argument's `cause` is the exception.
-
 When the outcome is unknown, look the transaction up from your backend with
 [`GET /api/MoneyIn/details/{transId}`](https://docs.payabli.com/developers/api-reference/moneyin/get-details-for-a-processed-transaction)
 before you charge again. `PayInException.Unsettled` and `TapToPayException` carry the `paymentTransId` to
@@ -343,16 +289,40 @@ look up when there is one. When there isn't, find the transaction in the Payabli
 again. On card-not-present, setting `orderId` on each request lets you find it by your own reference.
 Store the transaction ID with your order every time you get one.
 
-## Language support
+Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes-and-errors) and
+[Tap to Pay](taptopay/README.md#outcomes-and-errors).
+
+## Go live
+
+- A **production** entry point, and production OAuth2 credentials with the permissions in
+  [Prepare your Payabli account](#prepare-your-payabli-account).
+- `PayabliEnvironment.PRODUCTION` in `PayabliConfig`.
+- Your token endpoint deployed and authenticating its callers.
+- The checklists for what you use: [card-not-present](payin/README.md#go-live) and
+  [Tap to Pay](taptopay/README.md#go-live).
+
+## Reference
+
+### Guides
+
+| Guide | Covers |
+|---|---|
+| [Card-not-present](payin/README.md) | The form, the direct API, stored methods, authorize and capture, void, configuration and styling |
+| [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrolment, the allowlist, activation, states and errors |
+| [Sample app](example/README.md) and [token server](example-server/README.md) | Running both ways to pay against your sandbox paypoint |
+| [Payabli developer documentation](https://docs.payabli.com) | The API, OAuth, test accounts and the portal |
+
+### Language support
 
 The SDK is written in Kotlin. Its calls are `suspend` functions, so call them from a coroutine. The
 card-not-present form, `PayabliPayInForm`, is a Jetpack Compose composable.
 
-## Sample app
+## Sample app and testing
 
-[`example/`](example/README.md) is a Compose app that runs card-not-present and Tap to Pay against your
-sandbox paypoint. [`example-server/`](example-server/README.md) is its token server. Their READMEs say
-how to configure and run both.
+[`example/`](example/README.md) is a Compose app that takes card-not-present and Tap to Pay payments
+against your sandbox paypoint, and [`example-server/`](example-server/README.md) is its token server.
+Their READMEs say how to configure and run both. In sandbox, use Payabli's
+[test cards](https://docs.payabli.com/guides/test-accounts-reference).
 
 ## Privacy and data collection
 
