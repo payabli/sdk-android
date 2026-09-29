@@ -4,6 +4,10 @@ The `taptopay` module lets your app take a contactless card, phone or watch paym
 with no external reader. This guide is part of the [Payabli Android SDK](../README.md); set up the SDK and
 its session there first.
 
+> [!WARNING]
+> **This SDK is in beta.** Its public interface can change in ways that aren't backward compatible. See
+> [Versioning and support](../README.md#versioning-and-support).
+
 ## Requirements
 
 ### Your app
