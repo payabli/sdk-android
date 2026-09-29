@@ -1,0 +1,224 @@
+name: Release
+
+# Publishes a tagged release of every module to /maven, where a key is written once and never replaced,
+# then opens a GitHub Release at the tag carrying notes and no assets. The artifacts are resolved from the
+# Maven origin only.
+#
+# The tag is the trigger and `payabli.version` is the version. A tag naming anything else is refused
+# before anything is built, because a wrong coordinate on this prefix cannot be taken back.
+
+on:
+  push:
+    tags:
+      # A release version and nothing else. A candidate carries a qualifier and belongs on the mutable
+      # channel; the role this assumes would write it where it can never be replaced.
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+# See the note in qa-snapshot.yml: naming bash is what turns `-o pipefail` on.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Gradle, the suites and the card reader credential, and no identity that can write the origin. The
+  # upload runs on a fresh runner, so nothing a build script or a dependency leaves behind runs beside
+  # the token.
+  build:
+    name: Build the release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check the tag names the committed version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::tag '$TAG' does not match payabli.version '$version' in gradle.properties."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb # v6.3.0
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      # A tag answers to no CI run, so the suites run here. build-logic is an included build and takes its
+      # own invocation.
+      - name: Unit tests
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: |
+          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
+          ./gradlew -p build-logic test
+
+      # No version override: the check above is what makes the committed property the tag.
+      - name: Publish to the staging directory
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: ./gradlew publish
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-repo
+          path: build/staging-repo
+          if-no-files-found: error
+          retention-days: 1
+
+  # The environment cannot go on the upload job: a job with one presents `environment:<name>` as its OIDC
+  # subject and no ref, and the release role trusts `refs/tags/*`. So the review is a job of its own,
+  # granted nothing, entered after the build has passed.
+  approve:
+    name: Approve the release
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions: {}
+    steps:
+      - run: echo "approved for $GITHUB_REF"
+
+  upload:
+    name: Upload to /maven
+    needs: [approve]
+    # One release upload at a time, and a queued one waits rather than cancelling a run mid-upload: the
+    # keys already written stay written.
+    concurrency:
+      group: maven-release
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # For the uploader alone. No toolchain and no Gradle run in this job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Derived again rather than handed over by the build, so the version uploaded is read from the
+      # tagged commit by the job that writes it.
+      - name: Check the tag names the committed version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
+          if [ "$TAG" != "$version" ]; then
+            echo "::error::tag '$TAG' does not match payabli.version '$version' in gradle.properties."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # Variables rather than secrets: masking a role ARN makes every AccessDenied unreadable.
+      - name: Check the channel is provisioned
+        run: |
+          missing=
+          [ -n "$AWS_RELEASE_PUBLISH_ROLE_ARN" ] || missing="$missing AWS_RELEASE_PUBLISH_ROLE_ARN"
+          [ -n "$AWS_SDK_CDN_BUCKET" ] || missing="$missing AWS_SDK_CDN_BUCKET"
+          [ -n "$AWS_SDK_CDN_REGION" ] || missing="$missing AWS_SDK_CDN_REGION"
+          if [ -n "$missing" ]; then
+            echo "::error::unset repository variable(s):$missing"
+            exit 1
+          fi
+        env:
+          AWS_RELEASE_PUBLISH_ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+          AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      # The same check as qa-snapshot.yml, in the tag form this role trusts.
+      - name: Check the OIDC subject the trust policies expect
+        env:
+          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/tags/
+        run: |
+          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |
+            python3 -c 'import base64,json,sys; t=json.load(sys.stdin)["value"].split(".")[1]; print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())')
+          sub=$(printf '%s' "$claims" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sub"])')
+          echo "subject presented: $sub"
+          case "$sub" in
+            "$EXPECTED"*) ;;
+            *)
+              echo "::error::this run presents '$sub', and the release role grants '$EXPECTED*'."
+              echo "::error::GitHub's immutable subject claim setting for this repository may have moved."
+              echo "::error::The trust policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: staging-repo
+          path: build/staging-repo
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      # The release role writes /maven and nothing else. Asked before the upload, so a role that could also
+      # write the QA prefix publishes nothing. An allowed write lands an empty key on the mutable prefix.
+      - name: Check the role is refused on the QA prefix
+        env:
+          ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+        run: |
+          python3 -c '
+          import os, subprocess, sys
+          account = os.environ["ROLE_ARN"].split(":")[4]
+          r = subprocess.run(
+              ["aws", "s3api", "put-object", "--bucket", os.environ["AWS_SDK_CDN_BUCKET"],
+               "--key", "maven-qa/com/payabli/.release-role-probe", "--body", "/dev/null",
+               "--if-none-match", "*", "--expected-bucket-owner", account],
+              capture_output=True, text=True)
+          denied = r.returncode != 0 and "AccessDenied" in r.stderr
+          print("refused on maven-qa/, as it should be" if denied
+                else "::error::expected AccessDenied on maven-qa/, got: " + (r.stderr.strip() or "a successful write"))
+          sys.exit(0 if denied else 1)
+          '
+
+      # The account comes off the role ARN, so there is one copy of it. Re-running this job against the
+      # same build reports every key already written as present. A rebuild does not: its bytes differ,
+      # and the uploader refuses a key that holds different ones.
+      - name: Upload the staging tree
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+        run: |
+          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
+          export AWS_SDK_CDN_ACCOUNT
+          python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"
+
+  # Notes only. The binary is at the Maven origin, and a release asset cannot front a Maven layout.
+  release-notes:
+    name: Create the GitHub Release
+    needs: [upload]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # A re-run of a tag whose release already exists leaves it as it is.
+      - name: Create the release at the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
+            --jq ".[] | select(.tagName == \"$TAG\") | .tagName")
+          if [ -n "$existing" ]; then
+            echo "release $TAG already exists"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+          fi

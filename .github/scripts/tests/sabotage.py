@@ -73,6 +73,9 @@ MIRROR = WORKFLOW_DIR / "card-reader-mirror.yml"
 # The QA snapshot, whose channel, trigger and identifier are each green while wrong: a tree at the wrong
 # prefix uploads, a shared coordinate publishes, and a stamp that stops sorting still builds.
 QA = WORKFLOW_DIR / "qa-snapshot.yml"
+# The release, where a key is written once. Every mutation below is a run that would publish something
+# that can never be replaced, or publish it with nobody having looked.
+RELEASE = WORKFLOW_DIR / "release.yml"
 
 # The uploader. Its branches decide whether a key already at the origin is accepted, and every wrong
 # answer is a publish that reports success.
@@ -106,6 +109,7 @@ SOURCE = {
     SCRIPTS: SDK / ".github/workflows/scripts.yml",
     MIRROR: SDK / ".github/workflows/card-reader-mirror.yml",
     QA: SDK / ".github/workflows/qa-snapshot.yml",
+    RELEASE: SDK / ".github/workflows/release.yml",
     PUBLISHER: SDK / ".github/scripts/publish_staging.py",
     CI: SDK / ".github/workflows/ci.yml",
 }
@@ -993,20 +997,20 @@ MUTATIONS = [
     # each anchor below names every line between the one it breaks and `push:`. Adding an entry to the
     # filter therefore moves every anchor after it, and leaves them matching nothing.
     ("The harness stops running when the nightly changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
+     "      - '.github/workflows/nightly.yml'\n      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
      "      - '.github/workflows/nightly-disabled.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:"),
 
     ("The harness stops running when a live workflow changes", SCRIPTS, "workflows",
      "      - '.github/workflows/live-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
      "      - '.github/workflows/live-disabled-*.yml'\n      - '.github/workflows/nightly.yml'\n"
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:"),
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:"),
 
     ("The harness stops running when the card reader mirror changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror-disabled.yml'\n"
-     "      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:"),
+     "      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:"),
 
     # The mirror's permission split. The token is what turns repository-controlled code into an identity
     # that can write the origin, and every one of these hands it to a run that publishes nothing.
@@ -1184,8 +1188,85 @@ MUTATIONS = [
      'for module in ("taptopay",)'),
 
     ("The harness stops running when only ci.yml changes", SCRIPTS, "workflows",
-     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n  push:",
+     "      - '.github/workflows/card-reader-mirror.yml'\n      - '.github/workflows/ci.yml'\n      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
      "      - '.github/workflows/card-reader-mirror.yml'\n  push:"),
+
+    ("The harness stops running when release.yml changes", SCRIPTS, "workflows",
+     "      - '.github/workflows/qa-snapshot.yml'\n      - '.github/workflows/release.yml'\n  push:",
+     "      - '.github/workflows/qa-snapshot.yml'\n  push:"),
+
+    ("Release drops a suite ci.yml runs", RELEASE, "workflows",
+     ":testutils:test :taptopay:test :example:test\n          ./gradlew -p build-logic test",
+     ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
+
+    # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release can be dispatched, so it runs with a branch subject and no tag', RELEASE, "workflows",
+     'on:\n  push:\n',
+     'on:\n  workflow_dispatch:\n  push:\n'),
+
+    ('Release triggers on a candidate tag, which would land on the immutable prefix', RELEASE, "workflows",
+     "      - '[0-9]+.[0-9]+.[0-9]+'\n",
+     "      - '*.*.*'\n"),
+
+    ('Release builds without checking the tag against the committed version', RELEASE, "workflows",
+     '      - name: Check the tag names the committed version\n        env:\n          TAG: ${{ github.ref_name }}\n        run: |\n          version=$(grep \'^payabli.version=\' gradle.properties | cut -d= -f2)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
+     '      - uses: actions/setup-java'),
+
+    ('Release publishes a version other than the committed one', RELEASE, "workflows",
+     '        run: ./gradlew publish\n',
+     '        run: ./gradlew publish -Ppayabli.version=0.1.0\n'),
+
+    ('Release uploads with nobody approving it', RELEASE, "workflows",
+     '    environment: release\n',
+     ''),
+
+    ('Release upload skips the gate', RELEASE, "workflows",
+     '    needs: [approve]\n',
+     '    needs: [build]\n'),
+
+    ('Release upload names the environment, so its subject loses the tag', RELEASE, "workflows",
+     '    name: Upload to /maven\n',
+     '    name: Upload to /maven\n    environment: release\n'),
+
+    ('Release grants the publishing token to every job', RELEASE, "workflows",
+     'permissions:\n  contents: read\n\n#',
+     'permissions:\n  contents: read\n  id-token: write\n\n#'),
+
+    ('Release runs Gradle beside the publishing token', RELEASE, "workflows",
+     '      # For the uploader alone. No toolchain and no Gradle run in this job.\n',
+     '      - run: ./gradlew help\n      # For the uploader alone. No toolchain and no Gradle run in this job.\n'),
+
+    ('Release hands the uploading job a secret', RELEASE, "workflows",
+     '          VERSION: ${{ steps.version.outputs.version }}\n',
+     '          VERSION: ${{ steps.version.outputs.version }}\n          TOKEN: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+
+    ('Release uploads a version it never checked', RELEASE, "workflows",
+     '          VERSION: ${{ steps.version.outputs.version }}\n',
+     '          VERSION: 0.0.1\n'),
+
+    ('Release uploads to the QA prefix', RELEASE, "workflows",
+     '--prefix maven --version',
+     '--prefix maven-qa --version'),
+
+    ('Release subject check accepts a branch, which the release role never grants', RELEASE, "workflows",
+     'EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/tags/',
+     'EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/'),
+
+    ('Release probes its own prefix, so a role that can write QA goes unnoticed', RELEASE, "workflows",
+     '"--key", "maven-qa/com/payabli/.release-role-probe"',
+     '"--key", "maven/com/payabli/.release-role-probe"'),
+
+    ('Release lets a queued upload cancel one mid-upload', RELEASE, "workflows",
+     '      group: maven-release\n      cancel-in-progress: false\n',
+     '      group: maven-release\n      cancel-in-progress: true\n'),
+
+    ('Release runs an action on a moving tag', RELEASE, "workflows",
+     'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8',
+     'actions/download-artifact@v8'),
+
+    ('Release notes job fetches the artifacts, so it could attach them', RELEASE, "workflows",
+     '    permissions:\n      contents: write\n    steps:\n',
+     '    permissions:\n      contents: write\n    steps:\n      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'),
 
 ]
 

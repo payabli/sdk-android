@@ -43,6 +43,7 @@ on:
       - '.github/workflows/card-reader-mirror.yml'
       - '.github/workflows/ci.yml'
       - '.github/workflows/qa-snapshot.yml'
+      - '.github/workflows/release.yml'
   push:
     branches: [main]
     paths:
@@ -53,6 +54,7 @@ on:
       - '.github/workflows/card-reader-mirror.yml'
       - '.github/workflows/ci.yml'
       - '.github/workflows/qa-snapshot.yml'
+      - '.github/workflows/release.yml'
 
 concurrency:
   group: scripts-${{ github.ref }}
