@@ -306,6 +306,9 @@ look up when there is one. When there isn't, find the transaction in the Payabli
 again. On card-not-present, setting `orderId` on each request lets you find it by your own reference.
 Store the transaction ID with your order every time you get one.
 
+A card-not-present capture sent with `isAsync = true` returns once the service accepts it, before the
+processor answers. Treat its success as unknown, and look the transaction up before you fulfill the order.
+
 Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes-and-errors) and
 [Tap to Pay](taptopay/README.md#outcomes-and-errors).
 

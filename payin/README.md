@@ -134,12 +134,24 @@ retry. Don't resend a charge whose outcome is unknown. Find the transaction firs
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
 `CancellationException`. A form reports through `onCompleted` and `onFailed`, whose argument's `cause` is
-the exception. The outcomes are the ones in the root README's
+the exception.
+
+A success means what the call did, which depends on the call:
+
+| Call | A success means | A failure means |
+|---|---|---|
+| `capture` | The payment was charged. With `isAsync = true`, only that the service accepted it: look the transaction up before you fulfill the order | See the table below |
+| `authorize` | An amount is held on the card. Nothing is charged until you capture it | No hold was placed |
+| `captureAuthorizedTransaction` | The held amount was charged | The hold wasn't captured |
+| `voidTransaction` | The transaction was voided | The void was refused. It doesn't mean the original payment wasn't charged |
+| `storeMethod` | The method was saved | The method wasn't saved |
+
+For a charge, the outcomes are the ones in the root README's
 [Handle the outcome](../README.md#handle-the-outcome):
 
 | Result | Outcome | What to do |
 |---|---|---|
-| `Result.success` | Charged, or saved | Store the transaction ID or the stored method ID |
+| `Result.success` | Charged, except an `isAsync` capture, which is accepted and not yet known | Store the transaction ID; look an async capture up before fulfilling |
 | `PayInException.Refused`, for example a decline | Not charged | You can retry |
 | `PayInException.InvalidInput` | Not charged; the request was refused before it was sent | Fix the named field |
 | `PayInException.Unsettled`, or a cancellation of `capture` after it was called | Unknown | Look the transaction up before charging again. `Unsettled.paymentTransId` names it when there is one |
