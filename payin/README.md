@@ -58,7 +58,7 @@ PayabliPayInForm(
         PayInTransactionOptions(PayInPaymentDetails(totalAmount = BigDecimal("12.34"))),
     ),
     configuration = PayInFormConfiguration(),
-    onCompleted = { succeeded -> /* charged, or saved */ },
+    onCompleted = { succeeded -> /* store the transaction ID or stored method ID; don't log it */ },
     onFailed = { failed -> /* failed.cause says why; see Outcomes and errors */ },
     onMethodChanged = { },
 )
