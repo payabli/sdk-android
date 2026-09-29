@@ -112,8 +112,8 @@ try {
     ttp.initialize()
 } catch (failure: TapToPayException) {
     if (ttp.sessionState.value == TapToPaySessionState.PendingActivation) {
-        // The phone needs an activation code, the app isn't on the allowlist, or the credentials lack a
-        // Tap to Pay permission. See Activate a phone.
+        // The phone needs an activation code, the app isn't on the allowlist, or the credentials lack
+        // tools_init or pos_create. See Activate a phone.
     } else {
         throw failure
     }
@@ -133,8 +133,9 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
   recently, which then needs to be set up again the next time it's used.
 
 Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`. An app that
-isn't on the allowlist, or credentials without the Tap to Pay permissions, land in the same state, so check
-both before issuing a code.
+isn't on the allowlist, or credentials without `tools_init` or `pos_create`, land in the same state, so check
+both before issuing a code. Credentials without `inboundpayments_create` reach `Ready`, and `charge` is then
+refused before the card is read.
 
 1. Issue a code for the phone. In the Payabli portal, under **Device Management**, the waiting device's
    options include **Activate device**. The code is valid for 30 minutes, and asking again before it
@@ -209,7 +210,7 @@ lookup.
 | `Idle` | Not started, or activated and waiting for `initialize()`. |
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
 | `Ready` | Ready to charge. |
-| `PendingActivation` | The phone needs an activation code, the app isn't on the paypoint's allowlist, or the credentials lack a Tap to Pay permission. |
+| `PendingActivation` | The phone needs an activation code, the app isn't on the paypoint's allowlist, or the credentials lack `tools_init` or `pos_create`. |
 | `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
 | `Reinitializing` | The session is being refreshed. |
 | `Failed(reason)` | The session stopped. `reason` says what to do. |
