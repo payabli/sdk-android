@@ -1938,6 +1938,7 @@ LIVE_WORKFLOWS = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml")
 # origin. Named once, because three checks below and the path filter all have to mean the same file.
 MIRROR_WORKFLOW = "card-reader-mirror.yml"
 QA_WORKFLOW = "qa-snapshot.yml"
+RELEASE_WORKFLOW = "release.yml"
 
 
 def workflow_text(name: str) -> str:
@@ -2845,7 +2846,7 @@ def test_workflows():
     # the push. W8 was added for `nightly.yml` while that file was outside the filter, so the assertion and
     # its two mutations could not have run on the change that broke them.
     guarded = ("live-flows.yml", "live-qa.yml", "live-sandbox.yml", "nightly.yml", MIRROR_WORKFLOW,
-               "ci.yml")
+               "ci.yml", RELEASE_WORKFLOW)
     harness = workflow_doc("scripts.yml")
     triggers = next((harness[key] for key in (True, "on") if isinstance(harness.get(key), dict)), {})
     for event in ("pull_request", "push"):
@@ -3710,6 +3711,186 @@ def test_workflows():
     check("W16 and it authenticates to AWS", assume is not None, names)
     if subject is not None and assume is not None:
         check("W16 and the subject check runs before the assume", subject < assume, f"{subject} vs {assume}")
+
+    # W17 the release's properties. A key under /maven is written once, so each of these is a mistake
+    # that cannot be taken back once a tag has run: a wrong version, a candidate on the immutable prefix,
+    # a token beside Gradle, or an upload nobody reviewed.
+    rel = workflow_doc(RELEASE_WORKFLOW)
+    rel_on = (rel.get(True) if True in rel else rel.get("on")) or {}
+    rel_jobs = {name: job for name, job in (rel.get("jobs") or {}).items() if isinstance(job, dict)}
+    rel_steps = steps_of(rel)
+    rel_text = workflow_text(RELEASE_WORKFLOW)
+
+    def job_steps(job: dict) -> list[dict]:
+        return [step for step in (job.get("steps") or []) if isinstance(step, dict)]
+
+    # A dispatch presents a branch subject and names no tag, and a schedule or a pull request is a run
+    # nobody cut. A tag push is the act.
+    check(f"W17 {RELEASE_WORKFLOW} triggers on a tag push and nothing else",
+          set(rel_on) == {"push"} and set(rel_on.get("push") or {}) == {"tags"}, f"{rel_on}")
+    # The whole pattern: `*` or `*.*.*` also takes `0.1.0-rc.1`, which belongs on the mutable channel.
+    tags = (rel_on.get("push") or {}).get("tags") or []
+    check("W17 and only on a release version, never a candidate",
+          tags == ["[0-9]+.[0-9]+.[0-9]+"], f"{tags}")
+
+    uploading = {name: job for name, job in rel_jobs.items() if mints(job.get("permissions"))}
+    check("W17 exactly one job mints the publishing identity", len(uploading) == 1, f"{sorted(uploading)}")
+    check("W17 and the workflow grants no token for a job to inherit",
+          not mints(rel.get("permissions")), f"{rel.get('permissions')}")
+    upload_name = next(iter(uploading), "")
+    upload_job = uploading.get(upload_name, {})
+    upload_steps = job_steps(upload_job)
+
+    # Nothing but the workflow's own code runs beside the token: no toolchain, no Gradle and no secret,
+    # so a build script or a dependency cannot reach it.
+    upload_body = " ".join(step_text(step) for step in upload_steps)
+    check("W17 the uploading job runs no Gradle", "gradlew" not in upload_body)
+    check("W17 and sets up no toolchain",
+          not any(tool in upload_body for tool in ("setup-java", "setup-gradle")))
+    check("W17 and mentions no secret", not SECRETS_CONTEXT.search(yaml.safe_dump(upload_job)))
+
+    # The review, which cannot sit on the uploading job without changing its subject.
+    gate = {name: job for name, job in rel_jobs.items() if str(job.get("environment", "")) == "release"}
+    check("W17 the upload waits for the release environment", len(gate) == 1, f"{sorted(gate)}")
+    gate_name = next(iter(gate), "")
+    gate_job = gate.get(gate_name, {})
+    check("W17 and the uploading job names no environment, so its subject keeps the tag",
+          not upload_job.get("environment"), str(upload_job.get("environment", "")))
+    check("W17 and the gate mints no token", not mints(gate_job.get("permissions")),
+          f"{gate_job.get('permissions')}")
+    check("W17 and the upload needs the gate", gate_name in needs_of(upload_job), f"{upload_job.get('needs')}")
+    # Entered after the build has passed, so a reviewer approves a tested tree rather than a start.
+    builder = next((name for name, job in rel_jobs.items()
+                    if any("gradlew publish" in run_commands(step) for step in job_steps(job))), "")
+    check("W17 and the gate needs the build", bool(builder) and builder in needs_of(gate_job),
+          f"build={builder} needs={gate_job.get('needs')}")
+    # A job condition is how a gate is stepped around: `always()` uploads through a refusal.
+    conditioned = [name for name in (upload_name, gate_name) if rel_jobs.get(name, {}).get("if")]
+    check("W17 and neither the gate nor the upload carries a condition", not conditioned, f"{conditioned}")
+
+    # The tag is checked against the property in the job that builds and in the job that uploads, and
+    # before either does anything. The build's Gradle carries no override, so the property is the version.
+    def tag_check(steps) -> int | None:
+        return next((i for i, step in enumerate(steps)
+                     if "payabli.version=" in run_commands(step) and "github.ref_name" in step_text(step)
+                     and "exit 1" in run_commands(step)), None)
+
+    build_steps = job_steps(rel_jobs.get(builder, {}))
+    # The unit tier is all this workflow runs, so the rest of what CI proves has to have passed for the
+    # tagged commit on main. Asked before anything is built, and the run has to have succeeded.
+    ci_gate = next((i for i, step in enumerate(build_steps)
+                    if "gh run list" in run_commands(step) and "--workflow ci.yml" in run_commands(step)), None)
+    ci_run = run_commands(build_steps[ci_gate]) if ci_gate is not None else ""
+    check("W17 the build refuses a commit that has not passed CI on main",
+          ci_gate is not None and all(term in ci_run for term in
+                                      ("--commit", "--event push", "--branch main", 'conclusion == "success"', "exit 1")),
+          ci_run[:200])
+    first_gradle = next((i for i, step in enumerate(build_steps) if "gradlew" in run_commands(step)), None)
+    checked = tag_check(build_steps)
+    if ci_gate is not None and first_gradle is not None:
+        check("W17 and asks before anything is built", ci_gate < first_gradle, f"{ci_gate} vs {first_gradle}")
+    check("W17 the build refuses a tag that is not the committed version",
+          checked is not None and first_gradle is not None and checked < first_gradle,
+          f"check={checked} first gradle={first_gradle}")
+    # The suites ci.yml runs, read off it for the reason W16 gives: a list written twice drifts.
+    suites_run = set(re.findall(r":([A-Za-z0-9_-]+):test\b", " ".join(gradle_arguments(step) for step in build_steps)))
+    check("W17 and the build runs every suite ci.yml runs", bool(ci_suites) and ci_suites <= suites_run,
+          f"missing={sorted(ci_suites - suites_run)}")
+    check("W17 and the convention plugin tests",
+          any("-p build-logic test" in gradle_arguments(step) for step in build_steps))
+    publishes = [words for step in rel_steps for words in invocations(step, "gradlew") if "publish" in words]
+    check("W17 and it runs the publish task once", len(publishes) == 1, f"{len(publishes)} invocations")
+    check("W17 and publishes the committed version, with no override",
+          bool(publishes) and not any(word.startswith("-Ppayabli.version") for word in publishes[0]),
+          " ".join(publishes[0]) if publishes else "")
+
+    uploader = next((i for i, step in enumerate(upload_steps)
+                     if "publish_staging.py" in run_commands(step)), None)
+    rechecked = tag_check(upload_steps)
+    check("W17 the upload derives the version again before uploading",
+          rechecked is not None and uploader is not None and rechecked < uploader,
+          f"check={rechecked} upload={uploader}")
+    uploads = [words for step in rel_steps for words in invocations(step, "publish_staging.py")]
+    mentions = [word for step in rel_steps for word in run_commands(step).split()
+                if word.endswith("publish_staging.py")]
+    check("W17 it runs the uploader once", len(uploads) == 1 and len(mentions) == 1,
+          f"{len(uploads)} invocations, {mentions}")
+    words = uploads[0] if uploads else []
+    check("W17 and to the release prefix", argument(words, "--prefix") == "maven", " ".join(words))
+    if uploader is not None and rechecked is not None:
+        version_step = upload_steps[rechecked]
+        given = argument(words, "--version") or ""
+        source = str((upload_steps[uploader].get("env") or {}).get(given.lstrip("$").strip("{}"), ""))
+        check("W17 and the version it uploads is the one it checked",
+              f"steps.{version_step.get('id', '')}.outputs" in source, f"--version {given} = {source}")
+
+    # The same subject check as the snapshot, in the tag form, and before anything assumes the role.
+    names = " | ".join(str(step.get("name", "")) for step in upload_steps)
+    subject = next((i for i, step in enumerate(upload_steps)
+                    if "ACTIONS_ID_TOKEN_REQUEST_URL" in step_text(step)), None)
+    assume = next((i for i, step in enumerate(upload_steps)
+                   if "configure-aws-credentials" in str(step.get("uses", ""))), None)
+    check("W17 it checks the OIDC subject it presents", subject is not None, names)
+    if subject is not None:
+        expected = str((upload_steps[subject].get("env") or {}).get("EXPECTED", ""))
+        check("W17 and the subject it expects is a tag", expected.endswith(":ref:refs/tags/"), expected)
+    check("W17 and it authenticates to AWS", assume is not None, names)
+    if subject is not None and assume is not None:
+        check("W17 and the subject check runs before the assume", subject < assume, f"{subject} vs {assume}")
+    role = str(((upload_steps[assume].get("with") or {}) if assume is not None else {}).get("role-to-assume", ""))
+    check("W17 the role it assumes comes from a variable",
+          " ".join(role.split()) == "${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}", role)
+    check("W17 and no role ARN is written inline", "arn:aws:iam:" not in rel_text)
+
+    # Asked before the upload and after the assume: the role writes /maven and must be refused on the QA
+    # prefix, and one that is not publishes nothing.
+    # On the key the probe writes, not on the words around it: its messages name the QA prefix too, so a
+    # probe aimed at /maven would still mention it.
+    probe = next((i for i, step in enumerate(upload_steps)
+                  if re.search(r'"--key",\s*"maven-qa/', str(step.get("run", "")))
+                  and "AccessDenied" in str(step.get("run", ""))), None)
+    check("W17 it checks the role is refused on the QA prefix",
+          probe is not None and assume is not None and uploader is not None and assume < probe < uploader,
+          f"assume={assume} probe={probe} upload={uploader}")
+
+    # One upload at a time, and a running one is not cancelled: the keys it has written stay written.
+    concurrency = upload_job.get("concurrency")
+    group = str((concurrency or {}).get("group", "")) if isinstance(concurrency, dict) else str(concurrency or "")
+    check("W17 one upload runs at a time across tags", bool(group) and "${{" not in group, group)
+    cancels = str((concurrency or {}).get("cancel-in-progress", "")) if isinstance(concurrency, dict) else ""
+    check("W17 and a running upload is never cancelled", cancels == "False", cancels or "not set")
+
+    # The release's write is for the notes and nothing else, so no other job is granted one.
+    writers = sorted(name for name, job in rel_jobs.items()
+                     if isinstance(job.get("permissions"), dict)
+                     and job["permissions"].get("contents") == "write")
+    check("W17 exactly one job may write the repository", len(writers) == 1, f"{writers}")
+    writer_steps = job_steps(rel_jobs.get(writers[0], {})) if writers else []
+    check("W17 and it runs after the upload",
+          bool(writers) and upload_name in needs_of(rel_jobs[writers[0]]), f"{writers}")
+    check("W17 and it creates the release", any("gh release create" in run_commands(step) for step in writer_steps),
+          " | ".join(run_commands(step)[:80] for step in writer_steps))
+    # Nothing to attach rather than a reading of gh's arguments: with no checkout and no artifact the job
+    # holds no file, and `gh release upload` is the only other way one arrives.
+    carried = [str(step.get("uses") or run_commands(step)[:60]) for step in writer_steps
+               if any(action in str(step.get("uses", "")) for action in ("checkout", "download-artifact"))
+               or "gh release upload" in run_commands(step)]
+    check("W17 and it has no file to attach", not carried, " | ".join(carried))
+
+    unpinned = [ref for ref in (str(step.get("uses")).strip() for step in rel_steps if step.get("uses"))
+                if not PINNED.match(ref)]
+    check("W17 every action it runs is pinned to a commit", not unpinned, " | ".join(unpinned))
+    masked = unstoppable(rel_steps)
+    check("W17 no step of it can fail without failing the job", not masked, " | ".join(masked))
+    shell = ((rel.get("defaults") or {}).get("run") or {}).get("shell")
+    check("W17 it runs its steps under a shell with pipefail", shell == "bash", f"{shell}")
+    # The card reader credential goes to the steps that run Gradle and nowhere else.
+    holding = [step for step in rel_steps if SECRETS_CONTEXT.search(json.dumps(step, default=str))]
+    check("W17 only a step that runs Gradle holds a secret",
+          bool(holding) and all("gradlew" in run_commands(step) for step in holding),
+          " | ".join(str(step.get("name", "")) for step in holding))
+    check("W17 no credential is declared for the whole workflow", not (rel.get("env") or {}),
+          f"{sorted(rel.get('env') or {})}")
 
 
 

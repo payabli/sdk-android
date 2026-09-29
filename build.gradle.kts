@@ -58,7 +58,9 @@ sonar {
         // app and its token server are not shipped. Nothing an integrator installs contains a line of them,
         // so a coverage figure over them measures how thoroughly the demonstration is tested and reports it
         // as though it were the product. Every module that IS the product stays measured, composables now
-        // included. Coverage only, again, so the sample is still analysed for issues and duplication.
+        // included. Coverage only, again, so the sample is still analysed for issues and duplication. The CI
+        // scripts and their harness under `.github/` are the same case: they ship in nothing, and their tests
+        // run in scripts.yml, which reports no coverage.
         property(
             "sonar.coverage.exclusions",
             listOf(
@@ -66,6 +68,7 @@ sonar {
                 "**/sdk/testutils/**",
                 "**/com/payabli/example/**",
                 "example-server/**",
+                ".github/**",
             ).joinToString(","),
         )
 
