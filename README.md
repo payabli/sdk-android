@@ -7,8 +7,9 @@ The Payabli Android SDK lets an Android app take payments through Payabli in two
 - **Tap to Pay.** The payer taps a contactless card, phone or watch on the Android phone, with no external
   reader. This is the `taptopay` module, documented in [`taptopay/README.md`](taptopay/README.md).
 
-Your app never holds a Payabli credential. It supplies a function that fetches a short-lived access
-token from your backend, and the SDK calls it when it needs one.
+Your app never holds your Payabli client ID or client secret. It supplies a function that fetches a
+short-lived access token from your backend, and the SDK calls it when it needs one. The SDK holds that
+token in memory while the session runs.
 
 ## Terms used in this guide
 
