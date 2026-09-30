@@ -1200,6 +1200,14 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release tags again on a resumed run, the guard removed', RELEASE, "workflows",
+     '          if [ -z "$tagged" ]; then\n',
+     '          if true; then\n'),
+
+    ('Release tags only when the version is already tagged', RELEASE, "workflows",
+     'if [ -z "$tagged" ]; then',
+     'if [ -n "$tagged" ]; then'),
+
     ('Release takes a CI run from any branch, the branch filter echoed beside the query', RELEASE, "workflows",
      '--event push \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
      '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch main\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),

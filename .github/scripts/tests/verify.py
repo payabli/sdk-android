@@ -3823,6 +3823,17 @@ def test_workflows():
     check("W17 and the host keys come from GitHub's API",
           ["gh", "api", "meta", "--jq", '.ssh_keys[] | "github.com " + .', ">", "$hosts"] in tag_commands,
           f"{tag_commands[:10]}")
+    # A tag already on this commit is a resumed release: the tag and the push sit inside the guard that
+    # skips them, so a re-run after a failed dispatch goes on to dispatch rather than failing at `git tag`.
+    joined = [" ".join(command) for command in tag_commands]
+    guard = joined.index("if [ -z $tagged ]") if "if [ -z $tagged ]" in joined else None
+    close = joined.index("fi", guard) if guard is not None and "fi" in joined[guard:] else None
+    inside = [i for i, command in enumerate(tag_commands)
+              if command[:2] == ["git", "tag"] or (command[1:3] == ["git", "push"])]
+    check("W17 and it tags and pushes only when the version is not yet tagged",
+          guard is not None and close is not None and joined[guard + 1:guard + 2] == ["then"]
+          and len(inside) == 2 and all(guard < i < close for i in inside),
+          f"guard={guard} close={close} tag/push at {inside}")
     # A tag already on another commit is a spent number, and pushing over it is refused.
     check("W17 and it refuses a version already tagged on another commit",
           len(tagging) == 1 and refuses(tagging[0], "[ -n $tagged ] && [ $tagged != $COMMIT ]"), pushed[:200])
