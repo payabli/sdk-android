@@ -1200,6 +1200,10 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release keeps the tag-name guard but drops its exit, leaving the next guard to exit', RELEASE, "workflows",
+     'so it is not a release tag."\n            exit 1\n',
+     'so it is not a release tag."\n'),
+
     ('Release lets a commit with no successful CI through the check', RELEASE, "workflows",
      '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
      '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),

@@ -3729,10 +3729,15 @@ def test_workflows():
 
     # A guard is its predicate, not its words: `-lt 0` for `-lt 1`, or a dropped `!`, keeps every word and
     # refuses nothing. So the exact test has to open an `if` that ends in `exit 1`.
+    # Up to the guard's own `fi`, so a later guard's `exit 1` cannot vouch for this one. Guards here are
+    # never nested, so the first `fi` after the `then` closes it.
     def refuses(step: dict, predicate: str) -> bool:
         text = run_commands(step)
         opened = text.find(f"if {predicate} ; then")
-        return opened >= 0 and "exit 1" in text[opened:]
+        if opened < 0:
+            return False
+        closed = text.find(" fi", opened)
+        return "exit 1" in text[opened:closed if closed >= 0 else len(text)]
 
     RELEASE_VERSION = "release=^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
 
