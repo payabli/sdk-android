@@ -3727,6 +3727,15 @@ def test_workflows():
     def condition(job: dict) -> str:
         return " ".join(str(job.get("if", "")).split())
 
+    # A guard is its predicate, not its words: `-lt 0` for `-lt 1`, or a dropped `!`, keeps every word and
+    # refuses nothing. So the exact test has to open an `if` that ends in `exit 1`.
+    def refuses(step: dict, predicate: str) -> bool:
+        text = run_commands(step)
+        opened = text.find(f"if {predicate} ; then")
+        return opened >= 0 and "exit 1" in text[opened:]
+
+    RELEASE_VERSION = "release=^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+
     # Dispatched and nothing else. A tag push would be a person creating the release, and a schedule or a
     # pull request is a run nobody cut.
     check(f"W17 {RELEASE_WORKFLOW} is dispatched and has no other trigger",
@@ -3801,7 +3810,8 @@ def test_workflows():
         return next((i for i, step in enumerate(steps)
                      if all(term in run_commands(step) for term in
                             ("gh run list", "--workflow ci.yml", "--commit", "--event push", "--branch main",
-                             'conclusion == "success"', "exit 1"))), None)
+                             'conclusion == "success"'))
+                     and refuses(step, "[ $passed -lt 1 ]")), None)
 
     checker_steps = job_steps(checker)
     gated = ci_gated(checker_steps)
@@ -3813,19 +3823,23 @@ def test_workflows():
     in_full = [step for step in checker_steps if "^[0-9a-f]{40}$" in run_commands(step)]
     on_main = [step for step in checker_steps if "git merge-base $COMMIT origin/main" in run_commands(step)]
     check("W17 and a commit named in full",
-          len(in_full) == 1 and env_of(in_full[0], "COMMIT") == named and "$COMMIT =~" in run_commands(in_full[0]),
+          len(in_full) == 1 and env_of(in_full[0], "COMMIT") == named
+          and refuses(in_full[0], "[[ ! $COMMIT =~ ^[0-9a-f]{40}$ ]]"),
           f"{[env_of(step, 'COMMIT') for step in in_full]}")
-    check("W17 and one that is on main", len(on_main) == 1 and env_of(on_main[0], "COMMIT") == named,
+    check("W17 and one that is on main",
+          len(on_main) == 1 and env_of(on_main[0], "COMMIT") == named
+          and refuses(on_main[0], "[ $(git merge-base $COMMIT origin/main) != $COMMIT ]"),
           f"{[env_of(step, 'COMMIT') for step in on_main]}")
     checked_out = [step.get("with") or {} for step in checker_steps if "actions/checkout" in str(step.get("uses", ""))]
     check("W17 and it reads the version at that commit",
           bool(checked_out) and " ".join(str(checked_out[0].get("ref", "")).split()) == "${{ inputs.commit }}",
           f"{checked_out}")
-    versioned = " ".join(run_commands(step) for step in job_steps(checker))
-    # A release version only: a candidate belongs on the mutable channel.
+    # A release version only: a candidate belongs on the mutable channel. The step that reads it, alone.
+    reading = [step for step in checker_steps if "payabli.version=" in run_commands(step)]
     check("W17 and it reads the version as <major>.<minor>.<patch> and nothing else",
-          "payabli.version=" in versioned and "(0|[1-9][0-9]*)" in versioned and "exit 1" in versioned,
-          versioned[-200:])
+          len(reading) == 1 and RELEASE_VERSION in run_commands(reading[0])
+          and refuses(reading[0], "[[ ! $version =~ $release ]]"),
+          run_commands(reading[0])[:200] if reading else "")
 
     uploading = {name: job for name, job in rel_jobs.items() if mints(job.get("permissions"))}
     check("W17 exactly one job mints the publishing identity", len(uploading) == 1, f"{sorted(uploading)}")
@@ -3865,18 +3879,19 @@ def test_workflows():
     def tag_check(steps) -> int | None:
         return next((i for i, step in enumerate(steps)
                      if "payabli.version=" in run_commands(step) and "github.ref_name" in step_text(step)
-                     and "exit 1" in run_commands(step)), None)
+                     and refuses(step, "[ $TAG != $version ]")), None)
 
     build_steps = job_steps(rel_jobs.get(builder, {}))
     same = next((i for i, step in enumerate(build_steps)
-                 if "$GITHUB_SHA != $COMMIT" in run_commands(step)
+                 if refuses(step, "[ $GITHUB_SHA != $COMMIT ]")
                  and (step.get("env") or {}).get("COMMIT") == "${{ inputs.commit }}"), None)
     check("W17 the build refuses a tag that does not name the commit it was given",
           same is not None and all("gradlew" not in run_commands(step) for step in build_steps[:same]), f"{same}")
     # The tag's own name, before anything else: a dispatch can name any tag the ruleset let exist.
     first = run_commands(build_steps[0]) if build_steps else ""
     check("W17 and the first thing it does is refuse a tag that is not a release version",
-          "(0|[1-9][0-9]*)" in first and "$GITHUB_REF_NAME =~" in first and "exit 1" in first, first[:200])
+          bool(build_steps) and RELEASE_VERSION in first
+          and refuses(build_steps[0], "[[ ! $GITHUB_REF_NAME =~ $release ]]"), first[:200])
     # Asked again on the tag, because anyone who can dispatch can dispatch on an existing tag.
     ci_gate = ci_gated(build_steps)
     # The run's own commit here, which is the tag's, and nothing written in by hand.
