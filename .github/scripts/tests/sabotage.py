@@ -1200,6 +1200,18 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release overrides the version it read with export', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          export version=0.0.1\n          release="),
+
+    ('Release overrides the version it read with printf -v', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          printf -v version 0.0.1\n          release="),
+
+    ('Release overrides the version it read with eval', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          eval version=0.0.1\n          release="),
+
     ('Release tags again on a resumed run, the guard removed', RELEASE, "workflows",
      '          if [ -z "$tagged" ]; then\n',
      '          if true; then\n'),

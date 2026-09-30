@@ -3798,9 +3798,28 @@ def test_workflows():
 
     # A value read by a command, as commands: `var=$(command)` and no other assignment to var in the step,
     # so neither a hard-coded value nor an echo carrying the right words can stand in for the read.
+    # An assignment is any way the shell sets a variable, not only `var=`: a prefix assignment, a builtin
+    # that takes the name (`export var=…`, `read var`, `printf -v var`), and `eval` or `source`, which can
+    # set anything and so are refused in a read step outright.
+    SETTERS = ("export", "declare", "typeset", "local", "readonly", "let", "read", "mapfile", "readarray",
+               "unset", "printf")
+
+    def assignments(commands: list[list[str]], var: str) -> list[int]:
+        found = []
+        for i, words in enumerate(commands):
+            head = program_index(words)
+            prefix, rest = words[:head], words[head:]
+            named = rest[:1] and rest[0] in SETTERS and any(
+                word == var or word.startswith(f"{var}=") for word in rest[1:])
+            if any(word.startswith(f"{var}=") for word in prefix) or named:
+                found.append(i)
+        return found
+
     def reads(step: dict, var: str, command: list[str]) -> bool:
         commands = full_commands(step)
-        assigned = [i for i, words in enumerate(commands) if words and words[0].startswith(f"{var}=")]
+        if any(words[program_index(words):][:1] in (["eval"], ["source"], ["."]) for words in commands):
+            return False
+        assigned = assignments(commands, var)
         return (len(assigned) == 1 and commands[assigned[0]] == [f"{var}=$"]
                 and commands[assigned[0] + 1:assigned[0] + 2] == [command])
 
