@@ -64,12 +64,15 @@ fun FormLookTheme(
 /**
  * The top bar's three-dots menu: presets, then every setting in named groups.
  *
- * Each pick applies and closes the menu, so the whole form is on screen when it changes.
+ * Each pick applies and closes the menu, so the whole form is on screen when it changes. A pick while a
+ * submission is in flight would reshape the form the request was built from, so the caller holds the
+ * menu closed while one runs.
  */
 @Composable
 fun FormSettingsMenu(
     settings: FormSettings,
     onSettingsChange: (FormSettings) -> Unit,
+    enabled: Boolean = true,
 ) {
     var open by remember { mutableStateOf(false) }
     val pick: (FormSettings) -> Unit = {
@@ -77,7 +80,7 @@ fun FormSettingsMenu(
         open = false
     }
 
-    IconButton(onClick = { open = true }) {
+    IconButton(onClick = { open = true }, enabled = enabled) {
         Icon(DemoIcons.More, contentDescription = "Customize the form")
     }
     DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

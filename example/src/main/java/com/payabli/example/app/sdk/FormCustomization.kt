@@ -44,7 +44,7 @@ object FormCustomization {
         val summary =
             PayInFormSection(
                 title = if (settings.customWording) "Order total" else null,
-                fields = listOf(PayInField.Amount),
+                fields = listOf(PayInField.Amount, PayInField.ServiceFee),
                 style = PayInSectionStyle.Summary,
             ).takeIf { operation == FormOperation.Capture }
 
@@ -102,19 +102,26 @@ object FormCustomization {
             fieldPlaceholders = if (settings.hideLabels) PLACEHOLDERS else emptyMap(),
         )
 
-    /** The operation the form submits. With the customer section off, the app supplies the customer. */
+    /**
+     * The operation the form submits. With the customer section off, the app supplies the customer, and a
+     * capture's fee is the one for [method], included in its `totalAmount`.
+     */
     fun operation(
         settings: FormSettings,
         operation: FormOperation,
         amount: BigDecimal,
         idempotencyKey: String?,
+        method: PayInMethodType,
     ): PayabliPayInOperation {
         val supplied = DEMO_CUSTOMER.takeUnless { settings.customerSection }
         return when (operation) {
             FormOperation.Capture ->
                 PayabliPayInOperation.Capture(
                     PayInTransactionOptions(
-                        PayInPaymentDetails(totalAmount = amount),
+                        PayInPaymentDetails(
+                            totalAmount = amount + serviceFee(method),
+                            serviceFee = serviceFee(method),
+                        ),
                         customerData = supplied,
                         idempotencyKey = idempotencyKey,
                     ),
@@ -126,6 +133,13 @@ object FormCustomization {
                 )
         }
     }
+
+    /** The fee this screen puts on a payment, which differs by instrument. `totalAmount` includes it. */
+    private fun serviceFee(method: PayInMethodType): BigDecimal =
+        when (method) {
+            PayInMethodType.Card -> CARD_SERVICE_FEE
+            PayInMethodType.BankAccount -> BANK_SERVICE_FEE
+        }
 
     /** Null for the app theme, which the form follows with nothing passed. */
     @Composable
@@ -215,6 +229,10 @@ object FormCustomization {
             lastName = "Payer",
             billingEmail = "demo.payer@example.com",
         )
+
+    private val CARD_SERVICE_FEE = BigDecimal("0.30")
+
+    private val BANK_SERVICE_FEE = BigDecimal("0.10")
 
     private val BRAND_LABELS =
         mapOf(

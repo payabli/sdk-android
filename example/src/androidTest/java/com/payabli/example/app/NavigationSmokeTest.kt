@@ -241,10 +241,11 @@ class NavigationSmokeTest {
 
         /**
          * The summary row, read back from the operation rather than typed, so it also proves the row. The
-         * screen names no currency, so the figure carries no symbol, and the box it was typed into is not it.
+         * screen names no currency, so the figure carries no symbol, and the box it was typed into is not
+         * it. The figure is the default amount plus the fee the screen charges the default instrument.
          */
         const val SIMPLE_CAPTURE_LABEL = "Total"
-        const val SIMPLE_CAPTURE_AMOUNT = "12.34"
+        const val SIMPLE_CAPTURE_AMOUNT = "12.64"
     }
 }
 

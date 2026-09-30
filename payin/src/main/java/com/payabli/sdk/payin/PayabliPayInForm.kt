@@ -24,6 +24,11 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * Collects a card or a bank account and submits it. The payer's tap runs [operation] through [payIn], and one
  * of [onCompleted] or [onFailed] fires with the outcome.
  *
+ * **[onMethodChanged] fires when the method on screen changes, whoever moved it.** A host reprices on it,
+ * so a configuration that moves the method reaches it exactly as a tap does, and the form opens silently.
+ * The values stay in the form: a card number and a security code have no reason to cross into a host that
+ * no longer submits them.
+ *
  * **It looks like the app it is in.** With no [style] it takes its colors, type and shapes from the host's
  * `MaterialTheme`, so light, dark and dynamic color arrive with nothing passed. Use
  * `PayInFormStyleOverrides` to change one value, or `LocalPayInFormStyle` for every form in a tree.
@@ -57,8 +62,6 @@ import com.payabli.sdk.payin.ui.PayInFormContent
  * @param style null takes `LocalPayInFormStyle`, then the host's theme.
  * @param onCompleted the service accepted it.
  * @param onFailed it did not go through, with the typed cause and the fields the service rejected.
- * @param onMethodChanged the payer switched instrument. The values themselves stay in the form: a card
- *   number and a security code have no reason to cross into a host that no longer submits them.
  */
 @Composable
 public fun PayabliPayInForm(

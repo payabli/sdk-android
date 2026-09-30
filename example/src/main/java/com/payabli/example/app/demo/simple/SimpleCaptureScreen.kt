@@ -13,6 +13,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -35,6 +36,7 @@ import com.payabli.example.app.sdk.FormCustomization
 import com.payabli.example.app.sdk.PayInSessionSource
 import com.payabli.sdk.payin.PayabliPayIn
 import com.payabli.sdk.payin.PayabliPayInForm
+import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import kotlinx.coroutines.launch
@@ -89,7 +91,9 @@ internal fun operationAfter(
     submission: PayInSubmissionState,
 ): FormOperation = if (submission is PayInSubmissionState.Submitting) current else requested
 
-/** The amount can change only between payments: not mid-flight, and not while a held key still names one. */
+/**
+ * The amount can change only between payments: not mid-flight, and not while a held key still names one.
+ */
 internal fun amountEditable(
     submission: PayInSubmissionState,
     retryKey: String?,
@@ -141,6 +145,13 @@ class SimpleCaptureViewModel(
     var operation by mutableStateOf(FormOperation.Capture)
 
     var amountText by mutableStateOf(DEFAULT_AMOUNT)
+
+    /**
+     * The instrument the form last said is on screen, which is the one this app prices a fee for.
+     * Seeded from the configuration when the form first appears, and moved only by the form after
+     * that.
+     */
+    var method by mutableStateOf<PayInMethodType?>(null)
 
     fun failed(
         submitted: FormOperation,
@@ -206,7 +217,13 @@ fun SimpleCaptureScreen(
     DemoScreen(
         title = "Simple Capture",
         modifier = modifier,
-        actions = { FormSettingsMenu(settings) { viewModel.settings = it } },
+        actions = {
+            FormSettingsMenu(
+                settings,
+                onSettingsChange = { viewModel.settings = it },
+                enabled = !submitting,
+            )
+        },
     ) {
         OwnerFrame(Owner.App) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -262,6 +279,19 @@ fun SimpleCaptureScreen(
             else ->
                 OwnerFrame(Owner.Sdk) {
                     FormLookTheme(settings.look) {
+                        val form = FormCustomization.configuration(settings, operation)
+
+                        // The form opens silently, so the method starts as the one this configuration
+                        // opens on, taken once: the screen is rebuilt across a rotation while the
+                        // draft's choice survives it.
+                        LaunchedEffect(payInFlow) {
+                            viewModel.method = viewModel.method ?: form.startingMethod
+                        }
+
+                        // The form opens silently, so the method on screen starts as the one this
+                        // configuration opens on, taken once.
+                        val method = viewModel.method ?: form.startingMethod
+
                         // 3. The form. It collects, validates and submits; the outcome arrives here.
                         PayabliPayInForm(
                             payIn = payInFlow,
@@ -271,9 +301,9 @@ fun SimpleCaptureScreen(
                                     operation,
                                     amount ?: BigDecimal.ZERO,
                                     viewModel.retryKey,
+                                    method,
                                 ),
-                            configuration =
-                                FormCustomization.configuration(settings, operation),
+                            configuration = form,
                             labels = FormCustomization.labels(settings, operation),
                             style = FormCustomization.style(settings.look),
                             onCompleted = {
@@ -294,7 +324,7 @@ fun SimpleCaptureScreen(
                                         Toast.LENGTH_LONG,
                                     ).show()
                             },
-                            onMethodChanged = {},
+                            onMethodChanged = { viewModel.method = it },
                         )
                     }
                 }
