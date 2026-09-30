@@ -3873,6 +3873,12 @@ def test_workflows():
           len(on_main) == 1 and env_of(on_main[0], "COMMIT") == named
           and refuses(on_main[0], "[ $(git merge-base $COMMIT origin/main) != $COMMIT ]"),
           f"{[env_of(step, 'COMMIT') for step in on_main]}")
+    # And one whose release workflow is this one, before the tag exists: the tag run executes the tag's.
+    same_workflow = [step for step in checker_steps
+                     if refuses(step, "[ $(git rev-parse $COMMIT:.github/workflows/release.yml)"
+                                      " != $(git rev-parse $GITHUB_SHA:.github/workflows/release.yml) ]")]
+    check("W17 and one that carries this release workflow",
+          len(same_workflow) == 1 and env_of(same_workflow[0], "COMMIT") == named, f"{len(same_workflow)} steps")
     checked_out = [step.get("with") or {} for step in checker_steps if "actions/checkout" in str(step.get("uses", ""))]
     check("W17 and it reads the version at that commit",
           bool(checked_out) and " ".join(str(checked_out[0].get("ref", "")).split()) == "${{ inputs.commit }}",

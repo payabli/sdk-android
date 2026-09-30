@@ -1200,6 +1200,14 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release tags a commit whose release workflow is another one', RELEASE, "workflows",
+     '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" != "$(git rev-parse "$GITHUB_SHA:.github/workflows/release.yml")"',
+     '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" = "$(git rev-parse "$COMMIT:.github/workflows/release.yml")" -a 1 = 0'),
+
+    ("Release compares main's head with itself rather than the named commit", RELEASE, "workflows",
+     '      - name: Check the commit carries this release workflow\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '      - name: Check the commit carries this release workflow\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+
     ('Release echoes the SSH options and pushes the tag without them', RELEASE, "workflows",
      '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n              git push',
      '            echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"\n            git push'),

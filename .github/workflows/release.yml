@@ -72,6 +72,17 @@ jobs:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
 
+      # The run on the tag executes the workflow at the tag, so a commit carrying another release.yml would
+      # take the tag and then run something else, or nothing, and the number would be spent.
+      - name: Check the commit carries this release workflow
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [ "$(git rev-parse "$COMMIT:.github/workflows/release.yml")" != "$(git rev-parse "$GITHUB_SHA:.github/workflows/release.yml")" ]; then
+            echo "::error::$COMMIT carries a different release.yml from $GITHUB_SHA. Name a commit that carries this one."
+            exit 1
+          fi
+
       - name: Check the commit is on main
         env:
           COMMIT: ${{ inputs.commit }}
