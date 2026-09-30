@@ -84,7 +84,8 @@ dependencies {
 
 ### Configure your app
 
-The SDK doesn't declare the `INTERNET` permission. Add it to your app's manifest:
+The card-not-present and core artifacts don't declare the `INTERNET` permission. Unless your app includes
+Tap to Pay, which brings it, add it to your app's manifest:
 
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
@@ -105,8 +106,8 @@ android {
 
 An app built without it installs and runs, and is refused when it is submitted for enrolment.
 
-The card reader library also brings its own permissions, which Gradle merges into your app's manifest:
-`NFC`, `INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, `HIDE_OVERLAY_WINDOWS` and `ACCELEROMETER`. Your app
+The card reader library brings its own permissions, which Gradle merges into your app's manifest: `NFC`,
+`INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, `HIDE_OVERLAY_WINDOWS` and `ACCELEROMETER`. Your app
 doesn't declare them. The [Tap to Pay guide](taptopay/README.md#before-you-start) covers the rest of its
 setup.
 
