@@ -1200,6 +1200,18 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release hands every secret to the whole build job through a job-level env', RELEASE, "workflows",
+     "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n",
+     "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n    env:\n      ALL_SECRETS: ${{ toJSON(secrets) }}\n"),
+
+    ('Release hands every secret to every job through a workflow-level env', RELEASE, "workflows",
+     'permissions:\n  contents: read\n\n#',
+     'env:\n  ALL_SECRETS: ${{ toJSON(secrets) }}\npermissions:\n  contents: read\n\n#'),
+
+    ('Release hands the uploading job a secret through its job-level env', RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build]\n    env:\n      KEY: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+
     ('Release overrides the version it read with export', RELEASE, "workflows",
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          export version=0.0.1\n          release="),

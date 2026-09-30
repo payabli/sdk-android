@@ -4101,7 +4101,7 @@ def test_workflows():
     # build code.
     maven = {"${{ secrets.PAYABLI_MAVEN_US_PROD }}", "${{ secrets.PAYABLI_MAVEN_PW_PROD }}"}
     deploy_key = {"${{ secrets.RELEASE_DEPLOY_KEY }}"}
-    stray, holding = [], []
+    stray, holding, granted = [], [], 0
     for name, job in rel_jobs.items():
         for step in job_steps(job):
             if not SECRETS_CONTEXT.search(json.dumps(step, default=str)):
@@ -4114,8 +4114,13 @@ def test_workflows():
                        else deploy_key if name == gate_name else set())
             if reached - allowed or SECRETS_CONTEXT.search(json.dumps(outside, default=str)):
                 stray.append(f"{step.get('name', '')}: {sorted(reached - allowed)}")
+            granted += sum(1 for value in env.values() if value in allowed)
+    # And nowhere but those step envs: a job- or workflow-level env, a `with:`, or anything else a job
+    # carries reaches every step beneath it. Every mention in the document has to be one of the grants.
+    mentions = len(SECRETS_CONTEXT.findall(json.dumps(rel, default=str)))
     check("W17 only a Gradle step or the release job's key holds a secret, each by name",
-          bool(holding) and not stray, " | ".join(stray))
+          bool(holding) and not stray and mentions == granted,
+          " | ".join(stray) + f" | {mentions} mentions, {granted} granted")
     check("W17 no credential is declared for the whole workflow", not (rel.get("env") or {}),
           f"{sorted(rel.get('env') or {})}")
 
