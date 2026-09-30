@@ -62,7 +62,7 @@ cd sdk-android
 The build needs the Android SDK, through `ANDROID_HOME` or `sdk.dir` in `local.properties`. Building Tap
 to Pay also needs the [card reader repository](#card-reader-repository) credentials.
 
-Then add `mavenLocal()` to your app's repositories and depend on what you use. The version is the one the
+Then add `mavenLocal()` to the repositories in `settings.gradle.kts` and depend on what you use. The version is the one the
 build published, which `payabli.version` in the clone's [`gradle.properties`](gradle.properties) sets:
 
 | Artifact | Adds |
@@ -74,10 +74,18 @@ build published, which `payabli.version` in the clone's [`gradle.properties`](gr
 Each library includes `com.payabli:sdk-android-core`, which holds the session and the configuration.
 
 ```kotlin
-repositories {
-    mavenLocal()
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()
+        google()
+        mavenCentral()
+    }
 }
+```
 
+```kotlin
+// app/build.gradle.kts
 dependencies {
     val payabliVersion = "<payabli.version>" // from the clone's gradle.properties
     implementation("com.payabli:sdk-android-payin:$payabliVersion")
