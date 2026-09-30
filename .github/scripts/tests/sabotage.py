@@ -1200,6 +1200,18 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release starts the tag run without a token', RELEASE, "workflows",
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run',
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n        run: gh workflow run'),
+
+    ("Release fetches GitHub's host keys without a token", RELEASE, "workflows",
+     '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          tagged=',
+     '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n        run: |\n          tagged='),
+
+    ('Release tag job may not start a run', RELEASE, "workflows",
+     '      # To dispatch the tag run.\n      actions: write\n',
+     ''),
+
     ('Release hands the whole secrets context to a Gradle step', RELEASE, "workflows",
      '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        run: |\n          ./gradlew :core:test',
      '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n          ALL_SECRETS: ${{ toJSON(secrets) }}\n        run: |\n          ./gradlew :core:test'),

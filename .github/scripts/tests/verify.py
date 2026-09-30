@@ -3826,6 +3826,15 @@ def test_workflows():
           and [command[:5] + command[6:] for command in tag_commands if command[:2] == ["git", "tag"]]
           == [["git", "tag", "-a", "$VERSION", "-m", "$COMMIT"]],
           f"{[(env_of(step, 'COMMIT'), env_of(step, 'VERSION')) for step in tagging]}")
+    # `gh` authenticates from GH_TOKEN and nothing else, and a dispatch needs `actions: write`. Without
+    # either, the tag is pushed and the run that publishes it never starts.
+    token = "${{ github.token }}"
+    check("W17 and both of its gh commands carry the job's token",
+          len(tagging) == 1 and len(starting) == 1
+          and env_of(tagging[0], "GH_TOKEN") == token and env_of(starting[0], "GH_TOKEN") == token,
+          f"{[env_of(step, 'GH_TOKEN') for step in tagging + starting]}")
+    granted = gate_job.get("permissions") if isinstance(gate_job.get("permissions"), dict) else {}
+    check("W17 and the job may start a run", str(granted.get("actions")) == "write", f"{gate_job.get('permissions')}")
     check("W17 and it hands the tag run that same commit and version",
           len(starting) == 1 and env_of(starting[0], "COMMIT") == approved
           and env_of(starting[0], "VERSION") == approved_version
