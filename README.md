@@ -36,7 +36,7 @@ token in memory while the session runs.
 | **Paypoint** | A merchant account in Payabli. Payments are made to a paypoint. |
 | **Entry point** | The identifier of a paypoint, for example `acmePay`. You pass it to the SDK. Payabli gives it to you. |
 | **Token endpoint** | A route on your own backend that exchanges your Payabli client ID and client secret for a short-lived access token and returns the token to your app. |
-| **Allowlist** | The list of apps a paypoint accepts Tap to Pay requests from. |
+| **Authorized apps** | The apps a paypoint accepts Tap to Pay requests from. The Payabli portal lists them under **Authorized apps**. |
 
 ## Requirements
 
@@ -50,7 +50,7 @@ token in memory while the session runs.
 
 ### Add the SDK
 
-No version has been released, so build the SDK from source into your local Maven repository:
+Build the SDK from source into your local Maven repository:
 
 ```bash
 git clone https://github.com/payabli/sdk-android.git
@@ -62,35 +62,65 @@ cd sdk-android
 The build needs the Android SDK, through `ANDROID_HOME` or `sdk.dir` in `local.properties`. Building Tap
 to Pay also needs the [card reader repository](#card-reader-repository) credentials.
 
-Add `mavenLocal()` to your repositories and depend on what you use, at the version the build published,
-which `payabli.version` in [`gradle.properties`](gradle.properties) sets:
+Then add `mavenLocal()` to the repositories in `settings.gradle.kts` and depend on what you use. The version is the one the
+build published, which `payabli.version` in the clone's [`gradle.properties`](gradle.properties) sets:
 
 | Artifact | Adds |
 |---|---|
 | `com.payabli:sdk-android-payin` | Card-not-present |
 | `com.payabli:sdk-android-taptopay` | Tap to Pay |
 | `com.payabli:sdk-android` | Both, with error and usage reporting |
-| `com.payabli:sdk-android-bom` | A bill of materials that pins the versions of the others |
 
-Each library includes `com.payabli:sdk-android-core`, which holds the session and the configuration. The
-BOM holds versions only and adds no library: add it with `platform(...)`, beside the libraries you use.
+Each library includes `com.payabli:sdk-android-core`, which holds the session and the configuration.
 
 ```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()
+        google()
+        mavenCentral()
+    }
+}
+```
+
+```kotlin
+// app/build.gradle.kts
 dependencies {
-    implementation("com.payabli:sdk-android-payin:0.1.0")
-    implementation("com.payabli:sdk-android-taptopay:0.1.0")
+    val payabliVersion = "<payabli.version>" // from the clone's gradle.properties
+    implementation("com.payabli:sdk-android-payin:$payabliVersion")
+    implementation("com.payabli:sdk-android-taptopay:$payabliVersion")
 }
 ```
 
 ### Configure your app
 
-The SDK doesn't declare the `INTERNET` permission. Add it to your app's manifest:
+The card-not-present and core artifacts don't declare the `INTERNET` permission. Unless your app includes
+Tap to Pay, which brings it, add it to your app's manifest:
 
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
 ```
 
-Tap to Pay adds build settings of its own, in the [Tap to Pay guide](taptopay/README.md#before-you-start).
+For Tap to Pay, add this to your **application** module's `build.gradle.kts`, so the card reader's native
+library is unpacked at install. A library module can't set it for you:
+
+```kotlin
+android {
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+}
+```
+
+An app built without it installs and runs, and is refused when it is submitted for enrolment.
+
+The card reader library brings its own permissions, which Gradle merges into your app's manifest: `NFC`,
+`INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, `HIDE_OVERLAY_WINDOWS` and `ACCELEROMETER`. Your app
+doesn't declare them. The [Tap to Pay guide](taptopay/README.md#before-you-start) covers the rest of its
+setup.
 
 ### Card reader repository
 
@@ -130,11 +160,21 @@ Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store,
    enabled if you plan to use it.
 2. **Create OAuth2 credentials.** Provision a client ID and client secret for the sandbox. See
    [OAuth authentication](https://docs.payabli.com/developers/oauth-authentication).
-   - Card-not-present needs `inboundpayments_create` to charge, authorize and capture,
-     `inboundpayments_void` to void, and `tokens_create` to store a payment method.
-   - Tap to Pay needs `tools_init`, `pos_create` and `inboundpayments_create`.
-3. **For Tap to Pay**, have your app enrolled and registered on the paypoint's allowlist, as the
+   Give them the permissions in the table below.
+3. **For Tap to Pay**, have your app enrolled and registered as one of the paypoint's authorized apps, as the
    [Tap to Pay guide](taptopay/README.md#before-you-start) describes.
+
+Each operation needs its own permission on those credentials:
+
+| Operation | Permission |
+|---|---|
+| Charge, authorize, or capture an authorization | `inboundpayments_create` |
+| Void a transaction | `inboundpayments_void` |
+| Save a payment method | `tokens_create` |
+| Initialize Tap to Pay on a phone | `tools_init` and `pos_create` |
+| Activate a phone with its code | `pos_create` |
+| Take a Tap to Pay payment | `inboundpayments_create` |
+| Register an authorized app through the API | `pos_create` |
 
 ### Build your token endpoint
 
@@ -293,7 +333,7 @@ val result = ttp.charge(
 order.paymentTransId = result.paymentTransId // store it; don't log it
 ```
 
-The guide covers the phone and build requirements, enrolment, the allowlist, activating a phone, and the
+The guide covers the phone and build requirements, enrolment, authorized apps, activating a phone, and the
 session states.
 
 ## Handle the outcome
@@ -337,7 +377,7 @@ Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes
 | Guide | Covers |
 |---|---|
 | [Card-not-present](payin/README.md) | The form, the direct API, stored methods, authorize and capture, void, configuration and styling |
-| [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrolment, the allowlist, activation, states and errors |
+| [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrolment, authorized apps, activation, states and errors |
 | [Sample app](example/README.md) and [token server](example-server/README.md) | Running both ways to pay against your sandbox paypoint |
 | [Payabli developer documentation](https://docs.payabli.com) | The API, OAuth, test accounts and the portal |
 

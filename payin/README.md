@@ -17,8 +17,13 @@ This guide is part of the [Payabli Android SDK](../README.md); set up the SDK an
 
 ### Your account
 
-- OAuth2 credentials with `inboundpayments_create` to charge, authorize and capture,
-  `inboundpayments_void` to void, and `tokens_create` to store a payment method.
+OAuth2 credentials with a permission for each operation you use:
+
+| Operation | Permission |
+|---|---|
+| `capture`, `authorize`, `captureAuthorizedTransaction` | `inboundpayments_create` |
+| `voidTransaction` | `inboundpayments_void` |
+| `storeMethod` | `tokens_create` |
 
 ## Before you start
 

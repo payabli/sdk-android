@@ -16,6 +16,8 @@ its session there first.
 - The `packaging` setting in [Unpack the card reader's native library](#unpack-the-card-readers-native-library),
   in your **application** module.
 - The 64-bit `arm64-v8a` ABI. The card reader has no 32-bit build.
+- Nothing more in your manifest. The card reader library adds `NFC`, `INTERNET`, `ACCESS_NETWORK_STATE`,
+  `CAMERA`, `HIDE_OVERLAY_WINDOWS` and `ACCELEROMETER` to your merged manifest itself.
 
 ### The phone
 
@@ -34,9 +36,18 @@ the card reader's own checks.
 ### Your account
 
 - A paypoint with Tap to Pay enabled. Ask your Payabli representative.
-- OAuth2 credentials with the `tools_init`, `pos_create` and `inboundpayments_create` permissions.
+- OAuth2 credentials with these permissions:
+
+  | Operation | Permission |
+  |---|---|
+  | `initialize()` | `tools_init` and `pos_create` |
+  | `activateDevice` | `pos_create` |
+  | `charge` | `inboundpayments_create` |
+  | Registering an authorized app through the API | `pos_create` |
 
 ## Before you start
+
+Tap to Pay on Android has no platform terms for the merchant to accept.
 
 ### Unpack the card reader's native library
 
@@ -62,9 +73,10 @@ takes payments. A debug key, a release key and a CI key are three certificates. 
 the installed app is signed with Google Play's app signing certificate. An app signed with a certificate
 that isn't enrolled is refused when the reader arms.
 
-### Register your app on the allowlist
+### Register your app as an authorized app
 
-The allowlist entry for Android is your app's **package name**. Register it once per paypoint, from your
+The authorized app entry for Android is your app's **package name**. Register it once per paypoint,
+in the Payabli portal under **Pay In > Devices > Device management**, **⋯ > Authorized apps**, or from your
 backend:
 
 ```bash
@@ -80,8 +92,10 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
 - Register each package name you ship, including a debug suffix or a flavour. The entry must match the
   package name of the installed app.
 
-An app that isn't on the allowlist is refused when the device attests. `initialize()` fails, and
-`sessionState` is `PendingActivation`, the same state as a phone that needs a code.
+An app that isn't an authorized app is refused when the device attests, with an HTTP 403. `initialize()`
+fails, and `sessionState` is `PendingActivation`, the same state as a phone that needs a code. An
+activation code doesn't clear it: register the app, then initialize again. So a phone that lands on
+`PendingActivation` straight after setup may be running an app that isn't registered.
 
 ## Set up
 
@@ -112,7 +126,7 @@ try {
     ttp.initialize()
 } catch (failure: TapToPayException) {
     if (ttp.sessionState.value == TapToPaySessionState.PendingActivation) {
-        // The phone needs an activation code, the app isn't on the allowlist, or the credentials lack
+        // The phone needs an activation code, the app isn't an authorized app, or the credentials lack
         // tools_init or pos_create. See Activate a phone.
     } else {
         throw failure
@@ -133,12 +147,12 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
   recently, which then needs to be set up again the next time it's used.
 
 Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`. An app that
-isn't on the allowlist, or credentials without `tools_init` or `pos_create`, land in the same state, so check
+isn't an authorized app, or credentials without `tools_init` or `pos_create`, land in the same state, so check
 both before issuing a code. Credentials without `inboundpayments_create` reach `Ready`, and `charge` is then
 refused before the card is read.
 
-1. Issue a code for the phone. In the Payabli portal, under **Device Management**, the waiting device's
-   options include **Activate device**. The code is valid for 30 minutes, and asking again before it
+1. Issue a code for the phone. In the Payabli portal, under **Pay In > Devices > Device management**, choose
+   **⋯ > Generate activation code**. The code is valid for 30 minutes, and asking again before it
    expires returns the same code. The API route,
    [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge),
    takes the device's ID, which the SDK doesn't return, so issue codes from the portal.
@@ -210,7 +224,7 @@ lookup.
 | `Idle` | Not started, or activated and waiting for `initialize()`. |
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
 | `Ready` | Ready to charge. |
-| `PendingActivation` | The phone needs an activation code, the app isn't on the paypoint's allowlist, or the credentials lack `tools_init` or `pos_create`. |
+| `PendingActivation` | The phone needs an activation code, the app isn't one of the paypoint's authorized apps, or the credentials lack `tools_init` or `pos_create`. |
 | `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
 | `Reinitializing` | The session is being refreshed. |
 | `Failed(reason)` | The session stopped. `reason` says what to do. |
@@ -232,7 +246,7 @@ The Android SDK has no event stream. Collect `sessionState` to follow progress.
 ## Go live
 
 - Your release package name and the certificate the installed app is signed with, enrolled with Payabli.
-- Your release package name on your **production** paypoint's allowlist.
+- Your release package name among your **production** paypoint's authorized apps.
 - Your app installed from Google Play on a phone that meets the [requirements](#requirements).
 - One phone activated and one payment approved end to end, then looked up by its transaction ID.
 
