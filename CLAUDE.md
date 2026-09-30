@@ -299,7 +299,7 @@ reaches the branch under test.
     instrumented tier, so that alone would argue for including it. What keeps it out is that part of what
     covers `platform` is hardware the emulator job does not have: the two secure-element tests carry
     `@ManualDeviceTest` and no automated run executes them. Measured on a handset with that tier excluded,
-    exactly as the job runs it, `:core`'s `platform` packages read 72.0% line. Revisit against a measurement.
+    exactly as the job runs it, `:core`'s `platform` packages read 72.0% line.
   - **`**/sdk/payin/ui/**` was on that list and is not any more.** A composable needs a device, and the
     emulator is one, so nothing in the form needs hardware the job lacks. The rule also never covered what it
     claimed to: `PayabliPayInForm` sits outside `ui`, so 11 of its lines counted against the gate while the
@@ -391,11 +391,9 @@ reaches the branch under test.
   emulator cannot run there and the coverage cannot be produced in place. It runs for forks too, since it
   needs nothing they cannot have.
   - **`:taptopay` and `:example` are absent, for two different reasons.** Building `:taptopay` resolves the
-    card reader from a credentialed repository, so including it would hand that credential to that action; its
-    instrumented tier waits on a job of its own, and `enableAndroidTestCoverage` is turned off at its own
-    declaration to say so. `:example` is `isSkipProject` in the analysis, so its coverage is read by nothing.
-    `:example`'s tests still run in the nightly. `:taptopay`'s run in no automated job at all, which is what
-    the job of its own is for.
+    card reader from a credentialed repository, so including it would hand that credential to that action, and
+    `enableAndroidTestCoverage` is turned off at its own declaration. `:example` is `isSkipProject` in the analysis, so its coverage is read by nothing.
+    `:example`'s tests still run in the nightly. `:taptopay`'s run in no automated job at all.
   - A regression in the manual tier's device-only behaviours still will not turn a pull request red: that
     tier is excluded by `notAnnotation`, naming both modules' annotations.
 - Card-present paths need a physical device or mocks rather than an emulator.
@@ -407,8 +405,8 @@ reaches the branch under test.
   `UNRECOGNIZED_VERSION` and `UNLICENSED` are verdict values inside the token, not reasons the call fails.
   Hardware and a Play-Store emulator agreed at every client-observable level, so a manual tier can ask
   nothing the emulator tier cannot, and there is none. Reading verdict *contents* needs a server-side decode
-  through the same cloud project, which is separate work with no owner.
+  through the same cloud project.
 - **The attestation instrumented tier does not run in the nightly, and the blocker is a credential, not
   hardware.** Building `:taptopay` resolves the card reader from a credentialed repository, so running
   its instrumented tests in the nightly would hand that credential to the third-party emulator action, which is
-  the exposure the job split exists to prevent. It waits on `:taptopay` getting its own instrumented job.
+  the exposure the job split exists to prevent.
