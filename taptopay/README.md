@@ -40,7 +40,8 @@ the card reader's own checks.
 
   | Operation | Permission |
   |---|---|
-  | `initialize()` and activating a phone | `tools_init` and `pos_create` |
+  | `initialize()` | `tools_init` and `pos_create` |
+  | `activateDevice` | `pos_create` |
   | `charge` | `inboundpayments_create` |
   | Registering an authorized app through the API | `pos_create` |
 
