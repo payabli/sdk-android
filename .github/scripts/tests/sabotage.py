@@ -1200,6 +1200,18 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release pushes the tag without the deploy key', RELEASE, "workflows",
+     'GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes',
+     'GIT_SSH_COMMAND="ssh -o IdentitiesOnly=yes'),
+
+    ('Release lets the push fall back to another SSH identity', RELEASE, "workflows",
+     '-i $key -o IdentitiesOnly=yes',
+     '-i $key'),
+
+    ('Release pushes the tag over HTTPS, where the deploy key is not used', RELEASE, "workflows",
+     'git push "git@github.com:$GITHUB_REPOSITORY.git"',
+     'git push "https://github.com/$GITHUB_REPOSITORY.git"'),
+
     ('Release tags a version other than the one the check read', RELEASE, "workflows",
      '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY',
      '          VERSION: 0.0.1\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY'),

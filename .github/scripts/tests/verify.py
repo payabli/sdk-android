@@ -3755,6 +3755,11 @@ def test_workflows():
     check("W17 and it pushes the tag with the key, verifying GitHub's host keys",
           "git push" in pushed and "refs/tags/" in pushed and "StrictHostKeyChecking=yes" in pushed
           and "gh api meta" in pushed, pushed[:200])
+    # The key is what the ruleset admits, so the push has to go over SSH and authenticate with it alone.
+    # Without `-i $key` the push is still written, and is refused or made as somebody else.
+    check("W17 and the push authenticates with the deploy key and nothing else",
+          "printf %s\\n $RELEASE_DEPLOY_KEY > $key" in pushed and "ssh -i $key -o IdentitiesOnly=yes" in pushed
+          and "git push git@github.com:$GITHUB_REPOSITORY.git refs/tags/$VERSION" in pushed, pushed[:300])
     # A tag already on another commit is a spent number, and pushing over it is refused.
     check("W17 and it refuses a version already tagged on another commit",
           "$tagged != $COMMIT" in pushed and "already names" in pushed and "exit 1" in pushed, pushed[:200])
