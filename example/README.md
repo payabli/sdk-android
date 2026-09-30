@@ -102,8 +102,8 @@ Inside `sdk/`:
 - `PayInOutcomes.kt` maps what the SDK answers onto this app's own `PaymentResult` and `PaymentError`, so a
   screen reads a demo type.
 
-Card-present has no SDK yet, so `demo/terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
-marks it with `⟵ swap point`.
+Card-present runs on the Tap to Pay SDK: `AppContainer.kt` builds `sdk/TapToPayTerminal.kt`, which
+implements `demo/terminal/TerminalController.kt` so the screens never name the SDK.
 
 ### The smallest capture there is
 
@@ -122,8 +122,9 @@ calls are numbered in it:
 Not reproduced here. A fenced block is not compiled, so a signature change would leave this page describing
 an integration that no longer builds, and the file is short enough to open. What the file adds beyond the
 three calls is the part an integration also has to get right: the customer fields a capture is refused
-without, the amount read back from the operation rather than typed, and `Failed.retryKey` sent on a second
-attempt so a retry after an unknown outcome settles the first charge instead of making a second one.
+without, the amount read back from the operation rather than typed, and `Failed.retryKey` kept for a second
+attempt, which then carries the first attempt's key rather than a new one. After an unknown
+outcome, look the transaction up first, as [Handle the outcome](../README.md#handle-the-outcome) says.
 
 `SdkCallsAreInOnePackageTest` allows `demo/simple/` alongside `sdk/` precisely so this file can call the SDK
 directly. Everywhere else in `demo/` still may not.
@@ -143,7 +144,7 @@ directly. Everywhere else in `demo/` still may not.
 
 ## Styling
 
-The palette is the PAY_Style-Guide Figma file token for token, with the names kept in `Color.kt`. Where
+The palette is Payabli's brand palette, with the names kept in `Color.kt`. Where
 the guide names only the ends, the middle Material 3 container tones are blended and marked as such;
 every pair the app leans on clears WCAG 4.5:1 in both schemes. A passing check reads teal, because the
 guide has no green. There is no dynamic-colour option: it would replace the brand with the user's
@@ -151,10 +152,10 @@ wallpaper on any Android 12+ device.
 
 This app is branded and the SDK's form is not. Every colour here is a Material 3 role, so a form that
 reads `MaterialTheme` picks up this scheme with nothing passed to it, and an integrator's scheme in
-their app. What the component's own defaults should be is a public-surface question for both platforms.
+their app.
 
-The guide specifies **Poppins**, which needs font files that are not in the repository. On the follow-up
-list.
+The brand typeface, **Poppins**, needs font files that aren't in the repository, so the app uses the
+system font.
 
 ## Verifying
 
@@ -170,8 +171,7 @@ say which targets ran.
 
 ### Manual device checks
 
-No job runs these, and none can until there is a service providing remote physical devices. Walk them on
-every attached device and report the models and API levels that ran.
+No job runs these. Walk them on every attached device and report the models and API levels that ran.
 
 **Readiness follows NFC.** Open Tap to pay with NFC on, and step 1 lists no NFC problem. Switch NFC off
 in Settings, return, and the step reports `NFC switched off` and the verdict drops off ready. Switch it
@@ -185,6 +185,6 @@ delivered on none of a Pixel 7a, a Galaxy S22 Ultra or a Galaxy A13, spanning AP
 the settings panel over this screen, and dismissing it clears the problem; below API 29 it opens the
 full NFC settings screen. No app can switch NFC on, and even the adb shell uid is refused.
 
-**Card-present needs the reader.** Everything past step 1 on Tap to pay runs against the demo
-controller. A real terminal session, an activation and a charge need hardware and the card reader
-dependency.
+**Card-present needs the reader.** Everything past step 1 on Tap to pay needs a phone, a paypoint and a
+build that meet the [Tap to Pay guide](../taptopay/README.md#requirements)'s requirements, including the
+card reader repository's credentials.
