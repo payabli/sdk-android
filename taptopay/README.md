@@ -16,6 +16,8 @@ its session there first.
 - The `packaging` setting in [Unpack the card reader's native library](#unpack-the-card-readers-native-library),
   in your **application** module.
 - The 64-bit `arm64-v8a` ABI. The card reader has no 32-bit build.
+- Nothing more in your manifest. The card reader library adds `NFC`, `INTERNET`, `ACCESS_NETWORK_STATE`,
+  `CAMERA`, `HIDE_OVERLAY_WINDOWS` and `ACCELEROMETER` to your merged manifest itself.
 
 ### The phone
 
