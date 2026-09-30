@@ -1200,6 +1200,14 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release echoes the SSH options and pushes the tag without them', RELEASE, "workflows",
+     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n              git push',
+     '            echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"\n            git push'),
+
+    ('Release echoes the dispatch instead of starting the tag run', RELEASE, "workflows",
+     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
+     '        run: echo "gh workflow run release.yml --repo $GITHUB_REPOSITORY --ref $VERSION -f commit=$COMMIT"\n'),
+
     ('Release echoes the CI guard instead of running it', RELEASE, "workflows",
      '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch once CI on main has passed."\n            exit 1\n          fi\n',
      "          echo 'if [ $passed -lt 1 ] ; then exit 1 ; fi'\n"),

@@ -3734,9 +3734,12 @@ def test_workflows():
     # are never nested, so the first `fi` after the `if` closes it.
     def refuses(step: dict, predicate: str) -> bool:
         commands = [" ".join(command) for command in commands_of(step)]
-        if f"if {predicate}" not in commands:
+        tests = predicate.split(" && ")
+        tests[0] = f"if {tests[0]}"
+        opened = next((i for i in range(len(commands)) if commands[i:i + len(tests)] == tests), None)
+        if opened is None:
             return False
-        body = commands[commands.index(f"if {predicate}") + 1:]
+        body = commands[opened + len(tests):]
         body = body[:body.index("fi")] if "fi" in body else body
         return body[:1] == ["then"] and "exit 1" in body
 
@@ -3770,19 +3773,46 @@ def test_workflows():
     starting = [step for step in gate_steps if "gh workflow run" in run_commands(step)]
     pushed = run_commands(tagging[0]) if len(tagging) == 1 else ""
     started = run_commands(starting[0]) if len(starting) == 1 else ""
+
+    # Commands with whatever is assigned in front of them, which `commands_of` drops: GIT_SSH_COMMAND on
+    # the push is the part that makes it use the key. Read as commands, an echo of the same words is an
+    # echo and not a push.
+    def full_commands(step: dict) -> list[list[str]]:
+        found = []
+        for line in logical_lines(str(step.get("run", ""))):
+            try:
+                words = shell_words(line)
+            except ValueError:
+                continue
+            command: list[str] = []
+            for word in [*words, ";"]:
+                if word not in OPERATORS and word not in GROUPING:
+                    command.append(word)
+                    continue
+                if command:
+                    found.append(command)
+                command = []
+        return found
+
+    tag_commands = full_commands(tagging[0]) if len(tagging) == 1 else []
+    ssh = ("GIT_SSH_COMMAND=ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+           " -o UserKnownHostsFile=$hosts")
     check("W17 and exactly one step tags and one starts the tag run", len(tagging) == 1 and len(starting) == 1,
           f"{len(tagging)} tagging, {len(starting)} starting")
-    check("W17 and it pushes the tag with the key, verifying GitHub's host keys",
-          "git push" in pushed and "refs/tags/" in pushed and "StrictHostKeyChecking=yes" in pushed
-          and "gh api meta" in pushed, pushed[:200])
-    # The key is what the ruleset admits, so the push has to go over SSH and authenticate with it alone.
-    # Without `-i $key` the push is still written, and is refused or made as somebody else.
-    check("W17 and the push authenticates with the deploy key and nothing else",
-          "printf %s\\n $RELEASE_DEPLOY_KEY > $key" in pushed and "ssh -i $key -o IdentitiesOnly=yes" in pushed
-          and "git push git@github.com:$GITHUB_REPOSITORY.git refs/tags/$VERSION" in pushed, pushed[:300])
+    # The key is what the ruleset admits, so the push has to go over SSH and authenticate with it alone,
+    # against host keys read from GitHub rather than trusted on first use.
+    pushes = [command for command in tag_commands if "git" in command and command[command.index("git"):][:2] == ["git", "push"]]
+    check("W17 and it pushes the tag once, with the key and GitHub's host keys, and nothing else",
+          pushes == [[ssh, "git", "push", "git@github.com:$GITHUB_REPOSITORY.git", "refs/tags/$VERSION"]],
+          f"{pushes}")
+    check("W17 and the key it pushes with is the deploy key",
+          ["printf", "%s\\n", "$RELEASE_DEPLOY_KEY", ">", "$key"] in tag_commands, f"{tag_commands[:8]}")
+    check("W17 and the host keys come from GitHub's API",
+          ["gh", "api", "meta", "--jq", '.ssh_keys[] | "github.com " + .', ">", "$hosts"] in tag_commands,
+          f"{tag_commands[:10]}")
     # A tag already on another commit is a spent number, and pushing over it is refused.
     check("W17 and it refuses a version already tagged on another commit",
-          "$tagged != $COMMIT" in pushed and "already names" in pushed and "exit 1" in pushed, pushed[:200])
+          len(tagging) == 1 and refuses(tagging[0], "[ -n $tagged ] && [ $tagged != $COMMIT ]"), pushed[:200])
     # The named commit, never the run's own: the run's is main's head when the dispatch was made. Each
     # step's own env, because one step's correct value would otherwise stand in for another's.
     def env_of(step: dict, var: str) -> str:
@@ -3790,19 +3820,18 @@ def test_workflows():
 
     approved = "${{ needs.check.outputs.commit }}"
     approved_version = "${{ needs.check.outputs.version }}"
-    tag_run = pushed
     check("W17 and it tags the commit and version the check approved, not the run's",
           len(tagging) == 1 and env_of(tagging[0], "COMMIT") == approved
           and env_of(tagging[0], "VERSION") == approved_version
-          and "git tag -a $VERSION" in tag_run and "$COMMIT" in tag_run and "GITHUB_SHA" not in tag_run,
+          and [command[:5] + command[6:] for command in tag_commands if command[:2] == ["git", "tag"]]
+          == [["git", "tag", "-a", "$VERSION", "-m", "$COMMIT"]],
           f"{[(env_of(step, 'COMMIT'), env_of(step, 'VERSION')) for step in tagging]}")
     check("W17 and it hands the tag run that same commit and version",
           len(starting) == 1 and env_of(starting[0], "COMMIT") == approved
           and env_of(starting[0], "VERSION") == approved_version
-          and "--ref $VERSION" in run_commands(starting[0]) and "-f commit=$COMMIT" in run_commands(starting[0]),
+          and full_commands(starting[0]) == [["gh", "workflow", "run", "release.yml", "--repo", "$GITHUB_REPOSITORY",
+                                              "--ref", "$VERSION", "-f", "commit=$COMMIT"]],
           f"{[(env_of(step, 'COMMIT'), env_of(step, 'VERSION')) for step in starting]}")
-    check("W17 and it starts the run on the tag",
-          "gh workflow run release.yml" in started and "--ref" in started, started[-200:])
 
     checker_name = next((name for name in needs_of(gate_job)), "")
     checker = rel_jobs.get(checker_name, {})
