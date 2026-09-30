@@ -36,7 +36,7 @@ token in memory while the session runs.
 | **Paypoint** | A merchant account in Payabli. Payments are made to a paypoint. |
 | **Entry point** | The identifier of a paypoint, for example `acmePay`. You pass it to the SDK. Payabli gives it to you. |
 | **Token endpoint** | A route on your own backend that exchanges your Payabli client ID and client secret for a short-lived access token and returns the token to your app. |
-| **Allowlist** | The list of apps a paypoint accepts Tap to Pay requests from. |
+| **Authorized apps** | The apps a paypoint accepts Tap to Pay requests from. The Payabli portal lists them under **Authorized apps**. |
 
 ## Requirements
 
@@ -155,7 +155,7 @@ Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store,
    - Card-not-present needs `inboundpayments_create` to charge, authorize and capture,
      `inboundpayments_void` to void, and `tokens_create` to store a payment method.
    - Tap to Pay needs `tools_init`, `pos_create` and `inboundpayments_create`.
-3. **For Tap to Pay**, have your app enrolled and registered on the paypoint's allowlist, as the
+3. **For Tap to Pay**, have your app enrolled and registered as one of the paypoint's authorized apps, as the
    [Tap to Pay guide](taptopay/README.md#before-you-start) describes.
 
 ### Build your token endpoint
@@ -315,7 +315,7 @@ val result = ttp.charge(
 order.paymentTransId = result.paymentTransId // store it; don't log it
 ```
 
-The guide covers the phone and build requirements, enrolment, the allowlist, activating a phone, and the
+The guide covers the phone and build requirements, enrolment, authorized apps, activating a phone, and the
 session states.
 
 ## Handle the outcome
@@ -359,7 +359,7 @@ Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes
 | Guide | Covers |
 |---|---|
 | [Card-not-present](payin/README.md) | The form, the direct API, stored methods, authorize and capture, void, configuration and styling |
-| [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrolment, the allowlist, activation, states and errors |
+| [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrolment, authorized apps, activation, states and errors |
 | [Sample app](example/README.md) and [token server](example-server/README.md) | Running both ways to pay against your sandbox paypoint |
 | [Payabli developer documentation](https://docs.payabli.com) | The API, OAuth, test accounts and the portal |
 
