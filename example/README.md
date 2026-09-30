@@ -144,7 +144,7 @@ directly. Everywhere else in `demo/` still may not.
 
 ## Styling
 
-The palette is the PAY_Style-Guide Figma file token for token, with the names kept in `Color.kt`. Where
+The palette is Payabli's brand palette, with the names kept in `Color.kt`. Where
 the guide names only the ends, the middle Material 3 container tones are blended and marked as such;
 every pair the app leans on clears WCAG 4.5:1 in both schemes. A passing check reads teal, because the
 guide has no green. There is no dynamic-colour option: it would replace the brand with the user's
@@ -152,10 +152,10 @@ wallpaper on any Android 12+ device.
 
 This app is branded and the SDK's form is not. Every colour here is a Material 3 role, so a form that
 reads `MaterialTheme` picks up this scheme with nothing passed to it, and an integrator's scheme in
-their app. What the component's own defaults should be is a public-surface question for both platforms.
+their app.
 
-The guide specifies **Poppins**, which needs font files that are not in the repository. On the follow-up
-list.
+The brand typeface, **Poppins**, needs font files that aren't in the repository, so the app uses the
+system font.
 
 ## Verifying
 
@@ -171,8 +171,7 @@ say which targets ran.
 
 ### Manual device checks
 
-No job runs these, and none can until there is a service providing remote physical devices. Walk them on
-every attached device and report the models and API levels that ran.
+No job runs these. Walk them on every attached device and report the models and API levels that ran.
 
 **Readiness follows NFC.** Open Tap to pay with NFC on, and step 1 lists no NFC problem. Switch NFC off
 in Settings, return, and the step reports `NFC switched off` and the verdict drops off ready. Switch it
