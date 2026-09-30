@@ -1200,6 +1200,38 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ("Release skips the check job's CI gate with a step condition", RELEASE, "workflows",
+     '      - name: Check CI passed on main for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
+     '      - name: Check CI passed on main for this commit\n        if: false\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n'),
+
+    ('Release lets the on-main guard fail without failing the job', RELEASE, "workflows",
+     '      - name: Check the commit is on main\n',
+     '      - name: Check the commit is on main\n        continue-on-error: true\n'),
+
+    ("Release runs the build's CI gate under another shell", RELEASE, "workflows",
+     '      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.\n      - name: Check CI passed on main for this commit\n',
+     '      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.\n      - name: Check CI passed on main for this commit\n        shell: sh {0}\n'),
+
+    ("Release runs the upload's steps under sh, without pipefail", RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build]\n    defaults:\n      run:\n        shell: sh\n'),
+
+    ('Release uploads from a self-hosted runner', RELEASE, "workflows",
+     '    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n',
+     '    runs-on: self-hosted\n    permissions:\n      contents: read\n      id-token: write\n'),
+
+    ('Release writes the notes even when the upload failed', RELEASE, "workflows",
+     '    name: Create the GitHub Release\n    needs: [upload]\n',
+     '    name: Create the GitHub Release\n    needs: [upload]\n    if: always()\n'),
+
+    ('Release lets the check job write the repository', RELEASE, "workflows",
+     '    permissions:\n      contents: read\n      # To read the CI runs for this commit.\n      actions: read\n    outputs:',
+     '    permissions:\n      contents: write\n      # To read the CI runs for this commit.\n      actions: read\n    outputs:'),
+
+    ("Release rewrites a later step's environment through GITHUB_ENV", RELEASE, "workflows",
+     '          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n',
+     '          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"\n          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n'),
+
     ('Release hands every secret to the whole build job through a job-level env', RELEASE, "workflows",
      "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n",
      "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n    env:\n      ALL_SECRETS: ${{ toJSON(secrets) }}\n"),

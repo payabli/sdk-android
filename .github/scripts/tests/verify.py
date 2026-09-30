@@ -4124,6 +4124,40 @@ def test_workflows():
     check("W17 no credential is declared for the whole workflow", not (rel.get("env") or {}),
           f"{sorted(rel.get('env') or {})}")
 
+    # The structure, pinned exactly. Each checks above reads words; these keys are how a job or step steps
+    # around them without touching those words. A step `if:` skips a guard, `continue-on-error` or
+    # `shell:` masks one, a job-level `env` or `defaults` reaches every step beneath it, a wider grant or
+    # another runner changes what the job can do, and `$GITHUB_ENV` rewrites a later step's environment.
+    # So a change to any of these is made here as well as in the workflow.
+    shape = {
+        checker_name: ({"if", "name", "outputs", "permissions", "runs-on", "steps"},
+                       {"contents": "read", "actions": "read"}),
+        gate_name: ({"environment", "name", "needs", "permissions", "runs-on", "steps"},
+                    {"contents": "read", "actions": "write"}),
+        builder: ({"if", "name", "permissions", "runs-on", "steps"}, {"contents": "read", "actions": "read"}),
+        upload_name: ({"concurrency", "name", "needs", "permissions", "runs-on", "steps"},
+                      {"contents": "read", "id-token": "write"}),
+        (writers[0] if writers else ""): ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "write"}),
+    }
+    check("W17 its jobs are exactly the check, the tag, the build, the upload and the notes",
+          len(shape) == 5 and set(rel_jobs) == set(shape), f"{sorted(rel_jobs)} vs {sorted(shape)}")
+    for name, (keys, grant) in shape.items():
+        job = rel_jobs.get(name, {})
+        check(f"W17 the {name or '?'} job carries exactly its keys", set(job) == keys, f"{sorted(set(job) ^ keys)}")
+        check(f"W17 and exactly its permissions", job.get("permissions") == grant, f"{job.get('permissions')}")
+        check(f"W17 and runs on a GitHub-hosted runner", job.get("runs-on") == "ubuntu-latest", f"{job.get('runs-on')}")
+    top = {"on" if key is True else key for key in rel}
+    check("W17 the workflow carries exactly its keys", top == {"name", "on", "permissions", "defaults", "jobs"},
+          f"{sorted(top)}")
+    check("W17 and grants read at the top and nothing more", rel.get("permissions") == {"contents": "read"},
+          f"{rel.get('permissions')}")
+    extra = [f"{step.get('name') or step.get('uses')}: {sorted(set(step) - {'name', 'id', 'uses', 'with', 'env', 'run'})}"
+             for step in rel_steps if set(step) - {"name", "id", "uses", "with", "env", "run"}]
+    check("W17 no step carries a condition, a shell, or anything but name, id, uses, with, env and run",
+          not extra, " | ".join(extra))
+    check("W17 no step rewrites a later step's environment or path",
+          "GITHUB_ENV" not in rel_text and "GITHUB_PATH" not in rel_text)
+
 
 
 
