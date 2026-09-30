@@ -46,6 +46,8 @@ the card reader's own checks.
 
 ## Before you start
 
+Tap to Pay on Android has no platform terms for the merchant to accept.
+
 ### Unpack the card reader's native library
 
 Add this to your **application** module's `build.gradle.kts`. The library module can't set it for you:
