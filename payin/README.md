@@ -134,7 +134,8 @@ retry. Don't resend a charge whose outcome is unknown. Find the transaction firs
 ## Outcomes and errors
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
-`CancellationException`. A form reports through `onCompleted` and `onFailed`, whose argument's `cause` is
+`CancellationException`. A cancelled `storeMethod` may already have saved the method, so read the stored
+methods back before storing again. A form reports through `onCompleted` and `onFailed`, whose argument's `cause` is
 the exception.
 
 A success means what the call did, which depends on the call:
