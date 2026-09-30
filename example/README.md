@@ -123,7 +123,7 @@ Not reproduced here. A fenced block is not compiled, so a signature change would
 an integration that no longer builds, and the file is short enough to open. What the file adds beyond the
 three calls is the part an integration also has to get right: the customer fields a capture is refused
 without, the amount read back from the operation rather than typed, and `Failed.retryKey` kept for a second
-attempt, so the service recognises it as the first charge rather than a new one. After an unknown
+attempt, which then carries the first attempt's key rather than a new one. After an unknown
 outcome, look the transaction up first, as [Handle the outcome](../README.md#handle-the-outcome) says.
 
 `SdkCallsAreInOnePackageTest` allows `demo/simple/` alongside `sdk/` precisely so this file can call the SDK
