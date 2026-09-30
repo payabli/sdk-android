@@ -93,7 +93,7 @@ import com.payabli.sdk.taptopay.PayabliTTP
 val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 ```
 
-- `sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` a `StateFlow<Boolean>`. Collect them
+- `sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` is a `StateFlow<Boolean>`. Collect them
   to drive your UI.
 - `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions;
   call them from a coroutine.
