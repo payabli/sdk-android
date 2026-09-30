@@ -3819,6 +3819,14 @@ def test_workflows():
                      and refuses(step, "[ $passed -lt 1 ]")), None)
 
     checker_steps = job_steps(checker)
+    # What the check publishes is what the release job tags and hands on, so the producer's side is held
+    # as well as the readers': the named commit, and the version the version step read.
+    outputs = {key: " ".join(str(value).split()) for key, value in (checker.get("outputs") or {}).items()}
+    version_ids = [step.get("id") for step in checker_steps if "payabli.version=" in run_commands(step)]
+    check("W17 and the check publishes the named commit and the version it read",
+          outputs.get("commit") == "${{ inputs.commit }}" and len(version_ids) == 1 and bool(version_ids[0])
+          and outputs.get("version") == "${{ steps." + str(version_ids[0]) + ".outputs.version }}",
+          f"{outputs} version step id={version_ids}")
     gated = ci_gated(checker_steps)
     check("W17 and the check refuses a commit that has not passed CI on main",
           gated is not None

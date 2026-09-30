@@ -1200,6 +1200,14 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ("Release publishes main's head as the approved commit", RELEASE, "workflows",
+     '      commit: ${{ inputs.commit }}\n    steps:\n',
+     '      commit: ${{ github.sha }}\n    steps:\n'),
+
+    ('Release publishes a literal version rather than the one read', RELEASE, "workflows",
+     '      version: ${{ steps.version.outputs.version }}\n      commit:',
+     '      version: 0.0.1\n      commit:'),
+
     ('Release keeps the tag-name guard but drops its exit, leaving the next guard to exit', RELEASE, "workflows",
      'so it is not a release tag."\n            exit 1\n',
      'so it is not a release tag."\n'),
