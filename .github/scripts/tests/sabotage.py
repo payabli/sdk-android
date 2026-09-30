@@ -1200,6 +1200,14 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release build waits for the check, which the tag run skips', RELEASE, "workflows",
+     "    if: startsWith(github.ref, 'refs/tags/')\n",
+     "    needs: [check]\n    if: startsWith(github.ref, 'refs/tags/')\n"),
+
+    ('Release upload waits for the check as well, which the tag run skips', RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build, check]\n'),
+
     ('Release pushes the tag without the deploy key', RELEASE, "workflows",
      'GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes',
      'GIT_SSH_COMMAND="ssh -o IdentitiesOnly=yes'),

@@ -3848,7 +3848,12 @@ def test_workflows():
     check("W17 the build runs only on a tag ref",
           condition(rel_jobs.get(builder, {})) == "startsWith(github.ref, 'refs/tags/')",
           f"{builder}: {condition(rel_jobs.get(builder, {}))}")
-    check("W17 and the upload needs the build", builder in needs_of(upload_job), f"{upload_job.get('needs')}")
+    # Exactly, both ways. The check job is skipped on the tag run, so a build or an upload that needs it is
+    # skipped too, and nothing is published.
+    check("W17 and the build needs nothing", not needs_of(rel_jobs.get(builder, {})),
+          f"{rel_jobs.get(builder, {}).get('needs')}")
+    check("W17 and the upload needs the build and nothing else", needs_of(upload_job) == [builder],
+          f"{upload_job.get('needs')}")
     # A condition on the upload is how the build's is stepped around: `always()` uploads through a skip.
     check("W17 and the upload carries no condition of its own", not upload_job.get("if"), condition(upload_job))
 
