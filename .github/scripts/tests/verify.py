@@ -4047,14 +4047,26 @@ def test_workflows():
     shell = ((rel.get("defaults") or {}).get("run") or {}).get("shell")
     check("W17 it runs its steps under a shell with pipefail", shell == "bash", f"{shell}")
     # The card reader credential goes to the steps that run Gradle, and the deploy key to the release
-    # environment's job. Nothing else holds a secret.
-    holding = [(name, step) for name, job in rel_jobs.items() for step in job_steps(job)
-               if SECRETS_CONTEXT.search(json.dumps(step, default=str))]
-    stray = [str(step.get("name", "")) for name, step in holding
-             if not ("gradlew" in run_commands(step)
-                     or (name == gate_name and set(re.findall(r"secrets\.(\w+)", json.dumps(step))) == {"RELEASE_DEPLOY_KEY"}))]
-    check("W17 only a Gradle step or the release job's key holds a secret", bool(holding) and not stray,
-          " | ".join(stray))
+    # environment's job, each as one named secret in the step's env. Any other reach into the secrets
+    # context is refused, `toJSON(secrets)` included: in a Gradle step it hands every repository secret to
+    # build code.
+    maven = {"${{ secrets.PAYABLI_MAVEN_US_PROD }}", "${{ secrets.PAYABLI_MAVEN_PW_PROD }}"}
+    deploy_key = {"${{ secrets.RELEASE_DEPLOY_KEY }}"}
+    stray, holding = [], []
+    for name, job in rel_jobs.items():
+        for step in job_steps(job):
+            if not SECRETS_CONTEXT.search(json.dumps(step, default=str)):
+                continue
+            holding.append(step)
+            env = {var: " ".join(str(value).split()) for var, value in (step.get("env") or {}).items()}
+            reached = {value for value in env.values() if SECRETS_CONTEXT.search(value)}
+            outside = {key: value for key, value in step.items() if key != "env"}
+            allowed = (maven if "gradlew" in run_commands(step)
+                       else deploy_key if name == gate_name else set())
+            if reached - allowed or SECRETS_CONTEXT.search(json.dumps(outside, default=str)):
+                stray.append(f"{step.get('name', '')}: {sorted(reached - allowed)}")
+    check("W17 only a Gradle step or the release job's key holds a secret, each by name",
+          bool(holding) and not stray, " | ".join(stray))
     check("W17 no credential is declared for the whole workflow", not (rel.get("env") or {}),
           f"{sorted(rel.get('env') or {})}")
 

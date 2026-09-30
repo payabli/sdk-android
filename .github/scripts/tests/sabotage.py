@@ -1200,6 +1200,10 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release hands the whole secrets context to a Gradle step', RELEASE, "workflows",
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        run: |\n          ./gradlew :core:test',
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n          ALL_SECRETS: ${{ toJSON(secrets) }}\n        run: |\n          ./gradlew :core:test'),
+
     ('Release tags a commit whose release workflow is another one', RELEASE, "workflows",
      '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" != "$(git rev-parse "$GITHUB_SHA:.github/workflows/release.yml")"',
      '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" = "$(git rev-parse "$COMMIT:.github/workflows/release.yml")" -a 1 = 0'),
