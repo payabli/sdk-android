@@ -89,8 +89,10 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
 - Register each package name you ship, including a debug suffix or a flavour. The entry must match the
   package name of the installed app.
 
-An app that isn't an authorized app is refused when the device attests. `initialize()` fails, and
-`sessionState` is `PendingActivation`, the same state as a phone that needs a code.
+An app that isn't an authorized app is refused when the device attests, with an HTTP 403. `initialize()`
+fails, and `sessionState` is `PendingActivation`, the same state as a phone that needs a code. An
+activation code doesn't clear it: register the app, then initialize again. So a phone that lands on
+`PendingActivation` straight after setup may be running an app that isn't registered.
 
 ## Set up
 
