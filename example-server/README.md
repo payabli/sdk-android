@@ -19,10 +19,6 @@ The sample app calls this server. Its Setup and Tap to pay screens post to
 the app fetching its own token over `HttpURLConnection`, not an SDK call: no
 session exists yet to hold a token provider.
 
-The live workflows run this server too, on the runner, so CI and the bench exercise one
-path rather than two. Nothing else in `.github/` starts it, and the ordinary per-pull-request
-jobs do not: they run no test that needs a token.
-
 ## Requirements
 
 Node 18 or newer. `server.mjs` uses the global `fetch`, which stopped requiring
