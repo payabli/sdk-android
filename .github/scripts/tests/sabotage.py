@@ -1200,6 +1200,10 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release moves the push controls into the dispatch step, where they protect nothing', RELEASE, "workflows",
+     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n          fi\n\n      # A dispatch always creates a run, including one started with this job\'s token, and a run on the tag\n      # presents the subject the release role trusts.\n      - name: Start the tag run\n        env:\n          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
+     '            GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$hosts" \\\n              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n          fi\n\n      # A dispatch always creates a run, including one started with this job\'s token, and a run on the tag\n      # presents the subject the release role trusts.\n      - name: Start the tag run\n        env:\n          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes gh api meta"\n          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n'),
+
     ('Release build waits for the check, which the tag run skips', RELEASE, "workflows",
      "    if: startsWith(github.ref, 'refs/tags/')\n",
      "    needs: [check]\n    if: startsWith(github.ref, 'refs/tags/')\n"),

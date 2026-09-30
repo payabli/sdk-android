@@ -3750,8 +3750,13 @@ def test_workflows():
     check("W17 and it runs no Gradle and sets up no toolchain",
           not any(term in gate_body for term in ("gradlew", "setup-java", "setup-gradle")))
     check("W17 and it mints no token", not mints(gate_job.get("permissions")), f"{gate_job.get('permissions')}")
-    pushed = " ".join(run_commands(step) for step in gate_steps
-                      if "git tag -a" in run_commands(step) or "gh workflow run" in run_commands(step))
+    # The step that tags and pushes, alone: a string in another step cannot stand in for a control here.
+    tagging = [step for step in gate_steps if "git tag -a" in run_commands(step)]
+    starting = [step for step in gate_steps if "gh workflow run" in run_commands(step)]
+    pushed = run_commands(tagging[0]) if len(tagging) == 1 else ""
+    started = run_commands(starting[0]) if len(starting) == 1 else ""
+    check("W17 and exactly one step tags and one starts the tag run", len(tagging) == 1 and len(starting) == 1,
+          f"{len(tagging)} tagging, {len(starting)} starting")
     check("W17 and it pushes the tag with the key, verifying GitHub's host keys",
           "git push" in pushed and "refs/tags/" in pushed and "StrictHostKeyChecking=yes" in pushed
           and "gh api meta" in pushed, pushed[:200])
@@ -3770,9 +3775,7 @@ def test_workflows():
 
     approved = "${{ needs.check.outputs.commit }}"
     approved_version = "${{ needs.check.outputs.version }}"
-    tagging = [step for step in gate_steps if "git tag -a" in run_commands(step)]
-    starting = [step for step in gate_steps if "gh workflow run" in run_commands(step)]
-    tag_run = run_commands(tagging[0]) if len(tagging) == 1 else ""
+    tag_run = pushed
     check("W17 and it tags the commit and version the check approved, not the run's",
           len(tagging) == 1 and env_of(tagging[0], "COMMIT") == approved
           and env_of(tagging[0], "VERSION") == approved_version
@@ -3784,7 +3787,7 @@ def test_workflows():
           and "--ref $VERSION" in run_commands(starting[0]) and "-f commit=$COMMIT" in run_commands(starting[0]),
           f"{[(env_of(step, 'COMMIT'), env_of(step, 'VERSION')) for step in starting]}")
     check("W17 and it starts the run on the tag",
-          "gh workflow run release.yml" in pushed and "--ref" in pushed, pushed[-200:])
+          "gh workflow run release.yml" in started and "--ref" in started, started[-200:])
 
     checker_name = next((name for name in needs_of(gate_job)), "")
     checker = rel_jobs.get(checker_name, {})
