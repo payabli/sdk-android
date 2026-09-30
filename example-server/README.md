@@ -177,8 +177,8 @@ behind shares it.
 `/payabli/devices` also returns `unavailable`, the devices whose per-device lookup was declined, with
 the code and text. They are named rather than dropped from the list.
 
-These mirror the iOS demo's token server, which has served them for longer. The sample
-app's terminal is still `DemoTerminalController`, so nothing in the app calls them yet.
+These mirror the iOS demo's token server. The sample app doesn't call them: it takes the
+activation code from whoever issued it.
 
 ## Selecting an environment
 

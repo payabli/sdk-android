@@ -102,8 +102,8 @@ Inside `sdk/`:
 - `PayInOutcomes.kt` maps what the SDK answers onto this app's own `PaymentResult` and `PaymentError`, so a
   screen reads a demo type.
 
-Card-present has no SDK yet, so `demo/terminal/TerminalController.kt` stands in for one and `AppContainer.kt`
-marks it with `⟵ swap point`.
+Card-present runs on the Tap to Pay SDK: `AppContainer.kt` builds `sdk/TapToPayTerminal.kt`, which
+implements `demo/terminal/TerminalController.kt` so the screens never name the SDK.
 
 ### The smallest capture there is
 
@@ -185,6 +185,6 @@ delivered on none of a Pixel 7a, a Galaxy S22 Ultra or a Galaxy A13, spanning AP
 the settings panel over this screen, and dismissing it clears the problem; below API 29 it opens the
 full NFC settings screen. No app can switch NFC on, and even the adb shell uid is refused.
 
-**Card-present needs the reader.** Everything past step 1 on Tap to pay runs against the demo
-controller. A real terminal session, an activation and a charge need hardware and the card reader
-dependency.
+**Card-present needs the reader.** Everything past step 1 on Tap to pay needs a phone, a paypoint and a
+build that meet the [Tap to Pay guide](../taptopay/README.md#requirements)'s requirements, including the
+card reader repository's credentials.
