@@ -13,8 +13,8 @@ token in memory while the session runs.
 [Card-not-present guide](payin/README.md) · [Tap to Pay guide](taptopay/README.md) ·
 [Sample app](example/README.md)
 
-> [!WARNING]
-> **This SDK is in beta and under active development.** Its public interface can change in ways that
+> [!IMPORTANT]
+> **Notice:** This SDK is in beta and under active development. Its public interface can change in ways that
 > aren't backward compatible, including the names, parameters and behavior of its types and methods.
 > No stable version has been released. See [Versioning and support](#versioning-and-support).
 
@@ -360,8 +360,8 @@ and sends nothing.
 
 ## Versioning and support
 
-> [!WARNING]
-> **The Payabli Android SDK is in beta.** Until a stable version is released, expect changes to the public
+> [!IMPORTANT]
+> **Notice:** The Payabli Android SDK is in beta. Until a stable version is released, expect changes to the public
 > interface that aren't backward compatible, and read the changes on `main` before you update.
 
 - **No version has been released.** Build from `main` as [Installation](#installation) describes.
