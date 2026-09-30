@@ -91,23 +91,13 @@ internal fun operationAfter(
     submission: PayInSubmissionState,
 ): FormOperation = if (submission is PayInSubmissionState.Submitting) current else requested
 
-/** The amount can change only between payments: not mid-flight, and not while a held key still names one. */
+/**
+ * The amount can change only between payments: not mid-flight, and not while a held key still names one.
+ */
 internal fun amountEditable(
     submission: PayInSubmissionState,
     retryKey: String?,
 ): Boolean = submission !is PayInSubmissionState.Submitting && retryKey == null
-
-/**
- * The method a held key is priced as, so a retry carries the total that key names.
- *
- * A key already priced keeps its method: one key, one total. A key with no method yet takes the one on
- * screen, and a key that is gone takes its price with it.
- */
-internal fun pricedMethodAfter(
-    heldKey: String?,
-    pricedBefore: PayInMethodType?,
-    onScreen: PayInMethodType?,
-): PayInMethodType? = heldKey?.let { pricedBefore ?: onScreen }
 
 /** What the screen says when [operation] ends, for either instrument. */
 internal fun outcomeMessage(
@@ -163,24 +153,15 @@ class SimpleCaptureViewModel(
      */
     var method by mutableStateOf<PayInMethodType?>(null)
 
-    /**
-     * The method a held key's attempt is priced as, so a retry carries the total that key names.
-     * Set exactly while [retryKey] is.
-     */
-    var keyedMethod by mutableStateOf<PayInMethodType?>(null)
-        private set
-
     fun failed(
         submitted: FormOperation,
         outcome: PayInSubmissionState.Failed,
     ) {
         retryKey = keyAfter(retryKey, submitted, outcome)
-        keyedMethod = pricedMethodAfter(retryKey, keyedMethod, method)
     }
 
     fun succeeded(submitted: FormOperation) {
         retryKey = keyAfter(retryKey, submitted, outcome = null)
-        keyedMethod = pricedMethodAfter(retryKey, keyedMethod, method)
     }
 
     init {
@@ -307,9 +288,9 @@ fun SimpleCaptureScreen(
                             viewModel.method = viewModel.method ?: form.startingMethod
                         }
 
-                        // A held key names one total, so the method it was priced as stands while it
-                        // is held.
-                        val method = viewModel.keyedMethod ?: viewModel.method ?: form.startingMethod
+                        // The form opens silently, so the method on screen starts as the one this
+                        // configuration opens on, taken once.
+                        val method = viewModel.method ?: form.startingMethod
 
                         // 3. The form. It collects, validates and submits; the outcome arrives here.
                         PayabliPayInForm(

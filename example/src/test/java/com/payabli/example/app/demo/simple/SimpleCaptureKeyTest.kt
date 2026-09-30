@@ -3,7 +3,6 @@ package com.payabli.example.app.demo.simple
 import com.payabli.example.app.demo.ui.customize.FormOperation
 import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.model.PayabliException
-import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import org.junit.Assert.assertEquals
@@ -58,27 +57,6 @@ class SimpleCaptureKeyTest {
     @Test
     fun `a capture that succeeds spends the held key`() {
         assertNull(keyAfter("key-1", FormOperation.Capture, outcome = null))
-    }
-
-    @Test
-    fun `a held key keeps the method it was first priced as`() {
-        // A second failure on another tab must not re-price a key already carrying a total.
-        assertEquals(
-            PayInMethodType.BankAccount,
-            pricedMethodAfter("key-1", PayInMethodType.BankAccount, PayInMethodType.Card),
-        )
-    }
-
-    @Test
-    fun `a newly held key is priced as the method on screen`() {
-        assertEquals(PayInMethodType.Card, pricedMethodAfter("key-1", null, PayInMethodType.Card))
-    }
-
-    @Test
-    fun `a key that is gone takes its price with it`() {
-        // A store's success keeps the capture's key, and a capture's success spends it; only the second
-        // one may carry the price away.
-        assertNull(pricedMethodAfter(null, PayInMethodType.BankAccount, PayInMethodType.Card))
     }
 
     private fun failed(
