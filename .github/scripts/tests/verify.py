@@ -3795,6 +3795,19 @@ def test_workflows():
         return found
 
     tag_commands = full_commands(tagging[0]) if len(tagging) == 1 else []
+
+    # A value read by a command, as commands: `var=$(command)` and no other assignment to var in the step,
+    # so neither a hard-coded value nor an echo carrying the right words can stand in for the read.
+    def reads(step: dict, var: str, command: list[str]) -> bool:
+        commands = full_commands(step)
+        assigned = [i for i, words in enumerate(commands) if words and words[0].startswith(f"{var}=")]
+        return (len(assigned) == 1 and commands[assigned[0]] == [f"{var}=$"]
+                and commands[assigned[0] + 1:assigned[0] + 2] == [command])
+
+    CI_QUERY = ["gh", "run", "list", "--repo", "$GITHUB_REPOSITORY", "--workflow", "ci.yml", "--commit", "$SHA",
+                "--event", "push", "--branch", "main", "--json", "conclusion",
+                "--jq", '[.[] | select(.conclusion == "success")] | length']
+    VERSION_READ = ["sed", "-n", "s/^payabli.version=//p", "gradle.properties"]
     ssh = ("GIT_SSH_COMMAND=ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
            " -o UserKnownHostsFile=$hosts")
     check("W17 and exactly one step tags and one starts the tag run", len(tagging) == 1 and len(starting) == 1,
@@ -3852,16 +3865,13 @@ def test_workflows():
 
     def ci_gated(steps) -> int | None:
         return next((i for i, step in enumerate(steps)
-                     if all(term in run_commands(step) for term in
-                            ("gh run list", "--workflow ci.yml", "--commit", "--event push", "--branch main",
-                             'conclusion == "success"'))
-                     and refuses(step, "[ $passed -lt 1 ]")), None)
+                     if reads(step, "passed", CI_QUERY) and refuses(step, "[ $passed -lt 1 ]")), None)
 
     checker_steps = job_steps(checker)
     # What the check publishes is what the release job tags and hands on, so the producer's side is held
     # as well as the readers': the named commit, and the version the version step read.
     outputs = {key: " ".join(str(value).split()) for key, value in (checker.get("outputs") or {}).items()}
-    version_ids = [step.get("id") for step in checker_steps if "payabli.version=" in run_commands(step)]
+    version_ids = [step.get("id") for step in checker_steps if reads(step, "version", VERSION_READ)]
     check("W17 and the check publishes the named commit and the version it read",
           outputs.get("commit") == "${{ inputs.commit }}" and len(version_ids) == 1 and bool(version_ids[0])
           and outputs.get("version") == "${{ steps." + str(version_ids[0]) + ".outputs.version }}",
@@ -3893,7 +3903,7 @@ def test_workflows():
           bool(checked_out) and " ".join(str(checked_out[0].get("ref", "")).split()) == "${{ inputs.commit }}",
           f"{checked_out}")
     # A release version only: a candidate belongs on the mutable channel. The step that reads it, alone.
-    reading = [step for step in checker_steps if "payabli.version=" in run_commands(step)]
+    reading = [step for step in checker_steps if reads(step, "version", VERSION_READ)]
     check("W17 and it reads the version as <major>.<minor>.<patch> and nothing else",
           len(reading) == 1 and RELEASE_VERSION in run_commands(reading[0])
           and refuses(reading[0], "[[ ! $version =~ $release ]]"),
@@ -3936,7 +3946,7 @@ def test_workflows():
     # before either does anything. The build's Gradle carries no override, so the property is the version.
     def tag_check(steps) -> int | None:
         return next((i for i, step in enumerate(steps)
-                     if "payabli.version=" in run_commands(step) and "github.ref_name" in step_text(step)
+                     if reads(step, "version", VERSION_READ) and "github.ref_name" in step_text(step)
                      and refuses(step, "[ $TAG != $version ]")), None)
 
     build_steps = job_steps(rel_jobs.get(builder, {}))

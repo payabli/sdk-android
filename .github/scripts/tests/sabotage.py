@@ -1200,6 +1200,18 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release takes a CI run from any branch, the branch filter echoed beside the query', RELEASE, "workflows",
+     '--event push \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch main\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ('Release hard-codes the version it tags, the property name echoed beside it', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     '          echo payabli.version=; version=0.0.1\n          release='),
+
+    ('Release builds against a hard-coded version, the property name echoed beside it', RELEASE, "workflows",
+     '          version=$(sed -n \'s/^payabli.version=//p\' gradle.properties)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
+     '          echo payabli.version=; version=0.0.1\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java'),
+
     ('Release starts the tag run without a token', RELEASE, "workflows",
      '          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run',
      '          COMMIT: ${{ needs.check.outputs.commit }}\n        run: gh workflow run'),
