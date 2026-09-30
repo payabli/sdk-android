@@ -1,4 +1,4 @@
-# PayabliDemo Local Token Server
+# Android sample token server
 
 Tiny development server for exercising the PayIn payment flows. It gives the Android sample a
 backend-shaped endpoint without putting Payabli credentials in the APK.
