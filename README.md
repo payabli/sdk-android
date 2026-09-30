@@ -152,11 +152,20 @@ Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store,
    enabled if you plan to use it.
 2. **Create OAuth2 credentials.** Provision a client ID and client secret for the sandbox. See
    [OAuth authentication](https://docs.payabli.com/developers/oauth-authentication).
-   - Card-not-present needs `inboundpayments_create` to charge, authorize and capture,
-     `inboundpayments_void` to void, and `tokens_create` to store a payment method.
-   - Tap to Pay needs `tools_init`, `pos_create` and `inboundpayments_create`.
+   Give them the permissions in the table below.
 3. **For Tap to Pay**, have your app enrolled and registered as one of the paypoint's authorized apps, as the
    [Tap to Pay guide](taptopay/README.md#before-you-start) describes.
+
+Each operation needs its own permission on those credentials:
+
+| Operation | Permission |
+|---|---|
+| Charge, authorize, or capture an authorization | `inboundpayments_create` |
+| Void a transaction | `inboundpayments_void` |
+| Save a payment method | `tokens_create` |
+| Set up a phone for Tap to Pay | `tools_init` and `pos_create` |
+| Take a Tap to Pay payment | `inboundpayments_create` |
+| Register an authorized app through the API | `pos_create` |
 
 ### Build your token endpoint
 
