@@ -93,7 +93,9 @@ internal fun PayInFormContent(
 
     // The draft holds what the host was last told, not this composition: the method can move while no
     // form is composed, so the next showing has to read a move as a change rather than as an opening.
-    LaunchedEffect(method) {
+    // Keyed on the draft as well, so a new draft initializes even where its opening method matches the
+    // one the old draft stood on.
+    LaunchedEffect(draft, method) {
         val previous = draft.toldMethod
         draft.toldMethod = method
         if (previous != null && previous != method) methodChanged(method)

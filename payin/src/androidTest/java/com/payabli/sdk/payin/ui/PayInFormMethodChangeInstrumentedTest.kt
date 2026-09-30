@@ -191,7 +191,39 @@ class PayInFormMethodChangeInstrumentedTest {
         assertTold(PayInMethodType.BankAccount)
     }
 
+    @Test
+    fun aSecondDraftOpeningOnTheSameMethodStillTellsItsFirstChange() {
+        // A host can hand the form a new flow in the same place, and the new flow's draft opens where
+        // the old one stood. The new draft opens silently, and a change on it reaches the host.
+        val swapped = mutableStateOf(PayInFormDraft())
+        show(draft = { swapped.value })
+        rule.waitForIdle()
+
+        rule.runOnIdle { swapped.value = PayInFormDraft() }
+        rule.waitForIdle()
+        tap(PayInMethodType.BankAccount)
+
+        assertTold(PayInMethodType.BankAccount)
+    }
+
     private fun show(configuration: PayInFormConfiguration) = show { configuration }
+
+    private fun show(
+        draft: () -> PayInFormDraft,
+        configuration: PayInFormConfiguration = both,
+    ) {
+        rule.setContent {
+            MaterialTheme {
+                PayInFormContent(
+                    submission = PayInSubmissionState.Idle,
+                    draft = draft(),
+                    configuration = configuration,
+                    reports = PayInFormReports.None,
+                    onMethodChanged = { told += it },
+                )
+            }
+        }
+    }
 
     private fun show(configuration: () -> PayInFormConfiguration) {
         rule.setContent {
