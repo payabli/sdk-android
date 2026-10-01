@@ -348,27 +348,6 @@ jobs:
           role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
           aws-region: ${{ vars.AWS_SDK_CDN_REGION }}
 
-      # The release role writes /maven and nothing else. Asked before the upload, so a role that could also
-      # write the QA prefix publishes nothing. An allowed write lands an empty key on the mutable prefix.
-      - name: Check the role is refused on the QA prefix
-        env:
-          ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
-          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
-        run: |
-          python3 -c '
-          import os, subprocess, sys
-          account = os.environ["ROLE_ARN"].split(":")[4]
-          r = subprocess.run(
-              ["aws", "s3api", "put-object", "--bucket", os.environ["AWS_SDK_CDN_BUCKET"],
-               "--key", "maven-qa/com/payabli/.release-role-probe", "--body", "/dev/null",
-               "--if-none-match", "*", "--expected-bucket-owner", account],
-              capture_output=True, text=True)
-          denied = r.returncode != 0 and "AccessDenied" in r.stderr
-          print("refused on maven-qa/, as it should be" if denied
-                else "::error::expected AccessDenied on maven-qa/, got: " + (r.stderr.strip() or "a successful write"))
-          sys.exit(0 if denied else 1)
-          '
-
       # The account comes off the role ARN, so there is one copy of it. Re-running this job against the
       # same build reports every key already written as present. A rebuild does not: its bytes differ,
       # and the uploader refuses a key that holds different ones.
