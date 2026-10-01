@@ -55,23 +55,14 @@ Build the SDK from source into your local Maven repository:
 ```bash
 git clone https://github.com/payabli/sdk-android.git
 cd sdk-android
-./gradlew publishToMavenLocal                                    # everything
-./gradlew :core:publishToMavenLocal :payin:publishToMavenLocal  # card-not-present only
+./gradlew publishToMavenLocal                                                            # everything
+./gradlew :core:publishToMavenLocal :payin:publishToMavenLocal :payabli-bom:publishToMavenLocal  # card-not-present only
 ```
 
 The build needs the Android SDK, through `ANDROID_HOME` or `sdk.dir` in `local.properties`. Building Tap
 to Pay also needs the [card reader repository](#card-reader-repository) credentials.
 
-Then add `mavenLocal()` to the repositories in `settings.gradle.kts` and depend on what you use. The version is the one the
-build published, which `payabli.version` in the clone's [`gradle.properties`](gradle.properties) sets:
-
-| Artifact | Adds |
-|---|---|
-| `com.payabli:sdk-android-payin` | Card-not-present |
-| `com.payabli:sdk-android-taptopay` | Tap to Pay |
-| `com.payabli:sdk-android` | Both, with error and usage reporting |
-
-Each library includes `com.payabli:sdk-android-core`, which holds the session and the configuration.
+Then add `mavenLocal()` to the repositories in `settings.gradle.kts`:
 
 ```kotlin
 // settings.gradle.kts
@@ -84,14 +75,29 @@ dependencyResolutionManagement {
 }
 ```
 
+Depend on the SDK through its bill of materials, which is the recommended setup. The BOM pins every
+artifact to one version, the one the build published, which `payabli.version` in the clone's
+[`gradle.properties`](gradle.properties) sets. The libraries then take no version of their own:
+
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    val payabliVersion = "<payabli.version>" // from the clone's gradle.properties
-    implementation("com.payabli:sdk-android-payin:$payabliVersion")
-    implementation("com.payabli:sdk-android-taptopay:$payabliVersion")
+    implementation(platform("com.payabli:sdk-android-bom:<payabli.version>"))
+    implementation("com.payabli:sdk-android-payin")    // card-not-present
+    implementation("com.payabli:sdk-android-taptopay") // Tap to Pay
 }
 ```
+
+| Artifact | Adds |
+|---|---|
+| `com.payabli:sdk-android-bom` | The versions of the artifacts below. No code |
+| `com.payabli:sdk-android-payin` | Card-not-present |
+| `com.payabli:sdk-android-taptopay` | Tap to Pay |
+| `com.payabli:sdk-android` | Both, with error and usage reporting |
+
+Take `sdk-android-payin` or `sdk-android-taptopay` alone, or both. Each includes
+`com.payabli:sdk-android-core`, which holds the session and the configuration. Without the BOM, give each
+library the version yourself, for example `implementation("com.payabli:sdk-android-payin:<payabli.version>")`.
 
 ### Configure your app
 
