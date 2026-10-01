@@ -1,6 +1,6 @@
 package com.payabli.sdk.telemetry
 
-import com.payabli.sdk.core.PayabliSdkVersion
+import com.payabli.sdk.core.PayabliSdk
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
@@ -101,7 +101,7 @@ internal class TelemetryUploader(
     private fun QueuedTelemetryEvent.toBody(): TelemetryEventBody =
         TelemetryEventBody(
             schemaVersion = TelemetryEventBody.SCHEMA_VERSION,
-            sdkVersion = PayabliSdkVersion.VALUE,
+            sdkVersion = PayabliSdk.VERSION,
             timestamp = formatTimestamp(occurredAtMillis),
             sessionId = session.sessionId,
             entry = session.entryPoint,

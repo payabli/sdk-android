@@ -37,7 +37,7 @@ android {
 
         // The version every module reports, taken from the same property the publish convention reads, so a
         // release cannot ship an artifact whose reported version is a stale literal. Read here rather than in
-        // each module: `PayabliSdkVersion` is what the rest of the SDK names.
+        // each module: `PayabliSdk.VERSION` is what the rest of the SDK and a host name.
         buildConfigField(
             "String",
             "SDK_VERSION",

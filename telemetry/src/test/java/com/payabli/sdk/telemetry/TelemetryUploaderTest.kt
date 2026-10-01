@@ -1,6 +1,6 @@
 package com.payabli.sdk.telemetry
 
-import com.payabli.sdk.core.PayabliSdkVersion
+import com.payabli.sdk.core.PayabliSdk
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
@@ -52,7 +52,7 @@ class TelemetryUploaderTest {
 
             assertEquals(
                 """{"entry":"an-entry-point","events":[{"schemaVersion":"1",""" +
-                    """"sdkVersion":"${PayabliSdkVersion.VALUE}",""" +
+                    """"sdkVersion":"${PayabliSdk.VERSION}",""" +
                     """"timestamp":"2025-08-12T12:00:00.000Z","sessionId":""" +
                     """"0f8d2a1c-4b6e-4a2f-9c3d-5e7f8a9b0c1d","entry":"an-entry-point",""" +
                     """"environment":"sandbox","event":"payin.capture.completed",""" +
