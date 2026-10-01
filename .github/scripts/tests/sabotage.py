@@ -1200,6 +1200,26 @@ MUTATIONS = [
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
+    ('Release overrides the version it read with command export', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          command export version=0.0.1\n          release="),
+
+    ('Release overrides the version it read with builtin export', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          builtin export version=0.0.1\n          release="),
+
+    ('Release overrides the version it read with a function', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          set_version() { version=0.0.1; }; set_version\n          release="),
+
+    ('Release overrides the version it read with declare', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          declare version=0.0.1\n          release="),
+
+    ('Release overrides the CI count it read with command export', RELEASE, "workflows",
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
     ("Release skips the check job's CI gate with a step condition", RELEASE, "workflows",
      '      - name: Check CI passed on main for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
      '      - name: Check CI passed on main for this commit\n        if: false\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n'),

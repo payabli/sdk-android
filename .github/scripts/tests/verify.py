@@ -3796,32 +3796,26 @@ def test_workflows():
 
     tag_commands = full_commands(tagging[0]) if len(tagging) == 1 else []
 
-    # A value read by a command, as commands: `var=$(command)` and no other assignment to var in the step,
-    # so neither a hard-coded value nor an echo carrying the right words can stand in for the read.
-    # An assignment is any way the shell sets a variable, not only `var=`: a prefix assignment, a builtin
-    # that takes the name (`export var=…`, `read var`, `printf -v var`), and `eval` or `source`, which can
-    # set anything and so are refused in a read step outright.
-    SETTERS = ("export", "declare", "typeset", "local", "readonly", "let", "read", "mapfile", "readarray",
-               "unset", "printf")
-
-    def assignments(commands: list[list[str]], var: str) -> list[int]:
-        found = []
-        for i, words in enumerate(commands):
-            head = program_index(words)
-            prefix, rest = words[:head], words[head:]
-            named = rest[:1] and rest[0] in SETTERS and any(
-                word == var or word.startswith(f"{var}=") for word in rest[1:])
-            if any(word.startswith(f"{var}=") for word in prefix) or named:
-                found.append(i)
-        return found
+    # A value read by a command, as commands: `var=$(command)` once, and nothing else in the step that
+    # could set var another way. That is an allowlist rather than a list of setters, because the setters
+    # have no end: `export`, `printf -v`, `eval`, then `command export`, `builtin`, a function. Besides
+    # the read, a read step may only assign other names, test and refuse, echo, and append to a file.
+    PLAIN = ("if", "then", "fi", "echo", "exit", ">>")
 
     def reads(step: dict, var: str, command: list[str]) -> bool:
         commands = full_commands(step)
-        if any(words[program_index(words):][:1] in (["eval"], ["source"], ["."]) for words in commands):
+        at = [i for i, words in enumerate(commands) if words == [f"{var}=$"]]
+        if len(at) != 1 or commands[at[0] + 1:at[0] + 2] != [command]:
             return False
-        assigned = assignments(commands, var)
-        return (len(assigned) == 1 and commands[assigned[0]] == [f"{var}=$"]
-                and commands[assigned[0] + 1:assigned[0] + 2] == [command])
+        for i, words in enumerate(commands):
+            if i in (at[0], at[0] + 1):
+                continue
+            head = program_index(words)
+            if any(word.startswith(f"{var}=") for word in words[:head]):
+                return False
+            if words[head:] and words[head] not in PLAIN:
+                return False
+        return True
 
     CI_QUERY = ["gh", "run", "list", "--repo", "$GITHUB_REPOSITORY", "--workflow", "ci.yml", "--commit", "$SHA",
                 "--event", "push", "--branch", "main", "--json", "conclusion",
