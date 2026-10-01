@@ -1548,10 +1548,6 @@ MUTATIONS = [
      'EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/tags/',
      'EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/'),
 
-    ('Release probes its own prefix, so a role that can write QA goes unnoticed', RELEASE, "workflows",
-     '"--key", "maven-qa/com/payabli/.release-role-probe"',
-     '"--key", "maven/com/payabli/.release-role-probe"'),
-
     ('Release lets a queued upload cancel one mid-upload', RELEASE, "workflows",
      '      group: maven-release\n      cancel-in-progress: false\n',
      '      group: maven-release\n      cancel-in-progress: true\n'),

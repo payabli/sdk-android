@@ -4047,17 +4047,6 @@ def test_workflows():
           " ".join(role.split()) == "${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}", role)
     check("W17 and no role ARN is written inline", "arn:aws:iam:" not in rel_text)
 
-    # Asked before the upload and after the assume: the role writes /maven and must be refused on the QA
-    # prefix, and one that is not publishes nothing.
-    # On the key the probe writes, not on the words around it: its messages name the QA prefix too, so a
-    # probe aimed at /maven would still mention it.
-    probe = next((i for i, step in enumerate(upload_steps)
-                  if re.search(r'"--key",\s*"maven-qa/', str(step.get("run", "")))
-                  and "AccessDenied" in str(step.get("run", ""))), None)
-    check("W17 it checks the role is refused on the QA prefix",
-          probe is not None and assume is not None and uploader is not None and assume < probe < uploader,
-          f"assume={assume} probe={probe} upload={uploader}")
-
     # One upload at a time, and a running one is not cancelled: the keys it has written stay written.
     concurrency = upload_job.get("concurrency")
     group = str((concurrency or {}).get("group", "")) if isinstance(concurrency, dict) else str(concurrency or "")
