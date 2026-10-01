@@ -132,6 +132,16 @@ class PayabliTapToPayTest {
         }
 
     @Test
+    fun `the declared deviceId refuses as the one host-facing type`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val terminal = terminalOver(SessionFixture(script()))
+
+            val failure = runCatching { terminal.deviceId() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+        }
+
+    @Test
     fun `a failure reaching a host still names the payment`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The facade builds the failure a host sees, so a payment named underneath it has to survive

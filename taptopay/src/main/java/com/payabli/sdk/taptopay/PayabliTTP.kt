@@ -52,6 +52,13 @@ public class PayabliTTP private constructor(
         wrapping { coordinator.activateDevice(activationCode) }
 
     /**
+     * The id Payabli assigned this device on the session's paypoint, pending or active, or null when the SDK
+     * holds none for it, until [initialize] enrolls the device. A store that cannot be read throws.
+     */
+    public suspend fun deviceId(): String? =
+        wrapping { throw TapToPayException.of("Reading the device id is not available yet", null) }
+
+    /**
      * Takes one payment. Waits for a card, so it runs as long as the person in front of the phone.
      *
      * [customer] has to identify the payer: an opening that names none is refused before a card is asked
