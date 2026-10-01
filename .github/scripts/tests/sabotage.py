@@ -1199,22 +1199,314 @@ MUTATIONS = [
      ":testutils:test :taptopay:test :example:test\n          ./gradlew -p build-logic test",
      ":testutils:test :taptopay:test\n          ./gradlew -p build-logic test"),
 
-    ("Release publishes a commit whatever CI said about it", RELEASE, "workflows",
-     "--jq '[.[] | select(.conclusion == \"success\")] | length')",
-     "--jq 'length')"),
-
-    ("Release accepts a CI run from any branch", RELEASE, "workflows",
-     " \\\n            --branch main --json conclusion",
-     " \\\n            --json conclusion"),
-
     # The release. Each row is green on every check but its own, and each is a publish that cannot be undone.
-    ('Release can be dispatched, so it runs with a branch subject and no tag', RELEASE, "workflows",
-     'on:\n  push:\n',
-     'on:\n  workflow_dispatch:\n  push:\n'),
+    ('Release overrides the version it read with command export', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          command export version=0.0.1\n          release="),
 
-    ('Release triggers on a candidate tag, which would land on the immutable prefix', RELEASE, "workflows",
-     "      - '[0-9]+.[0-9]+.[0-9]+'\n",
-     "      - '*.*.*'\n"),
+    ('Release overrides the version it read with builtin export', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          builtin export version=0.0.1\n          release="),
+
+    ('Release overrides the version it read with a function', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          set_version() { version=0.0.1; }; set_version\n          release="),
+
+    ('Release overrides the version it read with declare', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          declare version=0.0.1\n          release="),
+
+    ('Release overrides the CI count it read with command export', RELEASE, "workflows",
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     '          command export passed=1\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ("Release skips the check job's CI gate with a step condition", RELEASE, "workflows",
+     '      - name: Check CI passed on main for this commit\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n',
+     '      - name: Check CI passed on main for this commit\n        if: false\n        env:\n          GH_TOKEN: ${{ github.token }}\n          SHA: ${{ inputs.commit }}\n'),
+
+    ('Release lets the on-main guard fail without failing the job', RELEASE, "workflows",
+     '      - name: Check the commit is on main\n',
+     '      - name: Check the commit is on main\n        continue-on-error: true\n'),
+
+    ("Release runs the build's CI gate under another shell", RELEASE, "workflows",
+     '      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.\n      - name: Check CI passed on main for this commit\n',
+     '      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.\n      - name: Check CI passed on main for this commit\n        shell: sh {0}\n'),
+
+    ("Release runs the upload's steps under sh, without pipefail", RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build]\n    defaults:\n      run:\n        shell: sh\n'),
+
+    ('Release uploads from a self-hosted runner', RELEASE, "workflows",
+     '    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n',
+     '    runs-on: self-hosted\n    permissions:\n      contents: read\n      id-token: write\n'),
+
+    ('Release writes the notes even when the upload failed', RELEASE, "workflows",
+     '    name: Create the GitHub Release\n    needs: [upload]\n',
+     '    name: Create the GitHub Release\n    needs: [upload]\n    if: always()\n'),
+
+    ('Release lets the check job write the repository', RELEASE, "workflows",
+     '    permissions:\n      contents: read\n      # To read the CI runs for this commit.\n      actions: read\n    outputs:',
+     '    permissions:\n      contents: write\n      # To read the CI runs for this commit.\n      actions: read\n    outputs:'),
+
+    ("Release rewrites a later step's environment through GITHUB_ENV", RELEASE, "workflows",
+     '          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n',
+     '          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"\n          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n'),
+
+    ('Release hands every secret to the whole build job through a job-level env', RELEASE, "workflows",
+     "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n",
+     "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n    env:\n      ALL_SECRETS: ${{ toJSON(secrets) }}\n"),
+
+    ('Release hands every secret to every job through a workflow-level env', RELEASE, "workflows",
+     'permissions:\n  contents: read\n\n#',
+     'env:\n  ALL_SECRETS: ${{ toJSON(secrets) }}\npermissions:\n  contents: read\n\n#'),
+
+    ('Release hands the uploading job a secret through its job-level env', RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build]\n    env:\n      KEY: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+
+    ('Release overrides the version it read with export', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          export version=0.0.1\n          release="),
+
+    ('Release overrides the version it read with printf -v', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          printf -v version 0.0.1\n          release="),
+
+    ('Release overrides the version it read with eval', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          eval version=0.0.1\n          release="),
+
+    ('Release tags again on a resumed run, the guard removed', RELEASE, "workflows",
+     '          if [ -z "$tagged" ]; then\n',
+     '          if true; then\n'),
+
+    ('Release tags only when the version is already tagged', RELEASE, "workflows",
+     'if [ -z "$tagged" ]; then',
+     'if [ -n "$tagged" ]; then'),
+
+    ('Release takes a CI run from any branch, the branch filter echoed beside the query', RELEASE, "workflows",
+     '--event push \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     '--event push \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          echo \'--branch main\'\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ('Release hard-codes the version it tags, the property name echoed beside it', RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     '          echo payabli.version=; version=0.0.1\n          release='),
+
+    ('Release builds against a hard-coded version, the property name echoed beside it', RELEASE, "workflows",
+     '          version=$(sed -n \'s/^payabli.version=//p\' gradle.properties)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
+     '          echo payabli.version=; version=0.0.1\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java'),
+
+    ('Release starts the tag run without a token', RELEASE, "workflows",
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run',
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n        run: gh workflow run'),
+
+    ("Release fetches GitHub's host keys without a token", RELEASE, "workflows",
+     '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          tagged=',
+     '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n        run: |\n          tagged='),
+
+    ('Release tag job may not start a run', RELEASE, "workflows",
+     '      # To dispatch the tag run.\n      actions: write\n',
+     ''),
+
+    ('Release hands the whole secrets context to a Gradle step', RELEASE, "workflows",
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        run: |\n          ./gradlew :core:test',
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n          ALL_SECRETS: ${{ toJSON(secrets) }}\n        run: |\n          ./gradlew :core:test'),
+
+    ('Release tags a commit whose release workflow is another one', RELEASE, "workflows",
+     '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" != "$(git rev-parse "$GITHUB_SHA:.github/workflows/release.yml")"',
+     '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" = "$(git rev-parse "$COMMIT:.github/workflows/release.yml")" -a 1 = 0'),
+
+    ("Release compares main's head with itself rather than the named commit", RELEASE, "workflows",
+     '      - name: Check the commit carries this release workflow\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '      - name: Check the commit carries this release workflow\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+
+    ('Release echoes the SSH options and pushes the tag without them', RELEASE, "workflows",
+     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n              git push',
+     '            echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"\n            git push'),
+
+    ('Release echoes the dispatch instead of starting the tag run', RELEASE, "workflows",
+     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
+     '        run: echo "gh workflow run release.yml --repo $GITHUB_REPOSITORY --ref $VERSION -f commit=$COMMIT"\n'),
+
+    ('Release echoes the CI guard instead of running it', RELEASE, "workflows",
+     '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch once CI on main has passed."\n            exit 1\n          fi\n',
+     "          echo 'if [ $passed -lt 1 ] ; then exit 1 ; fi'\n"),
+
+    ("Release publishes main's head as the approved commit", RELEASE, "workflows",
+     '      commit: ${{ inputs.commit }}\n    steps:\n',
+     '      commit: ${{ github.sha }}\n    steps:\n'),
+
+    ('Release publishes a literal version rather than the one read', RELEASE, "workflows",
+     '      version: ${{ steps.version.outputs.version }}\n      commit:',
+     '      version: 0.0.1\n      commit:'),
+
+    ('Release keeps the tag-name guard but drops its exit, leaving the next guard to exit', RELEASE, "workflows",
+     'so it is not a release tag."\n            exit 1\n',
+     'so it is not a release tag."\n'),
+
+    ('Release lets a commit with no successful CI through the check', RELEASE, "workflows",
+     '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ('Release lets a commit with no successful CI through the build', RELEASE, "workflows",
+     '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n',
+     '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n'),
+
+    ('Release refuses a full SHA and accepts anything else', RELEASE, "workflows",
+     'if [[ ! "$COMMIT" =~',
+     'if [[ "$COMMIT" =~'),
+
+    ('Release refuses a commit on main and accepts one off it', RELEASE, "workflows",
+     '!= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on main.',
+     '= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on main.'),
+
+    ('Release refuses a release version and accepts a candidate', RELEASE, "workflows",
+     'if [[ ! "$version" =~ $release ]]',
+     'if [[ "$version" =~ $release ]]'),
+
+    ('Release reads any version as a release version', RELEASE, "workflows",
+     'release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$version"',
+     'release=\'^.*$\'\n          if [[ ! "$version"'),
+
+    ('Release builds on any tag name, the check reversed', RELEASE, "workflows",
+     'if [[ ! "$GITHUB_REF_NAME" =~',
+     'if [[ "$GITHUB_REF_NAME" =~'),
+
+    ('Release builds when the tag and the property disagree', RELEASE, "workflows",
+     'if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
+     'if [ "$TAG" = "$version" ] && false; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java'),
+
+    ('Release moves the push controls into the dispatch step, where they protect nothing', RELEASE, "workflows",
+     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n          fi\n\n      # A dispatch always creates a run, including one started with this job\'s token, and a run on the tag\n      # presents the subject the release role trusts.\n      - name: Start the tag run\n        env:\n          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
+     '            GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$hosts" \\\n              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n          fi\n\n      # A dispatch always creates a run, including one started with this job\'s token, and a run on the tag\n      # presents the subject the release role trusts.\n      - name: Start the tag run\n        env:\n          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes gh api meta"\n          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n'),
+
+    ('Release build waits for the check, which the tag run skips', RELEASE, "workflows",
+     "    if: startsWith(github.ref, 'refs/tags/')\n",
+     "    needs: [check]\n    if: startsWith(github.ref, 'refs/tags/')\n"),
+
+    ('Release upload waits for the check as well, which the tag run skips', RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build, check]\n'),
+
+    ('Release pushes the tag without the deploy key', RELEASE, "workflows",
+     'GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes',
+     'GIT_SSH_COMMAND="ssh -o IdentitiesOnly=yes'),
+
+    ('Release lets the push fall back to another SSH identity', RELEASE, "workflows",
+     '-i $key -o IdentitiesOnly=yes',
+     '-i $key'),
+
+    ('Release pushes the tag over HTTPS, where the deploy key is not used', RELEASE, "workflows",
+     'git push "git@github.com:$GITHUB_REPOSITORY.git"',
+     'git push "https://github.com/$GITHUB_REPOSITORY.git"'),
+
+    ('Release tags a version other than the one the check read', RELEASE, "workflows",
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY',
+     '          VERSION: 0.0.1\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY'),
+
+    ('Release starts the tag run on a version other than the one the check read', RELEASE, "workflows",
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN',
+     '          VERSION: 0.0.1\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN'),
+
+    ("Release asks CI about a commit written in by hand rather than the tag's", RELEASE, "workflows",
+     '          SHA: ${{ github.sha }}\n',
+     '          SHA: a37642a360f698d6b244ade14041ebe457f0974b\n'),
+
+    ('Release builds on any tag whose name matches the version, a candidate included', RELEASE, "workflows",
+     '          release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$GITHUB_REF_NAME" =~ $release ]]; then\n            echo "::error::$GITHUB_REF_NAME is not <major>.<minor>.<patch>, so it is not a release tag."\n            exit 1\n          fi\n',
+     ''),
+
+    ("Release tags main's head through the tag step's own env", RELEASE, "workflows",
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY',
+     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ github.sha }}\n          RELEASE_DEPLOY_KEY'),
+
+    ("Release hands the tag run main's head", RELEASE, "workflows",
+     '          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run',
+     '          COMMIT: ${{ github.sha }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run'),
+
+    ("Release checks main's head is named in full rather than the named commit", RELEASE, "workflows",
+     '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+
+    ("Release checks main's head is on main rather than the named commit", RELEASE, "workflows",
+     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
+     '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ github.sha }}\n'),
+
+    ("Release takes main's head when no commit is named", RELEASE, "workflows",
+     '        required: true\n        type: string\n',
+     '        required: false\n        type: string\n'),
+
+    ('Release accepts a short SHA, which can resolve to another commit', RELEASE, "workflows",
+     '^[0-9a-f]{40}$',
+     '^[0-9a-f]+$'),
+
+    ('Release tags a commit that is not on main', RELEASE, "workflows",
+     'git merge-base "$COMMIT" origin/main',
+     'git merge-base "$COMMIT" HEAD'),
+
+    ("Release checks CI for main's head rather than the named commit", RELEASE, "workflows",
+     '          SHA: ${{ inputs.commit }}\n',
+     '          SHA: ${{ github.sha }}\n'),
+
+    ("Release reads the version at main's head", RELEASE, "workflows",
+     '          ref: ${{ inputs.commit }}\n          fetch-depth: 0\n',
+     '          fetch-depth: 0\n'),
+
+    ("Release tags main's head rather than the approved commit", RELEASE, "workflows",
+     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"',
+     'dispatched by $GITHUB_TRIGGERING_ACTOR" "$GITHUB_SHA"'),
+
+    ('Release builds from a tag that names another commit', RELEASE, "workflows",
+     '          if [ "$GITHUB_SHA" != "$COMMIT" ]; then\n            echo "::error::$GITHUB_REF_NAME',
+     '          if [ "$GITHUB_SHA" = "$GITHUB_SHA" ] && false; then\n            echo "::error::$GITHUB_REF_NAME'),
+
+    ('Release starts on a tag push, so a person creates the release', RELEASE, "workflows",
+     'on:\n  workflow_dispatch:\n',
+     "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
+
+    ('Release tags a commit whatever CI said about it', RELEASE, "workflows",
+     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ('Release tags a commit whose CI ran on any branch', RELEASE, "workflows",
+     ' \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
+     ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
+
+    ('Release builds on a tag whatever CI said about it', RELEASE, "workflows",
+     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n',
+     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n'),
+
+    ('Release tags from any branch', RELEASE, "workflows",
+     "    if: github.ref == 'refs/heads/main'\n",
+     ''),
+
+    ('Release builds on a branch ref, where the release role never grants the write', RELEASE, "workflows",
+     "    if: startsWith(github.ref, 'refs/tags/')\n",
+     ''),
+
+    ('Release hands the deploy key to the build', RELEASE, "workflows",
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        run: ./gradlew publish\n',
+     '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n          KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n        run: ./gradlew publish\n'),
+
+    ("Release trusts GitHub's host key on first use", RELEASE, "workflows",
+     '-o StrictHostKeyChecking=yes',
+     '-o StrictHostKeyChecking=no'),
+
+    ('Release pushes over a version already tagged on another commit', RELEASE, "workflows",
+     '[ "$tagged" != "$COMMIT" ]',
+     '[ "$tagged" = "$COMMIT" ]'),
+
+    ('Release tags and never starts the run that publishes', RELEASE, "workflows",
+     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
+     '        run: echo "tagged $VERSION"\n'),
+
+    ('Release upload runs through a skipped build', RELEASE, "workflows",
+     '    name: Upload to /maven\n    needs: [build]\n',
+     '    name: Upload to /maven\n    needs: [build]\n    if: always()\n'),
+
+    ('Release tags without the check having run', RELEASE, "workflows",
+     '    name: Tag the release\n    needs: [check]\n',
+     '    name: Tag the release\n    needs: [check]\n    if: always()\n'),
 
     ('Release builds without checking the tag against the committed version', RELEASE, "workflows",
      '      - name: Check the tag names the committed version\n        env:\n          TAG: ${{ github.ref_name }}\n        run: |\n          # Empty rather than a failed grep when the line is missing, so the refusal below says why.\n          version=$(sed -n \'s/^payabli.version=//p\' gradle.properties)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
@@ -1227,10 +1519,6 @@ MUTATIONS = [
     ('Release uploads with nobody approving it', RELEASE, "workflows",
      '    environment: release\n',
      ''),
-
-    ('Release upload skips the gate', RELEASE, "workflows",
-     '    needs: [approve]\n',
-     '    needs: [build]\n'),
 
     ('Release upload names the environment, so its subject loses the tag', RELEASE, "workflows",
      '    name: Upload to /maven\n',
