@@ -10,10 +10,18 @@ import org.junit.Test
  */
 class PayabliSdkTest {
     @Test
-    fun `the version is a release version`() {
+    fun `the version is a release or a QA snapshot of one`() {
         assertTrue(
             "the SDK reports '${PayabliSdk.VERSION}'",
-            PayabliSdk.VERSION.matches(Regex("""\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?""")),
+            PayabliSdk.VERSION.matches(PUBLISHED_VERSION),
         )
     }
 }
+
+/**
+ * The two shapes this project publishes: `<major>.<minor>.<patch>`, which the release workflow requires of
+ * `payabli.version`, and that followed by `-QA.<yyyymmddHHMMSS>`, which the snapshot workflow appends. No
+ * leading zero in any numeric part, because a pre-release identifier of only digits compares numerically.
+ */
+private val PUBLISHED_VERSION =
+    Regex("""(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-QA\.\d{14})?""")
