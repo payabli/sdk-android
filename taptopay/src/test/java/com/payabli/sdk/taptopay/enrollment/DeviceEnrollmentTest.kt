@@ -403,7 +403,7 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `a store that cannot be read this time raises rather than reading as no device`() =
+    fun `a store that cannot be read reads as no device id, without throwing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 EnrollmentFixture(
@@ -412,12 +412,7 @@ class DeviceEnrollmentTest {
                 )
             fixture.seedRecord()
 
-            val thrown = runCatching { fixture.enrollment.deviceId() }.exceptionOrNull()
-
-            assertEquals(
-                SecureStorageException.CryptoUnavailable::class.java,
-                thrown?.javaClass,
-            )
+            assertEquals(null, fixture.enrollment.deviceId())
         }
 
     @Test
@@ -445,7 +440,7 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `a key store that cannot be reached raises rather than reading as no device`() =
+    fun `a key store that cannot be reached reads as no device id, without throwing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 EnrollmentFixture(
@@ -454,9 +449,7 @@ class DeviceEnrollmentTest {
                 )
             fixture.seedRecord()
 
-            val thrown = runCatching { fixture.enrollment.deviceId() }.exceptionOrNull()
-
-            assertEquals(DeviceKeyException.CryptoUnavailable::class.java, thrown?.javaClass)
+            assertEquals(null, fixture.enrollment.deviceId())
         }
 
     @Test

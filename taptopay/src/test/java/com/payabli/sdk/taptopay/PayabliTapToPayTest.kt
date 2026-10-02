@@ -156,7 +156,7 @@ class PayabliTapToPayTest {
         }
 
     @Test
-    fun `a store that cannot be read reaches a host as the one failure type`() =
+    fun `a store that cannot be read reads as no device id, without throwing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 SessionFixture(
@@ -166,9 +166,7 @@ class PayabliTapToPayTest {
             fixture.seedRecord()
             val terminal = terminalOver(fixture)
 
-            val failure = runCatching { terminal.deviceId() }.exceptionOrNull()
-
-            assertTrue(failure.toString(), failure is TapToPayException)
+            assertNull(terminal.deviceId())
         }
 
     @Test

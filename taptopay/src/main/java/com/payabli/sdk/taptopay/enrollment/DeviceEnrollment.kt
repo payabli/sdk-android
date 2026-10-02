@@ -9,6 +9,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.AppAttestor
 import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
 import com.payabli.sdk.taptopay.attestation.MintProjectResolver
@@ -278,21 +279,25 @@ internal class DeviceEnrollment(
         }
 
     /**
-     * The handle this paypoint's device was registered under, or null when none is held.
+     * The handle this paypoint's device was registered under, or null when this device holds no usable one.
      *
-     * Null as well for a record [enroll] would discard, one naming a key this device no longer holds, so the
-     * answer matches what the next enrollment does with it. A store or key store that cannot be read raises,
-     * as [enroll] does, because the binding may still be there. Takes the same lock as the rest, so it cannot
-     * read a handle a re-registration is replacing.
+     * Never raises. A record [enroll] would discard, a store or key store that cannot be read, and a key that is
+     * gone all read as null, because the caller's one remedy for each is [enroll]. Takes the same lock as the
+     * rest, so it cannot read a handle a re-registration is replacing.
      */
     suspend fun deviceId(): String? =
         lock.withLock {
             // The store first, so an install holding nothing never reaches the key store.
-            val known = store.read(entry) ?: return@withLock null
+            val known =
+                try {
+                    store.read(entry)
+                } catch (unreadable: SecureStorageException) {
+                    null
+                } ?: return@withLock null
             val identity =
                 try {
                     withContext(dispatcher) { deviceKey.publicKey() }
-                } catch (lost: DeviceKeyException.KeyLost) {
+                } catch (unusable: DeviceKeyException) {
                     return@withLock null
                 }
             known.deviceId.takeIf { known.keyId == identity.identity }
