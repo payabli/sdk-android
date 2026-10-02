@@ -85,6 +85,11 @@ internal class FakeSecureStore(
     /** What is stored, read without recording an operation. */
     fun peek(key: String): ByteArray? = entries[key]?.copyOf()
 
+    /** Drops an entry outside any operation, the way the real store discards one it reports unreadable. */
+    fun drop(key: String) {
+        entries.remove(key)
+    }
+
     companion object {
         /** Fails [operation] with [failure] and lets everything else through. */
         fun failing(

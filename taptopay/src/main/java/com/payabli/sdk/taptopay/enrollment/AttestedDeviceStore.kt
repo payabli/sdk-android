@@ -134,9 +134,10 @@ internal class AttestedDeviceStore(
             }
             // This device has written the current shape, so the old record is older than a binding that is
             // gone, and restoring it would hand back a stale one. Nothing is held, and a fresh enrollment
-            // follows. Removed now rather than left for a later read to find once this entry is absent.
+            // follows. The store may already have discarded the unusable entry, so if the old record cannot be
+            // removed an empty current entry is written instead: absent, a later read would fall back to it.
             Decoded.Unusable -> {
-                removeQuietly(LEGACY_ENTRY, EVENT_LEGACY_KEPT)
+                if (!removeQuietly(LEGACY_ENTRY, EVENT_LEGACY_KEPT)) markEmpty()
                 return null
             }
             Decoded.Absent -> Unit
@@ -176,6 +177,17 @@ internal class AttestedDeviceStore(
             false
         }
 
+    /** Writes an empty current entry, and never fails the caller for it: the answer is already "nothing held". */
+    private suspend fun markEmpty() {
+        try {
+            withContext(NonCancellable) { store(DeviceBindings(emptyList())) }
+        } catch (unwritable: SecureStorageException) {
+            logger.debug(RedactedCause(unwritable), LogField.safe("event", EVENT_EMPTY_UNWRITTEN)) {
+                "could not record that no device binding is held"
+            }
+        }
+    }
+
     /**
      * Removes the older entry once this store has read the current one, and never fails the caller for it.
      *
@@ -213,15 +225,16 @@ internal class AttestedDeviceStore(
     private suspend fun removeQuietly(
         key: String,
         event: String,
-    ) {
+    ): Boolean =
         try {
             storage.remove(key)
+            true
         } catch (unremovable: SecureStorageException) {
             logger.debug(RedactedCause(unremovable), LogField.safe("event", event)) {
                 "could not remove an unusable stored entry"
             }
+            false
         }
-    }
 
     /**
      * Moves a binding to the front, and does not fail the read that asked for it.
@@ -344,6 +357,7 @@ internal class AttestedDeviceStore(
         const val EVENT_LEGACY_KEPT = "device_identity_superseded_kept"
         const val EVENT_UNREADABLE_KEPT = "device_identity_undecodable_kept"
         const val EVENT_MIGRATION_DEFERRED = "device_identity_carry_forward_deferred"
+        const val EVENT_EMPTY_UNWRITTEN = "device_binding_empty_unwritten"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
         val SHARED_LOCK = Mutex()

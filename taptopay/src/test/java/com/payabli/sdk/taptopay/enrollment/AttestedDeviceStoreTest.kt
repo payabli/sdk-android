@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.enrollment
 
+import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
@@ -35,6 +36,43 @@ class AttestedDeviceStoreTest {
             assertEquals(ENTRY, read.entry)
             assertEquals(DEVICE_ID, read.deviceId)
             assertEquals(FakeDeviceKey.KEY_IDENTITY, read.keyId)
+        }
+
+    @Test
+    fun `an unusable current entry never lets a later read restore the legacy one, even if removing it fails`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            lateinit var storage: FakeSecureStore
+            var armed = false
+            var reported = false
+            storage =
+                FakeSecureStore({ operation, key ->
+                    when {
+                        // The real store discards an entry it reports unreadable before raising.
+                        operation == "get" && key == RECORD_ENTRY && armed && !reported -> {
+                            reported = true
+                            storage.drop(RECORD_ENTRY)
+                            SecureStorageException.ValueUnreadable()
+                        }
+                        operation == "remove" && key == LEGACY_RECORD_ENTRY ->
+                            SecureStorageException
+                                .StorageUnavailable()
+                        else -> null
+                    }
+                })
+            val store = AttestedDeviceStore(storage)
+            store.write(AttestedDevice(ENTRY, DEVICE_ID, FakeDeviceKey.KEY_IDENTITY))
+            storage.seed(
+                LEGACY_RECORD_ENTRY,
+                PayabliJson.format
+                    .encodeToString(
+                        AttestedDevice.serializer(),
+                        AttestedDevice(ENTRY, "legacy-device-id", FakeDeviceKey.KEY_IDENTITY),
+                    ).encodeToByteArray(),
+            )
+            armed = true
+
+            assertNull(store.read(ENTRY))
+            assertNull(AttestedDeviceStore(storage).read(ENTRY))
         }
 
     @Test
