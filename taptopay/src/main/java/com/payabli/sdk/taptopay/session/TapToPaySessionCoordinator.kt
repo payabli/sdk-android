@@ -109,6 +109,12 @@ internal class TapToPaySessionCoordinator(
     suspend fun activateDevice(activationCode: String) =
         runExclusively(SessionWorkKind.ACTIVATE) { runActivateDevice(activationCode) }
 
+    /**
+     * The device's registered handle for this paypoint, or null when none is held. Not run inside the region,
+     * which is held for a whole setup; the enrollment's own lock keeps the read off a handle being replaced.
+     */
+    suspend fun deviceId(): String? = enrollment.deviceId()
+
     /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
         kind: SessionWorkKind,

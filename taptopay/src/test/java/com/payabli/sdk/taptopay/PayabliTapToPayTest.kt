@@ -1,8 +1,11 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
+import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.ENTRY
+import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.activateBody
 import com.payabli.sdk.taptopay.enrollment.attestBody
@@ -18,6 +21,7 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -132,11 +136,39 @@ class PayabliTapToPayTest {
         }
 
     @Test
-    fun `the declared deviceId answers null and does not throw`() =
+    fun `a fresh install reads no device id`() =
         runTest(timeout = TEST_TIMEOUT) {
             val terminal = terminalOver(SessionFixture(script()))
 
-            assertEquals(null, terminal.deviceId())
+            assertNull(terminal.deviceId())
+        }
+
+    @Test
+    fun `a device that owes a code reads the id it owes it under`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The host's backend needs this id to request the code, so it has to be readable while pending.
+            val fixture = SessionFixture(script(registerStatus = "pending"))
+            val terminal = terminalOver(fixture)
+            runCatching { terminal.initialize() }
+            assertEquals(TapToPaySessionState.PendingActivation, terminal.sessionState.value)
+
+            assertEquals(DEVICE_ID, terminal.deviceId())
+        }
+
+    @Test
+    fun `a store that cannot be read reaches a host as the one failure type`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    script(),
+                    storeFailure = FakeSecureStore.failing("get", SecureStorageException.StorageUnavailable()),
+                )
+            fixture.seedRecord()
+            val terminal = terminalOver(fixture)
+
+            val failure = runCatching { terminal.deviceId() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
         }
 
     @Test

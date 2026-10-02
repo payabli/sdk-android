@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.logging.LogLevel
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
 import kotlinx.coroutines.test.runTest
@@ -367,6 +368,63 @@ class DeviceEnrollmentTest {
                 assertFalse(record.message.contains(FakeAppAttestor.TOKEN))
                 assertFalse(record.fieldNames.contains("deviceId"))
             }
+        }
+
+    @Test
+    fun `a device that never enrolled reads no device id`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript())
+
+            assertEquals(null, fixture.enrollment.deviceId())
+            assertTrue(fixture.transport.requests.isEmpty())
+        }
+
+    @Test
+    fun `a device still owing activation reads the id registration assigned`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(coldScript())
+            assertTrue((fixture.enrollment.enroll() as EnrollmentOutcome.Attested).activationRequired)
+
+            assertEquals(DEVICE_ID, fixture.enrollment.deviceId())
+        }
+
+    @Test
+    fun `another paypoint's device id is not read as this one's`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript())
+            fixture.seedRecord(entry = OTHER_ENTRY, deviceId = "other-device-id")
+
+            assertEquals(null, fixture.enrollment.deviceId())
+            assertEquals("other-device-id", fixture.enrollmentFor(OTHER_ENTRY).deviceId())
+        }
+
+    @Test
+    fun `a store that cannot be read this time raises rather than reading as no device`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(),
+                    storeFailure = FakeSecureStore.failing("get", SecureStorageException.CryptoUnavailable()),
+                )
+            fixture.seedRecord()
+
+            val thrown = runCatching { fixture.enrollment.deviceId() }.exceptionOrNull()
+
+            assertEquals(
+                SecureStorageException.CryptoUnavailable::class.java,
+                thrown?.javaClass,
+            )
+        }
+
+    @Test
+    fun `reading the device id writes no log line`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript())
+            fixture.seedRecord()
+
+            fixture.enrollment.deviceId()
+
+            assertTrue(fixture.logger.records.toString(), fixture.logger.records.isEmpty())
         }
 
     @Test

@@ -278,6 +278,14 @@ internal class DeviceEnrollment(
         }
 
     /**
+     * The handle this paypoint's device was registered under, or null when none is held.
+     *
+     * Takes the same lock as the rest, so it cannot read a handle a re-registration is replacing. A store that
+     * cannot be read raises, as [enroll] does, because the binding may still be there.
+     */
+    suspend fun deviceId(): String? = lock.withLock { store.read(entry)?.deviceId }
+
+    /**
      * Forgets this entry point's device without touching its key, so the next [enroll] runs the cold
      * sequence.
      *
