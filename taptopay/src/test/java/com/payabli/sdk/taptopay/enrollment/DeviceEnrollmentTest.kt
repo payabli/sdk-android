@@ -214,6 +214,35 @@ class DeviceEnrollmentTest {
         }
 
     @Test
+    fun `an unreadable current binding starts cold, and does not bring back a surviving legacy one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var reported = false
+            val fixture =
+                EnrollmentFixture(
+                    coldScript(),
+                    storeFailure = { operation, key ->
+                        if (operation == "get" && key == RECORD_ENTRY && !reported) {
+                            reported = true
+                            SecureStorageException.ValueUnreadable()
+                        } else {
+                            null
+                        }
+                    },
+                )
+            fixture.seedRecord()
+            fixture.seedLegacyRecord(deviceId = "legacy-device-id")
+
+            fixture.enrollment.enroll()
+
+            assertEquals(
+                listOf(RouteScript.CHALLENGE, RouteScript.REGISTER, RouteScript.ATTEST),
+                fixture.routes,
+            )
+            assertEquals(DEVICE_ID, fixture.storedRecord()!!.deviceId)
+            assertEquals(null, fixture.storage.peek(LEGACY_RECORD_ENTRY))
+        }
+
+    @Test
     fun `a record naming a key the store no longer holds is not treated as enrolled`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(coldScript())

@@ -127,14 +127,24 @@ internal class AttestedDeviceStore(
     private suspend fun load(): DeviceBindings? {
         // The current entry answers alone whenever it is there, so the old one is never read once this
         // device has written anything, and a binding discarded since the upgrade cannot be restored from it.
-        decode(ENTRY, DeviceBindings.serializer())?.let {
-            scrubLegacy()
-            return it
+        when (val current = decode(ENTRY, DeviceBindings.serializer())) {
+            is Decoded.Held -> {
+                scrubLegacy()
+                return current.value
+            }
+            // This device has written the current shape, so the old record is older than a binding that is
+            // gone, and restoring it would hand back a stale one. Nothing is held, and a fresh enrollment
+            // follows. Removed now rather than left for a later read to find once this entry is absent.
+            Decoded.Unusable -> {
+                removeQuietly(LEGACY_ENTRY, EVENT_LEGACY_KEPT)
+                return null
+            }
+            Decoded.Absent -> Unit
         }
 
         // Nothing in the current entry. An older record is the only other thing that can be there, and
         // reading it is what keeps an enrolled device enrolled across the upgrade.
-        val legacy = decode(LEGACY_ENTRY, AttestedDevice.serializer()) ?: return null
+        val legacy = (decode(LEGACY_ENTRY, AttestedDevice.serializer()) as? Decoded.Held)?.value ?: return null
         val migrated = DeviceBindings.of(legacy)
 
         // Written before the old entry goes, never the reverse. Interrupted between them, both are present
@@ -244,30 +254,40 @@ internal class AttestedDeviceStore(
         }
     }
 
+    /** What one entry holds. Absent and unusable differ only in whether anything was written. */
+    private sealed interface Decoded<out T> {
+        class Held<T>(
+            val value: T,
+        ) : Decoded<T>
+
+        data object Absent : Decoded<Nothing>
+
+        data object Unusable : Decoded<Nothing>
+    }
+
     /**
-     * Reads one entry and decodes it, or answers null for every way it can turn out not to be there.
+     * Reads one entry and decodes it, saying whether it was absent or held something that cannot be used.
      *
-     * Shared by both shapes so the four storage failures are classified in one place. A store whose key is
-     * gone answers null for each entry it is asked for, which is the right answer for all of them.
+     * Shared by both shapes so the four storage failures are classified in one place.
      */
     private suspend fun <T> decode(
         key: String,
         serializer: KSerializer<T>,
-    ): T? {
+    ): Decoded<T> {
         val bytes =
             try {
                 storage.get(key)
             } catch (lost: SecureStorageException.KeyInvalidated) {
                 reportLost(lost, "key_invalidated")
-                return null
+                return Decoded.Unusable
             } catch (unreadable: SecureStorageException.ValueUnreadable) {
                 reportLost(unreadable, "value_unreadable")
-                return null
+                return Decoded.Unusable
             }
-                ?: return null
+                ?: return Decoded.Absent
 
         return try {
-            PayabliJson.format.decodeFromString(serializer, bytes.decodeToString())
+            Decoded.Held(PayabliJson.format.decodeFromString(serializer, bytes.decodeToString()))
         } catch (malformed: SerializationException) {
             // Narrowed to the serializer's own failure. A storage failure raised by the read above must
             // not be swallowed here on its way past.
@@ -279,7 +299,7 @@ internal class AttestedDeviceStore(
             // bytes and raises again, and the entry is never removed on any of those attempts.
             reportLost(malformed, "undecodable")
             removeQuietly(key, EVENT_UNREADABLE_KEPT)
-            null
+            Decoded.Unusable
         } finally {
             bytes.fill(0)
         }
