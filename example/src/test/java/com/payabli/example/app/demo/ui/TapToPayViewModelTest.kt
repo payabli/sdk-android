@@ -142,6 +142,29 @@ class TapToPayViewModelTest {
     // --- actions ---
 
     @Test
+    fun `opening activation shows the id the device is registered under`() =
+        runTest {
+            val viewModel = model()
+            viewModel.enableTerminal()
+
+            viewModel.openActivation()
+
+            assertEquals(DemoTerminalController.DEMO_DEVICE_ID, viewModel.uiState.value.deviceId)
+            assertFalse(viewModel.uiState.value.deviceIdUnavailable)
+        }
+
+    @Test
+    fun `opening activation before setup shows no id`() =
+        runTest {
+            val viewModel = model()
+
+            viewModel.openActivation()
+
+            assertNull(viewModel.uiState.value.deviceId)
+            assertFalse(viewModel.uiState.value.deviceIdUnavailable)
+        }
+
+    @Test
     fun `a rejected activation code reports the failure and closes the sheet`() =
         runTest {
             val viewModel = model()

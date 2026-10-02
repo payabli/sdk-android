@@ -45,6 +45,17 @@ class DemoTerminalControllerTest {
         }
 
     @Test
+    fun `a device holds no id until setup registers it, then holds one`() =
+        runTest {
+            val terminal = controller()
+            assertEquals(null, terminal.deviceId().getOrThrow())
+
+            terminal.initialize()
+
+            assertEquals(DemoTerminalController.DEMO_DEVICE_ID, terminal.deviceId().getOrThrow())
+        }
+
+    @Test
     fun `initialize walks attest then config then reader, and stops for activation`() =
         runTest {
             val terminal = controller()

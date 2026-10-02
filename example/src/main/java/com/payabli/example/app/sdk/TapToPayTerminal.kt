@@ -115,6 +115,8 @@ class TapToPayTerminal(
         return activated
     }
 
+    override suspend fun deviceId(): Result<String?> = attempt { terminal().deviceId() }
+
     /** The SDK, built once. The state collector starts with it, so the screen sees each phase. */
     private suspend fun terminal(): PayabliTTP =
         lock.withLock {

@@ -56,6 +56,10 @@ data class TapToPayUiState(
     /** A payment was approved and the confirmation has not been dismissed. */
     val isApprovalOpen: Boolean = false,
     val isActivationOpen: Boolean = false,
+    /** The id the device is registered under, read when the activation sheet opens. Null until it has one. */
+    val deviceId: String? = null,
+    /** Reading [deviceId] failed, which is not the same as the device having none. */
+    val deviceIdUnavailable: Boolean = false,
     /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
     val isProbingToken: Boolean = false,
     /**
@@ -122,7 +126,13 @@ class TapToPayViewModel(
 
     fun setActivationCode(text: String) = _uiState.update { it.copy(activationCode = text) }
 
-    fun openActivation() = _uiState.update { it.copy(isActivationOpen = true) }
+    fun openActivation() {
+        _uiState.update { it.copy(isActivationOpen = true) }
+        viewModelScope.launch {
+            val read = terminal.deviceId()
+            _uiState.update { it.copy(deviceId = read.getOrNull(), deviceIdUnavailable = read.isFailure) }
+        }
+    }
 
     fun dismissActivation() = _uiState.update { it.copy(isActivationOpen = false) }
 

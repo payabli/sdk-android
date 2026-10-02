@@ -45,6 +45,12 @@ interface TerminalController {
 
     /** Activate this device with a code issued by Payabli. */
     suspend fun activateDevice(activationCode: String): Result<Unit>
+
+    /**
+     * The id Payabli registered this device under, which a merchant's backend needs to request its
+     * activation code. Null until setup has registered the device.
+     */
+    suspend fun deviceId(): Result<String?>
 }
 
 /** What a successful charge produced. Carries no card data of any kind. */
