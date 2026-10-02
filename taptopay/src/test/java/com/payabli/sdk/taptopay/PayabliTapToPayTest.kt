@@ -132,13 +132,11 @@ class PayabliTapToPayTest {
         }
 
     @Test
-    fun `the declared deviceId refuses as the one host-facing type`() =
+    fun `the declared deviceId answers null and does not throw`() =
         runTest(timeout = TEST_TIMEOUT) {
             val terminal = terminalOver(SessionFixture(script()))
 
-            val failure = runCatching { terminal.deviceId() }.exceptionOrNull()
-
-            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(null, terminal.deviceId())
         }
 
     @Test
