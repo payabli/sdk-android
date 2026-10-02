@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.logging.LogLevel
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
 import kotlinx.coroutines.test.runTest
@@ -183,6 +184,33 @@ class DeviceEnrollmentTest {
             // call for the same reason: a remembered activation state is one nobody re-checks.
             assertEquals(EnrollmentOutcome.AlreadyAttested, outcome)
             assertTrue(fixture.transport.requests.isEmpty())
+        }
+
+    @Test
+    fun `a binding the store reports unreadable is re-registered under the same id, owing activation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The storage layer discards a malformed entry and reports it unreadable once; the next read finds
+            // nothing. That is the answer that lets this recover rather than fail every attempt.
+            var reported = false
+            val fixture =
+                EnrollmentFixture(
+                    coldScript(),
+                    storeFailure = { operation, key ->
+                        if (operation == "get" && key == RECORD_ENTRY && !reported) {
+                            reported = true
+                            SecureStorageException.ValueUnreadable()
+                        } else {
+                            null
+                        }
+                    },
+                )
+            fixture.seedRecord()
+
+            val outcome = fixture.enrollment.enroll()
+
+            assertTrue((outcome as EnrollmentOutcome.Attested).activationRequired)
+            assertEquals(DEVICE_ID, fixture.storedRecord()!!.deviceId)
+            assertEquals(EnrollmentOutcome.AlreadyAttested, fixture.enrollment.enroll())
         }
 
     @Test
