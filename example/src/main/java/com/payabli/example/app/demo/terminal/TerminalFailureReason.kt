@@ -14,4 +14,5 @@ enum class TerminalFailureReason(
     ServiceUnavailable("The service could not be reached. Try again."),
     DeviceIneligible("This device cannot take contactless payments, or the card reader vendor has denied it."),
     SdkInternalError("The SDK reported a problem it cannot repair."),
+    DeviceKeyUnavailable("This phone's key facility failed. Set up again; if it keeps failing, the phone is at fault."),
 }

@@ -150,6 +150,7 @@ class TapToPayTerminal(
             TapToPayFailureReason.SERVICE_UNAVAILABLE -> TerminalFailureReason.ServiceUnavailable
             TapToPayFailureReason.DEVICE_INELIGIBLE -> TerminalFailureReason.DeviceIneligible
             TapToPayFailureReason.SDK_INTERNAL_ERROR -> TerminalFailureReason.SdkInternalError
+            TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE -> TerminalFailureReason.DeviceKeyUnavailable
         }
 
     private fun TapToPaySessionState.asTerminalState(): TerminalSessionState =
