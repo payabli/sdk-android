@@ -53,7 +53,8 @@ public class PayabliTTP private constructor(
 
     /**
      * The id Payabli assigned this device on the session's paypoint, whether pending activation or active.
-     * Null when the SDK holds no usable id for it, for any reason; [initialize] enrolls the device again.
+     * Null when the SDK holds no usable id for it, for any reason; call [initialize], which enrolls the device
+     * or throws why it could not.
      */
     public suspend fun deviceId(): String? = null
 
