@@ -314,7 +314,9 @@ internal class AttestedDeviceStore(
             // reading wedges rather than degrades, because the caller retries, decodes the same unreadable
             // bytes and raises again, and the entry is never removed on any of those attempts.
             reportLost(malformed, "undecodable")
-            removeQuietly(key, EVENT_UNREADABLE_KEPT)
+            // Uncancellable, so a caller withdrawing after the entry is gone still hears it was unusable and runs
+            // the cleanup that follows: interrupted there, the entry would read as absent next time.
+            withContext(NonCancellable) { removeQuietly(key, EVENT_UNREADABLE_KEPT) }
             Decoded.Unusable
         } finally {
             bytes.fill(0)
