@@ -49,6 +49,19 @@ jobs:
             exit 1
           fi
 
+      # A missing environment is created on first use with no reviewer, and the snapshot role trusts its
+      # subject, so the publish would need nobody's approval. A missing one answers 404, which fails here.
+      - name: Check the qa-snapshot environment requires a reviewer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reviewers=$(gh api "repos/$GITHUB_REPOSITORY/environments/qa-snapshot" \
+            --jq '[.protection_rules[] | select(.type == "required_reviewers")] | length')
+          if [ "$reviewers" -lt 1 ]; then
+            echo "::error::the qa-snapshot environment requires no reviewer, so nobody would approve this."
+            exit 1
+          fi
+
       # All of history, so the check below can see the branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

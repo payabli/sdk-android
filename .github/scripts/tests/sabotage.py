@@ -1867,6 +1867,15 @@ MUTATIONS = [
 
     ("QA snapshot stamps a literal base, naming no version it precedes", QA, "workflows",
      "base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)", "base=0.0.9"),
+    # A missing environment is created with no reviewer, and the role trusts its subject.
+    ("QA check publishes into an environment nobody reviews", QA, "workflows",
+     '          if [ "$reviewers" -lt 1 ]; then\n',
+     '          if [ "$reviewers" -lt 0 ]; then\n'),
+
+    ("QA check counts every protection rule as a reviewer", QA, "workflows",
+     '[.protection_rules[] | select(.type == "required_reviewers")] | length',
+     "[.protection_rules[]] | length"),
+
 ]
 
 

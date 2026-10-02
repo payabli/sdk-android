@@ -3512,6 +3512,17 @@ def test_workflows():
     check("W16 and a dispatch that is not from a branch",
           len(qa_on_branch) == 1 and refuses(qa_on_branch[0], "[[ $GITHUB_REF != refs/heads/* ]]"))
 
+    # A missing environment is created on first use with no reviewer, and the role trusts its subject, so
+    # the check refuses unless the environment exists and requires one. Read off the API rather than
+    # assumed, because the setting is the repository's and nothing in this file can hold it.
+    REVIEWERS = ["gh", "api", "repos/$GITHUB_REPOSITORY/environments/qa-snapshot",
+                 "--jq", '[.protection_rules[] | select(.type == "required_reviewers")] | length']
+    reviewed = [step for step in qa_checker_steps
+                if reads(step, "reviewers", REVIEWERS) and refuses(step, "[ $reviewers -lt 1 ]")]
+    check("W16 and refuses an environment that requires no reviewer",
+          len(reviewed) == 1 and env_of(reviewed[0], "GH_TOKEN") == "${{ github.token }}",
+          f"{len(reviewed)} steps")
+
     # Each checkout names the commit, never the branch's head: that is where a push between the decision and
     # the dispatch would land. Neither names another repository, whose default branch it would take.
     checkouts = {name: [step.get("with") or {} for step in job_steps(job) if "actions/checkout" in str(step.get("uses", ""))]
