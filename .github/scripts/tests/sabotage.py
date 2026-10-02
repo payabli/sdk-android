@@ -1846,6 +1846,27 @@ MUTATIONS = [
     ("Release writes the notes before it uploads", RELEASE, "workflows",
      RELEASE_UPLOAD_THEN_NOTES, RELEASE_NOTES_THEN_UPLOAD),
 
+
+    # What the tag guard compares. Each keeps every word of the guard and refuses nothing.
+    ("Release compares the named commit with itself rather than with the tag", RELEASE, "workflows",
+     'tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")', "tagged=$COMMIT"),
+
+    ("Release looks the tag up under another name, so a resume pushes it again", RELEASE, "workflows",
+     'git tag --list "$VERSION"', 'git tag --list "v$VERSION"'),
+
+    # Any other depth fetches no tags, so the lookup finds none and a spent number is a refused push.
+    ("Release checks out without the tags", RELEASE, "workflows",
+     "          fetch-depth: 0\n          persist-credentials: false\n", "          persist-credentials: false\n"),
+
+    ("Release leaves the checkout's credential on the runner beside the deploy key", RELEASE, "workflows",
+     "          fetch-depth: 0\n          persist-credentials: false\n", "          fetch-depth: 0\n"),
+
+    # Every version after the first reports "already exists" and finishes green with no release written.
+    ("Release skips the notes when any release exists", RELEASE, "workflows",
+     'select(.tagName == \\"$TAG\\")', 'select(.tagName != \\"\\")'),
+
+    ("QA snapshot stamps a literal base, naming no version it precedes", QA, "workflows",
+     "base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)", "base=0.0.9"),
 ]
 
 

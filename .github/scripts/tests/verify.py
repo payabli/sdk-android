@@ -3343,6 +3343,17 @@ def test_workflows():
         body = body[:body.index("fi")] if "fi" in body else body
         return body[:1] == ["then"] and "exit 1" in body
 
+    # The notes step's own shape: the create is the `else` of a test on what the lookup found.
+    def refuses_else(step: dict) -> bool:
+        commands = [" ".join(command) for command in commands_of(step)]
+        if "if [ -n $existing ]" not in commands:
+            return False
+        at = commands.index("if [ -n $existing ]")
+        body = commands[at + 1:]
+        body = body[:body.index("fi")] if "fi" in body else body
+        return (body[:1] == ["then"] and "else" in body
+                and any(c.startswith("gh release create") for c in body[body.index("else"):]))
+
     # Commands with whatever is assigned in front of them, which `commands_of` drops: GIT_SSH_COMMAND on
     # the push is the part that makes it use the key. Read as commands, an echo of the same words is an
     # echo and not a push.
@@ -3698,6 +3709,12 @@ def test_workflows():
         # not carry a leading zero, which a day-first stamp does on the first nine days of every month.
         check("W16 and the stamp is UTC", "date -u" in run, run[:160])
         check("W16 and the qualifier is the ruled one", "-QA." in run, run[:160])
+        # The candidate names the version it is a candidate for, so a tester can tell which release it
+        # precedes. A literal base stays unique and names nothing.
+        base = full_commands(naming)
+        check("W16 and its base is the committed version",
+              base[:3] == [["base=$"], ["grep", "^payabli.version=", "gradle.properties"], ["cut", "-d=", "-f2"]]
+              and sum(word.startswith("base=") for command in base for word in command) == 1, f"{base[:3]}")
 
     # The setting that decides the subject lives in a different system from the trust policies that
     # grant it, and a mismatch fails at the assume with an error naming IAM. Checked afterwards it would
@@ -3760,6 +3777,11 @@ def test_workflows():
     check("W17 and it checks out this workflow's own commit",
           len(gate_checkouts) == 1 and not gate_checkouts[0].get("ref") and not gate_checkouts[0].get("repository"),
           f"{gate_checkouts}")
+    # Full history is what fetches the tags: any other depth fetches none, so the lookup below finds no tag,
+    # a resume pushes it again, and a spent number is reported as a refused push rather than said.
+    check("W17 and with its tags, and no credential left behind",
+          len(gate_checkouts) == 1 and gate_checkouts[0].get("fetch-depth") == 0
+          and gate_checkouts[0].get("persist-credentials") is False, f"{gate_checkouts}")
     # The release is the second run's no longer. A dispatch from inside this one is a run nobody approved.
     check("W17 and nothing starts another run", "gh workflow run" not in " ".join(run_commands(s) for s in rel_steps))
 
@@ -3883,6 +3905,14 @@ def test_workflows():
     # A tag already on another commit is a spent number, and pushing over it is refused.
     check("W17 and it refuses a version already tagged on another commit",
           len(tagging) == 1 and refuses(tagging[0], "[ -n $tagged ] && [ $tagged != $COMMIT ]"), pushed[:200])
+    # What the guard compares is read from the tag itself, and nowhere else. `tagged=$COMMIT` keeps every
+    # word of the guard and refuses nothing, and a lookup under another name never finds the tag, so a
+    # resume pushes it again and is refused.
+    lookup = ["tagged=", "if [ -n $(git tag --list $VERSION) ]", "then", "tagged=$",
+              "git rev-parse refs/tags/$VERSION^{commit}", "fi"]
+    assigned = [word for command in tag_commands for word in command if word.startswith("tagged=")]
+    check("W17 and what it compares is the commit the version's tag names",
+          joined[:len(lookup)] == lookup and assigned == ["tagged=", "tagged=$"], f"{joined[:6]} {assigned}")
     # The named commit, never the run's own: the run's is main's head when the dispatch was made. Each
     # step's own env, because one step's correct value would otherwise stand in for another's.
     check("W17 and it tags the commit and version the check approved, not the run's",
@@ -3951,6 +3981,14 @@ def test_workflows():
     if notes and uploader is not None:
         check("W17 and after the upload", uploader < notes[0], f"{uploader} vs {notes[0]}")
     check("W17 and nothing uploads a release asset", "gh release upload" not in " ".join(run_commands(s) for s in rel_steps))
+    # A re-run whose release already exists leaves it alone, so the lookup decides whether a release is
+    # written at all. One that matches any release reports "already exists" for every version after the
+    # first and finishes green having written nothing.
+    listed = [command for i in notes for command in commands_of(gate_steps[i]) if command[:3] == ["gh", "release", "list"]]
+    check("W17 and it skips only a release at that same tag",
+          listed == [["gh", "release", "list", "--repo", "$GITHUB_REPOSITORY", "--limit", "1000", "--json", "tagName",
+                      "--jq", '.[] | select(.tagName == "$TAG") | .tagName']]
+          and len(notes) == 1 and refuses_else(gate_steps[notes[0]]), f"{listed}")
 
     unpinned = [ref for ref in (str(step.get("uses")).strip() for step in rel_steps if step.get("uses"))
                 if not PINNED.match(ref)]
