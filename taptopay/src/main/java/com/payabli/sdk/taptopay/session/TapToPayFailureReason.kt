@@ -51,4 +51,10 @@ public enum class TapToPayFailureReason {
      * is not silently filed under one of the others.
      */
     SDK_INTERNAL_ERROR,
+
+    /**
+     * The phone's key facility failed, so the SDK cannot tell whether this device's key still works. Calling
+     * initialize again may succeed; a failure that persists is the device's.
+     */
+    DEVICE_KEY_UNAVAILABLE,
 }
