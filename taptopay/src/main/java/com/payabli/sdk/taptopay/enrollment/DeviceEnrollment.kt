@@ -280,10 +280,23 @@ internal class DeviceEnrollment(
     /**
      * The handle this paypoint's device was registered under, or null when none is held.
      *
-     * Takes the same lock as the rest, so it cannot read a handle a re-registration is replacing. A store that
-     * cannot be read raises, as [enroll] does, because the binding may still be there.
+     * Null as well for a record [enroll] would discard, one naming a key this device no longer holds, so the
+     * answer matches what the next enrollment does with it. A store or key store that cannot be read raises,
+     * as [enroll] does, because the binding may still be there. Takes the same lock as the rest, so it cannot
+     * read a handle a re-registration is replacing.
      */
-    suspend fun deviceId(): String? = lock.withLock { store.read(entry)?.deviceId }
+    suspend fun deviceId(): String? =
+        lock.withLock {
+            // The store first, so an install holding nothing never reaches the key store.
+            val known = store.read(entry) ?: return@withLock null
+            val identity =
+                try {
+                    withContext(dispatcher) { deviceKey.publicKey() }
+                } catch (lost: DeviceKeyException.KeyLost) {
+                    return@withLock null
+                }
+            known.deviceId.takeIf { known.keyId == identity.identity }
+        }
 
     /**
      * Forgets this entry point's device without touching its key, so the next [enroll] runs the cold

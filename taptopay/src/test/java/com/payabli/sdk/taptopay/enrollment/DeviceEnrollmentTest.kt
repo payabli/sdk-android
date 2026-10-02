@@ -1,9 +1,13 @@
 package com.payabli.sdk.taptopay.enrollment
 
+import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -414,6 +418,71 @@ class DeviceEnrollmentTest {
                 SecureStorageException.CryptoUnavailable::class.java,
                 thrown?.javaClass,
             )
+        }
+
+    @Test
+    fun `a record naming a key this device no longer holds reads no device id`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The next enrollment discards this record and registers again, so its handle is not this
+            // device's to report.
+            val fixture = EnrollmentFixture(RouteScript())
+            fixture.seedRecord(keyId = "a-thumbprint-from-a-key-that-is-gone")
+
+            assertEquals(null, fixture.enrollment.deviceId())
+        }
+
+    @Test
+    fun `a device key that is gone reads no device id`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(),
+                    deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.KeyLost()),
+                )
+            fixture.seedRecord()
+
+            assertEquals(null, fixture.enrollment.deviceId())
+        }
+
+    @Test
+    fun `a key store that cannot be reached raises rather than reading as no device`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(),
+                    deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.CryptoUnavailable()),
+                )
+            fixture.seedRecord()
+
+            val thrown = runCatching { fixture.enrollment.deviceId() }.exceptionOrNull()
+
+            assertEquals(DeviceKeyException.CryptoUnavailable::class.java, thrown?.javaClass)
+        }
+
+    @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `a read during a re-registration waits for it and answers the new handle`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val enrollmentRead = CompletableDeferred<Unit>()
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(deviceId = "new-device-id")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                    ),
+                    firstReadGate = { enrollmentRead.await() },
+                )
+            fixture.seedRecord(deviceId = "old-device-id", keyId = "a-thumbprint-from-a-key-that-is-gone")
+
+            val enrolling = async { fixture.enrollment.enroll() }
+            runCurrent()
+            val reading = async { fixture.enrollment.deviceId() }
+            runCurrent()
+            enrollmentRead.complete(Unit)
+
+            enrolling.await()
+            assertEquals("new-device-id", reading.await())
         }
 
     @Test

@@ -110,8 +110,8 @@ internal class TapToPaySessionCoordinator(
         runExclusively(SessionWorkKind.ACTIVATE) { runActivateDevice(activationCode) }
 
     /**
-     * The device's registered handle for this paypoint, or null when none is held. Not run inside the region,
-     * which is held for a whole setup; the enrollment's own lock keeps the read off a handle being replaced.
+     * The device's registered handle for this paypoint, or null when none is held. Outside the region, so it
+     * does not wait on the reader; it does wait on an enrollment or activation in progress, by design.
      */
     suspend fun deviceId(): String? = enrollment.deviceId()
 
