@@ -532,9 +532,9 @@ class KeystoreSecureStorageInstrumentedTest {
      * and replacing the alias are the reachable lost-key outcomes, and both are covered. Asserting the
      * **subtype** rather than merely "some storage exception" is what makes these tests.
      *
-     * A looser assertion would hide a real defect. A read that minted a key when the alias was
-     * missing would so the tag check failed and the caller was told `CryptoUnavailable`, meaning transient, when
-     * the value was gone for good. `is SecureStorageException` passed happily throughout.
+     * A looser assertion would hide a real defect. A read that minted a key when the alias was missing would
+     * fail the tag check and tell the caller `CryptoUnavailable`, meaning transient, when the value was gone for
+     * good, and `is SecureStorageException` would still pass.
      *
      * Afterwards the store must be usable again rather than permanently throwing on that key, since the
      * unreadable bytes are discarded once reported.
