@@ -239,6 +239,7 @@ lookup.
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
+| `DEVICE_KEY_UNAVAILABLE` | The phone's key facility failed, so the SDK can't tell whether the device key still works. Call `initialize()` again; if it keeps failing, the phone is at fault. |
 
 ### Events
 
