@@ -155,8 +155,8 @@ refused before the card is read.
    **⋯ > Generate activation code**. The code is valid for 30 minutes, and asking again before it
    expires returns the same code. To issue codes from your own backend instead, call
    [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)
-   with the phone's device ID. Read it with `ttp.deviceId()` after `initialize()` and send it to your backend.
-   It's `null` until `initialize()` has enrolled the phone.
+   with the phone's device ID. Read it with `ttp.deviceId()` once the session is `PendingActivation`, and send
+   it to your backend. If it's `null`, call `initialize()` again.
 
    The code is six digits and can start with zero, so keep it as a string.
 2. Deliver the code to the person holding the phone, and have your app ask for it.
