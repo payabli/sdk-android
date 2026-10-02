@@ -20,6 +20,7 @@ import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,6 +57,12 @@ data class TapToPayUiState(
     /** A payment was approved and the confirmation has not been dismissed. */
     val isApprovalOpen: Boolean = false,
     val isActivationOpen: Boolean = false,
+    /** The id the device is registered under, read when the activation sheet opens. Null until it has one. */
+    val deviceId: String? = null,
+    /** Reading [deviceId] failed, which is not the same as the device having none. */
+    val deviceIdUnavailable: Boolean = false,
+    /** A read is in flight, so neither [deviceId] nor its absence is known yet. */
+    val isReadingDeviceId: Boolean = false,
     /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
     val isProbingToken: Boolean = false,
     /**
@@ -122,7 +129,27 @@ class TapToPayViewModel(
 
     fun setActivationCode(text: String) = _uiState.update { it.copy(activationCode = text) }
 
-    fun openActivation() = _uiState.update { it.copy(isActivationOpen = true) }
+    private var deviceIdRead: Job? = null
+
+    fun openActivation() {
+        // Cleared first: the last id read may belong to a handle a re-registration has since replaced.
+        _uiState.update {
+            it.copy(isActivationOpen = true, deviceId = null, deviceIdUnavailable = false, isReadingDeviceId = true)
+        }
+        // Only the latest opening may publish: an earlier read finishing late would show its answer instead.
+        deviceIdRead?.cancel()
+        deviceIdRead =
+            viewModelScope.launch {
+                val read = terminal.deviceId()
+                _uiState.update {
+                    it.copy(
+                        deviceId = read.getOrNull(),
+                        deviceIdUnavailable = read.isFailure,
+                        isReadingDeviceId = false,
+                    )
+                }
+            }
+    }
 
     fun dismissActivation() = _uiState.update { it.copy(isActivationOpen = false) }
 

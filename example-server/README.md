@@ -165,7 +165,8 @@ curl -s -X POST -H 'Content-Type: application/json' \
   http://127.0.0.1:8787/payabli/activation-code
 ```
 
-`deviceId` targets one device. Omitted, the newest **pending** device is used and the response says so
+`deviceId` targets one device. A host app reads it with `ttp.deviceId()` once the session is
+`PendingActivation`, and sends it to its backend. Omitted, the newest **pending** device is used and the response says so
 in `resolvedFrom`, which is a convenience for a single-device setup rather than a guess to rely on. A
 serial number cannot stand in: it is the app's install identifier and every record a reinstall leaves
 behind shares it.

@@ -56,7 +56,7 @@ public class PayabliTTP private constructor(
      * Null when the SDK holds no usable id for it, for any reason; call [initialize], which enrolls the device
      * or throws why it could not.
      */
-    public suspend fun deviceId(): String? = null
+    public suspend fun deviceId(): String? = wrapping { coordinator.deviceId() }
 
     /**
      * Takes one payment. Waits for a card, so it runs as long as the person in front of the phone.

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -293,6 +294,7 @@ private fun ActivationSheet(
                 title = "Activate this device",
                 note = "Enter the code Payabli issued for it.",
             )
+            DeviceIdLine(state)
             OutlinedTextField(
                 value = state.activationCode,
                 onValueChange = onActivationCodeChange,
@@ -316,6 +318,19 @@ private fun ActivationSheet(
             )
         }
     }
+}
+
+/** Selectable, so it can be copied into the request for the activation code. */
+@Composable
+private fun DeviceIdLine(state: TapToPayUiState) {
+    val text =
+        when {
+            state.isReadingDeviceId -> "Reading the device id…"
+            state.deviceIdUnavailable -> "Device id unavailable"
+            state.deviceId == null -> "No device id yet. Set up the terminal first."
+            else -> "Device id: ${state.deviceId}"
+        }
+    SelectionContainer { Text(text, style = MaterialTheme.typography.bodyMedium) }
 }
 
 @Composable
