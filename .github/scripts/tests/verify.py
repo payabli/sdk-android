@@ -3600,6 +3600,13 @@ def test_workflows():
     masked = unstoppable(qa_steps)
     check("W16 and no step of it can fail without failing the job", not masked, " | ".join(masked))
 
+    # A guard that does not run refuses nothing, and a YAML condition skips one without touching a word the
+    # checks above read. So no step carries anything but these keys, the rule W17 holds for the release.
+    qa_extra = [f"{step.get('name') or step.get('uses')}: {sorted(set(step) - {'name', 'id', 'uses', 'with', 'env', 'run'})}"
+                for step in qa_steps if set(step) - {"name", "id", "uses", "with", "env", "run"}]
+    check("W16 no step carries a condition, a shell, or anything but name, id, uses, with, env and run",
+          not qa_extra, " | ".join(qa_extra))
+
     # `bash` and not merely any value: an unset `shell:` runs `bash -e`, which leaves `-o pipefail` off,
     # so a pipeline reports the last command's status and `./gradlew test | tee log` is green after a red
     # suite. Naming bash is what turns it on.

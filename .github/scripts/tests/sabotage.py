@@ -1867,6 +1867,19 @@ MUTATIONS = [
 
     ("QA snapshot stamps a literal base, naming no version it precedes", QA, "workflows",
      "base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)", "base=0.0.9"),
+    # A YAML condition skips a guard and leaves every word of it where the checks read.
+    ("QA check skips the branch check with a step condition", QA, "workflows",
+     "      - name: Check the commit is on the branch dispatched\n",
+     "      - name: Check the commit is on the branch dispatched\n        if: false\n"),
+
+    ("QA check lets the full-SHA check fail without failing the job", QA, "workflows",
+     "      - name: Check the commit is named in full\n",
+     "      - name: Check the commit is named in full\n        continue-on-error: true\n"),
+
+    ("QA publish skips the subject check with a step condition", QA, "workflows",
+     "      - name: Check the OIDC subject the trust policies expect\n",
+     "      - name: Check the OIDC subject the trust policies expect\n        if: false\n"),
+
     # A missing environment is created with no reviewer, and the role trusts its subject.
     ("QA check publishes into an environment nobody reviews", QA, "workflows",
      '          if [ "$reviewers" -lt 1 ]; then\n',
@@ -1876,6 +1889,9 @@ MUTATIONS = [
      '[.protection_rules[] | select(.type == "required_reviewers")] | length',
      "[.protection_rules[]] | length"),
 
+    ("QA check skips the reviewer check with a step condition", QA, "workflows",
+     "      - name: Check the qa-snapshot environment requires a reviewer\n",
+     "      - name: Check the qa-snapshot environment requires a reviewer\n        if: false\n"),
 ]
 
 
