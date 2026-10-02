@@ -35,15 +35,17 @@ public sealed class SecureStorageException(
         )
 
     /**
-     * One stored value failed authentication while the key is still usable, and has been discarded.
+     * One stored value failed authentication, or is not a well-formed envelope, while the key is still usable,
+     * and has been discarded.
      *
      * Causes are a partial write, a bit flip, a hand edit, or a rotated key, which is indistinguishable
-     * from corruption on the read side. The rest of the store is intact.
+     * from corruption on the read side. Each fails the same way on every read, which is why the value is
+     * discarded rather than kept for a retry. The rest of the store is intact.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class ValueUnreadable(
         cause: Throwable? = null,
-    ) : SecureStorageException("the stored value could not be authenticated and was discarded", cause)
+    ) : SecureStorageException("the stored value could not be read and was discarded", cause)
 
     /** The Keystore or the cipher failed for a reason that is neither key loss nor a bad value. */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
@@ -52,20 +54,17 @@ public sealed class SecureStorageException(
     ) : SecureStorageException("the platform key store or cipher is unavailable", cause)
 
     /**
-     * The backing file could not be read or written, **or** a stored blob is not a well-formed envelope.
+     * The backing file could not be read or written. The store is left intact.
      *
-     * Both, and the message says both, because the second raises this while the file was read perfectly well: a
-     * blob that fails base64 decoding, or is shorter than an IV plus a tag, is corruption rather than an I/O
-     * failure, and a message naming only the file sends a caller looking for a disk problem that did not happen.
-     *
-     * Note what does **not** raise this: a whole store whose JSON cannot be parsed is reset and read as empty,
+     * A stored blob that is not a well-formed envelope does not raise this: it fails on every read, so it is
+     * [ValueUnreadable]. Nor does a whole store whose JSON cannot be parsed, which is reset and read as empty,
      * because refusing to load would make one bad write permanent.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class StorageUnavailable(
         cause: Throwable? = null,
     ) : SecureStorageException(
-            "the secure storage file could not be read or written, or a stored value is malformed",
+            "the secure storage file could not be read or written",
             cause,
         )
 }

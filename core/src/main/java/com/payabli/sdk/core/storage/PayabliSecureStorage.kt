@@ -41,17 +41,17 @@ public interface PayabliSecureStorage {
      * | Failure | Means | Caller |
      * |---|---|---|
      * | [SecureStorageException.KeyInvalidated] | the key is gone, so the store was cleared | re-authenticate |
-     * | [SecureStorageException.ValueUnreadable] | this entry alone could not be authenticated, and was discarded | re-obtain this value |
+     * | [SecureStorageException.ValueUnreadable] | this entry alone could not be authenticated or is malformed, and was discarded | re-obtain this value |
      * | [SecureStorageException.CryptoUnavailable] | the platform key store or cipher failed | retry |
-     * | [SecureStorageException.StorageUnavailable] | the file could not be read or written, or a stored blob is not a well-formed envelope | retry |
+     * | [SecureStorageException.StorageUnavailable] | the file could not be read or written | retry |
      *
      * The first two are terminal for the data they describe; the last two are not, and the store is left
      * intact for both of them.
      *
      * **Unparseable file *content* is not reported at all.** A store whose JSON cannot be parsed is reset and
      * reads as empty, because refusing to load would make one bad write permanent and everything in the file is
-     * ciphertext the caller can obtain again. `StorageUnavailable` covers the file being unreachable and a blob
-     * that is too short or not decodable, not a whole-store parse failure.
+     * ciphertext the caller can obtain again. `StorageUnavailable` covers the file being unreachable; a blob that
+     * is too short or not decodable is `ValueUnreadable`, and a whole-store parse failure is neither.
      */
     public suspend fun get(key: String): ByteArray?
 

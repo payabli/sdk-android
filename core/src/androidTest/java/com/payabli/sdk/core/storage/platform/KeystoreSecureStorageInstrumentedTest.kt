@@ -46,7 +46,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * The persistence half is covered on the JVM by `FileSecureStorageTest`; nothing here repeats it. What is
  * here cannot be shown off-device: an emulator or phone is the only place `AndroidKeyStore` exists, and the
- * per-write IV guarantee is a property of the platform's own randomized encryption rather than of our code.
+ * per-write IV guarantee is a property of the platform's own randomized encryption rather than of the SDK's code.
  *
  * A unique alias per run, deleted afterwards, so a leftover key from a previous run cannot make a failing
  * implementation look like a passing one.
@@ -82,7 +82,7 @@ class KeystoreSecureStorageInstrumentedTest {
      * caller retries forever instead of re-obtaining that entry.
      *
      * **Re-obtaining, not re-authenticating.** Re-authentication is `KeyInvalidated`'s action, and this path
-     * deliberately does not take it: a replaced key is indistinguishable from a corrupted blob on the read side, so
+     * does not take it: a replaced key is indistinguishable from a corrupted blob on the read side, so
      * only the entry asked for is discarded.
      */
     @Test
@@ -150,14 +150,12 @@ class KeystoreSecureStorageInstrumentedTest {
         }
 
     /**
-     * A truncated blob is corruption, not a bad value and not a lost key.
+     * A truncated blob is unusable on every read, so it is discarded like any other unreadable value.
      *
-     * Twenty bytes is longer than the 12-byte IV but shorter than IV plus the 16-byte tag. Without a guard
-     * on the full minimum it is valid base64 that reaches `doFinal`, throws a tag failure, and gets reported
-     * as an unreadable value, which contradicts the classification the code itself claims.
+     * Twenty bytes is longer than the 12-byte IV but shorter than IV plus the 16-byte tag.
      */
     @Test
-    fun aTruncatedBlobReportsStorageCorruption() =
+    fun aTruncatedBlobIsDiscarded() =
         runTest(timeout = 30.seconds) {
             val file = File(directory, "store.json")
             val subject = storage()
@@ -170,9 +168,30 @@ class KeystoreSecureStorageInstrumentedTest {
 
             val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
             assertTrue(
-                "a truncated blob is corruption, got $thrown",
-                thrown is SecureStorageException.StorageUnavailable,
+                "a truncated blob is unreadable, got $thrown",
+                thrown is SecureStorageException.ValueUnreadable,
             )
+            assertNull(subject.get("refresh"))
+        }
+
+    /** A blob that is not base64 at all is unusable on every read, and is discarded the same way. */
+    @Test
+    fun aBlobThatIsNotBase64IsDiscarded() =
+        runTest(timeout = 30.seconds) {
+            val file = File(directory, "store.json")
+            val subject = storage()
+            subject.set("refresh", "secret-value".toByteArray())
+
+            val serializer = MapSerializer(String.serializer(), String.serializer())
+            val map = Json.decodeFromString(serializer, file.readText())
+            file.writeText(Json.encodeToString(serializer, map + ("refresh" to "not base64 !")))
+
+            val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
+            assertTrue(
+                "a blob that is not base64 is unreadable, got $thrown",
+                thrown is SecureStorageException.ValueUnreadable,
+            )
+            assertNull(subject.get("refresh"))
         }
 
     private fun storage(
@@ -274,8 +293,8 @@ class KeystoreSecureStorageInstrumentedTest {
     /**
      * Two ciphers over one alias must generate exactly one key.
      *
-     * **The invariant, not its consequence.** An earlier version raced two writes and asserted both values were
-     * still readable, which caught the missing monitor in 3 of 3 whole-suite runs but only about half the time in
+     * **The invariant, not its consequence.** Racing two writes and asserting both values are still readable
+     * catches the missing monitor in 3 of 3 whole-suite runs but only about half the time in
      * isolation, and a start barrier did not help. Data is lost only when one store finishes encrypting *between*
      * the two generations, so tighter overlap puts both generations before either encrypt, both blobs end up under
      * the final key, and nothing is lost. The detection window was bounded on both sides.
@@ -350,7 +369,7 @@ class KeystoreSecureStorageInstrumentedTest {
      * is a real break, not a style problem, and the round-trip test above passes happily with one.
      *
      * Also asserts the plaintext is nowhere in the file, which the JVM test cannot claim: its fake cipher
-     * embeds the plaintext deliberately, so only here is the absence meaningful.
+     * embeds the plaintext, so only here is the absence meaningful.
      */
     @Test
     fun twoWritesOfTheSameValueProduceDifferentCiphertextAndNoPlaintext() =
@@ -383,7 +402,7 @@ class KeystoreSecureStorageInstrumentedTest {
     /**
      * The key is created on first use, under the alias given.
      *
-     * Asserted through the Keystore rather than through our own field, so it reflects what the platform
+     * Asserted through the Keystore rather than through the store's own field, so it reflects what the platform
      * actually holds. What the key was created *with* is
      * [theKeyIsCreatedWithTheAuthorizationsWeAskedFor]; this is only about the entry appearing.
      */
@@ -403,14 +422,14 @@ class KeystoreSecureStorageInstrumentedTest {
     /**
      * The key's authorizations are what the spec asked for, read back from the platform.
      *
-     * Here rather than in the manual tier on purpose. These *values* are readable wherever Keystore exists, so
+     * Here rather than in the manual tier. These *values* are readable wherever Keystore exists, so
      * the nightly catches a regression in them; whether a secure element **enforces** them is the separate
      * question the manual tier asks. An earlier comment claimed the size could not be read back for a
      * hardware-backed key. It can, on an emulator and on both test phones, so the claim is gone rather than
      * qualified.
      *
      * `isUserAuthenticationRequired` is the load-bearing one. The spec omits `setUserAuthenticationRequired`
-     * deliberately, because the first consumer is a secret read during background token refresh with nobody
+     * because the first consumer is a secret read during background token refresh with nobody
      * present, and because it is why no credential-change procedure for `KeyPermanentlyInvalidatedException`
      * exists. Bind the key to user presence and background refresh breaks at runtime with nothing here to
      * notice, which is exactly the kind of silent regression this asserts against.
@@ -513,9 +532,9 @@ class KeystoreSecureStorageInstrumentedTest {
      * and replacing the alias are the reachable lost-key outcomes, and both are covered. Asserting the
      * **subtype** rather than merely "some storage exception" is what makes these tests.
      *
-     * The looser version of this assertion hid a real defect. Reading used to mint a key when the alias was
-     * missing, so the tag check failed and the caller was told `CryptoUnavailable`, meaning transient, when
-     * the value was gone for good. `is SecureStorageException` passed happily throughout.
+     * A looser assertion would hide a real defect. A read that minted a key when the alias was missing would
+     * fail the tag check and tell the caller `CryptoUnavailable`, meaning transient, when the value was gone for
+     * good, and `is SecureStorageException` would still pass.
      *
      * Afterwards the store must be usable again rather than permanently throwing on that key, since the
      * unreadable bytes are discarded once reported.

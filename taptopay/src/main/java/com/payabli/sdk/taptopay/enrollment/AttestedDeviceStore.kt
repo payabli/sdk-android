@@ -69,7 +69,8 @@ internal class AttestedDeviceStore(
      * still be active, replacing it. The store's own contract separates the two, and this is the caller that
      * has to honour it:
      *
-     * - the key was lost, or this entry alone could not be authenticated: the data is gone, so null;
+     * - the key was lost, or this entry alone could not be authenticated or is malformed: the data is gone, so
+     *   null;
      * - the record decoded to nothing recognisable: also gone, and the entry is dropped on the way out;
      * - the platform's cipher or the file was unavailable: **raised**, because the record may be perfectly
      *   fine and unreadable only for a moment.
@@ -126,14 +127,28 @@ internal class AttestedDeviceStore(
     private suspend fun load(): DeviceBindings? {
         // The current entry answers alone whenever it is there, so the old one is never read once this
         // device has written anything, and a binding discarded since the upgrade cannot be restored from it.
-        decode(ENTRY, DeviceBindings.serializer())?.let {
-            scrubLegacy()
-            return it
+        when (val current = decode(ENTRY, DeviceBindings.serializer())) {
+            is Decoded.Held -> {
+                scrubLegacy()
+                return current.value
+            }
+            // This device has written the current shape, so the old record is older than a binding that is
+            // gone, and restoring it would hand back a stale one. Nothing is held, and a fresh enrollment
+            // follows. The store may already have discarded the unusable entry, so if the old record cannot be
+            // removed an empty current entry is written instead: absent, a later read would fall back to it.
+            // Uncancellable, because a caller withdrawing between the two leaves exactly that state.
+            Decoded.Unusable -> {
+                withContext(NonCancellable) {
+                    if (!removeQuietly(LEGACY_ENTRY, EVENT_LEGACY_KEPT)) markEmpty()
+                }
+                return null
+            }
+            Decoded.Absent -> Unit
         }
 
         // Nothing in the current entry. An older record is the only other thing that can be there, and
         // reading it is what keeps an enrolled device enrolled across the upgrade.
-        val legacy = decode(LEGACY_ENTRY, AttestedDevice.serializer()) ?: return null
+        val legacy = (decode(LEGACY_ENTRY, AttestedDevice.serializer()) as? Decoded.Held)?.value ?: return null
         val migrated = DeviceBindings.of(legacy)
 
         // Written before the old entry goes, never the reverse. Interrupted between them, both are present
@@ -164,6 +179,17 @@ internal class AttestedDeviceStore(
             }
             false
         }
+
+    /** Writes an empty current entry, and never fails the caller for it: the answer is already "nothing held". */
+    private suspend fun markEmpty() {
+        try {
+            store(DeviceBindings(emptyList()))
+        } catch (unwritable: SecureStorageException) {
+            logger.debug(RedactedCause(unwritable), LogField.safe("event", EVENT_EMPTY_UNWRITTEN)) {
+                "could not record that no device binding is held"
+            }
+        }
+    }
 
     /**
      * Removes the older entry once this store has read the current one, and never fails the caller for it.
@@ -202,15 +228,16 @@ internal class AttestedDeviceStore(
     private suspend fun removeQuietly(
         key: String,
         event: String,
-    ) {
+    ): Boolean =
         try {
             storage.remove(key)
+            true
         } catch (unremovable: SecureStorageException) {
             logger.debug(RedactedCause(unremovable), LogField.safe("event", event)) {
                 "could not remove an unusable stored entry"
             }
+            false
         }
-    }
 
     /**
      * Moves a binding to the front, and does not fail the read that asked for it.
@@ -243,30 +270,40 @@ internal class AttestedDeviceStore(
         }
     }
 
+    /** What one entry holds. Absent and unusable differ only in whether anything was written. */
+    private sealed interface Decoded<out T> {
+        class Held<T>(
+            val value: T,
+        ) : Decoded<T>
+
+        data object Absent : Decoded<Nothing>
+
+        data object Unusable : Decoded<Nothing>
+    }
+
     /**
-     * Reads one entry and decodes it, or answers null for every way it can turn out not to be there.
+     * Reads one entry and decodes it, saying whether it was absent or held something that cannot be used.
      *
-     * Shared by both shapes so the four storage failures are classified in one place. A store whose key is
-     * gone answers null for each entry it is asked for, which is the right answer for all of them.
+     * Shared by both shapes so the four storage failures are classified in one place.
      */
     private suspend fun <T> decode(
         key: String,
         serializer: KSerializer<T>,
-    ): T? {
+    ): Decoded<T> {
         val bytes =
             try {
                 storage.get(key)
             } catch (lost: SecureStorageException.KeyInvalidated) {
                 reportLost(lost, "key_invalidated")
-                return null
+                return Decoded.Unusable
             } catch (unreadable: SecureStorageException.ValueUnreadable) {
                 reportLost(unreadable, "value_unreadable")
-                return null
+                return Decoded.Unusable
             }
-                ?: return null
+                ?: return Decoded.Absent
 
         return try {
-            PayabliJson.format.decodeFromString(serializer, bytes.decodeToString())
+            Decoded.Held(PayabliJson.format.decodeFromString(serializer, bytes.decodeToString()))
         } catch (malformed: SerializationException) {
             // Narrowed to the serializer's own failure. A storage failure raised by the read above must
             // not be swallowed here on its way past.
@@ -277,8 +314,10 @@ internal class AttestedDeviceStore(
             // reading wedges rather than degrades, because the caller retries, decodes the same unreadable
             // bytes and raises again, and the entry is never removed on any of those attempts.
             reportLost(malformed, "undecodable")
-            removeQuietly(key, EVENT_UNREADABLE_KEPT)
-            null
+            // Uncancellable, so a caller withdrawing after the entry is gone still hears it was unusable and runs
+            // the cleanup that follows: interrupted there, the entry would read as absent next time.
+            withContext(NonCancellable) { removeQuietly(key, EVENT_UNREADABLE_KEPT) }
+            Decoded.Unusable
         } finally {
             bytes.fill(0)
         }
@@ -323,6 +362,7 @@ internal class AttestedDeviceStore(
         const val EVENT_LEGACY_KEPT = "device_identity_superseded_kept"
         const val EVENT_UNREADABLE_KEPT = "device_identity_undecodable_kept"
         const val EVENT_MIGRATION_DEFERRED = "device_identity_carry_forward_deferred"
+        const val EVENT_EMPTY_UNWRITTEN = "device_binding_empty_unwritten"
 
         /** One per process, so every store over the one backing entry takes the same lock. */
         val SHARED_LOCK = Mutex()

@@ -30,10 +30,10 @@ import javax.crypto.spec.GCMParameterSpec
  * In `platform` because Keystore and `android.util.Base64` have no JVM implementation, so no unit test can
  * reach a line of this file and the instrumented suite is what covers it.
  *
- * `androidx.security:security-crypto` is deliberately absent: it was deprecated in 2025 in favour of the
+ * `androidx.security:security-crypto` is not used: it was deprecated in 2025 in favour of the
  * platform APIs used here.
  *
- * The per-write IV comes from Keystore rather than from us. Randomized encryption is required on the key,
+ * The per-write IV comes from Keystore, not from this class. Randomized encryption is required on the key,
  * which makes supplying an IV an error and has the platform generate a fresh one per operation, so IV
  * freshness holds by construction.
  */
@@ -47,7 +47,7 @@ internal class KeystoreValueCipher(
      * The hazard is two ciphers over one alias both finding no key and both generating, where the second
      * generation replaces the first key and strands whatever was sealed under it. Reaching it needs both callers
      * past the check before either creates, and from outside [ensureKey] that check and the creation are atomic,
-     * so no decorator on [ValueCipher] can interleave them. Two coroutines racing cannot either: measured, a plain
+     * so no decorator on [ValueCipher] can interleave them. Two coroutines racing cannot either: a plain
      * `Dispatchers.IO` race detected the missing monitor in 3 of 3 whole-suite runs but only about half of the
      * time in isolation, and a start barrier did not improve it, because the test was observing a *consequence*.
      * A blob is only lost if one store finishes encrypting between the two generations, so tighter overlap puts
@@ -56,7 +56,7 @@ internal class KeystoreValueCipher(
      * With a rendezvous here, the test stops asking whether data was lost and asserts the invariant instead: the
      * key is generated exactly once, counted from the log line [createKey] already emits. That is deterministic.
      *
-     * The default makes this dead in production, and the parameter is deliberately not a `@VisibleForTesting`
+     * The default makes this dead in production, and the parameter is not a `@VisibleForTesting`
      * member or a mutable static: it is per-instance and injected, the same shape as `FileSecureStorage`'s
      * `dispatcher`.
      */
@@ -92,11 +92,11 @@ internal class KeystoreValueCipher(
             try {
                 Base64.decode(blob, Base64.NO_WRAP)
             } catch (e: IllegalArgumentException) {
-                throw SecureStorageException.StorageUnavailable(e)
+                throw SecureStorageException.ValueUnreadable(e)
             }
-        // IV plus tag, not just IV. A blob between the two lengths is valid base64 and would otherwise
-        // reach doFinal and be reported as a tag failure, which is corruption misreported as a bad value.
-        if (bytes.size < IV_BYTES + TAG_BYTES) throw SecureStorageException.StorageUnavailable()
+        // A malformed envelope fails this way on every read, so it is unreadable and discarded rather than
+        // retryable. IV plus tag, not just IV, so a short blob never reaches doFinal.
+        if (bytes.size < IV_BYTES + TAG_BYTES) throw SecureStorageException.ValueUnreadable()
 
         try {
             val cipher = cipher()
@@ -114,15 +114,15 @@ internal class KeystoreValueCipher(
      * Provisions the alias, and is the only place a key is ever created.
      *
      * Double-checked under the per-alias monitor, so concurrent first writes generate once rather than racing
-     * to replace each other's key. An earlier version asked a separate `hasKey()` and let `encrypt` create,
-     * which left the decision split across two calls with a window between them.
+     * to replace each other's key. A separate `hasKey()` followed by a creating `encrypt` would split the decision
+     * across two calls with a window between them.
      *
      * **What this guarantees, and what it does not.** With [mayCreate] false it proves a key is *present*, not
      * that the present key is the one that sealed the store. Continuity comes from alias ownership instead:
      * `SecureStorageFactory.create` derives one alias per backing file, so nothing else can delete and
      * recreate this one. Two ciphers constructed directly over a single alias, which only internal code can do,
      * are outside that guarantee. Proving continuity rather than owning it would need a canary blob decrypted
-     * on every write, and that is deliberately not built.
+     * on every write, which is not built.
      */
     override fun ensureKey(mayCreate: Boolean) {
         if (existingKey() != null) return
@@ -143,7 +143,7 @@ internal class KeystoreValueCipher(
      * surface exists to make. Always `CryptoUnavailable`: a provider that is broken says nothing about this
      * blob or about the key, so it is neither a tag failure nor key loss.
      *
-     * Deliberately **not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
+     * **Not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
      * `ProviderException`, so a catch there swallows it, [strongBoxKey] never sees the signal it falls back on,
      * and key creation fails outright on every device without StrongBox. [createKey] maps it one level up,
      * after the fallback has resolved.
