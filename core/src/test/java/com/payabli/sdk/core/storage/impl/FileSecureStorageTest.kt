@@ -444,8 +444,9 @@ class FileSecureStorageTest {
      * Any byte sequence round-trips exactly, which is the property the old text contract could not offer.
      *
      * These bytes are not valid UTF-8: a lone `0x80` continuation byte, `0xED 0xA0 0x80` which is
-     * the UTF-8 encoding of an unpaired surrogate, and a NUL. Decoding them as text would replace
-     * them with `?`, so the value read back would differ from the value stored. Storing bytes means there is nothing to interpret and therefore nothing to corrupt.
+     * the UTF-8 encoding of an unpaired surrogate, and a NUL. Decoding them as text would replace them with
+     * U+FFFD, so the value read back would differ from the value stored. Storing bytes means there is nothing to
+     * interpret and therefore nothing to corrupt.
      */
     @Test
     fun `an arbitrary byte sequence round-trips exactly`() =
