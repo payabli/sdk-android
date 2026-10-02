@@ -348,9 +348,8 @@ class FileSecureStorageTest {
     /**
      * The caller's array reaches the cipher unchanged and uncopied.
      *
-     * The inverse of what this test used to assert. It once checked that storage *wiped* the buffer it handed the
-     * cipher, which was necessary because the old `CharArray` contract encoded into a second array that storage
-     * then owned. Bytes go straight through, so no such buffer exists: nothing of ours holds the plaintext, and
+     * Storage does not wipe the buffer it hands the cipher, because there is no such buffer: bytes go straight
+     * through, so nothing the store owns holds the plaintext, and
      * there is nothing for storage to forget to clear. Wiping is the caller's, as the contract now says.
      */
     @Test
@@ -387,7 +386,7 @@ class FileSecureStorageTest {
     /**
      * Two names that collapse under UTF-8 must not be able to open each other's value.
      *
-     * `"\uD800"` and `"\uD801"` both encode to the single byte `0x3f`, measured, so as GCM AAD they are the same
+     * `"\uD800"` and `"\uD801"` both encode to the single byte `0x3f`, so as GCM AAD they are the same
      * name. Since every entry shares one key, the AAD is the only thing binding a blob to its entry, and two
      * entries with one AAD is the substitution attack the binding exists to stop, reached by naming rather than
      * by editing the file. Rejecting the names makes the collision unreachable, so this asserts through the
@@ -444,10 +443,9 @@ class FileSecureStorageTest {
     /**
      * Any byte sequence round-trips exactly, which is the property the old text contract could not offer.
      *
-     * These bytes are deliberately not valid UTF-8: a lone `0x80` continuation byte, `0xED 0xA0 0x80` which is
-     * the UTF-8 encoding of an unpaired surrogate, and a NUL. Under the previous `CharArray` contract the
-     * equivalent input was silently replaced with `?`, measured, so the value read back differed from the value
-     * stored. Storing bytes means there is nothing to interpret and therefore nothing to corrupt.
+     * These bytes are not valid UTF-8: a lone `0x80` continuation byte, `0xED 0xA0 0x80` which is
+     * the UTF-8 encoding of an unpaired surrogate, and a NUL. Decoding them as text would replace
+     * them with `?`, so the value read back would differ from the value stored. Storing bytes means there is nothing to interpret and therefore nothing to corrupt.
      */
     @Test
     fun `an arbitrary byte sequence round-trips exactly`() =
@@ -606,10 +604,9 @@ class FileSecureStorageTest {
     /**
      * The sweep must not reach another store's temp file.
      *
-     * Written against the derived prefix rather than a literal name, which is what it should always have
-     * asserted: the guarantee is "not ours", and ownership is what the identity decides. Every prefix is now the
-     * same width, so a sibling's prefix cannot be an initial substring of ours the way `store` and `store2`
-     * could.
+     * Written against the derived prefix rather than a literal name: the guarantee is "not this store's", and
+     * ownership is what the identity decides. Every prefix is the same width, so another store's prefix cannot
+     * be an initial substring of this one's the way `store` and `store2` could.
      */
     @Test
     fun `the sweep leaves another store's temporary file alone`() =
@@ -625,7 +622,7 @@ class FileSecureStorageTest {
         }
 
     /**
-     * Nor a file carrying our own prefix whose middle is not digits, since the store never produces such a name.
+     * Nor a file carrying this store's prefix whose middle is not digits, since the store never produces such a name.
      * The directory belongs to the host app too.
      */
     @Test
@@ -799,8 +796,8 @@ class FileSecureStorageTest {
      * Modelled with a path whose `canonicalPath` answers differently on the second call, which is the hazard the
      * removed fallback created: the alias, the lock and the temp prefix all derive from this, so a store that
      * re-resolves can look for another key, take another lock, and stop recognising its own temp files. Only the
-     * identity shifts here; the file I/O still uses the real path, so the store keeps working and the split is what
-     * the test observes.
+     * identity shifts here, and reading and writing still use the real path, so the store keeps working and the
+     * split is what the test observes.
      */
     @Test
     fun `the identity is resolved once per store`() =
@@ -856,8 +853,8 @@ class FileSecureStorageTest {
     /**
      * A sweep that cannot delete an orphan must say so, or `remove` lies again.
      *
-     * The whole point of sweeping on `remove` is that deletion means deletion. `delete()` returning false used to
-     * be simply not the `if` branch, so the caller was told the entry was gone while a decryptable blob for it was
+     * The whole point of sweeping on `remove` is that deletion means deletion. If `delete()` returning false
+     * were simply not the `if` branch, the caller would be told the entry was gone while a decryptable blob for it was
      * still on disk. Injected by taking write permission off the directory, which is a real cause rather than a
      * stub, with the orphan already present.
      */
@@ -885,7 +882,7 @@ class FileSecureStorageTest {
      *
      * `listFiles` answers null for both a missing parent and a listing failure, and treating them alike meant
      * `remove` reported success without ever having looked. Injected by removing read permission from the
-     * directory: measured, that leaves `isDirectory` true with `listFiles` null, while a known path inside stays
+     * directory, which leaves `isDirectory` true with `listFiles` null, while a known path inside stays
      * readable, so the store still loads and only the sweep is blinded.
      */
     @Test
@@ -979,7 +976,7 @@ class FileSecureStorageTest {
      * `read` catches that rather than its `IllegalArgumentException` supertype, because the handler does not
      * rethrow, it overwrites the store with an empty map. Catching the supertype turns a programming error raised
      * from inside a serializer into data loss. Asserted against the library directly, so it pins kotlinx's
-     * behaviour rather than ours: if malformed input ever stopped being a `SerializationException`, the corrupt-file
+     * behaviour rather than the store's: if malformed input ever stopped being a `SerializationException`, the corrupt-file
      * path would silently stop resetting.
      */
     @Test
@@ -1075,7 +1072,7 @@ class FileSecureStorageTest {
         }
 
     private companion object {
-        /** Ten writers, which is enough: measured, a removed lock loses nine of them on every run. */
+        /** Ten writers: with the lock removed, nine of them are lost on every run. */
         const val WRITERS = 10
     }
 }
