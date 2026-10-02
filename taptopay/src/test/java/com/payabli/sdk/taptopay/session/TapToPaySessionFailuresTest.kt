@@ -11,6 +11,7 @@ import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.ATTESTATION_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 import org.junit.Assert.assertEquals
@@ -69,7 +70,7 @@ class TapToPaySessionFailuresTest {
             // The key is gone, so the identity is: enrollment discards the record before raising it.
             DeviceKeyException.KeyLost() to failed(ATTESTATION_REQUIRED),
             DeviceKeyException.SigningFailed() to failed(SDK_INTERNAL_ERROR),
-            DeviceKeyException.CryptoUnavailable() to failed(SDK_INTERNAL_ERROR),
+            DeviceKeyException.CryptoUnavailable() to failed(DEVICE_KEY_UNAVAILABLE),
             AttestationException.Retryable(-1) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Throttled(-8) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),

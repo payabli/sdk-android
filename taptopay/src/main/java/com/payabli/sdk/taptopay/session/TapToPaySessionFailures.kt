@@ -11,6 +11,7 @@ import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.ATTESTATION_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 
@@ -130,14 +131,15 @@ internal object TapToPaySessionFailures {
      * A key that is gone is the identity being gone, which is a positive match: enrollment discards the
      * record before raising it, so the remedy is to attest again.
      *
-     * The other two are not. A signature that failed and a platform that cannot do crypto both leave the
-     * key where it was, so neither says the identity is stale.
+     * The other two are not: a signature that failed and a key store that cannot confirm the key both leave
+     * the key where it was, so neither says the identity is stale. The second is the phone's key facility
+     * failing rather than a defect in the SDK, so it has its own reason.
      */
     private fun landingForDeviceKey(failure: DeviceKeyException): TapToPaySessionState =
         when (failure) {
             is DeviceKeyException.KeyLost -> failed(ATTESTATION_REQUIRED)
             is DeviceKeyException.SigningFailed -> failed(SDK_INTERNAL_ERROR)
-            is DeviceKeyException.CryptoUnavailable -> failed(SDK_INTERNAL_ERROR)
+            is DeviceKeyException.CryptoUnavailable -> failed(DEVICE_KEY_UNAVAILABLE)
         }
 
     private fun landingForTransport(failure: PayabliException): TapToPaySessionState =
