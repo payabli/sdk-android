@@ -440,7 +440,7 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `a key store that cannot be reached reads as no device id, without throwing`() =
+    fun `a key store that cannot confirm the key reads the stored id, without throwing`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 EnrollmentFixture(
@@ -449,7 +449,8 @@ class DeviceEnrollmentTest {
                 )
             fixture.seedRecord()
 
-            assertEquals(null, fixture.enrollment.deviceId())
+            // The binding is kept and not known to be stale, so its id is still this device's.
+            assertEquals(DEVICE_ID, fixture.enrollment.deviceId())
         }
 
     @Test
@@ -476,6 +477,39 @@ class DeviceEnrollmentTest {
 
             enrolling.await()
             assertEquals("new-device-id", reading.await())
+        }
+
+    @Test
+    fun `each unusable binding logs its kind, and neither the id nor the entry point`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val cases =
+                listOf(
+                    "could not be read" to
+                        EnrollmentFixture(
+                            RouteScript(),
+                            storeFailure = FakeSecureStore.failing("get", SecureStorageException.StorageUnavailable()),
+                        ),
+                    "key is gone" to
+                        EnrollmentFixture(
+                            RouteScript(),
+                            deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.KeyLost()),
+                        ),
+                    "no longer holds" to
+                        EnrollmentFixture(RouteScript(), deviceKey = FakeDeviceKey("a-replacement-key")),
+                )
+            for ((kind, fixture) in cases) {
+                fixture.seedRecord()
+
+                assertEquals(kind, null, fixture.enrollment.deviceId())
+
+                val written = fixture.logger.everythingWritten()
+                assertTrue(
+                    "\"$kind\" was not logged: $written",
+                    fixture.logger.records.any { it.message.contains(kind) },
+                )
+                assertFalse("\"$kind\" logged the id", written.contains(DEVICE_ID))
+                assertFalse("\"$kind\" logged the entry point", written.contains(ENTRY))
+            }
         }
 
     @Test

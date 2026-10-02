@@ -5,6 +5,7 @@ import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
+import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
@@ -19,6 +20,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceAttestationBinding
 import com.payabli.sdk.taptopay.attestation.device.DeviceIdentity
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
+import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
@@ -281,9 +283,11 @@ internal class DeviceEnrollment(
     /**
      * The handle this paypoint's device was registered under, or null when this device holds no usable one.
      *
-     * Never raises. A record [enroll] would discard, a store or key store that cannot be read, and a key that is
-     * gone all read as null, because the caller's one remedy for each is [enroll]. Takes the same lock as the
-     * rest, so it cannot read a handle a re-registration is replacing.
+     * Never raises. A record [enroll] would discard, a store that cannot be read, and a key that is gone all
+     * read as null, because the caller's one remedy for each is [enroll]. A key store that cannot confirm the
+     * key keeps the binding, as [enroll] does, so its handle is still answered. Each unusable case logs its
+     * kind and nothing it names. Takes the same lock as the rest, so it cannot read a handle a re-registration
+     * is replacing.
      */
     suspend fun deviceId(): String? =
         lock.withLock {
@@ -292,16 +296,37 @@ internal class DeviceEnrollment(
                 try {
                     store.read(entry)
                 } catch (unreadable: SecureStorageException) {
+                    reportUnusable(unreadable) { "the stored device binding could not be read" }
                     null
                 } ?: return@withLock null
             val identity =
                 try {
                     withContext(dispatcher) { deviceKey.publicKey() }
-                } catch (unusable: DeviceKeyException) {
+                } catch (lost: DeviceKeyException.KeyLost) {
+                    reportUnusable(lost) { "the device key is gone" }
                     return@withLock null
+                } catch (unconfirmed: DeviceKeyException) {
+                    return@withLock known.deviceId
                 }
-            known.deviceId.takeIf { known.keyId == identity.identity }
+            if (known.keyId != identity.identity) {
+                reportUnusable(null) { "the stored binding names a key this device no longer holds" }
+                return@withLock null
+            }
+            known.deviceId
         }
+
+    /** The kind alone: the cause is redacted, and neither the handle nor the entry point is a field. */
+    private fun reportUnusable(
+        cause: Throwable?,
+        message: () -> String,
+    ) {
+        logger.log(
+            LogLevel.WARN,
+            listOf(LogField.safe("event", "device_id_unusable")),
+            cause?.let(::RedactedCause),
+            message,
+        )
+    }
 
     /**
      * Forgets this entry point's device without touching its key, so the next [enroll] runs the cold
