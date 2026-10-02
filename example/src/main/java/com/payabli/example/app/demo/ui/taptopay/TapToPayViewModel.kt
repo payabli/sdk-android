@@ -20,6 +20,7 @@ import com.payabli.example.app.demo.terminal.TerminalActionOutcome
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -128,17 +129,26 @@ class TapToPayViewModel(
 
     fun setActivationCode(text: String) = _uiState.update { it.copy(activationCode = text) }
 
+    private var deviceIdRead: Job? = null
+
     fun openActivation() {
         // Cleared first: the last id read may belong to a handle a re-registration has since replaced.
         _uiState.update {
             it.copy(isActivationOpen = true, deviceId = null, deviceIdUnavailable = false, isReadingDeviceId = true)
         }
-        viewModelScope.launch {
-            val read = terminal.deviceId()
-            _uiState.update {
-                it.copy(deviceId = read.getOrNull(), deviceIdUnavailable = read.isFailure, isReadingDeviceId = false)
+        // Only the latest opening may publish: an earlier read finishing late would show its answer instead.
+        deviceIdRead?.cancel()
+        deviceIdRead =
+            viewModelScope.launch {
+                val read = terminal.deviceId()
+                _uiState.update {
+                    it.copy(
+                        deviceId = read.getOrNull(),
+                        deviceIdUnavailable = read.isFailure,
+                        isReadingDeviceId = false,
+                    )
+                }
             }
-        }
     }
 
     fun dismissActivation() = _uiState.update { it.copy(isActivationOpen = false) }

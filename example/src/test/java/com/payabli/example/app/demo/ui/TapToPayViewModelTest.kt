@@ -177,6 +177,30 @@ class TapToPayViewModelTest {
         }
 
     @Test
+    fun `a read from an earlier opening does not overwrite the latest one`() =
+        runTest {
+            val reads = ArrayDeque(listOf(CompletableDeferred<Result<String?>>(), CompletableDeferred()))
+            val pending = reads.toList()
+            val demo = DemoTerminalController(stepDelayMillis = 0)
+            val viewModel =
+                model(
+                    object : TerminalController by demo {
+                        override suspend fun deviceId(): Result<String?> = reads.removeFirst().await()
+                    },
+                )
+
+            viewModel.openActivation()
+            viewModel.dismissActivation()
+            viewModel.openActivation()
+            pending[0].complete(Result.success("an-earlier-id"))
+
+            assertTrue(viewModel.uiState.value.isReadingDeviceId)
+            assertNull(viewModel.uiState.value.deviceId)
+            pending[1].complete(Result.success(DemoTerminalController.DEMO_DEVICE_ID))
+            assertEquals(DemoTerminalController.DEMO_DEVICE_ID, viewModel.uiState.value.deviceId)
+        }
+
+    @Test
     fun `opening activation before setup shows no id`() =
         runTest {
             val viewModel = model()
