@@ -136,8 +136,11 @@ internal class AttestedDeviceStore(
             // gone, and restoring it would hand back a stale one. Nothing is held, and a fresh enrollment
             // follows. The store may already have discarded the unusable entry, so if the old record cannot be
             // removed an empty current entry is written instead: absent, a later read would fall back to it.
+            // Uncancellable, because a caller withdrawing between the two leaves exactly that state.
             Decoded.Unusable -> {
-                if (!removeQuietly(LEGACY_ENTRY, EVENT_LEGACY_KEPT)) markEmpty()
+                withContext(NonCancellable) {
+                    if (!removeQuietly(LEGACY_ENTRY, EVENT_LEGACY_KEPT)) markEmpty()
+                }
                 return null
             }
             Decoded.Absent -> Unit
@@ -180,7 +183,7 @@ internal class AttestedDeviceStore(
     /** Writes an empty current entry, and never fails the caller for it: the answer is already "nothing held". */
     private suspend fun markEmpty() {
         try {
-            withContext(NonCancellable) { store(DeviceBindings(emptyList())) }
+            store(DeviceBindings(emptyList()))
         } catch (unwritable: SecureStorageException) {
             logger.debug(RedactedCause(unwritable), LogField.safe("event", EVENT_EMPTY_UNWRITTEN)) {
                 "could not record that no device binding is held"
