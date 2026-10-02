@@ -1,10 +1,12 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.ENTRY
+import com.payabli.sdk.taptopay.enrollment.FakeDeviceKey
 import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.activateBody
@@ -17,10 +19,13 @@ import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
 import com.payabli.sdk.taptopay.network.TTPTransactionClient
 import com.payabli.sdk.taptopay.network.approved
 import com.payabli.sdk.taptopay.session.SessionFixture
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
+import com.payabli.sdk.taptopay.session.TapToPaySessionState.Failed
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -167,6 +172,25 @@ class PayabliTapToPayTest {
             val terminal = terminalOver(fixture)
 
             assertNull(terminal.deviceId())
+        }
+
+    @Test
+    fun `a key store that cannot confirm the key keeps the binding, throws, and names the reason`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    script(),
+                    deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.CryptoUnavailable()),
+                )
+            fixture.seedRecord()
+            val terminal = terminalOver(fixture)
+
+            val failure = runCatching { terminal.initialize() }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is TapToPayException)
+            assertEquals(Failed(TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE), terminal.sessionState.value)
+            assertNotNull("the binding was discarded", fixture.enrollment.storedRecord())
+            assertTrue("a request was sent", fixture.routes.isEmpty())
         }
 
     @Test

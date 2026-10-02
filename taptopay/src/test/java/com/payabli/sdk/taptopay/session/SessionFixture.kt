@@ -5,6 +5,7 @@ import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.ChargeKeyStore
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.EnrollmentFixture
+import com.payabli.sdk.taptopay.enrollment.FakeDeviceKey
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.attestBody
 import com.payabli.sdk.taptopay.enrollment.challengeBody
@@ -71,8 +72,10 @@ internal class SessionFixture(
     readGate: (suspend () -> Unit)? = null,
     elapsedRealtimeNanos: () -> Long = { System.nanoTime() },
     storeFailure: (operation: String, key: String) -> SecureStorageException? = { _, _ -> null },
+    deviceKey: FakeDeviceKey = FakeDeviceKey(),
 ) {
-    val enrollment = EnrollmentFixture(script, storeFailure = storeFailure, firstReadGate = firstReadGate)
+    val enrollment =
+        EnrollmentFixture(script, deviceKey = deviceKey, storeFailure = storeFailure, firstReadGate = firstReadGate)
 
     val reader = FakeTapToPayProvider(enrollment.trace, readerGate, eligibilityFailure, readGate = readGate)
 
