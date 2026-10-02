@@ -95,6 +95,334 @@ WALKTHROUGH_COMMAND = (
 # The nightly's instrumented module list, quoted by four mutations below. One spelling, for the reason the
 # walkthrough command has one: an anchor that no longer matches reports itself invalid rather than caught.
 INSTRUMENTED_MODULES_LINE = "          INSTRUMENTED_MODULES: core,payin"
+# Spans of release.yml for the rows that remove or reorder whole steps. Written out rather than built
+# from the file, so W15 can read each one and report it the moment the workflow moves under it.
+RELEASE_BUILD_VERSION_CHECK = (
+    "      # The build's Gradle carries no override, so the committed property is what it publishes.\n"
+    '      - name: Check the commit carries the version the check read\n'
+    '        env:\n'
+    '          CHECKED: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    '          # Empty rather than a failed grep when the line is missing, so the refusal below says why.\n'
+    "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n"
+    '          if [ "$CHECKED" != "$version" ]; then\n'
+    '            echo "::error::payabli.version is \'$version\' here, and the check read \'$CHECKED\'."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '\n'
+)
+RELEASE_KEEP_TREE = (
+    '      # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only\n'
+    '      # one a half-finished upload can be completed from, by re-running the failed job.\n'
+    '      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1\n'
+    '        with:\n'
+    '          name: staging-repo\n'
+    '          path: build/staging-repo\n'
+    '          if-no-files-found: error\n'
+    '          retention-days: 90\n'
+    '\n'
+)
+RELEASE_SUBJECT_THEN_TAG = (
+    "      # The same check as qa-snapshot.yml, in the release environment's form.\n"
+    '      - name: Check the OIDC subject the trust policies expect\n'
+    '        env:\n'
+    '          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:environment:release\n'
+    '        run: |\n'
+    '          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\\n'
+    '            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |\n'
+    '            python3 -c \'import base64,json,sys; t=json.load(sys.stdin)["value"].split(".")[1]; print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())\')\n'
+    '          sub=$(printf \'%s\' "$claims" | python3 -c \'import json,sys; print(json.load(sys.stdin)["sub"])\')\n'
+    '          echo "subject presented: $sub"\n'
+    '          if [ "$sub" != "$EXPECTED" ]; then\n'
+    '            echo "::error::this run presents \'$sub\', and the release role grants \'$EXPECTED\'."\n'
+    '            echo "::error::GitHub\'s immutable subject claim setting for this repository may have moved."\n'
+    '            echo "::error::The trust policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '\n'
+    '      # For the uploader, and the tags the step below reads.\n'
+    '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
+    '        with:\n'
+    '          fetch-depth: 0\n'
+    '          persist-credentials: false\n'
+    '\n'
+    '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
+    '      # a number already spent.\n'
+    '      - name: Create the tag\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+    '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n'
+    '          GH_TOKEN: ${{ github.token }}\n'
+    '        run: |\n'
+    '          tagged=\n'
+    '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+    '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+    '          fi\n'
+    '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+    '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '          if [ -z "$tagged" ]; then\n'
+    "            # GitHub's host keys come from its API over HTTPS, so the SSH connection is verified rather\n"
+    '            # than trusted on first use.\n'
+    '            umask 077\n'
+    '            key="$RUNNER_TEMP/release-key"\n'
+    '            hosts="$RUNNER_TEMP/github-known-hosts"\n'
+    '            trap \'rm -f "$key"\' EXIT\n'
+    '            printf \'%s\\n\' "$RELEASE_DEPLOY_KEY" > "$key"\n'
+    '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
+    '            git config user.name "github-actions[bot]"\n'
+    '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
+    '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
+    '          fi\n'
+    '\n'
+)
+RELEASE_TAG_THEN_SUBJECT = (
+    '      # For the uploader, and the tags the step below reads.\n'
+    '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n'
+    '        with:\n'
+    '          fetch-depth: 0\n'
+    '          persist-credentials: false\n'
+    '\n'
+    '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
+    '      # a number already spent.\n'
+    '      - name: Create the tag\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+    '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n'
+    '          GH_TOKEN: ${{ github.token }}\n'
+    '        run: |\n'
+    '          tagged=\n'
+    '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+    '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+    '          fi\n'
+    '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+    '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '          if [ -z "$tagged" ]; then\n'
+    "            # GitHub's host keys come from its API over HTTPS, so the SSH connection is verified rather\n"
+    '            # than trusted on first use.\n'
+    '            umask 077\n'
+    '            key="$RUNNER_TEMP/release-key"\n'
+    '            hosts="$RUNNER_TEMP/github-known-hosts"\n'
+    '            trap \'rm -f "$key"\' EXIT\n'
+    '            printf \'%s\\n\' "$RELEASE_DEPLOY_KEY" > "$key"\n'
+    '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
+    '            git config user.name "github-actions[bot]"\n'
+    '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
+    '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
+    '          fi\n'
+    '\n'
+    "      # The same check as qa-snapshot.yml, in the release environment's form.\n"
+    '      - name: Check the OIDC subject the trust policies expect\n'
+    '        env:\n'
+    '          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:environment:release\n'
+    '        run: |\n'
+    '          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\\n'
+    '            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |\n'
+    '            python3 -c \'import base64,json,sys; t=json.load(sys.stdin)["value"].split(".")[1]; print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())\')\n'
+    '          sub=$(printf \'%s\' "$claims" | python3 -c \'import json,sys; print(json.load(sys.stdin)["sub"])\')\n'
+    '          echo "subject presented: $sub"\n'
+    '          if [ "$sub" != "$EXPECTED" ]; then\n'
+    '            echo "::error::this run presents \'$sub\', and the release role grants \'$EXPECTED\'."\n'
+    '            echo "::error::GitHub\'s immutable subject claim setting for this repository may have moved."\n'
+    '            echo "::error::The trust policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '\n'
+)
+RELEASE_TAG_THEN_UPLOAD = (
+    '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
+    '      # a number already spent.\n'
+    '      - name: Create the tag\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+    '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n'
+    '          GH_TOKEN: ${{ github.token }}\n'
+    '        run: |\n'
+    '          tagged=\n'
+    '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+    '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+    '          fi\n'
+    '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+    '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '          if [ -z "$tagged" ]; then\n'
+    "            # GitHub's host keys come from its API over HTTPS, so the SSH connection is verified rather\n"
+    '            # than trusted on first use.\n'
+    '            umask 077\n'
+    '            key="$RUNNER_TEMP/release-key"\n'
+    '            hosts="$RUNNER_TEMP/github-known-hosts"\n'
+    '            trap \'rm -f "$key"\' EXIT\n'
+    '            printf \'%s\\n\' "$RELEASE_DEPLOY_KEY" > "$key"\n'
+    '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
+    '            git config user.name "github-actions[bot]"\n'
+    '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
+    '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
+    '          fi\n'
+    '\n'
+    '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'
+    '        with:\n'
+    '          name: staging-repo\n'
+    '          path: build/staging-repo\n'
+    '\n'
+    '      - name: Authenticate to AWS\n'
+    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        with:\n'
+    '          role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
+    '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
+    '\n'
+    '      # The account comes off the role ARN, so there is one copy of it. Re-running this job against the\n'
+    '      # same build reports every key already written as present. A rebuild does not: its bytes differ,\n'
+    '      # and the uploader refuses a key that holds different ones. Unbuffered, so a cancelled upload still\n'
+    '      # logs the keys it wrote.\n'
+    '      - name: Upload the staging tree\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
+    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
+    '          PYTHONUNBUFFERED: "1"\n'
+    '        run: |\n'
+    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
+    '          export AWS_SDK_CDN_ACCOUNT\n'
+    '          python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'
+    '\n'
+)
+RELEASE_UPLOAD_THEN_TAG = (
+    '      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'
+    '        with:\n'
+    '          name: staging-repo\n'
+    '          path: build/staging-repo\n'
+    '\n'
+    '      - name: Authenticate to AWS\n'
+    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        with:\n'
+    '          role-to-assume: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
+    '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
+    '\n'
+    '      # The account comes off the role ARN, so there is one copy of it. Re-running this job against the\n'
+    '      # same build reports every key already written as present. A rebuild does not: its bytes differ,\n'
+    '      # and the uploader refuses a key that holds different ones. Unbuffered, so a cancelled upload still\n'
+    '      # logs the keys it wrote.\n'
+    '      - name: Upload the staging tree\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
+    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
+    '          PYTHONUNBUFFERED: "1"\n'
+    '        run: |\n'
+    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
+    '          export AWS_SDK_CDN_ACCOUNT\n'
+    '          python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'
+    '\n'
+    '      # A tag already on this commit is a resumed release and is not pushed twice. One on another commit is\n'
+    '      # a number already spent.\n'
+    '      - name: Create the tag\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          COMMIT: ${{ needs.check.outputs.commit }}\n'
+    '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n'
+    '          GH_TOKEN: ${{ github.token }}\n'
+    '        run: |\n'
+    '          tagged=\n'
+    '          if [ -n "$(git tag --list "$VERSION")" ]; then\n'
+    '            tagged=$(git rev-parse "refs/tags/$VERSION^{commit}")\n'
+    '          fi\n'
+    '          if [ -n "$tagged" ] && [ "$tagged" != "$COMMIT" ]; then\n'
+    '            echo "::error::tag $VERSION already names $tagged, not $COMMIT. Take the next version."\n'
+    '            exit 1\n'
+    '          fi\n'
+    '          if [ -z "$tagged" ]; then\n'
+    "            # GitHub's host keys come from its API over HTTPS, so the SSH connection is verified rather\n"
+    '            # than trusted on first use.\n'
+    '            umask 077\n'
+    '            key="$RUNNER_TEMP/release-key"\n'
+    '            hosts="$RUNNER_TEMP/github-known-hosts"\n'
+    '            trap \'rm -f "$key"\' EXIT\n'
+    '            printf \'%s\\n\' "$RELEASE_DEPLOY_KEY" > "$key"\n'
+    '            gh api meta --jq \'.ssh_keys[] | "github.com " + .\' > "$hosts"\n'
+    '            git config user.name "github-actions[bot]"\n'
+    '            git config user.email "github-actions[bot]@users.noreply.github.com"\n'
+    '            git tag -a "$VERSION" -m "Payabli Android SDK $VERSION, dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"\n'
+    '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n'
+    '              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n'
+    '          fi\n'
+    '\n'
+)
+RELEASE_UPLOAD_THEN_NOTES = (
+    '      # The account comes off the role ARN, so there is one copy of it. Re-running this job against the\n'
+    '      # same build reports every key already written as present. A rebuild does not: its bytes differ,\n'
+    '      # and the uploader refuses a key that holds different ones. Unbuffered, so a cancelled upload still\n'
+    '      # logs the keys it wrote.\n'
+    '      - name: Upload the staging tree\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
+    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
+    '          PYTHONUNBUFFERED: "1"\n'
+    '        run: |\n'
+    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
+    '          export AWS_SDK_CDN_ACCOUNT\n'
+    '          python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'
+    '\n'
+    '      # Notes only. The binary is at the Maven origin, and a release asset cannot front a Maven layout. A\n'
+    '      # re-run whose release already exists leaves it as it is.\n'
+    '      - name: Create the GitHub Release\n'
+    '        env:\n'
+    '          GH_TOKEN: ${{ github.token }}\n'
+    '          TAG: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    '          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \\\n'
+    '            --jq ".[] | select(.tagName == \\"$TAG\\") | .tagName")\n'
+    '          if [ -n "$existing" ]; then\n'
+    '            echo "release $TAG already exists"\n'
+    '          else\n'
+    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes\n'
+    '          fi\n'
+)
+RELEASE_NOTES_THEN_UPLOAD = (
+    '      # Notes only. The binary is at the Maven origin, and a release asset cannot front a Maven layout. A\n'
+    '      # re-run whose release already exists leaves it as it is.\n'
+    '      - name: Create the GitHub Release\n'
+    '        env:\n'
+    '          GH_TOKEN: ${{ github.token }}\n'
+    '          TAG: ${{ needs.check.outputs.version }}\n'
+    '        run: |\n'
+    '          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \\\n'
+    '            --jq ".[] | select(.tagName == \\"$TAG\\") | .tagName")\n'
+    '          if [ -n "$existing" ]; then\n'
+    '            echo "release $TAG already exists"\n'
+    '          else\n'
+    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes\n'
+    '          fi\n'
+    '      # The account comes off the role ARN, so there is one copy of it. Re-running this job against the\n'
+    '      # same build reports every key already written as present. A rebuild does not: its bytes differ,\n'
+    '      # and the uploader refuses a key that holds different ones. Unbuffered, so a cancelled upload still\n'
+    '      # logs the keys it wrote.\n'
+    '      - name: Upload the staging tree\n'
+    '        env:\n'
+    '          VERSION: ${{ needs.check.outputs.version }}\n'
+    '          ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}\n'
+    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
+    '          PYTHONUNBUFFERED: "1"\n'
+    '        run: |\n'
+    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
+    '          export AWS_SDK_CDN_ACCOUNT\n'
+    '          python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"\n'
+    '\n'
+)
+
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -116,35 +444,24 @@ SOURCE = {
 
 # (description, target file, half to run, anchor, replacement)
 MUTATIONS = [
-    ("QA snapshot gains a trigger of its own, so it publishes beside CI rather than after it", QA,
-     "workflows",
-     "  workflow_call:\n", "  workflow_call:\n  push:\n    branches: [main]\n"),
+    ("QA snapshot publishes on every merge to main again", QA, "workflows",
+     "on:\n  workflow_dispatch:\n", "on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n"),
 
     ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
-    ("QA snapshot names a checkout ref, so it builds something other than what CI tested", QA,
-     "workflows",
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
-     "        with:\n          ref: main\n"),
+    ("QA snapshot builds the branch's head rather than the commit the check passed", QA, "workflows",
+     "          ref: ${{ needs.check.outputs.commit }}\n", "          ref: ${{ github.ref }}\n"),
 
-    ("CI hands the publisher every secret the repository holds", CI, "workflows",
-     "    secrets:\n      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
-     "      PAYABLI_MAVEN_PW_PROD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n",
-     "    secrets: inherit\n"),
+    ("CI calls the publisher again, so a merge to main publishes", CI, "workflows",
+     "  sonar:\n    name: SonarCloud\n",
+     "  qa-snapshot:\n    uses: ./.github/workflows/qa-snapshot.yml\n\n  sonar:\n    name: SonarCloud\n"),
 
     ("CI grants the publishing token at the workflow level, so every job inherits it", CI, "workflows",
      "permissions:\n  contents: read\n", "permissions:\n  contents: read\n  id-token: write\n"),
 
     ("QA snapshot declares the card reader credential for the whole workflow", QA, "workflows",
      "permissions:\n  contents: read\n", "env:\n  PAYABLI_MAVEN_USER: x\npermissions:\n  contents: read\n"),
-
-    ("CI publishes without waiting for any job", CI, "workflows",
-     "    needs: [card-present, sonar]\n", ""),
-
-    ("CI publishes before the instrumented suites finish", CI, "workflows",
-     "    needs: [card-present, sonar]", "    needs: [card-present, build]"),
 
     ("A job CI waits for is allowed to fail without failing the run", CI, "workflows",
      "  instrumented:\n", "  instrumented:\n    continue-on-error: true\n"),
@@ -185,8 +502,8 @@ MUTATIONS = [
      "            ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n          fi\n"),
 
     # The instrumented suite is not in a `run:` at all: the emulator action takes it as an input, so a
-    # reader that knows only about `run:` finds nothing to object to and the snapshot publishes behind a
-    # red device suite.
+    # reader that knows only about `run:` finds nothing to object to, and the run a release reads is green
+    # behind a red device suite.
     ("CI masks the instrumented suite inside the emulator action's script", CI, "workflows",
      "            -Pandroid.testInstrumentationRunnerArguments.notAnnotation="
      "com.payabli.sdk.core.ManualDeviceTest,com.payabli.sdk.payin.ManualDeviceTest\n",
@@ -220,13 +537,13 @@ MUTATIONS = [
      '        run: "! ./gradlew :core:test :payin:test :telemetry:test :testutils:test"\n'),
 
     # Nothing is declared: no continue-on-error, no shell override, and the command still exits 0 after
-    # a red suite. The job the publish waits for is green and the snapshot goes out behind it.
+    # a red suite. The run is green, and a release can name its commit.
     ("CI masks a failed unit suite with a command the publish never reads", CI, "workflows",
      "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
      "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test || echo ignored\n"),
 
-    ("A dispatched QA snapshot runs the suites under a shell without -e", QA, "workflows",
-     "      - name: Unit tests\n        if:", "      - name: Unit tests\n        shell: bash {0}\n        if:"),
+    ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
+     "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
 
     ("CI cancels a run on main, and with it a publish part way through its upload", CI, "workflows",
      "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}", "  cancel-in-progress: true"),
@@ -279,26 +596,17 @@ MUTATIONS = [
     ("QA snapshot gains a trigger that is neither a dispatch nor a call", QA, "workflows",
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
 
-    ("QA snapshot skips the suites on a dispatch while publishing anyway", QA, "workflows",
-     "        if: github.event_name == 'workflow_dispatch'\n",
-     "        if: github.event_name != 'workflow_dispatch'\n"),
-
-    ("QA snapshot checks out another repository's default branch", QA, "workflows",
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n",
-     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
-     "        with:\n          repository: other/repo\n"),
+    ("QA snapshot checks out another repository", QA, "workflows",
+     "          ref: ${{ needs.check.outputs.commit }}\n",
+     "          ref: ${{ needs.check.outputs.commit }}\n          repository: other/repo\n"),
 
     ("QA snapshot runs an action on a moving tag", QA, "workflows",
      "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1",
      "      - uses: actions/setup-java@v6"),
 
-    ("CI publishes from a pull request, including a fork's", CI, "workflows",
-     "    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n", "    if: always()\n"),
-
-    ("CI calls the publisher without granting it a token, so nothing here mints one deliberately", CI,
-     "workflows",
-     "      id-token: write\n    uses: ./.github/workflows/qa-snapshot.yml",
-     "    uses: ./.github/workflows/qa-snapshot.yml"),
+    ("A ci.yml job is granted the publishing token", CI, "workflows",
+     "  build:\n    name: Build & Test\n    runs-on: ubuntu-latest\n",
+     "  build:\n    name: Build & Test\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n"),
 
 
     # With abbreviation back on, `--pref` reaches `--prefix` and the later spelling wins, so a command
@@ -398,9 +706,9 @@ MUTATIONS = [
     ("QA snapshot runs its steps without pipefail", QA, "workflows",
      "defaults:\n  run:\n    shell: bash\n", ""),
 
-    # The publishing job still serialises, and the gate is inside the group with it: a dispatch waiting
-    # for a reviewer holds the slot, and snapshots from main queue behind it or are replaced.
-    ("The QA gate waits for a reviewer while holding the publishing slot", QA, "workflows",
+    # The publishing job still serialises, and the check is inside the group with it: a dispatch being
+    # checked queues behind one waiting for its reviewer, and a pending one is replaced by the next.
+    ("The QA check queues behind a snapshot waiting for its reviewer", QA, "workflows",
      "defaults:\n  run:\n    shell: bash\n",
      "concurrency:\n  group: qa-snapshot\n  cancel-in-progress: false\n\n"
      "defaults:\n  run:\n    shell: bash\n"),
@@ -475,58 +783,25 @@ MUTATIONS = [
     ("A dispatched QA snapshot skips the convention plugin tests", QA, "workflows",
      "          ./gradlew -p build-logic test\n", ""),
 
-    ("A dispatched QA snapshot publishes without running the suites", QA, "workflows",
-     "      - name: Unit tests\n        if: github.event_name == 'workflow_dispatch'",
-     "      - name: Unit tests\n        if: false"),
+    ("A QA snapshot publishes without running the suites", QA, "workflows",
+     "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        if: false\n        env:\n"),
 
     ("QA snapshot cannot be dispatched, so no candidate can be cut on demand", QA, "workflows",
      "on:\n  workflow_dispatch:\n", "on:\n"),
 
     ("A QA snapshot can be dispatched by anyone with write access, with nobody approving it", QA,
-     "workflows", "    environment: release\n", ""),
+     "workflows", "    environment: qa-snapshot\n", ""),
 
-    # The environment is still named and the reviewers still approve. The subject the run presents is
-    # `environment:release` with no ref, which the snapshot role does not trust, so the publish fails at
-    # the assume instead of being gated.
-    ("The QA gate is put onto the job that assumes the role, losing the ref in its subject", QA,
-     "workflows",
-     "    permissions:\n      contents: read\n      id-token: write\n",
-     "    environment: release\n    permissions:\n      contents: read\n      id-token: write\n"),
+    # The reviewers still approve. The subject is the release environment's, which the snapshot role does
+    # not trust, so the publish fails at the assume instead of being gated.
+    ("The QA publish runs in the release environment", QA, "workflows",
+     "    environment: qa-snapshot\n", "    environment: release\n"),
 
-    ("The QA gate runs on the called path instead, holding every merge to main", QA, "workflows",
-     "    if: github.event_name == 'workflow_dispatch'\n    runs-on: ubuntu-latest\n"
-     "    environment: release\n",
-     "    if: github.event_name != 'workflow_dispatch'\n    runs-on: ubuntu-latest\n"
-     "    environment: release\n"),
+    ("The QA publish runs through a refused check", QA, "workflows",
+     "    needs: [check]\n", "    needs: [check]\n    if: ${{ always() }}\n"),
 
-    # The gate still runs and the reviewers still approve, and the publish no longer waits for the answer.
-    ("A refused QA approval publishes anyway", QA, "workflows",
-     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
-     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
-     "    if: ${{ always() }}\n"),
-
-    # A skipped gate is not a failure, so this accepts every caller that skipped it. Any workflow in the
-    # repository can call this one, and one added on a feature branch publishes with no CI and no
-    # approval while presenting a subject the role trusts.
-    ("The QA publish accepts any caller that skipped the gate", QA, "workflows",
-     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
-     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
-     "    if: ${{ !cancelled() && needs.approve.result != 'failure' }}\n"),
-
-    # The approval half alone, which refuses the automatic run from main rather than the feature branch.
-    ("The QA publish requires an approval the called path can never get", QA, "workflows",
-     "    if: >-\n      ${{ !cancelled() && (needs.approve.result == 'success'\n"
-     "      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}\n",
-     "    if: ${{ !cancelled() && needs.approve.result == 'success' }}\n"),
-
-    ("The QA publish stops waiting for the gate", QA, "workflows",
-     "    needs: [approve]\n", ""),
-
-    # The publisher declares these two names and reads them, so the aliases still match what it declares
-    # while the credential arriving under one of them is the analysis token.
-    ("CI hands the publisher a different secret under the name it declares", CI, "workflows",
-     "      PAYABLI_MAVEN_US_PROD: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n",
-     "      PAYABLI_MAVEN_US_PROD: ${{ secrets.SONAR_TOKEN }}\n"),
+    ("The QA publish stops waiting for the check", QA, "workflows",
+     "    needs: [check]\n", ""),
 
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
@@ -540,7 +815,7 @@ MUTATIONS = [
 
     # Out of the publishing job, which is the only one holding the token and the staging tree. Removed
     # and relocated are one state as far as this is concerned: either way the job that uploads has no
-    # build, and a called run skips whatever job the build was moved to.
+    # build.
     ("The staging tree is never built in the publishing job", QA, "workflows",
      '      - name: Publish to the staging directory\n        env:\n'
      '          VERSION: ${{ steps.name.outputs.version }}\n'
@@ -554,9 +829,43 @@ MUTATIONS = [
     ("QA snapshot serialises nothing, because the publish has no group", QA, "workflows",
      "    concurrency:\n      group: qa-snapshot\n      cancel-in-progress: false\n", ""),
 
-    ("QA subject check accepts a tag, whose role never grants the write", QA, "workflows",
-     "EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/",
+    ("QA subject check accepts any subject from this repository", QA, "workflows",
+     "EXPECTED: repo:payabli@139794672/sdk-android@1311286517:environment:qa-snapshot",
      "EXPECTED: repo:payabli@139794672/sdk-android@1311286517"),
+
+    # The expected value is right and the comparison is a prefix, so a branch subject the role refuses
+    # passes and the assume then fails naming IAM.
+    ("QA subject check compares by prefix", QA, "workflows",
+     'if [ "$sub" != "$EXPECTED" ]; then', 'if [[ "$sub" != "$EXPECTED"* ]]; then'),
+
+    ("QA check refuses a full SHA and accepts anything else", QA, "workflows",
+     'if [[ ! "$COMMIT" =~', 'if [[ "$COMMIT" =~'),
+
+    ("QA check accepts a short SHA, which can resolve to another commit", QA, "workflows",
+     "^[0-9a-f]{40}$", "^[0-9a-f]+$"),
+
+    ("QA check refuses a commit on the branch and accepts one off it", QA, "workflows",
+     '!= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on $BRANCH.',
+     '= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on $BRANCH.'),
+
+    ("QA check asks whether the commit is on main rather than the branch dispatched", QA, "workflows",
+     '"$(git merge-base "$COMMIT" "origin/$BRANCH")"', '"$(git merge-base "$COMMIT" origin/main)"'),
+
+    ("QA check accepts a dispatch from a tag", QA, "workflows",
+     'if [[ "$GITHUB_REF" != refs/heads/* ]]; then', 'if [[ "$GITHUB_REF" == refs/heads/* ]] && false; then'),
+
+    ("QA check publishes the branch's head as the commit", QA, "workflows",
+     "      commit: ${{ inputs.commit }}\n", "      commit: ${{ github.sha }}\n"),
+
+    ("QA check reads the branch's head", QA, "workflows",
+     "          ref: ${{ inputs.commit }}\n          fetch-depth: 0\n", "          fetch-depth: 0\n"),
+
+    ("QA check is granted the publishing token", QA, "workflows",
+     "    permissions:\n      contents: read\n    outputs:",
+     "    permissions:\n      contents: read\n      id-token: write\n    outputs:"),
+
+    ("QA upload is block-buffered, so a cancelled one logs nothing", QA, "workflows",
+     '          PYTHONUNBUFFERED: "1"\n', ""),
 
     ("QA stamp taken in local time, so it stops sorting across a DST change", QA, "workflows",
      "date -u +%Y%m%d%H%M%S", "date +%d%m%y%H%M%S"),
@@ -1228,21 +1537,18 @@ MUTATIONS = [
      '      - name: Check the commit is on main\n',
      '      - name: Check the commit is on main\n        continue-on-error: true\n'),
 
-    ("Release runs the build's CI gate under another shell", RELEASE, "workflows",
-     '      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.\n      - name: Check CI passed on main for this commit\n',
-     '      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.\n      - name: Check CI passed on main for this commit\n        shell: sh {0}\n'),
+    ("Release runs the check's CI gate under another shell", RELEASE, "workflows",
+     "      - name: Check CI passed on main for this commit\n        env:\n",
+     "      - name: Check CI passed on main for this commit\n        shell: sh {0}\n        env:\n"),
 
-    ("Release runs the upload's steps under sh, without pipefail", RELEASE, "workflows",
-     '    name: Upload to /maven\n    needs: [build]\n',
-     '    name: Upload to /maven\n    needs: [build]\n    defaults:\n      run:\n        shell: sh\n'),
+    ("Release runs the release job's steps under sh, without pipefail", RELEASE, "workflows",
+     "    needs: [check, build]\n", "    needs: [check, build]\n    defaults:\n      run:\n        shell: sh\n"),
 
-    ('Release uploads from a self-hosted runner', RELEASE, "workflows",
-     '    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n',
-     '    runs-on: self-hosted\n    permissions:\n      contents: read\n      id-token: write\n'),
+    ("Release uploads from a self-hosted runner", RELEASE, "workflows",
+     "    runs-on: ubuntu-latest\n    environment: release\n", "    runs-on: self-hosted\n    environment: release\n"),
 
-    ('Release writes the notes even when the upload failed', RELEASE, "workflows",
-     '    name: Create the GitHub Release\n    needs: [upload]\n',
-     '    name: Create the GitHub Release\n    needs: [upload]\n    if: always()\n'),
+    ("Release writes the notes even when the upload failed", RELEASE, "workflows",
+     "      - name: Create the GitHub Release\n", "      - name: Create the GitHub Release\n        if: always()\n"),
 
     ('Release lets the check job write the repository', RELEASE, "workflows",
      '    permissions:\n      contents: read\n      # To read the CI runs for this commit.\n      actions: read\n    outputs:',
@@ -1252,17 +1558,17 @@ MUTATIONS = [
      '          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n',
      '          echo "SHA=$GITHUB_SHA" >> "$GITHUB_ENV"\n          if [ "$(git merge-base "$COMMIT" origin/main)" != "$COMMIT" ]; then\n'),
 
-    ('Release hands every secret to the whole build job through a job-level env', RELEASE, "workflows",
-     "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n",
-     "    name: Build the release\n    if: startsWith(github.ref, 'refs/tags/')\n    env:\n      ALL_SECRETS: ${{ toJSON(secrets) }}\n"),
+    ("Release hands every secret to the whole build job through a job-level env", RELEASE, "workflows",
+     "    name: Build the release\n    needs: [check]\n",
+     "    name: Build the release\n    needs: [check]\n    env:\n      ALL_SECRETS: ${{ toJSON(secrets) }}\n"),
 
     ('Release hands every secret to every job through a workflow-level env', RELEASE, "workflows",
      'permissions:\n  contents: read\n\n#',
      'env:\n  ALL_SECRETS: ${{ toJSON(secrets) }}\npermissions:\n  contents: read\n\n#'),
 
-    ('Release hands the uploading job a secret through its job-level env', RELEASE, "workflows",
-     '    name: Upload to /maven\n    needs: [build]\n',
-     '    name: Upload to /maven\n    needs: [build]\n    env:\n      KEY: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+    ("Release hands the release job a secret through its job-level env", RELEASE, "workflows",
+     "    name: Tag, upload and write the release\n",
+     "    name: Tag, upload and write the release\n    env:\n      KEY: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"),
 
     ('Release overrides the version it read with export', RELEASE, "workflows",
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
@@ -1292,41 +1598,21 @@ MUTATIONS = [
      "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
      '          echo payabli.version=; version=0.0.1\n          release='),
 
-    ('Release builds against a hard-coded version, the property name echoed beside it', RELEASE, "workflows",
-     '          version=$(sed -n \'s/^payabli.version=//p\' gradle.properties)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
-     '          echo payabli.version=; version=0.0.1\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java'),
-
-    ('Release starts the tag run without a token', RELEASE, "workflows",
-     '          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run',
-     '          COMMIT: ${{ needs.check.outputs.commit }}\n        run: gh workflow run'),
+    ("Release builds against a hard-coded version, the property name echoed beside it", RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          if [ \"$CHECKED\"",
+     "          echo payabli.version=; version=0.0.1\n          if [ \"$CHECKED\""),
 
     ("Release fetches GitHub's host keys without a token", RELEASE, "workflows",
      '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          tagged=',
      '          RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}\n        run: |\n          tagged='),
 
-    ('Release tag job may not start a run', RELEASE, "workflows",
-     '      # To dispatch the tag run.\n      actions: write\n',
-     ''),
-
     ('Release hands the whole secrets context to a Gradle step', RELEASE, "workflows",
      '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        run: |\n          ./gradlew :core:test',
      '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n          ALL_SECRETS: ${{ toJSON(secrets) }}\n        run: |\n          ./gradlew :core:test'),
 
-    ('Release tags a commit whose release workflow is another one', RELEASE, "workflows",
-     '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" != "$(git rev-parse "$GITHUB_SHA:.github/workflows/release.yml")"',
-     '"$(git rev-parse "$COMMIT:.github/workflows/release.yml")" = "$(git rev-parse "$COMMIT:.github/workflows/release.yml")" -a 1 = 0'),
-
-    ("Release compares main's head with itself rather than the named commit", RELEASE, "workflows",
-     '      - name: Check the commit carries this release workflow\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
-     '      - name: Check the commit carries this release workflow\n        env:\n          COMMIT: ${{ github.sha }}\n'),
-
     ('Release echoes the SSH options and pushes the tag without them', RELEASE, "workflows",
      '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n              git push',
      '            echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts"\n            git push'),
-
-    ('Release echoes the dispatch instead of starting the tag run', RELEASE, "workflows",
-     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
-     '        run: echo "gh workflow run release.yml --repo $GITHUB_REPOSITORY --ref $VERSION -f commit=$COMMIT"\n'),
 
     ('Release echoes the CI guard instead of running it', RELEASE, "workflows",
      '          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch once CI on main has passed."\n            exit 1\n          fi\n',
@@ -1340,17 +1626,12 @@ MUTATIONS = [
      '      version: ${{ steps.version.outputs.version }}\n      commit:',
      '      version: 0.0.1\n      commit:'),
 
-    ('Release keeps the tag-name guard but drops its exit, leaving the next guard to exit', RELEASE, "workflows",
-     'so it is not a release tag."\n            exit 1\n',
-     'so it is not a release tag."\n'),
+    ("Release keeps the build's version guard but drops its exit", RELEASE, "workflows",
+     "and the check read '$CHECKED'.\"\n            exit 1\n", "and the check read '$CHECKED'.\"\n"),
 
     ('Release lets a commit with no successful CI through the check', RELEASE, "workflows",
      '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
      '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
-
-    ('Release lets a commit with no successful CI through the build', RELEASE, "workflows",
-     '[ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n',
-     '[ "$passed" -lt 0 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n'),
 
     ('Release refuses a full SHA and accepts anything else', RELEASE, "workflows",
      'if [[ ! "$COMMIT" =~',
@@ -1368,25 +1649,14 @@ MUTATIONS = [
      'release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$version"',
      'release=\'^.*$\'\n          if [[ ! "$version"'),
 
-    ('Release builds on any tag name, the check reversed', RELEASE, "workflows",
-     'if [[ ! "$GITHUB_REF_NAME" =~',
-     'if [[ "$GITHUB_REF_NAME" =~'),
+    ("Release builds when the commit and the check disagree on the version", RELEASE, "workflows",
+     'if [ "$CHECKED" != "$version" ]; then', 'if [ "$CHECKED" = "$version" ] && false; then'),
 
-    ('Release builds when the tag and the property disagree', RELEASE, "workflows",
-     'if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
-     'if [ "$TAG" = "$version" ] && false; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java'),
+    ("Release builds before the commit is checked", RELEASE, "workflows",
+     "    name: Build the release\n    needs: [check]\n", "    name: Build the release\n"),
 
-    ('Release moves the push controls into the dispatch step, where they protect nothing', RELEASE, "workflows",
-     '            GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$hosts" \\\n              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n          fi\n\n      # A dispatch always creates a run, including one started with this job\'s token, and a run on the tag\n      # presents the subject the release role trusts.\n      - name: Start the tag run\n        env:\n          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
-     '            GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=$hosts" \\\n              git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"\n          fi\n\n      # A dispatch always creates a run, including one started with this job\'s token, and a run on the tag\n      # presents the subject the release role trusts.\n      - name: Start the tag run\n        env:\n          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: |\n          echo "ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes gh api meta"\n          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n'),
-
-    ('Release build waits for the check, which the tag run skips', RELEASE, "workflows",
-     "    if: startsWith(github.ref, 'refs/tags/')\n",
-     "    needs: [check]\n    if: startsWith(github.ref, 'refs/tags/')\n"),
-
-    ('Release upload waits for the check as well, which the tag run skips', RELEASE, "workflows",
-     '    name: Upload to /maven\n    needs: [build]\n',
-     '    name: Upload to /maven\n    needs: [build, check]\n'),
+    ("Release tags and uploads without waiting for the build", RELEASE, "workflows",
+     "    needs: [check, build]\n", "    needs: [check]\n"),
 
     ('Release pushes the tag without the deploy key', RELEASE, "workflows",
      'GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes',
@@ -1404,25 +1674,9 @@ MUTATIONS = [
      '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY',
      '          VERSION: 0.0.1\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY'),
 
-    ('Release starts the tag run on a version other than the one the check read', RELEASE, "workflows",
-     '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN',
-     '          VERSION: 0.0.1\n          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN'),
-
-    ("Release asks CI about a commit written in by hand rather than the tag's", RELEASE, "workflows",
-     '          SHA: ${{ github.sha }}\n',
-     '          SHA: a37642a360f698d6b244ade14041ebe457f0974b\n'),
-
-    ('Release builds on any tag whose name matches the version, a candidate included', RELEASE, "workflows",
-     '          release=\'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$\'\n          if [[ ! "$GITHUB_REF_NAME" =~ $release ]]; then\n            echo "::error::$GITHUB_REF_NAME is not <major>.<minor>.<patch>, so it is not a release tag."\n            exit 1\n          fi\n',
-     ''),
-
     ("Release tags main's head through the tag step's own env", RELEASE, "workflows",
      '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ needs.check.outputs.commit }}\n          RELEASE_DEPLOY_KEY',
      '          VERSION: ${{ needs.check.outputs.version }}\n          COMMIT: ${{ github.sha }}\n          RELEASE_DEPLOY_KEY'),
-
-    ("Release hands the tag run main's head", RELEASE, "workflows",
-     '          COMMIT: ${{ needs.check.outputs.commit }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run',
-     '          COMMIT: ${{ github.sha }}\n          GH_TOKEN: ${{ github.token }}\n        run: gh workflow run'),
 
     ("Release checks main's head is named in full rather than the named commit", RELEASE, "workflows",
      '      - name: Check the commit is named in full\n        env:\n          COMMIT: ${{ inputs.commit }}\n',
@@ -1456,10 +1710,6 @@ MUTATIONS = [
      'dispatched by $GITHUB_TRIGGERING_ACTOR" "$COMMIT"',
      'dispatched by $GITHUB_TRIGGERING_ACTOR" "$GITHUB_SHA"'),
 
-    ('Release builds from a tag that names another commit', RELEASE, "workflows",
-     '          if [ "$GITHUB_SHA" != "$COMMIT" ]; then\n            echo "::error::$GITHUB_REF_NAME',
-     '          if [ "$GITHUB_SHA" = "$GITHUB_SHA" ] && false; then\n            echo "::error::$GITHUB_REF_NAME'),
-
     ('Release starts on a tag push, so a person creates the release', RELEASE, "workflows",
      'on:\n  workflow_dispatch:\n',
      "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
@@ -1472,17 +1722,13 @@ MUTATIONS = [
      ' \\\n            --branch main --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch',
      ' \\\n            --json conclusion --jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA. Dispatch'),
 
-    ('Release builds on a tag whatever CI said about it', RELEASE, "workflows",
-     '--jq \'[.[] | select(.conclusion == "success")] | length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n',
-     '--jq \'length\')\n          if [ "$passed" -lt 1 ]; then\n            echo "::error::no successful CI run on main for $SHA."\n'),
-
     ('Release tags from any branch', RELEASE, "workflows",
      "    if: github.ref == 'refs/heads/main'\n",
      ''),
 
-    ('Release builds on a branch ref, where the release role never grants the write', RELEASE, "workflows",
-     "    if: startsWith(github.ref, 'refs/tags/')\n",
-     ''),
+    ("Release builds only on a tag ref, which a dispatch from main never is", RELEASE, "workflows",
+     "    name: Build the release\n    needs: [check]\n",
+     "    name: Build the release\n    needs: [check]\n    if: startsWith(github.ref, 'refs/tags/')\n"),
 
     ('Release hands the deploy key to the build', RELEASE, "workflows",
      '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n        run: ./gradlew publish\n',
@@ -1496,21 +1742,18 @@ MUTATIONS = [
      '[ "$tagged" != "$COMMIT" ]',
      '[ "$tagged" = "$COMMIT" ]'),
 
-    ('Release tags and never starts the run that publishes', RELEASE, "workflows",
-     '        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"\n',
-     '        run: echo "tagged $VERSION"\n'),
+    # The release is one run. A dispatch from inside it is a second run nobody approved.
+    ("Release starts another run", RELEASE, "workflows",
+     "      - uses: actions/download-artifact",
+     "      - name: Start another run\n        env:\n          GH_TOKEN: ${{ github.token }}\n"
+     "        run: gh workflow run release.yml --repo \"$GITHUB_REPOSITORY\"\n\n"
+     "      - uses: actions/download-artifact"),
 
-    ('Release upload runs through a skipped build', RELEASE, "workflows",
-     '    name: Upload to /maven\n    needs: [build]\n',
-     '    name: Upload to /maven\n    needs: [build]\n    if: always()\n'),
+    ("Release tags and uploads through a failed check or build", RELEASE, "workflows",
+     "    needs: [check, build]\n", "    needs: [check, build]\n    if: always()\n"),
 
-    ('Release tags without the check having run', RELEASE, "workflows",
-     '    name: Tag the release\n    needs: [check]\n',
-     '    name: Tag the release\n    needs: [check]\n    if: always()\n'),
-
-    ('Release builds without checking the tag against the committed version', RELEASE, "workflows",
-     '      - name: Check the tag names the committed version\n        env:\n          TAG: ${{ github.ref_name }}\n        run: |\n          # Empty rather than a failed grep when the line is missing, so the refusal below says why.\n          version=$(sed -n \'s/^payabli.version=//p\' gradle.properties)\n          if [ "$TAG" != "$version" ]; then\n            echo "::error::tag \'$TAG\' does not match payabli.version \'$version\' in gradle.properties."\n            exit 1\n          fi\n\n      - uses: actions/setup-java',
-     '      - uses: actions/setup-java'),
+    ("Release builds without checking the commit carries the version the check read", RELEASE, "workflows",
+     RELEASE_BUILD_VERSION_CHECK, ""),
 
     ('Release publishes a version other than the committed one', RELEASE, "workflows",
      '        run: ./gradlew publish\n',
@@ -1520,33 +1763,36 @@ MUTATIONS = [
      '    environment: release\n',
      ''),
 
-    ('Release upload names the environment, so its subject loses the tag', RELEASE, "workflows",
-     '    name: Upload to /maven\n',
-     '    name: Upload to /maven\n    environment: release\n'),
+    ("Release builds in the release environment too, beside Gradle", RELEASE, "workflows",
+     "    name: Build the release\n    needs: [check]\n",
+     "    name: Build the release\n    needs: [check]\n    environment: release\n"),
 
     ('Release grants the publishing token to every job', RELEASE, "workflows",
      'permissions:\n  contents: read\n\n#',
      'permissions:\n  contents: read\n  id-token: write\n\n#'),
 
-    ('Release runs Gradle beside the publishing token', RELEASE, "workflows",
-     '      # For the uploader alone. No toolchain and no Gradle run in this job.\n',
-     '      - run: ./gradlew help\n      # For the uploader alone. No toolchain and no Gradle run in this job.\n'),
+    ("Release runs Gradle beside the deploy key and the publishing token", RELEASE, "workflows",
+     "      # For the uploader, and the tags the step below reads.\n",
+     "      - run: ./gradlew help\n      # For the uploader, and the tags the step below reads.\n"),
 
-    ('Release hands the uploading job a secret', RELEASE, "workflows",
-     '          VERSION: ${{ steps.version.outputs.version }}\n',
-     '          VERSION: ${{ steps.version.outputs.version }}\n          TOKEN: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'),
+    ("Release hands the upload step a secret", RELEASE, "workflows",
+     "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
+     "          VERSION: ${{ needs.check.outputs.version }}\n          TOKEN: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n          ROLE_ARN"),
 
-    ('Release uploads a version it never checked', RELEASE, "workflows",
-     '          VERSION: ${{ steps.version.outputs.version }}\n',
-     '          VERSION: 0.0.1\n'),
+    ("Release uploads a version the check never read", RELEASE, "workflows",
+     "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
+     "          VERSION: 0.0.1\n          ROLE_ARN"),
 
     ('Release uploads to the QA prefix', RELEASE, "workflows",
      '--prefix maven --version',
      '--prefix maven-qa --version'),
 
-    ('Release subject check accepts a branch, which the release role never grants', RELEASE, "workflows",
-     'EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/tags/',
-     'EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/'),
+    ("Release subject check expects a branch, which the release role never grants", RELEASE, "workflows",
+     "EXPECTED: repo:payabli@139794672/sdk-android@1311286517:environment:release",
+     "EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/main"),
+
+    ("Release subject check compares by prefix", RELEASE, "workflows",
+     'if [ "$sub" != "$EXPECTED" ]; then', 'if [[ "$sub" != "$EXPECTED"* ]]; then'),
 
     ('Release lets a queued upload cancel one mid-upload', RELEASE, "workflows",
      '      group: maven-release\n      cancel-in-progress: false\n',
@@ -1556,9 +1802,49 @@ MUTATIONS = [
      'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8',
      'actions/download-artifact@v8'),
 
-    ('Release notes job fetches the artifacts, so it could attach them', RELEASE, "workflows",
-     '    permissions:\n      contents: write\n    steps:\n',
-     '    permissions:\n      contents: write\n    steps:\n      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n'),
+    ("Release attaches the staging tree to the GitHub Release", RELEASE, "workflows",
+     "--generate-notes\n", "--generate-notes build/staging-repo/com/payabli/*/*/*.aar\n"),
+
+    # Without it `gh` creates the tag itself, from main's head, when the push above did not land.
+    ("Release lets gh create a missing tag", RELEASE, "workflows",
+     "--verify-tag ", ""),
+
+    ("Release writes the notes at the run's ref rather than the version the check read", RELEASE, "workflows",
+     "          TAG: ${{ needs.check.outputs.version }}\n", "          TAG: ${{ github.ref_name }}\n"),
+
+    ("Release upload is block-buffered, so a cancelled one logs nothing", RELEASE, "workflows",
+     '          PYTHONUNBUFFERED: "1"\n', ""),
+
+    ("Release runs the uploader at the commit being released rather than its own", RELEASE, "workflows",
+     "          fetch-depth: 0\n          persist-credentials: false\n",
+     "          ref: ${{ needs.check.outputs.commit }}\n          fetch-depth: 0\n          persist-credentials: false\n"),
+
+    ("Release builds main's head rather than the commit the check passed", RELEASE, "workflows",
+     "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
+     "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+
+    # A re-run of a half-finished upload completes from this tree, and a rebuild's bytes are refused.
+    ("Release keeps no tree to complete a half-finished upload from", RELEASE, "workflows",
+     RELEASE_KEEP_TREE, ""),
+
+    ("Release uploads a tree other than the one the build kept", RELEASE, "workflows",
+     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n"
+     "          name: staging-repo\n",
+     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n"
+     "          name: staging-repo-rebuilt\n"),
+
+    # Three reorderings, each of which leaves every step intact and correct. The subject check after the
+    # tag spends the number before a moved setting is found; the upload before the tag writes keys under
+    # a version another commit may yet take; the notes before the upload announce what is not there.
+    ("Release checks the subject only after it has tagged", RELEASE, "workflows",
+     RELEASE_SUBJECT_THEN_TAG, RELEASE_TAG_THEN_SUBJECT),
+
+    ("Release uploads before it tags", RELEASE, "workflows",
+     RELEASE_TAG_THEN_UPLOAD, RELEASE_UPLOAD_THEN_TAG),
+
+    ("Release writes the notes before it uploads", RELEASE, "workflows",
+     RELEASE_UPLOAD_THEN_NOTES, RELEASE_NOTES_THEN_UPLOAD),
 
 ]
 
