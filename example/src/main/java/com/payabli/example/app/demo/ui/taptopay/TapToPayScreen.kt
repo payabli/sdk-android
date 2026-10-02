@@ -325,6 +325,7 @@ private fun ActivationSheet(
 private fun DeviceIdLine(state: TapToPayUiState) {
     val text =
         when {
+            state.isReadingDeviceId -> "Reading the device id…"
             state.deviceIdUnavailable -> "Device id unavailable"
             state.deviceId == null -> "No device id yet. Set up the terminal first."
             else -> "Device id: ${state.deviceId}"

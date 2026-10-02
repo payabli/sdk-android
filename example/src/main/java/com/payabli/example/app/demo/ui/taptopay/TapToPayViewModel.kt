@@ -60,6 +60,8 @@ data class TapToPayUiState(
     val deviceId: String? = null,
     /** Reading [deviceId] failed, which is not the same as the device having none. */
     val deviceIdUnavailable: Boolean = false,
+    /** A read is in flight, so neither [deviceId] nor its absence is known yet. */
+    val isReadingDeviceId: Boolean = false,
     /** A token check is running. Narrower than [isWorking], which every terminal action also sets. */
     val isProbingToken: Boolean = false,
     /**
@@ -127,10 +129,15 @@ class TapToPayViewModel(
     fun setActivationCode(text: String) = _uiState.update { it.copy(activationCode = text) }
 
     fun openActivation() {
-        _uiState.update { it.copy(isActivationOpen = true) }
+        // Cleared first: the last id read may belong to a handle a re-registration has since replaced.
+        _uiState.update {
+            it.copy(isActivationOpen = true, deviceId = null, deviceIdUnavailable = false, isReadingDeviceId = true)
+        }
         viewModelScope.launch {
             val read = terminal.deviceId()
-            _uiState.update { it.copy(deviceId = read.getOrNull(), deviceIdUnavailable = read.isFailure) }
+            _uiState.update {
+                it.copy(deviceId = read.getOrNull(), deviceIdUnavailable = read.isFailure, isReadingDeviceId = false)
+            }
         }
     }
 

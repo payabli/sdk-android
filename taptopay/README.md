@@ -109,7 +109,7 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 
 - `sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` is a `StateFlow<Boolean>`. Collect them
   to drive your UI.
-- `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions;
+- `create`, `initialize`, `activateDevice`, `deviceId`, `charge` and `closeCapturedCharge` are `suspend` functions;
   call them from a coroutine.
 - **One paypoint per session.** There is one session per app process, and it has one entry point.
   `PayabliSession.initialize` with a different entry point fails while the session is live.
@@ -153,9 +153,10 @@ refused before the card is read.
 
 1. Issue a code for the phone. In the Payabli portal, under **Pay In > Devices > Device management**, choose
    **⋯ > Generate activation code**. The code is valid for 30 minutes, and asking again before it
-   expires returns the same code. The API route,
-   [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge),
-   takes the device's ID, which the SDK doesn't return, so issue codes from the portal.
+   expires returns the same code. To issue codes from your own backend instead, call
+   [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)
+   with the phone's device ID. Read it with `ttp.deviceId()` after `initialize()` and send it to your backend.
+   It's `null` until `initialize()` has enrolled the phone.
 
    The code is six digits and can start with zero, so keep it as a string.
 2. Deliver the code to the person holding the phone, and have your app ask for it.
