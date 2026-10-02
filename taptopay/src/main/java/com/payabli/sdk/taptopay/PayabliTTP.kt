@@ -53,9 +53,9 @@ public class PayabliTTP private constructor(
 
     /**
      * The id Payabli assigned this device on the session's paypoint, whether pending activation or active.
-     * Null until [initialize] has enrolled the device there.
+     * Null until [initialize] has enrolled the device there, which it does again if the stored id was lost.
      *
-     * Throws when the stored id cannot be read, so a failure is never reported as a device with no id.
+     * Throws when the store holding the id cannot be read.
      */
     public suspend fun deviceId(): String? =
         wrapping { throw TapToPayException.of("Reading the device id is not available yet", null) }
