@@ -69,7 +69,8 @@ internal class AttestedDeviceStore(
      * still be active, replacing it. The store's own contract separates the two, and this is the caller that
      * has to honour it:
      *
-     * - the key was lost, or this entry alone could not be authenticated: the data is gone, so null;
+     * - the key was lost, or this entry alone could not be authenticated or is malformed: the data is gone, so
+     *   null;
      * - the record decoded to nothing recognisable: also gone, and the entry is dropped on the way out;
      * - the platform's cipher or the file was unavailable: **raised**, because the record may be perfectly
      *   fine and unreadable only for a moment.

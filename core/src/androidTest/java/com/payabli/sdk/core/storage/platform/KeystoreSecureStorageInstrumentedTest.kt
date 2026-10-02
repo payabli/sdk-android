@@ -150,14 +150,12 @@ class KeystoreSecureStorageInstrumentedTest {
         }
 
     /**
-     * A truncated blob is corruption, not a bad value and not a lost key.
+     * A truncated blob is unusable on every read, so it is discarded like any other unreadable value.
      *
-     * Twenty bytes is longer than the 12-byte IV but shorter than IV plus the 16-byte tag. Without a guard
-     * on the full minimum it is valid base64 that reaches `doFinal`, throws a tag failure, and gets reported
-     * as an unreadable value, which contradicts the classification the code itself claims.
+     * Twenty bytes is longer than the 12-byte IV but shorter than IV plus the 16-byte tag.
      */
     @Test
-    fun aTruncatedBlobReportsStorageCorruption() =
+    fun aTruncatedBlobIsDiscarded() =
         runTest(timeout = 30.seconds) {
             val file = File(directory, "store.json")
             val subject = storage()
@@ -170,9 +168,30 @@ class KeystoreSecureStorageInstrumentedTest {
 
             val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
             assertTrue(
-                "a truncated blob is corruption, got $thrown",
-                thrown is SecureStorageException.StorageUnavailable,
+                "a truncated blob is unreadable, got $thrown",
+                thrown is SecureStorageException.ValueUnreadable,
             )
+            assertNull(subject.get("refresh"))
+        }
+
+    /** A blob that is not base64 at all is unusable on every read, and is discarded the same way. */
+    @Test
+    fun aBlobThatIsNotBase64IsDiscarded() =
+        runTest(timeout = 30.seconds) {
+            val file = File(directory, "store.json")
+            val subject = storage()
+            subject.set("refresh", "secret-value".toByteArray())
+
+            val serializer = MapSerializer(String.serializer(), String.serializer())
+            val map = Json.decodeFromString(serializer, file.readText())
+            file.writeText(Json.encodeToString(serializer, map + ("refresh" to "not base64 !")))
+
+            val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
+            assertTrue(
+                "a blob that is not base64 is unreadable, got $thrown",
+                thrown is SecureStorageException.ValueUnreadable,
+            )
+            assertNull(subject.get("refresh"))
         }
 
     private fun storage(

@@ -105,7 +105,7 @@ class FileSecureStorageTest {
             // Not a well-formed envelope, which the real cipher reports the same way for a blob that fails base64
             // decoding or is shorter than an IV plus a tag. Without this the double threw IndexOutOfBounds, a
             // failure the contract does not have, so a test feeding it a bad blob learned nothing about storage.
-            if (parts.size < 3) throw SecureStorageException.StorageUnavailable()
+            if (parts.size < 3) throw SecureStorageException.ValueUnreadable()
             // The AAD check the real cipher gets from GCM: a blob under the wrong name must not open.
             if (parts[1] != aad) throw SecureStorageException.ValueUnreadable()
             return parts[2].fromHex()
@@ -752,13 +752,12 @@ class FileSecureStorageTest {
         }
 
     /**
-     * A malformed blob raises `StorageUnavailable`, and the message must name that cause.
+     * A malformed blob fails the same way on every read, so it is discarded rather than reported as retryable.
      *
-     * The file was read perfectly well here, so a message naming only the file would send a reader looking for a
-     * disk problem that did not happen.
+     * Kept, it would fail every later read of its entry with nothing able to remove it.
      */
     @Test
-    fun `a malformed value reports storage unavailable with a message naming the value`() =
+    fun `a malformed value is discarded, and the next read finds nothing`() =
         runTest(timeout = 5.seconds) {
             val file = File(folder.root, "store.json")
             val subject = storage(file)
@@ -768,11 +767,11 @@ class FileSecureStorageTest {
 
             val thrown = runCatching { subject.get("refresh") }.exceptionOrNull()
 
-            assertTrue("expected a storage failure, got $thrown", thrown is SecureStorageException)
             assertTrue(
-                "the message names only the file: ${thrown?.message}",
-                thrown?.message?.contains("malformed") == true,
+                "expected the value to be unreadable, got $thrown",
+                thrown is SecureStorageException.ValueUnreadable,
             )
+            assertNull(subject.get("refresh"))
         }
 
     /**

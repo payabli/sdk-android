@@ -92,11 +92,11 @@ internal class KeystoreValueCipher(
             try {
                 Base64.decode(blob, Base64.NO_WRAP)
             } catch (e: IllegalArgumentException) {
-                throw SecureStorageException.StorageUnavailable(e)
+                throw SecureStorageException.ValueUnreadable(e)
             }
-        // IV plus tag, not just IV. A blob between the two lengths is valid base64 and would otherwise
-        // reach doFinal and be reported as a tag failure, which is corruption misreported as a bad value.
-        if (bytes.size < IV_BYTES + TAG_BYTES) throw SecureStorageException.StorageUnavailable()
+        // A malformed envelope fails this way on every read, so it is unreadable and discarded rather than
+        // retryable. IV plus tag, not just IV, so a short blob never reaches doFinal.
+        if (bytes.size < IV_BYTES + TAG_BYTES) throw SecureStorageException.ValueUnreadable()
 
         try {
             val cipher = cipher()
