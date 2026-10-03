@@ -1,10 +1,12 @@
 package com.payabli.sdk.taptopay.telemetry
 
 import com.payabli.sdk.core.model.PayabliDeclineException
+import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
 import com.payabli.sdk.core.telemetry.TelemetryRecorders
+import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
 import com.payabli.sdk.taptopay.network.TTPTransactionException
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
@@ -96,7 +98,8 @@ internal object TapToPayReports {
         startedAt: Long,
         origin: String,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_FAILED) {
-        failureProperties(failure, startedAt, canBeDeclined = false) + (TelemetryProperty.ORIGIN.key to origin)
+        failureProperties(failure, PayabliErrorCode.PAYMENT_NOT_CLOSED, startedAt, canBeDeclined = false) +
+            (TelemetryProperty.ORIGIN.key to origin)
     }
 
     fun nfcStarted() = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_STARTED)
@@ -148,10 +151,14 @@ internal object TapToPayReports {
         failure: Throwable,
         startedAt: Long,
         canBeDeclined: Boolean = true,
-    ) = TelemetryRecorders.record(event) { failureProperties(failure, startedAt, canBeDeclined) }
+    ) = TelemetryRecorders.record(event) {
+        failureProperties(failure, TapToPayErrorCodes.codeFor(failure), startedAt, canBeDeclined)
+    }
 
+    /** [code] is the catalog code the host is told, which is the number this reports. */
     private fun failureProperties(
         failure: Throwable,
+        code: PayabliErrorCode,
         startedAt: Long,
         canBeDeclined: Boolean,
     ): Map<String, String> =
@@ -159,6 +166,7 @@ internal object TapToPayReports {
             put(TelemetryProperty.OUTCOME.key, outcomeOf(failure, canBeDeclined))
             put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
             codeOf(failure)?.let { put(TelemetryProperty.CODE.key, it) }
+            put(TelemetryProperty.ERROR_NUMBER.key, code.number.toString())
         }
 
     /**
