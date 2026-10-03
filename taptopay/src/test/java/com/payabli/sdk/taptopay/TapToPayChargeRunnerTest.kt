@@ -1185,7 +1185,7 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `an unrecognised failure after the card was asked for leaves the outcome unknown`() =
+    fun `a failure claiming nothing was sent, after the card was asked for, is an unconfirmed outcome`() =
         runTest(timeout = TEST_TIMEOUT) {
             // Its type says nothing was sent, which is not true once the reader may have taken the card.
             val fixture = readyFixture(updates = 2)
@@ -1196,7 +1196,7 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull() as TapToPayException
 
-            assertEquals(PayabliErrorCode.UNKNOWN, failure.code)
+            assertEquals(PayabliErrorCode.PAYMENT_OUTCOME_UNKNOWN, failure.code)
         }
 
     @Test
