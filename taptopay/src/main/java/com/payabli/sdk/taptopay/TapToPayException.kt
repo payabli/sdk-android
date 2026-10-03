@@ -1,10 +1,14 @@
 package com.payabli.sdk.taptopay
 
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 
 /**
  * A card-present call that did not succeed.
+ *
+ * A [PayabliException], so [code] and its category are read exactly as for every other failure the SDK raises.
  *
  * What to do next is on [PayabliTTP.sessionState]. A failure that changed the session appears there as
  * [TapToPaySessionState.Failed] carrying a [TapToPayFailureReason], or as
@@ -27,28 +31,23 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * not, and a reporter that reads fields rather than `toString` will find it. `toString` on those types
  * omits it.
  *
+ * [paymentTransId] is the payment this failure belongs to, or null when no identifier was received. Null is not
+ * proof that nothing was opened: the call that opens a payment may have succeeded with its answer lost, which is
+ * the case the attempt is kept for. It is the only handle to a payment that exists, so a caller that means to
+ * reconcile one holds this.
+ *
  * **A terminal that is still up is not the same as a charge that can be repeated.** Where a failure left it
  * unknown whether the payment was opened, the next charge carries the same attempt, so a charge for a
  * different amount is not what to send next. There is no call that resolves such an attempt yet.
  */
 public class TapToPayException private constructor(
-    message: String,
+    code: PayabliErrorCode,
+    reason: String,
+    detail: String?,
     cause: Throwable?,
-    /**
-     * The payment this failure belongs to, or null when no identifier was received.
-     *
-     * Null is not proof that nothing was opened: the call that opens a payment may have succeeded with its
-     * answer lost, which is the case the attempt is kept for. It is the only handle to a payment that
-     * exists, so a caller that means to reconcile one holds this.
-     */
-    public val paymentTransId: String? = null,
-    /**
-     * Whether the card was charged.
-     *
-     * Only [TapToPayCapture.NOT_CHARGED] means a retry cannot take the money twice.
-     */
-    public val capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
-) : Exception(message, cause) {
+    public val paymentTransId: String?,
+    public val capture: TapToPayCapture,
+) : PayabliException(code, reason, detail, cause) {
     internal companion object {
         /**
          * The only way this type is constructed.
@@ -58,10 +57,12 @@ public class TapToPayException private constructor(
          */
         @JvmSynthetic
         internal fun of(
-            message: String,
+            code: PayabliErrorCode,
+            reason: String,
             cause: Throwable?,
+            detail: String? = null,
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
-        ): TapToPayException = TapToPayException(message, cause, paymentTransId, capture)
+        ): TapToPayException = TapToPayException(code, reason, detail, cause, paymentTransId, capture)
     }
 }

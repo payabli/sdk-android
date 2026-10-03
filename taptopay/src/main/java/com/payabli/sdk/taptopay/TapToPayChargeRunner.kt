@@ -455,6 +455,7 @@ internal class TapToPayChargeRunner(
         paymentTransId: String?,
         capture: TapToPayCapture,
     ) = TapToPayException.of(
+        PayabliErrorCode.UNKNOWN,
         failure.message ?: failure.javaClass.simpleName,
         failure,
         paymentTransId = paymentTransId,
