@@ -3428,6 +3428,14 @@ def test_workflows():
             value = value.get("group")
         return "" if value is None else str(value)
 
+    # A guard that exits before its body refuses nothing and reports success. Every check above reads the
+    # guard's words, which an `exit 0` in front of them leaves in place. Nothing in these workflows exits
+    # but to refuse, so any other exit is a finding.
+    def early_exits(steps) -> list[str]:
+        return [f"{step.get('name') or step.get('uses')}: {' '.join(command)}"
+                for step in steps for command in commands_of(step)
+                if command[0] in ("exit", "return") and command[1:] != ["1"]]
+
     def cancels_of(value) -> str:
         return "" if isinstance(value, str) else " ".join(str((value or {}).get("cancel-in-progress", "")).split())
 
@@ -3480,7 +3488,7 @@ def test_workflows():
           [name for name, job in qa_jobs.items() if job.get("environment")] == [qa_job_name],
           f"{[(name, job.get('environment')) for name, job in qa_jobs.items()]}")
     # A condition on the publish is how the check's refusal is stepped around: `always()` publishes through it.
-    check("W16 and it carries no condition of its own", not qa_job.get("if"), condition(qa_job))
+    check("W16 and it carries no condition of its own", "if" not in qa_job, condition(qa_job))
 
     # The check: before the approval, holding nothing, so a wrong commit is refused without anyone asked.
     qa_checker_name = next(iter(needs_of(qa_job)), "")
@@ -3491,7 +3499,7 @@ def test_workflows():
     check("W16 and the check mints no token", not mints(qa_checker.get("permissions")),
           f"{qa_checker.get('permissions')}")
     check("W16 and holds no secret", not SECRETS_CONTEXT.search(yaml.safe_dump(qa_checker)))
-    check("W16 and runs whenever the workflow does", not qa_checker.get("if"), condition(qa_checker))
+    check("W16 and runs whenever the workflow does", "if" not in qa_checker, condition(qa_checker))
     check("W16 and publishes the named commit",
           " ".join(str((qa_checker.get("outputs") or {}).get("commit", "")).split()) == "${{ inputs.commit }}",
           f"{qa_checker.get('outputs')}")
@@ -3566,6 +3574,11 @@ def test_workflows():
         check("W16 and every suite ci.yml runs", not missing, f"missing={sorted(missing)}")
         # An included build, so no task in the main build reaches it and it needs its own invocation.
         check("W16 and the convention plugin tests", "-p build-logic test" in run, run[:200])
+        # Before the upload, or a red suite fails the job after the snapshot is already published.
+        uploaded_at = next((i for i, step in enumerate(publishing_steps) if "publish_staging.py" in run_commands(step)), None)
+        check("W16 and before anything is uploaded",
+              uploaded_at is not None and publishing_steps.index(tested) < uploaded_at,
+              f"{publishing_steps.index(tested)} vs {uploaded_at}")
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
@@ -3606,6 +3619,30 @@ def test_workflows():
                 for step in qa_steps if set(step) - {"name", "id", "uses", "with", "env", "run"}]
     check("W16 no step carries a condition, a shell, or anything but name, id, uses, with, env and run",
           not qa_extra, " | ".join(qa_extra))
+
+    check("W16 and no step exits except to refuse", not early_exits(qa_steps), " | ".join(early_exits(qa_steps)))
+
+    # The jobs, pinned exactly, as W17 pins the release's. Every check above reads steps; these keys are
+    # how a job steps around them without touching a step. `continue-on-error` on the check lets the
+    # publish run behind a refusal, a job-level `defaults` shell drops `-e` from every guard, and a
+    # `container` or a `services` block runs an image of somebody else's beside the token.
+    qa_shape = {
+        qa_checker_name: ({"name", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_job_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
+                      {"contents": "read", "id-token": "write"}),
+    }
+    check("W16 its jobs are exactly the check and the publish",
+          len(qa_shape) == 2 and set(qa_jobs) == set(qa_shape), f"{sorted(qa_jobs)} vs {sorted(qa_shape)}")
+    for name, (keys, grant) in qa_shape.items():
+        job = qa_jobs.get(name, {})
+        check(f"W16 the {name or '?'} job carries exactly its keys", set(job) == keys, f"{sorted(set(job) ^ keys)}")
+        check(f"W16 and exactly its permissions", job.get("permissions") == grant, f"{job.get('permissions')}")
+        check(f"W16 and runs on a GitHub-hosted runner", job.get("runs-on") == "ubuntu-latest", f"{job.get('runs-on')}")
+    qa_top = {"on" if key is True else key for key in qa}
+    check("W16 the workflow carries exactly its keys", qa_top == {"name", "on", "permissions", "defaults", "jobs"},
+          f"{sorted(qa_top)}")
+    check("W16 and grants read at the top and nothing more", qa.get("permissions") == {"contents": "read"},
+          f"{qa.get('permissions')}")
 
     # `bash` and not merely any value: an unset `shell:` runs `bash -e`, which leaves `-o pipefail` off,
     # so a pipeline reports the last command's status and `./gradlew test | tee log` is green after a red
@@ -3812,12 +3849,12 @@ def test_workflows():
     # the tree, and a condition on it is how either is stepped around.
     check("W17 and it needs the check and the build",
           sorted(needs_of(gate_job)) == sorted([checker_name, builder]) and bool(builder), f"{gate_job.get('needs')}")
-    check("W17 and carries no condition of its own", not gate_job.get("if"), condition(gate_job))
+    check("W17 and carries no condition of its own", "if" not in gate_job, condition(gate_job))
     check("W17 the check runs only on main",
           bool(checker) and condition(checker) == "github.ref == 'refs/heads/main'", condition(checker))
     check("W17 the build needs the check and nothing else, so it builds what the check passed",
           needs_of(build_job) == [checker_name], f"{build_job.get('needs')}")
-    check("W17 and carries no condition of its own", not build_job.get("if"), condition(build_job))
+    check("W17 and carries no condition of its own", "if" not in build_job, condition(build_job))
 
     CI_QUERY = ["gh", "run", "list", "--repo", "$GITHUB_REPOSITORY", "--workflow", "ci.yml", "--commit", "$SHA",
                 "--event", "push", "--branch", "main", "--json", "conclusion",
@@ -4044,6 +4081,8 @@ def test_workflows():
     check("W17 no credential is declared for the whole workflow", not (rel.get("env") or {}),
           f"{sorted(rel.get('env') or {})}")
 
+    check("W17 no step exits except to refuse", not early_exits(rel_steps), " | ".join(early_exits(rel_steps)))
+
     # The structure, pinned exactly. Each checks above reads words; these keys are how a job or step steps
     # around them without touching those words. A step `if:` skips a guard, `continue-on-error` or
     # `shell:` masks one, a job-level `env` or `defaults` reaches every step beneath it, a wider grant or
@@ -4103,6 +4142,19 @@ def test_workflows():
           ci_cancels in ("", "False", "${{ github.ref != 'refs/heads/main' }}"), ci_cancels)
     ci_shell = ((ci_doc.get("defaults") or {}).get("run") or {}).get("shell")
     check("W17 and ci.yml runs its steps under a shell with pipefail", ci_shell == "bash", f"{ci_shell}")
+    # A skipped job is not a failed one, so the run concludes success with that job's suite never run. The
+    # one condition in the file is the fork and Dependabot gate, which a push to main always passes; any
+    # other is a finding. And one job's `defaults` shell replaces the workflow's for every step in it.
+    FORK_GATE = ("github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name"
+                 " == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')")
+    ci_jobs = {name: job for name, job in (ci_doc.get("jobs") or {}).items() if isinstance(job, dict)}
+    # By key and not by value: YAML reads `if: false` as the boolean, which is falsy.
+    skipped = {name: condition(job) for name, job in ci_jobs.items() if "if" in job and condition(job) != FORK_GATE}
+    check("W17 and no ci.yml job can be skipped on a push to main", not skipped, f"{skipped}")
+    overridden = sorted(name for name, job in ci_jobs.items() if job.get("defaults"))
+    check("W17 and no ci.yml job replaces the workflow's shell", not overridden, f"{overridden}")
+    ci_exits = early_exits([step for job in ci_jobs.values() for step in job_steps(job)])
+    check("W17 and no ci.yml step exits except to refuse", not ci_exits, " | ".join(ci_exits))
 
 
 

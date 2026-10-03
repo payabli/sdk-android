@@ -423,6 +423,91 @@ RELEASE_NOTES_THEN_UPLOAD = (
     '\n'
 )
 
+QA_TESTS_THEN_UPLOAD = (
+    '      # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,\n'
+    '      # the OIDC check and the upload read nothing from /maven.\n'
+    '      #\n'
+    '      # A dispatch answers to no CI run, so it runs the unit suites itself. It does not carry the\n'
+    '      # instrumented suites, ktlint or lint. build-logic is an included build, so no task in the main build\n'
+    '      # reaches its tests and it takes its own invocation.\n'
+    '      - name: Unit tests\n'
+    '        env:\n'
+    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
+    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
+    '        run: |\n'
+    '          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test\n'
+    '          ./gradlew -p build-logic test\n'
+    '\n'
+    '      - name: Publish to the staging directory\n'
+    '        env:\n'
+    '          VERSION: ${{ steps.name.outputs.version }}\n'
+    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
+    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
+    '        run: ./gradlew publish -Ppayabli.version="$VERSION"\n'
+    '\n'
+    '      - name: Authenticate to AWS\n'
+    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        with:\n'
+    '          role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
+    '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
+    '\n'
+    '      # The account comes off the role ARN, so there is one copy of it. The script passes it as\n'
+    "      # --expected-bucket-owner, so a mistyped bucket that resolves to someone else's is refused.\n"
+    '      # Unbuffered, so a cancelled upload still logs the keys it wrote.\n'
+    '      - name: Upload the staging tree\n'
+    '        env:\n'
+    '          VERSION: ${{ steps.name.outputs.version }}\n'
+    '          ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
+    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
+    '          PYTHONUNBUFFERED: "1"\n'
+    '        run: |\n'
+    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
+    '          export AWS_SDK_CDN_ACCOUNT\n'
+    '          python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+)
+QA_UPLOAD_THEN_TESTS = (
+    '      - name: Publish to the staging directory\n'
+    '        env:\n'
+    '          VERSION: ${{ steps.name.outputs.version }}\n'
+    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
+    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
+    '        run: ./gradlew publish -Ppayabli.version="$VERSION"\n'
+    '\n'
+    '      - name: Authenticate to AWS\n'
+    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
+    '        with:\n'
+    '          role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
+    '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
+    '\n'
+    '      # The account comes off the role ARN, so there is one copy of it. The script passes it as\n'
+    "      # --expected-bucket-owner, so a mistyped bucket that resolves to someone else's is refused.\n"
+    '      # Unbuffered, so a cancelled upload still logs the keys it wrote.\n'
+    '      - name: Upload the staging tree\n'
+    '        env:\n'
+    '          VERSION: ${{ steps.name.outputs.version }}\n'
+    '          ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
+    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
+    '          PYTHONUNBUFFERED: "1"\n'
+    '        run: |\n'
+    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
+    '          export AWS_SDK_CDN_ACCOUNT\n'
+    '          python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
+    '      # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,\n'
+    '      # the OIDC check and the upload read nothing from /maven.\n'
+    '      #\n'
+    '      # A dispatch answers to no CI run, so it runs the unit suites itself. It does not carry the\n'
+    '      # instrumented suites, ktlint or lint. build-logic is an included build, so no task in the main build\n'
+    '      # reaches its tests and it takes its own invocation.\n'
+    '      - name: Unit tests\n'
+    '        env:\n'
+    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
+    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
+    '        run: |\n'
+    '          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test\n'
+    '          ./gradlew -p build-logic test\n'
+    '\n'
+)
+
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -1892,6 +1977,53 @@ MUTATIONS = [
     ("QA check skips the reviewer check with a step condition", QA, "workflows",
      "      - name: Check the qa-snapshot environment requires a reviewer\n",
      "      - name: Check the qa-snapshot environment requires a reviewer\n        if: false\n"),
+    # Job-level settings, which every check on the steps reads straight past.
+    ("CI skips the unit suites' job, so the run concludes success without them", CI, "workflows",
+     "  build:\n    name: Build & Test\n", "  build:\n    name: Build & Test\n    if: false\n"),
+
+    ("CI runs the instrumented job's steps without -e", CI, "workflows",
+     "  instrumented:\n", "  instrumented:\n    defaults:\n      run:\n        shell: bash {0}\n"),
+
+    ("CI exits a unit suite step before it runs anything", CI, "workflows",
+     "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
+     "        run: |\n          exit 0\n          ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n"),
+
+    ("QA check runs its guards without -e", QA, "workflows",
+     "    name: Check the commit can be published\n",
+     "    name: Check the commit can be published\n    defaults:\n      run:\n        shell: bash {0}\n"),
+
+    ("QA check lets the publish run behind a refusal", QA, "workflows",
+     "    name: Check the commit can be published\n",
+     "    name: Check the commit can be published\n    continue-on-error: true\n"),
+
+    ("QA publish runs in somebody else's container beside the token", QA, "workflows",
+     "    name: Publish a QA snapshot\n", "    name: Publish a QA snapshot\n    container: ubuntu:22.04\n"),
+
+    ("QA subject check exits before it compares", QA, "workflows",
+     '          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\\n'
+     '            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |\n'
+     "            python3 -c 'import base64,json,sys; t=json.load(sys.stdin)[\"value\"].split(\".\")[1]; print(base64.urlsafe_b64decode(t + \"=\" * (-len(t) % 4)).decode())')\n"
+     "          sub=$(printf '%s' \"$claims\" | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"sub\"])')\n"
+     '          echo "subject presented: $sub"\n          if [ "$sub" != "$EXPECTED" ]; then\n'
+     '            echo "::error::this run presents \'$sub\', and the snapshot role grants',
+     '          exit 0\n          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \\\n'
+     '            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |\n'
+     "            python3 -c 'import base64,json,sys; t=json.load(sys.stdin)[\"value\"].split(\".\")[1]; print(base64.urlsafe_b64decode(t + \"=\" * (-len(t) % 4)).decode())')\n"
+     "          sub=$(printf '%s' \"$claims\" | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"sub\"])')\n"
+     '          echo "subject presented: $sub"\n          if [ "$sub" != "$EXPECTED" ]; then\n'
+     '            echo "::error::this run presents \'$sub\', and the snapshot role grants'),
+
+    ("Release exits the version read before it reads anything", RELEASE, "workflows",
+     "          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release=",
+     "          exit 0\n          version=$(sed -n 's/^payabli.version=//p' gradle.properties)\n          release="),
+
+    ("Release exits the CI check before it asks", RELEASE, "workflows",
+     '          passed=$(gh run list',
+     '          exit 0\n          passed=$(gh run list'),
+
+    # A red suite after the upload fails the job with the snapshot already published.
+    ("QA snapshot runs the suites after it uploads", QA, "workflows",
+     QA_TESTS_THEN_UPLOAD, QA_UPLOAD_THEN_TESTS),
 ]
 
 
