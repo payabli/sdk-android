@@ -62,12 +62,17 @@ internal object TapToPayReports {
      * refusal arriving while the outcome is being recorded is a failure to record it rather than a payment
      * that was turned down. Reporting the second as `declined` would count a captured sale as a refused
      * one, in a property the card-not-present path shares.
+     *
+     * [code] is the code the caller is told, which the runner can know better than the failure's own type.
      */
     fun chargeFailed(
         failure: Throwable,
         startedAt: Long,
         cardWasAsked: Boolean = false,
-    ) = failed(TelemetryEvents.TTP_CHARGE_FAILED, failure, startedAt, canBeDeclined = !cardWasAsked)
+        code: PayabliErrorCode = TapToPayErrorCodes.codeFor(failure),
+    ) = TelemetryRecorders.record(TelemetryEvents.TTP_CHARGE_FAILED) {
+        failureProperties(failure, code, startedAt, canBeDeclined = !cardWasAsked)
+    }
 
     /** [origin] is [TelemetryProperties.Origin.CHARGE] or [TelemetryProperties.Origin.RETRY]. */
     fun closeStarted(origin: String) =

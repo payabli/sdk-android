@@ -173,6 +173,25 @@ class TapToPayErrorCodesTest {
     }
 
     @Test
+    fun `an empty or SDK-written reason is never offered as the service's words`() {
+        listOf(
+            DeviceActivationException.CodeMalformed(),
+            DeviceActivationException.NotEnrolled(),
+            DeviceServiceException.Forbidden(403, ""),
+            DeviceServiceException.Undecodable(null),
+        ).forEach { failure ->
+            val thrown =
+                TapToPayErrorCodes.exceptionFor(
+                    failure,
+                    TapToPayErrorCodes.codeFor(failure),
+                    null,
+                    TapToPayCapture.NOT_CHARGED,
+                )
+            assertNull(failure.javaClass.name, thrown.detail)
+        }
+    }
+
+    @Test
     fun `a cause with no service text carries no detail`() {
         val thrown =
             TapToPayErrorCodes.exceptionFor(
