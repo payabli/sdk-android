@@ -1,6 +1,6 @@
 package com.payabli.sdk.taptopay.network
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayInvoiceData
@@ -296,7 +296,7 @@ class TTPTransactionClientTest {
 
             val failure = runCatching { client.update(TRANS_ID, cardRead()) }.exceptionOrNull()
 
-            assertEquals(PayabliErrorCode.SERVER_ERROR, (failure as PayabliException).code)
+            assertEquals(PayabliErrorType.SERVER_ERROR, (failure as PayabliException).type)
             assertEquals(3, transport.requests.size)
         }
 

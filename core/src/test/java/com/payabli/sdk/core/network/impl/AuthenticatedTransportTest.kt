@@ -9,7 +9,7 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.AuthRecoveryPolicy
 import com.payabli.sdk.core.network.HttpMethod
@@ -245,7 +245,7 @@ class AuthenticatedTransportTest {
 
                 val failure = failureFrom { stack(server, auth).execute(ping()) }
 
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
                 assertEquals("retry once, so two attempts and no more", 2, server.recorded.size)
             }
         }
@@ -445,7 +445,7 @@ class AuthenticatedTransportTest {
 
                 val failure = failureFrom { stack(server, auth).execute(ping(), Payload.serializer()) }
 
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
             }
         }
 
@@ -481,7 +481,7 @@ class AuthenticatedTransportTest {
                         completing("the request issued against a finished auth") { subject.execute(ping()) }
                     }.exceptionOrNull()
 
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as PayabliException).type)
                 assertEquals(
                     "a finished auth must not call the host's broker again",
                     callsWhenFinished,
@@ -529,7 +529,7 @@ class AuthenticatedTransportTest {
                     }.exceptionOrNull()
 
                 // The caller fails, because its own request did not succeed.
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as PayabliException).type)
 
                 // The transport does not, because the token it holds now was never refused. Without the
                 // staleness check this second request throws from the latch instead of reaching the server.
@@ -576,7 +576,7 @@ class AuthenticatedTransportTest {
 
                 val failure = failureFrom { stack(server, auth).execute(ping()) }
 
-                assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, failure.code)
+                assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, failure.type)
                 assertEquals("the refresh failed, so no second attempt", 1, server.recorded.size)
                 assertFalse(
                     "the provider's own message must not reach the caller",
@@ -659,7 +659,7 @@ class AuthenticatedTransportTest {
                         }
                     }
 
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, failure.code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
                 // Two: the original and the one retry after refresh. Retry contributed none of its three.
                 assertEquals("the retry layer must not replay a terminal 401", 2, server.recorded.size)
             }

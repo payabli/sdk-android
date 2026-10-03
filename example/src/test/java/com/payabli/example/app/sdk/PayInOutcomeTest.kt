@@ -1,6 +1,6 @@
 package com.payabli.example.app.sdk
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.model.PayInException
@@ -98,10 +98,10 @@ class PayInOutcomeTest {
 }
 
 private class PayabliNetworkException :
-    PayabliException(PayabliErrorCode.NETWORK_ERROR, "The request did not complete", "timeout")
+    PayabliException(PayabliErrorType.NETWORK_ERROR, "The request did not complete", "timeout")
 
 private class PayabliConflictException :
-    PayabliException(PayabliErrorCode.CONFLICT, "The service has seen this idempotency key")
+    PayabliException(PayabliErrorType.CONFLICT, "The service has seen this idempotency key")
 
 private fun serviceFailure() =
     PayInFailure(code = "D0001", reason = "Insufficient funds", explanation = null, action = null, httpStatus = 200)

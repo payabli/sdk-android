@@ -5,7 +5,7 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliDeclineException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
@@ -57,7 +57,7 @@ class PayabliServiceErrorTest {
                     service(closedPortBaseUrl()).execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
                 }
 
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, failure.code)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, failure.type)
             assertTrue("cause was ${failure.cause}", failure.cause is IOException)
         }
 
@@ -70,7 +70,7 @@ class PayabliServiceErrorTest {
                     service("not a url at all").execute(PayabliRequest(HttpMethod.GET, "/api/ping"))
                 }
 
-            assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+            assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
         }
 
     @Test
@@ -83,7 +83,7 @@ class PayabliServiceErrorTest {
                         service(server.baseUrl).execute(PayabliRequest(HttpMethod.GET, "/api/a b"))
                     }
 
-                assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+                assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
             }
         }
 
@@ -105,7 +105,7 @@ class PayabliServiceErrorTest {
                 for (request in cases) {
                     val failure = failureFrom { service(server.baseUrl).execute(request) }
 
-                    assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+                    assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
                     assertFalse(
                         "the identifier reached the cause for path ${request.route ?: "n/a"}",
                         failure.stackTraceToString().contains(identifier),
@@ -128,7 +128,7 @@ class PayabliServiceErrorTest {
                         )
                     }
 
-                assertEquals(PayabliErrorCode.DECODING_ERROR, failure.code)
+                assertEquals(PayabliErrorType.DECODING_ERROR, failure.type)
                 // The failure type survives, so the cause still says what went wrong.
                 assertTrue("cause was ${failure.cause}", failure.cause is RedactedCause)
                 assertTrue(
@@ -160,7 +160,7 @@ class PayabliServiceErrorTest {
                         )
                     }
 
-                assertEquals(PayabliErrorCode.DECODING_ERROR, failure.code)
+                assertEquals(PayabliErrorType.DECODING_ERROR, failure.type)
                 val causeMessage = failure.cause?.message.orEmpty()
                 assertFalse("message leaked the body", failure.message.orEmpty().contains(sentinel))
                 assertFalse("cause message leaked the body", causeMessage.contains(sentinel))
@@ -185,7 +185,7 @@ class PayabliServiceErrorTest {
                     }
 
                 assertTrue(failure is PayabliDeclineException)
-                assertEquals(PayabliErrorCode.PAYMENT_DECLINED, failure.code)
+                assertEquals(PayabliErrorType.PAYMENT_DECLINED, failure.type)
             }
         }
 

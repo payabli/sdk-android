@@ -5,7 +5,7 @@ import com.payabli.sdk.core.SdkState
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -96,7 +96,7 @@ class SessionInitializeReportingTest {
                     UnusedTransport
                 }.getOrThrow()
 
-            retire!!.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "no longer valid"))
+            retire!!.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "no longer valid"))
             assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
             recorded.clear()
 

@@ -1,7 +1,7 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
@@ -36,5 +36,5 @@ public open class AuthRecoveryPolicy {
 
     /** Carries no server text: a 401 body belongs to the service. Final, for the reason in the class note. */
     public fun exhausted(): PayabliGenericException =
-        PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, REASON_REFRESH_REJECTED)
+        PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, REASON_REFRESH_REJECTED)
 }

@@ -58,7 +58,7 @@ class PayInSessionSource(
      * so asking it is always current and caching it here never is. No token is minted by asking.
      *
      * The failure is a `String` because it goes to a demo screen beside the step it belongs to. A real
-     * integration reads `PayabliException.code` instead.
+     * integration reads `PayabliException.type` instead.
      */
     suspend fun session(): Result<PayabliSession> = lock.withLock { build() }
 

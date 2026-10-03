@@ -17,38 +17,70 @@ class LeavesOutcomeUnknownTest {
     /** May have been carried out, so the attempt is kept. */
     private val unknown =
         setOf(
-            PayabliErrorCode.USER_CANCELLED,
-            PayabliErrorCode.NETWORK_ERROR,
-            PayabliErrorCode.SERVER_ERROR,
-            PayabliErrorCode.DECODING_ERROR,
-            PayabliErrorCode.UNKNOWN,
+            PayabliErrorType.USER_CANCELLED,
+            PayabliErrorType.NETWORK_ERROR,
+            PayabliErrorType.SERVER_ERROR,
+            PayabliErrorType.DECODING_ERROR,
+            PayabliErrorType.UNKNOWN,
+            PayabliErrorType.TAP_NOT_COMPLETED,
+            PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN,
+            PayabliErrorType.PAYMENT_NOT_CLOSED,
         )
 
     /** Answered, so what comes next is a different request. */
     private val answered =
         setOf(
-            PayabliErrorCode.MISSING_TOKEN,
-            PayabliErrorCode.TOKEN_EXPIRED,
-            PayabliErrorCode.TOKEN_MALFORMED,
-            PayabliErrorCode.TOKEN_PROVIDER_FAILED,
-            PayabliErrorCode.INVALID_SIGNATURE,
-            PayabliErrorCode.PERMISSION_DENIED,
-            PayabliErrorCode.SESSION_BURNED,
-            PayabliErrorCode.PAYMENT_DECLINED,
-            PayabliErrorCode.RATE_LIMITED,
-            PayabliErrorCode.CONFLICT,
-            PayabliErrorCode.INVALID_CONFIGURATION,
-            PayabliErrorCode.VALIDATION_ERROR,
+            PayabliErrorType.MISSING_TOKEN,
+            PayabliErrorType.TOKEN_EXPIRED,
+            PayabliErrorType.TOKEN_MALFORMED,
+            PayabliErrorType.TOKEN_PROVIDER_FAILED,
+            PayabliErrorType.INVALID_SIGNATURE,
+            PayabliErrorType.PERMISSION_DENIED,
+            PayabliErrorType.SESSION_BURNED,
+            PayabliErrorType.PAYMENT_DECLINED,
+            PayabliErrorType.RATE_LIMITED,
+            PayabliErrorType.CONFLICT,
+            PayabliErrorType.INVALID_CONFIGURATION,
+            PayabliErrorType.VALIDATION_ERROR,
+            PayabliErrorType.SDK_INTERNAL_ERROR,
+            PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
+            PayabliErrorType.ATTESTATION_NOT_SUPPORTED,
+            PayabliErrorType.ATTESTATION_SERVICES_OUTDATED,
+            PayabliErrorType.DEVICE_PENDING_ACTIVATION,
+            PayabliErrorType.ATTESTATION_REQUIRED,
+            PayabliErrorType.ATTESTATION_REFUSED,
+            PayabliErrorType.ATTESTATION_UNAVAILABLE,
+            PayabliErrorType.ATTESTATION_NOT_CONFIGURED,
+            PayabliErrorType.ENTRY_POINT_REFUSED,
+            PayabliErrorType.READER_CREDENTIALS_UNUSABLE,
+            PayabliErrorType.DEVICE_OS_UNSUPPORTED,
+            PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
+            PayabliErrorType.TERMS_NOT_ACCEPTED,
+            PayabliErrorType.CARD_PRESENT_NOT_ENABLED,
+            PayabliErrorType.READER_DEVICE_REFUSED,
+            PayabliErrorType.READER_UNAVAILABLE,
+            PayabliErrorType.READER_SESSION_EXPIRED,
+            PayabliErrorType.PAYMENT_NOT_OPENED,
+            PayabliErrorType.CARD_DECLINED,
+            PayabliErrorType.ACTIVATION_CODE_MALFORMED,
+            PayabliErrorType.ACTIVATION_CODE_INCORRECT,
+            PayabliErrorType.ACTIVATION_CODE_EXPIRED,
+            PayabliErrorType.ACTIVATION_ATTEMPTS_EXHAUSTED,
+            PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
+            PayabliErrorType.DEVICE_NOT_PENDING,
+            PayabliErrorType.TERMINAL_NOT_READY,
+            PayabliErrorType.TOO_MANY_OPEN_CHARGES,
+            PayabliErrorType.PAYMENT_NOT_HELD,
         )
 
     @Test
     fun `every member is classified, so a new one cannot arrive unclassified`() {
         assertEquals(
             "a member is in neither list, or in both",
-            PayabliErrorCode.entries.toSet(),
+            PayabliErrorType.entries.toSet(),
             unknown + answered,
         )
-        assertEquals("a member is in both lists", emptySet<PayabliErrorCode>(), unknown intersect answered)
+        assertEquals("a member is in both lists", emptySet<PayabliErrorType>(), unknown intersect answered)
     }
 
     @Test

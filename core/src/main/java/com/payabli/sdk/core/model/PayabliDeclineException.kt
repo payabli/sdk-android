@@ -18,7 +18,7 @@ public class PayabliDeclineException(
     public val explanation: String? = null,
     /** The remediation the server suggests. */
     public val action: String? = null,
-) : PayabliException(PayabliErrorCode.PAYMENT_DECLINED, reason, detail = explanation) {
+) : PayabliException(PayabliErrorType.PAYMENT_DECLINED, reason, detail = explanation) {
     public companion object {
         public const val DEFAULT_REASON: String = "Payment declined (402)"
     }

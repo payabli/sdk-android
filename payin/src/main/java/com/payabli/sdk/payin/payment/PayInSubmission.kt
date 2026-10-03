@@ -6,7 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliValidationException
@@ -348,8 +348,8 @@ internal class PayInSubmission(
         when {
             key == null -> Unit
             failure == null || failure.answersThePayment(retry.reused) -> forget(payment, key)
-            failure.code.leavesOutcomeUnknown -> hold(payment, HeldKey(key, retry.reservedAt))
-            retry.reused && failure.code == PayabliErrorCode.CONFLICT ->
+            failure.type.leavesOutcomeUnknown -> hold(payment, HeldKey(key, retry.reservedAt))
+            retry.reused && failure.type == PayabliErrorType.CONFLICT ->
                 hold(payment, HeldKey(key, retry.reservedAt, arrived = true))
 
             else -> Unit
@@ -420,10 +420,10 @@ internal class PayInSubmission(
      * what was refused.
      */
     private fun PayabliException.answersThePayment(reused: Boolean): Boolean =
-        when (code) {
-            PayabliErrorCode.PAYMENT_DECLINED -> true
-            PayabliErrorCode.VALIDATION_ERROR -> this is PayabliValidationException
-            PayabliErrorCode.CONFLICT -> !reused
+        when (type) {
+            PayabliErrorType.PAYMENT_DECLINED -> true
+            PayabliErrorType.VALIDATION_ERROR -> this is PayabliValidationException
+            PayabliErrorType.CONFLICT -> !reused
             else -> false
         }
 
@@ -452,7 +452,7 @@ internal class PayInSubmission(
      * The failure, with the field it blamed.
      *
      * Anything that is not a [PayabliException] is a defect in this SDK, and arrives as
-     * [PayabliErrorCode.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
+     * [PayabliErrorType.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
      * body writer or a serializer can quote what it was given.
      *
      * **Two facts, and each has its own place.** Whether the payment's outcome is unknown is carried by the
@@ -471,7 +471,7 @@ internal class PayInSubmission(
         val cause =
             this as? PayabliException
                 ?: PayabliGenericException(
-                    PayabliErrorCode.UNKNOWN,
+                    PayabliErrorType.UNKNOWN,
                     REASON_UNEXPECTED,
                     cause = RedactedCause(this),
                 )
@@ -481,7 +481,7 @@ internal class PayInSubmission(
             fieldErrors = PayInRejectedFields.of(this),
             retryKey =
                 retry.key.takeIf {
-                    unknown && (retry.reused || cause.code != PayabliErrorCode.CONFLICT)
+                    unknown && (retry.reused || cause.type != PayabliErrorType.CONFLICT)
                 },
         )
     }
@@ -502,7 +502,7 @@ internal class PayInSubmission(
         if (reused) {
             !answersThePayment(true)
         } else {
-            code.leavesOutcomeUnknown || code == PayabliErrorCode.CONFLICT
+            type.leavesOutcomeUnknown || type == PayabliErrorType.CONFLICT
         }
 
     /**
@@ -574,16 +574,16 @@ internal class PayInSubmission(
             // A request was spent and the service answered it, so this is the service refusing rather than
             // this module declining to ask.
             cause is PayabliValidationException -> TelemetryProperties.Outcome.REFUSED
-            cause.code == PayabliErrorCode.PAYMENT_DECLINED -> TelemetryProperties.Outcome.DECLINED
-            cause.code == PayabliErrorCode.USER_CANCELLED -> TelemetryProperties.Outcome.INTERRUPTED
-            cause.code == PayabliErrorCode.VALIDATION_ERROR ||
-                cause.code == PayabliErrorCode.INVALID_CONFIGURATION
+            cause.type == PayabliErrorType.PAYMENT_DECLINED -> TelemetryProperties.Outcome.DECLINED
+            cause.type == PayabliErrorType.USER_CANCELLED -> TelemetryProperties.Outcome.INTERRUPTED
+            cause.type == PayabliErrorType.VALIDATION_ERROR ||
+                cause.type == PayabliErrorType.INVALID_CONFIGURATION
             -> TelemetryProperties.Outcome.REFUSED_LOCALLY
             else -> TelemetryProperties.Outcome.FAILED
         }
 
     private fun codeOf(state: PayInSubmissionState): String? =
-        (state as? PayInSubmissionState.Failed)?.cause?.code?.wireName
+        (state as? PayInSubmissionState.Failed)?.cause?.type?.wireName
 
     /**
      * The idempotency key of the request that went out, once there is one.

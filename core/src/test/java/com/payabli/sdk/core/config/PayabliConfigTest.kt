@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.config
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -127,7 +127,7 @@ class PayabliConfigTest {
     @Test
     fun `a blank entry point is a configuration error`() {
         val failure = failureFrom { config(entryPoint = "") }
-        assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+        assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
     }
 
     @Test

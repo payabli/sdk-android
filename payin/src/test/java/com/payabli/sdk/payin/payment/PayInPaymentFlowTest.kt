@@ -1,6 +1,6 @@
 package com.payabli.sdk.payin.payment
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
@@ -207,7 +207,7 @@ class PayInPaymentFlowTest {
 
             val failure = flow.storeMethod(cardStoreRequest()).exceptionOrNull()
 
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, (failure as PayabliException).code)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, (failure as PayabliException).type)
             assertFalse("$failure", failure is PayInException.Unsettled)
         }
 
@@ -219,7 +219,7 @@ class PayInPaymentFlowTest {
 
             val failure = flow.storeMethod(cardStoreRequest(testCard(pan = LUHN_FAILING_PAN))).exceptionOrNull()
 
-            assertEquals(PayabliErrorCode.VALIDATION_ERROR, (failure as PayabliException).code)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
             assertEquals(0, transport.count)
         }
 
@@ -360,7 +360,7 @@ class PayInPaymentFlowTest {
 
             val cause = outcome.exceptionOrNull()
             assertTrue("$cause", cause is PayInException.Refused)
-            assertEquals(PayabliErrorCode.PAYMENT_DECLINED, (cause as PayInException.Refused).code)
+            assertEquals(PayabliErrorType.PAYMENT_DECLINED, (cause as PayInException.Refused).type)
         }
 
     /**
@@ -380,7 +380,7 @@ class PayInPaymentFlowTest {
                     .exceptionOrNull()
 
             assertTrue("$cause", cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, (cause as PayInException.Unsettled).code)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, (cause as PayInException.Unsettled).type)
         }
 
     @Test
@@ -411,7 +411,7 @@ class PayInPaymentFlowTest {
             val cause = flow.captureAuthorizedTransaction(request).exceptionOrNull()
 
             assertTrue("$cause", cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
+            assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
         }
 
     /** The SDK is still holding the key, so a refusal of the send cannot be reported as an answer. */
@@ -436,7 +436,7 @@ class PayInPaymentFlowTest {
             // a first attempt that happened to be rate limited.
             assertEquals(first, transport.request?.headers?.get("idempotencyKey"))
             assertTrue("$cause", cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorCode.RATE_LIMITED, (cause as PayInException.Unsettled).code)
+            assertEquals(PayabliErrorType.RATE_LIMITED, (cause as PayInException.Unsettled).type)
         }
 
     /** Nothing holds a key for the form, so naming one would point at a key that does not exist. */
@@ -517,7 +517,7 @@ class PayInPaymentFlowTest {
 
             assertTrue("$cause", cause is PayInException.Unsettled)
             assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, published.cause.code)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, published.cause.type)
             assertNotNull("the form's own channel still carries the key", published.retryKey)
         }
 
@@ -534,7 +534,7 @@ class PayInPaymentFlowTest {
             val published = flow.state.value as PayInSubmissionState.Failed
 
             assertTrue("$cause", cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
+            assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
             assertTrue("${published.cause}", published.cause is PayInException.Unsettled)
             assertNull("a host following the contract would resubmit this key", published.retryKey)
         }
@@ -552,7 +552,7 @@ class PayInPaymentFlowTest {
                     ).exceptionOrNull()
 
             assertTrue("$cause", cause is PayInException.Unsettled)
-            assertEquals(PayabliErrorCode.CONFLICT, (cause as PayInException.Unsettled).code)
+            assertEquals(PayabliErrorType.CONFLICT, (cause as PayInException.Unsettled).type)
         }
 
     @Test
@@ -719,7 +719,7 @@ class PayInPaymentFlowTest {
         }
 
     private fun dropped(): PayabliGenericException =
-        PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, DROPPED_DETAIL)
+        PayabliGenericException(PayabliErrorType.NETWORK_ERROR, DROPPED_DETAIL)
 
     /** Stores [form] and charges the result as a host would, passing back only what it was handed. */
     private suspend fun TestScope.storeThroughTheFormThenCharge(form: PayInFormValues): String {

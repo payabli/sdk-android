@@ -12,8 +12,8 @@ public class PayabliValidationException(
     public val httpStatus: Int,
     reason: String = DEFAULT_REASON,
     detail: String? = null,
-    /** The error `type`, a documentation URI. */
-    public val type: String? = null,
+    /** The error's `type` field, a documentation URI naming the kind of problem. */
+    public val problemType: String? = null,
     /** The error `instance`, the request path. A resolved path, so never logged. */
     public val instance: String? = null,
     /** Payabli's own wire code, for example `E1001`. Absent when the body carried none. */
@@ -26,7 +26,7 @@ public class PayabliValidationException(
      * field in it, which is how a missing required property reports itself.
      */
     fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
-) : PayabliException(PayabliErrorCode.VALIDATION_ERROR, reason, detail) {
+) : PayabliException(PayabliErrorType.VALIDATION_ERROR, reason, detail) {
     /** Copied and wrapped at both levels: the lists arrive from the decoder as `ArrayList`. */
     public val fieldErrors: Map<String, List<PayabliFieldError>> =
         Collections.unmodifiableMap(

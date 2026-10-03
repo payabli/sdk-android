@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay.attestation.device
 
 import com.payabli.sdk.core.logging.LogLevel
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliRateLimitException
 import com.payabli.sdk.core.model.PayabliValidationException
@@ -197,7 +197,7 @@ class DeviceFailureMappingTest {
             val failure =
                 challengeAgainst(successEnvelope("""{"challengeId":"c","challenge":"Y2g="}"""), statusCode = 403)
 
-            assertEquals(PayabliErrorCode.PERMISSION_DENIED, (failure as PayabliException).code)
+            assertEquals(PayabliErrorType.PERMISSION_DENIED, (failure as PayabliException).type)
         }
 
     @Test
@@ -286,7 +286,7 @@ class DeviceFailureMappingTest {
             val failure = challengeAgainst(recorded, statusCode = 400)
 
             assertFalse(failure is DeviceServiceException)
-            assertEquals(PayabliErrorCode.VALIDATION_ERROR, (failure as PayabliException).code)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
             assertEquals("One or more validation errors occurred.", failure.reason)
             // `errors` names what was refused, and the string under `$` says which property was missing, so a
             // caller can report it. `:core` reads the service's string arrays as well as the objects

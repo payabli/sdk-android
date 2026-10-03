@@ -1,6 +1,6 @@
 package com.payabli.sdk.payin.model
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.RedactedFailure
 import java.math.BigDecimal
@@ -106,14 +106,14 @@ public class PayInFailure(
  * Why a PayIn call did not produce a result.
  *
  * A [PayabliException] subclass, so a caller already handling the SDK's transport failures handles these in
- * the same `catch` and reads the same [PayabliException.code].
+ * the same `catch` and reads the same [PayabliException.type].
  */
 public sealed class PayInException(
-    code: PayabliErrorCode,
+    type: PayabliErrorType,
     reason: String,
     detail: String? = null,
     cause: Throwable? = null,
-) : PayabliException(code, reason, detail, cause) {
+) : PayabliException(type, reason, detail, cause) {
     /**
      * A value this module refused before sending it.
      *
@@ -123,7 +123,7 @@ public sealed class PayInException(
     public class InvalidInput(
         public val field: String?,
         reason: String,
-    ) : PayInException(PayabliErrorCode.VALIDATION_ERROR, reason) {
+    ) : PayInException(PayabliErrorType.VALIDATION_ERROR, reason) {
         override fun toString(): String = "PayInException.InvalidInput(field=$field)"
     }
 
@@ -131,7 +131,7 @@ public sealed class PayInException(
     public class Refused(
         public val failure: PayInFailure,
     ) : PayInException(
-            PayabliErrorCode.PAYMENT_DECLINED,
+            PayabliErrorType.PAYMENT_DECLINED,
             failure.reason ?: DEFAULT_REFUSED_REASON,
             failure.explanation,
         ) {
@@ -148,7 +148,7 @@ public sealed class PayInException(
     public class ServiceError(
         public val failure: PayInFailure,
     ) : PayInException(
-            PayabliErrorCode.SERVER_ERROR,
+            PayabliErrorType.SERVER_ERROR,
             failure.reason ?: DEFAULT_SERVICE_ERROR_REASON,
             failure.explanation,
         ) {
@@ -164,7 +164,7 @@ public sealed class PayInException(
     public class Undecodable(
         cause: Throwable? = null,
     ) : PayInException(
-            PayabliErrorCode.DECODING_ERROR,
+            PayabliErrorType.DECODING_ERROR,
             DEFAULT_UNDECODABLE_REASON,
             cause = cause?.let(::RedactedCause),
         ) {
@@ -188,7 +188,7 @@ public sealed class PayInException(
      * return three different identifiers, so a repeat is not recognizable and there is nothing for a key to
      * settle. A store whose fate is in doubt is settled by reading the entry point's stored methods back.
      */
-    public class Interrupted : PayInException(PayabliErrorCode.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
+    public class Interrupted : PayInException(PayabliErrorType.USER_CANCELLED, DEFAULT_INTERRUPTED_REASON) {
         override fun toString(): String = "PayInException.Interrupted"
     }
 
@@ -205,7 +205,7 @@ public sealed class PayInException(
      * the service no longer recognises is carried out as a new payment whoever chose it. What came back the
      * first time is not repeated, so a caller that needs the outcome reads the transaction back.
      *
-     * [PayabliException.code] is [cause]'s own, so a caller branching on it reads what went wrong as well
+     * [PayabliException.type] is [cause]'s own, so a caller branching on it reads what went wrong as well
      * as that it is unresolved. It is taken from [cause] rather than accepted beside it, because two
      * sources for one classification can disagree and a caller cannot tell which it is holding. [cause]
      * names the failing type and withholds its message, and it names the type that failed rather than this
@@ -214,7 +214,7 @@ public sealed class PayInException(
     public class Unsettled(
         cause: PayabliException,
     ) : PayInException(
-            cause.code,
+            cause.type,
             DEFAULT_UNSETTLED_REASON,
             detail = cause.reason,
             cause = cause.redactedOnce(),
@@ -233,17 +233,17 @@ public sealed class PayInException(
          */
         public val paymentTransId: String? = cause.namedTransaction()
 
-        override fun toString(): String = "PayInException.Unsettled(code=${code.wireName})"
+        override fun toString(): String = "PayInException.Unsettled(code=${type.wireName})"
     }
 
     /**
      * A submission was already in flight, so this one was refused and nothing was sent.
      *
      * A sequencing mistake by the caller rather than anything that came back, which is why it carries
-     * [PayabliErrorCode.INVALID_CONFIGURATION] and no failure from the wire.
+     * [PayabliErrorType.INVALID_CONFIGURATION] and no failure from the wire.
      */
     public class AlreadySubmitting :
-        PayInException(PayabliErrorCode.INVALID_CONFIGURATION, DEFAULT_ALREADY_SUBMITTING_REASON) {
+        PayInException(PayabliErrorType.INVALID_CONFIGURATION, DEFAULT_ALREADY_SUBMITTING_REASON) {
         override fun toString(): String = "PayInException.AlreadySubmitting"
     }
 

@@ -102,7 +102,7 @@ public sealed class PayabliPayIn {
      * service described arrives as `PayInException.Refused` or `.ServiceError`; a rejected field, a rejected
      * credential and a rate limit arrive as the `:core` types this SDK raises everywhere else. A failure
      * that leaves the outcome open is [PayInException.Unsettled] instead of the type it wraps, so branch on
-     * [PayabliException.code], which is the underlying classification either way and covers both.
+     * [PayabliException.type], which is the underlying classification either way and covers both.
      *
      * **This call moves money, so it always carries an idempotency key.** Set
      * [PayInAuthorizedRequest.idempotencyKey] to choose it; left unset, one is minted for the attempt. A
@@ -113,7 +113,7 @@ public sealed class PayabliPayIn {
      * rather than a second one, from any instance and after a restart.
      *
      * **A repeat the service refuses outright is the end of what repeating can tell you.** It arrives as
-     * [PayInException.Unsettled] over [PayabliErrorCode.CONFLICT], which says a request under that key got
+     * [PayInException.Unsettled] over [PayabliErrorType.CONFLICT], which says a request under that key got
      * past the service's check and nothing about whether the capture was applied. Repeating again is
      * refused the same way, and a fresh key applies a second capture. Read the transaction back instead.
      *

@@ -1,7 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.config.PayabliEnvironment
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliFieldError
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.network.PayabliTransport
@@ -338,7 +338,7 @@ class PayInSubmissionTelemetryTest {
                 properties[TelemetryProperty.OUTCOME.key],
             )
             assertEquals(
-                PayabliErrorCode.USER_CANCELLED.wireName,
+                PayabliErrorType.USER_CANCELLED.wireName,
                 properties[TelemetryProperty.CODE.key],
             )
             assertTrue(

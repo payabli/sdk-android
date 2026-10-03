@@ -212,7 +212,7 @@ internal class MoneyInClient(
                 LogField.safe("event", "payin_call_failed"),
                 LogField.safe("route", route),
                 LogField.safe("statusCode", response.statusCode),
-                LogField.safe("errorCode", failure.code),
+                LogField.safe("errorCode", failure.type),
             ) { "the transaction call failed at the transport" }
             throw failure
         }
