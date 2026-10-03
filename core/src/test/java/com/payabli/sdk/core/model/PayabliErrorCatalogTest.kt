@@ -246,6 +246,23 @@ class PayabliErrorCatalogTest {
     }
 
     @Test
+    fun `every category matches its published wire value, in order`() {
+        assertEquals(
+            listOf(
+                "CREDENTIAL",
+                "RETRY_LATER",
+                "OUTCOME_UNKNOWN",
+                "CONFIGURATION",
+                "INVALID_REQUEST",
+                "DECLINED",
+                "DEVICE",
+                "INTERNAL",
+            ),
+            PayabliErrorCategory.entries.map { it.wireName },
+        )
+    }
+
+    @Test
     fun `a category's wire value is its constant's name`() {
         PayabliErrorCategory.entries.forEach { assertEquals(it.name, it.wireName) }
     }
