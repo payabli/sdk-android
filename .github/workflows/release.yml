@@ -5,8 +5,9 @@ name: Release
 # origin only.
 #
 # Dispatched from main, naming the commit to release, in one run. The check reads the commit and its
-# `payabli.version`, the build makes the staging tree at that commit, and then one job in the `release`
-# environment tags, uploads and writes the notes. That job is the approval, the only holder of the deploy
+# `payabli.version`, the suites and the build run side by side at that commit, and then one job in the
+# `release` environment tags, uploads and writes the notes. Each is its own job so that "Re-run failed
+# jobs" repeats only what failed. That job is the approval, the only holder of the deploy
 # key the tag ruleset admits, and the subject the role that writes /maven trusts. No person creates a
 # release tag.
 
@@ -99,11 +100,46 @@ jobs:
             echo "Releasing \`$version\` from \`$(git rev-parse HEAD)\`:"
             echo
             echo "> $(git log -1 --format=%s HEAD)"
+            echo
+            echo "The workflow and its uploader run from \`$GITHUB_SHA\` on main."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Gradle, the suites and the card reader credential, and no identity that can tag or write the origin.
-  # Before the approval, so a build that fails spends no version number, and on its own runner, so nothing
-  # a build script or a dependency leaves behind runs beside the deploy key or the publishing token.
+  # The suites, on their own so a flaky one is re-run without rebuilding. Gradle and the card reader
+  # credential, and no identity that can tag or write the origin.
+  test:
+    name: Test the release
+    needs: [check]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      # build-logic is an included build and takes its own invocation.
+      - name: Unit tests
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: |
+          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
+          ./gradlew -p build-logic test
+
+  # The staging tree, beside the suites rather than after them, and on its own so a packaging failure is
+  # re-run without the suites. Before the approval, so a build that fails spends no version number, and on
+  # its own runner, so nothing a build script or a dependency leaves behind runs beside the deploy key or
+  # the publishing token.
   build:
     name: Build the release
     needs: [check]
@@ -137,15 +173,6 @@ jobs:
           # See the note on the first setup-gradle in ci.yml.
           cache-provider: basic
 
-      # build-logic is an included build and takes its own invocation.
-      - name: Unit tests
-        env:
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: |
-          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
-          ./gradlew -p build-logic test
-
       - name: Publish to the staging directory
         env:
           PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
@@ -166,7 +193,7 @@ jobs:
   # this workflow's own.
   release:
     name: Tag, upload and write the release
-    needs: [check, build]
+    needs: [check, test, build]
     runs-on: ubuntu-latest
     environment: release
     # One release at a time, and a running one is never cancelled: the keys it has written stay written.

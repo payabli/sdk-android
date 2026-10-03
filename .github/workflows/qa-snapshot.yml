@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
     inputs:
       # Named rather than taken from the branch's head, so a push landing between the decision and the
-      # dispatch is not what gets published.
+      # dispatch is refused rather than published.
       commit:
-        description: "Full 40-character SHA of the commit to publish, on the branch this is dispatched from"
+        description: "Full 40-character SHA of the head of the branch this is dispatched from"
         required: true
         type: string
 
@@ -30,14 +30,20 @@ defaults:
 
 jobs:
   # Before the approval, and holding nothing that can publish, so a wrong commit is refused without
-  # anyone being asked.
+  # anyone being asked. It also takes the stamp, one run at a time: two runs stamping in the same second
+  # would build two trees under one identifier. GitHub holds one pending run per group, so a third run
+  # queued behind two replaces the second, which then shows as cancelled and is dispatched again.
   check:
     name: Check the commit can be published
     runs-on: ubuntu-latest
+    concurrency:
+      group: qa-snapshot-stamp
+      cancel-in-progress: false
     permissions:
       contents: read
     outputs:
       commit: ${{ inputs.commit }}
+      version: ${{ steps.name.outputs.version }}
     steps:
       # A full SHA and nothing shorter, so the commit approved is not a prefix that resolves to another.
       - name: Check the commit is named in full
@@ -62,47 +68,58 @@ jobs:
             exit 1
           fi
 
-      # All of history, so the check below can see the branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.commit }}
-          fetch-depth: 0
 
-      # A tag carries no branch to be on, and the reviewer is approving a branch's commit.
-      - name: Check the commit is on the branch dispatched
+      # The head of the branch, so the workflow that runs, the tree that is built and the uploader that
+      # receives the role are one revision, and it is the one the reviewer is shown. A push landing after
+      # the decision is refused rather than published.
+      - name: Check the commit is the head of the branch dispatched
         env:
           COMMIT: ${{ inputs.commit }}
-          BRANCH: ${{ github.ref_name }}
         run: |
           if [[ "$GITHUB_REF" != refs/heads/* ]]; then
             echo "::error::a snapshot is dispatched from a branch, not $GITHUB_REF."
             exit 1
           fi
-          if [ "$(git merge-base "$COMMIT" "origin/$BRANCH")" != "$COMMIT" ]; then
-            echo "::error::$COMMIT is not on $BRANCH."
+          if [ "$GITHUB_SHA" != "$COMMIT" ]; then
+            echo "::error::$GITHUB_REF_NAME is at $GITHUB_SHA, not $COMMIT. Name its head, or dispatch again."
             exit 1
           fi
           # On the run's page, so the approver sees what the approval publishes.
           {
-            echo "Publishing a snapshot of \`$BRANCH\` at \`$COMMIT\`:"
+            echo "Publishing a snapshot of \`$GITHUB_REF_NAME\` at \`$COMMIT\`, which is also the commit this workflow and its uploader run from:"
             echo
             echo "> $(git log -1 --format=%s "$COMMIT")"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  publish:
-    name: Publish a QA snapshot
+      # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
+      # carry a leading zero. The group is held until the clock has passed this second, so the next run's
+      # stamp is a later one. A re-run of a later job reuses this output, and with it the version.
+      - name: Name this build
+        id: name
+        run: |
+          base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
+          stamp=$(date -u +%Y%m%d%H%M%S)
+          echo "version=${base}-QA.${stamp}" >> "$GITHUB_OUTPUT"
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if [ "$(date -u +%Y%m%d%H%M%S)" != "$stamp" ]; then
+              break
+            fi
+            sleep 0.2
+          done
+
+  # The suites, on their own so a flaky one is re-run without rebuilding. A dispatch answers to no CI
+  # run, so it runs the unit suites itself. It does not carry the instrumented suites, ktlint or lint.
+  # build-logic is an included build, so no task in the main build reaches its tests and it takes its own
+  # invocation.
+  test:
+    name: Test the snapshot
     needs: [check]
     runs-on: ubuntu-latest
-    environment: qa-snapshot
-    # On this job rather than on the workflow, so a dispatch being checked does not queue behind one
-    # waiting for its reviewer. One group across every ref, not one per ref: two refs stamping in the same
-    # UTC second reach one identifier, and the first writer keeps the coordinate.
-    concurrency:
-      group: qa-snapshot
-      cancel-in-progress: false
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -118,6 +135,66 @@ jobs:
           # See the note on the first setup-gradle in ci.yml.
           cache-provider: basic
 
+      # The release identity, on the steps that resolve the card reader and nowhere else.
+      - name: Unit tests
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: |
+          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
+          ./gradlew -p build-logic test
+
+  # The staging tree, beside the suites, and on its own so a packaging failure is re-run without them.
+  build:
+    name: Build the snapshot
+    needs: [check]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      - name: Publish to the staging directory
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: ./gradlew publish -Ppayabli.version="$VERSION"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-repo
+          path: build/staging-repo
+          if-no-files-found: error
+
+  # The approval, after the suites and the build have passed, so the reviewer approves a tree that exists.
+  # It runs no Gradle and sets up no toolchain, so the only code beside the publishing token is this
+  # workflow's own.
+  publish:
+    name: Publish a QA snapshot
+    needs: [check, test, build]
+    runs-on: ubuntu-latest
+    environment: qa-snapshot
+    # One publish at a time across every ref, and a queued one waits rather than cancelling one mid-upload.
+    concurrency:
+      group: qa-snapshot
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
       # Variables rather than secrets: masking a role ARN makes every AccessDenied unreadable.
       - name: Check the channel is provisioned
         run: |
@@ -153,34 +230,15 @@ jobs:
             exit 1
           fi
 
-      # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
-      # carry a leading zero.
-      - name: Name this build
-        id: name
-        run: |
-          base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
-          echo "version=${base}-QA.$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+      # For the uploader alone: this workflow's own commit, not the one being published.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,
-      # the OIDC check and the upload read nothing from /maven.
-      #
-      # A dispatch answers to no CI run, so it runs the unit suites itself. It does not carry the
-      # instrumented suites, ktlint or lint. build-logic is an included build, so no task in the main build
-      # reaches its tests and it takes its own invocation.
-      - name: Unit tests
-        env:
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: |
-          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
-          ./gradlew -p build-logic test
-
-      - name: Publish to the staging directory
-        env:
-          VERSION: ${{ steps.name.outputs.version }}
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: ./gradlew publish -Ppayabli.version="$VERSION"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: staging-repo
+          path: build/staging-repo
 
       - name: Authenticate to AWS
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -193,7 +251,7 @@ jobs:
       # Unbuffered, so a cancelled upload still logs the keys it wrote.
       - name: Upload the staging tree
         env:
-          VERSION: ${{ steps.name.outputs.version }}
+          VERSION: ${{ needs.check.outputs.version }}
           ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}
           AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
           PYTHONUNBUFFERED: "1"
