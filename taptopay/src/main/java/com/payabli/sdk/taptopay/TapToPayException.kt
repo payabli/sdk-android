@@ -64,28 +64,6 @@ public class TapToPayException private constructor(
             detail: String? = null,
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
-        ): TapToPayException = TapToPayException(type, reason, detail, cause, paymentTransId, capture)
-
-        /**
-         * [failure] as a host receives it. A [PayabliException] keeps its code, reason and detail, because its
-         * `message` is only the classification; anything else is [PayabliErrorType.UNKNOWN].
-         */
-        @JvmSynthetic
-        internal fun from(
-            failure: Exception,
-            paymentTransId: String?,
-            capture: TapToPayCapture,
-        ): TapToPayException =
-            if (failure is PayabliException) {
-                of(failure.type, failure.reason, failure, failure.detail, paymentTransId, capture)
-            } else {
-                of(
-                    PayabliErrorType.UNKNOWN,
-                    failure.message ?: failure.javaClass.simpleName,
-                    failure,
-                    paymentTransId = paymentTransId,
-                    capture = capture,
-                )
-            }
+        ): TapToPayException = TapToPayException(code, reason, detail, cause, paymentTransId, capture)
     }
 }

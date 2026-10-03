@@ -8,10 +8,10 @@ import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE
-import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 import org.junit.Assert.assertEquals
@@ -75,7 +75,11 @@ class TapToPaySessionFailuresTest {
             AttestationException.Throttled(-8) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),
             AttestationException.IntegrityFailed(-3) to failed(DEVICE_SETUP_REQUIRED),
-            DeviceIneligibleException("contactless payments are not supported") to failed(DEVICE_INELIGIBLE),
+            DeviceIneligibleException(
+                PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED,
+                "contactless payments are not supported",
+            ) to
+                failed(DEVICE_INELIGIBLE),
             CardReaderException.CredentialsUnusable("terminalId is blank") to failed(CONFIGURATION_REJECTED),
             CardReaderException.ArmingFailed(null) to failed(SERVICE_UNAVAILABLE),
             // A refusal the vendor holds as state, so it is not the retryable landing above it.
