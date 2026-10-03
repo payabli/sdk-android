@@ -71,7 +71,6 @@ class LeavesOutcomeUnknownTest {
             PayabliErrorCode.TERMINAL_NOT_READY,
             PayabliErrorCode.TOO_MANY_OPEN_CHARGES,
             PayabliErrorCode.PAYMENT_NOT_HELD,
-            PayabliErrorCode.SETUP_WITHDRAWN,
         )
 
     @Test

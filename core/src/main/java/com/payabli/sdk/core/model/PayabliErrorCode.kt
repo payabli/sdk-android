@@ -309,12 +309,6 @@ public enum class PayabliErrorCode(
         PayabliErrorCategory.INVALID_REQUEST,
         "No captured payment is held under that identifier.",
     ),
-    SETUP_WITHDRAWN(
-        "SETUP_WITHDRAWN",
-        3032,
-        PayabliErrorCategory.RETRY_LATER,
-        "Another call's setup was withdrawn before it finished.",
-    ),
 }
 
 /**
