@@ -75,7 +75,11 @@ class TapToPaySessionFailuresTest {
             AttestationException.Throttled(-8) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),
             AttestationException.IntegrityFailed(-3) to failed(ATTESTATION_REQUIRED),
-            DeviceIneligibleException("contactless payments are not supported") to failed(DEVICE_INELIGIBLE),
+            DeviceIneligibleException(
+                PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
+                "contactless payments are not supported",
+            ) to
+                failed(DEVICE_INELIGIBLE),
             CardReaderException.CredentialsUnusable("terminalId is blank") to failed(CONFIGURATION_REJECTED),
             CardReaderException.ArmingFailed(null) to failed(SERVICE_UNAVAILABLE),
             // A refusal the vendor holds as state, so it is not the retryable landing above it.

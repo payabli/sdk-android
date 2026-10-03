@@ -173,8 +173,7 @@ internal class ChargeKeyStore(
  * Every slot holds a charge whose outcome is still in doubt, so there is no room to name another.
  *
  * Reached only by more entry points charging at once than a device is expected to serve, each of them
- * left unresolved. Each clears as its charge is closed. The refusal says what it is; a public error
- * code for it waits on the vocabulary that can carry one.
+ * left unresolved. Each clears as its charge is closed.
  */
 internal class ChargeKeyStoreFullException(
     held: Int,

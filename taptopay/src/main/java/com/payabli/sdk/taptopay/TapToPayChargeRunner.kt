@@ -140,7 +140,7 @@ internal class TapToPayChargeRunner(
             // The service refuses an opening that identifies nobody, and it refuses it after the reader has
             // been armed and a card taken. Checked here, so a caller learns it before a merchant asks
             // someone to tap.
-            require(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
+            requireArgument(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
 
             // After the precondition, so a caller's own bad argument is not counted as a charge that
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
@@ -149,6 +149,8 @@ internal class TapToPayChargeRunner(
             // What the failure will be able to say, which only this scope knows.
             var openedAs: String? = null
             var capture = TapToPayCapture.NOT_CHARGED
+            // The close's own failure, which a caller is told as the payment not being closed.
+            var unclosed: Throwable? = null
             TapToPayReports.chargeStarted()
 
             // Hoisted so the failure path below can name the key this charge sent. Null until it is
@@ -162,7 +164,7 @@ internal class TapToPayChargeRunner(
             try {
                 // Repairs a spent reader session and does nothing to a ready one.
                 coordinator.reinitializeIfNeeded()
-                check(manager.state.value == TapToPaySessionState.Ready) { "the terminal is not ready" }
+                if (manager.state.value != TapToPaySessionState.Ready) throw TapToPayCallException.TerminalNotReady()
 
                 // A ready session with no stored device means the record was lost after it came up, which
                 // `AttestedDeviceStore.read` reports by answering null. Expire the session before throwing,
@@ -170,7 +172,7 @@ internal class TapToPayChargeRunner(
                 val deviceId =
                     store.read(entry)?.deviceId ?: run {
                         manager.invalidate()
-                        error("the session is ready with no device to charge as")
+                        throw TapToPayCallException.NoDeviceToChargeAs()
                     }
                 // Reserved after the checks above, so a charge that never reaches the wire leaves no key
                 // behind, and held across a failure that leaves it unknown whether this opened anything.
@@ -254,6 +256,8 @@ internal class TapToPayChargeRunner(
                         null
                     }
 
+                unclosed = closeFailure
+
                 // The close is sent for every outcome above, and only an approval is a payment. A refused
                 // card reported as a completed one is the failure this branch exists to prevent.
                 //
@@ -295,12 +299,14 @@ internal class TapToPayChargeRunner(
                         }
                     }
                 }
+                val type = hostTypeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard)
                 // Reported before it is wrapped: the report reads the failure's own type to decide what kind
-                // of failure it was, and would classify every one of them alike once wrapped.
-                TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard)
+                // of failure it was, and would classify every one of them alike once wrapped. The number it
+                // reports is the one the caller is told.
+                TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
                 // An Error is left as it is, as the facade leaves it: a linkage error is not a payment
                 // outcome and has no transaction to name.
-                throw if (failure is Exception) failed(failure, openedAs, capture) else failure
+                throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
             }
         }
 
@@ -359,16 +365,16 @@ internal class TapToPayChargeRunner(
      */
     private fun sendableAmountOf(paymentDetails: TapToPayPaymentDetails): BigDecimal {
         val sendable =
-            requireNotNull(paymentDetails.amount.sendableAmountOrNull()) {
+            requireArgumentNotNull(paymentDetails.amount.sendableAmountOrNull()) {
                 "an amount has to be one this SDK can send"
             }
-        require(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
+        requireArgument(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
 
         val sendableFee =
-            requireNotNull(paymentDetails.serviceFee.sendableAmountOrNull()) {
+            requireArgumentNotNull(paymentDetails.serviceFee.sendableAmountOrNull()) {
                 "a service fee has to be one this SDK can send"
             }
-        require(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
+        requireArgument(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
         return sendable
     }
 
@@ -391,8 +397,10 @@ internal class TapToPayChargeRunner(
                 // a payment whose answer is no longer held, and the default would report it as never
                 // charged, which is the one thing this SDK must not say about a payment it cannot account
                 // for. It carries the identifier it was given, and unknown, because that is what is true.
+                val refused = TapToPayCallException.PaymentNotHeld()
                 throw failed(
-                    IllegalStateException("no captured payment is held under that identifier"),
+                    refused,
+                    TapToPayErrorCodes.typeFor(refused),
                     paymentTransId,
                     TapToPayCapture.UNKNOWN,
                 )
@@ -420,7 +428,12 @@ internal class TapToPayChargeRunner(
             } catch (failure: Exception) {
                 TapToPayReports.closeFailed(failure, startedAt, TelemetryProperties.Origin.RETRY)
                 // Still held, so this can be tried again.
-                throw failed(failure, pending.paymentTransId, captureOf(pending.read.outcome, pending.resentKey))
+                throw failed(
+                    failure,
+                    PayabliErrorType.PAYMENT_NOT_CLOSED,
+                    pending.paymentTransId,
+                    captureOf(pending.read.outcome, pending.resentKey),
+                )
             }
             TapToPayReports.closeSucceeded(startedAt, TelemetryProperties.Origin.RETRY)
         }
@@ -449,12 +462,32 @@ internal class TapToPayChargeRunner(
         }
     }
 
-    /** The failure a caller sees, carrying the payment it belongs to and whether the money moved. */
+    /**
+     * The catalog entry a charge's failure reaches the caller under.
+     *
+     * Once the reader has been asked for a card the sale may be captured, so a code saying nothing was sent
+     * is not true of it, whatever the failure's own type: such a failure from then on is the payment's outcome
+     * not being confirmed.
+     */
+    private fun hostTypeFor(
+        failure: Throwable,
+        unclosed: Boolean,
+        cardWasAsked: Boolean,
+    ): PayabliErrorType {
+        if (unclosed) return PayabliErrorType.PAYMENT_NOT_CLOSED
+        val type = TapToPayErrorCodes.typeFor(failure)
+        val claimsNothingWasSent =
+            type == PayabliErrorType.SDK_INTERNAL_ERROR || type == PayabliErrorType.VALIDATION_ERROR
+        return if (cardWasAsked && claimsNothingWasSent) PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN else type
+    }
+
+    /** The failure a caller sees, under [type], carrying the payment it belongs to and whether the money moved. */
     private fun failed(
         failure: Exception,
+        type: PayabliErrorType,
         paymentTransId: String?,
         capture: TapToPayCapture,
-    ) = TapToPayException.from(failure, paymentTransId, capture)
+    ) = TapToPayErrorCodes.exceptionFor(failure, type, paymentTransId, capture)
 
     /**
      * Closes a transaction whose tap did not complete, best effort. The attempt stays named either way.

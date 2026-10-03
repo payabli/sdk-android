@@ -47,6 +47,9 @@ public enum class TelemetryProperty {
 
     /** Which path started the operation. Values come from [TelemetryProperties.Origin], per event. */
     ORIGIN,
+
+    /** The failure's number in the SDK's error catalog, as text. */
+    ERROR_NUMBER,
     ;
 
     /** The key as it goes on the wire. */

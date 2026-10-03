@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.telemetry
 
 import com.google.android.play.core.integrity.model.StandardIntegrityErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.telemetry.TelemetryBootstrap
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.adapters.CardReaderFailure
@@ -123,7 +124,11 @@ class CardPresentReportsWithoutTelemetryTest {
         TapToPayReports.chargeFailed(failure, startedAt)
         TapToPayReports.nfcStarted()
         TapToPayReports.nfcSucceeded(startedAt)
-        TapToPayReports.nfcFailed(CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"), startedAt)
+        TapToPayReports.nfcFailed(
+            CardReaderFailure(ReaderFailureKind.DEVICE_DENIED, code = "677"),
+            PayabliErrorType.READER_DEVICE_REFUSED,
+            startedAt,
+        )
         TapToPayReports.sessionStateChanged(
             TapToPaySessionState.Idle,
             TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_INELIGIBLE),

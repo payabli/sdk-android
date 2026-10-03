@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -1158,6 +1159,44 @@ class TapToPayChargeRunnerTest {
                 TapToPayCapture.CHARGED,
                 failure.capture,
             )
+        }
+
+    @Test
+    fun `a close that failed reaches the caller and telemetry as the payment not closed`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val reported = mutableListOf<Pair<String, Map<String, String>>>()
+            TelemetryRecorders.install { event, properties -> reported += event to properties }
+            try {
+                val fixture =
+                    SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                        .also { it.coordinator.initialize() }
+
+                val failure =
+                    runCatching {
+                        runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    }.exceptionOrNull() as TapToPayException
+
+                assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, failure.type)
+                val charge = reported.single { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
+                assertEquals("3022", charge[TelemetryProperty.ERROR_NUMBER.key])
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
+    @Test
+    fun `a failure claiming nothing was sent, after the card was asked for, is an unconfirmed outcome`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Its type says nothing was sent, which is not true once the reader may have taken the card.
+            val fixture = readyFixture(updates = 2)
+            fixture.reader.failNextRead(IllegalStateException("the vendor's own state check"))
+
+            val failure =
+                runCatching {
+                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN, failure.type)
         }
 
     @Test
