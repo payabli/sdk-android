@@ -160,5 +160,10 @@ private suspend fun <T> wrapping(block: suspend () -> T): T =
     } catch (named: TapToPayException) {
         throw named
     } catch (failure: Exception) {
-        throw TapToPayException.from(failure, paymentTransId = null, capture = TapToPayCapture.NOT_CHARGED)
+        throw TapToPayErrorCodes.exceptionFor(
+            failure,
+            TapToPayErrorCodes.codeFor(failure),
+            paymentTransId = null,
+            capture = TapToPayCapture.NOT_CHARGED,
+        )
     }
