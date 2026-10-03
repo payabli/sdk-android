@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.devicekey.DeviceKeyException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
@@ -17,45 +17,45 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionException
  *
  * A failure the transport already classified keeps its code. Every other cause is named here, family by
  * family. A family whose members are different causes is matched member by member without an `else`, so a
- * member added to one fails to compile here until it has a code. What reaches the end unrecognised is [PayabliErrorCode.UNKNOWN], whose category tells a
+ * member added to one fails to compile here until it has a code. What reaches the end unrecognised is [PayabliErrorType.UNKNOWN], whose category tells a
  * host to check before repeating: an unexamined failure is the one whose outcome nobody knows.
  */
 internal object TapToPayErrorCodes {
-    fun codeFor(failure: Throwable): PayabliErrorCode =
+    fun typeFor(failure: Throwable): PayabliErrorType =
         when (failure) {
-            is PayabliException -> failure.code
+            is PayabliException -> failure.type
             is TapToPayCallException -> callCode(failure)
             is TapToPaySessionException -> sessionCode(failure)
             is DeviceServiceException -> serviceCode(failure)
             is DeviceActivationException -> activationCode(failure)
             is AttestationException -> attestationCode(failure)
             is DeviceKeyException -> deviceKeyCode(failure)
-            is SecureStorageException -> PayabliErrorCode.SDK_INTERNAL_ERROR
-            is DeviceIneligibleException -> failure.code
+            is SecureStorageException -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is DeviceIneligibleException -> failure.type
             is CardReaderException -> readerCode(failure)
             is TTPTransactionException -> transactionCode(failure)
-            is ChargeKeyStoreFullException -> PayabliErrorCode.TOO_MANY_OPEN_CHARGES
-            is TapToPayArgumentException -> PayabliErrorCode.VALIDATION_ERROR
+            is ChargeKeyStoreFullException -> PayabliErrorType.TOO_MANY_OPEN_CHARGES
+            is TapToPayArgumentException -> PayabliErrorType.VALIDATION_ERROR
             // A guard inside this SDK that refused its own sequence, which is a defect rather than a refusal.
-            is IllegalStateException -> PayabliErrorCode.SDK_INTERNAL_ERROR
-            else -> PayabliErrorCode.UNKNOWN
+            is IllegalStateException -> PayabliErrorType.SDK_INTERNAL_ERROR
+            else -> PayabliErrorType.UNKNOWN
         }
 
     /**
-     * [failure] as a host receives it, under [code].
+     * [failure] as a host receives it, under [type].
      *
-     * The reason is [code]'s own fixed text, except for a failure the transport raised under the same code, which
+     * The reason is [type]'s own fixed text, except for a failure the transport raised under the same type, which
      * keeps the reason it was raised with. Text a service sent rides in the detail, never in the reason.
      */
     fun exceptionFor(
         failure: Throwable,
-        code: PayabliErrorCode,
+        type: PayabliErrorType,
         paymentTransId: String?,
         capture: TapToPayCapture,
     ): TapToPayException =
         TapToPayException.of(
-            code = code,
-            reason = (failure as? PayabliException)?.takeIf { it.code == code }?.reason ?: code.message,
+            type = type,
+            reason = (failure as? PayabliException)?.takeIf { it.type == type }?.reason ?: type.message,
             cause = failure,
             detail = serviceTextOf(failure),
             paymentTransId = paymentTransId,
@@ -73,89 +73,89 @@ internal object TapToPayErrorCodes {
             else -> null
         }?.takeIf { it.isNotBlank() }
 
-    private fun callCode(failure: TapToPayCallException): PayabliErrorCode =
+    private fun callCode(failure: TapToPayCallException): PayabliErrorType =
         when (failure) {
-            is TapToPayCallException.TerminalNotReady -> PayabliErrorCode.TERMINAL_NOT_READY
-            is TapToPayCallException.NoDeviceToChargeAs -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is TapToPayCallException.PaymentNotHeld -> PayabliErrorCode.PAYMENT_NOT_HELD
+            is TapToPayCallException.TerminalNotReady -> PayabliErrorType.TERMINAL_NOT_READY
+            is TapToPayCallException.NoDeviceToChargeAs -> PayabliErrorType.ATTESTATION_REQUIRED
+            is TapToPayCallException.PaymentNotHeld -> PayabliErrorType.PAYMENT_NOT_HELD
         }
 
-    private fun sessionCode(failure: TapToPaySessionException): PayabliErrorCode =
+    private fun sessionCode(failure: TapToPaySessionException): PayabliErrorType =
         when (failure) {
-            is TapToPaySessionException.PendingActivation -> PayabliErrorCode.DEVICE_PENDING_ACTIVATION
-            is TapToPaySessionException.AttestationRequired -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is TapToPaySessionException.NotRecoverable -> PayabliErrorCode.TERMINAL_NOT_READY
+            is TapToPaySessionException.PendingActivation -> PayabliErrorType.DEVICE_PENDING_ACTIVATION
+            is TapToPaySessionException.AttestationRequired -> PayabliErrorType.ATTESTATION_REQUIRED
+            is TapToPaySessionException.NotRecoverable -> PayabliErrorType.TERMINAL_NOT_READY
             // Nothing was sent for this caller, and this cause has no code of its own.
-            is TapToPaySessionException.SetupAbandoned -> PayabliErrorCode.UNKNOWN
-            is TapToPaySessionException.SetupFailed -> PayabliErrorCode.SDK_INTERNAL_ERROR
+            is TapToPaySessionException.SetupAbandoned -> PayabliErrorType.UNKNOWN
+            is TapToPaySessionException.SetupFailed -> PayabliErrorType.SDK_INTERNAL_ERROR
         }
 
-    private fun serviceCode(failure: DeviceServiceException): PayabliErrorCode =
+    private fun serviceCode(failure: DeviceServiceException): PayabliErrorType =
         when (failure) {
-            is DeviceServiceException.BadRequest -> PayabliErrorCode.SDK_INTERNAL_ERROR
-            is DeviceServiceException.NotAttested -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is DeviceServiceException.Forbidden -> PayabliErrorCode.DEVICE_PENDING_ACTIVATION
-            is DeviceServiceException.EntryPointUnusable -> PayabliErrorCode.ENTRY_POINT_REFUSED
-            is DeviceServiceException.NotFound -> PayabliErrorCode.ENTRY_POINT_REFUSED
-            is DeviceServiceException.ServerFailure -> PayabliErrorCode.SERVER_ERROR
-            is DeviceServiceException.Unclassified -> PayabliErrorCode.UNKNOWN
-            is DeviceServiceException.Undecodable -> PayabliErrorCode.DECODING_ERROR
+            is DeviceServiceException.BadRequest -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is DeviceServiceException.NotAttested -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceServiceException.Forbidden -> PayabliErrorType.DEVICE_PENDING_ACTIVATION
+            is DeviceServiceException.EntryPointUnusable -> PayabliErrorType.ENTRY_POINT_REFUSED
+            is DeviceServiceException.NotFound -> PayabliErrorType.ENTRY_POINT_REFUSED
+            is DeviceServiceException.ServerFailure -> PayabliErrorType.SERVER_ERROR
+            is DeviceServiceException.Unclassified -> PayabliErrorType.UNKNOWN
+            is DeviceServiceException.Undecodable -> PayabliErrorType.DECODING_ERROR
         }
 
-    private fun activationCode(failure: DeviceActivationException): PayabliErrorCode =
+    private fun activationCode(failure: DeviceActivationException): PayabliErrorType =
         when (failure) {
-            is DeviceActivationException.CodeMalformed -> PayabliErrorCode.ACTIVATION_CODE_MALFORMED
-            is DeviceActivationException.CodeIncorrect -> PayabliErrorCode.ACTIVATION_CODE_INCORRECT
-            is DeviceActivationException.CodeExpired -> PayabliErrorCode.ACTIVATION_CODE_EXPIRED
-            is DeviceActivationException.AttemptsExhausted -> PayabliErrorCode.ACTIVATION_ATTEMPTS_EXHAUSTED
-            is DeviceActivationException.CodeNotIssued -> PayabliErrorCode.ACTIVATION_CODE_NOT_ISSUED
-            is DeviceActivationException.CodeUnreadable -> PayabliErrorCode.ACTIVATION_CODE_NOT_ISSUED
-            is DeviceActivationException.DeviceNotPending -> PayabliErrorCode.DEVICE_NOT_PENDING
-            is DeviceActivationException.AssertionRejected -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is DeviceActivationException.RequestRejected -> PayabliErrorCode.SDK_INTERNAL_ERROR
-            is DeviceActivationException.AttestationRevoked -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is DeviceActivationException.EntryNotAuthorized -> PayabliErrorCode.ENTRY_POINT_REFUSED
-            is DeviceActivationException.PaypointUnknown -> PayabliErrorCode.ENTRY_POINT_REFUSED
-            is DeviceActivationException.EntryPointUnusable -> PayabliErrorCode.ENTRY_POINT_REFUSED
-            is DeviceActivationException.DeviceUnknown -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is DeviceActivationException.ServiceFailed -> PayabliErrorCode.SERVER_ERROR
-            is DeviceActivationException.NotEnrolled -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is DeviceActivationException.Unclassified -> PayabliErrorCode.UNKNOWN
+            is DeviceActivationException.CodeMalformed -> PayabliErrorType.ACTIVATION_CODE_MALFORMED
+            is DeviceActivationException.CodeIncorrect -> PayabliErrorType.ACTIVATION_CODE_INCORRECT
+            is DeviceActivationException.CodeExpired -> PayabliErrorType.ACTIVATION_CODE_EXPIRED
+            is DeviceActivationException.AttemptsExhausted -> PayabliErrorType.ACTIVATION_ATTEMPTS_EXHAUSTED
+            is DeviceActivationException.CodeNotIssued -> PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED
+            is DeviceActivationException.CodeUnreadable -> PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED
+            is DeviceActivationException.DeviceNotPending -> PayabliErrorType.DEVICE_NOT_PENDING
+            is DeviceActivationException.AssertionRejected -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.RequestRejected -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is DeviceActivationException.AttestationRevoked -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.EntryNotAuthorized -> PayabliErrorType.ENTRY_POINT_REFUSED
+            is DeviceActivationException.PaypointUnknown -> PayabliErrorType.ENTRY_POINT_REFUSED
+            is DeviceActivationException.EntryPointUnusable -> PayabliErrorType.ENTRY_POINT_REFUSED
+            is DeviceActivationException.DeviceUnknown -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.ServiceFailed -> PayabliErrorType.SERVER_ERROR
+            is DeviceActivationException.NotEnrolled -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.Unclassified -> PayabliErrorType.UNKNOWN
         }
 
-    private fun attestationCode(failure: AttestationException): PayabliErrorCode =
+    private fun attestationCode(failure: AttestationException): PayabliErrorType =
         when (failure) {
-            is AttestationException.RemediationRequired -> PayabliErrorCode.ATTESTATION_SERVICES_OUTDATED
-            is AttestationException.Retryable -> PayabliErrorCode.ATTESTATION_UNAVAILABLE
-            is AttestationException.Throttled -> PayabliErrorCode.ATTESTATION_UNAVAILABLE
-            is AttestationException.IntegrityFailed -> PayabliErrorCode.ATTESTATION_REFUSED
-            is AttestationException.Misconfigured -> PayabliErrorCode.ATTESTATION_NOT_CONFIGURED
-            is AttestationException.ChallengeReused -> PayabliErrorCode.SDK_INTERNAL_ERROR
+            is AttestationException.RemediationRequired -> PayabliErrorType.ATTESTATION_SERVICES_OUTDATED
+            is AttestationException.Retryable -> PayabliErrorType.ATTESTATION_UNAVAILABLE
+            is AttestationException.Throttled -> PayabliErrorType.ATTESTATION_UNAVAILABLE
+            is AttestationException.IntegrityFailed -> PayabliErrorType.ATTESTATION_REFUSED
+            is AttestationException.Misconfigured -> PayabliErrorType.ATTESTATION_NOT_CONFIGURED
+            is AttestationException.ChallengeReused -> PayabliErrorType.SDK_INTERNAL_ERROR
         }
 
-    private fun deviceKeyCode(failure: DeviceKeyException): PayabliErrorCode =
+    private fun deviceKeyCode(failure: DeviceKeyException): PayabliErrorType =
         when (failure) {
-            is DeviceKeyException.KeyLost -> PayabliErrorCode.ATTESTATION_REQUIRED
-            is DeviceKeyException.SigningFailed -> PayabliErrorCode.SDK_INTERNAL_ERROR
-            is DeviceKeyException.CryptoUnavailable -> PayabliErrorCode.DEVICE_KEY_UNAVAILABLE
+            is DeviceKeyException.KeyLost -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceKeyException.SigningFailed -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is DeviceKeyException.CryptoUnavailable -> PayabliErrorType.DEVICE_KEY_UNAVAILABLE
         }
 
-    private fun readerCode(failure: CardReaderException): PayabliErrorCode =
+    private fun readerCode(failure: CardReaderException): PayabliErrorType =
         when (failure) {
-            is CardReaderException.CredentialsUnusable -> PayabliErrorCode.READER_CREDENTIALS_UNUSABLE
-            is CardReaderException.ArmingFailed -> PayabliErrorCode.READER_UNAVAILABLE
-            is CardReaderException.DeviceDenied -> PayabliErrorCode.READER_DEVICE_REFUSED
-            is CardReaderException.SessionUnusable -> PayabliErrorCode.READER_SESSION_EXPIRED
-            is CardReaderException.ReadFailed -> PayabliErrorCode.TAP_NOT_COMPLETED
+            is CardReaderException.CredentialsUnusable -> PayabliErrorType.READER_CREDENTIALS_UNUSABLE
+            is CardReaderException.ArmingFailed -> PayabliErrorType.READER_UNAVAILABLE
+            is CardReaderException.DeviceDenied -> PayabliErrorType.READER_DEVICE_REFUSED
+            is CardReaderException.SessionUnusable -> PayabliErrorType.READER_SESSION_EXPIRED
+            is CardReaderException.ReadFailed -> PayabliErrorType.TAP_NOT_COMPLETED
         }
 
-    private fun transactionCode(failure: TTPTransactionException): PayabliErrorCode =
+    private fun transactionCode(failure: TTPTransactionException): PayabliErrorType =
         when (failure) {
-            is TTPTransactionException.NotEnabled -> PayabliErrorCode.CARD_PRESENT_NOT_ENABLED
-            is TTPTransactionException.Refused -> PayabliErrorCode.PAYMENT_NOT_OPENED
-            is TTPTransactionException.ServiceRejected -> PayabliErrorCode.PAYMENT_NOT_OPENED
-            is TTPTransactionException.CardRefused -> PayabliErrorCode.CARD_DECLINED
-            is TTPTransactionException.OutcomeUnknown -> PayabliErrorCode.PAYMENT_OUTCOME_UNKNOWN
-            is TTPTransactionException.Undecodable -> PayabliErrorCode.DECODING_ERROR
+            is TTPTransactionException.NotEnabled -> PayabliErrorType.CARD_PRESENT_NOT_ENABLED
+            is TTPTransactionException.Refused -> PayabliErrorType.PAYMENT_NOT_OPENED
+            is TTPTransactionException.ServiceRejected -> PayabliErrorType.PAYMENT_NOT_OPENED
+            is TTPTransactionException.CardRefused -> PayabliErrorType.CARD_DECLINED
+            is TTPTransactionException.OutcomeUnknown -> PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN
+            is TTPTransactionException.Undecodable -> PayabliErrorType.DECODING_ERROR
         }
 }

@@ -76,7 +76,7 @@ class TapToPaySessionFailuresTest {
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),
             AttestationException.IntegrityFailed(-3) to failed(ATTESTATION_REQUIRED),
             DeviceIneligibleException(
-                PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED,
+                PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
                 "contactless payments are not supported",
             ) to
                 failed(DEVICE_INELIGIBLE),

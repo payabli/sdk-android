@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -1176,7 +1176,7 @@ class TapToPayChargeRunnerTest {
                         runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                     }.exceptionOrNull() as TapToPayException
 
-                assertEquals(PayabliErrorCode.PAYMENT_NOT_CLOSED, failure.code)
+                assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, failure.type)
                 val charge = reported.single { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
                 assertEquals("3022", charge[TelemetryProperty.ERROR_NUMBER.key])
             } finally {
@@ -1196,7 +1196,7 @@ class TapToPayChargeRunnerTest {
                     runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
                 }.exceptionOrNull() as TapToPayException
 
-            assertEquals(PayabliErrorCode.PAYMENT_OUTCOME_UNKNOWN, failure.code)
+            assertEquals(PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN, failure.type)
         }
 
     @Test

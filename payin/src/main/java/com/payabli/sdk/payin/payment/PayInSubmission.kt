@@ -517,7 +517,7 @@ internal class PayInSubmission(
     private fun report(
         event: String,
         outcome: String,
-        code: PayabliErrorCode?,
+        code: PayabliErrorType?,
         startedAt: Long?,
         entryPoint: String?,
         fromForm: Boolean,
@@ -535,7 +535,7 @@ internal class PayInSubmission(
 
     private fun measurements(
         outcome: String,
-        code: PayabliErrorCode?,
+        code: PayabliErrorType?,
         startedAt: Long?,
         fromForm: Boolean,
     ): Map<String, String> =
@@ -547,7 +547,7 @@ internal class PayInSubmission(
             )
             code?.let {
                 put(TelemetryProperty.CODE.key, it.wireName)
-                put(TelemetryProperty.ERROR_NUMBER.key, it.number.toString())
+                put(TelemetryProperty.ERROR_NUMBER.key, it.code.toString())
             }
             startedAt?.let {
                 put(

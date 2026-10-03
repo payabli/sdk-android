@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.devicekey.DeviceKeyException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
@@ -25,80 +25,80 @@ import org.junit.Test
  * remedy, and nothing else in the suite reads the code.
  */
 class TapToPayErrorCodesTest {
-    private val causes: List<Pair<Throwable, PayabliErrorCode>> =
+    private val causes: List<Pair<Throwable, PayabliErrorType>> =
         listOf(
-            DeviceKeyException.CryptoUnavailable() to PayabliErrorCode.DEVICE_KEY_UNAVAILABLE,
-            DeviceKeyException.KeyLost() to PayabliErrorCode.ATTESTATION_REQUIRED,
-            DeviceKeyException.SigningFailed() to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            AttestationException.RemediationRequired(-14) to PayabliErrorCode.ATTESTATION_SERVICES_OUTDATED,
-            AttestationException.IntegrityFailed(-5) to PayabliErrorCode.ATTESTATION_REFUSED,
-            AttestationException.Retryable(-3) to PayabliErrorCode.ATTESTATION_UNAVAILABLE,
-            AttestationException.Throttled(-8) to PayabliErrorCode.ATTESTATION_UNAVAILABLE,
-            AttestationException.Misconfigured(null) to PayabliErrorCode.ATTESTATION_NOT_CONFIGURED,
-            AttestationException.ChallengeReused() to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            TapToPaySessionException.PendingActivation() to PayabliErrorCode.DEVICE_PENDING_ACTIVATION,
-            TapToPaySessionException.AttestationRequired() to PayabliErrorCode.ATTESTATION_REQUIRED,
+            DeviceKeyException.CryptoUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
+            DeviceKeyException.KeyLost() to PayabliErrorType.ATTESTATION_REQUIRED,
+            DeviceKeyException.SigningFailed() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            AttestationException.RemediationRequired(-14) to PayabliErrorType.ATTESTATION_SERVICES_OUTDATED,
+            AttestationException.IntegrityFailed(-5) to PayabliErrorType.ATTESTATION_REFUSED,
+            AttestationException.Retryable(-3) to PayabliErrorType.ATTESTATION_UNAVAILABLE,
+            AttestationException.Throttled(-8) to PayabliErrorType.ATTESTATION_UNAVAILABLE,
+            AttestationException.Misconfigured(null) to PayabliErrorType.ATTESTATION_NOT_CONFIGURED,
+            AttestationException.ChallengeReused() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            TapToPaySessionException.PendingActivation() to PayabliErrorType.DEVICE_PENDING_ACTIVATION,
+            TapToPaySessionException.AttestationRequired() to PayabliErrorType.ATTESTATION_REQUIRED,
             TapToPaySessionException.NotRecoverable(TapToPaySessionState.PendingActivation) to
-                PayabliErrorCode.TERMINAL_NOT_READY,
-            TapToPaySessionException.SetupAbandoned() to PayabliErrorCode.UNKNOWN,
-            TapToPaySessionException.SetupFailed() to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            DeviceServiceException.BadRequest(400, "refused") to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            DeviceServiceException.NotAttested(401, "refused") to PayabliErrorCode.ATTESTATION_REQUIRED,
-            DeviceServiceException.Forbidden(403, "refused") to PayabliErrorCode.DEVICE_PENDING_ACTIVATION,
-            DeviceServiceException.EntryPointUnusable(403, "refused") to PayabliErrorCode.ENTRY_POINT_REFUSED,
-            DeviceServiceException.NotFound(404, "refused") to PayabliErrorCode.ENTRY_POINT_REFUSED,
-            DeviceServiceException.ServerFailure(500, "refused") to PayabliErrorCode.SERVER_ERROR,
-            DeviceServiceException.Unclassified(null, "refused") to PayabliErrorCode.UNKNOWN,
-            DeviceServiceException.Undecodable(null) to PayabliErrorCode.DECODING_ERROR,
-            DeviceActivationException.CodeMalformed() to PayabliErrorCode.ACTIVATION_CODE_MALFORMED,
-            DeviceActivationException.CodeIncorrect(400, "refused") to PayabliErrorCode.ACTIVATION_CODE_INCORRECT,
-            DeviceActivationException.CodeExpired(400, "refused") to PayabliErrorCode.ACTIVATION_CODE_EXPIRED,
+                PayabliErrorType.TERMINAL_NOT_READY,
+            TapToPaySessionException.SetupAbandoned() to PayabliErrorType.UNKNOWN,
+            TapToPaySessionException.SetupFailed() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            DeviceServiceException.BadRequest(400, "refused") to PayabliErrorType.SDK_INTERNAL_ERROR,
+            DeviceServiceException.NotAttested(401, "refused") to PayabliErrorType.ATTESTATION_REQUIRED,
+            DeviceServiceException.Forbidden(403, "refused") to PayabliErrorType.DEVICE_PENDING_ACTIVATION,
+            DeviceServiceException.EntryPointUnusable(403, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceServiceException.NotFound(404, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceServiceException.ServerFailure(500, "refused") to PayabliErrorType.SERVER_ERROR,
+            DeviceServiceException.Unclassified(null, "refused") to PayabliErrorType.UNKNOWN,
+            DeviceServiceException.Undecodable(null) to PayabliErrorType.DECODING_ERROR,
+            DeviceActivationException.CodeMalformed() to PayabliErrorType.ACTIVATION_CODE_MALFORMED,
+            DeviceActivationException.CodeIncorrect(400, "refused") to PayabliErrorType.ACTIVATION_CODE_INCORRECT,
+            DeviceActivationException.CodeExpired(400, "refused") to PayabliErrorType.ACTIVATION_CODE_EXPIRED,
             DeviceActivationException.AttemptsExhausted(400, "refused") to
-                PayabliErrorCode.ACTIVATION_ATTEMPTS_EXHAUSTED,
-            DeviceActivationException.CodeNotIssued(400, "refused") to PayabliErrorCode.ACTIVATION_CODE_NOT_ISSUED,
-            DeviceActivationException.CodeUnreadable(400, "refused") to PayabliErrorCode.ACTIVATION_CODE_NOT_ISSUED,
-            DeviceActivationException.DeviceNotPending(400, "refused") to PayabliErrorCode.DEVICE_NOT_PENDING,
-            DeviceActivationException.AssertionRejected(400, "refused") to PayabliErrorCode.ATTESTATION_REQUIRED,
-            DeviceActivationException.RequestRejected(400, "refused") to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            DeviceActivationException.AttestationRevoked(401, "refused") to PayabliErrorCode.ATTESTATION_REQUIRED,
-            DeviceActivationException.EntryNotAuthorized(401, "refused") to PayabliErrorCode.ENTRY_POINT_REFUSED,
-            DeviceActivationException.PaypointUnknown(404, "refused") to PayabliErrorCode.ENTRY_POINT_REFUSED,
-            DeviceActivationException.EntryPointUnusable(403, "refused") to PayabliErrorCode.ENTRY_POINT_REFUSED,
-            DeviceActivationException.DeviceUnknown(404, "refused") to PayabliErrorCode.ATTESTATION_REQUIRED,
-            DeviceActivationException.ServiceFailed(500, "refused") to PayabliErrorCode.SERVER_ERROR,
-            DeviceActivationException.NotEnrolled() to PayabliErrorCode.ATTESTATION_REQUIRED,
-            DeviceActivationException.Unclassified(400, "refused") to PayabliErrorCode.UNKNOWN,
-            SecureStorageException.CryptoUnavailable() to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            SecureStorageException.StorageUnavailable() to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            DeviceIneligibleException(PayabliErrorCode.DEVICE_OS_UNSUPPORTED, "too old") to
-                PayabliErrorCode.DEVICE_OS_UNSUPPORTED,
-            DeviceIneligibleException(PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED, "no radio") to
-                PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED,
-            CardReaderException.CredentialsUnusable("blank") to PayabliErrorCode.READER_CREDENTIALS_UNUSABLE,
-            CardReaderException.ArmingFailed(null) to PayabliErrorCode.READER_UNAVAILABLE,
-            CardReaderException.DeviceDenied(null) to PayabliErrorCode.READER_DEVICE_REFUSED,
-            CardReaderException.SessionUnusable(null) to PayabliErrorCode.READER_SESSION_EXPIRED,
-            CardReaderException.ReadFailed(null) to PayabliErrorCode.TAP_NOT_COMPLETED,
-            TTPTransactionException.NotEnabled() to PayabliErrorCode.CARD_PRESENT_NOT_ENABLED,
-            TTPTransactionException.Refused("D", "refused") to PayabliErrorCode.PAYMENT_NOT_OPENED,
-            TTPTransactionException.ServiceRejected("E", "refused") to PayabliErrorCode.PAYMENT_NOT_OPENED,
-            TTPTransactionException.CardRefused("DECLINED") to PayabliErrorCode.CARD_DECLINED,
-            TTPTransactionException.OutcomeUnknown(null) to PayabliErrorCode.PAYMENT_OUTCOME_UNKNOWN,
-            TTPTransactionException.Undecodable() to PayabliErrorCode.DECODING_ERROR,
-            TapToPayCallException.TerminalNotReady() to PayabliErrorCode.TERMINAL_NOT_READY,
-            TapToPayCallException.NoDeviceToChargeAs() to PayabliErrorCode.ATTESTATION_REQUIRED,
-            TapToPayCallException.PaymentNotHeld() to PayabliErrorCode.PAYMENT_NOT_HELD,
-            ChargeKeyStoreFullException(4) to PayabliErrorCode.TOO_MANY_OPEN_CHARGES,
-            TapToPayArgumentException("a charge has to name the payer it is for") to PayabliErrorCode.VALIDATION_ERROR,
-            IllegalArgumentException("a decoder's own complaint") to PayabliErrorCode.UNKNOWN,
-            IllegalStateException("refused transition") to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            RuntimeException("unexamined") to PayabliErrorCode.UNKNOWN,
+                PayabliErrorType.ACTIVATION_ATTEMPTS_EXHAUSTED,
+            DeviceActivationException.CodeNotIssued(400, "refused") to PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
+            DeviceActivationException.CodeUnreadable(400, "refused") to PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED,
+            DeviceActivationException.DeviceNotPending(400, "refused") to PayabliErrorType.DEVICE_NOT_PENDING,
+            DeviceActivationException.AssertionRejected(400, "refused") to PayabliErrorType.ATTESTATION_REQUIRED,
+            DeviceActivationException.RequestRejected(400, "refused") to PayabliErrorType.SDK_INTERNAL_ERROR,
+            DeviceActivationException.AttestationRevoked(401, "refused") to PayabliErrorType.ATTESTATION_REQUIRED,
+            DeviceActivationException.EntryNotAuthorized(401, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceActivationException.PaypointUnknown(404, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceActivationException.EntryPointUnusable(403, "refused") to PayabliErrorType.ENTRY_POINT_REFUSED,
+            DeviceActivationException.DeviceUnknown(404, "refused") to PayabliErrorType.ATTESTATION_REQUIRED,
+            DeviceActivationException.ServiceFailed(500, "refused") to PayabliErrorType.SERVER_ERROR,
+            DeviceActivationException.NotEnrolled() to PayabliErrorType.ATTESTATION_REQUIRED,
+            DeviceActivationException.Unclassified(400, "refused") to PayabliErrorType.UNKNOWN,
+            SecureStorageException.CryptoUnavailable() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            SecureStorageException.StorageUnavailable() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            DeviceIneligibleException(PayabliErrorType.DEVICE_OS_UNSUPPORTED, "too old") to
+                PayabliErrorType.DEVICE_OS_UNSUPPORTED,
+            DeviceIneligibleException(PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED, "no radio") to
+                PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
+            CardReaderException.CredentialsUnusable("blank") to PayabliErrorType.READER_CREDENTIALS_UNUSABLE,
+            CardReaderException.ArmingFailed(null) to PayabliErrorType.READER_UNAVAILABLE,
+            CardReaderException.DeviceDenied(null) to PayabliErrorType.READER_DEVICE_REFUSED,
+            CardReaderException.SessionUnusable(null) to PayabliErrorType.READER_SESSION_EXPIRED,
+            CardReaderException.ReadFailed(null) to PayabliErrorType.TAP_NOT_COMPLETED,
+            TTPTransactionException.NotEnabled() to PayabliErrorType.CARD_PRESENT_NOT_ENABLED,
+            TTPTransactionException.Refused("D", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
+            TTPTransactionException.ServiceRejected("E", "refused") to PayabliErrorType.PAYMENT_NOT_OPENED,
+            TTPTransactionException.CardRefused("DECLINED") to PayabliErrorType.CARD_DECLINED,
+            TTPTransactionException.OutcomeUnknown(null) to PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN,
+            TTPTransactionException.Undecodable() to PayabliErrorType.DECODING_ERROR,
+            TapToPayCallException.TerminalNotReady() to PayabliErrorType.TERMINAL_NOT_READY,
+            TapToPayCallException.NoDeviceToChargeAs() to PayabliErrorType.ATTESTATION_REQUIRED,
+            TapToPayCallException.PaymentNotHeld() to PayabliErrorType.PAYMENT_NOT_HELD,
+            ChargeKeyStoreFullException(4) to PayabliErrorType.TOO_MANY_OPEN_CHARGES,
+            TapToPayArgumentException("a charge has to name the payer it is for") to PayabliErrorType.VALIDATION_ERROR,
+            IllegalArgumentException("a decoder's own complaint") to PayabliErrorType.UNKNOWN,
+            IllegalStateException("refused transition") to PayabliErrorType.SDK_INTERNAL_ERROR,
+            RuntimeException("unexamined") to PayabliErrorType.UNKNOWN,
         )
 
     @Test
     fun `every cause reaches a host under its catalog code`() {
         causes.forEach { (failure, expected) ->
-            assertEquals(failure.javaClass.name, expected, TapToPayErrorCodes.codeFor(failure))
+            assertEquals(failure.javaClass.name, expected, TapToPayErrorCodes.typeFor(failure))
         }
     }
 
@@ -110,27 +110,27 @@ class TapToPayErrorCodesTest {
         // service's "not available" also means it is not enabled or the store is out of date.
         val notFromACause =
             setOf(
-                PayabliErrorCode.TERMS_NOT_ACCEPTED,
-                PayabliErrorCode.PAYMENT_NOT_CLOSED,
-                PayabliErrorCode.ATTESTATION_NOT_SUPPORTED,
+                PayabliErrorType.TERMS_NOT_ACCEPTED,
+                PayabliErrorType.PAYMENT_NOT_CLOSED,
+                PayabliErrorType.ATTESTATION_NOT_SUPPORTED,
             )
-        val cardPresent = PayabliErrorCode.entries.filter { it.number in 3001..3999 }.toSet()
+        val cardPresent = PayabliErrorType.entries.filter { it.code in 3001..3999 }.toSet()
         assertEquals(cardPresent - notFromACause, causes.map { it.second }.filter { it in cardPresent }.toSet())
     }
 
     @Test
     fun `a transport failure keeps its code, reason and detail`() {
-        val transport = PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "Unauthorized", "token rejected")
+        val transport = PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "Unauthorized", "token rejected")
 
         val thrown =
             TapToPayErrorCodes.exceptionFor(
                 transport,
-                TapToPayErrorCodes.codeFor(transport),
+                TapToPayErrorCodes.typeFor(transport),
                 null,
                 TapToPayCapture.NOT_CHARGED,
             )
 
-        assertEquals(PayabliErrorCode.TOKEN_EXPIRED, thrown.code)
+        assertEquals(PayabliErrorType.TOKEN_EXPIRED, thrown.type)
         assertEquals("Unauthorized", thrown.reason)
         assertEquals("token rejected", thrown.detail)
         assertSame(transport, thrown.cause)
@@ -138,11 +138,11 @@ class TapToPayErrorCodesTest {
 
     @Test
     fun `a rejected credential and a refused reader are told apart by their code`() {
-        val credential = PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "Unauthorized")
+        val credential = PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "Unauthorized")
         val reader = CardReaderException.DeviceDenied(null)
 
-        assertNotEquals(TapToPayErrorCodes.codeFor(credential), TapToPayErrorCodes.codeFor(reader))
-        assertNotEquals(TapToPayErrorCodes.codeFor(credential).category, TapToPayErrorCodes.codeFor(reader).category)
+        assertNotEquals(TapToPayErrorCodes.typeFor(credential), TapToPayErrorCodes.typeFor(reader))
+        assertNotEquals(TapToPayErrorCodes.typeFor(credential).category, TapToPayErrorCodes.typeFor(reader).category)
     }
 
     @Test
@@ -152,30 +152,30 @@ class TapToPayErrorCodesTest {
         val thrown =
             TapToPayErrorCodes.exceptionFor(
                 refused,
-                TapToPayErrorCodes.codeFor(refused),
+                TapToPayErrorCodes.typeFor(refused),
                 "txn",
                 TapToPayCapture.NOT_CHARGED,
             )
 
-        assertEquals(PayabliErrorCode.PAYMENT_NOT_OPENED.message, thrown.reason)
+        assertEquals(PayabliErrorType.PAYMENT_NOT_OPENED.message, thrown.reason)
         assertEquals("the service's own words", thrown.detail)
-        assertEquals(PayabliErrorCode.PAYMENT_NOT_OPENED.wireName, thrown.message)
+        assertEquals(PayabliErrorType.PAYMENT_NOT_OPENED.message, thrown.message)
     }
 
     @Test
     fun `a transport failure reported under another code takes that code's reason`() {
-        val close = PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "Unreachable", "socket closed")
+        val close = PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "Unreachable", "socket closed")
 
         val thrown =
             TapToPayErrorCodes.exceptionFor(
                 close,
-                PayabliErrorCode.PAYMENT_NOT_CLOSED,
+                PayabliErrorType.PAYMENT_NOT_CLOSED,
                 "txn",
                 TapToPayCapture.CHARGED,
             )
 
-        assertEquals(PayabliErrorCode.PAYMENT_NOT_CLOSED, thrown.code)
-        assertEquals(PayabliErrorCode.PAYMENT_NOT_CLOSED.message, thrown.reason)
+        assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED, thrown.type)
+        assertEquals(PayabliErrorType.PAYMENT_NOT_CLOSED.message, thrown.reason)
         assertEquals("socket closed", thrown.detail)
     }
 
@@ -190,7 +190,7 @@ class TapToPayErrorCodesTest {
             val thrown =
                 TapToPayErrorCodes.exceptionFor(
                     failure,
-                    TapToPayErrorCodes.codeFor(failure),
+                    TapToPayErrorCodes.typeFor(failure),
                     null,
                     TapToPayCapture.NOT_CHARGED,
                 )
@@ -203,7 +203,7 @@ class TapToPayErrorCodesTest {
         val thrown =
             TapToPayErrorCodes.exceptionFor(
                 CardReaderException.ReadFailed(null),
-                PayabliErrorCode.TAP_NOT_COMPLETED,
+                PayabliErrorType.TAP_NOT_COMPLETED,
                 "txn",
                 TapToPayCapture.UNKNOWN,
             )
