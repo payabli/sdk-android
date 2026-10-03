@@ -10,7 +10,13 @@ package com.payabli.sdk.core.model
 public enum class PayabliErrorCategory(
     public val wireName: String,
 ) {
-    /** The SDK's credential, a token or this device's identity, has to be established again: call `initialize`. */
+    /**
+     * The SDK could not obtain or use a credential, a token or this device's identity.
+     *
+     * The SDK asks the token provider again on the next call, so a provider that can return a working token
+     * repairs it. A session or a device identity that has finished, which the state reports, is established
+     * again by calling `initialize`.
+     */
     CREDENTIAL("CREDENTIAL"),
 
     /** The same call may work later. */
