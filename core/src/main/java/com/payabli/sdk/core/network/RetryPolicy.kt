@@ -1,7 +1,7 @@
 package com.payabli.sdk.core.network
 
 import androidx.annotation.RestrictTo
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import java.util.Collections
 import kotlin.random.Random
@@ -23,7 +23,7 @@ import kotlin.random.Random
  * timeout is the only bound.
  *
  * **Not this policy's business: a refused credential.** That is [AuthRecoveryPolicy], which is why
- * [PayabliErrorCode.TOKEN_EXPIRED] is absent from [RETRYABLE_CODES] below. The two sit at different layers,
+ * [PayabliErrorType.TOKEN_EXPIRED] is absent from [RETRYABLE_CODES] below. The two sit at different layers,
  * outermost first, and a credential decision belongs in the other one rather than as a code added here:
  *
  * ```
@@ -107,18 +107,18 @@ public class RetryPolicy(
          * Retried because each is transient by nature. Everything absent is not retried, and three of those
          * are worth naming: a decline is authoritative and retrying risks a double charge; an expired token
          * needs refresh, which is a different mechanism, so a blind retry loops to exhaustion; and
-         * [PayabliErrorCode.UNKNOWN] is an unclassified server state, where not retrying is the safe
+         * [PayabliErrorType.UNKNOWN] is an unclassified server state, where not retrying is the safe
          * default. That last one is also why a reused idempotency key needs no code of its own.
          */
-        public val RETRYABLE_CODES: Set<PayabliErrorCode> =
+        public val RETRYABLE_CODES: Set<PayabliErrorType> =
             Collections.unmodifiableSet(
                 setOf(
-                    PayabliErrorCode.NETWORK_ERROR,
-                    PayabliErrorCode.SERVER_ERROR,
-                    PayabliErrorCode.RATE_LIMITED,
+                    PayabliErrorType.NETWORK_ERROR,
+                    PayabliErrorType.SERVER_ERROR,
+                    PayabliErrorType.RATE_LIMITED,
                 ),
             )
 
-        public val RETRYABLE_BY_CODE: (PayabliException) -> Boolean = { it.code in RETRYABLE_CODES }
+        public val RETRYABLE_BY_CODE: (PayabliException) -> Boolean = { it.type in RETRYABLE_CODES }
     }
 }

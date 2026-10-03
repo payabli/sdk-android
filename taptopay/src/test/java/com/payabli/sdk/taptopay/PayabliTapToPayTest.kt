@@ -2,7 +2,7 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKeyException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.storage.SecureStorageException
@@ -155,8 +155,8 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is PayabliException)
             val thrown = failure as TapToPayException
-            assertEquals(PayabliErrorCode.UNKNOWN, thrown.code)
-            assertEquals(thrown.code.wireName, thrown.message)
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(thrown.type.message, thrown.message)
             assertTrue(thrown.cause.toString(), thrown.cause is IllegalArgumentException)
             assertEquals(thrown.cause?.message, thrown.reason)
         }
@@ -176,8 +176,8 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is PayabliException)
             val thrown = failure as TapToPayException
-            assertEquals(PayabliErrorCode.UNKNOWN, thrown.code)
-            assertEquals(thrown.code.wireName, thrown.message)
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(thrown.type.message, thrown.message)
             assertTrue(thrown.cause.toString(), thrown.cause is CardReaderException.ReadFailed)
             assertEquals(TRANS_ID, thrown.paymentTransId)
         }
@@ -185,11 +185,11 @@ class PayabliTapToPayTest {
     @Test
     fun `a transport failure under a charge keeps its code, reason and detail`() {
         val transport =
-            PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "The service could not be reached.", "timed out")
+            PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "The service could not be reached.", "timed out")
 
         val thrown = TapToPayException.from(transport, TRANS_ID, TapToPayCapture.UNKNOWN)
 
-        assertEquals(PayabliErrorCode.NETWORK_ERROR, thrown.code)
+        assertEquals(PayabliErrorType.NETWORK_ERROR, thrown.type)
         assertEquals("The service could not be reached.", thrown.reason)
         assertEquals("timed out", thrown.detail)
         assertEquals(TRANS_ID, thrown.paymentTransId)

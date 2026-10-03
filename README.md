@@ -277,7 +277,7 @@ your token endpoint:
 - The SDK calls it before its first request, and again when a token is rejected. Return a newly minted
   token each time, not a cached one.
 - Each call has 30 seconds to return a token that isn't blank. A call that takes longer or throws fails
-  with `PayabliErrorCode.TOKEN_PROVIDER_FAILED`.
+  with `PayabliErrorType.TOKEN_PROVIDER_FAILED`.
 - Let cancellation through. Don't catch `CancellationException`.
 
 ## Take a payment

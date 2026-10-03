@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.network.impl
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
@@ -73,7 +73,7 @@ internal suspend fun assertTheCallBudgetCutsTheCallOutOfTheStall(
 
             // Both hold however the machine is behaving, so every attempt asserts them.
             assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, (thrown as PayabliException).type)
 
             // Whether the budget ended a call in flight rather than one that never began. On a starved
             // machine the deadline can expire before the request reaches the wire, and an attempt that never

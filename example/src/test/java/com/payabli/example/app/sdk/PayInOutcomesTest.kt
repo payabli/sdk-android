@@ -1,7 +1,7 @@
 package com.payabli.example.app.sdk
 
 import com.payabli.example.app.demo.payment.PaymentError
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInFailure
@@ -305,7 +305,7 @@ class PayInOutcomesTest {
             Result
                 .failure<PayInResult>(
                     PayInException.Unsettled(
-                        PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the link dropped"),
+                        PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped"),
                     ),
                 ).toOutcome() as PayInOutcome.Refused
         val inFlight =

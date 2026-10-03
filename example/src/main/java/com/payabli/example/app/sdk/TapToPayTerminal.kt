@@ -205,4 +205,4 @@ class TapToPayTerminal(
  * An SDK failure's `message` is its classification, so the line a person reads is built from `reason` and the
  * catalog number support looks up.
  */
-internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason (${code.number})", this)
+internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason ($code)", this)

@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.devicekey.DeviceKeyException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
@@ -84,12 +84,12 @@ class TapToPaySessionFailuresTest {
             CardReaderException.SessionUnusable(null) to TapToPaySessionState.SessionExpired,
             // A tap that did not complete says nothing about the session it ran on.
             CardReaderException.ReadFailed(null) to null,
-            PayabliGenericException(PayabliErrorCode.PERMISSION_DENIED, REASON) to
+            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON) to
                 TapToPaySessionState.PendingActivation,
-            PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON) to
+            PayabliGenericException(PayabliErrorType.INVALID_CONFIGURATION, REASON) to
                 failed(CONFIGURATION_REJECTED),
-            PayabliGenericException(PayabliErrorCode.DECODING_ERROR, REASON) to failed(SDK_INTERNAL_ERROR),
-            PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON) to failed(SERVICE_UNAVAILABLE),
+            PayabliGenericException(PayabliErrorType.DECODING_ERROR, REASON) to failed(SDK_INTERNAL_ERROR),
+            PayabliGenericException(PayabliErrorType.NETWORK_ERROR, REASON) to failed(SERVICE_UNAVAILABLE),
             IllegalStateException("a defect in this SDK") to failed(SDK_INTERNAL_ERROR),
         )
 

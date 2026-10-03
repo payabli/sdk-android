@@ -260,7 +260,7 @@ internal class TTPTransactionClient(
             LogField.safe("statusCode", response.statusCode),
             // The status alone does not say which failure a retry saw. Both forms are fixed vocabulary: a
             // code from the shared table, or the name of the one failure this route classifies itself.
-            LogField.safe("errorCode", (failure as? PayabliException)?.code?.name ?: failure.javaClass.simpleName),
+            LogField.safe("errorCode", (failure as? PayabliException)?.type?.name ?: failure.javaClass.simpleName),
         ) { "the transaction call failed at the transport" }
         return failure
     }

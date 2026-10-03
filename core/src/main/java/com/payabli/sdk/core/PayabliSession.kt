@@ -12,7 +12,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.info
 import com.payabli.sdk.core.logging.platform.applyHostLogLevel
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportAssembly
@@ -215,7 +215,7 @@ public class PayabliSession private constructor(
                     }
                     val refusal =
                         PayabliGenericException(
-                            PayabliErrorCode.INVALID_CONFIGURATION,
+                            PayabliErrorType.INVALID_CONFIGURATION,
                             REASON_ALREADY_INITIALIZED,
                         )
                     reportFailure(refusal, startedAt)
@@ -289,7 +289,7 @@ public class PayabliSession private constructor(
             TelemetryRecorders.record(TelemetryEvents.SDK_INITIALIZE_FAILED) {
                 mapOf(
                     TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.REFUSED,
-                    TelemetryProperty.CODE.key to failure.code.wireName,
+                    TelemetryProperty.CODE.key to failure.type.wireName,
                     TelemetryProperty.REASON.key to failure.reason,
                     TelemetryProperty.DURATION_MS.key to
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),

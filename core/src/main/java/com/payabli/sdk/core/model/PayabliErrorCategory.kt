@@ -1,11 +1,11 @@
 package com.payabli.sdk.core.model
 
 /**
- * What a host does about a failure. Every [PayabliErrorCode] belongs to exactly one category, and each
+ * What a host does about a failure. Every [PayabliErrorType] belongs to exactly one category, and each
  * category is one remedy, so a host chooses its response by switching on this rather than on the code.
  *
  * [wireName] is what telemetry and support tooling match on; the explicit property follows
- * [PayabliErrorCode.wireName] for the same reason.
+ * [PayabliErrorType.wireName] for the same reason.
  */
 public enum class PayabliErrorCategory(
     public val wireName: String,

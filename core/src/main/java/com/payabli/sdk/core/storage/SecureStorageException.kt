@@ -5,7 +5,7 @@ import androidx.annotation.RestrictTo
 /**
  * Failures from [PayabliSecureStorage].
  *
- * Storage-local rather than a new `PayabliErrorCode` case, mirroring iOS's own `KeychainError`: the
+ * Storage-local rather than a new `PayabliErrorType` case, mirroring iOS's own `KeychainError`: the
  * shared error taxonomy is a cross-platform surface and a storage primitive does not widen it.
  *
  * **Blast radius is the distinction that matters.** [KeyInvalidated] means nothing in the store can be

@@ -4,7 +4,7 @@ import com.payabli.sdk.core.auth.testAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
@@ -312,7 +312,7 @@ class PayabliServiceTest {
                 val elapsed = elapsedMillisSince(startedAt)
 
                 assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
-                assertEquals(PayabliErrorCode.NETWORK_ERROR, (thrown as PayabliException).code)
+                assertEquals(PayabliErrorType.NETWORK_ERROR, (thrown as PayabliException).type)
                 assertTrue("the dribble was never cut off: ${elapsed}ms", elapsed < 1_500)
             }
         }

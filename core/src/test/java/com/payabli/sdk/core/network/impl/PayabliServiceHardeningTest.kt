@@ -4,7 +4,7 @@ import com.payabli.sdk.core.auth.testAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
@@ -54,7 +54,7 @@ class PayabliServiceHardeningTest {
                         )
                     }
 
-                assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+                assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
                 assertTrue("nothing may reach the server", server.recorded.isEmpty())
             }
         }
@@ -70,7 +70,7 @@ class PayabliServiceHardeningTest {
                         service(server.baseUrl).execute(PayabliRequest(HttpMethod.GET, "//attacker.example/x"))
                     }
 
-                assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+                assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
                 assertTrue(server.recorded.isEmpty())
             }
         }
@@ -88,7 +88,7 @@ class PayabliServiceHardeningTest {
                         )
                     }
 
-                assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+                assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
                 assertTrue(server.recorded.isEmpty())
             }
         }
@@ -119,7 +119,7 @@ class PayabliServiceHardeningTest {
                         )
                     }
 
-                assertEquals(PayabliErrorCode.NETWORK_ERROR, failure.code)
+                assertEquals(PayabliErrorType.NETWORK_ERROR, failure.type)
                 assertEquals(PayabliService.REASON_RESPONSE_TOO_LARGE, failure.reason)
             }
         }
@@ -153,7 +153,7 @@ class PayabliServiceHardeningTest {
                         )
                     }
 
-                assertEquals(PayabliErrorCode.NETWORK_ERROR, failure.code)
+                assertEquals(PayabliErrorType.NETWORK_ERROR, failure.type)
             }
         }
 }

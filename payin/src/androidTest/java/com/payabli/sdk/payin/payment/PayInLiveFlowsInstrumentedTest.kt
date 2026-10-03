@@ -271,7 +271,7 @@ class PayInLiveFlowsInstrumentedTest {
                     "code=${(failure as? PayabliException)?.code ?: failure.javaClass.simpleName}",
                     server?.let { "httpStatus=${it.httpStatus}" },
                     server?.rawCode?.let { "serviceCode=$it" },
-                    server?.type?.let { "type=$it" },
+                    server?.problemType?.let { "type=$it" },
                     // Which decline, which is the whole content of a refusal and the one thing worth reading
                     // off a live run. A unified code, and published API surface.
                     refused?.code?.let { "declineCode=$it" },

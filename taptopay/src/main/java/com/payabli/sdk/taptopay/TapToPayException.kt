@@ -1,6 +1,6 @@
 package com.payabli.sdk.taptopay
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
@@ -8,8 +8,8 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
 /**
  * A card-present call that did not succeed.
  *
- * A [PayabliException], so [code] and its category are read exactly as for every other failure the SDK raises.
- * A failure the transport raised beneath a card-present call keeps the code it was raised with.
+ * A [PayabliException], so its [code], category and [type] are read exactly as for every other failure the SDK
+ * raises. A failure the transport raised beneath a card-present call keeps the type it was raised with.
  *
  * What to do next is on [PayabliTTP.sessionState]. A failure that changed the session appears there as
  * [TapToPaySessionState.Failed] carrying a [TapToPayFailureReason], or as
@@ -42,13 +42,13 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * different amount is not what to send next. There is no call that resolves such an attempt yet.
  */
 public class TapToPayException private constructor(
-    code: PayabliErrorCode,
+    type: PayabliErrorType,
     reason: String,
     detail: String?,
     cause: Throwable?,
     public val paymentTransId: String?,
     public val capture: TapToPayCapture,
-) : PayabliException(code, reason, detail, cause) {
+) : PayabliException(type, reason, detail, cause) {
     internal companion object {
         /**
          * The only way this type is constructed.
@@ -58,17 +58,17 @@ public class TapToPayException private constructor(
          */
         @JvmSynthetic
         internal fun of(
-            code: PayabliErrorCode,
+            type: PayabliErrorType,
             reason: String,
             cause: Throwable?,
             detail: String? = null,
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
-        ): TapToPayException = TapToPayException(code, reason, detail, cause, paymentTransId, capture)
+        ): TapToPayException = TapToPayException(type, reason, detail, cause, paymentTransId, capture)
 
         /**
          * [failure] as a host receives it. A [PayabliException] keeps its code, reason and detail, because its
-         * `message` is only the classification; anything else is [PayabliErrorCode.UNKNOWN].
+         * `message` is only the classification; anything else is [PayabliErrorType.UNKNOWN].
          */
         @JvmSynthetic
         internal fun from(
@@ -77,10 +77,10 @@ public class TapToPayException private constructor(
             capture: TapToPayCapture,
         ): TapToPayException =
             if (failure is PayabliException) {
-                of(failure.code, failure.reason, failure, failure.detail, paymentTransId, capture)
+                of(failure.type, failure.reason, failure, failure.detail, paymentTransId, capture)
             } else {
                 of(
-                    PayabliErrorCode.UNKNOWN,
+                    PayabliErrorType.UNKNOWN,
                     failure.message ?: failure.javaClass.simpleName,
                     failure,
                     paymentTransId = paymentTransId,

@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.core.devicekey.DeviceKeyException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
@@ -143,10 +143,10 @@ internal object TapToPaySessionFailures {
         }
 
     private fun landingForTransport(failure: PayabliException): TapToPaySessionState =
-        when (failure.code) {
-            PayabliErrorCode.PERMISSION_DENIED -> TapToPaySessionState.PendingActivation
-            PayabliErrorCode.INVALID_CONFIGURATION -> failed(CONFIGURATION_REJECTED)
-            PayabliErrorCode.DECODING_ERROR -> failed(SDK_INTERNAL_ERROR)
+        when (failure.type) {
+            PayabliErrorType.PERMISSION_DENIED -> TapToPaySessionState.PendingActivation
+            PayabliErrorType.INVALID_CONFIGURATION -> failed(CONFIGURATION_REJECTED)
+            PayabliErrorType.DECODING_ERROR -> failed(SDK_INTERNAL_ERROR)
             else -> failed(SERVICE_UNAVAILABLE)
         }
 

@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.config
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 
 private const val REASON_MISSING_ENTRY_POINT = "entryPoint must not be blank"
@@ -27,7 +27,7 @@ public class PayabliConfig(
 ) {
     init {
         if (entryPoint.isBlank()) {
-            throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_MISSING_ENTRY_POINT)
+            throw PayabliGenericException(PayabliErrorType.INVALID_CONFIGURATION, REASON_MISSING_ENTRY_POINT)
         }
     }
 

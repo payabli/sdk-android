@@ -8,7 +8,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.error
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliRequest
@@ -51,11 +51,11 @@ import kotlin.time.Duration.Companion.milliseconds
  * every request that leaves this class is authenticated and there is no undecorated path to forget.
  *
  * Transport and configuration failures do surface as a [PayabliException]: an `IOException` becomes
- * [PayabliErrorCode.NETWORK_ERROR], a malformed URL [PayabliErrorCode.INVALID_CONFIGURATION], and a
- * body that will not decode [PayabliErrorCode.DECODING_ERROR], each preserving the original as its
+ * [PayabliErrorType.NETWORK_ERROR], a malformed URL [PayabliErrorType.INVALID_CONFIGURATION], and a
+ * body that will not decode [PayabliErrorType.DECODING_ERROR], each preserving the original as its
  * cause.
  *
- * `internal`, and deliberately so: nothing outside `:core` names this type. Capability modules depend
+ * `internal`: nothing outside `:core` names this type. Capability modules depend
  * on the [PayabliTransport] interface and receive an instance from the session.
  *
  * **The decoration chain is applied here, not by a wrapping layer.** Decorating in a wrapper would leave a
@@ -124,10 +124,10 @@ internal class PayabliService private constructor(
                 logger.error(
                     methodField(decorated),
                     routeField(decorated),
-                    LogField.safe("errorCode", PayabliErrorCode.NETWORK_ERROR),
+                    LogField.safe("errorCode", PayabliErrorType.NETWORK_ERROR),
                     LogField.safe("callTimeoutMs", callTimeout.inWholeMilliseconds),
                 ) { "call exceeded its timeout" }
-                throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_CALL_TIMED_OUT)
+                throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, REASON_CALL_TIMED_OUT)
             }
             outcome.getOrThrow()
         }
@@ -149,7 +149,7 @@ internal class PayabliService private constructor(
         val connection = openConnection(decorated)
 
         // Exactly once, not idempotently. The cancellation handler runs on the canceller's thread and the
-        // failure path below runs on ours, so both can reach it, and the platform documents neither
+        // failure path below runs on the calling one, so both can reach it, and the platform documents neither
         // idempotency nor the effect on a blocked read. Nothing here may rely on a second call being free.
         val disconnected = AtomicBoolean(false)
         val disconnectOnce = { if (disconnected.compareAndSet(false, true)) connection.disconnect() }
@@ -210,9 +210,9 @@ internal class PayabliService private constructor(
                 e,
                 methodField(decorated),
                 routeField(decorated),
-                LogField.safe("errorCode", PayabliErrorCode.NETWORK_ERROR),
+                LogField.safe("errorCode", PayabliErrorType.NETWORK_ERROR),
             ) { "request failed" }
-            throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
+            throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
         }
     }
 
@@ -236,9 +236,9 @@ internal class PayabliService private constructor(
         val connection =
             try {
                 url.openConnection() as? HttpURLConnection
-                    ?: throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_INVALID_URL)
+                    ?: throw PayabliGenericException(PayabliErrorType.INVALID_CONFIGURATION, REASON_INVALID_URL)
             } catch (e: IOException) {
-                throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
+                throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, REASON_NETWORK_FAILED, cause = e)
             }
         try {
             connection.requestMethod = request.method.wireName
@@ -246,7 +246,7 @@ internal class PayabliService private constructor(
             // Caught ahead of IOException, which it extends. An unsupported verb is configuration, not a
             // network fault. Note PATCH: Android's implementation accepts it, the JVM's does not, so a
             // PATCH route works on a device and cannot be exercised by a JVM unit test.
-            throw PayabliGenericException(PayabliErrorCode.INVALID_CONFIGURATION, REASON_METHOD_UNSUPPORTED, cause = e)
+            throw PayabliGenericException(PayabliErrorType.INVALID_CONFIGURATION, REASON_METHOD_UNSUPPORTED, cause = e)
         }
         connection.connectTimeout = connectTimeoutMillis
         connection.readTimeout = readTimeoutMillis
@@ -254,8 +254,8 @@ internal class PayabliService private constructor(
         // A payments API does not redirect, and following one would forward the Authorization header
         // to whatever host the 3xx names. A 3xx is returned to the caller instead.
         connection.instanceFollowRedirects = false
-        // Accept-Encoding is left unset on purpose. Android's implementation then negotiates gzip and
-        // decompresses transparently; setting it by hand would make decompression our problem. The JVM
+        // Accept-Encoding is left unset. Android's implementation then negotiates gzip and decompresses
+        // transparently; setting it by hand would leave decompression to this code. The JVM
         // implementation used by unit tests does not do this, so gzip is covered by instrumented tests.
         request.headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
         return connection
@@ -283,7 +283,7 @@ internal class PayabliService private constructor(
 
     private fun invalidUrl(cause: Throwable): PayabliGenericException =
         PayabliGenericException(
-            PayabliErrorCode.INVALID_CONFIGURATION,
+            PayabliErrorType.INVALID_CONFIGURATION,
             REASON_INVALID_URL,
             cause = RedactedCause(cause),
         )
@@ -370,7 +370,7 @@ internal class PayabliService private constructor(
             total += read
             if (total > maxResponseBytes) {
                 throw PayabliGenericException(
-                    PayabliErrorCode.NETWORK_ERROR,
+                    PayabliErrorType.NETWORK_ERROR,
                     REASON_RESPONSE_TOO_LARGE,
                     detail = "limit $maxResponseBytes bytes",
                 )
@@ -384,7 +384,7 @@ internal class PayabliService private constructor(
     private fun readHeaders(connection: HttpURLConnection): Map<String, String> {
         // Bound to a read-only type first: the platform hands back a Map whose mutability Kotlin cannot
         // prove, and nothing here mutates it.
-        // Nullable key and value on purpose: the platform really does return a null-keyed entry for the
+        // Nullable key and value: the platform returns a null-keyed entry for the
         // status line, so a non-null type here would compile and then admit a null key at runtime.
         val fields: Map<String?, List<String>?> = connection.headerFields ?: return emptyMap()
         return buildMap {
@@ -406,7 +406,7 @@ internal class PayabliService private constructor(
     private fun urlEncode(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     internal companion object {
-        /** Deliberately generic: these reach a host app, so they carry no host, path or server text. */
+        /** Generic, because these reach a host app: they carry no host, path or server text. */
         internal const val REASON_NETWORK_FAILED: String = "Network request failed"
         internal const val REASON_INVALID_URL: String = "Invalid request URL"
         internal const val REASON_RESPONSE_TOO_LARGE: String = "Response body exceeded the allowed size"
@@ -435,7 +435,7 @@ internal class PayabliService private constructor(
         /**
          * The only production way to obtain a transport.
          *
-         * It does not take a decoration list, deliberately: no caller anywhere chooses the chain, so no
+         * It takes no decoration list: no caller anywhere chooses the chain, so no
          * caller can choose an empty one. Returns the interface, so nothing
          * accumulates a dependency on the concrete class.
          *

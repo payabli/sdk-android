@@ -82,7 +82,7 @@ internal class TelemetryUploader(
             logger.warn(
                 LogField.safe("event", "telemetry_batch_failed"),
                 LogField.safe("route", ROUTE),
-                LogField.safe("errorCode", failure.code.wireName),
+                LogField.safe("errorCode", failure.type.wireName),
             ) { "batch could not be sent; discarded" }
         } catch (failure: RuntimeException) {
             // Wider than the transport's documented contract, and that is the point: a reporting channel that

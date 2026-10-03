@@ -1,7 +1,7 @@
 package com.payabli.sdk.core.network
 
 import com.payabli.sdk.core.model.PayabliDeclineException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliServerException
@@ -36,30 +36,30 @@ class PayabliHttpErrorsTest {
     fun `400 maps to a validation error`() {
         val mapped = map(400)
         assertTrue(mapped is PayabliValidationException)
-        assertEquals(PayabliErrorCode.VALIDATION_ERROR, mapped?.code)
+        assertEquals(PayabliErrorType.VALIDATION_ERROR, mapped?.type)
     }
 
     @Test
     fun `401 maps to token expired`() {
-        assertEquals(PayabliErrorCode.TOKEN_EXPIRED, map(401)?.code)
+        assertEquals(PayabliErrorType.TOKEN_EXPIRED, map(401)?.type)
     }
 
     @Test
     fun `402 maps to a decline`() {
         val mapped = map(402)
         assertTrue(mapped is PayabliDeclineException)
-        assertEquals(PayabliErrorCode.PAYMENT_DECLINED, mapped?.code)
+        assertEquals(PayabliErrorType.PAYMENT_DECLINED, mapped?.type)
     }
 
     @Test
     fun `403 maps to permission denied`() {
-        assertEquals(PayabliErrorCode.PERMISSION_DENIED, map(403)?.code)
+        assertEquals(PayabliErrorType.PERMISSION_DENIED, map(403)?.type)
     }
 
     @Test
     fun `410 maps to session burned`() {
         // Mapped to the specification; no endpoint has been observed producing a 410.
-        assertEquals(PayabliErrorCode.SESSION_BURNED, map(410)?.code)
+        assertEquals(PayabliErrorType.SESSION_BURNED, map(410)?.type)
     }
 
     @Test
@@ -67,7 +67,7 @@ class PayabliHttpErrorsTest {
         listOf(500, 502, 503, 599).forEach { status ->
             val mapped = map(status)
             assertTrue("status $status", mapped is PayabliServerException)
-            assertEquals(PayabliErrorCode.SERVER_ERROR, mapped?.code)
+            assertEquals(PayabliErrorType.SERVER_ERROR, mapped?.type)
             assertEquals(status, (mapped as PayabliServerException).httpStatus)
         }
     }
@@ -77,7 +77,7 @@ class PayabliHttpErrorsTest {
         listOf(404, 418, 451).forEach { status ->
             val mapped = map(status)
             assertTrue("status $status", mapped is PayabliGenericException)
-            assertEquals(PayabliErrorCode.UNKNOWN, mapped?.code)
+            assertEquals(PayabliErrorType.UNKNOWN, mapped?.type)
             assertEquals("HTTP $status", mapped?.reason)
         }
     }
@@ -88,7 +88,7 @@ class PayabliHttpErrorsTest {
         val mapped = map(409, "Duplicated idempotencyKey: key-9")
 
         assertTrue(mapped is PayabliGenericException)
-        assertEquals(PayabliErrorCode.CONFLICT, mapped?.code)
+        assertEquals(PayabliErrorType.CONFLICT, mapped?.type)
         assertEquals("Conflict (409)", mapped?.reason)
         assertNull(mapped?.detail)
     }
@@ -106,7 +106,7 @@ class PayabliHttpErrorsTest {
 
         assertEquals("One or more fields are invalid", mapped.reason)
         assertEquals("See errors", mapped.detail)
-        assertEquals("https://payabli.com/errors/validation", mapped.type)
+        assertEquals("https://payabli.com/errors/validation", mapped.problemType)
         assertEquals("/api/v2/MoneyIn/getpaid", mapped.instance)
         assertEquals("E1001", mapped.rawCode)
         assertEquals(400, mapped.httpStatus)
@@ -130,7 +130,7 @@ class PayabliHttpErrorsTest {
     fun `a body that will not decode costs fields, never the classification`() {
         // A proxy's HTML error page must not flip the caller's `when (code)` branch.
         val mapped = map(400, "<html><body>502 Bad Gateway</body></html>") as PayabliValidationException
-        assertEquals(PayabliErrorCode.VALIDATION_ERROR, mapped.code)
+        assertEquals(PayabliErrorType.VALIDATION_ERROR, mapped.type)
         assertEquals(PayabliValidationException.DEFAULT_REASON, mapped.reason)
         assertTrue(mapped.fieldErrors.isEmpty())
         assertNull(mapped.rawCode)
@@ -225,7 +225,7 @@ class PayabliHttpErrorsTest {
             """{"title":"Invalid","errors":["must be positive"]}""",
         ).forEach { body ->
             val mapped = map(400, body) as PayabliValidationException
-            assertEquals(body, PayabliErrorCode.VALIDATION_ERROR, mapped.code)
+            assertEquals(body, PayabliErrorType.VALIDATION_ERROR, mapped.type)
             assertEquals(body, "Invalid", mapped.reason)
             assertTrue(body, mapped.fieldErrors.isEmpty())
         }
@@ -269,7 +269,7 @@ class PayabliHttpErrorsTest {
     @Test
     fun `a bodyless 402 is still classified as a decline`() {
         val mapped = map(402) as PayabliDeclineException
-        assertEquals(PayabliErrorCode.PAYMENT_DECLINED, mapped.code)
+        assertEquals(PayabliErrorType.PAYMENT_DECLINED, mapped.type)
         assertNull(mapped.rawCode)
         assertEquals(PayabliDeclineException.DEFAULT_REASON, mapped.reason)
     }
@@ -285,7 +285,7 @@ class PayabliHttpErrorsTest {
 
     @Test
     fun `the override wins for a non-2xx`() {
-        val substitute = PayabliGenericException(PayabliErrorCode.MISSING_TOKEN, "device pending activation")
+        val substitute = PayabliGenericException(PayabliErrorType.MISSING_TOKEN, "device pending activation")
         val mapped = PayabliHttpErrors.from(response(403)) { if (it == 403) substitute else null }
         assertEquals(substitute, mapped)
     }
@@ -293,7 +293,7 @@ class PayabliHttpErrorsTest {
     @Test
     fun `the override falls through when it returns null`() {
         val mapped = PayabliHttpErrors.from(response(403)) { null }
-        assertEquals(PayabliErrorCode.PERMISSION_DENIED, mapped?.code)
+        assertEquals(PayabliErrorType.PERMISSION_DENIED, mapped?.type)
     }
 
     @Test
@@ -302,7 +302,7 @@ class PayabliHttpErrorsTest {
         val mapped =
             PayabliHttpErrors.from(response(200)) {
                 consulted = true
-                PayabliGenericException(PayabliErrorCode.UNKNOWN, "should never happen")
+                PayabliGenericException(PayabliErrorType.UNKNOWN, "should never happen")
             }
         assertNull(mapped)
         assertFalse(consulted)
@@ -313,7 +313,7 @@ class PayabliHttpErrorsTest {
         // A crash reporter or printStackTrace must not carry text that may echo request data.
         val body = """{"title":"Card number 9999999999999999 is invalid"}"""
         val mapped = map(400, body)
-        assertEquals(PayabliErrorCode.VALIDATION_ERROR.wireName, mapped?.message)
+        assertEquals(PayabliErrorType.VALIDATION_ERROR.message, mapped?.message)
         assertFalse(mapped.toString().contains("9999999999999999"))
     }
 }

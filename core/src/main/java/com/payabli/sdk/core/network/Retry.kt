@@ -7,7 +7,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRetryAfter
@@ -111,11 +111,11 @@ public object Retry {
         logger.warn(
             routeField(route),
             // Which site. The budget can run out before an attempt starts or during one, and an incident
-            // reads differently either way. This said "mid-attempt" from both, which was wrong from one.
+            // reads differently either way.
             LogField.safe("phase", phase),
             LogField.safe("totalTimeoutMs", policy.totalTimeoutMillis ?: -1L),
         ) { "total budget exhausted; not retrying" }
-        return PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, REASON_TOTAL_TIMEOUT)
+        return PayabliGenericException(PayabliErrorType.NETWORK_ERROR, REASON_TOTAL_TIMEOUT)
     }
 
     /**
@@ -140,7 +140,7 @@ public object Retry {
             logger.warn(
                 routeField(route),
                 LogField.safe("retryAfter", serverHint),
-                LogField.safe("errorCode", failure.code),
+                LogField.safe("errorCode", failure.type),
             ) { "retry-after exceeds the ceiling; not retrying" }
             throw failure
         }
@@ -150,7 +150,7 @@ public object Retry {
         val remaining = remainingBudget(policy, startedAt)
         if (remaining != null && wait.milliseconds >= remaining) {
             // Sleeping past the total budget only delays the same failure.
-            logger.warn(routeField(route), LogField.safe("errorCode", failure.code)) {
+            logger.warn(routeField(route), LogField.safe("errorCode", failure.type)) {
                 "total budget exhausted; not retrying"
             }
             throw failure
@@ -161,7 +161,7 @@ public object Retry {
             LogField.safe("attempt", attempt),
             LogField.safe("maxAttempts", policy.maxAttempts),
             LogField.safe("retryable", true),
-            LogField.safe("errorCode", failure.code),
+            LogField.safe("errorCode", failure.type),
             LogField.safe("retryAfter", serverHint ?: -1L),
             LogField.safe("timeoutMs", wait),
         ) { "retrying" }

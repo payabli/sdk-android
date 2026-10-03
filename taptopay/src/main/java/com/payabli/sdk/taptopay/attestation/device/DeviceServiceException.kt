@@ -23,7 +23,7 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
  * shape these routes do not send, so it arrives empty. The fix belongs in `:core`, where every 400 in the SDK
  * shares one decode.
  *
- * Device-local, because each subtype is what this SDK does about a refusal. Each cause has its own `PayabliErrorCode`,
+ * Device-local, because each subtype is what this SDK does about a refusal. Each cause has its own `PayabliErrorType`,
  * which is the classification a host reads.
  *
  * **The subtypes are keyed on [resultCode] alone, and no subtype is chosen by matching message text.** A

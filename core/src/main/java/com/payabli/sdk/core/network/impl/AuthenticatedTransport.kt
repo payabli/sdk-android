@@ -55,7 +55,7 @@ internal class AuthenticatedTransport(
         // Fail without a round trip on an instance already known to be finished. This is a convenience, not
         // the guard: [PayabliAuth] refuses a refresh claim on its own, so a request that slips past this
         // line still cannot reach the host's broker.
-        auth.terminalFailure?.let { throw PayabliGenericException(it.code, it.reason) }
+        auth.terminalFailure?.let { throw PayabliGenericException(it.type, it.reason) }
 
         val stamped = SentToken()
         val first = withContext(stamped) { base.execute(request) }

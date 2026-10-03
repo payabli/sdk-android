@@ -6,7 +6,7 @@ import androidx.annotation.RestrictTo
  * Failures from [AppAttestor].
  *
  * Attestation-local, because each subtype is what this SDK does about a platform verdict. Each cause has its own
- * `PayabliErrorCode`, which is the classification a host reads.
+ * `PayabliErrorType`, which is the classification a host reads.
  *
  * **The subtypes are dispositions, not error codes.** Play Integrity has two error enums, more than thirty
  * constants between them, and near-total overlap in what a caller can actually *do* about any of them. Five

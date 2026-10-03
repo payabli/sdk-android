@@ -213,18 +213,18 @@ class PayabliErrorCatalogTest {
     fun `every member matches its published row, in order`() {
         assertEquals(
             published,
-            PayabliErrorCode.entries.map { Row(it.wireName, it.number, it.category, it.message) },
+            PayabliErrorType.entries.map { Row(it.wireName, it.code, it.category, it.message) },
         )
     }
 
     @Test
     fun `a member's wire name is its constant's name`() {
-        PayabliErrorCode.entries.forEach { assertEquals(it.name, it.wireName) }
+        PayabliErrorType.entries.forEach { assertEquals(it.name, it.wireName) }
     }
 
     @Test
     fun `numbers are unique and fall in their area's range`() {
-        val numbers = PayabliErrorCode.entries.map { it.number }
+        val numbers = PayabliErrorType.entries.map { it.code }
         assertEquals("a number is used twice", numbers.size, numbers.toSet().size)
         numbers.forEach {
             assertTrue(
@@ -236,13 +236,24 @@ class PayabliErrorCatalogTest {
 
     @Test
     fun `numbers are appended within an area, so none is skipped`() {
-        PayabliErrorCode.entries.groupBy { it.number / 1000 }.values.forEach { area ->
-            val numbers = area.map { it.number }
+        PayabliErrorType.entries.groupBy { it.code / 1000 }.values.forEach { area ->
+            val numbers = area.map { it.code }
             assertEquals(
                 ((numbers.first() / 1000) * 1000 + 1..(numbers.first() / 1000) * 1000 + numbers.size).toList(),
                 numbers,
             )
         }
+    }
+
+    @Test
+    fun `an error reads its entry's code, category and message directly`() {
+        val failure = PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "Unauthorized", "the service's words")
+
+        assertEquals(PayabliErrorType.TOKEN_EXPIRED, failure.type)
+        assertEquals(1002, failure.code)
+        assertEquals(PayabliErrorCategory.CREDENTIAL, failure.category)
+        assertEquals("The access token expired or was rejected.", failure.message)
+        assertEquals("PayabliGenericException(code=1002, type=TOKEN_EXPIRED)", failure.toString())
     }
 
     @Test

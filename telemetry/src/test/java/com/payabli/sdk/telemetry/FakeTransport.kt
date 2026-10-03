@@ -1,6 +1,6 @@
 package com.payabli.sdk.telemetry
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -72,7 +72,7 @@ internal class FakeTransport(
 
         fun failing(): FakeTransport =
             FakeTransport {
-                throw PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the host could not be reached")
+                throw PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the host could not be reached")
             }
     }
 }

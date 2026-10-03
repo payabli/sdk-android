@@ -7,7 +7,7 @@ import com.payabli.sdk.core.config.PayabliTokenProvider
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.Dispatchers
@@ -153,7 +153,7 @@ class TransportFactoryTest {
                 val thrown = runCatching { transport.execute(ping()) }.exceptionOrNull()
 
                 assertTrue("got $thrown", thrown is PayabliException)
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (thrown as PayabliException).code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (thrown as PayabliException).type)
                 assertEquals(2, server.recorded.size)
             }
         }
@@ -360,7 +360,7 @@ class TransportFactoryTest {
                         runCatching { tooTight.execute(ping()) }.exceptionOrNull()
                     }
                 assertTrue("expected a PayabliException, got $failure", failure is PayabliException)
-                assertEquals(PayabliErrorCode.TOKEN_PROVIDER_FAILED, (failure as PayabliException).code)
+                assertEquals(PayabliErrorType.TOKEN_PROVIDER_FAILED, (failure as PayabliException).type)
 
                 val roomy =
                     TransportFactory.authenticatedAgainst(
