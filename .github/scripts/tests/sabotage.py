@@ -450,10 +450,11 @@ MUTATIONS = [
     ("QA snapshot triggers on a tag, which the snapshot role cannot assume", QA, "workflows",
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
-    ("QA snapshot builds the branch's head rather than the commit the check passed", QA, "workflows",
-     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+    ("QA snapshot builds a ref other than the commit the check passed", QA, "workflows",
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: main\n"),
 
     ("QA snapshot tests the branch's head rather than the commit the check passed", QA, "workflows",
      "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
@@ -585,11 +586,11 @@ MUTATIONS = [
      "# --prefix maven-qa"),
 
     ("QA snapshot publishes without the credential that resolves the card reader", QA, "workflows",
-     "          VERSION: ${{ steps.name.outputs.version }}\n"
+     "          VERSION: ${{ needs.check.outputs.version }}\n"
      "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
      "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
      "        run: ./gradlew publish",
-     "          VERSION: ${{ steps.name.outputs.version }}\n        run: ./gradlew publish"),
+     "          VERSION: ${{ needs.check.outputs.version }}\n        run: ./gradlew publish"),
 
     ("QA snapshot names the QA prefix in a comment and publishes to the release one", QA, "workflows",
      "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"",
@@ -604,9 +605,9 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
 
     ("QA snapshot builds another repository", QA, "workflows",
-     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n          repository: other/repo\n"),
 
     ("QA snapshot runs an action on a moving tag", QA, "workflows",
@@ -821,12 +822,9 @@ MUTATIONS = [
      "      group: qa-snapshot\n      cancel-in-progress: false\n",
      "      group: qa-snapshot\n      cancel-in-progress: true\n"),
 
-    # Out of the publishing job, which is the only one holding the token and the staging tree. Removed
-    # and relocated are one state as far as this is concerned: either way the job that uploads has no
-    # build.
-    ("The staging tree is never built in the publishing job", QA, "workflows",
+    ("The staging tree is never built", QA, "workflows",
      '      - name: Publish to the staging directory\n        env:\n'
-     '          VERSION: ${{ steps.name.outputs.version }}\n'
+     '          VERSION: ${{ needs.check.outputs.version }}\n'
      '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
      '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
      '        run: ./gradlew publish -Ppayabli.version="$VERSION"\n',
@@ -852,12 +850,11 @@ MUTATIONS = [
     ("QA check accepts a short SHA, which can resolve to another commit", QA, "workflows",
      "^[0-9a-f]{40}$", "^[0-9a-f]+$"),
 
-    ("QA check refuses a commit on the branch and accepts one off it", QA, "workflows",
-     '!= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on $BRANCH.',
-     '= "$COMMIT" ]; then\n            echo "::error::$COMMIT is not on $BRANCH.'),
+    ("QA check accepts a commit other than the branch's head", QA, "workflows",
+     'if [ "$GITHUB_SHA" != "$COMMIT" ]; then', 'if [ "$GITHUB_SHA" = "$COMMIT" ] && false; then'),
 
-    ("QA check asks whether the commit is on main rather than the branch dispatched", QA, "workflows",
-     '"$(git merge-base "$COMMIT" "origin/$BRANCH")"', '"$(git merge-base "$COMMIT" origin/main)"'),
+    ("QA check compares the branch's head with itself rather than with the named commit", QA, "workflows",
+     'if [ "$GITHUB_SHA" != "$COMMIT" ]; then', 'if [ "$GITHUB_SHA" != "$GITHUB_SHA" ]; then'),
 
     ("QA check accepts a dispatch from a tag", QA, "workflows",
      'if [[ "$GITHUB_REF" != refs/heads/* ]]; then', 'if [[ "$GITHUB_REF" == refs/heads/* ]] && false; then'),
@@ -865,18 +862,39 @@ MUTATIONS = [
     ("QA check publishes the branch's head as the commit", QA, "workflows",
      "      commit: ${{ inputs.commit }}\n", "      commit: ${{ github.sha }}\n"),
 
-    ("QA check reads the branch's head", QA, "workflows",
-     "          ref: ${{ inputs.commit }}\n          fetch-depth: 0\n", "          fetch-depth: 0\n"),
+    ("QA check reads the version at another commit", QA, "workflows",
+     "          ref: ${{ inputs.commit }}\n", "          ref: main\n"),
 
     ("QA check is granted the publishing token", QA, "workflows",
-     "    name: Check the commit can be published\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n",
-     "    name: Check the commit can be published\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n"),
+     "      cancel-in-progress: false\n    permissions:\n      contents: read\n    outputs:",
+     "      cancel-in-progress: false\n    permissions:\n      contents: read\n      id-token: write\n    outputs:"),
 
     ("QA upload is block-buffered, so a cancelled one logs nothing", QA, "workflows",
      '          PYTHONUNBUFFERED: "1"\n', ""),
 
     ("QA stamp taken in local time, so it stops sorting across a DST change", QA, "workflows",
-     "date -u +%Y%m%d%H%M%S", "date +%d%m%y%H%M%S"),
+     "stamp=$(date -u +%Y%m%d%H%M%S)", "stamp=$(date +%d%m%y%H%M%S)"),
+
+    # Second precision is the ruled format, so taking the stamp one run at a time, and holding the slot
+    # past the second, is what keeps two runs from building two trees under one identifier.
+    ("QA stamp is taken in the publish's group, behind a run waiting for its reviewer", QA, "workflows",
+     "      group: qa-snapshot-stamp\n", "      group: qa-snapshot\n"),
+
+    ("QA stamp lets a queued run cancel the one stamping", QA, "workflows",
+     "      group: qa-snapshot-stamp\n      cancel-in-progress: false\n",
+     "      group: qa-snapshot-stamp\n      cancel-in-progress: true\n"),
+
+    ("QA stamp is taken by every run at once", QA, "workflows",
+     "    concurrency:\n      group: qa-snapshot-stamp\n      cancel-in-progress: false\n", ""),
+
+    ("QA stamp releases the slot within the second it stamped", QA, "workflows",
+     "          for _ in 1 2 3 4 5 6 7 8 9 10; do\n"
+     "            if [ \"$(date -u +%Y%m%d%H%M%S)\" != \"$stamp\" ]; then\n"
+     "              break\n            fi\n            sleep 0.2\n          done\n", ""),
+
+    ("QA build is handed a literal version rather than the check's stamp", QA, "workflows",
+     "          VERSION: ${{ needs.check.outputs.version }}\n          PAYABLI_MAVEN_USER",
+     "          VERSION: 0.0.2-QA.20260101000000\n          PAYABLI_MAVEN_USER"),
 
     ("QA role ARN masked as a secret, making every AccessDenied unreadable", QA, "workflows",
      "role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}",
@@ -1886,10 +1904,9 @@ MUTATIONS = [
 
     ("QA snapshot stamps a literal base, naming no version it precedes", QA, "workflows",
      "base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)", "base=0.0.9"),
-    # A YAML condition skips a guard and leaves every word of it where the checks read.
-    ("QA check skips the branch check with a step condition", QA, "workflows",
-     "      - name: Check the commit is on the branch dispatched\n",
-     "      - name: Check the commit is on the branch dispatched\n        if: false\n"),
+    ("QA check skips the head check with a step condition", QA, "workflows",
+     "      - name: Check the commit is the head of the branch dispatched\n",
+     "      - name: Check the commit is the head of the branch dispatched\n        if: false\n"),
 
     ("QA check lets the full-SHA check fail without failing the job", QA, "workflows",
      "      - name: Check the commit is named in full\n",
@@ -1969,10 +1986,11 @@ MUTATIONS = [
      "      # For the uploader alone: this workflow's own commit, not the one being published.\n"
      "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
 
-    ("QA upload is handed a literal version rather than the build's stamp", QA, "workflows",
-     "          VERSION: ${{ needs.build.outputs.version }}\n", "          VERSION: 0.0.2-QA.20260101000000\n"),
+    ("QA upload is handed a literal version rather than the check's stamp", QA, "workflows",
+     "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
+     "          VERSION: 0.0.2-QA.20260101000000\n          ROLE_ARN"),
 
-    ("QA build hands on a literal version rather than its stamp", QA, "workflows",
+    ("QA check hands on a literal version rather than its stamp", QA, "workflows",
      "      version: ${{ steps.name.outputs.version }}\n", "      version: 0.0.2-QA.20260101000000\n"),
 
     ("QA publish uploads a tree other than the one the build kept", QA, "workflows",

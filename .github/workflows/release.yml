@@ -100,6 +100,8 @@ jobs:
             echo "Releasing \`$version\` from \`$(git rev-parse HEAD)\`:"
             echo
             echo "> $(git log -1 --format=%s HEAD)"
+            echo
+            echo "The workflow and its uploader run from \`$GITHUB_SHA\` on main."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # The suites, on their own so a flaky one is re-run without rebuilding. Gradle and the card reader

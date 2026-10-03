@@ -3525,16 +3525,15 @@ def test_workflows():
           len(qa_in_full) == 1 and env_of(qa_in_full[0], "COMMIT") == qa_named
           and refuses(qa_in_full[0], "[[ ! $COMMIT =~ ^[0-9a-f]{40}$ ]]"),
           f"{[env_of(step, 'COMMIT') for step in qa_in_full]}")
-    qa_on_branch = [step for step in qa_checker_steps
-                    if refuses(step, "[ $(git merge-base $COMMIT origin/$BRANCH) != $COMMIT ]")]
-    check("W16 and one that is not on the branch dispatched",
-          len(qa_on_branch) == 1 and env_of(qa_on_branch[0], "COMMIT") == qa_named
-          and env_of(qa_on_branch[0], "BRANCH") == "${{ github.ref_name }}",
-          f"{[(env_of(step, 'COMMIT'), env_of(step, 'BRANCH')) for step in qa_on_branch]}")
-    # A tag's ref_name is the tag, and `origin/<tag>` resolves nothing, so the branch check would fail
-    # with a git error rather than say why. Refused by name first.
+    # The head of the dispatched branch, so the workflow that runs and the uploader that receives the role
+    # are the revision the reviewer is shown. A commit that is merely on the branch would let later commits
+    # run with the role unseen.
+    qa_at_head = [step for step in qa_checker_steps if refuses(step, "[ $GITHUB_SHA != $COMMIT ]")]
+    check("W16 and one that is not the head of the branch dispatched",
+          len(qa_at_head) == 1 and env_of(qa_at_head[0], "COMMIT") == qa_named, f"{len(qa_at_head)} steps")
+    # A tag's head is a commit too, and the reviewer is approving a branch's.
     check("W16 and a dispatch that is not from a branch",
-          len(qa_on_branch) == 1 and refuses(qa_on_branch[0], "[[ $GITHUB_REF != refs/heads/* ]]"))
+          len(qa_at_head) == 1 and refuses(qa_at_head[0], "[[ $GITHUB_REF != refs/heads/* ]]"))
 
     # A missing environment is created on first use with no reviewer, and the role trusts its subject, so
     # the check refuses unless the environment exists and requires one. Read off the API rather than
@@ -3654,9 +3653,9 @@ def test_workflows():
     # publish run behind a refusal, a job-level `defaults` shell drops `-e` from every guard, and a
     # `container` or a `services` block runs an image of somebody else's beside the token.
     qa_shape = {
-        qa_checker_name: ({"name", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_checker_name: ({"concurrency", "name", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         qa_tester_name: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
-        qa_builder_name: ({"name", "needs", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_builder_name: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         qa_job_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
                       {"contents": "read", "id-token": "write"}),
     }
@@ -3740,7 +3739,7 @@ def test_workflows():
         check("W16 and the uploader runs unbuffered", env_of(upload, "PYTHONUNBUFFERED") == "1",
               env_of(upload, "PYTHONUNBUFFERED") or "not set")
 
-    naming = next((step for step in qa_builder_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
+    naming = next((step for step in qa_checker_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
     check("W16 it stamps the identifier", naming is not None)
 
     # The committed property names the version under development, so publishing it gives every build
@@ -3779,29 +3778,43 @@ def test_workflows():
     check("W16 and the uploader accepts no abbreviated option",
           "allow_abbrev=False" in publisher_source().read_text(),
           "publish_staging.py builds its parser without allow_abbrev=False")
+    # The stamp crosses jobs: the check publishes it, and the build and the upload are each handed that
+    # output and nothing else, so the tree and the upload name one version and a re-run of either reuses it.
+    stamp_out = "${{ needs." + qa_checker_name + ".outputs.version }}"
     if gradle is not None and naming is not None:
         stamped = {var for var, value in (gradle.get("env") or {}).items()
-                   if f"steps.{naming.get('id', '')}.outputs" in str(value)}
+                   if " ".join(str(value).split()) == stamp_out}
         given = argument(publishes[0] if publishes else [], "-Ppayabli.version")
         passed = re.fullmatch(r"\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?", given or "")
         check("W16 and the version it publishes under is the stamp",
               bool(stamped) and passed is not None and passed.group(1) in stamped,
               f"env={sorted(stamped)} given={given}")
-    # The stamp crosses jobs: the build publishes it, and the upload is handed that output and nothing else,
-    # so a re-run of the publish uploads the version the kept tree was built at.
     if naming is not None and upload is not None:
-        built = " ".join(str((qa_builder.get("outputs") or {}).get("version", "")).split())
-        check("W16 and the version the upload is handed is the build's stamp",
+        built = " ".join(str((qa_checker.get("outputs") or {}).get("version", "")).split())
+        check("W16 and the version the upload is handed is the check's stamp",
               built == "${{ steps." + str(naming.get("id", "")) + ".outputs.version }}"
-              and env_of(upload, "VERSION") == "${{ needs." + qa_builder_name + ".outputs.version }}"
+              and env_of(upload, "VERSION") == stamp_out
               and argument(invocations(upload, "publish_staging.py")[0] if invocations(upload, "publish_staging.py") else [], "--version") == "$VERSION",
               f"build output={built} upload VERSION={env_of(upload, 'VERSION')}")
     if naming is not None:
         run = run_commands(naming)
         # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
         # not carry a leading zero, which a day-first stamp does on the first nine days of every month.
-        check("W16 and the stamp is UTC", "date -u" in run, run[:160])
+        # The stamp's own command, not any `date -u` in the step: the hold below calls one too.
+        stamped_by = [full_commands(naming)[i + 1] for i, c in enumerate(full_commands(naming)[:-1]) if c == ["stamp=$"]]
+        check("W16 and the stamp is UTC", stamped_by == [["date", "-u", "+%Y%m%d%H%M%S"]], f"{stamped_by}")
         check("W16 and the qualifier is the ruled one", "-QA." in run, run[:160])
+        # Taken one run at a time, and the slot held until the clock has left this second, so the next
+        # run's stamp is a later one. Second precision is the ruled format, so this is what makes it unique.
+        check("W16 and the stamp is taken one run at a time, in a group of its own",
+              bool(group_of(qa_checker.get("concurrency"))) and "${{" not in group_of(qa_checker.get("concurrency"))
+              and group_of(qa_checker.get("concurrency")) != group_of(qa_job.get("concurrency"))
+              and cancels_of(qa_checker.get("concurrency")) == "False", f"{qa_checker.get('concurrency')}")
+        held = [" ".join(command) for command in full_commands(naming)]
+        check("W16 and held until the clock has left that second, for a bounded time",
+              "stamp=$" in held and "for _ in 1 2 3 4 5 6 7 8 9 10" in held
+              and "if [ $(date -u +%Y%m%d%H%M%S) != $stamp ]" in held and "break" in held and "sleep 0.2" in held,
+              f"{held}")
         # The candidate names the version it is a candidate for, so a tester can tell which release it
         # precedes. A literal base stays unique and names nothing.
         base = full_commands(naming)
