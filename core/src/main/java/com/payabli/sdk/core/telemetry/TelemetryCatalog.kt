@@ -98,6 +98,7 @@ public object TelemetryCatalog {
                     TelemetryProperty.REASON.key,
                     TelemetryProperty.CODE.key,
                     TelemetryProperty.DURATION_MS.key,
+                    TelemetryProperty.ERROR_NUMBER.key,
                 ),
             TelemetryEvents.TTP_REINITIALIZE_STARTED to NONE,
             TelemetryEvents.TTP_REINITIALIZE_SUCCEEDED to TIMED,

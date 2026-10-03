@@ -116,10 +116,12 @@ internal object TapToPayReports {
      *
      * Both, because they answer different questions. The kind is what this SDK decided to do about the
      * refusal; the code is which refusal it was. A kind of `unclassified` is the case where only the code
-     * says anything, and a reader that timed out locally has a kind and no code at all.
+     * says anything, and a reader that timed out locally has a kind and no code at all. [code] is the catalog
+     * code the charge reaches the caller under, which is the number this reports.
      */
     fun nfcFailed(
         failure: CardReaderFailure,
+        code: PayabliErrorCode,
         startedAt: Long,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_FAILED) {
         buildMap {
@@ -127,6 +129,7 @@ internal object TapToPayReports {
             put(TelemetryProperty.REASON.key, failure.kind.diagnosticName)
             put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
             failure.code?.let { put(TelemetryProperty.CODE.key, it) }
+            put(TelemetryProperty.ERROR_NUMBER.key, code.number.toString())
         }
     }
 
