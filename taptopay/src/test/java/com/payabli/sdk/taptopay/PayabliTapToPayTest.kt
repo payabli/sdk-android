@@ -2,6 +2,8 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKeyException
+import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
@@ -138,6 +140,45 @@ class PayabliTapToPayTest {
                 runCatching { terminal.charge(TapToPayPaymentDetails(BigDecimal.ZERO), PAYER) }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
+        }
+
+    @Test
+    fun `a failure refused at the facade is a PayabliException carrying its classification, not its prose`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = SessionFixture(script())
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+
+            val failure =
+                runCatching { terminal.charge(TapToPayPaymentDetails(BigDecimal.ZERO), PAYER) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is PayabliException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorCode.UNKNOWN, thrown.code)
+            assertEquals(thrown.code.wireName, thrown.message)
+            assertTrue(thrown.cause.toString(), thrown.cause is IllegalArgumentException)
+            assertEquals(thrown.cause?.message, thrown.reason)
+        }
+
+    @Test
+    fun `a failure during a charge is a PayabliException carrying its classification, not its prose`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = SessionFixture(script())
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            val failure =
+                runCatching {
+                    terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")), PAYER)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is PayabliException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorCode.UNKNOWN, thrown.code)
+            assertEquals(thrown.code.wireName, thrown.message)
+            assertTrue(thrown.cause.toString(), thrown.cause is CardReaderException.ReadFailed)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
         }
 
     @Test
