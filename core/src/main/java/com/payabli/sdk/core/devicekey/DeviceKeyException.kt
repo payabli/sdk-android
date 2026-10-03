@@ -5,8 +5,8 @@ import androidx.annotation.RestrictTo
 /**
  * Failures from [DeviceKey].
  *
- * Key-local rather than a new `PayabliErrorCode` case, on the same grounds the storage failures are: the
- * shared error taxonomy is a cross-platform surface, and a device-key primitive does not widen it.
+ * Key-local, because each subtype is what this SDK does about the key. Each cause has its own
+ * `PayabliErrorCode`, which is the classification a host reads.
  *
  * **The distinction that matters is whether the key is gone.** [KeyLost] means the attested key no longer
  * exists, so nothing it signed can be proven again and the device has to be attested afresh; every later

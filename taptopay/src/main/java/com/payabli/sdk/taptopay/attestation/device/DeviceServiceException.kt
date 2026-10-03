@@ -23,9 +23,8 @@ import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
  * shape these routes do not send, so it arrives empty. The fix belongs in `:core`, where every 400 in the SDK
  * shares one decode.
  *
- * Device-local rather than new `PayabliErrorCode` cases, on the precedent
- * [com.payabli.sdk.taptopay.attestation.AttestationException] sets and states: that vocabulary is matched
- * string for string by the sibling SDK and is not this module's to widen.
+ * Device-local, because each subtype is what this SDK does about a refusal. Each cause has its own `PayabliErrorCode`,
+ * which is the classification a host reads.
  *
  * **The subtypes are keyed on [resultCode] alone, and no subtype is chosen by matching message text.** A
  * taxonomy built on wording breaks the moment the wording changes. So one result code is one case here, and a
