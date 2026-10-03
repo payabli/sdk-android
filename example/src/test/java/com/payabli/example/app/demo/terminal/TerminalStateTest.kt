@@ -142,6 +142,17 @@ class TerminalStateTest {
     }
 
     @Test
+    fun `a terminal failure shows its screen line, not its message`() {
+        assertEquals(
+            "✗ Charge failed: The card was declined. (3020)",
+            TerminalActionOutcome.failure(
+                TerminalAction.Charge,
+                TerminalFailure("The card was declined. (3020)", RuntimeException("CARD_DECLINED")),
+            ),
+        )
+    }
+
+    @Test
     fun `a failure with no message falls back to the exception type`() {
         assertEquals(
             "✗ Activate device failed: IllegalStateException",

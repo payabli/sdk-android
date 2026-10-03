@@ -6,6 +6,7 @@ import com.payabli.example.app.demo.terminal.ChargeReceipt
 import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.demo.terminal.TerminalEvent
 import com.payabli.example.app.demo.terminal.TerminalEventCode
+import com.payabli.example.app.demo.terminal.TerminalFailure
 import com.payabli.example.app.demo.terminal.TerminalFailureReason
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.sdk.core.model.PayabliException
@@ -204,4 +205,4 @@ class TapToPayTerminal(
  * An SDK failure's `message` is its classification, so the line a person reads is built from `reason` and the
  * catalog number support looks up.
  */
-internal fun PayabliException.forScreen(): Exception = Exception("$reason (${code.number})", this)
+internal fun PayabliException.forScreen(): TerminalFailure = TerminalFailure("$reason (${code.number})", this)
