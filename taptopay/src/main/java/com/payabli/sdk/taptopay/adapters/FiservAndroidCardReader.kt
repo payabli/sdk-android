@@ -6,6 +6,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
@@ -92,8 +93,9 @@ internal class FiservAndroidCardReader(
                 )
             } catch (failure: CardReaderFailure) {
                 record("charge", failure)
-                TapToPayReports.nfcFailed(failure, startedAt)
-                throw failure.asChargeFailure()
+                val refused = failure.asChargeFailure()
+                TapToPayReports.nfcFailed(failure, TapToPayErrorCodes.codeFor(refused), startedAt)
+                throw refused
             }
         TapToPayReports.nfcSucceeded(startedAt)
         return CardReadResult(
