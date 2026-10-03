@@ -154,10 +154,10 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is PayabliException)
             val thrown = failure as TapToPayException
-            assertEquals(PayabliErrorCode.VALIDATION_ERROR, thrown.code)
-            assertEquals(thrown.code.wireName, thrown.message)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, thrown.type)
+            assertEquals(thrown.type.message, thrown.message)
             assertTrue(thrown.cause.toString(), thrown.cause is IllegalArgumentException)
-            assertEquals(thrown.code.message, thrown.reason)
+            assertEquals(thrown.type.message, thrown.reason)
         }
 
     @Test
@@ -175,8 +175,8 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is PayabliException)
             val thrown = failure as TapToPayException
-            assertEquals(PayabliErrorCode.TAP_NOT_COMPLETED, thrown.code)
-            assertEquals(thrown.code.wireName, thrown.message)
+            assertEquals(PayabliErrorType.TAP_NOT_COMPLETED, thrown.type)
+            assertEquals(thrown.type.message, thrown.message)
             assertTrue(thrown.cause.toString(), thrown.cause is CardReaderException.ReadFailed)
             assertEquals(TRANS_ID, thrown.paymentTransId)
         }

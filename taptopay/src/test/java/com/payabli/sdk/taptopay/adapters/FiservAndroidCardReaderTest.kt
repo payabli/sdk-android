@@ -1,6 +1,6 @@
 package com.payabli.sdk.taptopay.adapters
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
@@ -35,7 +35,7 @@ class FiservAndroidCardReaderTest {
 
             val refused =
                 DeviceIneligibleException(
-                    PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED,
+                    PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
                     "this device has no contactless radio",
                 )
             val raised =

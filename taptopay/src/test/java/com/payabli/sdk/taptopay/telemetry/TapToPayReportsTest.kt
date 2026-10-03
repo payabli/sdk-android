@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay.telemetry
 
 import com.payabli.sdk.core.model.PayabliDeclineException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.telemetry.TelemetryCatalog
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -210,12 +210,12 @@ class TapToPayReportsTest {
     fun `a reader that did not come up says which kind and which code`() {
         TapToPayReports.nfcFailed(
             refusal(ReaderFailureKind.DEVICE_DENIED, "677"),
-            PayabliErrorCode.READER_DEVICE_REFUSED,
+            PayabliErrorType.READER_DEVICE_REFUSED,
             System.nanoTime(),
         )
         TapToPayReports.nfcFailed(
             refusal(ReaderFailureKind.DEVICE_DENIED_UNCONFIRMED, "705"),
-            PayabliErrorCode.READER_DEVICE_REFUSED,
+            PayabliErrorType.READER_DEVICE_REFUSED,
             System.nanoTime(),
         )
 
@@ -230,7 +230,7 @@ class TapToPayReportsTest {
         // The case the reason alone cannot answer, and the reason this event carries a code at all.
         TapToPayReports.nfcFailed(
             refusal(ReaderFailureKind.UNCLASSIFIED, "E-1"),
-            PayabliErrorCode.TAP_NOT_COMPLETED,
+            PayabliErrorType.TAP_NOT_COMPLETED,
             System.nanoTime(),
         )
 
@@ -245,7 +245,7 @@ class TapToPayReportsTest {
     fun `a reader that timed out locally has a kind and no code to send`() {
         TapToPayReports.nfcFailed(
             CardReaderFailure(ReaderFailureKind.TIMED_OUT),
-            PayabliErrorCode.TAP_NOT_COMPLETED,
+            PayabliErrorType.TAP_NOT_COMPLETED,
             System.nanoTime(),
         )
 
@@ -292,7 +292,7 @@ class TapToPayReportsTest {
         // Carries a code, so a catalog that stopped allowing one is caught here rather than in the wire.
         TapToPayReports.nfcFailed(
             refusal(ReaderFailureKind.DEVICE_DENIED, "677"),
-            PayabliErrorCode.READER_DEVICE_REFUSED,
+            PayabliErrorType.READER_DEVICE_REFUSED,
             startedAt,
         )
         TapToPayReports.sessionStateChanged(

@@ -299,14 +299,14 @@ internal class TapToPayChargeRunner(
                         }
                     }
                 }
-                val code = hostCodeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard)
+                val type = hostTypeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard)
                 // Reported before it is wrapped: the report reads the failure's own type to decide what kind
                 // of failure it was, and would classify every one of them alike once wrapped. The number it
                 // reports is the one the caller is told.
-                TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, code = code)
+                TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
                 // An Error is left as it is, as the facade leaves it: a linkage error is not a payment
                 // outcome and has no transaction to name.
-                throw if (failure is Exception) failed(failure, code, openedAs, capture) else failure
+                throw if (failure is Exception) failed(failure, type, openedAs, capture) else failure
             }
         }
 
@@ -400,7 +400,7 @@ internal class TapToPayChargeRunner(
                 val refused = TapToPayCallException.PaymentNotHeld()
                 throw failed(
                     refused,
-                    TapToPayErrorCodes.codeFor(refused),
+                    TapToPayErrorCodes.typeFor(refused),
                     paymentTransId,
                     TapToPayCapture.UNKNOWN,
                 )
@@ -430,7 +430,7 @@ internal class TapToPayChargeRunner(
                 // Still held, so this can be tried again.
                 throw failed(
                     failure,
-                    PayabliErrorCode.PAYMENT_NOT_CLOSED,
+                    PayabliErrorType.PAYMENT_NOT_CLOSED,
                     pending.paymentTransId,
                     captureOf(pending.read.outcome, pending.resentKey),
                 )
@@ -463,31 +463,31 @@ internal class TapToPayChargeRunner(
     }
 
     /**
-     * The code a charge's failure reaches the caller under.
+     * The catalog entry a charge's failure reaches the caller under.
      *
      * Once the reader has been asked for a card the sale may be captured, so a code saying nothing was sent
      * is not true of it, whatever the failure's own type: such a failure from then on is the payment's outcome
      * not being confirmed.
      */
-    private fun hostCodeFor(
+    private fun hostTypeFor(
         failure: Throwable,
         unclosed: Boolean,
         cardWasAsked: Boolean,
-    ): PayabliErrorCode {
-        if (unclosed) return PayabliErrorCode.PAYMENT_NOT_CLOSED
-        val code = TapToPayErrorCodes.codeFor(failure)
+    ): PayabliErrorType {
+        if (unclosed) return PayabliErrorType.PAYMENT_NOT_CLOSED
+        val type = TapToPayErrorCodes.typeFor(failure)
         val claimsNothingWasSent =
-            code == PayabliErrorCode.SDK_INTERNAL_ERROR || code == PayabliErrorCode.VALIDATION_ERROR
-        return if (cardWasAsked && claimsNothingWasSent) PayabliErrorCode.PAYMENT_OUTCOME_UNKNOWN else code
+            type == PayabliErrorType.SDK_INTERNAL_ERROR || type == PayabliErrorType.VALIDATION_ERROR
+        return if (cardWasAsked && claimsNothingWasSent) PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN else type
     }
 
-    /** The failure a caller sees, under [code], carrying the payment it belongs to and whether the money moved. */
+    /** The failure a caller sees, under [type], carrying the payment it belongs to and whether the money moved. */
     private fun failed(
         failure: Exception,
-        code: PayabliErrorCode,
+        type: PayabliErrorType,
         paymentTransId: String?,
         capture: TapToPayCapture,
-    ) = TapToPayErrorCodes.exceptionFor(failure, code, paymentTransId, capture)
+    ) = TapToPayErrorCodes.exceptionFor(failure, type, paymentTransId, capture)
 
     /**
      * Closes a transaction whose tap did not complete, best effort. The attempt stays named either way.

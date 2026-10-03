@@ -1,7 +1,7 @@
 package com.payabli.sdk.taptopay.telemetry
 
 import com.payabli.sdk.core.model.PayabliDeclineException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -63,15 +63,15 @@ internal object TapToPayReports {
      * that was turned down. Reporting the second as `declined` would count a captured sale as a refused
      * one, in a property the card-not-present path shares.
      *
-     * [code] is the code the caller is told, which the runner can know better than the failure's own type.
+     * [type] is the catalog entry the caller is told, which the runner can know better than the failure's own class.
      */
     fun chargeFailed(
         failure: Throwable,
         startedAt: Long,
         cardWasAsked: Boolean = false,
-        code: PayabliErrorCode = TapToPayErrorCodes.codeFor(failure),
+        type: PayabliErrorType = TapToPayErrorCodes.typeFor(failure),
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CHARGE_FAILED) {
-        failureProperties(failure, code, startedAt, canBeDeclined = !cardWasAsked)
+        failureProperties(failure, type, startedAt, canBeDeclined = !cardWasAsked)
     }
 
     /** [origin] is [TelemetryProperties.Origin.CHARGE] or [TelemetryProperties.Origin.RETRY]. */
@@ -103,7 +103,7 @@ internal object TapToPayReports {
         startedAt: Long,
         origin: String,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_CLOSE_FAILED) {
-        failureProperties(failure, PayabliErrorCode.PAYMENT_NOT_CLOSED, startedAt, canBeDeclined = false) +
+        failureProperties(failure, PayabliErrorType.PAYMENT_NOT_CLOSED, startedAt, canBeDeclined = false) +
             (TelemetryProperty.ORIGIN.key to origin)
     }
 
@@ -116,12 +116,12 @@ internal object TapToPayReports {
      *
      * Both, because they answer different questions. The kind is what this SDK decided to do about the
      * refusal; the code is which refusal it was. A kind of `unclassified` is the case where only the code
-     * says anything, and a reader that timed out locally has a kind and no code at all. [code] is the catalog
-     * code the charge reaches the caller under, which is the number this reports.
+     * says anything, and a reader that timed out locally has a kind and no code at all. [type] is the catalog
+     * entry the charge reaches the caller under, whose number this reports.
      */
     fun nfcFailed(
         failure: CardReaderFailure,
-        code: PayabliErrorCode,
+        type: PayabliErrorType,
         startedAt: Long,
     ) = TelemetryRecorders.record(TelemetryEvents.TTP_NFC_FAILED) {
         buildMap {
@@ -129,7 +129,7 @@ internal object TapToPayReports {
             put(TelemetryProperty.REASON.key, failure.kind.diagnosticName)
             put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
             failure.code?.let { put(TelemetryProperty.CODE.key, it) }
-            put(TelemetryProperty.ERROR_NUMBER.key, code.number.toString())
+            put(TelemetryProperty.ERROR_NUMBER.key, type.code.toString())
         }
     }
 
@@ -160,13 +160,13 @@ internal object TapToPayReports {
         startedAt: Long,
         canBeDeclined: Boolean = true,
     ) = TelemetryRecorders.record(event) {
-        failureProperties(failure, TapToPayErrorCodes.codeFor(failure), startedAt, canBeDeclined)
+        failureProperties(failure, TapToPayErrorCodes.typeFor(failure), startedAt, canBeDeclined)
     }
 
-    /** [code] is the catalog code the host is told, which is the number this reports. */
+    /** [type] is the catalog entry the host is told, whose number this reports. */
     private fun failureProperties(
         failure: Throwable,
-        code: PayabliErrorCode,
+        type: PayabliErrorType,
         startedAt: Long,
         canBeDeclined: Boolean,
     ): Map<String, String> =
@@ -174,7 +174,7 @@ internal object TapToPayReports {
             put(TelemetryProperty.OUTCOME.key, outcomeOf(failure, canBeDeclined))
             put(TelemetryProperty.DURATION_MS.key, elapsedMillis(startedAt).toString())
             codeOf(failure)?.let { put(TelemetryProperty.CODE.key, it) }
-            put(TelemetryProperty.ERROR_NUMBER.key, code.number.toString())
+            put(TelemetryProperty.ERROR_NUMBER.key, type.code.toString())
         }
 
     /**

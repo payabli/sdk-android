@@ -64,6 +64,6 @@ public class TapToPayException private constructor(
             detail: String? = null,
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
-        ): TapToPayException = TapToPayException(code, reason, detail, cause, paymentTransId, capture)
+        ): TapToPayException = TapToPayException(type, reason, detail, cause, paymentTransId, capture)
     }
 }

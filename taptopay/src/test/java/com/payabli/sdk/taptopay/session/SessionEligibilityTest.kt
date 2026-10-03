@@ -1,6 +1,6 @@
 package com.payabli.sdk.taptopay.session
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.configBody
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
@@ -19,7 +19,7 @@ import org.junit.Test
 class SessionEligibilityTest {
     private val ineligible =
         DeviceIneligibleException(
-            PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED,
+            PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
             "contactless payments are not supported",
         )
 

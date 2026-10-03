@@ -94,7 +94,7 @@ internal class FiservAndroidCardReader(
             } catch (failure: CardReaderFailure) {
                 record("charge", failure)
                 val refused = failure.asChargeFailure()
-                TapToPayReports.nfcFailed(failure, TapToPayErrorCodes.codeFor(refused), startedAt)
+                TapToPayReports.nfcFailed(failure, TapToPayErrorCodes.typeFor(refused), startedAt)
                 throw refused
             }
         TapToPayReports.nfcSucceeded(startedAt)

@@ -3,7 +3,7 @@ package com.payabli.sdk.taptopay.adapters.platform
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.taptopay.adapters.ReaderEligibility
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 
@@ -79,19 +79,19 @@ internal class CardReaderEligibility(
     override fun check() {
         if (apiLevel < CARD_PRESENT_MIN_API) {
             throw DeviceIneligibleException(
-                PayabliErrorCode.DEVICE_OS_UNSUPPORTED,
+                PayabliErrorType.DEVICE_OS_UNSUPPORTED,
                 "contactless payments need API level $CARD_PRESENT_MIN_API or newer",
             )
         }
         if (!hasContactless()) {
             throw DeviceIneligibleException(
-                PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED,
+                PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
                 "this device has no contactless radio",
             )
         }
         if (CARD_PRESENT_REQUIRED_ABI !in abis()) {
             throw DeviceIneligibleException(
-                PayabliErrorCode.DEVICE_HARDWARE_UNSUPPORTED,
+                PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
                 "the card reader runs only on $CARD_PRESENT_REQUIRED_ABI, which this device does not offer",
             )
         }
