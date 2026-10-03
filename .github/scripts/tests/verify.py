@@ -3491,11 +3491,27 @@ def test_workflows():
     check("W16 and it carries no condition of its own", "if" not in qa_job, condition(qa_job))
 
     # The check: before the approval, holding nothing, so a wrong commit is refused without anyone asked.
-    qa_checker_name = next(iter(needs_of(qa_job)), "")
+    # Then the suites and the build, each its own job so that a re-run of the failed job repeats only what
+    # failed, and the publish waits for all three. Found by what they run, so renaming one does not move
+    # the checks off it.
+    qa_checker_name = "check"
     qa_checker = qa_jobs.get(qa_checker_name, {})
     qa_checker_steps = job_steps(qa_checker)
-    check("W16 the publish needs a check job and nothing else",
-          bool(qa_checker) and needs_of(qa_job) == [qa_checker_name], f"{qa_job.get('needs')}")
+    qa_tester_name = next((name for name, job in qa_jobs.items()
+                           if any(re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step)) for step in job_steps(job))), "")
+    qa_builder_name = next((name for name, job in qa_jobs.items()
+                            if any("gradlew publish" in run_commands(step) for step in job_steps(job))), "")
+    qa_tester, qa_builder = qa_jobs.get(qa_tester_name, {}), qa_jobs.get(qa_builder_name, {})
+    qa_builder_steps = job_steps(qa_builder)
+    check("W16 the suites and the build are separate jobs, neither of them the publish",
+          bool(qa_tester_name) and bool(qa_builder_name) and len({qa_tester_name, qa_builder_name, qa_job_name}) == 3,
+          f"test={qa_tester_name} build={qa_builder_name} publish={qa_job_name}")
+    check("W16 the publish needs the check, the suites and the build",
+          bool(qa_checker) and sorted(needs_of(qa_job)) == sorted([qa_checker_name, qa_tester_name, qa_builder_name]),
+          f"{qa_job.get('needs')}")
+    check("W16 and the suites and the build each need the check and nothing else",
+          needs_of(qa_tester) == [qa_checker_name] and needs_of(qa_builder) == [qa_checker_name],
+          f"test={qa_tester.get('needs')} build={qa_builder.get('needs')}")
     check("W16 and the check mints no token", not mints(qa_checker.get("permissions")),
           f"{qa_checker.get('permissions')}")
     check("W16 and holds no secret", not SECRETS_CONTEXT.search(yaml.safe_dump(qa_checker)))
@@ -3538,10 +3554,15 @@ def test_workflows():
     check("W16 the check reads the named commit",
           [" ".join(str(w.get("ref", "")).split()) for w in checkouts.get(qa_checker_name, [])] == [qa_named],
           f"{checkouts.get(qa_checker_name)}")
-    check("W16 and the publish builds the commit the check passed",
-          [" ".join(str(w.get("ref", "")).split()) for w in checkouts.get(qa_job_name, [])]
-          == ["${{ needs.check.outputs.commit }}"] and qa_checker_name == "check",
-          f"{checkouts.get(qa_job_name)}")
+    for name in (qa_tester_name, qa_builder_name):
+        check(f"W16 and the {name or '?'} job checks out the commit the check passed",
+              [" ".join(str(w.get("ref", "")).split()) for w in checkouts.get(name, [])]
+              == ["${{ needs.check.outputs.commit }}"], f"{checkouts.get(name)}")
+    # The uploader is this workflow's, the commit the run was dispatched on, and the checkout leaves no
+    # credential beside the publishing token.
+    check("W16 and the publish checks out this workflow's own commit, with no credential left behind",
+          len(checkouts.get(qa_job_name, [])) == 1 and not checkouts[qa_job_name][0].get("ref")
+          and checkouts[qa_job_name][0].get("persist-credentials") is False, f"{checkouts.get(qa_job_name)}")
     elsewhere = [str(w) for found in checkouts.values() for w in found if w.get("repository")]
     check("W16 and no checkout names another repository", not elsewhere, " | ".join(elsewhere))
 
@@ -3564,7 +3585,7 @@ def test_workflows():
 
     # A dispatch answers to no CI run, so it carries the unit suites itself. It does not carry the
     # instrumented ones, ktlint or lint, and the workflow says so where it runs them.
-    tested = next((step for step in publishing_steps
+    tested = next((step for step in job_steps(qa_tester)
                    if re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step))), None)
     check("W16 a snapshot runs the suites", tested is not None,
           " | ".join(str(step.get("name", "")) for step in qa_steps))
@@ -3574,11 +3595,17 @@ def test_workflows():
         check("W16 and every suite ci.yml runs", not missing, f"missing={sorted(missing)}")
         # An included build, so no task in the main build reaches it and it needs its own invocation.
         check("W16 and the convention plugin tests", "-p build-logic test" in run, run[:200])
-        # Before the upload, or a red suite fails the job after the snapshot is already published.
-        uploaded_at = next((i for i, step in enumerate(publishing_steps) if "publish_staging.py" in run_commands(step)), None)
-        check("W16 and before anything is uploaded",
-              uploaded_at is not None and publishing_steps.index(tested) < uploaded_at,
-              f"{publishing_steps.index(tested)} vs {uploaded_at}")
+
+    # Nothing but the workflow's own code runs beside the publishing token: no toolchain and no Gradle, so a
+    # build script or a dependency cannot reach it. The tree it uploads is the one the build kept.
+    publish_body = " ".join(step_text(step) for step in publishing_steps)
+    check("W16 the publish runs no Gradle and sets up no toolchain",
+          not any(term in publish_body for term in ("gradlew", "setup-java", "setup-gradle")))
+    kept = [step.get("with") or {} for step in qa_builder_steps if "actions/upload-artifact" in str(step.get("uses", ""))]
+    fetched = [step.get("with") or {} for step in publishing_steps if "actions/download-artifact" in str(step.get("uses", ""))]
+    check("W16 and it uploads the tree the build kept",
+          len(kept) == 1 and len(fetched) == 1 and kept[0].get("name") == fetched[0].get("name") == "staging-repo",
+          f"kept={kept} fetched={fetched}")
 
     # One publish at a time across every ref. Keyed by ref, two refs stamping in the same UTC second
     # against the same base reach one identifier, and the first writer keeps the coordinate.
@@ -3628,11 +3655,13 @@ def test_workflows():
     # `container` or a `services` block runs an image of somebody else's beside the token.
     qa_shape = {
         qa_checker_name: ({"name", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_tester_name: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
+        qa_builder_name: ({"name", "needs", "outputs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         qa_job_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
                       {"contents": "read", "id-token": "write"}),
     }
-    check("W16 its jobs are exactly the check and the publish",
-          len(qa_shape) == 2 and set(qa_jobs) == set(qa_shape), f"{sorted(qa_jobs)} vs {sorted(qa_shape)}")
+    check("W16 its jobs are exactly the check, the suites, the build and the publish",
+          len(qa_shape) == 4 and set(qa_jobs) == set(qa_shape), f"{sorted(qa_jobs)} vs {sorted(qa_shape)}")
     for name, (keys, grant) in qa_shape.items():
         job = qa_jobs.get(name, {})
         check(f"W16 the {name or '?'} job carries exactly its keys", set(job) == keys, f"{sorted(set(job) ^ keys)}")
@@ -3711,14 +3740,14 @@ def test_workflows():
         check("W16 and the uploader runs unbuffered", env_of(upload, "PYTHONUNBUFFERED") == "1",
               env_of(upload, "PYTHONUNBUFFERED") or "not set")
 
-    naming = next((step for step in publishing_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
+    naming = next((step for step in qa_builder_steps if "%Y%m%d%H%M%S" in run_commands(step)), None)
     check("W16 it stamps the identifier", naming is not None)
 
     # The committed property names the version under development, so publishing it gives every build
     # from every branch one coordinate and a tester cannot pin the build they tested. Overriding it with
     # a literal does the same, so the override has to reach the stamp: the step's env maps a variable to
     # the naming step's output, and the command interpolates that variable.
-    gradle = next((step for step in publishing_steps if "gradlew publish" in run_commands(step)), None)
+    gradle = next((step for step in qa_builder_steps if "gradlew publish" in run_commands(step)), None)
     check("W16 it builds the staging tree", gradle is not None)
     # The same shape as the uploader, and the reason the override is read off the publishing command
     # rather than off the step's first Gradle line: a second `gradlew publish` carrying no override
@@ -3758,6 +3787,15 @@ def test_workflows():
         check("W16 and the version it publishes under is the stamp",
               bool(stamped) and passed is not None and passed.group(1) in stamped,
               f"env={sorted(stamped)} given={given}")
+    # The stamp crosses jobs: the build publishes it, and the upload is handed that output and nothing else,
+    # so a re-run of the publish uploads the version the kept tree was built at.
+    if naming is not None and upload is not None:
+        built = " ".join(str((qa_builder.get("outputs") or {}).get("version", "")).split())
+        check("W16 and the version the upload is handed is the build's stamp",
+              built == "${{ steps." + str(naming.get("id", "")) + ".outputs.version }}"
+              and env_of(upload, "VERSION") == "${{ needs." + qa_builder_name + ".outputs.version }}"
+              and argument(invocations(upload, "publish_staging.py")[0] if invocations(upload, "publish_staging.py") else [], "--version") == "$VERSION",
+              f"build output={built} upload VERSION={env_of(upload, 'VERSION')}")
     if naming is not None:
         run = run_commands(naming)
         # Year-first and UTC. A pre-release identifier of only digits is compared numerically and must
@@ -3845,16 +3883,28 @@ def test_workflows():
     builder = next((name for name, job in rel_jobs.items()
                     if any("gradlew publish" in run_commands(step) for step in job_steps(job))), "")
     build_job = rel_jobs.get(builder, {})
+    # The suites, a job of their own so a flaky one is re-run without rebuilding the tree.
+    tester = next((name for name, job in rel_jobs.items()
+                   if any(re.search(r":[A-Za-z0-9_-]+:test\b", gradle_arguments(step)) for step in job_steps(job))), "")
+    test_job = rel_jobs.get(tester, {})
+    test_steps = job_steps(test_job)
+    check("W17 the suites and the build are separate jobs, neither of them the release",
+          bool(tester) and bool(builder) and len({tester, builder, gate_name}) == 3,
+          f"test={tester} build={builder} release={gate_name}")
     # Exactly, both ways: the release waits for the check that read the version and the build that made
     # the tree, and a condition on it is how either is stepped around.
-    check("W17 and it needs the check and the build",
-          sorted(needs_of(gate_job)) == sorted([checker_name, builder]) and bool(builder), f"{gate_job.get('needs')}")
+    check("W17 and it needs the check, the suites and the build",
+          sorted(needs_of(gate_job)) == sorted([checker_name, tester, builder]) and bool(builder) and bool(tester),
+          f"{gate_job.get('needs')}")
     check("W17 and carries no condition of its own", "if" not in gate_job, condition(gate_job))
     check("W17 the check runs only on main",
           bool(checker) and condition(checker) == "github.ref == 'refs/heads/main'", condition(checker))
     check("W17 the build needs the check and nothing else, so it builds what the check passed",
           needs_of(build_job) == [checker_name], f"{build_job.get('needs')}")
     check("W17 and carries no condition of its own", "if" not in build_job, condition(build_job))
+    check("W17 the suites need the check and nothing else, so they test what the check passed",
+          needs_of(test_job) == [checker_name], f"{test_job.get('needs')}")
+    check("W17 and carry no condition of their own", "if" not in test_job, condition(test_job))
 
     CI_QUERY = ["gh", "run", "list", "--repo", "$GITHUB_REPOSITORY", "--workflow", "ci.yml", "--commit", "$SHA",
                 "--event", "push", "--branch", "main", "--json", "conclusion",
@@ -3913,11 +3963,15 @@ def test_workflows():
     check("W17 and refuses a commit that does not carry the version the check read, before it builds",
           carries is not None and first_gradle is not None and carries < first_gradle,
           f"check={carries} first gradle={first_gradle}")
-    suites_run = set(re.findall(r":([A-Za-z0-9_-]+):test\b", " ".join(gradle_arguments(step) for step in build_steps)))
-    check("W17 and the build runs every suite ci.yml runs", bool(ci_suites) and ci_suites <= suites_run,
+    test_checkouts = [step.get("with") or {} for step in test_steps if "actions/checkout" in str(step.get("uses", ""))]
+    check("W17 the suites check out the commit the check passed",
+          [" ".join(str(w.get("ref", "")).split()) for w in test_checkouts] == [approved]
+          and not any(w.get("repository") for w in test_checkouts), f"{test_checkouts}")
+    suites_run = set(re.findall(r":([A-Za-z0-9_-]+):test\b", " ".join(gradle_arguments(step) for step in test_steps)))
+    check("W17 and run every suite ci.yml runs", bool(ci_suites) and ci_suites <= suites_run,
           f"missing={sorted(ci_suites - suites_run)}")
     check("W17 and the convention plugin tests",
-          any("-p build-logic test" in gradle_arguments(step) for step in build_steps))
+          any("-p build-logic test" in gradle_arguments(step) for step in test_steps))
     publishes = [words for step in rel_steps for words in invocations(step, "gradlew") if "publish" in words]
     check("W17 and it runs the publish task once", len(publishes) == 1, f"{len(publishes)} invocations")
     check("W17 and publishes the committed version, with no override",
@@ -4091,12 +4145,13 @@ def test_workflows():
     shape = {
         checker_name: ({"if", "name", "outputs", "permissions", "runs-on", "steps"},
                        {"contents": "read", "actions": "read"}),
+        tester: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         builder: ({"name", "needs", "permissions", "runs-on", "steps"}, {"contents": "read"}),
         gate_name: ({"concurrency", "environment", "name", "needs", "permissions", "runs-on", "steps"},
                     {"contents": "write", "id-token": "write"}),
     }
-    check("W17 its jobs are exactly the check, the build and the release",
-          len(shape) == 3 and set(rel_jobs) == set(shape), f"{sorted(rel_jobs)} vs {sorted(shape)}")
+    check("W17 its jobs are exactly the check, the suites, the build and the release",
+          len(shape) == 4 and set(rel_jobs) == set(shape), f"{sorted(rel_jobs)} vs {sorted(shape)}")
     for name, (keys, grant) in shape.items():
         job = rel_jobs.get(name, {})
         check(f"W17 the {name or '?'} job carries exactly its keys", set(job) == keys, f"{sorted(set(job) ^ keys)}")

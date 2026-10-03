@@ -89,20 +89,16 @@ jobs:
             echo "> $(git log -1 --format=%s "$COMMIT")"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  publish:
-    name: Publish a QA snapshot
+  # The suites, on their own so a flaky one is re-run without rebuilding. A dispatch answers to no CI
+  # run, so it runs the unit suites itself. It does not carry the instrumented suites, ktlint or lint.
+  # build-logic is an included build, so no task in the main build reaches its tests and it takes its own
+  # invocation.
+  test:
+    name: Test the snapshot
     needs: [check]
     runs-on: ubuntu-latest
-    environment: qa-snapshot
-    # On this job rather than on the workflow, so a dispatch being checked does not queue behind one
-    # waiting for its reviewer. One group across every ref, not one per ref: two refs stamping in the same
-    # UTC second reach one identifier, and the first writer keeps the coordinate.
-    concurrency:
-      group: qa-snapshot
-      cancel-in-progress: false
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -118,6 +114,78 @@ jobs:
           # See the note on the first setup-gradle in ci.yml.
           cache-provider: basic
 
+      # The release identity, on the steps that resolve the card reader and nowhere else.
+      - name: Unit tests
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: |
+          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
+          ./gradlew -p build-logic test
+
+  # The staging tree, beside the suites, and on its own so a packaging failure is re-run without them. It
+  # stamps the identifier, so a re-run of the publish uploads the same version from the same tree.
+  build:
+    name: Build the snapshot
+    needs: [check]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.name.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
+      # carry a leading zero.
+      - name: Name this build
+        id: name
+        run: |
+          base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
+          echo "version=${base}-QA.$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the staging directory
+        env:
+          VERSION: ${{ steps.name.outputs.version }}
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: ./gradlew publish -Ppayabli.version="$VERSION"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-repo
+          path: build/staging-repo
+          if-no-files-found: error
+
+  # The approval, after the suites and the build have passed, so the reviewer approves a tree that exists.
+  # It runs no Gradle and sets up no toolchain, so the only code beside the publishing token is this
+  # workflow's own.
+  publish:
+    name: Publish a QA snapshot
+    needs: [check, test, build]
+    runs-on: ubuntu-latest
+    environment: qa-snapshot
+    # One publish at a time across every ref. Two refs stamping in the same UTC second reach one identifier,
+    # and the second upload then finds every key taken and writes nothing.
+    concurrency:
+      group: qa-snapshot
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
       # Variables rather than secrets: masking a role ARN makes every AccessDenied unreadable.
       - name: Check the channel is provisioned
         run: |
@@ -153,34 +221,15 @@ jobs:
             exit 1
           fi
 
-      # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
-      # carry a leading zero.
-      - name: Name this build
-        id: name
-        run: |
-          base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
-          echo "version=${base}-QA.$(date -u +%Y%m%d%H%M%S)" >> "$GITHUB_OUTPUT"
+      # For the uploader alone: this workflow's own commit, not the one being published.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,
-      # the OIDC check and the upload read nothing from /maven.
-      #
-      # A dispatch answers to no CI run, so it runs the unit suites itself. It does not carry the
-      # instrumented suites, ktlint or lint. build-logic is an included build, so no task in the main build
-      # reaches its tests and it takes its own invocation.
-      - name: Unit tests
-        env:
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: |
-          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
-          ./gradlew -p build-logic test
-
-      - name: Publish to the staging directory
-        env:
-          VERSION: ${{ steps.name.outputs.version }}
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: ./gradlew publish -Ppayabli.version="$VERSION"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: staging-repo
+          path: build/staging-repo
 
       - name: Authenticate to AWS
         uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
@@ -193,7 +242,7 @@ jobs:
       # Unbuffered, so a cancelled upload still logs the keys it wrote.
       - name: Upload the staging tree
         env:
-          VERSION: ${{ steps.name.outputs.version }}
+          VERSION: ${{ needs.build.outputs.version }}
           ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}
           AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
           PYTHONUNBUFFERED: "1"

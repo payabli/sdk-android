@@ -423,91 +423,6 @@ RELEASE_NOTES_THEN_UPLOAD = (
     '\n'
 )
 
-QA_TESTS_THEN_UPLOAD = (
-    '      # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,\n'
-    '      # the OIDC check and the upload read nothing from /maven.\n'
-    '      #\n'
-    '      # A dispatch answers to no CI run, so it runs the unit suites itself. It does not carry the\n'
-    '      # instrumented suites, ktlint or lint. build-logic is an included build, so no task in the main build\n'
-    '      # reaches its tests and it takes its own invocation.\n'
-    '      - name: Unit tests\n'
-    '        env:\n'
-    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
-    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
-    '        run: |\n'
-    '          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test\n'
-    '          ./gradlew -p build-logic test\n'
-    '\n'
-    '      - name: Publish to the staging directory\n'
-    '        env:\n'
-    '          VERSION: ${{ steps.name.outputs.version }}\n'
-    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
-    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
-    '        run: ./gradlew publish -Ppayabli.version="$VERSION"\n'
-    '\n'
-    '      - name: Authenticate to AWS\n'
-    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
-    '        with:\n'
-    '          role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
-    '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
-    '\n'
-    '      # The account comes off the role ARN, so there is one copy of it. The script passes it as\n'
-    "      # --expected-bucket-owner, so a mistyped bucket that resolves to someone else's is refused.\n"
-    '      # Unbuffered, so a cancelled upload still logs the keys it wrote.\n'
-    '      - name: Upload the staging tree\n'
-    '        env:\n'
-    '          VERSION: ${{ steps.name.outputs.version }}\n'
-    '          ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
-    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
-    '          PYTHONUNBUFFERED: "1"\n'
-    '        run: |\n'
-    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
-    '          export AWS_SDK_CDN_ACCOUNT\n'
-    '          python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
-)
-QA_UPLOAD_THEN_TESTS = (
-    '      - name: Publish to the staging directory\n'
-    '        env:\n'
-    '          VERSION: ${{ steps.name.outputs.version }}\n'
-    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
-    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
-    '        run: ./gradlew publish -Ppayabli.version="$VERSION"\n'
-    '\n'
-    '      - name: Authenticate to AWS\n'
-    '        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0\n'
-    '        with:\n'
-    '          role-to-assume: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
-    '          aws-region: ${{ vars.AWS_SDK_CDN_REGION }}\n'
-    '\n'
-    '      # The account comes off the role ARN, so there is one copy of it. The script passes it as\n'
-    "      # --expected-bucket-owner, so a mistyped bucket that resolves to someone else's is refused.\n"
-    '      # Unbuffered, so a cancelled upload still logs the keys it wrote.\n'
-    '      - name: Upload the staging tree\n'
-    '        env:\n'
-    '          VERSION: ${{ steps.name.outputs.version }}\n'
-    '          ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}\n'
-    '          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}\n'
-    '          PYTHONUNBUFFERED: "1"\n'
-    '        run: |\n'
-    '          AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)\n'
-    '          export AWS_SDK_CDN_ACCOUNT\n'
-    '          python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"\n'
-    '      # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,\n'
-    '      # the OIDC check and the upload read nothing from /maven.\n'
-    '      #\n'
-    '      # A dispatch answers to no CI run, so it runs the unit suites itself. It does not carry the\n'
-    '      # instrumented suites, ktlint or lint. build-logic is an included build, so no task in the main build\n'
-    '      # reaches its tests and it takes its own invocation.\n'
-    '      - name: Unit tests\n'
-    '        env:\n'
-    '          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n'
-    '          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n'
-    '        run: |\n'
-    '          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test\n'
-    '          ./gradlew -p build-logic test\n'
-    '\n'
-)
-
 # The live reporter, whose allowlist is what keeps a submitted value out of the channel.
 LIVE_POSTER = WORK / "live_slack.py"
 SOURCE = {
@@ -536,7 +451,14 @@ MUTATIONS = [
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  push:\n    tags: ['*']\n"),
 
     ("QA snapshot builds the branch's head rather than the commit the check passed", QA, "workflows",
-     "          ref: ${{ needs.check.outputs.commit }}\n", "          ref: ${{ github.ref }}\n"),
+     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
+     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+
+    ("QA snapshot tests the branch's head rather than the commit the check passed", QA, "workflows",
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
+     "    name: Test the snapshot\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
 
     ("CI calls the publisher again, so a merge to main publishes", CI, "workflows",
      "  sonar:\n    name: SonarCloud\n",
@@ -681,13 +603,14 @@ MUTATIONS = [
     ("QA snapshot gains a trigger that is neither a dispatch nor a call", QA, "workflows",
      "on:\n  workflow_dispatch:\n", "on:\n  workflow_dispatch:\n  pull_request:\n"),
 
-    ("QA snapshot checks out another repository", QA, "workflows",
-     "          ref: ${{ needs.check.outputs.commit }}\n",
-     "          ref: ${{ needs.check.outputs.commit }}\n          repository: other/repo\n"),
+    ("QA snapshot builds another repository", QA, "workflows",
+     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
+     "    outputs:\n      version: ${{ steps.name.outputs.version }}\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: ${{ needs.check.outputs.commit }}\n          repository: other/repo\n"),
 
     ("QA snapshot runs an action on a moving tag", QA, "workflows",
-     "      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1",
-     "      - uses: actions/setup-java@v6"),
+     "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8", "actions/download-artifact@v8"),
 
     ("A ci.yml job is granted the publishing token", CI, "workflows",
      "  build:\n    name: Build & Test\n    runs-on: ubuntu-latest\n",
@@ -882,11 +805,11 @@ MUTATIONS = [
     ("The QA publish runs in the release environment", QA, "workflows",
      "    environment: qa-snapshot\n", "    environment: release\n"),
 
-    ("The QA publish runs through a refused check", QA, "workflows",
-     "    needs: [check]\n", "    needs: [check]\n    if: ${{ always() }}\n"),
+    ("The QA publish runs through a refused check, a red suite or a failed build", QA, "workflows",
+     "    needs: [check, test, build]\n", "    needs: [check, test, build]\n    if: ${{ always() }}\n"),
 
     ("The QA publish stops waiting for the check", QA, "workflows",
-     "    needs: [check]\n", ""),
+     "    needs: [check, test, build]\n", "    needs: [test, build]\n"),
 
     ("QA snapshot serialises per ref, so two refs can stamp the same second", QA, "workflows",
      "  group: qa-snapshot\n", "  group: qa-snapshot-${{ github.ref }}\n"),
@@ -946,8 +869,8 @@ MUTATIONS = [
      "          ref: ${{ inputs.commit }}\n          fetch-depth: 0\n", "          fetch-depth: 0\n"),
 
     ("QA check is granted the publishing token", QA, "workflows",
-     "    permissions:\n      contents: read\n    outputs:",
-     "    permissions:\n      contents: read\n      id-token: write\n    outputs:"),
+     "    name: Check the commit can be published\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n",
+     "    name: Check the commit can be published\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n      id-token: write\n"),
 
     ("QA upload is block-buffered, so a cancelled one logs nothing", QA, "workflows",
      '          PYTHONUNBUFFERED: "1"\n', ""),
@@ -1627,7 +1550,7 @@ MUTATIONS = [
      "      - name: Check CI passed on main for this commit\n        shell: sh {0}\n        env:\n"),
 
     ("Release runs the release job's steps under sh, without pipefail", RELEASE, "workflows",
-     "    needs: [check, build]\n", "    needs: [check, build]\n    defaults:\n      run:\n        shell: sh\n"),
+     "    needs: [check, test, build]\n", "    needs: [check, test, build]\n    defaults:\n      run:\n        shell: sh\n"),
 
     ("Release uploads from a self-hosted runner", RELEASE, "workflows",
      "    runs-on: ubuntu-latest\n    environment: release\n", "    runs-on: self-hosted\n    environment: release\n"),
@@ -1741,7 +1664,10 @@ MUTATIONS = [
      "    name: Build the release\n    needs: [check]\n", "    name: Build the release\n"),
 
     ("Release tags and uploads without waiting for the build", RELEASE, "workflows",
-     "    needs: [check, build]\n", "    needs: [check]\n"),
+     "    needs: [check, test, build]\n", "    needs: [check, test]\n"),
+
+    ("Release tags and uploads without waiting for the suites", RELEASE, "workflows",
+     "    needs: [check, test, build]\n", "    needs: [check, build]\n"),
 
     ('Release pushes the tag without the deploy key', RELEASE, "workflows",
      'GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes',
@@ -1834,8 +1760,8 @@ MUTATIONS = [
      "        run: gh workflow run release.yml --repo \"$GITHUB_REPOSITORY\"\n\n"
      "      - uses: actions/download-artifact"),
 
-    ("Release tags and uploads through a failed check or build", RELEASE, "workflows",
-     "    needs: [check, build]\n", "    needs: [check, build]\n    if: always()\n"),
+    ("Release tags and uploads through a failed check, a red suite or a failed build", RELEASE, "workflows",
+     "    needs: [check, test, build]\n", "    needs: [check, test, build]\n    if: always()\n"),
 
     ("Release builds without checking the commit carries the version the check read", RELEASE, "workflows",
      RELEASE_BUILD_VERSION_CHECK, ""),
@@ -1905,9 +1831,17 @@ MUTATIONS = [
      "          ref: ${{ needs.check.outputs.commit }}\n          fetch-depth: 0\n          persist-credentials: false\n"),
 
     ("Release builds main's head rather than the commit the check passed", RELEASE, "workflows",
-     "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
      "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
-     "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+     "    name: Build the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+
+    ("Release tests main's head rather than the commit the check passed", RELEASE, "workflows",
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"
+     "        with:\n          ref: ${{ needs.check.outputs.commit }}\n",
+     "    name: Test the release\n    needs: [check]\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+
+    ("Release tests before the commit is checked", RELEASE, "workflows",
+     "    name: Test the release\n    needs: [check]\n", "    name: Test the release\n"),
 
     # A re-run of a half-finished upload completes from this tree, and a rebuild's bytes are refused.
     ("Release keeps no tree to complete a half-finished upload from", RELEASE, "workflows",
@@ -2021,9 +1955,29 @@ MUTATIONS = [
      '          passed=$(gh run list',
      '          exit 0\n          passed=$(gh run list'),
 
-    # A red suite after the upload fails the job with the snapshot already published.
-    ("QA snapshot runs the suites after it uploads", QA, "workflows",
-     QA_TESTS_THEN_UPLOAD, QA_UPLOAD_THEN_TESTS),
+    ("The QA publish stops waiting for the suites", QA, "workflows",
+     "    needs: [check, test, build]\n", "    needs: [check, build]\n"),
+
+    # Gradle beside the token is a build script or a dependency able to reach it.
+    ("QA publish runs Gradle beside the publishing token", QA, "workflows",
+     "      # For the uploader alone: this workflow's own commit, not the one being published.\n",
+     "      - run: ./gradlew help\n      # For the uploader alone: this workflow's own commit, not the one being published.\n"),
+
+    ("QA publish leaves the checkout's credential beside the token", QA, "workflows",
+     "      # For the uploader alone: this workflow's own commit, not the one being published.\n"
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n        with:\n          persist-credentials: false\n",
+     "      # For the uploader alone: this workflow's own commit, not the one being published.\n"
+     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7\n"),
+
+    ("QA upload is handed a literal version rather than the build's stamp", QA, "workflows",
+     "          VERSION: ${{ needs.build.outputs.version }}\n", "          VERSION: 0.0.2-QA.20260101000000\n"),
+
+    ("QA build hands on a literal version rather than its stamp", QA, "workflows",
+     "      version: ${{ steps.name.outputs.version }}\n", "      version: 0.0.2-QA.20260101000000\n"),
+
+    ("QA publish uploads a tree other than the one the build kept", QA, "workflows",
+     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo\n",
+     "      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8\n        with:\n          name: staging-repo-rebuilt\n"),
 ]
 
 
