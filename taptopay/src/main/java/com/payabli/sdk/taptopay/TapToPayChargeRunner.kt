@@ -466,8 +466,8 @@ internal class TapToPayChargeRunner(
      * The code a charge's failure reaches the caller under.
      *
      * Once the reader has been asked for a card the sale may be captured, so a code saying nothing was sent
-     * is not true of it, whatever the failure's own type: an unrecognised failure from then on leaves the
-     * outcome unknown.
+     * is not true of it, whatever the failure's own type: such a failure from then on is the payment's outcome
+     * not being confirmed.
      */
     private fun hostCodeFor(
         failure: Throwable,
@@ -478,7 +478,7 @@ internal class TapToPayChargeRunner(
         val code = TapToPayErrorCodes.codeFor(failure)
         val claimsNothingWasSent =
             code == PayabliErrorCode.SDK_INTERNAL_ERROR || code == PayabliErrorCode.VALIDATION_ERROR
-        return if (cardWasAsked && claimsNothingWasSent) PayabliErrorCode.UNKNOWN else code
+        return if (cardWasAsked && claimsNothingWasSent) PayabliErrorCode.PAYMENT_OUTCOME_UNKNOWN else code
     }
 
     /** The failure a caller sees, under [code], carrying the payment it belongs to and whether the money moved. */
