@@ -16,8 +16,8 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionException
  * Which catalog code a card-present failure reaches a host under, and the one place that decides it.
  *
  * A failure the transport already classified keeps its code. Every other cause is named here, family by
- * family, and each sealed family is matched without an `else`, so a cause added to one fails to compile here
- * until it has a code. What reaches the end unrecognised is [PayabliErrorCode.UNKNOWN], whose category tells a
+ * family. A family whose members are different causes is matched member by member without an `else`, so a
+ * member added to one fails to compile here until it has a code. What reaches the end unrecognised is [PayabliErrorCode.UNKNOWN], whose category tells a
  * host to check before repeating: an unexamined failure is the one whose outcome nobody knows.
  */
 internal object TapToPayErrorCodes {
@@ -65,11 +65,13 @@ internal object TapToPayErrorCodes {
     private fun serviceTextOf(failure: Throwable): String? =
         when (failure) {
             is PayabliException -> failure.detail
+            // The SDK's own wording for a body it could not read, not anything the service said.
+            is DeviceServiceException.Undecodable -> null
             is DeviceServiceException -> failure.reason
             is DeviceActivationException -> failure.reason
             is TTPTransactionException -> failure.reason
             else -> null
-        }
+        }?.takeIf { it.isNotBlank() }
 
     private fun callCode(failure: TapToPayCallException): PayabliErrorCode =
         when (failure) {

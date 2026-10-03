@@ -299,24 +299,14 @@ internal class TapToPayChargeRunner(
                         }
                     }
                 }
+                val code = hostCodeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard)
                 // Reported before it is wrapped: the report reads the failure's own type to decide what kind
-                // of failure it was, and would classify every one of them alike once wrapped.
-                TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard)
+                // of failure it was, and would classify every one of them alike once wrapped. The number it
+                // reports is the one the caller is told.
+                TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, code = code)
                 // An Error is left as it is, as the facade leaves it: a linkage error is not a payment
                 // outcome and has no transaction to name.
-                throw if (failure is Exception) {
-                    val code =
-                        if (failure ===
-                            unclosed
-                        ) {
-                            PayabliErrorCode.PAYMENT_NOT_CLOSED
-                        } else {
-                            TapToPayErrorCodes.codeFor(failure)
-                        }
-                    failed(failure, code, openedAs, capture)
-                } else {
-                    failure
-                }
+                throw if (failure is Exception) failed(failure, code, openedAs, capture) else failure
             }
         }
 
@@ -470,6 +460,25 @@ internal class TapToPayChargeRunner(
         } else {
             reported
         }
+    }
+
+    /**
+     * The code a charge's failure reaches the caller under.
+     *
+     * Once the reader has been asked for a card the sale may be captured, so a code saying nothing was sent
+     * is not true of it, whatever the failure's own type: an unrecognised failure from then on leaves the
+     * outcome unknown.
+     */
+    private fun hostCodeFor(
+        failure: Throwable,
+        unclosed: Boolean,
+        cardWasAsked: Boolean,
+    ): PayabliErrorCode {
+        if (unclosed) return PayabliErrorCode.PAYMENT_NOT_CLOSED
+        val code = TapToPayErrorCodes.codeFor(failure)
+        val claimsNothingWasSent =
+            code == PayabliErrorCode.SDK_INTERNAL_ERROR || code == PayabliErrorCode.VALIDATION_ERROR
+        return if (cardWasAsked && claimsNothingWasSent) PayabliErrorCode.UNKNOWN else code
     }
 
     /** The failure a caller sees, under [code], carrying the payment it belongs to and whether the money moved. */
