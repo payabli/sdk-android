@@ -4,11 +4,11 @@ name: Release
 # opens a GitHub Release at the tag carrying notes and no assets. The artifacts are resolved from the Maven
 # origin only.
 #
-# Dispatched from main, naming the commit to release, and in two runs. The run on main checks that the
-# commit is on main and passed CI there, and reads its `payabli.version`. Then a job in the `release` environment, the only job holding the deploy key the tag
-# ruleset admits, creates the tag and dispatches this workflow on it. The run on the tag builds, uploads and
-# writes the notes, because the role that writes /maven trusts a tag ref and nothing else. No person creates
-# a release tag.
+# Dispatched from main, naming the commit to release, in one run. The check reads the commit and its
+# `payabli.version`, the build makes the staging tree at that commit, and then one job in the `release`
+# environment tags, uploads and writes the notes. That job is the approval, the only holder of the deploy
+# key the tag ruleset admits, and the subject the role that writes /maven trusts. No person creates a
+# release tag.
 
 on:
   workflow_dispatch:
@@ -23,13 +23,14 @@ on:
 permissions:
   contents: read
 
-# See the note in qa-snapshot.yml: naming bash is what turns `-o pipefail` on.
+# Naming bash is what turns `-o pipefail` on: an unset `shell:` runs `bash -e`, where a pipeline reports
+# the last command's status and the failure of anything left of a `|` is dropped.
 defaults:
   run:
     shell: bash
 
 jobs:
-  # Run on main. Reads the commit and the property, and holds nothing that can tag or publish.
+  # Reads the commit and the property, and holds nothing that can tag or publish.
   check:
     name: Check the commit can be released
     if: github.ref == 'refs/heads/main'
@@ -52,7 +53,7 @@ jobs:
             exit 1
           fi
 
-      # The tag run executes the unit tier only. CI on main is what ran the instrumented tests, lint and
+      # The build runs the unit tier only. CI on main is what ran the instrumented tests, lint and
       # formatting, so a release names a commit that passed it there or nothing is tagged.
       - name: Check CI passed on main for this commit
         env:
@@ -72,17 +73,6 @@ jobs:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
 
-      # The run on the tag executes the workflow at the tag, so a commit carrying another release.yml would
-      # take the tag and then run something else, or nothing, and the number would be spent.
-      - name: Check the commit carries this release workflow
-        env:
-          COMMIT: ${{ inputs.commit }}
-        run: |
-          if [ "$(git rev-parse "$COMMIT:.github/workflows/release.yml")" != "$(git rev-parse "$GITHUB_SHA:.github/workflows/release.yml")" ]; then
-            echo "::error::$COMMIT carries a different release.yml from $GITHUB_SHA. Name a commit that carries this one."
-            exit 1
-          fi
-
       - name: Check the commit is on main
         env:
           COMMIT: ${{ inputs.commit }}
@@ -93,7 +83,7 @@ jobs:
           fi
 
       # A release version and nothing else. A candidate carries a qualifier and belongs on the mutable
-      # channel; the role the tag run assumes would write it where it can never be replaced.
+      # channel; the release role would write it where it can never be replaced.
       - name: Read the version
         id: version
         run: |
@@ -111,18 +101,88 @@ jobs:
             echo "> $(git log -1 --format=%s HEAD)"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # The approval. Its required reviewers are who may release, it deploys from main only, and it is the only
-  # job that can read the deploy key. It runs no file from the checkout.
-  tag:
-    name: Tag the release
+  # Gradle, the suites and the card reader credential, and no identity that can tag or write the origin.
+  # Before the approval, so a build that fails spends no version number, and on its own runner, so nothing
+  # a build script or a dependency leaves behind runs beside the deploy key or the publishing token.
+  build:
+    name: Build the release
     needs: [check]
     runs-on: ubuntu-latest
-    environment: release
     permissions:
       contents: read
-      # To dispatch the tag run.
-      actions: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.commit }}
+
+      # The build's Gradle carries no override, so the committed property is what it publishes.
+      - name: Check the commit carries the version the check read
+        env:
+          CHECKED: ${{ needs.check.outputs.version }}
+        run: |
+          # Empty rather than a failed grep when the line is missing, so the refusal below says why.
+          version=$(sed -n 's/^payabli.version=//p' gradle.properties)
+          if [ "$CHECKED" != "$version" ]; then
+            echo "::error::payabli.version is '$version' here, and the check read '$CHECKED'."
+            exit 1
+          fi
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          # See the note on the first setup-gradle in ci.yml.
+          cache-provider: basic
+
+      # build-logic is an included build and takes its own invocation.
+      - name: Unit tests
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: |
+          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
+          ./gradlew -p build-logic test
+
+      - name: Publish to the staging directory
+        env:
+          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
+          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
+        run: ./gradlew publish
+
+      # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only
+      # one a half-finished upload can be completed from, by re-running the failed job.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: staging-repo
+          path: build/staging-repo
+          if-no-files-found: error
+          retention-days: 90
+
+  # The approval. Its required reviewers are who may release and it deploys from main only. It runs no
+  # Gradle and sets up no toolchain, so the only code beside the deploy key and the publishing token is
+  # this workflow's own.
+  release:
+    name: Tag, upload and write the release
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    environment: release
+    # One release at a time, and a running one is never cancelled: the keys it has written stay written.
+    # GitHub holds one pending run per group, so a third release queued behind two replaces the second,
+    # which then shows as cancelled and is re-run.
+    concurrency:
+      group: maven-release
+      cancel-in-progress: false
+    permissions:
+      # For the GitHub Release. The tag ruleset admits the deploy key alone, so this token cannot create
+      # or move a tag.
+      contents: write
+      # For the OIDC role that writes /maven.
+      id-token: write
+    steps:
+      # Every check that needs no tag comes first, so a missing setting fails before a number is spent.
       - name: Check the release key is provisioned
         env:
           RELEASE_DEPLOY_KEY: ${{ secrets.RELEASE_DEPLOY_KEY }}
@@ -132,6 +192,40 @@ jobs:
             exit 1
           fi
 
+      # Variables rather than secrets: masking a role ARN makes every AccessDenied unreadable.
+      - name: Check the channel is provisioned
+        run: |
+          missing=
+          [ -n "$AWS_RELEASE_PUBLISH_ROLE_ARN" ] || missing="$missing AWS_RELEASE_PUBLISH_ROLE_ARN"
+          [ -n "$AWS_SDK_CDN_BUCKET" ] || missing="$missing AWS_SDK_CDN_BUCKET"
+          [ -n "$AWS_SDK_CDN_REGION" ] || missing="$missing AWS_SDK_CDN_REGION"
+          if [ -n "$missing" ]; then
+            echo "::error::unset repository variable(s):$missing"
+            exit 1
+          fi
+        env:
+          AWS_RELEASE_PUBLISH_ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
+          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+          AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
+
+      # The same check as qa-snapshot.yml, in the release environment's form.
+      - name: Check the OIDC subject the trust policies expect
+        env:
+          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:environment:release
+        run: |
+          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |
+            python3 -c 'import base64,json,sys; t=json.load(sys.stdin)["value"].split(".")[1]; print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())')
+          sub=$(printf '%s' "$claims" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sub"])')
+          echo "subject presented: $sub"
+          if [ "$sub" != "$EXPECTED" ]; then
+            echo "::error::this run presents '$sub', and the release role grants '$EXPECTED'."
+            echo "::error::GitHub's immutable subject claim setting for this repository may have moved."
+            echo "::error::The trust policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
+            exit 1
+          fi
+
+      # For the uploader, and the tags the step below reads.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -170,173 +264,6 @@ jobs:
               git push "git@github.com:$GITHUB_REPOSITORY.git" "refs/tags/$VERSION"
           fi
 
-      # A dispatch always creates a run, including one started with this job's token, and a run on the tag
-      # presents the subject the release role trusts.
-      - name: Start the tag run
-        env:
-          VERSION: ${{ needs.check.outputs.version }}
-          COMMIT: ${{ needs.check.outputs.commit }}
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION" -f commit="$COMMIT"
-
-  # Gradle, the suites and the card reader credential, and no identity that can write the origin. The
-  # upload runs on a fresh runner, so nothing a build script or a dependency leaves behind runs beside
-  # the token.
-  build:
-    name: Build the release
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      # To read the CI runs for this commit.
-      actions: read
-    steps:
-      # A release version, and the commit this run was given. The ruleset keeps other tags from being
-      # created, and that is a setting; this refuses them anyway before anything is built or assumed.
-      - name: Check the tag names the commit
-        env:
-          COMMIT: ${{ inputs.commit }}
-        run: |
-          release='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-          if [[ ! "$GITHUB_REF_NAME" =~ $release ]]; then
-            echo "::error::$GITHUB_REF_NAME is not <major>.<minor>.<patch>, so it is not a release tag."
-            exit 1
-          fi
-          if [ "$GITHUB_SHA" != "$COMMIT" ]; then
-            echo "::error::$GITHUB_REF_NAME names $GITHUB_SHA, not $COMMIT."
-            exit 1
-          fi
-
-      # Asked again here, because anyone who can dispatch can dispatch on an existing tag.
-      - name: Check CI passed on main for this commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.sha }}
-        run: |
-          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
-            --branch main --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
-          if [ "$passed" -lt 1 ]; then
-            echo "::error::no successful CI run on main for $SHA."
-            exit 1
-          fi
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Check the tag names the committed version
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          # Empty rather than a failed grep when the line is missing, so the refusal below says why.
-          version=$(sed -n 's/^payabli.version=//p' gradle.properties)
-          if [ "$TAG" != "$version" ]; then
-            echo "::error::tag '$TAG' does not match payabli.version '$version' in gradle.properties."
-            exit 1
-          fi
-
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
-        with:
-          # See the note on the first setup-gradle in ci.yml.
-          cache-provider: basic
-
-      # A tag answers to no CI run, so the suites run here. build-logic is an included build and takes its
-      # own invocation.
-      - name: Unit tests
-        env:
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: |
-          ./gradlew :core:test :payin:test :telemetry:test :testutils:test :taptopay:test :example:test
-          ./gradlew -p build-logic test
-
-      # No version override: the check above is what makes the committed property the tag.
-      - name: Publish to the staging directory
-        env:
-          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
-          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
-        run: ./gradlew publish
-
-      # Kept for as long as GitHub allows. A rebuild produces different bytes, so this tree is the only
-      # one a half-finished upload can be completed from.
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: staging-repo
-          path: build/staging-repo
-          if-no-files-found: error
-          retention-days: 90
-
-  upload:
-    name: Upload to /maven
-    needs: [build]
-    # One release upload at a time, and a running one is never cancelled: the keys it has written stay
-    # written. GitHub holds one pending run per group, so a third tag queued behind two replaces the
-    # second, which then shows as cancelled and is re-run.
-    concurrency:
-      group: maven-release
-      cancel-in-progress: false
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      # For the uploader alone. No toolchain and no Gradle run in this job.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # Derived again rather than handed over by the build, so the version uploaded is read from the
-      # tagged commit by the job that writes it.
-      - name: Check the tag names the committed version
-        id: version
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          # Empty rather than a failed grep when the line is missing, so the refusal below says why.
-          version=$(sed -n 's/^payabli.version=//p' gradle.properties)
-          if [ "$TAG" != "$version" ]; then
-            echo "::error::tag '$TAG' does not match payabli.version '$version' in gradle.properties."
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      # Variables rather than secrets: masking a role ARN makes every AccessDenied unreadable.
-      - name: Check the channel is provisioned
-        run: |
-          missing=
-          [ -n "$AWS_RELEASE_PUBLISH_ROLE_ARN" ] || missing="$missing AWS_RELEASE_PUBLISH_ROLE_ARN"
-          [ -n "$AWS_SDK_CDN_BUCKET" ] || missing="$missing AWS_SDK_CDN_BUCKET"
-          [ -n "$AWS_SDK_CDN_REGION" ] || missing="$missing AWS_SDK_CDN_REGION"
-          if [ -n "$missing" ]; then
-            echo "::error::unset repository variable(s):$missing"
-            exit 1
-          fi
-        env:
-          AWS_RELEASE_PUBLISH_ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
-          AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
-          AWS_SDK_CDN_REGION: ${{ vars.AWS_SDK_CDN_REGION }}
-
-      # The same check as qa-snapshot.yml, in the tag form this role trusts.
-      - name: Check the OIDC subject the trust policies expect
-        env:
-          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/tags/
-        run: |
-          claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |
-            python3 -c 'import base64,json,sys; t=json.load(sys.stdin)["value"].split(".")[1]; print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())')
-          sub=$(printf '%s' "$claims" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sub"])')
-          echo "subject presented: $sub"
-          case "$sub" in
-            "$EXPECTED"*) ;;
-            *)
-              echo "::error::this run presents '$sub', and the release role grants '$EXPECTED*'."
-              echo "::error::GitHub's immutable subject claim setting for this repository may have moved."
-              echo "::error::The trust policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
-              exit 1
-              ;;
-          esac
-
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: staging-repo
@@ -350,30 +277,25 @@ jobs:
 
       # The account comes off the role ARN, so there is one copy of it. Re-running this job against the
       # same build reports every key already written as present. A rebuild does not: its bytes differ,
-      # and the uploader refuses a key that holds different ones.
+      # and the uploader refuses a key that holds different ones. Unbuffered, so a cancelled upload still
+      # logs the keys it wrote.
       - name: Upload the staging tree
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.check.outputs.version }}
           ROLE_ARN: ${{ vars.AWS_RELEASE_PUBLISH_ROLE_ARN }}
           AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+          PYTHONUNBUFFERED: "1"
         run: |
           AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
           export AWS_SDK_CDN_ACCOUNT
           python3 .github/scripts/publish_staging.py --prefix maven --version "$VERSION"
 
-  # Notes only. The binary is at the Maven origin, and a release asset cannot front a Maven layout.
-  release-notes:
-    name: Create the GitHub Release
-    needs: [upload]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      # A re-run of a tag whose release already exists leaves it as it is.
-      - name: Create the release at the tag
+      # Notes only. The binary is at the Maven origin, and a release asset cannot front a Maven layout. A
+      # re-run whose release already exists leaves it as it is.
+      - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.check.outputs.version }}
         run: |
           existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
             --jq ".[] | select(.tagName == \"$TAG\") | .tagName")

@@ -1,89 +1,112 @@
 name: QA snapshot
 
-# Publishes a release candidate of every module to /maven-qa. The snapshot role trusts refs/heads/*, so a
-# run on a tag is refused at the assume; the subject check below says so before it gets there.
+# Publishes a release candidate of every module to /maven-qa, from a commit somebody names, and only when
+# somebody dispatches it. A merge to main publishes nothing.
+#
+# The snapshot role trusts the qa-snapshot environment and no ref. The OIDC subject of a job in an
+# environment carries `environment:<name>` in place of the ref, so a branch copy of this file with the
+# environment deleted presents a subject the role refuses, and the environment's reviewer is who may
+# publish, from any branch. A reviewer approves a deployment, not a diff: the run summary names the commit,
+# and the approver opens it.
 
 on:
   workflow_dispatch:
-  # No trigger of its own for main: as a called workflow it is a job with `needs`, which is how it
-  # waits for the suites rather than running beside them.
-  workflow_call:
-    # Named, so a caller hands over these two and not the repository's other twelve. This job mints the
-    # publishing identity, and `secrets: inherit` would put the vendor registry token and the live
-    # client credentials in the same place.
-    secrets:
-      PAYABLI_MAVEN_US_PROD:
+    inputs:
+      # Named rather than taken from the branch's head, so a push landing between the decision and the
+      # dispatch is not what gets published.
+      commit:
+        description: "Full 40-character SHA of the commit to publish, on the branch this is dispatched from"
         required: true
-      PAYABLI_MAVEN_PW_PROD:
-        required: true
+        type: string
 
 permissions:
   contents: read
 
 # Naming bash is what turns `-o pipefail` on: an unset `shell:` runs `bash -e`, where a pipeline reports
-# the last command's status and the failure of anything left of a `|` is dropped. Defaults do not reach a
-# called workflow from its caller, so this is declared here as well as in ci.yml.
+# the last command's status and the failure of anything left of a `|` is dropped.
 defaults:
   run:
     shell: bash
 
 jobs:
-  # The gate, and it publishes nothing. A dispatch answers to no CI run and any branch can start one, so
-  # it waits here for the release environment's reviewers. A called run reached main through branch
-  # protection and waits for every suite, so it skips this and is not held again.
-  #
-  # **This stops an unmodified dispatch and it is not an authorization boundary.** A dispatch runs the
-  # workflow file from the ref it names, so a branch copy with this job deleted publishes with nothing to
-  # approve: the job below still receives the repository's secrets and still presents a `refs/heads/*`
-  # subject the snapshot role trusts. Nothing written in this file can close that, because the file is
-  # what the attacker edits.
-  #
-  # What would close it is the role's trust policy, which is Terraform in payabli/infrastructure. iOS is
-  # not in this position for a reason worth copying: its deploy key lives inside its release environment,
-  # so a branch copy omitting the environment cannot read the credential at all. The equivalent here is a
-  # role trusted on `environment:` rather than on a ref, which is what card-reader-mirror already does.
-  #
-  # A separate job because the environment cannot go on the one below. The OIDC subject for a job with an
-  # environment carries `environment:<name>` and no ref, as card-reader-mirror.yml records, and the
-  # snapshot role trusts `refs/heads/*`: naming an environment there fails the subject check and then the
-  # assume. This job requests no token, so the claim it presents is nobody's concern.
-  approve:
-    name: Approve a hand-run snapshot
-    if: github.event_name == 'workflow_dispatch'
+  # Before the approval, and holding nothing that can publish, so a wrong commit is refused without
+  # anyone being asked.
+  check:
+    name: Check the commit can be published
     runs-on: ubuntu-latest
-    environment: release
-    permissions: {}
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ inputs.commit }}
     steps:
-      - run: echo "approved for $GITHUB_REF"
+      # A full SHA and nothing shorter, so the commit approved is not a prefix that resolves to another.
+      - name: Check the commit is named in full
+        env:
+          COMMIT: ${{ inputs.commit }}
+        run: |
+          if [[ ! "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::a snapshot names the full 40-character commit SHA, not '$COMMIT'."
+            exit 1
+          fi
+
+      # A missing environment is created on first use with no reviewer, and the snapshot role trusts its
+      # subject, so the publish would need nobody's approval. A missing one answers 404, which fails here.
+      - name: Check the qa-snapshot environment requires a reviewer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reviewers=$(gh api "repos/$GITHUB_REPOSITORY/environments/qa-snapshot" \
+            --jq '[.protection_rules[] | select(.type == "required_reviewers")] | length')
+          if [ "$reviewers" -lt 1 ]; then
+            echo "::error::the qa-snapshot environment requires no reviewer, so nobody would approve this."
+            exit 1
+          fi
+
+      # All of history, so the check below can see the branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      # A tag carries no branch to be on, and the reviewer is approving a branch's commit.
+      - name: Check the commit is on the branch dispatched
+        env:
+          COMMIT: ${{ inputs.commit }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/* ]]; then
+            echo "::error::a snapshot is dispatched from a branch, not $GITHUB_REF."
+            exit 1
+          fi
+          if [ "$(git merge-base "$COMMIT" "origin/$BRANCH")" != "$COMMIT" ]; then
+            echo "::error::$COMMIT is not on $BRANCH."
+            exit 1
+          fi
+          # On the run's page, so the approver sees what the approval publishes.
+          {
+            echo "Publishing a snapshot of \`$BRANCH\` at \`$COMMIT\`:"
+            echo
+            echo "> $(git log -1 --format=%s "$COMMIT")"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     name: Publish a QA snapshot
-    needs: [approve]
-    # Either the gate passed, or this is the one call that is allowed to skip it. A skipped dependency is
-    # not a failure, so reading only `!= 'failure'` accepted every caller that skipped the gate, and the
-    # caller is not only ci.yml: any workflow in the repository can call this one, and a push-triggered
-    # one added on a feature branch would hand over the secrets, present a `refs/heads/*` subject the
-    # role trusts, and publish with no CI and no approval. Naming the event and the ref is what refuses
-    # that, and both are the caller's. `always()` in place of `!cancelled()` would publish through a
-    # refusal as well.
-    if: >-
-      ${{ !cancelled() && (needs.approve.result == 'success'
-      || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
-    # On this job rather than on the workflow. One group across every ref, not one per ref: two refs
-    # stamping in the same UTC second reach one identifier, and the first writer keeps the coordinate.
-    # At the workflow level the gate above would sit inside the group, so a dispatch waiting for a
-    # reviewer holds the only slot and every snapshot from main queues behind it for as long as nobody
-    # answers. A pending run is also replaced when a newer one queues, so those would not merely be late.
+    needs: [check]
+    runs-on: ubuntu-latest
+    environment: qa-snapshot
+    # On this job rather than on the workflow, so a dispatch being checked does not queue behind one
+    # waiting for its reviewer. One group across every ref, not one per ref: two refs stamping in the same
+    # UTC second reach one identifier, and the first writer keeps the coordinate.
     concurrency:
       group: qa-snapshot
       cancel-in-progress: false
-    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
-      # No ref: a called workflow checks out the caller's commit, which is the one CI is testing.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.commit }}
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -116,24 +139,19 @@ jobs:
       # needs repository-admin scope.
       - name: Check the OIDC subject the trust policies expect
         env:
-          # The branch form: a dispatch can be started on a tag, whose subject shares the prefix.
-          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:ref:refs/heads/
+          EXPECTED: repo:payabli@139794672/sdk-android@1311286517:environment:qa-snapshot
         run: |
           claims=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" |
             python3 -c 'import base64,json,sys; t=json.load(sys.stdin)["value"].split(".")[1]; print(base64.urlsafe_b64decode(t + "=" * (-len(t) % 4)).decode())')
           sub=$(printf '%s' "$claims" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sub"])')
           echo "subject presented: $sub"
-          case "$sub" in
-            "$EXPECTED"*) ;;
-            *)
-              echo "::error::this run presents '$sub', and the snapshot role grants '$EXPECTED*'."
-              echo "::error::Either this run is on a tag, which that role never trusts, or GitHub's"
-              echo "::error::immutable subject claim setting for this repository has moved. The trust"
-              echo "::error::policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
-              exit 1
-              ;;
-          esac
+          if [ "$sub" != "$EXPECTED" ]; then
+            echo "::error::this run presents '$sub', and the snapshot role grants '$EXPECTED'."
+            echo "::error::GitHub's immutable subject claim setting for this repository may have moved."
+            echo "::error::The trust policies are Terraform in payabli/infrastructure, frontend/cdn/oidc.tf."
+            exit 1
+          fi
 
       # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
       # carry a leading zero.
@@ -146,12 +164,10 @@ jobs:
       # The release identity, on the two steps that resolve the card reader and nowhere else. Checkout,
       # the OIDC check and the upload read nothing from /maven.
       #
-      # A dispatch answers to no CI run, so it runs the unit suites itself. Called by CI they are skipped,
-      # because the run calling it has already passed them and waits for the instrumented ones too, which
-      # this step does not carry. build-logic is an included build, so no task in the main build reaches
-      # its tests and it takes its own invocation.
+      # A dispatch answers to no CI run, so it runs the unit suites itself. It does not carry the
+      # instrumented suites, ktlint or lint. build-logic is an included build, so no task in the main build
+      # reaches its tests and it takes its own invocation.
       - name: Unit tests
-        if: github.event_name == 'workflow_dispatch'
         env:
           PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}
           PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}
@@ -174,11 +190,13 @@ jobs:
 
       # The account comes off the role ARN, so there is one copy of it. The script passes it as
       # --expected-bucket-owner, so a mistyped bucket that resolves to someone else's is refused.
+      # Unbuffered, so a cancelled upload still logs the keys it wrote.
       - name: Upload the staging tree
         env:
           VERSION: ${{ steps.name.outputs.version }}
           ROLE_ARN: ${{ vars.AWS_MAVEN_QA_PUBLISH_ROLE_ARN }}
           AWS_SDK_CDN_BUCKET: ${{ vars.AWS_SDK_CDN_BUCKET }}
+          PYTHONUNBUFFERED: "1"
         run: |
           AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
           export AWS_SDK_CDN_ACCOUNT
