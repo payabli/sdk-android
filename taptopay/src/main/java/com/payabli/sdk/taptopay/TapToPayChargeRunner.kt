@@ -454,13 +454,7 @@ internal class TapToPayChargeRunner(
         failure: Exception,
         paymentTransId: String?,
         capture: TapToPayCapture,
-    ) = TapToPayException.of(
-        PayabliErrorCode.UNKNOWN,
-        failure.message ?: failure.javaClass.simpleName,
-        failure,
-        paymentTransId = paymentTransId,
-        capture = capture,
-    )
+    ) = TapToPayException.from(failure, paymentTransId, capture)
 
     /**
      * Closes a transaction whose tap did not complete, best effort. The attempt stays named either way.

@@ -9,6 +9,7 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * A card-present call that did not succeed.
  *
  * A [PayabliException], so [code] and its category are read exactly as for every other failure the SDK raises.
+ * A failure the transport raised beneath a card-present call keeps the code it was raised with.
  *
  * What to do next is on [PayabliTTP.sessionState]. A failure that changed the session appears there as
  * [TapToPaySessionState.Failed] carrying a [TapToPayFailureReason], or as
@@ -64,5 +65,27 @@ public class TapToPayException private constructor(
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
         ): TapToPayException = TapToPayException(code, reason, detail, cause, paymentTransId, capture)
+
+        /**
+         * [failure] as a host receives it. A [PayabliException] keeps its code, reason and detail, because its
+         * `message` is only the classification; anything else is [PayabliErrorCode.UNKNOWN].
+         */
+        @JvmSynthetic
+        internal fun from(
+            failure: Exception,
+            paymentTransId: String?,
+            capture: TapToPayCapture,
+        ): TapToPayException =
+            if (failure is PayabliException) {
+                of(failure.code, failure.reason, failure, failure.detail, paymentTransId, capture)
+            } else {
+                of(
+                    PayabliErrorCode.UNKNOWN,
+                    failure.message ?: failure.javaClass.simpleName,
+                    failure,
+                    paymentTransId = paymentTransId,
+                    capture = capture,
+                )
+            }
     }
 }

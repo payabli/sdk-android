@@ -2,7 +2,6 @@ package com.payabli.sdk.taptopay
 
 import android.content.Context
 import com.payabli.sdk.core.PayabliSession
-import com.payabli.sdk.core.model.PayabliErrorCode
 import com.payabli.sdk.taptopay.adapters.platform.CardReaderEligibility
 import com.payabli.sdk.taptopay.adapters.platform.TapToPayComponents
 import com.payabli.sdk.taptopay.adapters.platform.looksEmulated
@@ -161,9 +160,5 @@ private suspend fun <T> wrapping(block: suspend () -> T): T =
     } catch (named: TapToPayException) {
         throw named
     } catch (failure: Exception) {
-        throw TapToPayException.of(
-            PayabliErrorCode.UNKNOWN,
-            failure.message ?: failure.javaClass.simpleName,
-            failure,
-        )
+        throw TapToPayException.from(failure, paymentTransId = null, capture = TapToPayCapture.NOT_CHARGED)
     }
