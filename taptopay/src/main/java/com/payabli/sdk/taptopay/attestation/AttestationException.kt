@@ -83,16 +83,6 @@ public sealed class AttestationException(
         )
 
     /**
-     * The platform's integrity service is not available on this device at all, so no change on it lets it
-     * attest. Separate from [RemediationRequired], whose remedy is installing or updating something.
-     */
-    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
-    public class Unsupported(
-        errorCode: Int,
-        cause: Throwable? = null,
-    ) : AttestationException("the device does not offer the integrity service", errorCode, cause)
-
-    /**
      * The device cannot answer until something on it changes.
      *
      * A missing, outdated or signed-out Play Store, or Play services in the same condition. Retrying

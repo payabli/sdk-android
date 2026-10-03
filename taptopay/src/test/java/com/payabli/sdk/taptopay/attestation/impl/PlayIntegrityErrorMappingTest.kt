@@ -89,10 +89,9 @@ class PlayIntegrityErrorMappingTest {
             StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID,
         )
 
-    private val standardUnsupported = listOf(StandardIntegrityErrorCode.API_NOT_AVAILABLE)
-
     private val standardRemediation =
         listOf(
+            StandardIntegrityErrorCode.API_NOT_AVAILABLE,
             StandardIntegrityErrorCode.PLAY_STORE_NOT_FOUND,
             StandardIntegrityErrorCode.PLAY_SERVICES_NOT_FOUND,
             StandardIntegrityErrorCode.CANNOT_BIND_TO_SERVICE,
@@ -120,10 +119,9 @@ class PlayIntegrityErrorMappingTest {
             IntegrityErrorCode.INTERNAL_ERROR,
         )
 
-    private val classicUnsupported = listOf(IntegrityErrorCode.API_NOT_AVAILABLE)
-
     private val classicRemediation =
         listOf(
+            IntegrityErrorCode.API_NOT_AVAILABLE,
             IntegrityErrorCode.PLAY_STORE_NOT_FOUND,
             IntegrityErrorCode.PLAY_STORE_ACCOUNT_NOT_FOUND,
             IntegrityErrorCode.PLAY_SERVICES_NOT_FOUND,
@@ -175,10 +173,6 @@ class PlayIntegrityErrorMappingTest {
         assertAllMap<AttestationException.Retryable>(standardRetryable, ::standard)
 
     @Test
-    fun `standard unavailable integrity service is unsupported`() =
-        assertAllMap<AttestationException.Unsupported>(standardUnsupported, ::standard)
-
-    @Test
     fun `standard Play Store and services codes need remediation`() =
         assertAllMap<AttestationException.RemediationRequired>(standardRemediation, ::standard)
 
@@ -193,7 +187,7 @@ class PlayIntegrityErrorMappingTest {
     @Test
     fun `every documented standard code is classified exactly once`() {
         val classified =
-            standardRetryable + standardUnsupported + standardRemediation + standardFailed + standardMisconfigured +
+            standardRetryable + standardRemediation + standardFailed + standardMisconfigured +
                 standardThrottled
 
         assertEquals("a code classified twice", classified.size, classified.toSet().size)
@@ -216,10 +210,6 @@ class PlayIntegrityErrorMappingTest {
         assertAllMap<AttestationException.Retryable>(classicRetryable, ::classic)
 
     @Test
-    fun `classic unavailable integrity service is unsupported`() =
-        assertAllMap<AttestationException.Unsupported>(classicUnsupported, ::classic)
-
-    @Test
     fun `classic Play Store and services codes need remediation`() =
         assertAllMap<AttestationException.RemediationRequired>(classicRemediation, ::classic)
 
@@ -234,7 +224,7 @@ class PlayIntegrityErrorMappingTest {
     @Test
     fun `every documented classic code is classified exactly once`() {
         val classified =
-            classicRetryable + classicUnsupported + classicRemediation + classicFailed + classicMisconfigured +
+            classicRetryable + classicRemediation + classicFailed + classicMisconfigured +
                 classicThrottled
 
         assertEquals("a code classified twice", classified.size, classified.toSet().size)

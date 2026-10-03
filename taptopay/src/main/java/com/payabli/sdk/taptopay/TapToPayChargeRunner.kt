@@ -140,7 +140,7 @@ internal class TapToPayChargeRunner(
             // The service refuses an opening that identifies nobody, and it refuses it after the reader has
             // been armed and a card taken. Checked here, so a caller learns it before a merchant asks
             // someone to tap.
-            require(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
+            requireArgument(customer.identifiesSomeone) { "a charge has to name the payer it is for" }
 
             // After the precondition, so a caller's own bad argument is not counted as a charge that
             // failed. The bracket spans the whole of initiate, the tap and update, because what it
@@ -365,16 +365,16 @@ internal class TapToPayChargeRunner(
      */
     private fun sendableAmountOf(paymentDetails: TapToPayPaymentDetails): BigDecimal {
         val sendable =
-            requireNotNull(paymentDetails.amount.sendableAmountOrNull()) {
+            requireArgumentNotNull(paymentDetails.amount.sendableAmountOrNull()) {
                 "an amount has to be one this SDK can send"
             }
-        require(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
+        requireArgument(sendable > BigDecimal.ZERO) { "an amount has to be greater than zero" }
 
         val sendableFee =
-            requireNotNull(paymentDetails.serviceFee.sendableAmountOrNull()) {
+            requireArgumentNotNull(paymentDetails.serviceFee.sendableAmountOrNull()) {
                 "a service fee has to be one this SDK can send"
             }
-        require(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
+        requireArgument(sendableFee >= BigDecimal.ZERO) { "a service fee cannot be negative" }
         return sendable
     }
 
