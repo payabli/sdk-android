@@ -30,7 +30,6 @@ class TapToPayErrorCodesTest {
             DeviceKeyException.CryptoUnavailable() to PayabliErrorCode.DEVICE_KEY_UNAVAILABLE,
             DeviceKeyException.KeyLost() to PayabliErrorCode.ATTESTATION_REQUIRED,
             DeviceKeyException.SigningFailed() to PayabliErrorCode.SDK_INTERNAL_ERROR,
-            AttestationException.Unsupported(-1) to PayabliErrorCode.ATTESTATION_NOT_SUPPORTED,
             AttestationException.RemediationRequired(-14) to PayabliErrorCode.ATTESTATION_SERVICES_OUTDATED,
             AttestationException.IntegrityFailed(-5) to PayabliErrorCode.ATTESTATION_REFUSED,
             AttestationException.Retryable(-3) to PayabliErrorCode.ATTESTATION_UNAVAILABLE,
@@ -90,7 +89,8 @@ class TapToPayErrorCodesTest {
             TapToPayCallException.NoDeviceToChargeAs() to PayabliErrorCode.ATTESTATION_REQUIRED,
             TapToPayCallException.PaymentNotHeld() to PayabliErrorCode.PAYMENT_NOT_HELD,
             ChargeKeyStoreFullException(4) to PayabliErrorCode.TOO_MANY_OPEN_CHARGES,
-            IllegalArgumentException("a charge has to name the payer it is for") to PayabliErrorCode.VALIDATION_ERROR,
+            TapToPayArgumentException("a charge has to name the payer it is for") to PayabliErrorCode.VALIDATION_ERROR,
+            IllegalArgumentException("a decoder's own complaint") to PayabliErrorCode.UNKNOWN,
             IllegalStateException("refused transition") to PayabliErrorCode.SDK_INTERNAL_ERROR,
             RuntimeException("unexamined") to PayabliErrorCode.UNKNOWN,
         )
@@ -106,7 +106,14 @@ class TapToPayErrorCodesTest {
     fun `every card-present code this platform can produce has a cause`() {
         // Nothing here asks a merchant to accept terms, and only the runner knows which failure came from the
         // close, so it names that code itself.
-        val notFromACause = setOf(PayabliErrorCode.TERMS_NOT_ACCEPTED, PayabliErrorCode.PAYMENT_NOT_CLOSED)
+        // And no failure on this platform establishes that a device cannot attest at all: the integrity
+        // service's "not available" also means it is not enabled or the store is out of date.
+        val notFromACause =
+            setOf(
+                PayabliErrorCode.TERMS_NOT_ACCEPTED,
+                PayabliErrorCode.PAYMENT_NOT_CLOSED,
+                PayabliErrorCode.ATTESTATION_NOT_SUPPORTED,
+            )
         val cardPresent = PayabliErrorCode.entries.filter { it.number in 3001..3999 }.toSet()
         assertEquals(cardPresent - notFromACause, causes.map { it.second }.filter { it in cardPresent }.toSet())
     }

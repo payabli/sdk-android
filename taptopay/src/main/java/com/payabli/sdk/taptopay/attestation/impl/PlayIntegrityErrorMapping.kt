@@ -67,8 +67,7 @@ internal object PlayIntegrityErrorMapping {
             StandardIntegrityErrorCode.INTEGRITY_TOKEN_PROVIDER_INVALID ->
                 AttestationException.Retryable(code, cause)
 
-            StandardIntegrityErrorCode.API_NOT_AVAILABLE -> AttestationException.Unsupported(code, cause)
-
+            StandardIntegrityErrorCode.API_NOT_AVAILABLE,
             StandardIntegrityErrorCode.PLAY_STORE_NOT_FOUND,
             StandardIntegrityErrorCode.PLAY_SERVICES_NOT_FOUND,
             StandardIntegrityErrorCode.CANNOT_BIND_TO_SERVICE,
@@ -104,8 +103,7 @@ internal object PlayIntegrityErrorMapping {
             ->
                 AttestationException.Retryable(code, cause)
 
-            IntegrityErrorCode.API_NOT_AVAILABLE -> AttestationException.Unsupported(code, cause)
-
+            IntegrityErrorCode.API_NOT_AVAILABLE,
             IntegrityErrorCode.PLAY_STORE_NOT_FOUND,
             IntegrityErrorCode.PLAY_STORE_ACCOUNT_NOT_FOUND,
             IntegrityErrorCode.PLAY_SERVICES_NOT_FOUND,

@@ -35,7 +35,7 @@ internal object TapToPayErrorCodes {
             is CardReaderException -> readerCode(failure)
             is TTPTransactionException -> transactionCode(failure)
             is ChargeKeyStoreFullException -> PayabliErrorCode.TOO_MANY_OPEN_CHARGES
-            is IllegalArgumentException -> PayabliErrorCode.VALIDATION_ERROR
+            is TapToPayArgumentException -> PayabliErrorCode.VALIDATION_ERROR
             // A guard inside this SDK that refused its own sequence, which is a defect rather than a refusal.
             is IllegalStateException -> PayabliErrorCode.SDK_INTERNAL_ERROR
             else -> PayabliErrorCode.UNKNOWN
@@ -125,7 +125,6 @@ internal object TapToPayErrorCodes {
 
     private fun attestationCode(failure: AttestationException): PayabliErrorCode =
         when (failure) {
-            is AttestationException.Unsupported -> PayabliErrorCode.ATTESTATION_NOT_SUPPORTED
             is AttestationException.RemediationRequired -> PayabliErrorCode.ATTESTATION_SERVICES_OUTDATED
             is AttestationException.Retryable -> PayabliErrorCode.ATTESTATION_UNAVAILABLE
             is AttestationException.Throttled -> PayabliErrorCode.ATTESTATION_UNAVAILABLE
