@@ -161,6 +161,7 @@ class PayInSubmissionTelemetryTest {
             val properties = recorded.single().second
             assertEquals(TelemetryProperties.Outcome.DECLINED, properties[TelemetryProperty.OUTCOME.key])
             assertEquals("PAYMENT_DECLINED", properties[TelemetryProperty.CODE.key])
+            assertEquals("1008", properties[TelemetryProperty.ERROR_NUMBER.key])
         }
 
     /** A form nobody can submit is a real thing to count, and it is invisible to anything watching requests. */

@@ -290,6 +290,7 @@ public class PayabliSession private constructor(
                 mapOf(
                     TelemetryProperty.OUTCOME.key to TelemetryProperties.Outcome.REFUSED,
                     TelemetryProperty.CODE.key to failure.type.wireName,
+                    TelemetryProperty.ERROR_NUMBER.key to failure.code.toString(),
                     TelemetryProperty.REASON.key to failure.reason,
                     TelemetryProperty.DURATION_MS.key to
                         TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt).toString(),

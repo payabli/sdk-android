@@ -45,8 +45,11 @@ public object TelemetryCatalog {
             TelemetryProperty.DURATION_MS.key,
         )
 
+    /** A failure the SDK raised, which carries its catalog number beside whatever code the cause had. */
+    private val FAILED = TIMED_OUTCOME + TelemetryProperty.ERROR_NUMBER.key
+
     /** A money-path completion, which the form and a direct call both report under one name. */
-    private val PAYIN = TIMED_OUTCOME + TelemetryProperty.ORIGIN.key
+    private val PAYIN = FAILED + TelemetryProperty.ORIGIN.key
 
     /**
      * The device routes carry no attempt, and cannot.
@@ -73,16 +76,16 @@ public object TelemetryCatalog {
                 setOf(TelemetryProperty.REASON.key, TelemetryProperty.FIELD.key),
             TelemetryEvents.TTP_INITIALIZE_STARTED to NONE,
             TelemetryEvents.TTP_INITIALIZE_SUCCEEDED to TIMED,
-            TelemetryEvents.TTP_INITIALIZE_FAILED to TIMED_OUTCOME,
+            TelemetryEvents.TTP_INITIALIZE_FAILED to FAILED,
             TelemetryEvents.TTP_ATTESTATION_STARTED to NONE,
             TelemetryEvents.TTP_ATTESTATION_SUCCEEDED to TIMED,
-            TelemetryEvents.TTP_ATTESTATION_FAILED to TIMED_OUTCOME,
+            TelemetryEvents.TTP_ATTESTATION_FAILED to FAILED,
             TelemetryEvents.TTP_CHARGE_STARTED to NONE,
             TelemetryEvents.TTP_CHARGE_SUCCEEDED to TIMED,
-            TelemetryEvents.TTP_CHARGE_FAILED to TIMED_OUTCOME,
+            TelemetryEvents.TTP_CHARGE_FAILED to FAILED,
             TelemetryEvents.TTP_CLOSE_STARTED to setOf(TelemetryProperty.ORIGIN.key),
             TelemetryEvents.TTP_CLOSE_SUCCEEDED to TIMED + TelemetryProperty.ORIGIN.key,
-            TelemetryEvents.TTP_CLOSE_FAILED to TIMED_OUTCOME + TelemetryProperty.ORIGIN.key,
+            TelemetryEvents.TTP_CLOSE_FAILED to FAILED + TelemetryProperty.ORIGIN.key,
             TelemetryEvents.TTP_NFC_STARTED to NONE,
             TelemetryEvents.TTP_NFC_SUCCEEDED to TIMED,
             // Carries both, and the code is the half that earns its place. [TelemetryProperty.REASON] is the
@@ -117,6 +120,7 @@ public object TelemetryCatalog {
                 setOf(
                     TelemetryProperty.OUTCOME.key,
                     TelemetryProperty.CODE.key,
+                    TelemetryProperty.ERROR_NUMBER.key,
                     TelemetryProperty.REASON.key,
                     TelemetryProperty.DURATION_MS.key,
                 ),

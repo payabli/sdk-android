@@ -105,9 +105,20 @@ class TapToPayReportsTest {
                 TelemetryProperty.CODE.key,
                 TelemetryProperty.DURATION_MS.key,
                 TelemetryProperty.ORIGIN.key,
+                TelemetryProperty.ERROR_NUMBER.key,
             ),
             properties.keys,
         )
+        assertEquals("3022", properties[TelemetryProperty.ERROR_NUMBER.key])
+    }
+
+    @Test
+    fun `a charge failure reports the catalog number the host is told`() {
+        TapToPayReports.chargeFailed(deniedBy("677"), System.nanoTime())
+
+        val (_, properties) = recorded.single()
+        assertEquals("3015", properties[TelemetryProperty.ERROR_NUMBER.key])
+        assertEquals("677", properties[TelemetryProperty.CODE.key])
     }
 
     @Test
