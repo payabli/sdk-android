@@ -74,8 +74,8 @@ private fun declaredCodes(type: Class<*>): Set<Int> =
 /**
  * Both error enums, every documented constant, against an explicit table.
  *
- * The expectations are written out rather than derived from the mapper, on purpose: an expectation derived
- * from the code under test asserts only that the code equals itself. Written out, a mapping changed by
+ * The expectations are written out rather than derived from the mapper: an expectation derived from the code
+ * under test asserts only that the code equals itself. Written out, a mapping changed by
  * accident has to be changed here too, by someone who then has to agree with it.
  */
 class PlayIntegrityErrorMappingTest {
@@ -267,7 +267,7 @@ class PlayIntegrityErrorMappingTest {
     @Test
     fun `code -17 means different things in the two classes`() {
         // This is the entire reason there are two tables. CLIENT_TRANSIENT_ERROR for a classic request,
-        // REQUEST_HASH_TOO_LONG for a standard one: "wait" against "we built the request wrong". One
+        // REQUEST_HASH_TOO_LONG for a standard one: "wait" against "the request was built wrong". One
         // shared table would be wrong for one of them, silently, forever.
         assertEquals(-17, IntegrityErrorCode.CLIENT_TRANSIENT_ERROR)
         assertEquals(-17, StandardIntegrityErrorCode.REQUEST_HASH_TOO_LONG)
