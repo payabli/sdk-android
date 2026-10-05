@@ -199,6 +199,25 @@ class TapToPayErrorCodesTest {
     }
 
     @Test
+    fun `the service's words reach the detail when the session wrapped its refusal`() {
+        val wrapped =
+            TapToPaySessionException.PendingActivation(
+                DeviceServiceException.Forbidden(403, "the service's own words"),
+            )
+
+        val thrown =
+            TapToPayErrorCodes.exceptionFor(
+                wrapped,
+                TapToPayErrorCodes.typeFor(wrapped),
+                null,
+                TapToPayCapture.NOT_CHARGED,
+            )
+
+        assertEquals(PayabliErrorType.DEVICE_PENDING_ACTIVATION, thrown.type)
+        assertEquals("the service's own words", thrown.detail)
+    }
+
+    @Test
     fun `a cause with no service text carries no detail`() {
         val thrown =
             TapToPayErrorCodes.exceptionFor(

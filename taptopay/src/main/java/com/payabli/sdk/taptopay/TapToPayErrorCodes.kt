@@ -62,7 +62,14 @@ internal object TapToPayErrorCodes {
             capture = capture,
         )
 
+    /**
+     * The first text a service sent, anywhere in [failure]'s chain. A session refusal wraps the service's own
+     * failure, so the words are on the cause rather than on the failure a host is told about.
+     */
     private fun serviceTextOf(failure: Throwable): String? =
+        generateSequence(failure) { it.cause }.take(MAX_CAUSES).firstNotNullOfOrNull(::ownServiceTextOf)
+
+    private fun ownServiceTextOf(failure: Throwable): String? =
         when (failure) {
             is PayabliException -> failure.detail
             // The SDK's own wording for a body it could not read, not anything the service said.
@@ -158,4 +165,7 @@ internal object TapToPayErrorCodes {
             is TTPTransactionException.OutcomeUnknown -> PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN
             is TTPTransactionException.Undecodable -> PayabliErrorType.DECODING_ERROR
         }
+
+    /** Bounds the walk, so a cause chain that loops back on itself cannot hold the call. */
+    private const val MAX_CAUSES = 8
 }
