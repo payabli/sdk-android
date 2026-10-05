@@ -7,8 +7,8 @@ import com.payabli.sdk.core.model.RedactedFailure
  * trace and dropping the text.
  *
  * `kotlinx.serialization` appends the input it could not parse to its message, so a decoding failure
- * carries the response body verbatim. `PayabliException.message` is the error code and nothing else, and
- * a cause defeats that on its own: crash reporters and `printStackTrace` render the whole chain, and the
+ * carries the response body verbatim. `PayabliException.message` is the catalog's fixed text and nothing
+ * else, and a cause defeats that on its own: crash reporters and `printStackTrace` render the whole chain, and the
  * host app's reporter is outside anything this SDK scrubs.
  *
  * The class name is kept as the message because a type name carries no subject, and the original stack
