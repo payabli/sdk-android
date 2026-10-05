@@ -276,11 +276,13 @@ class PayabliHttpErrorsTest {
 
     @Test
     fun `a 500 problem document populates the server error`() {
-        val body = """{"title":"Internal error","detail":"Trace 9","code":"E5000"}"""
+        val body =
+            """{"type":"https://payabli.com/errors/server","title":"Internal error","detail":"Trace 9","code":"E5000"}"""
         val mapped = map(500, body) as PayabliServerException
         assertEquals("Internal error", mapped.reason)
         assertEquals("Trace 9", mapped.detail)
         assertEquals("E5000", mapped.rawCode)
+        assertEquals("https://payabli.com/errors/server", mapped.problemType)
     }
 
     @Test
