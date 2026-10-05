@@ -311,7 +311,7 @@ class PayabliHttpErrorsTest {
     }
 
     @Test
-    fun `the exception message is the code, never the server prose`() {
+    fun `the exception message is the catalog text, never the server prose`() {
         // A crash reporter or printStackTrace must not carry text that may echo request data.
         val body = """{"title":"Card number 9999999999999999 is invalid"}"""
         val mapped = map(400, body)

@@ -150,7 +150,7 @@ class PayInRedactionTest {
     }
 
     @Test
-    fun `every failure's message is the classification, never the prose`() {
+    fun `every failure's message is the catalog text, never the prose`() {
         val echoing = "Card $pan was refused"
         val refused = PayInException.Refused(PayInFailure("D0001", echoing, null, null, 200))
         val invalid = PayInException.InvalidInput("paymentMethod.cardnumber", "The card number is not valid")
