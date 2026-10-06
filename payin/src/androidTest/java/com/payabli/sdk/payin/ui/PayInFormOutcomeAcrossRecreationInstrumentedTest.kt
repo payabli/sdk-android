@@ -145,7 +145,7 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
         type(R.string.payabli_payin_field_card_number, TEST_PAN)
         type(R.string.payabli_payin_field_card_security_code, TEST_SECURITY_CODE)
         type(R.string.payabli_payin_field_card_postal_code, "22039")
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).performClick()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
         rule.waitForIdle()
     }
 
@@ -165,6 +165,7 @@ class PayInFormOutcomeAcrossRecreationInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     onSubmit = { true },
                     onCompleted = { completed += it },
                     onFailed = { failed += it },

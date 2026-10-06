@@ -162,7 +162,7 @@ class PayInFormConsumesOutcomeInstrumentedTest {
     }
 
     private fun submit() {
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).performClick()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
         rule.waitForIdle()
     }
 

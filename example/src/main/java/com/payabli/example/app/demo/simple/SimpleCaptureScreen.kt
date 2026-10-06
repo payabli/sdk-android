@@ -76,7 +76,7 @@ internal fun keyAfter(
     outcome: PayInSubmissionState.Failed?,
 ): String? =
     when {
-        submitted != FormOperation.Capture -> held
+        !submitted.takesAmount -> held
         outcome == null -> null
         else -> keyForNextAttempt(held, outcome)
     }
@@ -84,12 +84,42 @@ internal fun keyAfter(
 /**
  * The operation after [requested] is chosen, which stays [current] while a submission is in flight: its outcome
  * is read against the operation on screen when it arrives.
+ *
+ * While a key is held for [heldFor], no other operation that sends a key is chosen, since it would send that one.
  */
 internal fun operationAfter(
     current: FormOperation,
     requested: FormOperation,
     submission: PayInSubmissionState,
-): FormOperation = if (submission is PayInSubmissionState.Submitting) current else requested
+    heldFor: FormOperation?,
+): FormOperation =
+    when {
+        submission is PayInSubmissionState.Submitting -> current
+        heldFor != null && requested.takesAmount && requested != heldFor -> current
+        else -> requested
+    }
+
+/**
+ * The operations the screen offers: those [settings] turns on, plus [current] and [heldFor] whatever the
+ * settings say, so a held key can always be settled by the operation it belongs to.
+ */
+internal fun offeredOperations(
+    settings: FormSettings,
+    current: FormOperation,
+    heldFor: FormOperation?,
+): List<FormOperation> = FormOperation.entries.filter { it in settings.operations || it == current || it == heldFor }
+
+/** The operation [heldKey] belongs to once [submitted] has ended. A store sends no key, so it leaves the owner. */
+internal fun keyOwnerAfter(
+    owner: FormOperation?,
+    submitted: FormOperation,
+    heldKey: String?,
+): FormOperation? =
+    when {
+        heldKey == null -> null
+        submitted.takesAmount -> submitted
+        else -> owner
+    }
 
 /**
  * The amount can change only between payments: not mid-flight, and not while a held key still names one.
@@ -106,6 +136,7 @@ internal fun outcomeMessage(
 ): String =
     when (operation) {
         FormOperation.Capture -> if (succeeded) "Payment approved" else "Payment failed"
+        FormOperation.Authorize -> if (succeeded) "Payment authorized" else "Authorization failed"
         FormOperation.Tokenize -> if (succeeded) "Payment method saved" else "Save failed"
     }
 
@@ -140,7 +171,12 @@ class SimpleCaptureViewModel(
     var retryKey by mutableStateOf<String?>(null)
         private set
 
+    /** The operation [retryKey] was left by, and the only one that may send it. */
+    var heldFor by mutableStateOf<FormOperation?>(null)
+        private set
+
     var settings by mutableStateOf(FormSettings())
+        private set
 
     var operation by mutableStateOf(FormOperation.Capture)
 
@@ -153,15 +189,25 @@ class SimpleCaptureViewModel(
      */
     var method by mutableStateOf<PayInMethodType?>(null)
 
+    /** Applies [changed], and moves off an operation it no longer offers. */
+    fun changeSettings(changed: FormSettings) {
+        settings = changed
+        if (operation !in changed.operations) {
+            operation = operationAfter(operation, FormOperation.Capture, PayInSubmissionState.Idle, heldFor)
+        }
+    }
+
     fun failed(
         submitted: FormOperation,
         outcome: PayInSubmissionState.Failed,
     ) {
         retryKey = keyAfter(retryKey, submitted, outcome)
+        heldFor = keyOwnerAfter(heldFor, submitted, retryKey)
     }
 
     fun succeeded(submitted: FormOperation) {
         retryKey = keyAfter(retryKey, submitted, outcome = null)
+        heldFor = keyOwnerAfter(heldFor, submitted, retryKey)
     }
 
     init {
@@ -220,26 +266,29 @@ fun SimpleCaptureScreen(
         actions = {
             FormSettingsMenu(
                 settings,
-                onSettingsChange = { viewModel.settings = it },
+                onSettingsChange = viewModel::changeSettings,
                 enabled = !submitting,
             )
         },
     ) {
         OwnerFrame(Owner.App) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FormOperation.entries.forEach { option ->
+                offeredOperations(settings, operation, viewModel.heldFor).forEach { option ->
                     FilterChip(
                         selected = option == operation,
                         onClick = {
                             val submission = payInFlow?.state?.value ?: PayInSubmissionState.Idle
-                            viewModel.operation = operationAfter(operation, option, submission)
+                            viewModel.operation = operationAfter(operation, option, submission, viewModel.heldFor)
                         },
-                        enabled = !submitting,
+                        enabled =
+                            !submitting &&
+                                operationAfter(operation, option, PayInSubmissionState.Idle, viewModel.heldFor) ==
+                                option,
                         label = { Text(option.label) },
                     )
                 }
             }
-            if (operation == FormOperation.Capture) {
+            if (operation.takesAmount) {
                 OutlinedTextField(
                     value = viewModel.amountText,
                     enabled = !submitting && viewModel.retryKey == null,
@@ -274,7 +323,7 @@ fun SimpleCaptureScreen(
             payInFlow == null ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 
-            operation == FormOperation.Capture && amount == null -> Unit
+            operation.takesAmount && amount == null -> Unit
 
             else ->
                 OwnerFrame(Owner.Sdk) {

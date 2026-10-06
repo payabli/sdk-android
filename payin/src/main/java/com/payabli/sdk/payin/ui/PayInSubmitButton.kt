@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +17,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
+import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.payment.PayabliPayInOperation
 
 /**
  * Submits the form. Material's own button, so it carries the host's color and shape.
@@ -67,6 +70,26 @@ internal fun PayInSubmitButton(
             }
             Text(text = if (isSubmitting) busyText else text)
         }
+    }
+}
+
+/** What the button reads for one operation, and what it reads while that operation runs. */
+internal enum class PayInSubmitText(
+    @StringRes val idle: Int,
+    @StringRes val busy: Int,
+) {
+    Capture(R.string.payabli_payin_submit_capture, R.string.payabli_payin_busy_capture),
+    Authorize(R.string.payabli_payin_submit_authorize, R.string.payabli_payin_busy_authorize),
+    StoreMethod(R.string.payabli_payin_submit_store_method, R.string.payabli_payin_busy_store_method),
+    ;
+
+    companion object {
+        fun of(operation: PayabliPayInOperation): PayInSubmitText =
+            when (operation) {
+                is PayabliPayInOperation.Capture -> Capture
+                is PayabliPayInOperation.Authorize -> Authorize
+                is PayabliPayInOperation.StoreMethod -> StoreMethod
+            }
     }
 }
 

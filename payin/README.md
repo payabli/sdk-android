@@ -201,7 +201,13 @@ or "voided":
 | `formatting` | How entered values are formatted |
 | `showsBaseAmount` | Whether the amount row shows |
 
+`defaultCardSections()` and `defaultBankSections()` return the instrument's fields followed by a summary
+section of the amounts, titled "Payment". An inputs section with no title draws no heading. A summary section lists only `Amount`, `ServiceFee` and
+`SurchargeFee`. Any other field there is refused when the configuration is built.
+
 `labels` takes a `PayInFormLabels` for the title, subtitle, submit button, field labels and placeholders.
+With no `submitButton`, the button names the operation: "Pay" for a capture, "Authorize" for an
+authorization and "Save" for a stored method, with "Paying…", "Authorizing…" and "Saving…" while it runs.
 
 ### Styling
 

@@ -369,7 +369,7 @@ class PayInFormTelemetryInstrumentedTest {
     }
 
     private fun submit() {
-        rule.onNodeWithText(rule.activity.getString(R.string.payabli_payin_submit)).performClick()
+        rule.onNodeWithText(rule.activity.getString(R.string.payabli_payin_submit_capture)).performClick()
     }
 
     private fun label(field: PayInField): String =

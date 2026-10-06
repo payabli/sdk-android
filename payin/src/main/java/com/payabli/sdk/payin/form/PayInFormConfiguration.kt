@@ -11,6 +11,8 @@ public enum class PayInSectionStyle {
      * Where the operation's amounts are drawn, and under what title. Each amount that is sendable and not zero
      * at two decimal places is drawn, in the order [PayInFormSection.fields] lists them and then the rest. A form
      * with such an amount and no summary gets one.
+     *
+     * Only the amount fields belong here, and any other is refused when the configuration is built.
      */
     Summary,
 }
@@ -34,7 +36,7 @@ public enum class PayInLabelLayout {
  *
  * [fields] is copied at construction, for the reason given on [PayInFormConfiguration].
  *
- * @param title null takes the section's default from string resources.
+ * @param title null draws no heading, except on a summary, which takes its default from string resources.
  */
 @Immutable
 public class PayInFormSection(
@@ -121,6 +123,15 @@ public class PayInFormConfiguration(
         this.allowedMethods.distinct().ifEmpty { listOf(defaultMethod) }
 
     init {
+        // A summary draws amounts and nothing else, so any other field listed there would leave the screen without
+        // a word. Read before the instrument rule, whose refusal would name the field as missing from the inputs.
+        methods.forEach { method ->
+            val listed = listedIn(method, PayInSectionStyle.Summary).filterNot { it in AMOUNT_FIELDS }
+            require(listed.isEmpty()) {
+                "${listed.joinToString()} cannot be listed in a summary: a summary shows the operation's amounts"
+            }
+        }
+
         // A method offered without one of these renders a form the payer can complete and the SDK cannot
         // submit: the instrument is built from fields, and a missing one is refused naming the wire spelling
         // of a box that is not on screen. Refused here instead, where the sections were written.
@@ -132,7 +143,7 @@ public class PayInFormConfiguration(
         // The amounts are the operation's. A box a payer types into would take a figure the request does not
         // carry, so the screen would show one amount and the request would send another.
         methods.forEach { method ->
-            val typed = inputFieldsFor(method).filter { it in READ_BACK_ONLY }
+            val typed = listedIn(method, PayInSectionStyle.Inputs).filter { it in AMOUNT_FIELDS }
             require(typed.isEmpty()) {
                 "${typed.joinToString()} cannot be typed into: the amounts come from the operation"
             }
@@ -165,6 +176,18 @@ public class PayInFormConfiguration(
             .map { section -> section.copy(fields = section.fields.filter { seen.add(it) }) }
             .filter { it.fields.isNotEmpty() || it.style == PayInSectionStyle.Summary }
     }
+
+    /**
+     * Every field listed in sections of [style] for one instrument, as written. Read before [sectionsFor] drops a
+     * field already used, which would hide a field from a check because an earlier section listed it.
+     */
+    private fun listedIn(
+        method: PayInMethodType,
+        style: PayInSectionStyle,
+    ): List<PayInField> =
+        (if (method == PayInMethodType.Card) cardSections else bankSections)
+            .filter { it.style == style }
+            .flatMap { it.fields }
 
     /** Every field a payer types into for one instrument, in the order they are rendered. */
     public fun inputFieldsFor(method: PayInMethodType): List<PayInField> =
@@ -258,14 +281,19 @@ public class PayInFormConfiguration(
 
     public companion object {
         /**
-         * Fields a form shows and never collects.
+         * Fields a form shows and never collects, in the order a summary draws them.
          *
          * The amounts are set on the operation, and nothing reads them back out of the form, so a box a
          * payer could type into would take a figure no request carries.
          */
-        private val READ_BACK_ONLY = setOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee)
+        internal val AMOUNT_FIELDS: List<PayInField> =
+            Collections.unmodifiableList(listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee))
 
-        /** Card details, as a payer is asked for them. */
+        /** The amounts, under the summary's default title. */
+        internal val DEFAULT_SUMMARY: PayInFormSection =
+            PayInFormSection(fields = AMOUNT_FIELDS, style = PayInSectionStyle.Summary)
+
+        /** Card details, as a payer is asked for them, then the amounts. */
         public fun defaultCardSections(): List<PayInFormSection> =
             listOf(
                 PayInFormSection(
@@ -278,9 +306,10 @@ public class PayInFormConfiguration(
                             PayInField.CardPostalCode,
                         ),
                 ),
+                DEFAULT_SUMMARY,
             )
 
-        /** Bank account details. */
+        /** Bank account details, then the amounts. */
         public fun defaultBankSections(): List<PayInFormSection> =
             listOf(
                 PayInFormSection(
@@ -292,6 +321,7 @@ public class PayInFormConfiguration(
                             PayInField.AccountType,
                         ),
                 ),
+                DEFAULT_SUMMARY,
             )
     }
 }

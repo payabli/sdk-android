@@ -17,6 +17,7 @@ import com.payabli.sdk.payin.payment.offering
 import com.payabli.sdk.payin.payment.paymentDetails
 import com.payabli.sdk.payin.payment.step
 import com.payabli.sdk.payin.ui.PayInFormContent
+import com.payabli.sdk.payin.ui.PayInSubmitText
 
 /**
  * The Payabli payment form.
@@ -105,6 +106,7 @@ public fun PayabliPayInForm(
         draft = impl.draft,
         configuration = offered,
         reports = impl.reports,
+        submitText = PayInSubmitText.of(operation),
         amounts = operation.paymentDetails,
         modifier = modifier,
         labels = labels,

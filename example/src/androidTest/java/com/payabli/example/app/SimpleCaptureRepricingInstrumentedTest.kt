@@ -134,7 +134,7 @@ class SimpleCaptureRepricingInstrumentedTest {
         const val SHOW_SIMPLE_CAPTURE = "Show Simple Capture"
 
         /** The form's own default label, since this screen passes no labels of its own. */
-        const val SUBMIT = "Submit"
+        const val SUBMIT = "Pay"
 
         const val FEE = "Fee"
 

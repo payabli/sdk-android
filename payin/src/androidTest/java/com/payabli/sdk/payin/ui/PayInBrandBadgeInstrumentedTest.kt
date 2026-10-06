@@ -171,6 +171,7 @@ class PayInBrandBadgeInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                 )
             }
         }

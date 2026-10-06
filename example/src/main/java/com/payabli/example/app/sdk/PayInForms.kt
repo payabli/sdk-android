@@ -72,9 +72,21 @@ object PayInForms {
         )
 
     /** The instrument sections, which are the SDK's own defaults for both methods. */
-    private fun cardDetails() = PayInFormConfiguration.defaultCardSections().single().copy(title = "Card Information")
+    private fun cardDetails() =
+        PayInFormConfiguration
+            .defaultCardSections()
+            .first {
+                it.style ==
+                    PayInSectionStyle.Inputs
+            }.copy(title = "Card Information")
 
-    private fun bankDetails() = PayInFormConfiguration.defaultBankSections().single().copy(title = "ACH Information")
+    private fun bankDetails() =
+        PayInFormConfiguration
+            .defaultBankSections()
+            .first {
+                it.style ==
+                    PayInSectionStyle.Inputs
+            }.copy(title = "ACH Information")
 
     /** @param identified adds the customer number the stored-method route requires. */
     private fun customerSection(identified: Boolean = false) =

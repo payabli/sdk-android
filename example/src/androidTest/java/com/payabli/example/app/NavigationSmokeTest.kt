@@ -237,7 +237,7 @@ class NavigationSmokeTest {
         const val SIMPLE_CAPTURE_SWITCH = "Show Simple Capture"
 
         /** The form's own default label, since this screen passes no labels of its own. */
-        const val SIMPLE_CAPTURE_SUBMIT = "Submit"
+        const val SIMPLE_CAPTURE_SUBMIT = "Pay"
 
         /**
          * The summary row, read back from the operation rather than typed, so it also proves the row. The

@@ -90,7 +90,7 @@ class PayInFormSubmissionInstrumentedTest {
         rule.onNodeWithText("Ada Lovelace").assertExists()
         rule.onNodeWithText("22039").assertExists()
         // The instrument is gone, so the form has nothing to send until the payer enters one.
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsNotEnabled()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).assertIsNotEnabled()
     }
 
     @Test
@@ -105,7 +105,7 @@ class PayInFormSubmissionInstrumentedTest {
         rule.waitForIdle()
 
         rule.onNodeWithText(groupedPan).assertDoesNotExist()
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsNotEnabled()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).assertIsNotEnabled()
     }
 
     @Test
@@ -120,7 +120,7 @@ class PayInFormSubmissionInstrumentedTest {
 
         rule.onNodeWithText(TEST_ROUTING).assertDoesNotExist()
         rule.onNodeWithText("Ada Lovelace").assertExists()
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsNotEnabled()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).assertIsNotEnabled()
     }
 
     @Test
@@ -148,7 +148,7 @@ class PayInFormSubmissionInstrumentedTest {
         rule.waitForIdle()
 
         rule.onNodeWithText(groupedPan).assertExists()
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsEnabled()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).assertIsEnabled()
     }
 
     @Test
@@ -191,11 +191,11 @@ class PayInFormSubmissionInstrumentedTest {
         rule.runOnIdle { submission = refusing(PayInField.FirstName) }
         fillBank()
 
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsNotEnabled()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).assertIsNotEnabled()
 
         type(R.string.payabli_payin_field_first_name, "h")
 
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).assertIsEnabled()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).assertIsEnabled()
     }
 
     @Test
@@ -265,6 +265,7 @@ class PayInFormSubmissionInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     onSubmit = { true },
                 )
             }
@@ -272,7 +273,7 @@ class PayInFormSubmissionInstrumentedTest {
     }
 
     private fun submit() {
-        rule.onNodeWithText(string(R.string.payabli_payin_submit)).performClick()
+        rule.onNodeWithText(string(R.string.payabli_payin_submit_capture)).performClick()
         rule.waitForIdle()
     }
 

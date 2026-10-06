@@ -57,7 +57,7 @@ class FormCustomizationTest {
                 }
             }
         }
-        assertEquals(512 * 3 * 2 * 2, built)
+        assertEquals(512 * 3 * 2 * FormOperation.entries.size, built)
     }
 
     @Test
@@ -102,10 +102,41 @@ class FormCustomizationTest {
     }
 
     @Test
+    fun `authorize is offered only once the setting turns it on`() {
+        assertFalse(FormOperation.Authorize in FormSettings().operations)
+        assertTrue(FormOperation.Authorize in FormSettings(offerAuthorize = true).operations)
+    }
+
+    @Test
+    fun `an authorization offers the card alone, whatever methods are chosen`() {
+        // The SDK refuses an authorization with nothing to hold funds on, so a bank-only form would crash.
+        FormMethods.entries.forEach { methods ->
+            val configuration = configure(FormSettings(methods = methods), FormOperation.Authorize)
+            assertEquals(methods.toString(), listOf(PayInMethodType.Card), configuration.methodsOffered)
+        }
+    }
+
+    @Test
+    fun `an authorization holds the amount and its fee`() {
+        val authorize =
+            FormCustomization.operation(
+                FormSettings(),
+                FormOperation.Authorize,
+                BigDecimal("12.34"),
+                "key-1",
+                PayInMethodType.Card,
+            ) as PayabliPayInOperation.Authorize
+
+        assertEquals(BigDecimal("12.64"), authorize.options.paymentDetails.totalAmount)
+        assertEquals("key-1", authorize.options.idempotencyKey)
+    }
+
+    @Test
     fun `the default preset is the SDK's own default sections`() {
         val configuration = configure(FormPreset.Default.settings)
         val inputs = configuration.sectionsFor(PayInMethodType.Card).filter { it.style == PayInSectionStyle.Inputs }
-        assertEquals(PayInFormConfiguration.defaultCardSections().map { it.fields }, inputs.map { it.fields })
+        val defaults = PayInFormConfiguration.defaultCardSections().filter { it.style == PayInSectionStyle.Inputs }
+        assertEquals(defaults.map { it.fields }, inputs.map { it.fields })
     }
 
     @Test

@@ -35,8 +35,6 @@
     <string name="payabli_payin_summary_total">Total</string>
 
     <!-- Section headings, used when a section carries no title of its own. -->
-    <string name="payabli_payin_section_card">Card details</string>
-    <string name="payabli_payin_section_bank">Bank account</string>
     <string name="payabli_payin_section_summary">Payment</string>
 
     <!-- The two instruments, as the selector names them. -->
@@ -56,8 +54,13 @@
     <string name="payabli_payin_sec_code_tel">TEL</string>
 
     <!-- Controls. -->
-    <string name="payabli_payin_submit">Submit</string>
-    <string name="payabli_payin_submitting">Submitting…</string>
+    <!-- The submit button names the operation, then reads the busy form while it runs. -->
+    <string name="payabli_payin_submit_capture">Pay</string>
+    <string name="payabli_payin_busy_capture">Paying…</string>
+    <string name="payabli_payin_submit_authorize">Authorize</string>
+    <string name="payabli_payin_busy_authorize">Authorizing…</string>
+    <string name="payabli_payin_submit_store_method">Save</string>
+    <string name="payabli_payin_busy_store_method">Saving…</string>
     <string name="payabli_payin_expiry_choose">Choose an expiry</string>
     <string name="payabli_payin_expiry_month">Month</string>
     <string name="payabli_payin_expiry_year">Year</string>

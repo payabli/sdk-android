@@ -115,6 +115,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     draft = draft,
                     configuration = both,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
                 )
             }
@@ -142,6 +143,7 @@ class PayInFormMethodChangeInstrumentedTest {
                         draft = draft,
                         configuration = configuration.value,
                         reports = PayInFormReports.None,
+                        submitText = PayInSubmitText.Capture,
                         onMethodChanged = { told += it },
                     )
                 }
@@ -169,6 +171,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     draft = draft,
                     configuration = both,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
                 )
                 PayInFormContent(
@@ -176,6 +179,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     draft = draft,
                     configuration = both,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
                 )
             }
@@ -219,6 +223,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     draft = draft(),
                     configuration = configuration,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
                 )
             }
@@ -233,6 +238,7 @@ class PayInFormMethodChangeInstrumentedTest {
                     draft = draft,
                     configuration = configuration(),
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     onMethodChanged = { told += it },
                 )
             }

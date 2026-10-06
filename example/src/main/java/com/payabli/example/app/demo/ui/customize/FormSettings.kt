@@ -1,11 +1,18 @@
 package com.payabli.example.app.demo.ui.customize
 
-/** What the Simple Capture screen does with what the payer enters. */
+/**
+ * What the Simple Capture screen does with what the payer enters.
+ *
+ * [takesAmount] is whether it charges or holds an amount, which is what the amount box, the summary and the
+ * retry key follow.
+ */
 enum class FormOperation(
     val label: String,
+    val takesAmount: Boolean,
 ) {
-    Capture("Capture"),
-    Tokenize("Tokenize"),
+    Capture("Capture", takesAmount = true),
+    Authorize("Authorize", takesAmount = true),
+    Tokenize("Tokenize", takesAmount = false),
 }
 
 /** Which payment methods the form offers. */
@@ -52,7 +59,12 @@ data class FormSettings(
     val groupCardNumber: Boolean = true,
     val dashExpirySeparator: Boolean = false,
     val maskAccountNumber: Boolean = true,
-)
+    val offerAuthorize: Boolean = false,
+) {
+    /** The operations the screen offers. Authorize only when [offerAuthorize] is on. */
+    val operations: List<FormOperation>
+        get() = FormOperation.entries.filter { it != FormOperation.Authorize || offerAuthorize }
+}
 
 /** Named combinations, so one tap shows several settings changing together. */
 enum class FormPreset(
