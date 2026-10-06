@@ -53,7 +53,10 @@ public sealed interface TapToPaySessionState {
      */
     data class PendingActivation(
         val activationId: String,
-    ) : TapToPaySessionState
+    ) : TapToPaySessionState {
+        /** Without the id, which a host reads from [activationId] rather than from a log line. */
+        override fun toString(): String = "PendingActivation"
+    }
 
     /** The session cannot be used, and [reason] says what a host can do about it. */
     data class Failed(

@@ -11,6 +11,7 @@ import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
+import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.CancellationException
@@ -179,12 +180,14 @@ internal class TapToPaySessionCoordinator(
      * Publishes where [failure] leaves the session and returns the failure its caller is given.
      *
      * Called with [region] held, so a run waiting on it cannot change the stored registration or the state
-     * between this failure and its landing. The registration is read once, so the state and the failure
-     * answer from the same one. Uncancellable, so a withdrawal cannot leave the failure unlanded.
+     * between this failure and its landing. A phase settles before the run enclosing it settles again, and a
+     * failure this already raised lands where it did the first time. The registration is read only where it
+     * decides the landing. Uncancellable, so a withdrawal cannot leave the failure unlanded.
      */
     private suspend fun settled(failure: Exception): Exception =
         withContext(NonCancellable) {
-            val registration = enrollment.registration()
+            val owesActivation = TapToPaySessionFailures.owesActivation(failure)
+            val registration = if (owesActivation) enrollment.registration() else StoredRegistration.None
             TapToPaySessionFailures.landingFor(failure, registration)?.let(manager::settle)
             TapToPaySessionFailures.raisedFor(failure, registration)
         }
@@ -233,9 +236,14 @@ internal class TapToPaySessionCoordinator(
             // Withdrawing is not an initialize result. `Throwable` covers CancellationException, so a
             // caller that cancelled was recorded as one whose setup failed.
             throw withdrawn
-        } catch (failure: Throwable) {
-            TapToPayReports.initializeFailed(failure, startedAt)
-            throw failure
+        } catch (failure: Exception) {
+            // Reported as the host is given it.
+            val raised = settled(failure)
+            TapToPayReports.initializeFailed(raised, startedAt)
+            throw raised
+        } catch (fatal: Throwable) {
+            TapToPayReports.initializeFailed(fatal, startedAt)
+            throw fatal
         }
         TapToPayReports.initializeSucceeded(startedAt)
     }
@@ -251,6 +259,10 @@ internal class TapToPaySessionCoordinator(
                 // A caller cancellation is not an attestation result, and this event is on the force-send
                 // list, so recording one flushed the batch over a withdrawal.
                 throw withdrawn
+            } catch (failure: Exception) {
+                val raised = settled(failure)
+                TapToPayReports.attestationFailed(raised, startedAt)
+                throw raised
             } catch (failure: Throwable) {
                 TapToPayReports.attestationFailed(failure, startedAt)
                 throw failure

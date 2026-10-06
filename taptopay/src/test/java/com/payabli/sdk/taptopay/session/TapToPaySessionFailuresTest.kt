@@ -18,6 +18,7 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUI
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Test
 
@@ -237,7 +238,9 @@ class TapToPaySessionFailuresTest {
     fun `the failure raised carries the code of the state landed`() {
         for (failure in owingActivation()) {
             val name = failure::class.qualifiedName
-            assertSame(name, failure, TapToPaySessionFailures.raisedFor(failure, HELD))
+            val held = TapToPaySessionFailures.raisedFor(failure, HELD)
+            assertEquals(name, PayabliErrorType.DEVICE_PENDING_ACTIVATION, TapToPayErrorCodes.typeFor(held))
+            if (failure !is TapToPaySessionException.PendingActivation) assertSame(name, failure, held.cause)
 
             val unregistered = TapToPaySessionFailures.raisedFor(failure, StoredRegistration.None)
             assertEquals(name, PayabliErrorType.PERMISSION_DENIED, TapToPayErrorCodes.typeFor(unregistered))
@@ -275,4 +278,10 @@ class TapToPaySessionFailuresTest {
             DeviceServiceException.Forbidden(403, REASON),
             PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON),
         )
+
+    @Test
+    fun `neither the pending state nor a held registration prints the id`() {
+        assertFalse(TapToPaySessionState.PendingActivation(ACTIVATION_ID).toString().contains(ACTIVATION_ID))
+        assertFalse(HELD.toString().contains(ACTIVATION_ID))
+    }
 }

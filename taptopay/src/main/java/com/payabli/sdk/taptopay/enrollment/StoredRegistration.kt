@@ -12,7 +12,9 @@ internal sealed interface StoredRegistration {
     /** A binding is stored, under the id the service assigned at registration. */
     data class Held(
         val activationId: String,
-    ) : StoredRegistration
+    ) : StoredRegistration {
+        override fun toString(): String = "Held"
+    }
 
     /** Nothing is stored. A record that would not decode is discarded on the read and counts as this. */
     data object None : StoredRegistration

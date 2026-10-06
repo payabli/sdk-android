@@ -47,8 +47,8 @@ internal object TapToPaySessionFailures {
 
     /**
      * The failure a caller is given for [failure], so its code agrees with the state [landingFor] published.
-     * A registration that cannot be read raises its storage refusal. With none stored, the original is the
-     * cause, which keeps any text the service sent.
+     * A registration that cannot be read raises its storage refusal. Otherwise the original is the cause,
+     * which keeps any text the service sent.
      */
     fun raisedFor(
         failure: Exception,
@@ -56,7 +56,9 @@ internal object TapToPaySessionFailures {
     ): Exception =
         when {
             !owesActivation(failure) -> failure
-            registration is StoredRegistration.Held -> failure
+            registration is StoredRegistration.Held ->
+                failure as? TapToPaySessionException.PendingActivation
+                    ?: TapToPaySessionException.PendingActivation(failure)
             registration is StoredRegistration.Unreadable -> registration.refusal
             // Already the code the configuration landing is reported under.
             failure is PayabliException -> failure
@@ -64,10 +66,11 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * The failures that say the device owes activation. A device that owes it and an application this
-     * paypoint does not permit arrive as one refusal, so both are here, and [registration] tells them apart.
+     * The failures that say the device owes activation, and the only ones a registration decides. A device
+     * that owes it and an application this paypoint does not permit arrive as one refusal, so both are here,
+     * and the registration tells them apart.
      */
-    private fun owesActivation(failure: Throwable): Boolean =
+    fun owesActivation(failure: Throwable): Boolean =
         failure is TapToPaySessionException.PendingActivation ||
             failure is DeviceServiceException.Forbidden ||
             (failure is PayabliException && failure.type == PayabliErrorType.PERMISSION_DENIED)
