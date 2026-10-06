@@ -24,6 +24,8 @@ import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
 
+private const val REPLACED = "device key was gone and has been replaced"
+
 /** The cold sequence, and the check that decides whether it runs at all. */
 class DeviceEnrollmentTest {
     private fun coldScript() =
@@ -275,6 +277,114 @@ class DeviceEnrollmentTest {
                 fixture.routes,
             )
             assertEquals(FakeDeviceKey.KEY_IDENTITY, fixture.storedRecord()!!.keyId)
+        }
+
+    @Test
+    fun `a device key that is gone is replaced, and the device re-registers under the same id owing activation`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(coldScript(), deviceKey = FakeDeviceKey(lost = true))
+            fixture.seedRecord()
+
+            val outcome = fixture.enrollment.enroll()
+
+            assertTrue((outcome as EnrollmentOutcome.Attested).activationRequired)
+            assertEquals(1, fixture.deviceKey.provisions)
+            assertEquals(0, fixture.deviceKey.deletions)
+            assertEquals(
+                listOf(RouteScript.CHALLENGE, RouteScript.REGISTER, RouteScript.ATTEST),
+                fixture.routes,
+            )
+            val register = fixture.transport.requests.single { it.path == RouteScript.REGISTER }
+            val body = register.body!!.toString(Charsets.UTF_8)
+            assertTrue(body, body.contains(""""hardwareId":"$HARDWARE_ID""""))
+            assertTrue(body, body.contains(""""keyId":"${FakeDeviceKey.PROVISIONED_IDENTITY}""""))
+            val stored = fixture.storedRecord()!!
+            assertEquals(DEVICE_ID, stored.deviceId)
+            assertEquals(FakeDeviceKey.PROVISIONED_IDENTITY, stored.keyId)
+            assertEquals(EnrollmentOutcome.AlreadyAttested, fixture.enrollment.enroll())
+        }
+
+    @Test
+    fun `a device key that is gone with no binding held is replaced and enrolled cold`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(coldScript(), deviceKey = FakeDeviceKey(lost = true))
+
+            fixture.enrollment.enroll()
+
+            assertEquals(1, fixture.deviceKey.provisions)
+            assertEquals(FakeDeviceKey.PROVISIONED_IDENTITY, fixture.storedRecord()!!.keyId)
+        }
+
+    @Test
+    fun `a key store that cannot confirm the key creates none, sends nothing and keeps the binding`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(),
+                    deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.CryptoUnavailable()),
+                )
+            fixture.seedRecord()
+
+            val failure = runCatching { fixture.enrollment.enroll() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceKeyException.CryptoUnavailable)
+            assertEquals(0, fixture.deviceKey.provisions)
+            assertTrue(fixture.routes.toString(), fixture.routes.isEmpty())
+            val stored = fixture.storedRecord()!!
+            assertEquals(DEVICE_ID, stored.deviceId)
+            assertEquals(FakeDeviceKey.KEY_IDENTITY, stored.keyId)
+        }
+
+    @Test
+    fun `a replacement key that cannot be created fails before any request`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(),
+                    deviceKey = FakeDeviceKey(lost = true, provisionFailure = DeviceKeyException.CryptoUnavailable()),
+                )
+            fixture.seedRecord()
+
+            val failure = runCatching { fixture.enrollment.enroll() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceKeyException.CryptoUnavailable)
+            assertEquals(1, fixture.deviceKey.provisions)
+            assertTrue(fixture.routes.toString(), fixture.routes.isEmpty())
+            assertFalse(
+                "a key that was not created is not reported replaced",
+                fixture.logger.records.any { it.message.contains(REPLACED) },
+            )
+        }
+
+    @Test
+    fun `a key still gone after provisioning fails rather than provisioning again`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                EnrollmentFixture(
+                    RouteScript(),
+                    deviceKey = FakeDeviceKey(lost = true, provisionLeavesNoKey = true),
+                )
+            fixture.seedRecord()
+
+            val failure = runCatching { fixture.enrollment.enroll() }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceKeyException.KeyLost)
+            assertEquals(1, fixture.deviceKey.provisions)
+            assertTrue(fixture.routes.toString(), fixture.routes.isEmpty())
+        }
+
+    @Test
+    fun `replacing a lost key logs that it happened, and neither the id nor the entry point`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(coldScript(), deviceKey = FakeDeviceKey(lost = true))
+            fixture.seedRecord()
+
+            fixture.enrollment.enroll()
+
+            val written = fixture.logger.everythingWritten()
+            assertTrue(written, fixture.logger.records.any { it.message.contains(REPLACED) })
+            assertFalse(written, written.contains(DEVICE_ID))
+            assertFalse(written, written.contains(ENTRY))
         }
 
     @Test

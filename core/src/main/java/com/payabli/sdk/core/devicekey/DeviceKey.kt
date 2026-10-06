@@ -89,6 +89,16 @@ public interface DeviceKey {
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public fun delete()
+
+    /**
+     * Creates a key at the alias when there is none, and leaves an existing key untouched.
+     *
+     * For a caller that has been told the key is gone and is about to enroll the replacement.
+     *
+     * @throws DeviceKeyException if the key store cannot be reached or cannot create the key.
+     */
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public fun provision()
 }
 
 /**

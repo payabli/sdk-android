@@ -19,6 +19,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import java.security.GeneralSecurityException
+import java.security.Key
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -78,6 +79,14 @@ internal class KeystoreDeviceKey(
      * it does whether or not the monitor is there.
      */
     private val betweenSignAndIdentity: () -> Unit = {},
+    /**
+     * Reads the private half of the entry at the alias. **A test seam; production reads the key store.**
+     *
+     * The platform raises `UnrecoverableKeyException` here for an entry it cannot load, such as one whose
+     * certificate is missing, and no public API can create such an entry. The seam is how a test reaches the
+     * discard-and-create path against the real key store.
+     */
+    private val readPrivateKey: (KeyStore, String) -> Key? = { store, alias -> store.getKey(alias, null) },
 ) : DeviceKey {
     /**
      * There is no alias parameter, and that is the point.
@@ -95,9 +104,9 @@ internal class KeystoreDeviceKey(
      * point this just read rather than from a second read, so the two cannot describe different keys.
      *
      * **The monitor is here because this is not a read.** [uncompressedPoint] discards the entry when the
-     * certificate is not a P-256 point, so an earlier version of this method that took no lock could observe
-     * a stale certificate, be overtaken by a replacement, and then delete the key that replaced it. Read,
-     * validate and discard belong in one section for that reason.
+     * certificate is not a P-256 point, so a caller without the lock could observe a stale certificate, be
+     * overtaken by a replacement, and then delete the key that replaced it. Read, validate and discard belong
+     * in one section for that reason.
      */
     override fun publicKey(): DevicePublicKey =
         synchronized(MONITOR) {
@@ -113,10 +122,8 @@ internal class KeystoreDeviceKey(
         // Under the same monitor as `sign`, so a deletion cannot land between a signature and the identity
         // that labels it.
         //
-        // That is the whole of what it buys, and deliberately not more: this releases the monitor before a
-        // caller invokes `ensureKey`, so delete-and-regenerate is two guarded steps rather than one. A `sign`
-        // arriving between them finds no key and reports it gone, which is a correct answer to a device with
-        // no key rather than a race, and a caller replacing a key handles that outcome anyway.
+        // The monitor is released on return, before any new key is created. A `sign` that runs after this
+        // and before the next key exists throws `KeyLost`.
         synchronized(MONITOR) {
             try {
                 keyStore().deleteEntry(alias)
@@ -126,6 +133,10 @@ internal class KeystoreDeviceKey(
                 throw asProviderFailure(e)
             }
         }
+    }
+
+    override fun provision() {
+        ensureKey(mayCreate = true)
     }
 
     private fun uncompressedPoint(): ByteArray {
@@ -179,11 +190,21 @@ internal class KeystoreDeviceKey(
      * With [mayCreate] false it proves a key is present, which is what a caller resolving a key the service has
      * already accepted wants: the answer to a missing key there is enrolling again, not a fresh key under the
      * same alias.
+     *
+     * An entry the platform cannot load, such as one whose certificate is missing, is discarded by the
+     * presence check. With [mayCreate] true the key is then created in the same call.
      */
     fun ensureKey(mayCreate: Boolean) {
         beforeKeyGeneration()
         synchronized(MONITOR) {
-            if (existingPrivateKey() != null) return
+            val existing =
+                try {
+                    existingPrivateKey()
+                } catch (discarded: DeviceKeyException.KeyLost) {
+                    if (!mayCreate) throw discarded
+                    null
+                }
+            if (existing != null) return
             if (!mayCreate) throw DeviceKeyException.KeyLost()
             createKey()
         }
@@ -197,7 +218,7 @@ internal class KeystoreDeviceKey(
      * distinction the surface exists to make. Always the platform case: a broken provider says nothing about
      * whether this key survives.
      *
-     * Deliberately **not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
+     * **Not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
      * `ProviderException`, so a catch there swallows it, [strongBoxKey] never sees the signal it falls back
      * on, and key creation fails outright on every device without a secure element.
      */
@@ -247,7 +268,7 @@ internal class KeystoreDeviceKey(
 
     private fun existingPrivateKey(): PrivateKey? =
         try {
-            keyStore().getKey(alias, null) as? PrivateKey
+            readPrivateKey(keyStore(), alias) as? PrivateKey
         } catch (e: UnrecoverableKeyException) {
             throw asFailure(e)
         } catch (e: GeneralSecurityException) {

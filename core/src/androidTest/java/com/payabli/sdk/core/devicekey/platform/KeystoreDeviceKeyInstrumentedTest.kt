@@ -32,6 +32,7 @@ import java.security.KeyFactory
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.Signature
+import java.security.UnrecoverableKeyException
 import java.security.interfaces.ECPublicKey
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
@@ -209,6 +210,58 @@ class KeystoreDeviceKeyInstrumentedTest {
         }
 
     @Test
+    fun provisionCreatesAKeyWhereThereIsNone() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val key = key()
+
+            key.provision()
+
+            assertTrue(keyStore().containsAlias(keyId))
+            assertTrue(key.sign("payload".toByteArray()).signature.isNotEmpty())
+        }
+
+    @Test
+    fun anEntryThePlatformCannotLoadIsReplacedWhenCreationIsAllowed() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val before = provisioned().publicKey().point
+            val unloadable =
+                KeystoreDeviceKey(logger, readPrivateKey = { _, _ ->
+                    throw UnrecoverableKeyException("no public certificate stored")
+                })
+
+            unloadable.provision()
+
+            val after = key().publicKey().point
+            assertNotEquals(before.toList(), after.toList())
+            assertTrue(key().sign("payload".toByteArray()).signature.isNotEmpty())
+        }
+
+    @Test
+    fun anEntryThePlatformCannotLoadIsReportedGoneWhenCreationIsNotAllowed() =
+        runTest(timeout = TEST_TIMEOUT) {
+            provisioned()
+            val unloadable =
+                KeystoreDeviceKey(logger, readPrivateKey = { _, _ ->
+                    throw UnrecoverableKeyException("no public certificate stored")
+                })
+
+            val thrown = runCatching { unloadable.ensureKey(mayCreate = false) }.exceptionOrNull()
+
+            assertTrue("expected KeyLost, got $thrown", thrown is DeviceKeyException.KeyLost)
+            assertFalse("the unloadable entry is discarded", keyStore().containsAlias(keyId))
+        }
+
+    @Test
+    fun provisionLeavesAnExistingKeyInPlace() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val before = provisioned().publicKey().point
+
+            key().provision()
+
+            assertEquals(before.toList(), key().publicKey().point.toList())
+        }
+
+    @Test
     fun theIdentityIsDerivedFromTheKeyRatherThanFromTheAlias() =
         runTest(timeout = TEST_TIMEOUT) {
             val before = provisioned().publicKey().identity
@@ -255,7 +308,7 @@ class KeystoreDeviceKeyInstrumentedTest {
      * row by the identity it was sent and verifies against the public key it holds for that row, so the
      * assertion is refused and nothing in the failure names the replacement.
      *
-     * **Nothing here waits on a duration.** An earlier version queued the replacement and slept, which proves
+     * **Nothing here waits on a duration.** Queuing the replacement and sleeping would prove
      * neither that the worker started nor that it was held: a worker descheduled past the sleep leaves the
      * old key in place, and the test then passes with the monitor removed. Three facts are established
      * instead, each by a bounded wait that fails loudly rather than hanging.
