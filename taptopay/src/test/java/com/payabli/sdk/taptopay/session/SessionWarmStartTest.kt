@@ -88,7 +88,7 @@ class SessionWarmStartTest {
 
             assertTrue("$failure", failure is TapToPaySessionException.AttestationRequired)
             assertEquals(
-                TapToPaySessionState.Failed(TapToPayFailureReason.ATTESTATION_REQUIRED),
+                TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED),
                 fixture.state,
             )
             assertEquals("the record names a binding that is gone", null, fixture.enrollment.storedRecord())
@@ -155,7 +155,7 @@ class SessionWarmStartTest {
             // is missing, and only attesting replaces that.
             assertTrue("$failure", failure is TapToPaySessionException.AttestationRequired)
             assertEquals(
-                TapToPaySessionState.Failed(TapToPayFailureReason.ATTESTATION_REQUIRED),
+                TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED),
                 fixture.state,
             )
             assertEquals("nothing was sent", emptyList<String>(), fixture.routes)

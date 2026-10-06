@@ -2,6 +2,9 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKeyException
+import com.payabli.sdk.core.model.PayabliErrorType
+import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
@@ -139,6 +142,58 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
         }
+
+    @Test
+    fun `a failure refused at the facade is a PayabliException carrying its classification, not its prose`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = SessionFixture(script())
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+
+            val failure =
+                runCatching { terminal.charge(TapToPayPaymentDetails(BigDecimal.ZERO), PAYER) }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is PayabliException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(thrown.type.message, thrown.message)
+            assertTrue(thrown.cause.toString(), thrown.cause is IllegalArgumentException)
+            assertEquals(thrown.cause?.message, thrown.reason)
+        }
+
+    @Test
+    fun `a failure during a charge is a PayabliException carrying its classification, not its prose`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = SessionFixture(script())
+            val terminal = terminalOver(fixture)
+            terminal.initialize()
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+
+            val failure =
+                runCatching {
+                    terminal.charge(TapToPayPaymentDetails(BigDecimal("12.34")), PAYER)
+                }.exceptionOrNull()
+
+            assertTrue(failure.toString(), failure is PayabliException)
+            val thrown = failure as TapToPayException
+            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(thrown.type.message, thrown.message)
+            assertTrue(thrown.cause.toString(), thrown.cause is CardReaderException.ReadFailed)
+            assertEquals(TRANS_ID, thrown.paymentTransId)
+        }
+
+    @Test
+    fun `a transport failure under a charge keeps its code, reason and detail`() {
+        val transport =
+            PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "The service could not be reached.", "timed out")
+
+        val thrown = TapToPayException.from(transport, TRANS_ID, TapToPayCapture.UNKNOWN)
+
+        assertEquals(PayabliErrorType.NETWORK_ERROR, thrown.type)
+        assertEquals("The service could not be reached.", thrown.reason)
+        assertEquals("timed out", thrown.detail)
+        assertEquals(TRANS_ID, thrown.paymentTransId)
+    }
 
     @Test
     fun `a fresh install reads no device id`() =

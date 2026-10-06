@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.network
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -46,7 +46,7 @@ class AuthRecoveryPolicyTest {
 
     @Test
     fun `an exhausted recovery is token expired`() {
-        assertEquals(PayabliErrorCode.TOKEN_EXPIRED, policy.exhausted().code)
+        assertEquals(PayabliErrorType.TOKEN_EXPIRED, policy.exhausted().type)
     }
 
     @Test
@@ -54,10 +54,10 @@ class AuthRecoveryPolicyTest {
         val failure = policy.exhausted()
 
         assertTrue("reason should say what happened", failure.reason.contains("refresh", ignoreCase = true))
-        // PayabliException is Exception(code.wireName), so reason never reaches `message`. That is the
+        // PayabliException is Exception(type.message), so reason never reaches `message`. That is the
         // family's redaction rule rather than this policy's doing: reason and detail are displayable and
         // never loggable, and `message` is what reaches logs and crash reports.
-        assertEquals(PayabliErrorCode.TOKEN_EXPIRED.wireName, failure.message)
+        assertEquals(PayabliErrorType.TOKEN_EXPIRED.message, failure.message)
         assertFalse("no server text relayed", failure.reason.contains("401"))
     }
 
@@ -65,6 +65,6 @@ class AuthRecoveryPolicyTest {
     fun `token expired is excluded from the retryable set, so the two policies do not overlap`() {
         // The division of labour, asserted rather than only documented: if TOKEN_EXPIRED were retryable,
         // Retry would replay a terminal rejection that this policy already gave up on.
-        assertFalse(PayabliErrorCode.TOKEN_EXPIRED in RetryPolicy.RETRYABLE_CODES)
+        assertFalse(PayabliErrorType.TOKEN_EXPIRED in RetryPolicy.RETRYABLE_CODES)
     }
 }

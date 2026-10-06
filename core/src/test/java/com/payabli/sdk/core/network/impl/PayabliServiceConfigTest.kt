@@ -4,7 +4,7 @@ import com.payabli.sdk.core.auth.testAuth
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
@@ -37,17 +37,17 @@ class PayabliServiceConfigTest {
     fun `a non-http scheme is rejected at construction, not at the connection cast`() {
         // file:///tmp parses as a URI, then fails the HttpURLConnection cast with a ClassCastException that
         // no mapping would catch.
-        assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failureFrom { create("file:///tmp") }.code)
+        assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failureFrom { create("file:///tmp") }.type)
     }
 
     @Test
     fun `a base URL with no host is rejected`() {
-        assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failureFrom { create("https:///nohost") }.code)
+        assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failureFrom { create("https:///nohost") }.type)
     }
 
     @Test
     fun `a relative base URL is rejected`() {
-        assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failureFrom { create("api.payabli.com") }.code)
+        assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failureFrom { create("api.payabli.com") }.type)
     }
 
     @Test
@@ -71,7 +71,7 @@ class PayabliServiceConfigTest {
                 assertTrue("expected a PayabliException, got $thrown", thrown is PayabliException)
                 val failure = thrown as PayabliException
 
-                assertEquals(PayabliErrorCode.INVALID_CONFIGURATION, failure.code)
+                assertEquals(PayabliErrorType.INVALID_CONFIGURATION, failure.type)
                 assertEquals(PayabliService.REASON_METHOD_UNSUPPORTED, failure.reason)
             }
         }

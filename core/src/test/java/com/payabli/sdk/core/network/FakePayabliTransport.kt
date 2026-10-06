@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.network
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
@@ -11,7 +11,7 @@ import kotlinx.serialization.SerializationException
  * Lives in `:core`'s own test source set because there is no shared fixtures module yet. When one lands,
  * this is the first thing that should move into it.
  *
- * **It deliberately does not apply the decoration chain.** Endpoint-client tests must not come to depend
+ * **It does not apply the decoration chain.** Endpoint-client tests must not come to depend
  * on decoration having happened, or a later "fix" here would quietly turn this fake into a second
  * sanctioned transport. Decoration is `PayabliService`'s job and is tested there.
  */
@@ -54,7 +54,7 @@ internal class FakePayabliTransport : PayabliTransport {
             )
         } catch (e: SerializationException) {
             throw PayabliGenericException(
-                PayabliErrorCode.DECODING_ERROR,
+                PayabliErrorType.DECODING_ERROR,
                 "Failed to decode response envelope",
                 cause = e,
             )

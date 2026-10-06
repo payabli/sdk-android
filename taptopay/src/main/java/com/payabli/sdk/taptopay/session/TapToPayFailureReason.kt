@@ -16,7 +16,7 @@ public enum class TapToPayFailureReason {
      * The service revoked the attestation, or the credential it was pinned to has moved. A repair does not
      * attest, so it cannot restore this.
      */
-    ATTESTATION_REQUIRED,
+    DEVICE_SETUP_REQUIRED,
 
     /**
      * The paypoint, the device or its gateway is not set up for card-present work.

@@ -9,7 +9,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.error
 import com.payabli.sdk.core.logging.info
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.impl.RedactedCause
@@ -264,7 +264,7 @@ internal class PayabliAuth(
                 // would make their own scope look like it is unwinding.
                 finish(
                     shared,
-                    PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_REFRESH_CANCELLED),
+                    PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_REFRESH_CANCELLED),
                 )
                 throw cancellation
             } catch (failure: Exception) {
@@ -273,7 +273,7 @@ internal class PayabliAuth(
             } catch (fatal: Throwable) {
                 // It still reaches the caller unchanged, but the claim cannot outlive it or every later
                 // reader waits on a deferred nobody owns. No cause attached: it would pin whatever died.
-                finish(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_REFRESH_FAILED))
+                finish(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_REFRESH_FAILED))
                 throw fatal
             }
 
@@ -282,19 +282,19 @@ internal class PayabliAuth(
         val fresh =
             minted ?: fail(
                 shared,
-                PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_PROVIDER_TIMEOUT),
+                PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_PROVIDER_TIMEOUT),
             )
 
         // A blank token cannot authenticate anything, so it is refused rather than installed. This is the
         // only place the rule holds, since nothing validates a token before it reaches here.
         if (fresh.isBlank()) {
-            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_BLANK_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_BLANK_TOKEN))
         }
 
         // A CR or LF here would be header injection, and the platform would throw an unchecked exception from
         // inside the transport rather than a PayabliException. Refused for the same reason blank is.
         if (!fresh.isHeaderSafe()) {
-            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_UNUSABLE_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNUSABLE_TOKEN))
         }
 
         // The same credential the server just refused. Committing it would publish a rotation that did not
@@ -302,7 +302,7 @@ internal class PayabliAuth(
         // would be unchanged, the next rejection starts another provider call instead of taking the
         // already-rotated shortcut: one provider call per 401, for as long as the provider keeps doing it.
         if (fresh == rejectedToken) {
-            fail(shared, PayabliGenericException(PayabliErrorCode.TOKEN_PROVIDER_FAILED, REASON_UNCHANGED_TOKEN))
+            fail(shared, PayabliGenericException(PayabliErrorType.TOKEN_PROVIDER_FAILED, REASON_UNCHANGED_TOKEN))
         }
 
         // Emitted under the same lock that commits and releases, so a second refresh cannot publish its
@@ -332,7 +332,7 @@ internal class PayabliAuth(
     /** Anything the provider raised, redacted: it is host code, whatever type it chose to throw. */
     private fun providerFailure(failure: Throwable): PayabliGenericException =
         PayabliGenericException(
-            PayabliErrorCode.TOKEN_PROVIDER_FAILED,
+            PayabliErrorType.TOKEN_PROVIDER_FAILED,
             REASON_REFRESH_FAILED,
             cause = RedactedCause(failure),
         )
@@ -343,7 +343,7 @@ internal class PayabliAuth(
         outcome: PayabliGenericException,
     ): Nothing {
         finish(shared, outcome)
-        logger.error(outcome, LogField.safe("errorCode", outcome.code)) { "token refresh failed" }
+        logger.error(outcome, LogField.safe("errorCode", outcome.type)) { "token refresh failed" }
         throw outcome
     }
 
@@ -384,7 +384,7 @@ internal class PayabliAuth(
                 // rather than waiting for a token only this caller can supply.
                 currentToken
                     ?: throw PayabliGenericException(
-                        PayabliErrorCode.TOKEN_PROVIDER_FAILED,
+                        PayabliErrorType.TOKEN_PROVIDER_FAILED,
                         REASON_PROVIDER_READ_UNMINTED,
                     )
             }

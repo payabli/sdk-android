@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.model
 
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.payin.form.ExpiryValue
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -149,17 +150,17 @@ class PayInRedactionTest {
     }
 
     @Test
-    fun `every failure's message is the classification, never the prose`() {
+    fun `every failure's message is the catalog text, never the prose`() {
         val echoing = "Card $pan was refused"
         val refused = PayInException.Refused(PayInFailure("D0001", echoing, null, null, 200))
         val invalid = PayInException.InvalidInput("paymentMethod.cardnumber", "The card number is not valid")
         val undecodable = PayInException.Undecodable(IllegalStateException(echoing))
 
-        // `:core` requires the message to be the code, so a stack trace carries the classification rather than
+        // `:core` requires the message to be the catalog's fixed text, so a stack trace carries the classification rather than
         // text that may echo what was submitted.
-        assertEquals("PAYMENT_DECLINED", refused.message)
-        assertEquals("VALIDATION_ERROR", invalid.message)
-        assertEquals("DECODING_ERROR", undecodable.message)
+        assertEquals(PayabliErrorType.PAYMENT_DECLINED.message, refused.message)
+        assertEquals(PayabliErrorType.VALIDATION_ERROR.message, invalid.message)
+        assertEquals(PayabliErrorType.DECODING_ERROR.message, undecodable.message)
         listOf(refused, invalid, undecodable).forEach { assertFalse(it.toString().contains(pan)) }
     }
 

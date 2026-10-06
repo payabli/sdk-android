@@ -1,5 +1,6 @@
 package com.payabli.sdk.payin.client
 
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAccountType
 import com.payabli.sdk.payin.model.PayInBankAccountData
@@ -439,8 +440,8 @@ class PayInValidationTest {
 
         assertFalse(refused?.reason?.contains(pan) ?: true)
         assertFalse(refused.toString().contains(pan))
-        // The exception's own message is the classification, as `:core` requires of every one of these.
-        assertEquals("VALIDATION_ERROR", refused?.message)
+        // The exception's own message is the catalog's fixed text, as `:core` requires of every one of these.
+        assertEquals(PayabliErrorType.VALIDATION_ERROR.message, refused?.message)
     }
 
     @Test

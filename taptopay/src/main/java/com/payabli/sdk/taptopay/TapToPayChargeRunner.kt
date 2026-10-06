@@ -7,7 +7,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.telemetry.TelemetryProperties
@@ -454,12 +454,7 @@ internal class TapToPayChargeRunner(
         failure: Exception,
         paymentTransId: String?,
         capture: TapToPayCapture,
-    ) = TapToPayException.of(
-        failure.message ?: failure.javaClass.simpleName,
-        failure,
-        paymentTransId = paymentTransId,
-        capture = capture,
-    )
+    ) = TapToPayException.from(failure, paymentTransId, capture)
 
     /**
      * Closes a transaction whose tap did not complete, best effort. The attempt stays named either way.
@@ -526,11 +521,11 @@ internal class TapToPayChargeRunner(
                 is TTPTransactionException.NotEnabled,
                 -> true
 
-                is PayabliException -> !failure.code.leavesOutcomeUnknown
+                is PayabliException -> !failure.type.leavesOutcomeUnknown
                 else -> false
             }
 
     /** Whether [failure] is the service refusing a key it already holds. */
     private fun isConflict(failure: Throwable): Boolean =
-        failure is PayabliException && failure.code == PayabliErrorCode.CONFLICT
+        failure is PayabliException && failure.type == PayabliErrorType.CONFLICT
 }

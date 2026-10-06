@@ -14,7 +14,7 @@ public class PayabliRateLimitException(
     override val retryAfterMillis: Long? = null,
     reason: String = DEFAULT_REASON,
     detail: String? = null,
-) : PayabliException(PayabliErrorCode.RATE_LIMITED, reason, detail),
+) : PayabliException(PayabliErrorType.RATE_LIMITED, reason, detail),
     PayabliRetryAfter {
     public companion object {
         public const val DEFAULT_REASON: String = "Rate limited (429)"

@@ -10,11 +10,9 @@ import com.payabli.sdk.taptopay.attestation.device.RedactedCause
  * the request or with itself. The HTTP status agrees with that most of the time and not always, which is
  * why the envelope is read rather than the status.
  *
- * Module-local rather than new `PayabliErrorCode` cases, on the precedent
- * [com.payabli.sdk.taptopay.attestation.AttestationException] sets and states: that vocabulary is matched
- * string for string by the sibling SDK and is not this module's to widen. A genuine transport failure still
- * arrives as `PayabliException` from `PayabliHttpErrors`, so which type a caller catches says which layer
- * failed.
+ * Module-local, because each subtype is what this SDK does about an answer. Each cause has its own `PayabliErrorType`,
+ * which is the classification a host reads. A genuine transport failure arrives as `PayabliException` from
+ * `PayabliHttpErrors`, so which type is raised here says which layer failed.
  *
  * [reason] is text this SDK did not author, so treat it as able to carry back anything the request
  * contained: displayable, and **never loggable**. That is how `PayabliException` treats the same field.

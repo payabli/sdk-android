@@ -1,6 +1,6 @@
 package com.payabli.sdk.payin.client
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
@@ -468,7 +468,7 @@ class MoneyInClientTest {
             val refused = failure as PayInException.Refused
             assertEquals("D0329", refused.failure.code)
             assertEquals("Insufficient funds", refused.failure.reason)
-            assertEquals(PayabliErrorCode.PAYMENT_DECLINED, refused.code)
+            assertEquals(PayabliErrorType.PAYMENT_DECLINED, refused.type)
         }
 
     @Test
@@ -486,7 +486,7 @@ class MoneyInClientTest {
             assertTrue(failure is PayInException.ServiceError)
             val error = failure as PayInException.ServiceError
             assertEquals("E4001", error.failure.code)
-            assertEquals(PayabliErrorCode.SERVER_ERROR, error.code)
+            assertEquals(PayabliErrorType.SERVER_ERROR, error.type)
         }
 
     @Test
@@ -566,7 +566,7 @@ class MoneyInClientTest {
                         .exceptionOrNull()
 
                 assertTrue(body, failure is PayInException.Undecodable)
-                assertEquals(body, PayabliErrorCode.DECODING_ERROR, (failure as PayInException).code)
+                assertEquals(body, PayabliErrorType.DECODING_ERROR, (failure as PayInException).type)
             }
         }
 
@@ -583,8 +583,8 @@ class MoneyInClientTest {
                     .exceptionOrNull()
 
             assertEquals(
-                PayabliErrorCode.TOKEN_EXPIRED,
-                (failure as? com.payabli.sdk.core.model.PayabliException)?.code,
+                PayabliErrorType.TOKEN_EXPIRED,
+                (failure as? com.payabli.sdk.core.model.PayabliException)?.type,
             )
         }
 

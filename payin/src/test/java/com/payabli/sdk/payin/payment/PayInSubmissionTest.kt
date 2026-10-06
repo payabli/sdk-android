@@ -1,7 +1,7 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.core.logging.LogLevel
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.IDEMPOTENCY_KEY_MAX_AGE
 import com.payabli.sdk.core.network.PayabliResponse
@@ -846,7 +846,7 @@ class PayInSubmissionTest {
 
             val state = failed(submission.state.value)
             assertTrue("${state.cause}", state.cause is PayInException.Refused)
-            assertEquals(PayabliErrorCode.PAYMENT_DECLINED, state.cause.code)
+            assertEquals(PayabliErrorType.PAYMENT_DECLINED, state.cause.type)
             assertEquals(emptyMap<PayInField, PayInFieldError>(), state.fieldErrors)
         }
 
@@ -858,7 +858,7 @@ class PayInSubmissionTest {
             submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
 
             val state = failed(submission.state.value)
-            assertEquals(PayabliErrorCode.VALIDATION_ERROR, state.cause.code)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, state.cause.type)
             assertEquals(mapOf(PayInField.CardNumber to PayInFieldError.NotAccepted), state.fieldErrors)
         }
 
@@ -899,7 +899,7 @@ class PayInSubmissionTest {
             submission.submit(TEST_ENTRY_POINT, captureOf(), cardForm())
 
             val state = failed(submission.state.value)
-            assertEquals(PayabliErrorCode.UNKNOWN, state.cause.code)
+            assertEquals(PayabliErrorType.UNKNOWN, state.cause.type)
             val carried =
                 state.cause.cause
                     ?.message
@@ -929,7 +929,7 @@ class PayInSubmissionTest {
             // the carrier every other interrupted attempt uses.
             assertTrue("${state.cause}", state.cause is PayInException.Unsettled)
             assertEquals("key-9", state.retryKey)
-            assertEquals(PayabliErrorCode.USER_CANCELLED, state.cause.code)
+            assertEquals(PayabliErrorType.USER_CANCELLED, state.cause.type)
         }
 
     /**
@@ -1019,7 +1019,7 @@ class PayInSubmissionTest {
             // twice.
             val transport =
                 FakePayInTransport.failingWith(
-                    PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the read timed out"),
+                    PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the read timed out"),
                 )
             val submission = submissionOver(transport)
 
@@ -1037,7 +1037,7 @@ class PayInSubmissionTest {
             // here. The public contract says so, and a caller that dereferenced it would be holding a null.
             val transport =
                 FakePayInTransport.failingWith(
-                    PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the read timed out"),
+                    PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the read timed out"),
                 )
             val submission = submissionOver(transport)
 
@@ -1274,7 +1274,7 @@ class PayInSubmissionTest {
 
     /** A failure after the bytes were written, which is what leaves an outcome unknown. */
     private fun dropped(): PayabliGenericException =
-        PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "the link dropped")
+        PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "the link dropped")
 
     private fun failed(state: PayInSubmissionState): PayInSubmissionState.Failed {
         assertTrue("expected a failure, and the state is $state", state is PayInSubmissionState.Failed)

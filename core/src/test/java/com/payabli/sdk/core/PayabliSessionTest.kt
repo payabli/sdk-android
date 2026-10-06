@@ -4,7 +4,7 @@ import com.payabli.sdk.core.auth.mintingThen
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.config.PayabliTokenProvider
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.HttpMethod
@@ -293,8 +293,8 @@ class PayabliSessionTest {
                 val failure = second.exceptionOrNull()
                 assertTrue("expected a failure, got $second", failure is PayabliException)
                 assertEquals(
-                    PayabliErrorCode.INVALID_CONFIGURATION,
-                    (failure as PayabliException).code,
+                    PayabliErrorType.INVALID_CONFIGURATION,
+                    (failure as PayabliException).type,
                 )
                 // Survived rather than merely "not replaced": asking again with the original configuration
                 // hands back the same instance, which a refusal that had torn anything down could not do.
@@ -326,7 +326,7 @@ class PayabliSessionTest {
                     runCatching {
                         completing("the request through the replaced session") { dead.transport.execute(ping()) }
                     }.exceptionOrNull()
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (throughDead as PayabliException).code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (throughDead as PayabliException).type)
             }
         }
 
@@ -397,7 +397,7 @@ class PayabliSessionTest {
                         TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                     }.getOrThrow()
 
-                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "finished"))
                 assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
 
                 PayabliSession
@@ -409,7 +409,7 @@ class PayabliSessionTest {
                 // A request that decided the first session was finished can suspend before it says so, and
                 // resume after the host has re-initialized. Keyed on the published value rather than on the
                 // machine, this call kills a session that is live and the host has no signal that it did.
-                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "finished"))
 
                 assertEquals(
                     "a listener from a replaced session must not finish the one that replaced it",
@@ -442,7 +442,7 @@ class PayabliSessionTest {
                                 straggler = onAuthFailure
                                 TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
                             }.getOrThrow()
-                        straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+                        straggler.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "finished"))
                         assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
 
                         val initializing =
@@ -536,7 +536,7 @@ class PayabliSessionTest {
                 // reset that only put the value back would leave the outgoing session able to write over it,
                 // and the class that inherited the state would have nothing pointing back to the one that
                 // leaked it.
-                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorCode.TOKEN_EXPIRED, "finished"))
+                straggler.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "finished"))
 
                 assertEquals(
                     "a listener from a session that was reset away must not publish",
@@ -559,7 +559,7 @@ class PayabliSessionTest {
                         completing("the request whose replay is refused") { subject.transport.execute(ping()) }
                     }.exceptionOrNull()
 
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as PayabliException).type)
                 // A token minted seconds ago and refused again is an authorization fact, not a transient one.
                 assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
             }
@@ -590,7 +590,7 @@ class PayabliSessionTest {
                 // rejected token again, calls the host's broker again, and can even succeed, while the
                 // session it belongs to says it must be re-initialized. Worse, the host then re-initializes
                 // and a capability still holding this transport keeps a second refresh domain alive.
-                assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (after as PayabliException).code)
+                assertEquals(PayabliErrorType.TOKEN_EXPIRED, (after as PayabliException).type)
                 assertEquals("a finished transport must not send again", sentWhileDying, server.recorded.size)
                 assertEquals(
                     "a finished transport must not call the host's broker again",

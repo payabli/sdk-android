@@ -83,7 +83,7 @@ internal class TokenStorageClient(
                 LogField.safe("event", "payin_store_failed"),
                 LogField.safe("route", PayInRoutes.STORE_METHOD),
                 LogField.safe("statusCode", response.statusCode),
-                LogField.safe("errorCode", failure.code),
+                LogField.safe("errorCode", failure.type),
             ) { "the stored-method call failed at the transport" }
             throw failure
         }

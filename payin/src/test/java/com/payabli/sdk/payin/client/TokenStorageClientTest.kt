@@ -1,6 +1,6 @@
 package com.payabli.sdk.payin.client
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException
 import com.payabli.sdk.payin.model.PayInInstrument
@@ -220,7 +220,7 @@ class TokenStorageClientTest {
                 }.exceptionOrNull()
 
             assertTrue(failure is PayInException.Undecodable)
-            assertEquals(PayabliErrorCode.DECODING_ERROR, (failure as PayInException).code)
+            assertEquals(PayabliErrorType.DECODING_ERROR, (failure as PayInException).type)
         }
 
     @Test
@@ -234,7 +234,7 @@ class TokenStorageClientTest {
                         .storeMethod("e", PayInInstrument.Card(testCard()))
                 }.exceptionOrNull()
 
-            assertEquals(PayabliErrorCode.SERVER_ERROR, (failure as? com.payabli.sdk.core.model.PayabliException)?.code)
+            assertEquals(PayabliErrorType.SERVER_ERROR, (failure as? com.payabli.sdk.core.model.PayabliException)?.type)
         }
 
     @Test

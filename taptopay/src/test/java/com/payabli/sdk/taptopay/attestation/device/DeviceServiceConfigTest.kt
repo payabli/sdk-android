@@ -1,6 +1,6 @@
 package com.payabli.sdk.taptopay.attestation.device
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.taptopay.enrollment.configBody
@@ -227,6 +227,6 @@ class DeviceServiceConfigTest {
             val failure = failureOf { client.config(ENTRY, ASSERTION) }
 
             assertTrue("$failure", failure is PayabliException)
-            assertEquals(PayabliErrorCode.TOKEN_EXPIRED, (failure as PayabliException).code)
+            assertEquals(PayabliErrorType.TOKEN_EXPIRED, (failure as PayabliException).type)
         }
 }

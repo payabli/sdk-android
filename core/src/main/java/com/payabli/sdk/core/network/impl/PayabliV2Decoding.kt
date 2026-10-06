@@ -1,6 +1,6 @@
 package com.payabli.sdk.core.network.impl
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliHttpErrors
 import com.payabli.sdk.core.network.PayabliJson
@@ -27,7 +27,7 @@ internal fun <T> PayabliResponse.asV2Envelope(payloadSerializer: KSerializer<T>)
         // genuine programming errors raised from inside a serializer.
         // RedactedCause, not e: the message would carry the response body verbatim.
         throw PayabliGenericException(
-            PayabliErrorCode.DECODING_ERROR,
+            PayabliErrorType.DECODING_ERROR,
             REASON_DECODE_FAILED,
             cause = RedactedCause(e),
         )

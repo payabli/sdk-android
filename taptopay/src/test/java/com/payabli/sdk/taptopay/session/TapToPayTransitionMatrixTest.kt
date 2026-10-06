@@ -84,7 +84,7 @@ class TapToPayTransitionMatrixTest {
             true,
             TapToPaySessionTransitions.permits(
                 Failed(TapToPayFailureReason.SERVICE_UNAVAILABLE),
-                Failed(TapToPayFailureReason.ATTESTATION_REQUIRED),
+                Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED),
             ),
         )
     }

@@ -1,6 +1,6 @@
 package com.payabli.sdk.payin.model
 
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.RedactedFailure
 import org.junit.Assert.assertFalse
@@ -23,7 +23,7 @@ class UnsettledRedactionTest {
         val already = ForeignRedaction()
         val failure =
             PayabliGenericException(
-                PayabliErrorCode.SERVER_ERROR,
+                PayabliErrorType.SERVER_ERROR,
                 "The service did not answer",
                 cause = already,
             )
@@ -33,7 +33,7 @@ class UnsettledRedactionTest {
 
     @Test
     fun `a cause that has not been redacted is redacted here, once`() {
-        val failure = PayabliGenericException(PayabliErrorCode.NETWORK_ERROR, "The read timed out")
+        val failure = PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "The read timed out")
 
         val carried = PayInException.Unsettled(failure).cause
 

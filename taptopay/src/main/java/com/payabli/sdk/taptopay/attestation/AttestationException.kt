@@ -5,11 +5,8 @@ import androidx.annotation.RestrictTo
 /**
  * Failures from [AppAttestor].
  *
- * Attestation-local rather than new `PayabliErrorCode` cases, for the same reason secure storage keeps
- * its own: the shared error vocabulary is matched string for string by the sibling SDK, and this platform's
- * attestation failures have no counterpart there. "The Play Store is missing" is not a concept the other
- * platform can ever raise, and importing it into a shared taxonomy would oblige that platform to carry a
- * constant it can never return.
+ * Attestation-local, because each subtype is what this SDK does about a platform verdict. Each cause has its own
+ * `PayabliErrorType`, which is the classification a host reads.
  *
  * **The subtypes are dispositions, not error codes.** Play Integrity has two error enums, more than thirty
  * constants between them, and near-total overlap in what a caller can actually *do* about any of them. Five

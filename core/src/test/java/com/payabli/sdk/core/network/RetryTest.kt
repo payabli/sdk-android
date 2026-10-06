@@ -6,7 +6,7 @@ import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliDeclineException
-import com.payabli.sdk.core.model.PayabliErrorCode
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.model.PayabliRateLimitException
@@ -187,7 +187,7 @@ class RetryTest {
     @Test
     fun `every non-retryable code stops on the first attempt`() =
         runTest {
-            PayabliErrorCode.entries
+            PayabliErrorType.entries
                 .filterNot { it in RetryPolicy.RETRYABLE_CODES }
                 .forEach { code ->
                     var attempts = 0
@@ -205,9 +205,9 @@ class RetryTest {
     fun `the retryable set is exactly the three transient codes`() {
         assertEquals(
             setOf(
-                PayabliErrorCode.NETWORK_ERROR,
-                PayabliErrorCode.SERVER_ERROR,
-                PayabliErrorCode.RATE_LIMITED,
+                PayabliErrorType.NETWORK_ERROR,
+                PayabliErrorType.SERVER_ERROR,
+                PayabliErrorType.RATE_LIMITED,
             ),
             RetryPolicy.RETRYABLE_CODES,
         )
@@ -276,7 +276,7 @@ class RetryTest {
      * with a 1-second total budget returned successfully from a 5-second attempt.
      *
      * `attempts` is the load-bearing assertion. A budget expiry that was retryable would show up here as 3,
-     * and that is exactly the storm the removed per-attempt timeout used to cause.
+     * which is a retry storm.
      *
      * The scheduler's time source is passed for the same reason as the backoff test below, and here it is
      * what makes the `currentTime` assertion stable rather than merely meaningful. `TimeSource.Monotonic`
@@ -303,7 +303,7 @@ class RetryTest {
                     }
                 }
 
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, thrown.code)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, thrown.type)
             // The reason, not just the code: NETWORK_ERROR is also what a refused socket produces, so without
             // this the test would pass against an unrelated network failure.
             assertEquals("Operation exceeded its total timeout", thrown.reason)
@@ -313,7 +313,7 @@ class RetryTest {
 
     /**
      * Backoff spends the same budget the attempts do, which is what "one deadline for the whole operation"
-     * means and what could not previously be tested.
+     * means.
      *
      * The scheduler's own time source is passed in because `TimeSource.Monotonic` reads real time while
      * `runTest` advances `delay` virtually: without it a virtual backoff consumed none of the budget, so this
@@ -341,7 +341,7 @@ class RetryTest {
                     }
                 }
 
-            assertEquals(PayabliErrorCode.NETWORK_ERROR, thrown.code)
+            assertEquals(PayabliErrorType.NETWORK_ERROR, thrown.type)
             assertEquals("Operation exceeded its total timeout", thrown.reason)
             assertEquals("the second attempt was allowed to start and be cut off", 2, attempts)
             // 1,000ms of backoff plus the 200ms remainder. A budget that reset per attempt would reach 6,000.

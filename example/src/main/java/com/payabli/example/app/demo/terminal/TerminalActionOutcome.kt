@@ -36,10 +36,13 @@ object TerminalActionOutcome {
         readerDenied: Boolean = false,
     ): String =
         if (readerDenied) {
-            "✗ The card reader was refused: ${error.message ?: error.javaClass.simpleName}"
+            "✗ The card reader was refused: ${describe(error)}"
         } else {
-            "✗ ${action.label} failed: ${error.message ?: error.javaClass.simpleName}"
+            "✗ ${action.label} failed: ${describe(error)}"
         }
+
+    private fun describe(error: Throwable): String =
+        (error as? TerminalFailure)?.shown ?: error.message ?: error.javaClass.simpleName
 
     /** The whole mapping in one place, so a caller never has to remember which half to call. */
     fun from(

@@ -7,8 +7,8 @@ package com.payabli.sdk.core.model
  * The underlying failure is carried as [Throwable.cause], so there is no second slot for it.
  */
 public class PayabliGenericException(
-    code: PayabliErrorCode,
+    type: PayabliErrorType,
     reason: String,
     detail: String? = null,
     cause: Throwable? = null,
-) : PayabliException(code, reason, detail, cause)
+) : PayabliException(type, reason, detail, cause)
