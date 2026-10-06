@@ -10,6 +10,8 @@ import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.network.HttpMethod
 import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.impl.ClientFacts
+import com.payabli.sdk.core.network.impl.ClientHeader
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -89,11 +91,15 @@ class PayabliSessionDeviceIdInstrumentedTest {
 
             runBlocking { session.transport.execute(PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")) }
 
-            val header = server.onlyRequest.header("X-Pyb-Client")
-            assertNotNull(header)
-            assertTrue(header!!, header.contains("os-version=\"${Build.VERSION.RELEASE}\""))
-            assertTrue(header, header.contains("hardware=\"${Build.MODEL}\""))
-            assertTrue(header, header.endsWith("device-id=\"${session.deviceId}\""))
+            val handset =
+                ClientFacts(
+                    sdkVersion = PayabliSdkVersion.VALUE,
+                    osVersion = Build.VERSION.RELEASE,
+                    hardware = Build.MODEL,
+                    deviceId = { session.deviceId },
+                )
+            assertNotNull(session.deviceId)
+            assertEquals(ClientHeader.valueOf(handset), server.onlyRequest.header("X-Pyb-Client"))
         }
     }
 }
