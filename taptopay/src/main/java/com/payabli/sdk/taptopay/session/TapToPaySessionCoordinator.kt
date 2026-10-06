@@ -144,7 +144,13 @@ internal class TapToPaySessionCoordinator(
         try {
             region.withLock {
                 entered = true
-                work()
+                try {
+                    work()
+                } catch (withdrawn: CancellationException) {
+                    throw withdrawn
+                } catch (failure: Exception) {
+                    throw settled(failure)
+                }
             }
         } catch (withdrawn: CancellationException) {
             // **Only where this caller held the region.** A withdrawal reaching here without having entered
@@ -156,13 +162,8 @@ internal class TapToPaySessionCoordinator(
             release(claim, TapToPaySessionException.SetupAbandoned())
             throw withdrawn
         } catch (failure: Exception) {
-            // Read once, so the state and the failure a caller is given answer from the same registration.
-            // Uncancellable: a withdrawal here would skip the release below and wedge every later caller.
-            val registration = withContext(NonCancellable) { enrollment.registration() }
-            TapToPaySessionFailures.landingFor(failure, registration)?.let(manager::settle)
-            val raised = TapToPaySessionFailures.raisedFor(failure, registration)
-            release(claim, raised)
-            throw raised
+            release(claim, failure)
+            throw failure
         } catch (fatal: Throwable) {
             // An OutOfMemoryError reaches the caller unchanged. The claim is still released, or every later
             // caller of this kind waits for something that will never complete. Waiters are told the run
@@ -173,6 +174,20 @@ internal class TapToPaySessionCoordinator(
         }
         release(claim, null)
     }
+
+    /**
+     * Publishes where [failure] leaves the session and returns the failure its caller is given.
+     *
+     * Called with [region] held, so a run waiting on it cannot change the stored registration or the state
+     * between this failure and its landing. The registration is read once, so the state and the failure
+     * answer from the same one. Uncancellable, so a withdrawal cannot leave the failure unlanded.
+     */
+    private suspend fun settled(failure: Exception): Exception =
+        withContext(NonCancellable) {
+            val registration = enrollment.registration()
+            TapToPaySessionFailures.landingFor(failure, registration)?.let(manager::settle)
+            TapToPaySessionFailures.raisedFor(failure, registration)
+        }
 
     /**
      * Clears the slot and then answers everyone waiting on it, in that order, so a caller woken here never
