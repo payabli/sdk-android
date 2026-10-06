@@ -166,10 +166,10 @@ public class PayInFormConfiguration(
         get() = if (defaultMethod in methods) defaultMethod else methods.first()
 
     /**
-     * The sections for one instrument, with any field appearing twice dropped after its first use.
+     * The sections for one instrument, with any input field appearing twice dropped after its first use.
      *
-     * An input section left with no fields is dropped. A summary section is kept, since it places the amounts, and
-     * only the last one listed keeps its fields.
+     * An input section left with no fields is dropped. Every summary section is kept, and only the last one listed
+     * keeps its fields and places the amounts.
      */
     public fun sectionsFor(method: PayInMethodType): List<PayInFormSection> {
         val sections = if (method == PayInMethodType.Card) cardSections else bankSections
