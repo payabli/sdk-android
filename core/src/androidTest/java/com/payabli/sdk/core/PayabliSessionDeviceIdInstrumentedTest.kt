@@ -5,6 +5,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.config.PayabliConfig
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
+import com.payabli.sdk.core.logging.LogLevel
+import com.payabli.sdk.core.logging.LoggerRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -26,8 +28,16 @@ class PayabliSessionDeviceIdInstrumentedTest {
         )
 
     @After
-    fun resetSession() {
+    fun restoreProcessWideState() {
         runBlocking { PayabliSession.reset() }
+        LoggerRegistry.clearLogLevel()
+        LoggerRegistry.setHostDebuggable(false)
+
+        assertEquals(
+            "left the SDK verbose for every later test class in this process",
+            LogLevel.NONE,
+            LoggerRegistry.effectiveLogLevel(),
+        )
     }
 
     @Test
