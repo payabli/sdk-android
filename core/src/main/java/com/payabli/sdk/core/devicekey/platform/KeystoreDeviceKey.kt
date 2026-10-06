@@ -95,7 +95,7 @@ internal class KeystoreDeviceKey(
      * point this just read rather than from a second read, so the two cannot describe different keys.
      *
      * **The monitor is here because this is not a read.** [uncompressedPoint] discards the entry when the
-     * certificate is not a P-256 point, so an earlier version of this method that took no lock could observe
+     * certificate is not a P-256 point, so without the lock a caller could observe
      * a stale certificate, be overtaken by a replacement, and then delete the key that replaced it. Read,
      * validate and discard belong in one section for that reason.
      */
@@ -113,10 +113,8 @@ internal class KeystoreDeviceKey(
         // Under the same monitor as `sign`, so a deletion cannot land between a signature and the identity
         // that labels it.
         //
-        // That is the whole of what it buys, and deliberately not more: this releases the monitor before a
-        // caller invokes `ensureKey`, so delete-and-regenerate is two guarded steps rather than one. A `sign`
-        // arriving between them finds no key and reports it gone, which is a correct answer to a device with
-        // no key rather than a race, and a caller replacing a key handles that outcome anyway.
+        // The monitor is released on return, before any new key is created. A `sign` that runs after this
+        // and before the next key exists throws `KeyLost`.
         synchronized(MONITOR) {
             try {
                 keyStore().deleteEntry(alias)
@@ -126,6 +124,10 @@ internal class KeystoreDeviceKey(
                 throw asProviderFailure(e)
             }
         }
+    }
+
+    override fun provision() {
+        ensureKey(mayCreate = true)
     }
 
     private fun uncompressedPoint(): ByteArray {
@@ -197,7 +199,7 @@ internal class KeystoreDeviceKey(
      * distinction the surface exists to make. Always the platform case: a broken provider says nothing about
      * whether this key survives.
      *
-     * Deliberately **not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
+     * **Not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
      * `ProviderException`, so a catch there swallows it, [strongBoxKey] never sees the signal it falls back
      * on, and key creation fails outright on every device without a secure element.
      */

@@ -153,6 +153,8 @@ private class FakeDeviceKey(
 
     override fun delete(): Unit = throw UnsupportedOperationException("not asked for here")
 
+    override fun provision(): Unit = throw UnsupportedOperationException("not asked for here")
+
     override fun sign(payload: ByteArray): DeviceSignature {
         signed += payload
         val signature =

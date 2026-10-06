@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.devicekey.DeviceKey
+import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.devicekey.DevicePublicKey
 import com.payabli.sdk.core.devicekey.DeviceSignature
 
@@ -19,6 +20,12 @@ internal class FakeDeviceKey(
     private val publicKeyFailure: Throwable? = null,
     /** Raised by [sign] when set. */
     private val signFailure: Throwable? = null,
+    /** No key at the alias: reads and signatures report it gone until [provision] creates one. */
+    private var lost: Boolean = false,
+    /** Raised by [provision] when set, leaving the key gone. */
+    private val provisionFailure: Throwable? = null,
+    /** [provision] completes but the alias stays empty, for a key store that loses the key it just made. */
+    private val provisionLeavesNoKey: Boolean = false,
 ) : DeviceKey {
     var deletions: Int = 0
         private set
@@ -26,18 +33,32 @@ internal class FakeDeviceKey(
     var publicKeyReads: Int = 0
         private set
 
+    var provisions: Int = 0
+        private set
+
     val signedPayloads: MutableList<ByteArray> = mutableListOf()
 
     override fun publicKey(): DevicePublicKey {
         publicKeyReads++
+        if (lost) throw DeviceKeyException.KeyLost()
         publicKeyFailure?.let { throw it }
         return DevicePublicKey(point = POINT.copyOf(), identity = identity)
     }
 
     override fun sign(payload: ByteArray): DeviceSignature {
         signedPayloads += payload.copyOf()
+        if (lost) throw DeviceKeyException.KeyLost()
         signFailure?.let { throw it }
         return DeviceSignature(signature = SIGNATURE.copyOf(), identity = identity)
+    }
+
+    override fun provision() {
+        provisions++
+        provisionFailure?.let { throw it }
+        if (lost && !provisionLeavesNoKey) {
+            identity = PROVISIONED_IDENTITY
+            lost = false
+        }
     }
 
     override fun delete() {
@@ -52,6 +73,9 @@ internal class FakeDeviceKey(
 
     companion object {
         const val KEY_IDENTITY = "key-identity-value"
+
+        /** The identity of the key [provision] creates in place of a lost one. */
+        const val PROVISIONED_IDENTITY = "provisioned-key-identity-value"
 
         /** An X9.62 uncompressed point is 65 bytes and starts 0x04. Shaped right so encoding is exercised. */
         val POINT: ByteArray = ByteArray(65) { index -> if (index == 0) 0x04 else (index + 1).toByte() }

@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.enrollment
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKey
 import com.payabli.sdk.core.devicekey.DeviceKeyException
+import com.payabli.sdk.core.devicekey.DevicePublicKey
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.LogLevel
@@ -52,7 +53,8 @@ import java.util.Base64
  * as "nothing stored".
  *
  * **No path here deletes the device key.** No refusal in this sequence is about the key itself, so none of
- * them is a reason to discard it.
+ * them is a reason to discard it. When the key store reports the key gone, [enroll] creates a new one and
+ * registers it.
  */
 internal class DeviceEnrollment(
     /**
@@ -115,7 +117,7 @@ internal class DeviceEnrollment(
      */
     suspend fun enroll(): EnrollmentOutcome =
         lock.withLock {
-            val identity = withContext(dispatcher) { deviceKey.publicKey() }
+            val identity = withContext(dispatcher) { currentKey() }
 
             // Scoped to this entry point, so another one's binding is neither read nor disturbed here.
             val known = store.read(entry)
@@ -198,6 +200,23 @@ internal class DeviceEnrollment(
 
                 EnrollmentOutcome.Attested(activationRequired = activationRequired)
             }
+        }
+
+    /**
+     * The key at the handle, after creating one if the key store reports it gone.
+     *
+     * Only [DeviceKeyException.KeyLost] creates a key. Any other failure leaves the key store and the binding
+     * alone. A key still gone after one creation is thrown.
+     */
+    private fun currentKey(): DevicePublicKey =
+        try {
+            deviceKey.publicKey()
+        } catch (_: DeviceKeyException.KeyLost) {
+            logger.warn(LogField.safe("event", "device_key_replaced")) {
+                "the device key is gone, creating a new one"
+            }
+            deviceKey.provision()
+            deviceKey.publicKey()
         }
 
     /**

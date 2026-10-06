@@ -209,6 +209,27 @@ class KeystoreDeviceKeyInstrumentedTest {
         }
 
     @Test
+    fun provisionCreatesAKeyWhereThereIsNone() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val key = key()
+
+            key.provision()
+
+            assertTrue(keyStore().containsAlias(keyId))
+            assertTrue(key.sign("payload".toByteArray()).signature.isNotEmpty())
+        }
+
+    @Test
+    fun provisionLeavesAnExistingKeyInPlace() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val before = provisioned().publicKey().point
+
+            key().provision()
+
+            assertEquals(before.toList(), key().publicKey().point.toList())
+        }
+
+    @Test
     fun theIdentityIsDerivedFromTheKeyRatherThanFromTheAlias() =
         runTest(timeout = TEST_TIMEOUT) {
             val before = provisioned().publicKey().identity
@@ -255,7 +276,7 @@ class KeystoreDeviceKeyInstrumentedTest {
      * row by the identity it was sent and verifies against the public key it holds for that row, so the
      * assertion is refused and nothing in the failure names the replacement.
      *
-     * **Nothing here waits on a duration.** An earlier version queued the replacement and slept, which proves
+     * **Nothing here waits on a duration.** Queuing the replacement and sleeping would prove
      * neither that the worker started nor that it was held: a worker descheduled past the sleep leaves the
      * old key in place, and the test then passes with the monitor removed. Three facts are established
      * instead, each by a bounded wait that fails loudly rather than hanging.
