@@ -194,7 +194,15 @@ class PayInFormDraftTest {
     }
 
     private fun cardWithBillingEmail(): List<PayInFormSection> =
-        PayInFormConfiguration.defaultCardSections().map { it.copy(fields = it.fields + PayInField.BillingEmail) }
+        PayInFormConfiguration.defaultCardSections().map { section ->
+            if (section.style ==
+                PayInSectionStyle.Inputs
+            ) {
+                section.copy(fields = section.fields + PayInField.BillingEmail)
+            } else {
+                section
+            }
+        }
 
     private fun withBillingEmail(): List<PayInFormSection> =
         listOf(

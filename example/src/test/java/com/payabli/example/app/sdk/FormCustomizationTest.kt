@@ -105,7 +105,8 @@ class FormCustomizationTest {
     fun `the default preset is the SDK's own default sections`() {
         val configuration = configure(FormPreset.Default.settings)
         val inputs = configuration.sectionsFor(PayInMethodType.Card).filter { it.style == PayInSectionStyle.Inputs }
-        assertEquals(PayInFormConfiguration.defaultCardSections().map { it.fields }, inputs.map { it.fields })
+        val defaults = PayInFormConfiguration.defaultCardSections().filter { it.style == PayInSectionStyle.Inputs }
+        assertEquals(defaults.map { it.fields }, inputs.map { it.fields })
     }
 
     @Test

@@ -195,13 +195,13 @@ object FormCustomization {
     private fun cardDetails(settings: FormSettings) =
         PayInFormConfiguration
             .defaultCardSections()
-            .single()
+            .first { it.style == PayInSectionStyle.Inputs }
             .copy(title = if (settings.customWording) "Your card" else null)
 
     private fun bankDetails(settings: FormSettings) =
         PayInFormConfiguration
             .defaultBankSections()
-            .single()
+            .first { it.style == PayInSectionStyle.Inputs }
             .copy(title = if (settings.customWording) "Your bank" else null)
 
     /** Storing a method always asks for a customer number. */

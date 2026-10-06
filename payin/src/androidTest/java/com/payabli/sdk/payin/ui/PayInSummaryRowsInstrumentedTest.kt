@@ -134,6 +134,7 @@ class PayInSummaryRowsInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     labels = PayInFormLabels(fieldLabels = mapOf(PayInField.Amount to label)),
                     amounts =
                         PayInPaymentDetails(
@@ -213,6 +214,7 @@ class PayInSummaryRowsInstrumentedTest {
                         draft = draft,
                         configuration = configuration,
                         reports = PayInFormReports.None,
+                        submitText = PayInSubmitText.Capture,
                         amounts =
                             PayInPaymentDetails(
                                 BigDecimal("12.34"),
@@ -278,6 +280,7 @@ class PayInSummaryRowsInstrumentedTest {
                     draft = draft,
                     configuration = form,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                     amounts = amounts(),
                     labels = labels,
                 )

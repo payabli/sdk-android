@@ -39,7 +39,10 @@ public class PayInFormLabels(
     /** The line under the heading, or null for none. */
     public fun subtitleOrNull(): String? = subtitle?.takeIf { it.isNotBlank() }
 
-    /** The wording on the submit button, or null to use the resource. */
+    /**
+     * The wording on the submit button, or null for the operation's own: Pay, Authorize or Save. While a
+     * submission runs the button reads the operation's busy wording whatever this holds.
+     */
     public fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
 
     /** The label on the summary's Total row, or null to use the resource. */

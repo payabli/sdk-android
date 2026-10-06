@@ -100,15 +100,86 @@ class PayInFormConfigurationTest {
         val configuration =
             PayInFormConfiguration(
                 cardSections =
-                    PayInFormConfiguration.defaultCardSections() +
+                    listOf(
+                        PayInFormSection(fields = CARD_INSTRUMENT_FIELDS),
                         PayInFormSection(
                             fields = listOf(PayInField.Amount, PayInField.ServiceFee),
                             style = PayInSectionStyle.Summary,
                         ),
+                    ),
             )
 
         assertFalse(configuration.inputFieldsFor(PayInMethodType.Card).contains(PayInField.Amount))
         assertEquals(2, configuration.sectionsFor(PayInMethodType.Card).size)
+    }
+
+    @Test
+    fun `the default sections end with a summary of the amounts, under the default title`() {
+        val summary =
+            PayInFormSection(
+                fields = listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee),
+                style = PayInSectionStyle.Summary,
+            )
+
+        listOf(
+            PayInFormConfiguration.defaultCardSections(),
+            PayInFormConfiguration.defaultBankSections(),
+        ).forEach { sections ->
+            assertEquals(listOf(PayInSectionStyle.Inputs, PayInSectionStyle.Summary), sections.map { it.style })
+            assertEquals(summary, sections.last())
+        }
+    }
+
+    @Test
+    fun `a field that is not money is refused in a summary, on either form`() {
+        // A summary draws amounts only, so anything else listed there would be dropped from the screen.
+        val card =
+            runCatching {
+                PayInFormConfiguration(
+                    allowedMethods = listOf(PayInMethodType.Card),
+                    cardSections =
+                        PayInFormConfiguration.defaultCardSections() +
+                            PayInFormSection(
+                                fields = listOf(PayInField.BillingEmail),
+                                style = PayInSectionStyle.Summary,
+                            ),
+                )
+            }.exceptionOrNull()
+        val bank =
+            runCatching {
+                PayInFormConfiguration(
+                    allowedMethods = listOf(PayInMethodType.BankAccount),
+                    defaultMethod = PayInMethodType.BankAccount,
+                    bankSections =
+                        PayInFormConfiguration.defaultBankSections() +
+                            PayInFormSection(
+                                fields = listOf(PayInField.CustomerNumber),
+                                style = PayInSectionStyle.Summary,
+                            ),
+                )
+            }.exceptionOrNull()
+
+        assertTrue("a card summary took a billing email: $card", card is IllegalArgumentException)
+        assertTrue("does not name the field: ${card?.message}", card?.message?.contains("BillingEmail") == true)
+        assertTrue("a bank summary took a customer number: $bank", bank is IllegalArgumentException)
+        assertTrue("does not name the field: ${bank?.message}", bank?.message?.contains("CustomerNumber") == true)
+    }
+
+    @Test
+    fun `an instrument field listed in a summary is refused as a summary field`() {
+        // Also listed among the inputs, so the inputs are complete and only the summary rule can refuse it.
+        val refusal =
+            runCatching {
+                PayInFormConfiguration(
+                    allowedMethods = listOf(PayInMethodType.Card),
+                    cardSections =
+                        PayInFormConfiguration.defaultCardSections() +
+                            PayInFormSection(fields = listOf(PayInField.CardNumber), style = PayInSectionStyle.Summary),
+                )
+            }.exceptionOrNull()
+
+        assertTrue("a summary took a card number: $refusal", refusal is IllegalArgumentException)
+        assertTrue("not the summary rule: ${refusal?.message}", refusal?.message?.contains("summary") == true)
     }
 
     @Test

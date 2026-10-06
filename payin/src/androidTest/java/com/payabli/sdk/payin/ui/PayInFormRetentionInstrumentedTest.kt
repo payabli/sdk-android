@@ -127,6 +127,7 @@ class PayInFormRetentionInstrumentedTest {
                     draft = draft,
                     configuration = configuration,
                     reports = PayInFormReports.None,
+                    submitText = PayInSubmitText.Capture,
                 )
             }
         }

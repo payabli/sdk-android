@@ -61,6 +61,7 @@ internal fun PayInFormContent(
     draft: PayInFormDraft,
     configuration: PayInFormConfiguration,
     reports: PayInFormReports,
+    submitText: PayInSubmitText,
     modifier: Modifier = Modifier,
     amounts: PayInPaymentDetails? = null,
     labels: PayInFormLabels = PayInFormLabels(),
@@ -170,8 +171,8 @@ internal fun PayInFormContent(
         }
 
         PayInSubmitButton(
-            text = labels.submitButtonOrNull() ?: stringResource(R.string.payabli_payin_submit),
-            busyText = stringResource(R.string.payabli_payin_submitting),
+            text = labels.submitButtonOrNull() ?: stringResource(submitText.idle),
+            busyText = stringResource(submitText.busy),
             enabled = complete && !isSubmitting,
             isSubmitting = isSubmitting,
             style = context.style,
@@ -423,5 +424,6 @@ private fun PayabliPayInFormPreview() {
         draft = remember { PayInFormDraft() },
         configuration = PayInFormConfiguration(),
         reports = PayInFormReports.None,
+        submitText = PayInSubmitText.Capture,
     )
 }
