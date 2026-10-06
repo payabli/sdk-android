@@ -1,7 +1,6 @@
 package com.payabli.sdk.payin.model
 
 import com.payabli.sdk.core.model.PayabliErrorType
-import com.payabli.sdk.payin.form.ExpiryValue
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

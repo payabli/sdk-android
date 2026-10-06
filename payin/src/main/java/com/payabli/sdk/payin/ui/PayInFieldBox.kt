@@ -37,12 +37,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.CardBrand
-import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.schemeName
+import com.payabli.sdk.payin.model.ExpiryValue
 
 /**
  * One field, whichever kind it is.

@@ -29,8 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
 import com.payabli.sdk.payin.form.ExpiryChoices
-import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.model.ExpiryValue
 import java.util.Locale
 
 /**

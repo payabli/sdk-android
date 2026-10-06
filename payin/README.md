@@ -87,7 +87,7 @@ Card numbers and security codes travel in `SensitiveDigits` buffers. Collect the
 built, and close the `SensitiveDigits` once the call returns; `use` does that.
 
 ```kotlin
-import com.payabli.sdk.payin.form.ExpiryValue
+import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInCardData
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod

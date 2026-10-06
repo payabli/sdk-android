@@ -1,4 +1,4 @@
-package com.payabli.sdk.payin.form
+package com.payabli.sdk.payin.model
 
 import java.util.Calendar
 import java.util.Locale
@@ -58,7 +58,7 @@ public data class ExpiryValue(
         /**
          * Parses month, any run of non-digits, then a two-digit year in this century.
          *
-         * Any separator [PayInFormatting] can produce reads back, so validation needs no
+         * Any separator `PayInFormatting` can produce reads back, so validation needs no
          * configuration.
          */
         public fun parse(text: String): ExpiryValue? {
