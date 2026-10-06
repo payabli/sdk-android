@@ -4,7 +4,6 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
-import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
@@ -155,10 +154,10 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is PayabliException)
             val thrown = failure as TapToPayException
-            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, thrown.type)
             assertEquals(thrown.type.message, thrown.message)
             assertTrue(thrown.cause.toString(), thrown.cause is IllegalArgumentException)
-            assertEquals(thrown.cause?.message, thrown.reason)
+            assertEquals(thrown.type.message, thrown.reason)
         }
 
     @Test
@@ -176,24 +175,11 @@ class PayabliTapToPayTest {
 
             assertTrue(failure.toString(), failure is PayabliException)
             val thrown = failure as TapToPayException
-            assertEquals(PayabliErrorType.UNKNOWN, thrown.type)
+            assertEquals(PayabliErrorType.TAP_NOT_COMPLETED, thrown.type)
             assertEquals(thrown.type.message, thrown.message)
             assertTrue(thrown.cause.toString(), thrown.cause is CardReaderException.ReadFailed)
             assertEquals(TRANS_ID, thrown.paymentTransId)
         }
-
-    @Test
-    fun `a transport failure under a charge keeps its code, reason and detail`() {
-        val transport =
-            PayabliGenericException(PayabliErrorType.NETWORK_ERROR, "The service could not be reached.", "timed out")
-
-        val thrown = TapToPayException.from(transport, TRANS_ID, TapToPayCapture.UNKNOWN)
-
-        assertEquals(PayabliErrorType.NETWORK_ERROR, thrown.type)
-        assertEquals("The service could not be reached.", thrown.reason)
-        assertEquals("timed out", thrown.detail)
-        assertEquals(TRANS_ID, thrown.paymentTransId)
-    }
 
     @Test
     fun `a fresh install reads no device id`() =

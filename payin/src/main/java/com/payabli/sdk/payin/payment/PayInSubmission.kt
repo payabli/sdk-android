@@ -517,7 +517,7 @@ internal class PayInSubmission(
     private fun report(
         event: String,
         outcome: String,
-        code: String?,
+        code: PayabliErrorType?,
         startedAt: Long?,
         entryPoint: String?,
         fromForm: Boolean,
@@ -535,7 +535,7 @@ internal class PayInSubmission(
 
     private fun measurements(
         outcome: String,
-        code: String?,
+        code: PayabliErrorType?,
         startedAt: Long?,
         fromForm: Boolean,
     ): Map<String, String> =
@@ -545,7 +545,10 @@ internal class PayInSubmission(
                 TelemetryProperty.ORIGIN.key,
                 if (fromForm) TelemetryProperties.Origin.FORM else TelemetryProperties.Origin.DIRECT,
             )
-            code?.let { put(TelemetryProperty.CODE.key, it) }
+            code?.let {
+                put(TelemetryProperty.CODE.key, it.wireName)
+                put(TelemetryProperty.ERROR_NUMBER.key, it.code.toString())
+            }
             startedAt?.let {
                 put(
                     TelemetryProperty.DURATION_MS.key,
@@ -582,8 +585,8 @@ internal class PayInSubmission(
             else -> TelemetryProperties.Outcome.FAILED
         }
 
-    private fun codeOf(state: PayInSubmissionState): String? =
-        (state as? PayInSubmissionState.Failed)?.cause?.type?.wireName
+    private fun codeOf(state: PayInSubmissionState): PayabliErrorType? =
+        (state as? PayInSubmissionState.Failed)?.cause?.type
 
     /**
      * The idempotency key of the request that went out, once there is one.

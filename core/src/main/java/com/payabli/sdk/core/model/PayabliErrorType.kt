@@ -6,9 +6,9 @@ import androidx.annotation.RestrictTo
  * The SDK's error catalog, one member per cause.
  *
  * Each member carries four values, and none of them is ever changed once published:
- * - [code] is the catalog number, and what the support procedure is keyed by. Numbers are allocated in ranges per
- *   area, core in the 1000s, card-not-present in the 2000s and card-present in the 3000s, and are appended and
- *   never reused.
+ * - [code] is the catalog number: what telemetry reports as `error_number` and what the support procedure is
+ *   keyed by. Numbers are allocated in ranges per area, core in the 1000s, card-not-present in the 2000s and
+ *   card-present in the 3000s, and are appended and never reused.
  * - [wireName] is the member's identity in telemetry and support tooling. It is explicit rather than read from
  *   `Enum.name` because a wire contract should not depend on R8's enum-name retention.
  * - [category] is the remedy. A host chooses what to do by switching on it; two causes a host repairs the same
@@ -120,6 +120,12 @@ public enum class PayabliErrorType(
         "SDK_INTERNAL_ERROR",
         PayabliErrorCategory.INTERNAL,
         "The SDK failed before the request was sent.",
+    ),
+    SESSION_NOT_INITIALIZED(
+        1019,
+        "SESSION_NOT_INITIALIZED",
+        PayabliErrorCategory.INVALID_REQUEST,
+        "The session has not been initialized.",
     ),
 
     // Card-present.

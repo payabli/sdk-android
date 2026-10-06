@@ -43,6 +43,7 @@ class LeavesOutcomeUnknownTest {
             PayabliErrorType.INVALID_CONFIGURATION,
             PayabliErrorType.VALIDATION_ERROR,
             PayabliErrorType.SDK_INTERNAL_ERROR,
+            PayabliErrorType.SESSION_NOT_INITIALIZED,
             PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
             PayabliErrorType.DEVICE_SETUP_UNSUPPORTED,
             PayabliErrorType.DEVICE_SERVICES_OUTDATED,

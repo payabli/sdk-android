@@ -88,6 +88,7 @@ class TelemetryPropertyNamingTest {
                 "step",
                 "field",
                 "origin",
+                "error_number",
             ),
             declaredKeys(),
         )

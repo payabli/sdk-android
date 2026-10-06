@@ -1,5 +1,7 @@
 package com.payabli.sdk.taptopay.provider
 
+import com.payabli.sdk.core.model.PayabliErrorType
+
 /**
  * This handset cannot take contactless payments.
  *
@@ -8,8 +10,10 @@ package com.payabli.sdk.taptopay.provider
  * that is missing something the reader needs.
  *
  * [message] says which check failed. It never names the device, so it is safe in a message a host displays.
+ * [type] is the cause in the catalog, which the check that failed is the one place to know.
  */
 internal class DeviceIneligibleException(
+    val type: PayabliErrorType,
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
