@@ -240,9 +240,12 @@ public class PayabliSession private constructor(
                         machine = machine,
                         // Null without host bindings, which is the SDK's own tests: there is no device to read.
                         readDeviceId =
-                            host?.appContext?.applicationContext?.let { context ->
+                            if (host == null) {
+                                { null }
+                            } else {
+                                val context = host.appContext.applicationContext
                                 { DeviceIdentifierFactory.of(context).ifBlank { null } }
-                            } ?: { null },
+                            },
                         transport = buildTransport { machine.markReinitializeRequired() },
                         // Minted here rather than in the telemetry module, so every capability reporting for
                         // this session quotes the same lifetime even when they are wired independently.
