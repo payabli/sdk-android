@@ -10,7 +10,8 @@ public enum class PayInSectionStyle {
     /**
      * Where the operation's amounts are drawn, and under what title. Each amount that is sendable and not zero
      * at two decimal places is drawn, in the order [PayInFormSection.fields] lists them and then the rest. A form
-     * with such an amount and no summary gets one.
+     * with such an amount and no summary gets one. With more than one, the last listed is drawn and the others
+     * draw nothing.
      *
      * Only the amount fields belong here, and any other is refused when the configuration is built.
      */
@@ -165,16 +166,20 @@ public class PayInFormConfiguration(
         get() = if (defaultMethod in methods) defaultMethod else methods.first()
 
     /**
-     * The sections for one instrument, with any field appearing twice dropped after its first use.
+     * The sections for one instrument, with any input field appearing twice dropped after its first use.
      *
-     * An input section left with no fields is dropped. A summary section is kept, since it places the amounts.
+     * An input section left with no fields is dropped. Every summary section is kept, and only the last one listed
+     * keeps its fields and places the amounts.
      */
     public fun sectionsFor(method: PayInMethodType): List<PayInFormSection> {
         val sections = if (method == PayInMethodType.Card) cardSections else bankSections
+        val drawn = drawnSummaryAt(sections)
         val seen = mutableSetOf<PayInField>()
         return sections
-            .map { section -> section.copy(fields = section.fields.filter { seen.add(it) }) }
-            .filter { it.fields.isNotEmpty() || it.style == PayInSectionStyle.Summary }
+            .mapIndexed { at, section ->
+                val undrawn = section.style == PayInSectionStyle.Summary && at != drawn
+                section.copy(fields = if (undrawn) emptyList() else section.fields.filter { seen.add(it) })
+            }.filter { it.fields.isNotEmpty() || it.style == PayInSectionStyle.Summary }
     }
 
     /**
@@ -292,6 +297,10 @@ public class PayInFormConfiguration(
         /** The amounts, under the summary's default title. */
         internal val DEFAULT_SUMMARY: PayInFormSection =
             PayInFormSection(fields = AMOUNT_FIELDS, style = PayInSectionStyle.Summary)
+
+        /** The index of the summary the form draws, the last one listed, or -1 with none. */
+        internal fun drawnSummaryAt(sections: List<PayInFormSection>): Int =
+            sections.indexOfLast { it.style == PayInSectionStyle.Summary }
 
         /** Card details, as a payer is asked for them, then the amounts. */
         public fun defaultCardSections(): List<PayInFormSection> =

@@ -130,10 +130,38 @@ class PayInAmountTextTest {
     }
 
     @Test
-    fun `a second summary section is not drawn`() {
-        val drawn = placeAmounts(listOf(summary(PayInField.Amount), card, summary(PayInField.ServiceFee)), details)
+    fun `of two summary sections the last one listed is drawn, where it is listed`() {
+        val first =
+            PayInFormSection(fields = listOf(PayInField.Amount), title = "First", style = PayInSectionStyle.Summary)
+        val last =
+            PayInFormSection(fields = listOf(PayInField.ServiceFee), title = "Last", style = PayInSectionStyle.Summary)
 
-        assertEquals(1, drawn.count { it.section.style == PayInSectionStyle.Summary })
+        val drawn = placeAmounts(listOf(first, card, last, customer), details)
+
+        assertEquals(listOf(card, last, customer), drawn.map { it.section })
+    }
+
+    @Test
+    fun `of two equal summary sections the one drawn sits where the last is listed`() {
+        val drawn = placeAmounts(listOf(summary(), card, summary()), details)
+
+        assertEquals(listOf(card, summary()), drawn.map { it.section })
+    }
+
+    @Test
+    fun `a summary appended to the default sections is drawn under its title, in its order`() {
+        val host = summary(PayInField.SurchargeFee, PayInField.Amount)
+        val configuration =
+            PayInFormConfiguration(cardSections = PayInFormConfiguration.defaultCardSections() + host)
+
+        val drawn = placeAmounts(configuration.sectionsFor(PayInMethodType.Card), details)
+
+        assertEquals(listOf(PayInSectionStyle.Inputs, PayInSectionStyle.Summary), drawn.map { it.section.style })
+        assertEquals("Order", drawn.last().section.title)
+        assertEquals(
+            listOf(PayInField.SurchargeFee, PayInField.Amount, PayInField.ServiceFee),
+            drawn.last().amounts.map { it.first },
+        )
     }
 
     @Test

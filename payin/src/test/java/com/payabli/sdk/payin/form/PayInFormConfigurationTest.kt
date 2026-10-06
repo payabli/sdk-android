@@ -131,6 +131,23 @@ class PayInFormConfigurationTest {
     }
 
     @Test
+    fun `of two summaries the last keeps its fields, and the earlier is kept empty`() {
+        val host =
+            PayInFormSection(
+                fields = listOf(PayInField.SurchargeFee, PayInField.Amount),
+                title = "Order total",
+                style = PayInSectionStyle.Summary,
+            )
+        val configuration =
+            PayInFormConfiguration(cardSections = PayInFormConfiguration.defaultCardSections() + host)
+
+        val summaries = configuration.sectionsFor(PayInMethodType.Card).filter { it.style == PayInSectionStyle.Summary }
+
+        assertEquals(listOf(emptyList(), host.fields), summaries.map { it.fields })
+        assertEquals(host, summaries.last())
+    }
+
+    @Test
     fun `a field that is not money is refused in a summary, on either form`() {
         // A summary draws amounts only, so anything else listed there would be dropped from the screen.
         val card =
