@@ -10,7 +10,8 @@ import java.util.Locale
 
 /**
  * Each summary row as the form draws it, for a host that draws its own: the label, the figure, and the
- * figure as text. A null figure means the row is not drawn.
+ * figure as text. A null figure means the row is not drawn, and every figure is null when any amount on the
+ * payment cannot be sent, since submitting it is refused.
  */
 public object PayInSummaryRows {
     /** The caller's label for [field] in [labels], or the resource. */
@@ -34,7 +35,7 @@ public object PayInSummaryRows {
         field: PayInField,
         details: PayInPaymentDetails?,
     ): BigDecimal? {
-        if (details == null) return null
+        if (details == null || !details.isSendable()) return null
         val fee = details.shownAmount(PayInField.ServiceFee)
         val surcharge = details.shownAmount(PayInField.SurchargeFee)
         return when (field) {
@@ -52,7 +53,7 @@ public object PayInSummaryRows {
 
     /** The figure on the Total row: the total amount plus any surcharge, which is what is charged. */
     public fun totalRowAmount(details: PayInPaymentDetails?): BigDecimal? {
-        if (details == null) return null
+        if (details == null || !details.isSendable()) return null
         val charge = details.shownAmount(PayInField.Amount) ?: return null
         val surcharge = details.shownAmount(PayInField.SurchargeFee) ?: BigDecimal.ZERO
         return charge.add(surcharge).takeIf { it.signum() != 0 }
@@ -64,6 +65,10 @@ public object PayInSummaryRows {
         currency: String?,
     ): String = formatAmount(amount, currency, Locale.getDefault())
 }
+
+/** Whether every amount on the payment fits the wire, which submitting it requires. */
+private fun PayInPaymentDetails.isSendable(): Boolean =
+    listOfNotNull(totalAmount, serviceFee, surchargeFee).all { it.sendableOrNull() != null }
 
 /**
  * The figure a summary row shows for [field], or null when the row is not drawn.

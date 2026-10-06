@@ -95,6 +95,45 @@ class PayInSummaryRowsTest {
     }
 
     @Test
+    fun `a surcharge that cannot be sent empties every figure`() {
+        val unsendable =
+            PayInPaymentDetails(
+                BigDecimal("12.34"),
+                serviceFee = BigDecimal("0.10"),
+                surchargeFee = BigDecimal("1E+40"),
+            )
+
+        assertNull(PayInSummaryRows.rowAmount(PayInField.Amount, unsendable))
+        assertNull(PayInSummaryRows.rowAmount(PayInField.ServiceFee, unsendable))
+        assertNull(PayInSummaryRows.rowAmount(PayInField.SurchargeFee, unsendable))
+        assertNull(PayInSummaryRows.totalRowAmount(unsendable))
+    }
+
+    @Test
+    fun `a fee that cannot be sent empties every figure`() {
+        val unsendable =
+            PayInPaymentDetails(
+                BigDecimal("12.34"),
+                serviceFee = BigDecimal("1E+40"),
+                surchargeFee = BigDecimal("0.31"),
+            )
+
+        assertNull(PayInSummaryRows.rowAmount(PayInField.Amount, unsendable))
+        assertNull(PayInSummaryRows.rowAmount(PayInField.ServiceFee, unsendable))
+        assertNull(PayInSummaryRows.rowAmount(PayInField.SurchargeFee, unsendable))
+        assertNull(PayInSummaryRows.totalRowAmount(unsendable))
+    }
+
+    @Test
+    fun `a total that cannot be sent empties the fee and surcharge figures too`() {
+        val unsendable =
+            PayInPaymentDetails(BigDecimal("1E+40"), serviceFee = BigDecimal("0.10"), surchargeFee = BigDecimal("0.31"))
+
+        assertNull(PayInSummaryRows.rowAmount(PayInField.ServiceFee, unsendable))
+        assertNull(PayInSummaryRows.rowAmount(PayInField.SurchargeFee, unsendable))
+    }
+
+    @Test
     fun `a field that is not money has no figure`() {
         assertNull(PayInSummaryRows.rowAmount(PayInField.CardholderName, details))
     }
