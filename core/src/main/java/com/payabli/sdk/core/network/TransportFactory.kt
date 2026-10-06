@@ -9,6 +9,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.network.impl.AuthFailureListener
 import com.payabli.sdk.core.network.impl.AuthenticatedTransport
+import com.payabli.sdk.core.network.impl.ClientFacts
 import com.payabli.sdk.core.network.impl.PayabliService
 import kotlinx.coroutines.CoroutineDispatcher
 
@@ -34,14 +35,18 @@ internal object TransportFactory {
      * that narrowed parallelism, or a test that substituted a dispatcher, silently did not get it, and nothing
      * would report that.
      *
+     * [client] has no default either, for the same reason: it is what every request reports about this device,
+     * and only the session can read it.
+     *
      * [assembly] is the rest, and its default is the shipped behaviour. Nothing outside `:core` can set it, so
      * do not describe it as configuration.
      */
     internal fun authenticated(
         config: PayabliConfig,
         dispatcher: CoroutineDispatcher,
+        client: ClientFacts,
         assembly: TransportAssembly = TransportAssembly(),
-    ): PayabliTransport = authenticated(config.environment.baseUrl, config, dispatcher, assembly)
+    ): PayabliTransport = authenticated(config.environment.baseUrl, config, dispatcher, client, assembly)
 
     /**
      * Same, against an explicit [baseUrl], for `:core`'s own tests.
@@ -57,12 +62,14 @@ internal object TransportFactory {
         config: PayabliConfig,
         dispatcher: CoroutineDispatcher,
         assembly: TransportAssembly = TransportAssembly(),
-    ): PayabliTransport = authenticated(baseUrl, config, dispatcher, assembly)
+        client: ClientFacts = ClientFacts.NONE,
+    ): PayabliTransport = authenticated(baseUrl, config, dispatcher, client, assembly)
 
     private fun authenticated(
         baseUrl: String,
         config: PayabliConfig,
         dispatcher: CoroutineDispatcher,
+        client: ClientFacts,
         assembly: TransportAssembly,
     ): PayabliTransport {
         // One holder for both the chain that reads the token and the wrapper that refreshes it, which is what
@@ -76,6 +83,7 @@ internal object TransportFactory {
                     auth = auth,
                     dispatcher = dispatcher,
                     logger = assembly.logger,
+                    client = client,
                 ),
             auth = auth,
             recovery = assembly.recovery,

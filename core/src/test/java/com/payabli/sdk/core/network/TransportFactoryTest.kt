@@ -9,6 +9,7 @@ import com.payabli.sdk.core.logging.RecordingLogSink
 import com.payabli.sdk.core.logging.impl.DefaultSdkLogger
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.network.impl.ClientFacts
 import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
@@ -81,8 +82,8 @@ class TransportFactoryTest {
                     tokenProvider = PayabliTokenProvider { "a-minted-token" },
                 )
 
-            val first = TransportFactory.authenticated(config, Dispatchers.IO)
-            val second = TransportFactory.authenticated(config, Dispatchers.IO)
+            val first = TransportFactory.authenticated(config, Dispatchers.IO, ClientFacts.NONE)
+            val second = TransportFactory.authenticated(config, Dispatchers.IO, ClientFacts.NONE)
 
             // A holder per call, which is exactly why this is no longer what a capability calls: sharing
             // could only ever be requested here, and `PayabliSession` is where it became structural.

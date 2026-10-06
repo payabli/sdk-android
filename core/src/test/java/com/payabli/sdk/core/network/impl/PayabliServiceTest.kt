@@ -81,7 +81,7 @@ class PayabliServiceTest {
                         path = "/api/v2/MoneyIn/getpaid",
                         body = Payload("txn-1"),
                         bodySerializer = Payload.serializer(),
-                        headers = mapOf("X-Pyb-Client" to "android/0.1.0"),
+                        headers = mapOf("X-Caller-Header" to "caller-value"),
                     )
                 val response = service(server).execute(request)
 
@@ -90,7 +90,7 @@ class PayabliServiceTest {
                 assertEquals("POST", sent.method)
                 assertEquals("""{"paymentTransId":"txn-1"}""", sent.body)
                 assertEquals("application/json", sent.header("Content-Type"))
-                assertEquals("android/0.1.0", sent.header("X-Pyb-Client"))
+                assertEquals("caller-value", sent.header("X-Caller-Header"))
             }
         }
 

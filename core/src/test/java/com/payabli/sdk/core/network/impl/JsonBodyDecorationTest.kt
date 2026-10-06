@@ -58,7 +58,7 @@ class JsonBodyDecorationTest {
             // Every step rebuilds the request, so the guarantee is the chain's rather than one decoration's.
             val original = request()
 
-            val decorated = RequestDecorationFactory.chainFor(testAuth()).applyTo(original)
+            val decorated = RequestDecorationFactory.chainFor(testAuth(), ClientFacts.NONE).applyTo(original)
 
             assertSame(original.body, decorated.body)
         }
@@ -101,7 +101,7 @@ class JsonBodyDecorationTest {
     fun `the chain carries it`() =
         runTest(timeout = timeout) {
             // Registered rather than merely written: a decoration outside the factory's list runs for nobody.
-            val chain = RequestDecorationFactory.chainFor(testAuth())
+            val chain = RequestDecorationFactory.chainFor(testAuth(), ClientFacts.NONE)
 
             val decorated = chain.applyTo(request())
 

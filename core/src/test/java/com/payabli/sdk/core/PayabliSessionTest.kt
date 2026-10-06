@@ -31,6 +31,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -226,6 +227,23 @@ class PayabliSessionTest {
         runTest(timeout = TEST_TIMEOUT) {
             LoopbackServer().use { server ->
                 assertNull(session(server, config(tokenProvider = provider())).deviceId)
+            }
+        }
+
+    @Test
+    fun `a session's request carries the client header, with no device members when there is no device`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                server.respondWith(200, "{}")
+                val subject = session(server, config(tokenProvider = provider()))
+
+                completing("the request") { subject.transport.execute(ping()) }
+
+                assertEquals(
+                    "sdk-version=\"${PayabliSdkVersion.VALUE}\", platform=android, " +
+                        "locale=\"${Locale.getDefault().toLanguageTag()}\"",
+                    server.onlyRequest.header("X-Pyb-Client"),
+                )
             }
         }
 

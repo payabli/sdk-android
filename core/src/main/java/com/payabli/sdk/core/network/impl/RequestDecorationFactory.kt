@@ -10,10 +10,14 @@ import com.payabli.sdk.core.auth.PayabliAuth
  * A function rather than a value so [PayabliService.create] can take the auth holder without taking a chain.
  */
 internal object RequestDecorationFactory {
-    internal fun chainFor(auth: PayabliAuth): List<PayabliRequestDecoration> =
+    internal fun chainFor(
+        auth: PayabliAuth,
+        client: ClientFacts,
+    ): List<PayabliRequestDecoration> =
         listOf(
             // -- CONTRIBUTORS --
             CorrelationDecoration(),
+            ClientHeaderDecoration(client),
             BearerDecoration(auth),
             JsonBodyDecoration(),
             // -- BINDERS -- (none yet, and always last)
