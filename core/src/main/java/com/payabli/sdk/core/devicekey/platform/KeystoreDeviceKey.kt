@@ -181,11 +181,21 @@ internal class KeystoreDeviceKey(
      * With [mayCreate] false it proves a key is present, which is what a caller resolving a key the service has
      * already accepted wants: the answer to a missing key there is enrolling again, not a fresh key under the
      * same alias.
+     *
+     * An entry the platform cannot load, such as one whose certificate is missing, is discarded by the
+     * presence check. With [mayCreate] true the key is then created in the same call.
      */
     fun ensureKey(mayCreate: Boolean) {
         beforeKeyGeneration()
         synchronized(MONITOR) {
-            if (existingPrivateKey() != null) return
+            val existing =
+                try {
+                    existingPrivateKey()
+                } catch (discarded: DeviceKeyException.KeyLost) {
+                    if (!mayCreate) throw discarded
+                    null
+                }
+            if (existing != null) return
             if (!mayCreate) throw DeviceKeyException.KeyLost()
             createKey()
         }

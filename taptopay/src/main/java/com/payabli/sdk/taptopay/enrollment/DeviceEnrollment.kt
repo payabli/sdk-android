@@ -212,11 +212,12 @@ internal class DeviceEnrollment(
         try {
             deviceKey.publicKey()
         } catch (_: DeviceKeyException.KeyLost) {
-            logger.warn(LogField.safe("event", "device_key_replaced")) {
-                "the device key is gone, creating a new one"
-            }
             deviceKey.provision()
-            deviceKey.publicKey()
+            deviceKey.publicKey().also {
+                logger.warn(LogField.safe("event", "device_key_replaced")) {
+                    "the device key was gone and has been replaced"
+                }
+            }
         }
 
     /**

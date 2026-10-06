@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay.enrollment.platform
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.devicetrust.platform.DeviceTrust
 import com.payabli.sdk.taptopay.ManualDeviceTest
 import com.payabli.sdk.taptopay.enrollment.AttestedDeviceStore
@@ -51,8 +52,12 @@ class DeviceKeyRecoveryLiveTest {
                 val trust = DeviceTrust.open(context)
                 val keyBefore = trust.key.publicKey().identity
 
-                trust.key.delete()
+                // Built before the delete: opening the device trust creates a key when there is none.
                 val enrollment = LiveTapToPay.enrollment(context)
+                trust.key.delete()
+                val absent = runCatching { trust.key.publicKey() }.exceptionOrNull()
+                assertTrue("the key must be gone when enroll runs, got $absent", absent is DeviceKeyException.KeyLost)
+
                 val outcome = enrollment.enroll()
 
                 val record =

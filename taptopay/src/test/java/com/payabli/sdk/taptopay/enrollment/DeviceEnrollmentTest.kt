@@ -22,6 +22,8 @@ import kotlin.time.Duration.Companion.seconds
 
 private val TEST_TIMEOUT = 5.seconds
 
+private const val REPLACED = "device key was gone and has been replaced"
+
 /** The cold sequence, and the check that decides whether it runs at all. */
 class DeviceEnrollmentTest {
     private fun coldScript() =
@@ -334,6 +336,10 @@ class DeviceEnrollmentTest {
             assertTrue("$failure", failure is DeviceKeyException.CryptoUnavailable)
             assertEquals(1, fixture.deviceKey.provisions)
             assertTrue(fixture.routes.toString(), fixture.routes.isEmpty())
+            assertFalse(
+                "a key that was not created is not reported replaced",
+                fixture.logger.records.any { it.message.contains(REPLACED) },
+            )
         }
 
     @Test
@@ -362,7 +368,7 @@ class DeviceEnrollmentTest {
             fixture.enrollment.enroll()
 
             val written = fixture.logger.everythingWritten()
-            assertTrue(written, fixture.logger.records.any { it.message.contains("device key is gone") })
+            assertTrue(written, fixture.logger.records.any { it.message.contains(REPLACED) })
             assertFalse(written, written.contains(DEVICE_ID))
             assertFalse(written, written.contains(ENTRY))
         }
