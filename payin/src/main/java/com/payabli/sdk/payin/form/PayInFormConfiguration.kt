@@ -287,7 +287,7 @@ public class PayInFormConfiguration(
          * payer could type into would take a figure no request carries.
          */
         internal val AMOUNT_FIELDS: List<PayInField> =
-            listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee)
+            Collections.unmodifiableList(listOf(PayInField.Amount, PayInField.ServiceFee, PayInField.SurchargeFee))
 
         /** The amounts, under the summary's default title. */
         internal val DEFAULT_SUMMARY: PayInFormSection =

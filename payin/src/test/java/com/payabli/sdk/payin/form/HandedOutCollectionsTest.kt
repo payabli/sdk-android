@@ -95,6 +95,17 @@ class HandedOutCollectionsTest {
         assertRefusesClearing(failed.fieldErrors)
     }
 
+    @Test
+    fun `the amount fields cannot be replaced by whoever reaches them`() {
+        // A fixed-size list refuses clear() and still accepts set(), so set() is the change to try.
+        @Suppress("UNCHECKED_CAST")
+        val fields = PayInFormConfiguration.AMOUNT_FIELDS as java.util.List<PayInField>
+        val refused = runCatching { fields.set(0, PayInField.CardNumber) }.exceptionOrNull()
+
+        assertTrue("a caller replaced an amount field", refused is UnsupportedOperationException)
+        assertTrue("the list was changed", PayInFormConfiguration.AMOUNT_FIELDS.first() == PayInField.Amount)
+    }
+
     private fun assertRefusesClearing(collection: Map<*, *>) {
         assertTrue("a fixture of fewer than two entries proves nothing here", collection.size >= 2)
         val refused = runCatching { (collection as java.util.Map<*, *>).clear() }.exceptionOrNull()
