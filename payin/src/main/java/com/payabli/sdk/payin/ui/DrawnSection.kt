@@ -20,8 +20,8 @@ internal class DrawnSection(
  * [sections] with every amount other than zero placed in one summary.
  *
  * A host's summary section decides where the figures go and what the section is called, never which figures
- * appear: they are in the order it lists them, then any it left out. With no summary section one is appended
- * after the rest. With no figure to show, no summary is drawn.
+ * appear: they are in the order it lists them, then any it left out. Of several, the last listed is the one drawn.
+ * With no summary section one is appended after the rest. With no figure to show, no summary is drawn.
  *
  * The figures are [PayInSummaryRows]'s, so a host reading them gets what the form draws. The Amount row is drawn
  * only with [showsBaseAmount].
@@ -39,13 +39,11 @@ internal fun placeAmounts(
     val total = PayInSummaryRows.totalRowAmount(amounts)
     if (total == null && figures.values.all { it == null }) return inputs
 
-    val summary =
-        sections.firstOrNull { it.style == PayInSectionStyle.Summary }
-            ?: PayInFormConfiguration.DEFAULT_SUMMARY
+    val at = PayInFormConfiguration.drawnSummaryAt(sections)
+    val summary = sections.getOrNull(at) ?: PayInFormConfiguration.DEFAULT_SUMMARY
     val order = (summary.fields.filter { it in AMOUNT_FIELDS } + AMOUNT_FIELDS).distinct()
     val drawn = DrawnSection(summary, order.mapNotNull { field -> figures[field]?.let { field to it } }, total)
 
-    val at = sections.indexOf(summary)
     return if (at < 0) {
         inputs + drawn
     } else {
