@@ -134,7 +134,7 @@ internal object TapToPaySessionFailures {
 
     /**
      * Storage whose key facility cannot answer is the same cause as a key store that cannot confirm the key.
-     * The rest are not causes a host can repair.
+     * The rest land where an unrecognised failure does.
      */
     private fun landingForStorage(failure: SecureStorageException): TapToPaySessionState =
         when (failure) {
