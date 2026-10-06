@@ -83,14 +83,14 @@ internal object TapToPayErrorCodes {
     private fun callCode(failure: TapToPayCallException): PayabliErrorType =
         when (failure) {
             is TapToPayCallException.TerminalNotReady -> PayabliErrorType.TERMINAL_NOT_READY
-            is TapToPayCallException.NoDeviceToChargeAs -> PayabliErrorType.ATTESTATION_REQUIRED
+            is TapToPayCallException.NoDeviceToChargeAs -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is TapToPayCallException.PaymentNotHeld -> PayabliErrorType.PAYMENT_NOT_HELD
         }
 
     private fun sessionCode(failure: TapToPaySessionException): PayabliErrorType =
         when (failure) {
             is TapToPaySessionException.PendingActivation -> PayabliErrorType.DEVICE_PENDING_ACTIVATION
-            is TapToPaySessionException.AttestationRequired -> PayabliErrorType.ATTESTATION_REQUIRED
+            is TapToPaySessionException.AttestationRequired -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is TapToPaySessionException.NotRecoverable -> PayabliErrorType.TERMINAL_NOT_READY
             // Nothing was sent for this caller, and this cause has no code of its own.
             is TapToPaySessionException.SetupAbandoned -> PayabliErrorType.UNKNOWN
@@ -100,7 +100,7 @@ internal object TapToPayErrorCodes {
     private fun serviceCode(failure: DeviceServiceException): PayabliErrorType =
         when (failure) {
             is DeviceServiceException.BadRequest -> PayabliErrorType.SDK_INTERNAL_ERROR
-            is DeviceServiceException.NotAttested -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceServiceException.NotAttested -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceServiceException.Forbidden -> PayabliErrorType.DEVICE_PENDING_ACTIVATION
             is DeviceServiceException.EntryPointUnusable -> PayabliErrorType.ENTRY_POINT_REFUSED
             is DeviceServiceException.NotFound -> PayabliErrorType.ENTRY_POINT_REFUSED
@@ -118,31 +118,31 @@ internal object TapToPayErrorCodes {
             is DeviceActivationException.CodeNotIssued -> PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED
             is DeviceActivationException.CodeUnreadable -> PayabliErrorType.ACTIVATION_CODE_NOT_ISSUED
             is DeviceActivationException.DeviceNotPending -> PayabliErrorType.DEVICE_NOT_PENDING
-            is DeviceActivationException.AssertionRejected -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.AssertionRejected -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.RequestRejected -> PayabliErrorType.SDK_INTERNAL_ERROR
-            is DeviceActivationException.AttestationRevoked -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.AttestationRevoked -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.EntryNotAuthorized -> PayabliErrorType.ENTRY_POINT_REFUSED
             is DeviceActivationException.PaypointUnknown -> PayabliErrorType.ENTRY_POINT_REFUSED
             is DeviceActivationException.EntryPointUnusable -> PayabliErrorType.ENTRY_POINT_REFUSED
-            is DeviceActivationException.DeviceUnknown -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.DeviceUnknown -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.ServiceFailed -> PayabliErrorType.SERVER_ERROR
-            is DeviceActivationException.NotEnrolled -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceActivationException.NotEnrolled -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.Unclassified -> PayabliErrorType.UNKNOWN
         }
 
     private fun attestationCode(failure: AttestationException): PayabliErrorType =
         when (failure) {
-            is AttestationException.RemediationRequired -> PayabliErrorType.ATTESTATION_SERVICES_OUTDATED
-            is AttestationException.Retryable -> PayabliErrorType.ATTESTATION_UNAVAILABLE
-            is AttestationException.Throttled -> PayabliErrorType.ATTESTATION_UNAVAILABLE
-            is AttestationException.IntegrityFailed -> PayabliErrorType.ATTESTATION_REFUSED
-            is AttestationException.Misconfigured -> PayabliErrorType.ATTESTATION_NOT_CONFIGURED
+            is AttestationException.RemediationRequired -> PayabliErrorType.DEVICE_SERVICES_OUTDATED
+            is AttestationException.Retryable -> PayabliErrorType.DEVICE_SETUP_UNAVAILABLE
+            is AttestationException.Throttled -> PayabliErrorType.DEVICE_SETUP_UNAVAILABLE
+            is AttestationException.IntegrityFailed -> PayabliErrorType.DEVICE_SETUP_REFUSED
+            is AttestationException.Misconfigured -> PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED
             is AttestationException.ChallengeReused -> PayabliErrorType.SDK_INTERNAL_ERROR
         }
 
     private fun deviceKeyCode(failure: DeviceKeyException): PayabliErrorType =
         when (failure) {
-            is DeviceKeyException.KeyLost -> PayabliErrorType.ATTESTATION_REQUIRED
+            is DeviceKeyException.KeyLost -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceKeyException.SigningFailed -> PayabliErrorType.SDK_INTERNAL_ERROR
             is DeviceKeyException.CryptoUnavailable -> PayabliErrorType.DEVICE_KEY_UNAVAILABLE
         }
