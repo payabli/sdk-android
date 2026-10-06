@@ -20,6 +20,7 @@ import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.TransportAssembly
 import com.payabli.sdk.core.network.TransportFactory
 import com.payabli.sdk.core.network.impl.AuthFailureListener
+import com.payabli.sdk.core.network.impl.ClientFacts
 import com.payabli.sdk.core.telemetry.TelemetryBootstraps
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 import com.payabli.sdk.core.telemetry.TelemetryEvents
@@ -134,8 +135,13 @@ public class PayabliSession private constructor(
         ): PayabliSession {
             host.appContext.applicationContext.applyHostLogLevel()
 
-            return install(config, host) { onAuthFailure ->
-                TransportFactory.authenticated(config, IO_DISPATCHER, TransportAssembly(onAuthFailure = onAuthFailure))
+            return install(config, host) { onAuthFailure, client ->
+                TransportFactory.authenticated(
+                    config,
+                    IO_DISPATCHER,
+                    client,
+                    TransportAssembly(onAuthFailure = onAuthFailure),
+                )
             }
         }
 
@@ -155,12 +161,13 @@ public class PayabliSession private constructor(
             host: HostBindings? = null,
             identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
         ): PayabliSession =
-            install(config, host, identifierOf) { onAuthFailure ->
+            install(config, host, identifierOf) { onAuthFailure, client ->
                 TransportFactory.authenticatedAgainst(
                     baseUrl,
                     config,
                     IO_DISPATCHER,
                     TransportAssembly(onAuthFailure = onAuthFailure),
+                    client,
                 )
             }
 
@@ -195,13 +202,13 @@ public class PayabliSession private constructor(
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): PayabliSession = install(config, host = null, buildTransport = buildTransport)
+        ): PayabliSession = install(config, host = null) { onAuthFailure, _ -> buildTransport(onAuthFailure) }
 
         private suspend fun install(
             config: PayabliConfig,
             host: HostBindings?,
             identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
-            buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
+            buildTransport: suspend (AuthFailureListener, ClientFacts) -> PayabliTransport,
         ): PayabliSession {
             val startedAt = System.nanoTime()
 
@@ -237,21 +244,25 @@ public class PayabliSession private constructor(
                 }
 
                 val machine = SessionStateMachine(sink)
+                // Without host bindings, which is the SDK's own tests, there is no device to read.
+                val device = if (host == null) TelemetryDeviceContext.NONE else DeviceProfileFactory.of(host.appContext)
+                val readDeviceId: () -> String? =
+                    if (host == null) {
+                        { null }
+                    } else {
+                        val context = host.appContext.applicationContext
+                        { identifierOf(context).ifBlank { null } }
+                    }
+                // One reader per fact, so the header, telemetry and the public member report the same device.
+                val client = ClientFacts(PayabliSdkVersion.VALUE, device.osVersion, device.modelName, readDeviceId)
                 // The listener is handed in rather than wired afterwards so no request can complete against a
                 // transport whose failures nothing is listening for.
                 val session =
                     PayabliSession(
                         identity = identity,
                         machine = machine,
-                        // Null without host bindings, which is the SDK's own tests: there is no device to read.
-                        readDeviceId =
-                            if (host == null) {
-                                { null }
-                            } else {
-                                val context = host.appContext.applicationContext
-                                { identifierOf(context).ifBlank { null } }
-                            },
-                        transport = buildTransport { machine.markReinitializeRequired() },
+                        readDeviceId = readDeviceId,
+                        transport = buildTransport(AuthFailureListener { machine.markReinitializeRequired() }, client),
                         // Minted here rather than in the telemetry module, so every capability reporting for
                         // this session quotes the same lifetime even when they are wired independently.
                         telemetry =
@@ -260,11 +271,7 @@ public class PayabliSession private constructor(
                                 environment = config.environment,
                                 telemetryEnabled = config.telemetryEnabled,
                                 sessionId = UUID.randomUUID().toString(),
-                                // Blank without host bindings, which is the SDK's own tests rather than an
-                                // app: the values need a device and there is none to read.
-                                device =
-                                    host?.appContext?.let { DeviceProfileFactory.of(it) }
-                                        ?: TelemetryDeviceContext.NONE,
+                                device = device,
                             ),
                     )
                 machine.markReady()

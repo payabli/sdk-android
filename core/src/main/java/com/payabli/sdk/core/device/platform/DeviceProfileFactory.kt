@@ -7,11 +7,10 @@ import com.payabli.sdk.core.device.CardPresentLinkage
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 
 /**
- * Reads what the platform says about this handset, once, for every event to carry.
+ * Reads what the platform says about this handset, once. Telemetry, the client header and device registration
+ * all take the model and OS version from here, so they report one handset.
  *
- * `Build` is named here and nowhere else outside the card-present description, which is what keeps it out of
- * the reach of a unit test: reading `Build.MODEL` on a JVM throws rather than answering, so every caller of
- * this has to have a device.
+ * Reading `Build.MODEL` on a JVM throws rather than answering, so every caller of this has to have a device.
  *
  * **[TYPE] and [OS] are the service's own words for a device record**, not new ones invented here. Sending
  * anything else would put two vocabularies in one field, and the value a client sends could not be compared

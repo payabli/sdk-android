@@ -454,10 +454,11 @@ internal class PayabliService private constructor(
             logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
+            client: ClientFacts,
         ): PayabliTransport =
             PayabliService(
                 baseUrl,
-                RequestDecorationFactory.chainFor(auth),
+                RequestDecorationFactory.chainFor(auth, client),
                 logger,
                 DEFAULT_CONNECT_TIMEOUT_MILLIS,
                 DEFAULT_READ_TIMEOUT_MILLIS,

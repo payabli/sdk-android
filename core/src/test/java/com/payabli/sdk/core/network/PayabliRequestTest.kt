@@ -36,8 +36,8 @@ class PayabliRequestTest {
 
     @Test
     fun `json preserves caller headers alongside the content type`() {
-        val request = jsonRequest(Body(amount = 1), headers = mapOf("X-Pyb-Client" to "android/0.1.0"))
-        assertEquals("android/0.1.0", request.headers["X-Pyb-Client"])
+        val request = jsonRequest(Body(amount = 1), headers = mapOf("X-Caller-Header" to "caller-value"))
+        assertEquals("caller-value", request.headers["X-Caller-Header"])
         assertEquals("application/json", request.headers["Content-Type"])
     }
 

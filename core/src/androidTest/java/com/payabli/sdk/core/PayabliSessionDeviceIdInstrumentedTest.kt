@@ -1,5 +1,6 @@
 package com.payabli.sdk.core
 
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.payabli.sdk.core.config.PayabliConfig
@@ -7,6 +8,11 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
 import com.payabli.sdk.core.logging.LogLevel
 import com.payabli.sdk.core.logging.LoggerRegistry
+import com.payabli.sdk.core.network.HttpMethod
+import com.payabli.sdk.core.network.PayabliRequest
+import com.payabli.sdk.core.network.impl.ClientFacts
+import com.payabli.sdk.core.network.impl.ClientHeader
+import com.payabli.sdk.testutils.network.LoopbackServer
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -74,5 +80,26 @@ class PayabliSessionDeviceIdInstrumentedTest {
             }
 
         assertNull(session.deviceId)
+    }
+
+    @Test
+    fun theClientHeaderReportsThisHandsetAndTheSessionsDeviceId() {
+        LoopbackServer().use { server ->
+            server.respondWith(200, "{}")
+            val session =
+                runBlocking { PayabliSession.initializeAgainst(server.baseUrl, config(), HostBindings(context)) }
+
+            runBlocking { session.transport.execute(PayabliRequest(HttpMethod.GET, "/api/ping", route = "/api/ping")) }
+
+            val handset =
+                ClientFacts(
+                    sdkVersion = PayabliSdkVersion.VALUE,
+                    osVersion = Build.VERSION.RELEASE,
+                    hardware = Build.MODEL,
+                    deviceId = { session.deviceId },
+                )
+            assertNotNull(session.deviceId)
+            assertEquals(ClientHeader.valueOf(handset), server.onlyRequest.header("X-Pyb-Client"))
+        }
     }
 }

@@ -17,10 +17,11 @@ class RequestDecorationFactoryTest {
         assertEquals(
             listOf(
                 CorrelationDecoration::class.java,
+                ClientHeaderDecoration::class.java,
                 BearerDecoration::class.java,
                 JsonBodyDecoration::class.java,
             ),
-            RequestDecorationFactory.chainFor(testAuth()).map { it.javaClass },
+            RequestDecorationFactory.chainFor(testAuth(), ClientFacts.NONE).map { it.javaClass },
         )
     }
 }

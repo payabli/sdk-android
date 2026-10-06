@@ -80,6 +80,7 @@ class AuthenticatedTransportTest {
         AuthenticatedTransport(
             base =
                 PayabliService.create(
+                    client = ClientFacts.NONE,
                     baseUrl = server.baseUrl,
                     auth = auth,
                     dispatcher = Dispatchers.IO,
@@ -209,8 +210,13 @@ class AuthenticatedTransportTest {
                 // Through the base, not the wrapper: the chain is where this happens now, so asserting it
                 // through the wrapper would pass even if the wrapper were the one injecting.
                 PayabliService
-                    .create(server.baseUrl, auth, Dispatchers.IO, DefaultSdkLogger(LogCategory.NETWORK, sink))
-                    .execute(ping())
+                    .create(
+                        server.baseUrl,
+                        auth,
+                        Dispatchers.IO,
+                        DefaultSdkLogger(LogCategory.NETWORK, sink),
+                        client = ClientFacts.NONE,
+                    ).execute(ping())
 
                 assertEquals("Bearer $TEST_TOKEN", server.onlyRequest.header(AUTHORIZATION))
             }
@@ -271,8 +277,13 @@ class AuthenticatedTransportTest {
                 val auth = testAuth()
 
                 PayabliService
-                    .create(server.baseUrl, auth, Dispatchers.IO, DefaultSdkLogger(LogCategory.NETWORK, sink))
-                    .execute(
+                    .create(
+                        server.baseUrl,
+                        auth,
+                        Dispatchers.IO,
+                        DefaultSdkLogger(LogCategory.NETWORK, sink),
+                        client = ClientFacts.NONE,
+                    ).execute(
                         PayabliRequest(
                             HttpMethod.GET,
                             "/api/ping",
@@ -687,6 +698,7 @@ class AuthenticatedTransportTest {
                     AuthenticatedTransport(
                         base =
                             PayabliService.create(
+                                client = ClientFacts.NONE,
                                 baseUrl = server.baseUrl,
                                 auth = auth,
                                 dispatcher = Dispatchers.IO,

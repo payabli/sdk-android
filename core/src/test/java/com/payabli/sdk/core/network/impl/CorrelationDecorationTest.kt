@@ -33,6 +33,7 @@ class CorrelationDecorationTest {
         server: LoopbackServer,
         auth: PayabliAuth = testAuth(),
     ) = PayabliService.create(
+        client = ClientFacts.NONE,
         baseUrl = server.baseUrl,
         auth = auth,
         dispatcher = Dispatchers.IO,
