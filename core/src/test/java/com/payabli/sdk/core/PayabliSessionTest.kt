@@ -221,6 +221,14 @@ class PayabliSessionTest {
             }
         }
 
+    @Test
+    fun `a session with no device to read has no device id rather than a blank one`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            LoopbackServer().use { server ->
+                assertNull(session(server, config(tokenProvider = provider())).deviceId)
+            }
+        }
+
     /**
      * `runBlocking`, where the rest of this file uses `runTest`.
      *

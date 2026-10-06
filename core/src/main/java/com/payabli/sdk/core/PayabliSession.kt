@@ -1,8 +1,10 @@
 package com.payabli.sdk.core
 
+import android.content.Context
 import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
+import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
 import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
@@ -56,6 +58,7 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
 public class PayabliSession private constructor(
     private val identity: ConfigIdentity,
     private val machine: SessionStateMachine,
+    private val readDeviceId: () -> String?,
     /** The authenticated transport for this session: bearer injected, one 401 recovered, one replay. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val transport: PayabliTransport,
@@ -67,6 +70,12 @@ public class PayabliSession private constructor(
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val telemetry: TelemetrySessionContext,
 ) {
+    /**
+     * This device's identity, the same for every capability and stable for the install, or null while it
+     * cannot be read. It is not the activation id a Tap to Pay enrollment hands over.
+     */
+    public val deviceId: String? get() = readDeviceId()
+
     public companion object {
         /** Serializes [initialize] so two callers racing at startup install one session rather than two. */
         private val lock = Mutex()
@@ -136,14 +145,17 @@ public class PayabliSession private constructor(
          * It skips the host-log-level derivation, which needs a real `Context`; that line is covered on a
          * device instead. `internal` for the reason `TransportFactory.authenticatedAgainst` is: a member
          * left public in bytecode for testing is an origin override in a shipped artifact.
+         *
+         * [identifierOf] stands in for the platform identifier, so a test can give a real device none.
          */
         @VisibleForTesting
         internal suspend fun initializeAgainst(
             baseUrl: String,
             config: PayabliConfig,
             host: HostBindings? = null,
+            identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
         ): PayabliSession =
-            install(config, host) { onAuthFailure ->
+            install(config, host, identifierOf) { onAuthFailure ->
                 TransportFactory.authenticatedAgainst(
                     baseUrl,
                     config,
@@ -188,6 +200,7 @@ public class PayabliSession private constructor(
         private suspend fun install(
             config: PayabliConfig,
             host: HostBindings?,
+            identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
         ): PayabliSession {
             val startedAt = System.nanoTime()
@@ -230,6 +243,14 @@ public class PayabliSession private constructor(
                     PayabliSession(
                         identity = identity,
                         machine = machine,
+                        // Null without host bindings, which is the SDK's own tests: there is no device to read.
+                        readDeviceId =
+                            if (host == null) {
+                                { null }
+                            } else {
+                                val context = host.appContext.applicationContext
+                                { identifierOf(context).ifBlank { null } }
+                            },
                         transport = buildTransport { machine.markReinitializeRequired() },
                         // Minted here rather than in the telemetry module, so every capability reporting for
                         // this session quotes the same lifetime even when they are wired independently.

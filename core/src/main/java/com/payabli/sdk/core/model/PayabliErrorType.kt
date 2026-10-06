@@ -133,7 +133,7 @@ public enum class PayabliErrorType(
         3001,
         "DEVICE_KEY_UNAVAILABLE",
         PayabliErrorCategory.RETRY_LATER,
-        "The device's key facility could not confirm this device's key.",
+        "This device's secure storage is unavailable.",
     ),
     DEVICE_SETUP_UNSUPPORTED(
         3002,
@@ -314,6 +314,14 @@ public enum class PayabliErrorType(
         "PAYMENT_NOT_HELD",
         PayabliErrorCategory.INVALID_REQUEST,
         "No captured payment is held under that identifier.",
+    ),
+
+    // 3032 is reserved, and no member takes it.
+    DEVICE_IDENTITY_UNAVAILABLE(
+        3033,
+        "DEVICE_IDENTITY_UNAVAILABLE",
+        PayabliErrorCategory.DEVICE,
+        "This device cannot be identified.",
     ),
 }
 

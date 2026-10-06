@@ -76,7 +76,7 @@ class PayabliErrorCatalogTest {
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,
-                "The device's key facility could not confirm this device's key.",
+                "This device's secure storage is unavailable.",
             ),
             Row(
                 "DEVICE_SETUP_UNSUPPORTED",
@@ -213,6 +213,12 @@ class PayabliErrorCatalogTest {
                 PayabliErrorCategory.INVALID_REQUEST,
                 "No captured payment is held under that identifier.",
             ),
+            Row(
+                "DEVICE_IDENTITY_UNAVAILABLE",
+                3033,
+                PayabliErrorCategory.DEVICE,
+                "This device cannot be identified.",
+            ),
         )
 
     @Test
@@ -241,14 +247,25 @@ class PayabliErrorCatalogTest {
     }
 
     @Test
-    fun `numbers are appended within an area, so none is skipped`() {
+    fun `numbers are appended within an area, so none is skipped but a reserved one`() {
         PayabliErrorType.entries.groupBy { it.code / 1000 }.values.forEach { area ->
             val numbers = area.map { it.code }
+            val first = (numbers.first() / 1000) * 1000 + 1
             assertEquals(
-                ((numbers.first() / 1000) * 1000 + 1..(numbers.first() / 1000) * 1000 + numbers.size).toList(),
+                (first..numbers.last()).filterNot { it in reserved }.toList(),
                 numbers,
             )
         }
+    }
+
+    @Test
+    fun `a reserved number is never given to a member`() {
+        assertEquals(emptySet<Int>(), PayabliErrorType.entries.map { it.code }.toSet() intersect reserved)
+    }
+
+    private companion object {
+        /** Numbers no member may take. */
+        val reserved = setOf(3032)
     }
 
     @Test

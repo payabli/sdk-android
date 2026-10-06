@@ -11,11 +11,11 @@ public enum class PayabliErrorCategory(
     public val wireName: String,
 ) {
     /**
-     * The SDK could not obtain or use a credential, a token or this device's identity.
+     * The SDK could not obtain or use a credential, a token or this device's setup.
      *
      * The SDK asks the token provider again on the next call, so a provider that can return a working token
-     * repairs it. A session or a device identity that has finished, which the state reports, is established
-     * again by calling `initialize`.
+     * repairs it. A session or a device setup that has ended, which the state reports, is established again
+     * by calling `initialize`.
      */
     CREDENTIAL("CREDENTIAL"),
 
