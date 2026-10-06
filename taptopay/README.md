@@ -93,9 +93,9 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
   package name of the installed app.
 
 An app that isn't an authorized app is refused when the device attests, with an HTTP 403. `initialize()`
-fails, and `sessionState` is `PendingActivation`, the same state as a phone that needs a code. An
-activation code doesn't clear it: register the app, then initialize again. So a phone that lands on
-`PendingActivation` straight after setup may be running an app that isn't registered.
+throws a `TapToPayException` whose `type` is `PERMISSION_DENIED`, and `sessionState` is
+`Failed(CONFIGURATION_REJECTED)`: the phone was never registered, so there is nothing to activate. Register
+the app, then initialize again.
 
 ## Set up
 
@@ -109,8 +109,8 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 
 - `sessionState` is a `StateFlow<TapToPaySessionState>` and `isReady` is a `StateFlow<Boolean>`. Collect them
   to drive your UI.
-- `create`, `initialize`, `activateDevice`, `deviceId`, `charge` and `closeCapturedCharge` are `suspend` functions;
-  call them from a coroutine.
+- `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions; call
+  them from a coroutine.
 - **One paypoint per session.** There is one session per app process, and it has one entry point.
   `PayabliSession.initialize` with a different entry point throws a `PayabliException` whose `type` is
   `INVALID_CONFIGURATION` while the session is live.
@@ -126,9 +126,8 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
 try {
     ttp.initialize()
 } catch (failure: TapToPayException) {
-    if (ttp.sessionState.value == TapToPaySessionState.PendingActivation) {
-        // The phone needs an activation code, the app isn't an authorized app, or the credentials lack
-        // tools_init or pos_create. See Activate a phone.
+    if (ttp.sessionState.value is TapToPaySessionState.PendingActivation) {
+        // The phone needs an activation code. See Activate a phone.
     } else {
         throw failure
     }
@@ -147,17 +146,30 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 - One install can hold activations for up to four paypoints. Activating a fifth drops the one used least
   recently, which then needs to be set up again the next time it's used.
 
-Until the phone is activated, `initialize()` fails and `sessionState` is `PendingActivation`. An app that
-isn't an authorized app, or credentials without `tools_init` or `pos_create`, land in the same state, so check
-both before issuing a code. Credentials without `inboundpayments_create` reach `Ready`, and `charge` is then
-refused before the card is read.
+Until the phone is activated, `initialize()` throws a `TapToPayException` whose `type` is
+`DEVICE_PENDING_ACTIVATION`, and `sessionState` is `PendingActivation(activationId)`. An app that isn't an
+authorized app, or credentials without `tools_init` or `pos_create`, land on
+`Failed(CONFIGURATION_REJECTED)` on a phone that hasn't registered yet. Credentials without
+`inboundpayments_create` reach `Ready`, and `charge` is then refused before the card is read.
 
-1. Issue a code for the phone. In the Payabli portal, under **Pay In > Devices > Device management**, choose
-   **⋯ > Generate activation code**. The code is valid for 30 minutes, and asking again before it
-   expires returns the same code. To issue codes from your own backend instead, call
-   [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)
-   with the phone's device ID. Read it with `ttp.deviceId()` once the session is `PendingActivation`, and send
-   it to your backend. If it's `null`, call `initialize()` again.
+1. Issue a code for the phone, from your backend or from the Payabli portal. The code is valid for 30
+   minutes, and asking again before it expires returns the same code.
+
+   - **From your backend:** call
+     [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)
+     with the paypoint's entry point and the phone's activation ID in the request's `deviceId` field.
+     The activation ID is on the pending state, and only there:
+
+     ```kotlin
+     (ttp.sessionState.value as? TapToPaySessionState.PendingActivation)?.let { pending ->
+         // Send pending.activationId to your backend.
+     }
+     ```
+
+     An app that lost the ID initializes again and lands on the same one.
+
+   - **From the portal:** under **Pay In > Devices > Device management**, choose
+     **⋯ > Generate activation code**.
 
    The code is six digits and can start with zero, so keep it as a string.
 2. Deliver the code to the person holding the phone, and have your app ask for it.
@@ -226,7 +238,7 @@ lookup.
 | `Idle` | Not started, or activated and waiting for `initialize()`. |
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
 | `Ready` | Ready to charge. |
-| `PendingActivation` | The phone needs an activation code, the app isn't one of the paypoint's authorized apps, or the credentials lack `tools_init` or `pos_create`. |
+| `PendingActivation(activationId)` | The phone needs an activation code. `activationId` is what the activation route's `deviceId` field takes. |
 | `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
 | `Reinitializing` | The session is being refreshed. |
 | `Failed(reason)` | The session stopped. `reason` says what to do. |
