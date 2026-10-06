@@ -264,7 +264,7 @@ class PayabliErrorCatalogTest {
     }
 
     private companion object {
-        /** Retired before publication and never shipped, so never reused. */
+        /** Numbers no member may take. */
         val reserved = setOf(3032)
     }
 

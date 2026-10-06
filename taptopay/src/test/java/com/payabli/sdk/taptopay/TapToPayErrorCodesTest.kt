@@ -113,7 +113,7 @@ class TapToPayErrorCodesTest {
                 PayabliErrorType.TERMS_NOT_ACCEPTED,
                 PayabliErrorType.PAYMENT_NOT_CLOSED,
                 PayabliErrorType.DEVICE_SETUP_UNSUPPORTED,
-                // Declared, and nothing raises it yet.
+                // Nothing on this platform raises it.
                 PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
             )
         val cardPresent = PayabliErrorType.entries.filter { it.code in 3001..3999 }.toSet()

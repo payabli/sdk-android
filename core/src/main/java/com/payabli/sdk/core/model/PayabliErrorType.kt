@@ -316,7 +316,7 @@ public enum class PayabliErrorType(
         "No captured payment is held under that identifier.",
     ),
 
-    // 3032 is reserved: retired before publication, never shipped.
+    // 3032 is reserved, and no member takes it.
     DEVICE_IDENTITY_UNAVAILABLE(
         3033,
         "DEVICE_IDENTITY_UNAVAILABLE",
