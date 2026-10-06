@@ -46,6 +46,7 @@ android {
                     // Both drive the real service under a real paypoint. The transaction pair needs an
                     // activated device to charge as, so it needs the attestation credentials too.
                     add("com.payabli.sdk.taptopay.enrollment.platform.DeviceActivationLiveTest")
+                    add("com.payabli.sdk.taptopay.enrollment.platform.DeviceKeyRecoveryLiveTest")
                     add("com.payabli.sdk.taptopay.network.platform.TTPTransactionLiveTest")
                     add("com.payabli.sdk.taptopay.session.platform.TapToPaySessionLiveTest")
                     add("com.payabli.sdk.taptopay.adapters.platform.FiservCardReaderLiveTest")
