@@ -11,8 +11,7 @@ private const val PLATFORM = "android"
 /**
  * What `X-Pyb-Client` reports about this client. A null or blank value is reported as absent.
  *
- * The locale and the device identity are read on every request: the locale can change while the app runs, and
- * an identity that could not be read at install can be read later.
+ * The locale and the device identity are read on every request, because the locale can change while the app runs.
  */
 internal class ClientFacts(
     val sdkVersion: String,
