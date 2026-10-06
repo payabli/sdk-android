@@ -1990,6 +1990,32 @@ MUTATIONS = [
      "          VERSION: ${{ needs.check.outputs.version }}\n          ROLE_ARN",
      "          VERSION: 0.0.2-QA.20260101000000\n          ROLE_ARN"),
 
+    ("QA run's page names the commit and not the version the approval publishes", QA, "workflows",
+     'echo "Publishing \\`$version\\` from', 'echo "Publishing from'),
+    ("QA run's page escapes the version, so the page prints its name", QA, "workflows",
+     'echo "Publishing \\`$version\\` from', 'echo "Publishing \\`\\$version\\` from'),
+    ("QA run's page line is sent to stderr from inside the group", QA, "workflows",
+     'which is also the commit this workflow and its uploader run from:"\n',
+     'which is also the commit this workflow and its uploader run from:" >&2\n'),
+    ("QA run's page names a version other than the one handed on", QA, "workflows",
+     "          done\n          # On the run's page", "          done\n          version=latest\n          # On the run's page"),
+    ("QA publish single-quotes the version, so the page prints its name", QA, "workflows",
+     '            echo "Published \\`$VERSION\\` to \\`/maven-qa\\`."',
+     "            echo 'Published \\`$VERSION\\` to /maven-qa.'"),
+    ("QA run's page names a commit other than the one dispatched", QA, "workflows",
+     "        id: name\n        env:\n          COMMIT: ${{ inputs.commit }}\n",
+     "        id: name\n        env:\n          COMMIT: ${{ github.event.before }}\n"),
+    ("QA publish names the version on the run's page before the upload has finished", QA, "workflows",
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"\n\n"
+     "      - name: Name the published version on the run's page\n"
+     "        env:\n          VERSION: ${{ needs.check.outputs.version }}\n"
+     "        run: |\n          {\n            echo\n            echo \"Published \\`$VERSION\\` to \\`/maven-qa\\`.\"\n"
+     "          } >> \"$GITHUB_STEP_SUMMARY\"\n",
+     "          echo \"Published \\`$VERSION\\` to \\`/maven-qa\\`.\" >> \"$GITHUB_STEP_SUMMARY\"\n"
+     "          python3 .github/scripts/publish_staging.py --prefix maven-qa --version \"$VERSION\"\n"),
+    ("QA publish names a literal version on the run's page", QA, "workflows",
+     "            echo \"Published \\`$VERSION\\` to", "            echo \"Published \\`0.0.2-QA.20260101000000\\` to"),
+
     ("QA check hands on a literal version rather than its stamp", QA, "workflows",
      "      version: ${{ steps.name.outputs.version }}\n", "      version: 0.0.2-QA.20260101000000\n"),
 
