@@ -99,6 +99,16 @@ internal fun operationAfter(
         else -> requested
     }
 
+/**
+ * The operations the screen offers: those [settings] turns on, plus [current] and [heldFor] whatever the
+ * settings say, so a held key can always be settled by the operation it belongs to.
+ */
+internal fun offeredOperations(
+    settings: FormSettings,
+    current: FormOperation,
+    heldFor: FormOperation?,
+): List<FormOperation> = FormOperation.entries.filter { it in settings.operations || it == current || it == heldFor }
+
 /** The operation [heldKey] belongs to once [submitted] has ended. A store sends no key, so it leaves the owner. */
 internal fun keyOwnerAfter(
     owner: FormOperation?,
@@ -263,8 +273,7 @@ fun SimpleCaptureScreen(
     ) {
         OwnerFrame(Owner.App) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // The operation a held key belongs to stays offered, even with its setting turned off.
-                FormOperation.entries.filter { it in settings.operations || it == operation }.forEach { option ->
+                offeredOperations(settings, operation, viewModel.heldFor).forEach { option ->
                     FilterChip(
                         selected = option == operation,
                         onClick = {

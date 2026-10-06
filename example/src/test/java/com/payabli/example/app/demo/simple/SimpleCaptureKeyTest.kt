@@ -1,6 +1,7 @@
 package com.payabli.example.app.demo.simple
 
 import com.payabli.example.app.demo.ui.customize.FormOperation
+import com.payabli.example.app.demo.ui.customize.FormSettings
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.payin.model.PayInException
@@ -120,6 +121,19 @@ class SimpleCaptureKeyTest {
         assertEquals(
             FormOperation.Authorize,
             operationAfter(FormOperation.Capture, FormOperation.Authorize, idle, heldFor = null),
+        )
+    }
+
+    @Test
+    fun `the operation a held key belongs to stays offered with its setting off`() {
+        // An authorization left a key, the screen moved to Tokenize, and Authorize was then turned off.
+        val offered =
+            offeredOperations(FormSettings(), current = FormOperation.Tokenize, heldFor = FormOperation.Authorize)
+
+        assertEquals(listOf(FormOperation.Capture, FormOperation.Authorize, FormOperation.Tokenize), offered)
+        assertEquals(
+            listOf(FormOperation.Capture, FormOperation.Tokenize),
+            offeredOperations(FormSettings(), current = FormOperation.Capture, heldFor = null),
         )
     }
 
