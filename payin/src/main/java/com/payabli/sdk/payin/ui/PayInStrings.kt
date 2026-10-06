@@ -1,7 +1,10 @@
 package com.payabli.sdk.payin.ui
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.payabli.sdk.payin.R
@@ -9,7 +12,7 @@ import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInMethodType
-import com.payabli.sdk.payin.form.labelResource
+import com.payabli.sdk.payin.form.PayInSummaryRows
 
 /**
  * Where every word on the form comes from. A caller's [PayInFormLabels] wins, then the resource.
@@ -20,7 +23,11 @@ internal object PayInStrings {
     fun label(
         field: PayInField,
         labels: PayInFormLabels,
-    ): String = labels.labelFor(field) ?: stringResource(field.labelResource)
+    ): String = PayInSummaryRows.labelText(field, labels, resources())
+
+    @Composable
+    @ReadOnlyComposable
+    fun total(labels: PayInFormLabels): String = PayInSummaryRows.totalLabelText(labels, resources())
 
     @Composable
     @ReadOnlyComposable
@@ -76,6 +83,14 @@ internal object PayInStrings {
             PayInFieldError.ExpiryPast -> stringResource(R.string.payabli_payin_error_expiry_past)
             PayInFieldError.NotAccepted -> stringResource(R.string.payabli_payin_error_not_accepted)
         }
+
+    /** The context resources are read through, recomposing when the configuration changes as `stringResource` does. */
+    @Composable
+    @ReadOnlyComposable
+    private fun resources(): Context {
+        LocalConfiguration.current
+        return LocalContext.current
+    }
 
     /** The options a choice field offers, as the API's values paired with what a payer reads. */
     @Composable

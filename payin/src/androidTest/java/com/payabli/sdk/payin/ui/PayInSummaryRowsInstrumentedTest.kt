@@ -182,6 +182,40 @@ class PayInSummaryRowsInstrumentedTest {
     }
 
     @Test
+    fun theTotalRowDrawsTheHostsLabel() {
+        show(
+            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("0.31"), currency = "USD"),
+            labels = PayInFormLabels(total = "Due today"),
+        )
+
+        rule.onNode(hasText("Due today") and hasText(figure("12.65", "USD"))).assertExists()
+        rule.onNodeWithText(string(R.string.payabli_payin_summary_total)).assertDoesNotExist()
+    }
+
+    @Test
+    fun aBlankTotalLabelDrawsTheDefault() {
+        show(
+            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("0.31"), currency = "USD"),
+            labels = PayInFormLabels(total = " "),
+        )
+
+        rule
+            .onNode(
+                hasText(string(R.string.payabli_payin_summary_total)) and hasText(figure("12.65", "USD")),
+            ).assertExists()
+    }
+
+    @Test
+    fun aPaymentWithAnAmountThatCannotBeSentDrawsNoSummary() {
+        show(
+            PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("1E+40"), currency = "USD"),
+        )
+
+        rule.onNodeWithText(string(R.string.payabli_payin_summary_total)).assertDoesNotExist()
+        rule.onNodeWithText(figure("12.34", "USD")).assertDoesNotExist()
+    }
+
+    @Test
     fun thePlatformFormatterWritesWhatTheJvmOneDoes() {
         // The unit tier formats with the JDK's locale data and a device formats with its own.
         assertEquals("$1,234.56", formatAmount(BigDecimal("1234.56"), "USD", Locale.US))
@@ -192,10 +226,12 @@ class PayInSummaryRowsInstrumentedTest {
     private fun show(
         amounts: PayInPaymentDetails?,
         form: PayInFormConfiguration = configuration,
-    ) = show(form) { amounts }
+        labels: PayInFormLabels = PayInFormLabels(),
+    ) = show(form, labels) { amounts }
 
     private fun show(
         form: PayInFormConfiguration = configuration,
+        labels: PayInFormLabels = PayInFormLabels(),
         amounts: () -> PayInPaymentDetails?,
     ) {
         val draft = PayInFormDraft()
@@ -207,6 +243,7 @@ class PayInSummaryRowsInstrumentedTest {
                     configuration = form,
                     reports = PayInFormReports.None,
                     amounts = amounts(),
+                    labels = labels,
                 )
             }
         }
