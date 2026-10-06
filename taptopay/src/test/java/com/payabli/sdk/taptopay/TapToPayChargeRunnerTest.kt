@@ -288,6 +288,7 @@ class TapToPayChargeRunnerTest {
             assertTrue(failure.toString(), failure is TapToPayException)
             val refused = failure as TapToPayException
             assertTrue(refused.cause.toString(), refused.cause is TTPTransactionException.CardRefused)
+            assertEquals(PayabliErrorType.CARD_DECLINED, refused.type)
             assertEquals("a refused card was reported as charged", TapToPayCapture.NOT_CHARGED, refused.capture)
             assertEquals(TRANS_ID, refused.paymentTransId)
             assertTrue("the close was not sent for a refusal", UPDATE in fixture.routes)
@@ -1204,23 +1205,32 @@ class TapToPayChargeRunnerTest {
         runTest(timeout = TEST_TIMEOUT) {
             // The close records the outcome and changes nothing about it. A host told the transport failed
             // retries a card that was declined.
-            val fixture =
-                SessionFixture(scriptWithCloseControl(closes = 3) { true })
-                    .also { it.coordinator.initialize() }
-            fixture.reader.answerReadWith(
-                cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
-            )
+            val reported = mutableListOf<Pair<String, Map<String, String>>>()
+            TelemetryRecorders.install { event, properties -> reported += event to properties }
+            try {
+                val fixture =
+                    SessionFixture(scriptWithCloseControl(closes = 3) { true })
+                        .also { it.coordinator.initialize() }
+                fixture.reader.answerReadWith(
+                    cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"),
+                )
 
-            val failure =
-                runCatching {
-                    runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
-                }.exceptionOrNull()
+                val failure =
+                    runCatching {
+                        runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                    }.exceptionOrNull()
 
-            assertTrue(failure.toString(), failure is TapToPayException)
-            val refused = failure as TapToPayException
-            assertTrue(refused.cause.toString(), refused.cause is TTPTransactionException.CardRefused)
-            assertEquals(TapToPayCapture.NOT_CHARGED, refused.capture)
-            assertEquals(TRANS_ID, refused.paymentTransId)
+                assertTrue(failure.toString(), failure is TapToPayException)
+                val refused = failure as TapToPayException
+                assertTrue(refused.cause.toString(), refused.cause is TTPTransactionException.CardRefused)
+                assertEquals(PayabliErrorType.CARD_DECLINED, refused.type)
+                assertEquals(TapToPayCapture.NOT_CHARGED, refused.capture)
+                assertEquals(TRANS_ID, refused.paymentTransId)
+                val charge = reported.single { it.first == TelemetryEvents.TTP_CHARGE_FAILED }.second
+                assertEquals("3020", charge[TelemetryProperty.ERROR_NUMBER.key])
+            } finally {
+                TelemetryRecorders.clear()
+            }
         }
 
     @Test
