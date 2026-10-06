@@ -1,10 +1,12 @@
 package com.payabli.sdk.payin.ui
 
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.res.Resources
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.payabli.sdk.payin.R
@@ -84,12 +86,15 @@ internal object PayInStrings {
             PayInFieldError.NotAccepted -> stringResource(R.string.payabli_payin_error_not_accepted)
         }
 
-    /** The context resources are read through, recomposing when the configuration changes as `stringResource` does. */
+    /** A context whose strings come from [LocalResources], the resources every `stringResource` here reads. */
     @Composable
     @ReadOnlyComposable
     private fun resources(): Context {
-        LocalConfiguration.current
-        return LocalContext.current
+        val resources = LocalResources.current
+        val context = LocalContext.current
+        return object : ContextWrapper(context) {
+            override fun getResources(): Resources = resources
+        }
     }
 
     /** The options a choice field offers, as the API's values paired with what a payer reads. */

@@ -1,8 +1,11 @@
 package com.payabli.sdk.payin.ui
 
+import android.content.res.Resources
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -190,6 +193,39 @@ class PayInSummaryRowsInstrumentedTest {
 
         rule.onNode(hasText("Due today") and hasText(figure("12.65", "USD"))).assertExists()
         rule.onNodeWithText(string(R.string.payabli_payin_summary_total)).assertDoesNotExist()
+    }
+
+    @Test
+    fun theLabelsFollowResourcesTheHostProvides() {
+        val base = InstrumentationRegistry.getInstrumentation().targetContext.resources
+
+        @Suppress("DEPRECATION")
+        val provided =
+            object : Resources(base.assets, base.displayMetrics, base.configuration) {
+                override fun getString(id: Int): String = "Provided " + base.getString(id)
+            }
+        val draft = PayInFormDraft()
+        rule.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalResources provides provided) {
+                    PayInFormContent(
+                        submission = PayInSubmissionState.Idle,
+                        draft = draft,
+                        configuration = configuration,
+                        reports = PayInFormReports.None,
+                        amounts =
+                            PayInPaymentDetails(
+                                BigDecimal("12.34"),
+                                serviceFee = BigDecimal("0.10"),
+                                currency = "USD",
+                            ),
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithText("Provided " + string(R.string.payabli_payin_summary_total)).assertExists()
+        rule.onNodeWithText("Provided " + string(R.string.payabli_payin_field_service_fee)).assertExists()
     }
 
     @Test
