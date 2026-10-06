@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,5 +59,20 @@ class PayabliSessionDeviceIdInstrumentedTest {
 
         assertNotNull(first)
         assertEquals(first, second)
+    }
+
+    @Test
+    fun aDeviceWithNoPlatformIdentifierHasNoDeviceIdRatherThanABlankOne() {
+        val session =
+            runBlocking {
+                PayabliSession.initializeAgainst(
+                    "https://127.0.0.1",
+                    config(),
+                    HostBindings(context),
+                    identifierOf = { "" },
+                )
+            }
+
+        assertNull(session.deviceId)
     }
 }

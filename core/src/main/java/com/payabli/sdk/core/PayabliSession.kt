@@ -1,5 +1,6 @@
 package com.payabli.sdk.core
 
+import android.content.Context
 import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
@@ -144,14 +145,17 @@ public class PayabliSession private constructor(
          * It skips the host-log-level derivation, which needs a real `Context`; that line is covered on a
          * device instead. `internal` for the reason `TransportFactory.authenticatedAgainst` is: a member
          * left public in bytecode for testing is an origin override in a shipped artifact.
+         *
+         * [identifierOf] stands in for the platform identifier, so a test can give a real device none.
          */
         @VisibleForTesting
         internal suspend fun initializeAgainst(
             baseUrl: String,
             config: PayabliConfig,
             host: HostBindings? = null,
+            identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
         ): PayabliSession =
-            install(config, host) { onAuthFailure ->
+            install(config, host, identifierOf) { onAuthFailure ->
                 TransportFactory.authenticatedAgainst(
                     baseUrl,
                     config,
@@ -196,6 +200,7 @@ public class PayabliSession private constructor(
         private suspend fun install(
             config: PayabliConfig,
             host: HostBindings?,
+            identifierOf: (Context) -> String = DeviceIdentifierFactory::of,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
         ): PayabliSession {
             val startedAt = System.nanoTime()
@@ -244,7 +249,7 @@ public class PayabliSession private constructor(
                                 { null }
                             } else {
                                 val context = host.appContext.applicationContext
-                                { DeviceIdentifierFactory.of(context).ifBlank { null } }
+                                { identifierOf(context).ifBlank { null } }
                             },
                         transport = buildTransport { machine.markReinitializeRequired() },
                         // Minted here rather than in the telemetry module, so every capability reporting for
