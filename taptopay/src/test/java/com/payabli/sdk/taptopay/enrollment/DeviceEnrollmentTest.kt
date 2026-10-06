@@ -2,9 +2,11 @@ package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.logging.LogLevel
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.VerdictClass
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
+import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runCurrent
@@ -30,6 +32,18 @@ class DeviceEnrollmentTest {
             RouteScript.REGISTER to listOf(registerBody()),
             RouteScript.ATTEST to listOf(attestBody()),
         )
+
+    @Test
+    fun `a device with no identifier is refused before anything is sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(coldScript(), hardwareId = "")
+
+            val failure = runCatching { fixture.enrollment.enroll() }.exceptionOrNull()
+
+            assertTrue("not a device refusal: $failure", failure is DeviceIneligibleException)
+            assertEquals(PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE, (failure as DeviceIneligibleException).type)
+            assertEquals(emptyList<String>(), fixture.routes)
+        }
 
     @Test
     fun `the cold sequence calls challenge, register and attest in that order`() =

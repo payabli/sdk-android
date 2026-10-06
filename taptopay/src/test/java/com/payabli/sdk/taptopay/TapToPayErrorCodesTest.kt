@@ -74,6 +74,8 @@ class TapToPayErrorCodesTest {
                 PayabliErrorType.DEVICE_OS_UNSUPPORTED,
             DeviceIneligibleException(PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED, "no radio") to
                 PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
+            DeviceIneligibleException(PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE, "no identifier") to
+                PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
             CardReaderException.CredentialsUnusable("blank") to PayabliErrorType.READER_CREDENTIALS_UNUSABLE,
             CardReaderException.ArmingFailed(null) to PayabliErrorType.READER_UNAVAILABLE,
             CardReaderException.DeviceDenied(null) to PayabliErrorType.READER_DEVICE_REFUSED,
@@ -113,8 +115,6 @@ class TapToPayErrorCodesTest {
                 PayabliErrorType.TERMS_NOT_ACCEPTED,
                 PayabliErrorType.PAYMENT_NOT_CLOSED,
                 PayabliErrorType.DEVICE_SETUP_UNSUPPORTED,
-                // Nothing on this platform raises it.
-                PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
             )
         val cardPresent = PayabliErrorType.entries.filter { it.code in 3001..3999 }.toSet()
         assertEquals(cardPresent - notFromACause, causes.map { it.second }.filter { it in cardPresent }.toSet())

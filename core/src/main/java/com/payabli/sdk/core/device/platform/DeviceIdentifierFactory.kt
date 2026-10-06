@@ -6,6 +6,7 @@ import android.provider.Settings
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.BuildConfig
 import com.payabli.sdk.core.device.DeviceIdentifier
+import com.payabli.sdk.core.device.UsableValueCache
 
 /**
  * Reads the platform's per-app installation identifier and returns the digest of it.
@@ -28,20 +29,16 @@ import com.payabli.sdk.core.device.DeviceIdentifier
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object DeviceIdentifierFactory {
-    @Volatile
-    private var cached: String? = null
+    private val identifier = UsableValueCache<String> { it.isNotBlank() }
 
     /**
      * The identifier for this app on this device, or a blank when the platform offered nothing.
      *
-     * Computed once. The inputs cannot change while the process lives, and both a `Settings.Secure` read and
-     * a digest are worth avoiding on a path that runs per session and per registration.
+     * Held once one is read, so a `Settings.Secure` read and a digest run once per process. A blank is read
+     * again on the next call.
      */
     @SuppressLint("HardwareIds")
-    public fun of(context: Context): String =
-        cached ?: synchronized(this) {
-            cached ?: derive(context).also { cached = it }
-        }
+    public fun of(context: Context): String = identifier.get { derive(context) }
 
     private fun derive(context: Context): String {
         val application = context.applicationContext

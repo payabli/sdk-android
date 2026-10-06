@@ -10,6 +10,7 @@ import com.payabli.sdk.core.logging.LoggerRegistry
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
+import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.attestation.AppAttestor
 import com.payabli.sdk.taptopay.attestation.AttestationProjectStore
@@ -21,6 +22,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceIdentity
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.attestation.device.RedactedCause
+import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
@@ -135,6 +137,13 @@ internal class DeviceEnrollment(
                     "stored device identity names a key this device no longer holds, re-enrolling"
                 }
                 store.clear(entry)
+            }
+
+            if (description.hardwareId.isBlank()) {
+                throw DeviceIneligibleException(
+                    PayabliErrorType.DEVICE_IDENTITY_UNAVAILABLE,
+                    "this device gives no identifier to register",
+                )
             }
 
             val challenge = client.challenge(entry, failureMapper = EntryPointFailures)
