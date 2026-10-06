@@ -224,11 +224,9 @@ class KeystoreDeviceKeyInstrumentedTest {
     fun anEntryThePlatformCannotLoadIsReplacedWhenCreationIsAllowed() =
         runTest(timeout = TEST_TIMEOUT) {
             val before = provisioned().publicKey().point
-            var reads = 0
             val unloadable =
-                KeystoreDeviceKey(logger, readPrivateKey = { store, alias ->
-                    if (reads++ == 0) throw UnrecoverableKeyException("no public certificate stored")
-                    store.getKey(alias, null)
+                KeystoreDeviceKey(logger, readPrivateKey = { _, _ ->
+                    throw UnrecoverableKeyException("no public certificate stored")
                 })
 
             unloadable.provision()
