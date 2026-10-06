@@ -54,8 +54,13 @@ internal class TapToPaySessionCoordinator(
     /** Whether a payment can be taken right now. */
     val isReady: StateFlow<Boolean> get() = manager.isReady
 
-    /** Serialises the work. Held for a whole run, so no two runs are ever inside the reader together. */
-    private val region = Mutex()
+    /**
+     * Serialises the work. Held for a whole run, so no two runs are ever inside the reader together.
+     *
+     * One per paypoint in the process, shared by every coordinator for it, because they share the device's
+     * stored registration and a run lands its failure on what that registration holds.
+     */
+    private val region: Mutex = regionFor(entry)
 
     /** Guards [inFlight] alone. Nothing suspends while it is held. */
     private val claims = Mutex()
@@ -343,6 +348,13 @@ internal class TapToPaySessionCoordinator(
     private suspend fun runActivateDevice(activationCode: String) {
         enrollment.activateDevice(activationCode)
         manager.settle(TapToPaySessionState.Idle)
+    }
+
+    private companion object {
+        /** One region per paypoint, shared by every coordinator over it. */
+        private val regions = HashMap<String, Mutex>()
+
+        private fun regionFor(entry: String): Mutex = synchronized(regions) { regions.getOrPut(entry) { Mutex() } }
     }
 }
 

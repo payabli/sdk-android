@@ -646,6 +646,26 @@ class DeviceEnrollmentTest {
         }
 
     @Test
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `a second enrollment for the same paypoint waits for the first`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val gate = CompletableDeferred<Unit>()
+            // Held at attestation, which is inside the enrollment and outside any store read.
+            val first = EnrollmentFixture(coldScript(), attestor = FakeAppAttestor(gate = { gate.await() }))
+            val second = EnrollmentFixture(RouteScript())
+
+            val enrolling = async { first.enrollment.enroll() }
+            runCurrent()
+            val reading = async { second.enrollment.registration() }
+            runCurrent()
+            assertTrue("the read waits for the enrollment holding the paypoint", reading.isActive)
+
+            gate.complete(Unit)
+            enrolling.await()
+            reading.await()
+        }
+
+    @Test
     fun `reading a held registration writes no log line`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())

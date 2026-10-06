@@ -106,9 +106,10 @@ internal class DeviceEnrollment(
      * Serialises the two entry points against each other.
      *
      * Without it a concurrent [enroll] can re-register underneath a [activateDevice] and the code is then
-     * spent against a handle the service has just replaced.
+     * spent against a handle the service has just replaced. One per paypoint in the process, shared by every
+     * enrollment for it, since they read and write the one stored registration.
      */
-    private val lock = Mutex()
+    private val lock: Mutex = lockFor(entry)
 
     /**
      * Brings the device to attested.
@@ -378,6 +379,11 @@ internal class DeviceEnrollment(
     }
 
     private companion object {
+        /** One lock per paypoint, shared by every enrollment over it. */
+        private val locks = HashMap<String, Mutex>()
+
+        private fun lockFor(entry: String): Mutex = synchronized(locks) { locks.getOrPut(entry) { Mutex() } }
+
         val SIX_DIGITS = Regex("^[0-9]{6}$")
         const val OUTCOME_REUSED = "reused"
         const val OUTCOME_UNCHANGED = "unchanged"

@@ -8,6 +8,8 @@ import com.payabli.sdk.taptopay.attestation.AttestationToken
 internal class FakeAppAttestor(
     private val token: AttestationToken = AttestationToken(TOKEN),
     private val failure: Throwable? = null,
+    /** Awaited on every attestation, so a test can hold an enrollment between its store reads. */
+    private val gate: (suspend () -> Unit)? = null,
 ) : AppAttestor {
     val challenges: MutableList<AttestationChallenge> = mutableListOf()
     var warmUps: Int = 0
@@ -15,6 +17,7 @@ internal class FakeAppAttestor(
 
     override suspend fun attest(challenge: AttestationChallenge): AttestationToken {
         challenges += challenge
+        gate?.invoke()
         failure?.let { throw it }
         return token
     }

@@ -91,6 +91,27 @@ class SessionSerializationTest {
         }
 
     @Test
+    fun `two terminals for one paypoint take turns`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // Two terminals over one paypoint share what the device has stored for it, so one's setup must not
+            // run while the other's is still deciding where it landed.
+            val held = CompletableDeferred<Unit>()
+            val first = SessionFixture(SessionFixture.coldScript(), readerGate = { held.await() })
+            val second = SessionFixture(SessionFixture.coldScript())
+
+            val firstBuild = launch(UnconfinedTestDispatcher(testScheduler)) { first.coordinator.initialize() }
+            val secondBuild = launch(UnconfinedTestDispatcher(testScheduler)) { second.coordinator.initialize() }
+            assertTrue("the second terminal is waiting for the first", secondBuild.isActive)
+            assertEquals("the second terminal sent nothing", emptyList<String>(), second.routes)
+
+            held.complete(Unit)
+            completing("the first build") { firstBuild.join() }
+            completing("the second build") { secondBuild.join() }
+
+            assertEquals(TapToPaySessionState.Ready, second.state)
+        }
+
+    @Test
     fun `a second build joins the one in flight and runs nothing of its own`() =
         runTest(timeout = TEST_TIMEOUT) {
             val held = CompletableDeferred<Unit>()
