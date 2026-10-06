@@ -68,7 +68,7 @@ class SessionInitializeReportingTest {
             install(entryPoint = "an-entry-point")
             recorded.clear()
 
-            val refused = initialize(entryPoint = "a-different-entry-point")
+            val refused = runCatching { install(entryPoint = "a-different-entry-point") }
 
             assertTrue("the second configuration was accepted", refused.isFailure)
             assertEquals(
@@ -94,7 +94,7 @@ class SessionInitializeReportingTest {
                 .initializeWith(configFor("an-entry-point")) { onAuthFailure ->
                     retire = onAuthFailure
                     UnusedTransport
-                }.getOrThrow()
+                }
 
             retire!!.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "no longer valid"))
             assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
@@ -107,9 +107,7 @@ class SessionInitializeReportingTest {
             assertEquals(emptyList<String>(), recorded)
         }
 
-    private suspend fun install(entryPoint: String): PayabliSession = initialize(entryPoint).getOrThrow()
-
-    private suspend fun initialize(entryPoint: String): Result<PayabliSession> =
+    private suspend fun install(entryPoint: String): PayabliSession =
         PayabliSession.initializeWith(configFor(entryPoint)) { UnusedTransport }
 
     private fun configFor(entryPoint: String) =

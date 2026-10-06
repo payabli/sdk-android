@@ -122,7 +122,7 @@ class PayabliSessionTest {
     private suspend fun session(
         server: LoopbackServer,
         config: PayabliConfig,
-    ): PayabliSession = PayabliSession.initializeAgainst(server.baseUrl, config).getOrThrow()
+    ): PayabliSession = PayabliSession.initializeAgainst(server.baseUrl, config)
 
     /**
      * Its own configuration rather than [config], whose first answer comes from the wrapper and would make
@@ -268,8 +268,8 @@ class PayabliSessionTest {
                         releaseFirst.complete(Unit)
                         assertSame(
                             "two callers racing initialize must not install two sessions",
-                            first.await().getOrThrow(),
-                            second.await().getOrThrow(),
+                            first.await(),
+                            second.await(),
                         )
                     } finally {
                         // An assertion failing above must not leave the lock held, or every later test in
@@ -286,12 +286,14 @@ class PayabliSessionTest {
             LoopbackServer().use { server ->
                 val first = session(server, config())
 
-                val second = PayabliSession.initializeAgainst(server.baseUrl, config(entryPoint = "other"))
+                val failure =
+                    runCatching {
+                        PayabliSession.initializeAgainst(server.baseUrl, config(entryPoint = "other"))
+                    }.exceptionOrNull()
 
                 // Refused rather than replaced. Replacing would leave capabilities holding the old session
                 // while new ones got the new one, which is the two-sessions state this type exists to stop.
-                val failure = second.exceptionOrNull()
-                assertTrue("expected a failure, got $second", failure is PayabliException)
+                assertTrue("expected a refusal, got $failure", failure is PayabliException)
                 assertEquals(
                     PayabliErrorType.INVALID_CONFIGURATION,
                     (failure as PayabliException).type,
@@ -395,7 +397,7 @@ class PayabliSessionTest {
                     .initializeWith(config()) { onAuthFailure ->
                         straggler = onAuthFailure
                         TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
-                    }.getOrThrow()
+                    }
 
                 straggler.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "finished"))
                 assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
@@ -403,7 +405,7 @@ class PayabliSessionTest {
                 PayabliSession
                     .initializeWith(config()) { _ ->
                         TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
-                    }.getOrThrow()
+                    }
                 assertEquals(SdkState.Ready, PayabliSession.state.value)
 
                 // A request that decided the first session was finished can suspend before it says so, and
@@ -441,7 +443,7 @@ class PayabliSessionTest {
                             .initializeWith(config()) { onAuthFailure ->
                                 straggler = onAuthFailure
                                 TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
-                            }.getOrThrow()
+                            }
                         straggler.onUnrecoverable(PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, "finished"))
                         assertEquals(SdkState.ReinitializeRequired, PayabliSession.state.value)
 
@@ -466,7 +468,7 @@ class PayabliSessionTest {
                         assertEquals(SdkState.Uninitialized, PayabliSession.state.value)
 
                         releaseBuilder.complete(Unit)
-                        initializing.await().getOrThrow()
+                        initializing.await()
                         resetting.await()
                     } finally {
                         releaseBuilder.complete(Unit)
@@ -505,7 +507,7 @@ class PayabliSessionTest {
                         )
 
                         releaseBuilder.complete(Unit)
-                        initializing.await().getOrThrow()
+                        initializing.await()
                         resetting.await()
 
                         // Cleared against the session that ended up installed, not against the one that was
@@ -528,7 +530,7 @@ class PayabliSessionTest {
                     .initializeWith(config()) { onAuthFailure ->
                         straggler = onAuthFailure
                         TransportFactory.authenticatedAgainst(server.baseUrl, config(), Dispatchers.IO)
-                    }.getOrThrow()
+                    }
 
                 PayabliSession.reset()
 

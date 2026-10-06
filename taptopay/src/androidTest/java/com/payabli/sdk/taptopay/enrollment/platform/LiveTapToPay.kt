@@ -66,7 +66,7 @@ internal object LiveTapToPay {
                     tokenProvider = { LiveRunSettings.accessToken() },
                 ),
                 HostBindings(context),
-            ).getOrThrow()
+            )
 
     suspend fun enrollment(context: Context): DeviceEnrollment {
         val trust = DeviceTrust.open(context)

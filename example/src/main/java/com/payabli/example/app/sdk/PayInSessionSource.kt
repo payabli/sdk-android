@@ -45,7 +45,7 @@ class PayInSessionSource(
      * quickly to interrupt from outside, so a test cancelling during the token request would pass whether the
      * rule held or not.
      */
-    private val startSession: suspend (PayabliConfig) -> Result<PayabliSession> = { config ->
+    private val startSession: suspend (PayabliConfig) -> PayabliSession = { config ->
         PayabliSession.initialize(config, HostBindings(appContext))
     },
 ) {
@@ -69,7 +69,7 @@ class PayInSessionSource(
         // Not runCatching: that catches CancellationException as well, and turning cancellation into an
         // ordinary startup failure reports an error for a screen that simply went away.
         return try {
-            start(config())
+            Result.success(startSession(config()))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (failure: Exception) {
@@ -88,8 +88,6 @@ class PayInSessionSource(
                 tokenClient().mintAccessToken() ?: throw IllegalStateException(NO_TOKEN)
             },
         )
-
-    private suspend fun start(config: PayabliConfig): Result<PayabliSession> = startSession(config)
 
     private companion object {
         const val NO_TOKEN = "The token server returned no access token."

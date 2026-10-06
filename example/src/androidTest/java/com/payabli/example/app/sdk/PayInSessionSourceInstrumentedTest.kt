@@ -168,7 +168,7 @@ class PayInSessionSourceInstrumentedTest {
 
     private fun sourceAgainst(
         server: SlowTokenServer,
-        startSession: suspend (PayabliConfig) -> Result<PayabliSession>,
+        startSession: suspend (PayabliConfig) -> PayabliSession,
     ): PayInSessionSource {
         val target = TokenServerTarget("http://127.0.0.1:${server.port}", TokenHostSource.BuildSetting)
         return PayInSessionSource(

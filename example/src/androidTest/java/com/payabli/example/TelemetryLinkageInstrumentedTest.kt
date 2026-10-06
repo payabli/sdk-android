@@ -64,7 +64,7 @@ class TelemetryLinkageInstrumentedTest {
 
         installed =
             runBlocking {
-                PayabliSession.initialize(sharedConfiguration(), host)
+                runCatching { PayabliSession.initialize(sharedConfiguration(), host) }
             }
     }
 

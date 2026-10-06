@@ -55,7 +55,7 @@ class PayabliSessionInstrumentedTest {
     fun initializeDerivesTheAutomaticLevelFromADebuggableHost() {
         assertEquals("nothing should have lowered the cutoff yet", LogLevel.NONE, LoggerRegistry.effectiveLogLevel())
 
-        runBlocking { PayabliSession.initialize(config(), HostBindings(context)).getOrThrow() }
+        runBlocking { PayabliSession.initialize(config(), HostBindings(context)) }
 
         // The one line this ticket owed: without it the automatic slot is never written and an integrator's
         // debug build stays silent no matter how the SDK is configured.
@@ -66,7 +66,7 @@ class PayabliSessionInstrumentedTest {
     fun aLevelChosenBeforeInitializeSurvivesIt() {
         PayabliSession.setLogLevel(LogLevel.NONE)
 
-        runBlocking { PayabliSession.initialize(config(), HostBindings(context)).getOrThrow() }
+        runBlocking { PayabliSession.initialize(config(), HostBindings(context)) }
 
         // Why the setter is on the companion at all. An instance-owned one could not have been called
         // before this point, so the automatic value would always be the later write and would always win.
@@ -76,8 +76,8 @@ class PayabliSessionInstrumentedTest {
     @Test
     fun repeatedInitializeKeepsDerivingTheSameLevel() {
         runBlocking {
-            PayabliSession.initialize(config(), HostBindings(context)).getOrThrow()
-            PayabliSession.initialize(config(), HostBindings(context)).getOrThrow()
+            PayabliSession.initialize(config(), HostBindings(context))
+            PayabliSession.initialize(config(), HostBindings(context))
         }
 
         // Idempotent returns the installed session without rebuilding it, and the derivation runs on the

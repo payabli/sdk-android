@@ -116,7 +116,7 @@ class EntryPointRefusalLiveTest {
                     tokenProvider = { LiveRunSettings.accessToken() },
                 ),
                 HostBindings(context),
-            ).getOrThrow()
+            )
 
     private companion object {
         val EMULATED = setOf("ranchu", "goldfish")
