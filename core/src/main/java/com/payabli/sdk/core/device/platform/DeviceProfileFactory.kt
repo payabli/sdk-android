@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import androidx.annotation.RestrictTo
 import com.payabli.sdk.core.device.CardPresentLinkage
+import com.payabli.sdk.core.device.UsableValueCache
 import com.payabli.sdk.core.telemetry.TelemetryDeviceContext
 
 /**
@@ -31,24 +32,18 @@ public object DeviceProfileFactory {
     /** The platform. Fixed here and different on the sibling SDK, which is what makes it worth sending. */
     internal const val OS: String = "Android"
 
-    @Volatile
-    private var cached: TelemetryDeviceContext? = null
+    private val profile = UsableValueCache<TelemetryDeviceContext> { it.idHash.isNotBlank() }
 
-    /**
-     * The device facts, computed once.
-     *
-     * None of the inputs can change while the process lives, and the identifier's digest is worth avoiding
-     * on a path that runs per session.
-     */
+    /** The device facts, held once the identifier in them has been read. */
     public fun of(context: Context): TelemetryDeviceContext =
-        cached ?: synchronized(this) {
-            cached ?: TelemetryDeviceContext(
+        profile.get {
+            TelemetryDeviceContext(
                 idHash = DeviceIdentifierFactory.of(context),
                 type = if (CardPresentLinkage.isLinked()) TYPE else "",
                 os = OS,
                 osVersion = Build.VERSION.RELEASE.orEmpty(),
                 modelName = Build.MODEL.orEmpty(),
                 packageName = context.applicationContext.packageName.orEmpty(),
-            ).also { cached = it }
+            )
         }
 }
