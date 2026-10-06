@@ -89,6 +89,9 @@ fun FormSettingsMenu(
             Option(preset.label, selected = preset.settings == settings) { pick(preset.settings) }
         }
 
+        Group("Operations")
+        Toggle("Offer Authorize", settings.offerAuthorize) { pick(settings.copy(offerAuthorize = it)) }
+
         Group("Look")
         FormLook.entries.forEach { look ->
             Option(look.label, selected = look == settings.look) { pick(settings.copy(look = look)) }

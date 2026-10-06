@@ -46,7 +46,7 @@ object FormCustomization {
                 title = if (settings.customWording) "Order total" else null,
                 fields = listOf(PayInField.Amount, PayInField.ServiceFee),
                 style = PayInSectionStyle.Summary,
-            ).takeIf { operation == FormOperation.Capture }
+            ).takeIf { operation.takesAmount }
 
         fun arranged(details: PayInFormSection) =
             listOfNotNull(
@@ -58,10 +58,12 @@ object FormCustomization {
 
         return PayInFormConfiguration(
             allowedMethods =
-                when (settings.methods) {
-                    FormMethods.Card -> listOf(PayInMethodType.Card)
-                    FormMethods.Bank -> listOf(PayInMethodType.BankAccount)
-                    FormMethods.Both -> listOf(PayInMethodType.Card, PayInMethodType.BankAccount)
+                when {
+                    // An authorization holds funds on a card and nothing else, so it offers the card alone.
+                    operation == FormOperation.Authorize -> listOf(PayInMethodType.Card)
+                    settings.methods == FormMethods.Card -> listOf(PayInMethodType.Card)
+                    settings.methods == FormMethods.Bank -> listOf(PayInMethodType.BankAccount)
+                    else -> listOf(PayInMethodType.Card, PayInMethodType.BankAccount)
                 },
             defaultMethod =
                 if (settings.startOn ==
@@ -96,6 +98,7 @@ object FormCustomization {
                 when {
                     !settings.customWording -> null
                     operation == FormOperation.Capture -> "Pay now"
+                    operation == FormOperation.Authorize -> "Place hold"
                     else -> "Save for later"
                 },
             fieldLabels = if (settings.customWording) BRAND_LABELS else emptyMap(),
@@ -104,7 +107,7 @@ object FormCustomization {
 
     /**
      * The operation the form submits. With the customer section off, the app supplies the customer, and a
-     * capture's fee is the one for [method], included in its `totalAmount`.
+     * capture's or an authorization's fee is the one for [method], included in its `totalAmount`.
      */
     fun operation(
         settings: FormSettings,
@@ -114,19 +117,18 @@ object FormCustomization {
         method: PayInMethodType,
     ): PayabliPayInOperation {
         val supplied = DEMO_CUSTOMER.takeUnless { settings.customerSection }
+        val transaction =
+            PayInTransactionOptions(
+                PayInPaymentDetails(
+                    totalAmount = amount + serviceFee(method),
+                    serviceFee = serviceFee(method),
+                ),
+                customerData = supplied,
+                idempotencyKey = idempotencyKey,
+            )
         return when (operation) {
-            FormOperation.Capture ->
-                PayabliPayInOperation.Capture(
-                    PayInTransactionOptions(
-                        PayInPaymentDetails(
-                            totalAmount = amount + serviceFee(method),
-                            serviceFee = serviceFee(method),
-                        ),
-                        customerData = supplied,
-                        idempotencyKey = idempotencyKey,
-                    ),
-                )
-
+            FormOperation.Capture -> PayabliPayInOperation.Capture(transaction)
+            FormOperation.Authorize -> PayabliPayInOperation.Authorize(transaction)
             FormOperation.Tokenize ->
                 PayabliPayInOperation.StoreMethod(
                     PayInStoreOptions(customerData = supplied, forceCustomerCreation = true),

@@ -59,6 +59,14 @@ class SimpleCaptureKeyTest {
         assertNull(keyAfter("key-1", FormOperation.Capture, outcome = null))
     }
 
+    @Test
+    fun `an authorization keeps and spends its key as a capture does`() {
+        val dropped = failed(PayInException.Unsettled(network()), retryKey = "key-1")
+
+        assertEquals("key-1", keyAfter(null, FormOperation.Authorize, dropped))
+        assertNull(keyAfter("key-1", FormOperation.Authorize, outcome = null))
+    }
+
     private fun failed(
         cause: PayabliException,
         retryKey: String? = null,

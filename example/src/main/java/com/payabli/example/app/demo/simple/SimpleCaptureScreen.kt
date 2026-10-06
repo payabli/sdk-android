@@ -76,7 +76,7 @@ internal fun keyAfter(
     outcome: PayInSubmissionState.Failed?,
 ): String? =
     when {
-        submitted != FormOperation.Capture -> held
+        !submitted.takesAmount -> held
         outcome == null -> null
         else -> keyForNextAttempt(held, outcome)
     }
@@ -106,6 +106,7 @@ internal fun outcomeMessage(
 ): String =
     when (operation) {
         FormOperation.Capture -> if (succeeded) "Payment approved" else "Payment failed"
+        FormOperation.Authorize -> if (succeeded) "Payment authorized" else "Authorization failed"
         FormOperation.Tokenize -> if (succeeded) "Payment method saved" else "Save failed"
     }
 
@@ -141,6 +142,7 @@ class SimpleCaptureViewModel(
         private set
 
     var settings by mutableStateOf(FormSettings())
+        private set
 
     var operation by mutableStateOf(FormOperation.Capture)
 
@@ -152,6 +154,12 @@ class SimpleCaptureViewModel(
      * that.
      */
     var method by mutableStateOf<PayInMethodType?>(null)
+
+    /** Applies [changed], and moves off an operation it no longer offers. */
+    fun changeSettings(changed: FormSettings) {
+        settings = changed
+        if (operation !in changed.operations) operation = FormOperation.Capture
+    }
 
     fun failed(
         submitted: FormOperation,
@@ -220,14 +228,14 @@ fun SimpleCaptureScreen(
         actions = {
             FormSettingsMenu(
                 settings,
-                onSettingsChange = { viewModel.settings = it },
+                onSettingsChange = viewModel::changeSettings,
                 enabled = !submitting,
             )
         },
     ) {
         OwnerFrame(Owner.App) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FormOperation.entries.forEach { option ->
+                settings.operations.forEach { option ->
                     FilterChip(
                         selected = option == operation,
                         onClick = {
@@ -239,7 +247,7 @@ fun SimpleCaptureScreen(
                     )
                 }
             }
-            if (operation == FormOperation.Capture) {
+            if (operation.takesAmount) {
                 OutlinedTextField(
                     value = viewModel.amountText,
                     enabled = !submitting && viewModel.retryKey == null,
@@ -274,7 +282,7 @@ fun SimpleCaptureScreen(
             payInFlow == null ->
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 
-            operation == FormOperation.Capture && amount == null -> Unit
+            operation.takesAmount && amount == null -> Unit
 
             else ->
                 OwnerFrame(Owner.Sdk) {
