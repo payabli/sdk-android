@@ -76,7 +76,7 @@ class PayabliErrorCatalogTest {
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,
-                "This device's secure storage could not be read.",
+                "This device's secure storage is unavailable.",
             ),
             Row(
                 "DEVICE_SETUP_UNSUPPORTED",

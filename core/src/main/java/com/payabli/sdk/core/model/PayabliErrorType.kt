@@ -133,7 +133,7 @@ public enum class PayabliErrorType(
         3001,
         "DEVICE_KEY_UNAVAILABLE",
         PayabliErrorCategory.RETRY_LATER,
-        "This device's secure storage could not be read.",
+        "This device's secure storage is unavailable.",
     ),
     DEVICE_SETUP_UNSUPPORTED(
         3002,
