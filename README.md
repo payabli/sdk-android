@@ -259,8 +259,8 @@ val config = PayabliConfig(
 val session: PayabliSession = PayabliSession.initialize(config, HostBindings(applicationContext))
 ```
 
-Calling `initialize` again with the same configuration returns the same session. With a different configuration
-while a session is live, it throws a `PayabliException` whose `type` is `INVALID_CONFIGURATION`.
+While a session is live, calling `initialize` again with the same configuration returns that session, and a
+different configuration throws a `PayabliException` whose `type` is `INVALID_CONFIGURATION`.
 
 | Environment | API host |
 |---|---|
