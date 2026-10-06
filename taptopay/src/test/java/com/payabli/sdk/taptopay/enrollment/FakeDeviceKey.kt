@@ -14,15 +14,14 @@ import com.payabli.sdk.core.devicekey.DeviceSignature
  * the counter is what the assertions read, because a future `runCatching` somewhere would swallow the throw
  * and the count would still be right.
  *
- * A key built `lost` has nothing at the alias: reads and signatures throw `KeyLost` until [provision] creates
- * a key with [PROVISIONED_IDENTITY]. `provisionFailure` makes [provision] throw instead, and
- * `provisionLeavesNoKey` makes it return with the alias still empty.
+ * `publicKeyFailure` and `signFailure` are thrown by [publicKey] and [sign] when set. A key built `lost` has
+ * nothing at the alias: reads and signatures throw `KeyLost` until [provision] creates a key with
+ * [PROVISIONED_IDENTITY]. `provisionFailure` makes [provision] throw instead, and `provisionLeavesNoKey` makes
+ * it return with the alias still empty.
  */
 internal class FakeDeviceKey(
     private var identity: String = KEY_IDENTITY,
-    /** Raised by [publicKey] when set, for the paths that have to survive a key store that will not answer. */
     private val publicKeyFailure: Throwable? = null,
-    /** Raised by [sign] when set. */
     private val signFailure: Throwable? = null,
     private var lost: Boolean = false,
     private val provisionFailure: Throwable? = null,
@@ -75,10 +74,8 @@ internal class FakeDeviceKey(
     companion object {
         const val KEY_IDENTITY = "key-identity-value"
 
-        /** The identity of the key [provision] creates in place of a lost one. */
         const val PROVISIONED_IDENTITY = "provisioned-key-identity-value"
 
-        /** An X9.62 uncompressed point is 65 bytes and starts 0x04. Shaped right so encoding is exercised. */
         val POINT: ByteArray = ByteArray(65) { index -> if (index == 0) 0x04 else (index + 1).toByte() }
         val SIGNATURE: ByteArray = ByteArray(70) { index -> (index + 3).toByte() }
     }
