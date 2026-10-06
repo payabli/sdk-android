@@ -144,6 +144,15 @@ class PayInAmountTextTest {
         assertEquals(listOf(card), placeAmounts(listOf(card, summary(PayInField.Amount)), null).map { it.section })
     }
 
+    @Test
+    fun `a payment with an amount that cannot be sent draws no summary`() {
+        val unsendableSurcharge = PayInPaymentDetails(BigDecimal("12.34"), surchargeFee = BigDecimal("1E+40"))
+        val unsendableFee = PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("1E+40"))
+
+        assertEquals(listOf(card), placeAmounts(listOf(card), unsendableSurcharge).map { it.section })
+        assertEquals(listOf(card), placeAmounts(listOf(card), unsendableFee).map { it.section })
+    }
+
     private fun summaryOf(
         details: PayInPaymentDetails,
         showsBaseAmount: Boolean,

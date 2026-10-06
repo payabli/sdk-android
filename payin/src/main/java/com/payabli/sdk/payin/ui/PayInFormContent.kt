@@ -35,13 +35,12 @@ import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
+import com.payabli.sdk.payin.form.PayInSummaryRows
 import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
-import com.payabli.sdk.payin.util.extensions.formatAmount
 import java.math.BigDecimal
-import java.util.Locale
 
 /**
  * The form itself, which knows a submission state and nothing about where one comes from.
@@ -355,7 +354,7 @@ private fun SummaryRows(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.label)) {
         rows.forEach { (field, amount) -> SummaryRow(PayInStrings.label(field, context.labels), amount, context) }
-        total?.let { SummaryRow(stringResource(R.string.payabli_payin_summary_total), it, context) }
+        total?.let { SummaryRow(PayInStrings.total(context.labels), it, context) }
     }
 }
 
@@ -374,7 +373,7 @@ private fun SummaryRow(
         // leave the amount at zero width, which is the half a payer needs.
         Text(text = label, style = context.style.label, modifier = Modifier.weight(1f))
         Text(
-            text = formatAmount(amount, context.amounts?.currency, Locale.getDefault()),
+            text = PayInSummaryRows.formattedAmount(amount, context.amounts?.currency),
             style = context.style.supporting,
         )
     }
