@@ -225,14 +225,14 @@ class TapToPaySessionManagerTest {
             val collector = launch(UnconfinedTestDispatcher(testScheduler)) { manager.state.collect { seen += it } }
 
             manager.settle(TapToPaySessionState.Failed(TapToPayFailureReason.SERVICE_UNAVAILABLE))
-            manager.settle(TapToPaySessionState.Failed(TapToPayFailureReason.ATTESTATION_REQUIRED))
+            manager.settle(TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED))
 
             collector.cancelAndJoin()
             assertEquals(
                 listOf(
                     TapToPaySessionState.Idle,
                     TapToPaySessionState.Failed(TapToPayFailureReason.SERVICE_UNAVAILABLE),
-                    TapToPaySessionState.Failed(TapToPayFailureReason.ATTESTATION_REQUIRED),
+                    TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED),
                 ),
                 seen,
             )

@@ -235,7 +235,7 @@ lookup.
 | `TapToPayFailureReason` | What to do |
 |---|---|
 | `CONFIGURATION_REJECTED` | The paypoint, the device or its setup is missing something. Retrying won't help; contact Payabli. |
-| `ATTESTATION_REQUIRED` | The device's attestation was refused or revoked. Check that the app came from Google Play, then initialize again. |
+| `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Check that the app came from Google Play, then initialize again. |
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |

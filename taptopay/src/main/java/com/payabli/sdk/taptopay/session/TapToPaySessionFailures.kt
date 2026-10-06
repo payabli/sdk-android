@@ -8,10 +8,10 @@ import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
-import com.payabli.sdk.taptopay.session.TapToPayFailureReason.ATTESTATION_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUIRED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 
@@ -25,7 +25,7 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABL
  * repair that cannot work.
  *
  * **Discarding the device's identity requires a positive match.** Only a refusal that names the attestation
- * lands on [ATTESTATION_REQUIRED]. Everything unrecognised lands where being wrong costs nothing.
+ * lands on [DEVICE_SETUP_REQUIRED]. Everything unrecognised lands where being wrong costs nothing.
  */
 internal object TapToPaySessionFailures {
     /**
@@ -37,7 +37,7 @@ internal object TapToPaySessionFailures {
     fun landingFor(failure: Throwable): TapToPaySessionState? =
         when (failure) {
             is TapToPaySessionException.PendingActivation -> TapToPaySessionState.PendingActivation
-            is TapToPaySessionException.AttestationRequired -> failed(ATTESTATION_REQUIRED)
+            is TapToPaySessionException.AttestationRequired -> failed(DEVICE_SETUP_REQUIRED)
             is TapToPaySessionException.NotRecoverable -> null
             is TapToPaySessionException.SetupAbandoned -> TapToPaySessionState.Idle
             is TapToPaySessionException.SetupFailed -> failed(SDK_INTERNAL_ERROR)
@@ -63,7 +63,7 @@ internal object TapToPaySessionFailures {
         when (failure) {
             is DeviceServiceException.Forbidden -> TapToPaySessionState.PendingActivation
             is DeviceServiceException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
-            is DeviceServiceException.NotAttested -> failed(ATTESTATION_REQUIRED)
+            is DeviceServiceException.NotAttested -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceServiceException.NotFound -> failed(CONFIGURATION_REJECTED)
             // The request this SDK built was refused, which makes it this SDK's defect.
             is DeviceServiceException.BadRequest -> failed(SDK_INTERNAL_ERROR)
@@ -80,9 +80,9 @@ internal object TapToPaySessionFailures {
      */
     private fun landingForActivation(failure: DeviceActivationException): TapToPaySessionState? =
         when (failure) {
-            is DeviceActivationException.AttestationRevoked -> failed(ATTESTATION_REQUIRED)
-            is DeviceActivationException.DeviceUnknown -> failed(ATTESTATION_REQUIRED)
-            is DeviceActivationException.NotEnrolled -> failed(ATTESTATION_REQUIRED)
+            is DeviceActivationException.AttestationRevoked -> failed(DEVICE_SETUP_REQUIRED)
+            is DeviceActivationException.DeviceUnknown -> failed(DEVICE_SETUP_REQUIRED)
+            is DeviceActivationException.NotEnrolled -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.EntryNotAuthorized -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.PaypointUnknown -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
@@ -124,7 +124,7 @@ internal object TapToPaySessionFailures {
             is AttestationException.Retryable -> failed(SERVICE_UNAVAILABLE)
             is AttestationException.Throttled -> failed(SERVICE_UNAVAILABLE)
             is AttestationException.Misconfigured -> failed(CONFIGURATION_REJECTED)
-            else -> failed(ATTESTATION_REQUIRED)
+            else -> failed(DEVICE_SETUP_REQUIRED)
         }
 
     /**
@@ -137,7 +137,7 @@ internal object TapToPaySessionFailures {
      */
     private fun landingForDeviceKey(failure: DeviceKeyException): TapToPaySessionState =
         when (failure) {
-            is DeviceKeyException.KeyLost -> failed(ATTESTATION_REQUIRED)
+            is DeviceKeyException.KeyLost -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceKeyException.SigningFailed -> failed(SDK_INTERNAL_ERROR)
             is DeviceKeyException.CryptoUnavailable -> failed(DEVICE_KEY_UNAVAILABLE)
         }

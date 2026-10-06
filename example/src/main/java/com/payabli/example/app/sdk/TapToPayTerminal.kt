@@ -149,7 +149,7 @@ class TapToPayTerminal(
 
     private fun TapToPayFailureReason.asTerminalReason(): TerminalFailureReason =
         when (this) {
-            TapToPayFailureReason.ATTESTATION_REQUIRED -> TerminalFailureReason.AttestationRequired
+            TapToPayFailureReason.DEVICE_SETUP_REQUIRED -> TerminalFailureReason.DeviceSetupRequired
             TapToPayFailureReason.CONFIGURATION_REJECTED -> TerminalFailureReason.ConfigurationRejected
             TapToPayFailureReason.SERVICE_UNAVAILABLE -> TerminalFailureReason.ServiceUnavailable
             TapToPayFailureReason.DEVICE_INELIGIBLE -> TerminalFailureReason.DeviceIneligible
