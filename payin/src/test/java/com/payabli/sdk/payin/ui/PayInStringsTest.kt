@@ -2,6 +2,7 @@ package com.payabli.sdk.payin.ui
 
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldInput
+import com.payabli.sdk.payin.form.labelResource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

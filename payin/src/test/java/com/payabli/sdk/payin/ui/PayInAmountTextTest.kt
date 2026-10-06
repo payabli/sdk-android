@@ -6,7 +6,9 @@ import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormSection
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
+import com.payabli.sdk.payin.form.shownAmount
 import com.payabli.sdk.payin.model.PayInPaymentDetails
+import com.payabli.sdk.payin.util.extensions.formatAmount
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

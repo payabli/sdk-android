@@ -39,6 +39,7 @@ import com.payabli.sdk.payin.form.PayInSectionStyle
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
+import com.payabli.sdk.payin.util.extensions.formatAmount
 import java.math.BigDecimal
 import java.util.Locale
 

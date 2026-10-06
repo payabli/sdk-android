@@ -2,6 +2,7 @@
 
 package com.payabli.sdk.payin.client
 
+import com.payabli.sdk.payin.util.extensions.atWireScale
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
@@ -15,17 +16,6 @@ import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonUnquotedLiteral
 import java.math.BigDecimal
-import java.math.RoundingMode
-
-/** Amounts carry two decimal places on this wire, and the service reads them as a decimal. */
-private const val AMOUNT_SCALE = 2
-
-/**
- * The value as it will be written, so a check and the wire agree on what the amount is.
- *
- * Validation reads this rather than the value as supplied: `0.001` is more than zero and is sent as `0.00`.
- */
-internal fun BigDecimal.atWireScale(): BigDecimal = setScale(AMOUNT_SCALE, RoundingMode.HALF_UP)
 
 /**
  * Money on the wire: an unquoted JSON number with exactly two decimal places.
