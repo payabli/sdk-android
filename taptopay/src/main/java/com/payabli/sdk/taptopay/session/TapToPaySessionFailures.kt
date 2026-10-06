@@ -72,10 +72,7 @@ internal object TapToPaySessionFailures {
             failure is DeviceServiceException.Forbidden ||
             (failure is PayabliException && failure.type == PayabliErrorType.PERMISSION_DENIED)
 
-    /**
-     * A registration that cannot be read lands where its storage refusal does, never as "none": reading it as
-     * none reports a passing storage fault as the paypoint's configuration.
-     */
+    /** A registration that cannot be read lands where its storage refusal does. */
     private fun pendingOn(registration: StoredRegistration): TapToPaySessionState =
         when (registration) {
             is StoredRegistration.Held -> TapToPaySessionState.PendingActivation(registration.activationId)

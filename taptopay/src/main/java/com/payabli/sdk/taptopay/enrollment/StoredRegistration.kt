@@ -5,8 +5,8 @@ import com.payabli.sdk.core.storage.SecureStorageException
 /**
  * What this device holds for one paypoint's Tap to Pay registration.
  *
- * Three answers, not two: a store that refused the read is not a device that registered nothing, and
- * reading it as one reports a passing storage fault as the paypoint's configuration.
+ * A refused read is its own answer, so a passing storage fault is never reported as the paypoint's
+ * configuration.
  */
 internal sealed interface StoredRegistration {
     /** A binding is stored, under the id the service assigned at registration. */
