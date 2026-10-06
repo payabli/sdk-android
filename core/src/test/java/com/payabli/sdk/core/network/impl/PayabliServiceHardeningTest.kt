@@ -26,6 +26,7 @@ class PayabliServiceHardeningTest {
         baseUrl: String,
         maxResponseBytes: Long = PayabliService.DEFAULT_MAX_RESPONSE_BYTES,
     ) = PayabliService.create(
+        client = ClientFacts.NONE,
         auth = testAuth(),
         baseUrl = baseUrl,
         dispatcher = Dispatchers.IO,

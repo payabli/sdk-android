@@ -43,6 +43,7 @@ class PayabliServiceTest {
         baseUrl: String = server.baseUrl,
         callTimeout: Duration = PayabliService.DEFAULT_CALL_TIMEOUT,
     ) = PayabliService.create(
+        client = ClientFacts.NONE,
         baseUrl = baseUrl,
         auth = testAuth(),
         dispatcher = Dispatchers.IO,

@@ -454,7 +454,7 @@ internal class PayabliService private constructor(
             logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
             callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
             maxResponseBytes: Long = DEFAULT_MAX_RESPONSE_BYTES,
-            client: ClientFacts = ClientFacts.NONE,
+            client: ClientFacts,
         ): PayabliTransport =
             PayabliService(
                 baseUrl,

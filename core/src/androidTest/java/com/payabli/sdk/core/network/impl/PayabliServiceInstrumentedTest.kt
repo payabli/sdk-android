@@ -39,6 +39,7 @@ class PayabliServiceInstrumentedTest {
         server: LoopbackServer,
         callTimeout: Duration = PayabliService.DEFAULT_CALL_TIMEOUT,
     ) = PayabliService.create(
+        client = ClientFacts.NONE,
         baseUrl = server.baseUrl,
         auth = testAuth(),
         dispatcher = Dispatchers.IO,

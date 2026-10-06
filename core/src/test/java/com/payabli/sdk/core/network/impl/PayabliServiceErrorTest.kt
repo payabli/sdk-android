@@ -31,6 +31,7 @@ class PayabliServiceErrorTest {
 
     private fun service(baseUrl: String) =
         PayabliService.create(
+            client = ClientFacts.NONE,
             baseUrl = baseUrl,
             auth = testAuth(),
             dispatcher = Dispatchers.IO,
