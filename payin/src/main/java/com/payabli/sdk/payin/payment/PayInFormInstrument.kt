@@ -1,10 +1,10 @@
 package com.payabli.sdk.payin.payment
 
 import com.payabli.sdk.payin.client.PayInValidation
-import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
+import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAccountHolderType
 import com.payabli.sdk.payin.model.PayInAccountType
 import com.payabli.sdk.payin.model.PayInBankAccountData

@@ -1,7 +1,5 @@
 package com.payabli.sdk.payin.model
 
-import com.payabli.sdk.payin.form.ExpiryValue
-
 /**
  * A bank account's kind, as the service spells it.
  *

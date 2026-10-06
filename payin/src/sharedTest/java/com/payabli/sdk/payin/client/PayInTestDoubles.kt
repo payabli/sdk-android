@@ -4,7 +4,7 @@ import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.network.PayabliV2Envelope
-import com.payabli.sdk.payin.form.ExpiryValue
+import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAccountType
 import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData

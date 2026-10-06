@@ -2,7 +2,7 @@ package com.payabli.sdk.payin.client
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliValidationException
-import com.payabli.sdk.payin.form.ExpiryValue
+import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInAuthorizedRequest
 import com.payabli.sdk.payin.model.PayInCustomerData
 import com.payabli.sdk.payin.model.PayInException

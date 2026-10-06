@@ -21,6 +21,7 @@ public class PayInFormLabels(
     public val submitButton: String? = null,
     fieldLabels: Map<PayInField, String> = emptyMap(),
     fieldPlaceholders: Map<PayInField, String> = emptyMap(),
+    public val total: String? = null,
 ) {
     public val fieldLabels: Map<PayInField, String> = Collections.unmodifiableMap(fieldLabels.toMap())
     public val fieldPlaceholders: Map<PayInField, String> =
@@ -41,6 +42,9 @@ public class PayInFormLabels(
     /** The wording on the submit button, or null to use the resource. */
     public fun submitButtonOrNull(): String? = submitButton?.takeIf { it.isNotBlank() }
 
+    /** The label on the summary's Total row, or null to use the resource. */
+    public fun totalOrNull(): String? = total?.takeIf { it.isNotBlank() }
+
     /** As a `data class` would, over the copies rather than over what was handed in. */
     public fun copy(
         title: String? = this.title,
@@ -48,7 +52,8 @@ public class PayInFormLabels(
         submitButton: String? = this.submitButton,
         fieldLabels: Map<PayInField, String> = this.fieldLabels,
         fieldPlaceholders: Map<PayInField, String> = this.fieldPlaceholders,
-    ): PayInFormLabels = PayInFormLabels(title, subtitle, submitButton, fieldLabels, fieldPlaceholders)
+        total: String? = this.total,
+    ): PayInFormLabels = PayInFormLabels(title, subtitle, submitButton, fieldLabels, fieldPlaceholders, total)
 
     override fun equals(other: Any?): Boolean =
         this === other ||
@@ -58,14 +63,15 @@ public class PayInFormLabels(
                     subtitle == other.subtitle &&
                     submitButton == other.submitButton &&
                     fieldLabels == other.fieldLabels &&
-                    fieldPlaceholders == other.fieldPlaceholders
+                    fieldPlaceholders == other.fieldPlaceholders &&
+                    total == other.total
             )
 
     override fun hashCode(): Int =
-        listOf(title, subtitle, submitButton, fieldLabels, fieldPlaceholders)
+        listOf(title, subtitle, submitButton, fieldLabels, fieldPlaceholders, total)
             .fold(0) { hash, part -> 31 * hash + part.hashCode() }
 
     override fun toString(): String =
         "PayInFormLabels(title=$title, subtitle=$subtitle, submitButton=$submitButton, " +
-            "fieldLabels=$fieldLabels, fieldPlaceholders=$fieldPlaceholders)"
+            "fieldLabels=$fieldLabels, fieldPlaceholders=$fieldPlaceholders, total=$total)"
 }

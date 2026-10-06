@@ -25,7 +25,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.payabli.sdk.payin.R
-import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldRules
 import com.payabli.sdk.payin.form.PayInFormConfiguration
@@ -36,9 +35,11 @@ import com.payabli.sdk.payin.form.PayInFormStyle
 import com.payabli.sdk.payin.form.PayInFormValues
 import com.payabli.sdk.payin.form.PayInMethodType
 import com.payabli.sdk.payin.form.PayInSectionStyle
+import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.payment.PayInSubmissionState
 import com.payabli.sdk.payin.telemetry.PayInFormReports
+import com.payabli.sdk.payin.util.extensions.formatAmount
 import java.math.BigDecimal
 import java.util.Locale
 

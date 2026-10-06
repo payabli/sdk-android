@@ -1,12 +1,12 @@
 package com.payabli.sdk.payin.ui
 
 import androidx.compose.runtime.Immutable
-import com.payabli.sdk.payin.form.ExpiryValue
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFormConfiguration
 import com.payabli.sdk.payin.form.PayInFormLabels
 import com.payabli.sdk.payin.form.PayInFormStyle
+import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 
 /**
