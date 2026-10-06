@@ -2383,10 +2383,15 @@ def run_step(step: dict, env: dict[str, str]) -> tuple[int, str, str]:
     page, outputs = scratch / "summary", scratch / "outputs"
     page.touch()
     outputs.touch()
-    proc = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", str(step.get("run", ""))],
-                          cwd=SDK, capture_output=True, text=True, timeout=60,
-                          env={**os.environ, **env, "GITHUB_STEP_SUMMARY": str(page), "GITHUB_OUTPUT": str(outputs)})
-    return proc.returncode, page.read_text(), outputs.read_text()
+    try:
+        status = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", str(step.get("run", ""))],
+                                cwd=SDK, capture_output=True, text=True, timeout=60,
+                                env={**os.environ, **env, "GITHUB_STEP_SUMMARY": str(page), "GITHUB_OUTPUT": str(outputs)}
+                                ).returncode
+    except subprocess.TimeoutExpired:
+        # A status rather than the exception, so a step that hangs fails its checks instead of ending the run.
+        status = 124
+    return status, page.read_text(), outputs.read_text()
 
 
 def script_lines(step: dict) -> list[str]:
