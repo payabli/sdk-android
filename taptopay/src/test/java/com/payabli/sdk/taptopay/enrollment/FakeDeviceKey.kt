@@ -13,6 +13,10 @@ import com.payabli.sdk.core.devicekey.DeviceSignature
  * this module narrows its catches to specific exception types precisely so an `Error` travels unimpeded — but
  * the counter is what the assertions read, because a future `runCatching` somewhere would swallow the throw
  * and the count would still be right.
+ *
+ * A key built `lost` has nothing at the alias: reads and signatures throw `KeyLost` until [provision] creates
+ * a key with [PROVISIONED_IDENTITY]. `provisionFailure` makes [provision] throw instead, and
+ * `provisionLeavesNoKey` makes it return with the alias still empty.
  */
 internal class FakeDeviceKey(
     private var identity: String = KEY_IDENTITY,
@@ -20,11 +24,8 @@ internal class FakeDeviceKey(
     private val publicKeyFailure: Throwable? = null,
     /** Raised by [sign] when set. */
     private val signFailure: Throwable? = null,
-    /** No key at the alias: reads and signatures report it gone until [provision] creates one. */
     private var lost: Boolean = false,
-    /** Raised by [provision] when set, leaving the key gone. */
     private val provisionFailure: Throwable? = null,
-    /** [provision] completes but the alias stays empty, for a key store that loses the key it just made. */
     private val provisionLeavesNoKey: Boolean = false,
 ) : DeviceKey {
     var deletions: Int = 0

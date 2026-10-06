@@ -206,7 +206,7 @@ internal class DeviceEnrollment(
      * The key at the handle, after creating one if the key store reports it gone.
      *
      * Only [DeviceKeyException.KeyLost] creates a key. Any other failure leaves the key store and the binding
-     * alone. A key still gone after one creation is thrown.
+     * alone. A key still gone after one creation throws [DeviceKeyException.KeyLost].
      */
     private fun currentKey(): DevicePublicKey =
         try {

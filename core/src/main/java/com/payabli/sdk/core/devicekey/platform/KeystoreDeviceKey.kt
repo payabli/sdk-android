@@ -95,9 +95,9 @@ internal class KeystoreDeviceKey(
      * point this just read rather than from a second read, so the two cannot describe different keys.
      *
      * **The monitor is here because this is not a read.** [uncompressedPoint] discards the entry when the
-     * certificate is not a P-256 point, so without the lock a caller could observe
-     * a stale certificate, be overtaken by a replacement, and then delete the key that replaced it. Read,
-     * validate and discard belong in one section for that reason.
+     * certificate is not a P-256 point, so a caller without the lock could observe a stale certificate, be
+     * overtaken by a replacement, and then delete the key that replaced it. Read, validate
+     * and discard belong in one section for that reason.
      */
     override fun publicKey(): DevicePublicKey =
         synchronized(MONITOR) {
