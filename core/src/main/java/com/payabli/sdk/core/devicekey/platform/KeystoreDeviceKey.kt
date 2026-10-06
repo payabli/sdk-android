@@ -19,6 +19,7 @@ import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import java.security.GeneralSecurityException
+import java.security.Key
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -78,6 +79,14 @@ internal class KeystoreDeviceKey(
      * it does whether or not the monitor is there.
      */
     private val betweenSignAndIdentity: () -> Unit = {},
+    /**
+     * Reads the private half of the entry at the alias. **A test seam; production reads the key store.**
+     *
+     * The platform raises `UnrecoverableKeyException` here for an entry it cannot load, such as one whose
+     * certificate is missing, and no public API can create such an entry. The seam is how a test reaches the
+     * discard-and-create path against the real key store.
+     */
+    private val readPrivateKey: (KeyStore, String) -> Key? = { store, alias -> store.getKey(alias, null) },
 ) : DeviceKey {
     /**
      * There is no alias parameter, and that is the point.
@@ -259,7 +268,7 @@ internal class KeystoreDeviceKey(
 
     private fun existingPrivateKey(): PrivateKey? =
         try {
-            keyStore().getKey(alias, null) as? PrivateKey
+            readPrivateKey(keyStore(), alias) as? PrivateKey
         } catch (e: UnrecoverableKeyException) {
             throw asFailure(e)
         } catch (e: GeneralSecurityException) {

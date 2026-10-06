@@ -32,6 +32,7 @@ import java.security.KeyFactory
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.Signature
+import java.security.UnrecoverableKeyException
 import java.security.interfaces.ECPublicKey
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.CyclicBarrier
@@ -217,6 +218,39 @@ class KeystoreDeviceKeyInstrumentedTest {
 
             assertTrue(keyStore().containsAlias(keyId))
             assertTrue(key.sign("payload".toByteArray()).signature.isNotEmpty())
+        }
+
+    @Test
+    fun anEntryThePlatformCannotLoadIsReplacedWhenCreationIsAllowed() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val before = provisioned().publicKey().point
+            var reads = 0
+            val unloadable =
+                KeystoreDeviceKey(logger, readPrivateKey = { store, alias ->
+                    if (reads++ == 0) throw UnrecoverableKeyException("no public certificate stored")
+                    store.getKey(alias, null)
+                })
+
+            unloadable.provision()
+
+            val after = key().publicKey().point
+            assertNotEquals(before.toList(), after.toList())
+            assertTrue(key().sign("payload".toByteArray()).signature.isNotEmpty())
+        }
+
+    @Test
+    fun anEntryThePlatformCannotLoadIsReportedGoneWhenCreationIsNotAllowed() =
+        runTest(timeout = TEST_TIMEOUT) {
+            provisioned()
+            val unloadable =
+                KeystoreDeviceKey(logger, readPrivateKey = { _, _ ->
+                    throw UnrecoverableKeyException("no public certificate stored")
+                })
+
+            val thrown = runCatching { unloadable.ensureKey(mayCreate = false) }.exceptionOrNull()
+
+            assertTrue("expected KeyLost, got $thrown", thrown is DeviceKeyException.KeyLost)
+            assertFalse("the unloadable entry is discarded", keyStore().containsAlias(keyId))
         }
 
     @Test
