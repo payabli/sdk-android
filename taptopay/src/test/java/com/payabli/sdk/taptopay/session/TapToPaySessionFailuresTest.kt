@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.session
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
@@ -75,6 +76,14 @@ class TapToPaySessionFailuresTest {
             AttestationException.Throttled(-8) to failed(SERVICE_UNAVAILABLE),
             AttestationException.Misconfigured(-2) to failed(CONFIGURATION_REJECTED),
             AttestationException.IntegrityFailed(-3) to failed(DEVICE_SETUP_REQUIRED),
+            // Setting up again cannot install or update Google Play; someone has to.
+            AttestationException.RemediationRequired(-14) to failed(CONFIGURATION_REJECTED),
+            AttestationException.ChallengeReused() to failed(SDK_INTERNAL_ERROR),
+            // The same cause as the key store's CryptoUnavailable, and the same landing.
+            SecureStorageException.CryptoUnavailable() to failed(DEVICE_KEY_UNAVAILABLE),
+            SecureStorageException.StorageUnavailable() to failed(SDK_INTERNAL_ERROR),
+            SecureStorageException.KeyInvalidated() to failed(SDK_INTERNAL_ERROR),
+            SecureStorageException.ValueUnreadable() to failed(SDK_INTERNAL_ERROR),
             DeviceIneligibleException(
                 PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
                 "contactless payments are not supported",

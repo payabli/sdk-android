@@ -22,7 +22,7 @@ public enum class TapToPayFailureReason {
      * The paypoint, the device or its gateway is not set up for card-present work.
      *
      * Nothing in the SDK repairs this and repeating the call will not either. It is a change someone makes
-     * to the account.
+     * to the account, or to the device's own services, such as installing or updating Google Play.
      */
     CONFIGURATION_REJECTED,
 
