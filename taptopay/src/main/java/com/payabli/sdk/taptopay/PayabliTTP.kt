@@ -52,13 +52,6 @@ public class PayabliTTP private constructor(
         wrapping { coordinator.activateDevice(activationCode) }
 
     /**
-     * The id Payabli assigned this device on the session's paypoint, whether pending activation or active.
-     * Null when the SDK holds no usable id for it, for any reason; call [initialize], which enrolls the device
-     * or throws why it could not.
-     */
-    public suspend fun deviceId(): String? = wrapping { coordinator.deviceId() }
-
-    /**
      * Takes one payment. Waits for a card, so it runs as long as the person in front of the phone.
      *
      * [customer] has to identify the payer: an opening that names none is refused before a card is asked

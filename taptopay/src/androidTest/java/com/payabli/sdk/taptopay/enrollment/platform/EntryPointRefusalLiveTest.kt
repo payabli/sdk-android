@@ -11,6 +11,7 @@ import com.payabli.sdk.taptopay.ManualDeviceTest
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
+import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionFailures
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
@@ -102,7 +103,7 @@ class EntryPointRefusalLiveTest {
                 // The landing is the half a host acts on, and the reason this is not only a wording check.
                 assertEquals(
                     TapToPaySessionState.Failed(TapToPayFailureReason.CONFIGURATION_REJECTED),
-                    TapToPaySessionFailures.landingFor(thrown!!),
+                    TapToPaySessionFailures.landingFor(thrown!!, StoredRegistration.None),
                 )
             }
         }

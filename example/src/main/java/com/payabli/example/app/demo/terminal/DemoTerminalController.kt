@@ -57,12 +57,8 @@ class DemoTerminalController(
     /** A merchant registers a device once. Until then, starting the terminal asks for a code. */
     private var activated = false
 
-    /** Setup is what registers the device, so it has no id before the first one. */
-    private var registered = false
-
     override suspend fun initialize(): Result<Unit> {
         step(TerminalSessionState.AttestingDevice, TerminalEventCode.AttestationStarted)
-        registered = true
         emit(TerminalEventCode.AttestationCompleted)
         step(TerminalSessionState.FetchingConfig, TerminalEventCode.ConfigReceived, "entryPoint captured at startup")
         step(TerminalSessionState.InitializingReader, TerminalEventCode.ReaderInitializing)
@@ -102,7 +98,8 @@ class DemoTerminalController(
         return Result.success(Unit)
     }
 
-    override suspend fun deviceId(): Result<String?> = Result.success(DEMO_DEVICE_ID.takeIf { registered })
+    override fun activationId(): String? =
+        DEMO_ACTIVATION_ID.takeIf { _sessionState.value == TerminalSessionState.PendingActivation }
 
     private suspend fun step(
         state: TerminalSessionState,
@@ -130,8 +127,8 @@ class DemoTerminalController(
     companion object {
         const val DEFAULT_STEP_DELAY_MILLIS: Long = 600
 
-        /** The id the stand-in is registered under once set up. */
-        const val DEMO_DEVICE_ID: String = "demo-device-0001"
+        /** The id the stand-in hands over while it waits for a code. */
+        const val DEMO_ACTIVATION_ID: String = "demo-activation-0001"
 
         /** Type this to see the activation failure path. Named in the screen's own help text. */
         const val REJECTED_ACTIVATION_CODE: String = "REJECT"

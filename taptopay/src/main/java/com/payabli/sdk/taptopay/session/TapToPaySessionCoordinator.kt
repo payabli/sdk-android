@@ -109,12 +109,6 @@ internal class TapToPaySessionCoordinator(
     suspend fun activateDevice(activationCode: String) =
         runExclusively(SessionWorkKind.ACTIVATE) { runActivateDevice(activationCode) }
 
-    /**
-     * The device's registered handle for this paypoint, or null when none is held. Outside the region, so it
-     * does not wait on the reader; it does wait on an enrollment or activation in progress, by design.
-     */
-    suspend fun deviceId(): String? = enrollment.deviceId()
-
     /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
         kind: SessionWorkKind,
@@ -162,9 +156,13 @@ internal class TapToPaySessionCoordinator(
             release(claim, TapToPaySessionException.SetupAbandoned())
             throw withdrawn
         } catch (failure: Exception) {
-            TapToPaySessionFailures.landingFor(failure)?.let(manager::settle)
-            release(claim, failure)
-            throw failure
+            // Read once, so the state and the failure a caller is given answer from the same registration.
+            // Uncancellable: a withdrawal here would skip the release below and wedge every later caller.
+            val registration = withContext(NonCancellable) { enrollment.registration() }
+            TapToPaySessionFailures.landingFor(failure, registration)?.let(manager::settle)
+            val raised = TapToPaySessionFailures.raisedFor(failure, registration)
+            release(claim, raised)
+            throw raised
         } catch (fatal: Throwable) {
             // An OutOfMemoryError reaches the caller unchanged. The claim is still released, or every later
             // caller of this kind waits for something that will never complete. Waiters are told the run

@@ -4,10 +4,12 @@ import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.storage.SecureStorageException
+import com.payabli.sdk.taptopay.TapToPayErrorCodes
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
@@ -16,9 +18,18 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_SETUP_REQUI
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SDK_INTERNAL_ERROR
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABLE
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 private val REASON = "server text"
+
+private const val ACTIVATION_ID = "an-activation-id"
+
+private val HELD = StoredRegistration.Held(ACTIVATION_ID)
+
+private val UNREADABLE = StoredRegistration.Unreadable(SecureStorageException.CryptoUnavailable())
+
+private val EVERY_REGISTRATION = listOf(HELD, StoredRegistration.None, UNREADABLE)
 
 private fun failed(reason: TapToPayFailureReason) = TapToPaySessionState.Failed(reason)
 
@@ -28,6 +39,9 @@ private fun failed(reason: TapToPayFailureReason) = TapToPaySessionState.Failed(
  * The table is the contract: a host branches on the reason, so a failure that lands on the wrong one sends
  * it down a repair that cannot work. Each row names the failure so a wrong landing says which one moved.
  *
+ * The table is read against a held registration. What the other two registrations change is asserted
+ * separately, against the same rows.
+ *
  * Two properties are asserted separately below the table, because both are easy to lose in a rewrite and
  * neither is visible in a single row: a landing of null leaves the session where it is, and only a failure
  * that names the attestation reaches [DEVICE_SETUP_REQUIRED], which is the one landing that tells a host to
@@ -36,12 +50,14 @@ private fun failed(reason: TapToPayFailureReason) = TapToPaySessionState.Failed(
 class TapToPaySessionFailuresTest {
     private val cases: List<Pair<Throwable, TapToPaySessionState?>> =
         listOf(
-            TapToPaySessionException.PendingActivation() to TapToPaySessionState.PendingActivation,
+            TapToPaySessionException.PendingActivation() to TapToPaySessionState.PendingActivation(ACTIVATION_ID),
+            TapToPaySessionException.NotPermitted(DeviceServiceException.Forbidden(403, REASON)) to
+                failed(CONFIGURATION_REJECTED),
             TapToPaySessionException.AttestationRequired() to failed(DEVICE_SETUP_REQUIRED),
             TapToPaySessionException.NotRecoverable(TapToPaySessionState.Ready) to null,
             TapToPaySessionException.SetupAbandoned() to TapToPaySessionState.Idle,
             TapToPaySessionException.SetupFailed() to failed(SDK_INTERNAL_ERROR),
-            DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation,
+            DeviceServiceException.Forbidden(403, REASON) to TapToPaySessionState.PendingActivation(ACTIVATION_ID),
             DeviceServiceException.NotAttested(401, REASON) to failed(DEVICE_SETUP_REQUIRED),
             DeviceServiceException.EntryPointUnusable(403, REASON) to failed(CONFIGURATION_REJECTED),
             DeviceServiceException.NotFound(404, REASON) to failed(CONFIGURATION_REJECTED),
@@ -98,7 +114,7 @@ class TapToPaySessionFailuresTest {
             // A tap that did not complete says nothing about the session it ran on.
             CardReaderException.ReadFailed(null) to null,
             PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON) to
-                TapToPaySessionState.PendingActivation,
+                TapToPaySessionState.PendingActivation(ACTIVATION_ID),
             PayabliGenericException(PayabliErrorType.INVALID_CONFIGURATION, REASON) to
                 failed(CONFIGURATION_REJECTED),
             PayabliGenericException(PayabliErrorType.DECODING_ERROR, REASON) to failed(SDK_INTERNAL_ERROR),
@@ -114,7 +130,7 @@ class TapToPaySessionFailuresTest {
             assertEquals(
                 failure::class.qualifiedName ?: failure.javaClass.name,
                 expected,
-                TapToPaySessionFailures.landingFor(failure),
+                TapToPaySessionFailures.landingFor(failure, HELD),
             )
         }
     }
@@ -125,7 +141,7 @@ class TapToPaySessionFailuresTest {
         // assert the table against itself and pass with any production mapping.
         val discarding =
             cases
-                .filter { TapToPaySessionFailures.landingFor(it.first) == failed(DEVICE_SETUP_REQUIRED) }
+                .filter { TapToPaySessionFailures.landingFor(it.first, HELD) == failed(DEVICE_SETUP_REQUIRED) }
                 .map { it.first::class }
                 .toSet()
 
@@ -147,7 +163,7 @@ class TapToPaySessionFailuresTest {
     fun `a landing of null is only for failures that change nothing about the session`() {
         val unchanged =
             cases
-                .filter { TapToPaySessionFailures.landingFor(it.first) == null }
+                .filter { TapToPaySessionFailures.landingFor(it.first, HELD) == null }
                 .map { it.first::class }
                 .toSet()
 
@@ -169,4 +185,94 @@ class TapToPaySessionFailuresTest {
             unchanged,
         )
     }
+
+    @Test
+    fun `only a refusal that owes activation reads the registration`() {
+        // Read back from the classifier: the failures whose landing moves when nothing is registered.
+        val consulting =
+            cases
+                .filter {
+                    TapToPaySessionFailures.landingFor(it.first, HELD) !=
+                        TapToPaySessionFailures.landingFor(it.first, StoredRegistration.None)
+                }.map { it.first::class }
+                .toSet()
+
+        assertEquals(
+            setOf(
+                TapToPaySessionException.PendingActivation::class,
+                DeviceServiceException.Forbidden::class,
+                PayabliGenericException::class,
+            ),
+            consulting,
+        )
+    }
+
+    @Test
+    fun `a refusal that owes activation lands pending only on a held registration`() {
+        for (failure in owingActivation()) {
+            val name = failure::class.qualifiedName
+            assertEquals(
+                name,
+                TapToPaySessionState.PendingActivation(ACTIVATION_ID),
+                TapToPaySessionFailures.landingFor(failure, HELD),
+            )
+            assertEquals(
+                name,
+                failed(CONFIGURATION_REJECTED),
+                TapToPaySessionFailures.landingFor(failure, StoredRegistration.None),
+            )
+            // A refused read lands where that refusal lands on its own, so storage has one table.
+            for (refusal in storageRefusals()) {
+                assertEquals(
+                    "$name, ${refusal::class.simpleName}",
+                    TapToPaySessionFailures.landingFor(refusal, HELD),
+                    TapToPaySessionFailures.landingFor(failure, StoredRegistration.Unreadable(refusal)),
+                )
+            }
+            assertEquals(name, failed(DEVICE_KEY_UNAVAILABLE), TapToPaySessionFailures.landingFor(failure, UNREADABLE))
+        }
+    }
+
+    @Test
+    fun `the failure raised carries the code of the state landed`() {
+        for (failure in owingActivation()) {
+            val name = failure::class.qualifiedName
+            assertSame(name, failure, TapToPaySessionFailures.raisedFor(failure, HELD))
+
+            val unregistered = TapToPaySessionFailures.raisedFor(failure, StoredRegistration.None)
+            assertEquals(name, PayabliErrorType.PERMISSION_DENIED, TapToPayErrorCodes.typeFor(unregistered))
+
+            assertSame(name, UNREADABLE.refusal, TapToPaySessionFailures.raisedFor(failure, UNREADABLE))
+        }
+    }
+
+    @Test
+    fun `any other failure is raised unchanged, whatever is registered`() {
+        for ((failure, _) in cases) {
+            val consultsRegistration =
+                TapToPaySessionFailures.landingFor(failure, HELD) !=
+                    TapToPaySessionFailures.landingFor(failure, StoredRegistration.None)
+            if (failure !is Exception || consultsRegistration) continue
+            for (registration in EVERY_REGISTRATION) {
+                assertSame(
+                    "${failure::class.qualifiedName} under $registration",
+                    failure,
+                    TapToPaySessionFailures.raisedFor(failure, registration),
+                )
+            }
+        }
+    }
+
+    private fun storageRefusals(): List<SecureStorageException> =
+        listOf(
+            SecureStorageException.CryptoUnavailable(),
+            SecureStorageException.StorageUnavailable(),
+        )
+
+    private fun owingActivation(): List<Exception> =
+        listOf(
+            TapToPaySessionException.PendingActivation(),
+            DeviceServiceException.Forbidden(403, REASON),
+            PayabliGenericException(PayabliErrorType.PERMISSION_DENIED, REASON),
+        )
 }

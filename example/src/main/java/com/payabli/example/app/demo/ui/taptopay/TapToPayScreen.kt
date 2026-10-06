@@ -294,7 +294,7 @@ private fun ActivationSheet(
                 title = "Activate this device",
                 note = "Enter the code Payabli issued for it.",
             )
-            DeviceIdLine(state)
+            ActivationIdLine(state)
             OutlinedTextField(
                 value = state.activationCode,
                 onValueChange = onActivationCodeChange,
@@ -322,14 +322,10 @@ private fun ActivationSheet(
 
 /** Selectable, so it can be copied into the request for the activation code. */
 @Composable
-private fun DeviceIdLine(state: TapToPayUiState) {
+private fun ActivationIdLine(state: TapToPayUiState) {
     val text =
-        when {
-            state.isReadingDeviceId -> "Reading the device id…"
-            state.deviceIdUnavailable -> "Device id unavailable"
-            state.deviceId == null -> "No device id yet. Set up the terminal first."
-            else -> "Device id: ${state.deviceId}"
-        }
+        state.activationId?.let { "Activation id: $it" }
+            ?: "No activation id. Set up the terminal first."
     SelectionContainer { Text(text, style = MaterialTheme.typography.bodyMedium) }
 }
 

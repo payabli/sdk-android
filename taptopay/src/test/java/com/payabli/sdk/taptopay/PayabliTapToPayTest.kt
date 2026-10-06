@@ -4,12 +4,10 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
-import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.FakeDeviceKey
-import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.activateBody
 import com.payabli.sdk.taptopay.enrollment.attestBody
@@ -28,7 +26,6 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -112,7 +109,7 @@ class PayabliTapToPayTest {
             val failure = runCatching { terminal.initialize() }.exceptionOrNull()
 
             assertTrue(failure.toString(), failure is TapToPayException)
-            assertEquals(TapToPaySessionState.PendingActivation, terminal.sessionState.value)
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), terminal.sessionState.value)
         }
 
     @Test
@@ -182,37 +179,14 @@ class PayabliTapToPayTest {
         }
 
     @Test
-    fun `a fresh install reads no device id`() =
+    fun `a device that owes a code is handed the id it owes it under`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val terminal = terminalOver(SessionFixture(script()))
-
-            assertNull(terminal.deviceId())
-        }
-
-    @Test
-    fun `a device that owes a code reads the id it owes it under`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // The host's backend needs this id to request the code, so it has to be readable while pending.
+            // The host's backend needs this id to request the code, so the pending state carries it.
             val fixture = SessionFixture(script(registerStatus = "pending"))
             val terminal = terminalOver(fixture)
             runCatching { terminal.initialize() }
-            assertEquals(TapToPaySessionState.PendingActivation, terminal.sessionState.value)
 
-            assertEquals(DEVICE_ID, terminal.deviceId())
-        }
-
-    @Test
-    fun `a store that cannot be read reads as no device id, without throwing`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            val fixture =
-                SessionFixture(
-                    script(),
-                    storeFailure = FakeSecureStore.failing("get", SecureStorageException.StorageUnavailable()),
-                )
-            fixture.seedRecord()
-            val terminal = terminalOver(fixture)
-
-            assertNull(terminal.deviceId())
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), terminal.sessionState.value)
         }
 
     @Test

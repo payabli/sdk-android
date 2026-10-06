@@ -10,7 +10,6 @@ import com.payabli.example.app.demo.terminal.TerminalController
 import com.payabli.example.app.demo.terminal.TerminalSessionState
 import com.payabli.example.app.demo.ui.taptopay.TapToPayViewModel
 import com.payabli.example.app.sdk.DemoEnvironment
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -144,60 +143,14 @@ class TapToPayViewModelTest {
     // --- actions ---
 
     @Test
-    fun `opening activation shows the id the device is registered under`() =
+    fun `opening activation shows the id the code is requested under`() =
         runTest {
             val viewModel = model()
             viewModel.enableTerminal()
 
             viewModel.openActivation()
 
-            assertEquals(DemoTerminalController.DEMO_DEVICE_ID, viewModel.uiState.value.deviceId)
-            assertFalse(viewModel.uiState.value.deviceIdUnavailable)
-        }
-
-    @Test
-    fun `while the id is being read the sheet shows neither the last id nor that there is none`() =
-        runTest {
-            val held = CompletableDeferred<Result<String?>>()
-            val demo = DemoTerminalController(stepDelayMillis = 0)
-            val viewModel =
-                model(
-                    object : TerminalController by demo {
-                        override suspend fun deviceId(): Result<String?> = held.await()
-                    },
-                )
-
-            viewModel.openActivation()
-
-            assertTrue(viewModel.uiState.value.isReadingDeviceId)
-            assertNull(viewModel.uiState.value.deviceId)
-            held.complete(Result.success(DemoTerminalController.DEMO_DEVICE_ID))
-            assertFalse(viewModel.uiState.value.isReadingDeviceId)
-            assertEquals(DemoTerminalController.DEMO_DEVICE_ID, viewModel.uiState.value.deviceId)
-        }
-
-    @Test
-    fun `a read from an earlier opening does not overwrite the latest one`() =
-        runTest {
-            val reads = ArrayDeque(listOf(CompletableDeferred<Result<String?>>(), CompletableDeferred()))
-            val pending = reads.toList()
-            val demo = DemoTerminalController(stepDelayMillis = 0)
-            val viewModel =
-                model(
-                    object : TerminalController by demo {
-                        override suspend fun deviceId(): Result<String?> = reads.removeFirst().await()
-                    },
-                )
-
-            viewModel.openActivation()
-            viewModel.dismissActivation()
-            viewModel.openActivation()
-            pending[0].complete(Result.success("an-earlier-id"))
-
-            assertTrue(viewModel.uiState.value.isReadingDeviceId)
-            assertNull(viewModel.uiState.value.deviceId)
-            pending[1].complete(Result.success(DemoTerminalController.DEMO_DEVICE_ID))
-            assertEquals(DemoTerminalController.DEMO_DEVICE_ID, viewModel.uiState.value.deviceId)
+            assertEquals(DemoTerminalController.DEMO_ACTIVATION_ID, viewModel.uiState.value.activationId)
         }
 
     @Test
@@ -207,8 +160,7 @@ class TapToPayViewModelTest {
 
             viewModel.openActivation()
 
-            assertNull(viewModel.uiState.value.deviceId)
-            assertFalse(viewModel.uiState.value.deviceIdUnavailable)
+            assertNull(viewModel.uiState.value.activationId)
         }
 
     @Test

@@ -252,7 +252,7 @@ class TapToPaySessionManagerTest {
             TapToPaySessionState.Idle -> Unit
             TapToPaySessionState.AttestingDevice -> manager.advance(target)
             TapToPaySessionState.FetchingConfig -> manager.advance(target)
-            TapToPaySessionState.PendingActivation -> {
+            is TapToPaySessionState.PendingActivation -> {
                 manager.advance(TapToPaySessionState.FetchingConfig)
                 manager.advance(target)
             }
