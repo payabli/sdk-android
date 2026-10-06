@@ -20,6 +20,16 @@ private const val MAX_ROUNDABLE_SCALE = 1_000L
 private const val MAX_INTEGER_DIGITS = 1_000L
 
 /**
+ * Whether `setScale` can round this value without raising, which it does at both extremes of the exponent.
+ *
+ * Reads `precision` and `scale` rather than the expanded value, so an absurd one costs nothing to refuse.
+ * Zero rescales at any scale, because it short-circuits.
+ */
+internal fun BigDecimal.isRoundable(): Boolean =
+    signum() == 0 ||
+        (scale().toLong() <= MAX_ROUNDABLE_SCALE && precision().toLong() - scale().toLong() <= MAX_INTEGER_DIGITS)
+
+/**
  * The value as it will be written, so a check and the wire agree on what the amount is.
  *
  * Validation reads this rather than the value as supplied: `0.001` is more than zero and is sent as `0.00`.
@@ -35,17 +45,10 @@ internal fun BigDecimal.atWireScale(): BigDecimal = setScale(AMOUNT_SCALE, Round
  * the largest it holds is `792281625142643375935439503.35`. Nothing narrows that further beyond refusing
  * zero, so the type is the only bound there is.
  *
- * The two guards before the rounding exist only so the rounding itself cannot throw: `setScale` raises
- * `ArithmeticException` at both extremes of the exponent. Both read `precision` and `scale` rather than
- * the expanded value, so an absurd one costs nothing to refuse.
+ * A value [isRoundable] refuses is not sendable. Zero is sendable at any scale.
  */
 internal fun BigDecimal.sendableOrNull(): BigDecimal? {
-    // Zero rescales at any scale: rounding `BigDecimal.ZERO.setScale(Int.MAX_VALUE)` to two places
-    // answers 0.00 without expanding, because zero short-circuits. The guards below would otherwise
-    // refuse a fee of zero written with an extreme scale, and a fee of zero is a sendable value.
-    if (signum() == 0) return atWireScale()
-    if (scale().toLong() > MAX_ROUNDABLE_SCALE) return null
-    if (precision().toLong() - scale().toLong() > MAX_INTEGER_DIGITS) return null
+    if (!isRoundable()) return null
     val rounded = atWireScale()
     return rounded.takeIf { it.unscaledValue().abs() <= MAX_MANTISSA }
 }

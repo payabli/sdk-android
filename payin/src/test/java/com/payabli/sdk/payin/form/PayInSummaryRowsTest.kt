@@ -107,6 +107,14 @@ class PayInSummaryRowsTest {
     }
 
     @Test
+    fun `an amount too extreme to round is written as its digits rather than raising`() {
+        // setScale raises ArithmeticException at both extremes of the exponent.
+        listOf("1E+2147483647", "1E-2147483647", "1E+1001").forEach { extreme ->
+            assertEquals(extreme, PayInSummaryRows.formattedAmount(BigDecimal(extreme), "USD"))
+        }
+    }
+
+    @Test
     fun `formatting uses the default locale`() {
         assertEquals("1.234,56\u00A0€", PayInSummaryRows.formattedAmount(BigDecimal("1234.56"), "EUR"))
         assertEquals(
