@@ -133,7 +133,7 @@ public enum class PayabliErrorType(
         3001,
         "DEVICE_KEY_UNAVAILABLE",
         PayabliErrorCategory.RETRY_LATER,
-        "The device's key facility could not confirm this device's key.",
+        "This device's secure storage could not be read.",
     ),
     DEVICE_SETUP_UNSUPPORTED(
         3002,

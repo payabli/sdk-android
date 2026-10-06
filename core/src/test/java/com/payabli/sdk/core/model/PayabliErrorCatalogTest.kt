@@ -76,7 +76,7 @@ class PayabliErrorCatalogTest {
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,
-                "The device's key facility could not confirm this device's key.",
+                "This device's secure storage could not be read.",
             ),
             Row(
                 "DEVICE_SETUP_UNSUPPORTED",
