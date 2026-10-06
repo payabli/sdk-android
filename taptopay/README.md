@@ -94,8 +94,9 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
 
 An app that isn't an authorized app is refused when the device attests, with an HTTP 403. `initialize()`
 throws a `TapToPayException` whose `type` is `PERMISSION_DENIED`, and `sessionState` is
-`Failed(CONFIGURATION_REJECTED)`: the phone was never registered, so there is nothing to activate. Register
-the app, then initialize again.
+`Failed(CONFIGURATION_REJECTED)`: the phone holds no registration for the paypoint, so there is nothing to
+activate. Register the app, then initialize again. On a phone that already holds a registration, the same
+refusal throws `DEVICE_PENDING_ACTIVATION` and lands on `PendingActivation(activationId)`.
 
 ## Set up
 
@@ -149,7 +150,7 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 Until the phone is activated, `initialize()` throws a `TapToPayException` whose `type` is
 `DEVICE_PENDING_ACTIVATION`, and `sessionState` is `PendingActivation(activationId)`. An app that isn't an
 authorized app, or credentials without `tools_init` or `pos_create`, land on
-`Failed(CONFIGURATION_REJECTED)` on a phone that hasn't registered yet. Credentials without
+`Failed(CONFIGURATION_REJECTED)` on a phone that holds no registration for the paypoint. Credentials without
 `inboundpayments_create` reach `Ready`, and `charge` is then refused before the card is read.
 
 1. Issue a code for the phone, from your backend or from the Payabli portal. The code is valid for 30
