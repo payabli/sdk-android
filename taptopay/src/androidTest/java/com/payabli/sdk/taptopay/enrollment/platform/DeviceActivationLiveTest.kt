@@ -274,7 +274,7 @@ class DeviceActivationLiveTest {
                     tokenProvider = { LiveRunSettings.accessToken() },
                 ),
                 HostBindings(context),
-            ).getOrThrow()
+            )
 
     private suspend fun enrollment(
         description: DeviceDescription = DeviceDescriptionFactory.create(context),

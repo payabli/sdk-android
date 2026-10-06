@@ -89,7 +89,6 @@ class SessionTelemetryContextTest {
                     telemetryEnabled = telemetryEnabled,
                 ),
             ) { UnusedTransport }
-            .getOrThrow()
 
     /** No request is made by any of these; the session only has to be installed. */
     private object UnusedTransport : PayabliTransport {

@@ -199,7 +199,6 @@ class TelemetryBootstrapTest {
                     tokenProvider = PayabliTokenProvider { "a-minted-token" },
                 ),
             ) { UnusedTransport }
-            .getOrThrow()
 
     private object UnusedTransport : PayabliTransport {
         override suspend fun execute(request: PayabliRequest): PayabliResponse =

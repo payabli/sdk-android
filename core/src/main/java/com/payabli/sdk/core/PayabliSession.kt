@@ -107,8 +107,9 @@ public class PayabliSession private constructor(
          *
          * Two cases are not idempotent:
          *
-         * - A **different** configuration while the session is usable fails, rather than returning one
-         *   configured for something else or replacing one capabilities already hold.
+         * - A **different** configuration while the session is usable throws [PayabliException] with
+         *   [PayabliErrorType.INVALID_CONFIGURATION], rather than returning one configured for something else or
+         *   replacing one capabilities already hold.
          * - Any configuration while the session is [SdkState.ReinitializeRequired] builds a fresh one. That
          *   is the documented recovery, and it has to work with a newly brokered token.
          *
@@ -121,7 +122,7 @@ public class PayabliSession private constructor(
         public suspend fun initialize(
             config: PayabliConfig,
             host: HostBindings,
-        ): Result<PayabliSession> {
+        ): PayabliSession {
             host.appContext.applicationContext.applyHostLogLevel()
 
             return install(config, host) { onAuthFailure ->
@@ -141,7 +142,7 @@ public class PayabliSession private constructor(
             baseUrl: String,
             config: PayabliConfig,
             host: HostBindings? = null,
-        ): Result<PayabliSession> =
+        ): PayabliSession =
             install(config, host) { onAuthFailure ->
                 TransportFactory.authenticatedAgainst(
                     baseUrl,
@@ -182,13 +183,13 @@ public class PayabliSession private constructor(
         internal suspend fun initializeWith(
             config: PayabliConfig,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): Result<PayabliSession> = install(config, host = null, buildTransport = buildTransport)
+        ): PayabliSession = install(config, host = null, buildTransport = buildTransport)
 
         private suspend fun install(
             config: PayabliConfig,
             host: HostBindings?,
             buildTransport: suspend (AuthFailureListener) -> PayabliTransport,
-        ): Result<PayabliSession> {
+        ): PayabliSession {
             val startedAt = System.nanoTime()
 
             return lock.withLock {
@@ -203,7 +204,7 @@ public class PayabliSession private constructor(
                 // nobody can close, and an Application and an Activity both initializing is the ordinary way
                 // to produce one.
                 if (live && current!!.identity == identity) {
-                    return@withLock Result.success(current)
+                    return@withLock current
                 }
 
                 if (live) {
@@ -219,7 +220,7 @@ public class PayabliSession private constructor(
                             REASON_ALREADY_INITIALIZED,
                         )
                     reportFailure(refusal, startedAt)
-                    return@withLock Result.failure(refusal)
+                    throw refusal
                 }
 
                 val machine = SessionStateMachine(sink)
@@ -262,7 +263,7 @@ public class PayabliSession private constructor(
                 // and marked ready, so anything escaping it would fail an initialize that had succeeded.
                 TelemetryBootstraps.startInstalled(session, host)
 
-                Result.success(session)
+                session
             }
         }
 
@@ -278,7 +279,7 @@ public class PayabliSession private constructor(
          * Reports a refused initialization.
          *
          * [PayabliException.reason] is carried here and nowhere else in this file: the only refusal this
-         * returns is built two lines above from a constant in this file, so it is the SDK's own words. A
+         * throws is built two lines above from a constant in this file, so it is the SDK's own words. A
          * reason that came from a server would not be reportable, and a second failure mode added here has
          * to be checked against that before it joins this call.
          */

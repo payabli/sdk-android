@@ -57,7 +57,7 @@ class TelemetryOnDeviceTest {
                             tokenProvider = { "a-device-token" },
                         ),
                         host,
-                    ).getOrThrow()
+                    )
             }
 
         // Nothing called a start method. `sdk.initialized` is already queued by the module if it was found,

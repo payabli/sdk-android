@@ -112,7 +112,8 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
 - `create`, `initialize`, `activateDevice`, `deviceId`, `charge` and `closeCapturedCharge` are `suspend` functions;
   call them from a coroutine.
 - **One paypoint per session.** There is one session per app process, and it has one entry point.
-  `PayabliSession.initialize` with a different entry point fails while the session is live.
+  `PayabliSession.initialize` with a different entry point throws a `PayabliException` whose `type` is
+  `INVALID_CONFIGURATION` while the session is live.
 
 ## Take a payment
 

@@ -70,7 +70,7 @@ class TelemetryLinkageInstrumentedTest {
 
     @Test
     fun theSdkInitializesAndIsUsableEitherWay() {
-        assertTrue("initialize failed on flavor ${BuildConfig.FLAVOR}", installed?.isSuccess == true)
+        assertTrue("initialize failed on flavor ${BuildConfig.FLAVOR}", installed != null)
         assertEquals(SdkState.Ready, PayabliSession.state.value)
     }
 
@@ -89,7 +89,7 @@ class TelemetryLinkageInstrumentedTest {
      */
     @Test
     fun aCompletedCardNotPresentFlowReportsOrCostsNothing() {
-        assertTrue("the session this assertion rests on was not installed", installed?.isSuccess == true)
+        assertTrue("the session this assertion rests on was not installed", installed != null)
         var propertiesBuilt = 0
 
         @Suppress("RestrictedApi")
@@ -136,7 +136,7 @@ class TelemetryLinkageInstrumentedTest {
             tokenProvider = { "a-token-for-this-test" },
         )
 
-    private var installed: Result<PayabliSession>? = null
+    private var installed: PayabliSession? = null
 
     private companion object {
         const val TELEMETRY_MODULE = "com.payabli.sdk.telemetry.TelemetryModule"

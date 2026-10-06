@@ -55,7 +55,7 @@ class TelemetryLiveTest {
                             environment = PayabliEnvironment.SANDBOX,
                             tokenProvider = PayabliTokenProvider { "a-minted-token" },
                         ),
-                    ).getOrThrow()
+                    )
 
             // Nothing called a start method. If the module was not found, no recorder is installed, nothing
             // is ever queued and the wait below times out — so the request arriving at all is the assertion

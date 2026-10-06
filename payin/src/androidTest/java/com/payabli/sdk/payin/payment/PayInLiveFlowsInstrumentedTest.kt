@@ -364,7 +364,7 @@ class PayInLiveFlowsInstrumentedTest {
                     tokenProvider = { mintToken() },
                 ),
                 HostBindings(InstrumentationRegistry.getInstrumentation().targetContext.applicationContext),
-            ).getOrThrow()
+            )
 
     /**
      * A token from the app's backend, the way a host app gets one.
