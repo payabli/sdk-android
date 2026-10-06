@@ -166,6 +166,23 @@ class PayInFormConfigurationTest {
     }
 
     @Test
+    fun `an amount listed among the inputs is refused even after the summary has listed it`() {
+        // The default summary lists Amount first, so the inputs drawn for this form would not include it.
+        val refusal =
+            runCatching {
+                PayInFormConfiguration(
+                    allowedMethods = listOf(PayInMethodType.Card),
+                    cardSections =
+                        PayInFormConfiguration.defaultCardSections() +
+                            PayInFormSection(fields = listOf(PayInField.Amount)),
+                )
+            }.exceptionOrNull()
+
+        assertTrue("an amount was accepted as an input: $refusal", refusal is IllegalArgumentException)
+        assertTrue("does not name the field: ${refusal?.message}", refusal?.message?.contains("Amount") == true)
+    }
+
+    @Test
     fun `an instrument field listed in a summary is refused as a summary field`() {
         // Also listed among the inputs, so the inputs are complete and only the summary rule can refuse it.
         val refusal =

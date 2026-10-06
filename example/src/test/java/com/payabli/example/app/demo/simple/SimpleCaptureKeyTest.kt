@@ -82,12 +82,55 @@ class SimpleCaptureKeyTest {
         // read a capture's outcome as a store's and drop the key a retry needs.
         assertEquals(
             FormOperation.Capture,
-            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Submitting),
+            operationAfter(
+                FormOperation.Capture,
+                FormOperation.Tokenize,
+                PayInSubmissionState.Submitting,
+                heldFor = null,
+            ),
         )
         assertEquals(
             FormOperation.Tokenize,
-            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Idle),
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, PayInSubmissionState.Idle, heldFor = null),
         )
+    }
+
+    @Test
+    fun `a held key keeps the screen off every other operation that sends one`() {
+        // The key names one payment. Sent by a different operation it would be spent on that one, and the
+        // payment it names could then be charged again under a fresh key.
+        val idle = PayInSubmissionState.Idle
+
+        assertEquals(
+            FormOperation.Capture,
+            operationAfter(FormOperation.Capture, FormOperation.Authorize, idle, FormOperation.Capture),
+        )
+        assertEquals(
+            FormOperation.Tokenize,
+            operationAfter(FormOperation.Tokenize, FormOperation.Authorize, idle, FormOperation.Capture),
+        )
+        assertEquals(
+            FormOperation.Tokenize,
+            operationAfter(FormOperation.Capture, FormOperation.Tokenize, idle, FormOperation.Capture),
+        )
+        assertEquals(
+            FormOperation.Capture,
+            operationAfter(FormOperation.Tokenize, FormOperation.Capture, idle, FormOperation.Capture),
+        )
+        assertEquals(
+            FormOperation.Authorize,
+            operationAfter(FormOperation.Capture, FormOperation.Authorize, idle, heldFor = null),
+        )
+    }
+
+    @Test
+    fun `the held key belongs to the operation that left it`() {
+        assertEquals(FormOperation.Capture, keyOwnerAfter(null, FormOperation.Capture, heldKey = "key-1"))
+        assertEquals(
+            FormOperation.Capture,
+            keyOwnerAfter(FormOperation.Capture, FormOperation.Tokenize, heldKey = "key-1"),
+        )
+        assertNull(keyOwnerAfter(FormOperation.Capture, FormOperation.Capture, heldKey = null))
     }
 
     @Test

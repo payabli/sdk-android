@@ -126,7 +126,7 @@ public class PayInFormConfiguration(
         // A summary draws amounts and nothing else, so any other field listed there would leave the screen without
         // a word. Read before the instrument rule, whose refusal would name the field as missing from the inputs.
         methods.forEach { method ->
-            val listed = summaryFieldsIn(method).filterNot { it in AMOUNT_FIELDS }
+            val listed = listedIn(method, PayInSectionStyle.Summary).filterNot { it in AMOUNT_FIELDS }
             require(listed.isEmpty()) {
                 "${listed.joinToString()} cannot be listed in a summary: a summary shows the operation's amounts"
             }
@@ -143,7 +143,7 @@ public class PayInFormConfiguration(
         // The amounts are the operation's. A box a payer types into would take a figure the request does not
         // carry, so the screen would show one amount and the request would send another.
         methods.forEach { method ->
-            val typed = inputFieldsFor(method).filter { it in AMOUNT_FIELDS }
+            val typed = listedIn(method, PayInSectionStyle.Inputs).filter { it in AMOUNT_FIELDS }
             require(typed.isEmpty()) {
                 "${typed.joinToString()} cannot be typed into: the amounts come from the operation"
             }
@@ -178,12 +178,15 @@ public class PayInFormConfiguration(
     }
 
     /**
-     * Every field listed in a summary for one instrument, as written. Read before [sectionsFor] drops a field
-     * already used, which would let a field listed among the inputs pass through a summary unseen.
+     * Every field listed in sections of [style] for one instrument, as written. Read before [sectionsFor] drops a
+     * field already used, which would hide a field from a check because an earlier section listed it.
      */
-    private fun summaryFieldsIn(method: PayInMethodType): List<PayInField> =
+    private fun listedIn(
+        method: PayInMethodType,
+        style: PayInSectionStyle,
+    ): List<PayInField> =
         (if (method == PayInMethodType.Card) cardSections else bankSections)
-            .filter { it.style == PayInSectionStyle.Summary }
+            .filter { it.style == style }
             .flatMap { it.fields }
 
     /** Every field a payer types into for one instrument, in the order they are rendered. */
