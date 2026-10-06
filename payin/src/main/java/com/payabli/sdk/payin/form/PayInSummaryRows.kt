@@ -27,8 +27,8 @@ public object PayInSummaryRows {
     ): String = labels.totalOrNull() ?: context.getString(R.string.payabli_payin_summary_total)
 
     /**
-     * The figure on [field]'s row. Amount is the total less the service fee, and only beside a fee or a
-     * surcharge, whether or not the form is configured to draw it.
+     * The figure on [field]'s row. Amount is the total less the service fee, read only beside a fee or a
+     * surcharge, whatever [PayInFormConfiguration.showsBaseAmount] is set to.
      */
     public fun rowAmount(
         field: PayInField,
