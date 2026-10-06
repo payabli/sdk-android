@@ -167,6 +167,20 @@ class PayInSummaryRowsInstrumentedTest {
     }
 
     @Test
+    fun anUntitledInputsSectionDrawsNoHeadingWhileTheSummaryDrawsItsOwn() {
+        show(
+            PayInPaymentDetails(BigDecimal("12.34"), currency = "USD"),
+            PayInFormConfiguration(
+                allowedMethods = listOf(PayInMethodType.Card),
+                cardSections = PayInFormConfiguration.defaultCardSections(),
+            ),
+        )
+
+        rule.onNodeWithText(string(R.string.payabli_payin_section_summary)).assertExists()
+        rule.onNodeWithText("Card details").assertDoesNotExist()
+    }
+
+    @Test
     fun anOperationThatChargesNothingDrawsNoSummary() {
         show(null)
 

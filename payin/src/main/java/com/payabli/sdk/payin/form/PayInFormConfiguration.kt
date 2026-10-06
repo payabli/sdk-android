@@ -36,7 +36,7 @@ public enum class PayInLabelLayout {
  *
  * [fields] is copied at construction, for the reason given on [PayInFormConfiguration].
  *
- * @param title null takes the section's default from string resources.
+ * @param title null draws no heading, except on a summary, which takes its default from string resources.
  */
 @Immutable
 public class PayInFormSection(

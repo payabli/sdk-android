@@ -35,8 +35,6 @@
     <string name="payabli_payin_summary_total">Total</string>
 
     <!-- Section headings, used when a section carries no title of its own. -->
-    <string name="payabli_payin_section_card">Card details</string>
-    <string name="payabli_payin_section_bank">Bank account</string>
     <string name="payabli_payin_section_summary">Payment</string>
 
     <!-- The two instruments, as the selector names them. -->

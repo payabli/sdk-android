@@ -166,7 +166,7 @@ internal fun PayInFormContent(
 
         Column(verticalArrangement = Arrangement.spacedBy(context.style.spacing.section)) {
             placeAmounts(sections, amounts, configuration.showsBaseAmount).forEach { drawn ->
-                FormSection(drawn, method, typed, context, draft::enter)
+                FormSection(drawn, typed, context, draft::enter)
             }
         }
 
@@ -285,7 +285,6 @@ private fun MethodSelector(
 @Composable
 private fun FormSection(
     drawn: DrawnSection,
-    method: PayInMethodType,
     typed: Map<PayInField, String>,
     context: PayInFormContext,
     onValueChange: (PayInField, String) -> Unit,
@@ -293,7 +292,7 @@ private fun FormSection(
     val style = context.style
     val section = drawn.section
     Column(verticalArrangement = Arrangement.spacedBy(style.spacing.sectionTitle)) {
-        Text(text = section.title ?: defaultSectionTitle(section, method), style = style.sectionTitle)
+        sectionTitle(section)?.let { Text(text = it, style = style.sectionTitle) }
 
         if (section.style == PayInSectionStyle.Summary) {
             SummaryRows(drawn.amounts, drawn.total, context)
@@ -403,18 +402,12 @@ private fun List<PayInField>.intoRows(fitsTwo: Boolean): List<List<PayInField>> 
 /** Narrower than this a field's own label starts to wrap, so it takes the row to itself. */
 private val PAIRED_FIELD_MIN_WIDTH = 148.dp
 
+/** The host's title, else the summary's default. An inputs section with no title has no heading. */
 @Composable
-private fun defaultSectionTitle(
-    section: PayInFormSection,
-    method: PayInMethodType,
-): String =
-    stringResource(
-        when {
-            section.style == PayInSectionStyle.Summary -> R.string.payabli_payin_section_summary
-            method == PayInMethodType.Card -> R.string.payabli_payin_section_card
-            else -> R.string.payabli_payin_section_bank
-        },
-    )
+private fun sectionTitle(section: PayInFormSection): String? =
+    section.title ?: stringResource(R.string.payabli_payin_section_summary).takeIf {
+        section.style == PayInSectionStyle.Summary
+    }
 
 @PreviewLightDark
 @Composable
