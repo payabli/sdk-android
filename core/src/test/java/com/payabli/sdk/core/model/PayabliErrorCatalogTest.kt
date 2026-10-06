@@ -67,6 +67,12 @@ class PayabliErrorCatalogTest {
                 "The SDK failed before the request was sent.",
             ),
             Row(
+                "SESSION_NOT_INITIALIZED",
+                1019,
+                PayabliErrorCategory.INVALID_REQUEST,
+                "The session has not been initialized.",
+            ),
+            Row(
                 "DEVICE_KEY_UNAVAILABLE",
                 3001,
                 PayabliErrorCategory.RETRY_LATER,

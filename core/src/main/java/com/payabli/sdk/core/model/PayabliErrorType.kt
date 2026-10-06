@@ -121,6 +121,12 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.INTERNAL,
         "The SDK failed before the request was sent.",
     ),
+    SESSION_NOT_INITIALIZED(
+        1019,
+        "SESSION_NOT_INITIALIZED",
+        PayabliErrorCategory.INVALID_REQUEST,
+        "The session has not been initialized.",
+    ),
 
     // Card-present.
     DEVICE_KEY_UNAVAILABLE(
