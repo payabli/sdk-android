@@ -3,6 +3,7 @@ package com.payabli.sdk.core
 import androidx.annotation.RestrictTo
 import androidx.annotation.VisibleForTesting
 import com.payabli.sdk.core.config.PayabliConfig
+import com.payabli.sdk.core.device.platform.DeviceIdentifierFactory
 import com.payabli.sdk.core.device.platform.DeviceProfileFactory
 import com.payabli.sdk.core.logging.LogCategory
 import com.payabli.sdk.core.logging.LogField
@@ -56,6 +57,7 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
 public class PayabliSession private constructor(
     private val identity: ConfigIdentity,
     private val machine: SessionStateMachine,
+    private val readDeviceId: () -> String?,
     /** The authenticated transport for this session: bearer injected, one 401 recovered, one replay. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val transport: PayabliTransport,
@@ -67,6 +69,12 @@ public class PayabliSession private constructor(
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val telemetry: TelemetrySessionContext,
 ) {
+    /**
+     * This device's identity, the same for every capability and stable for the install, or null while it
+     * cannot be read. It is not the activation id a Tap to Pay enrollment hands over.
+     */
+    public val deviceId: String? get() = readDeviceId()
+
     public companion object {
         /** Serializes [initialize] so two callers racing at startup install one session rather than two. */
         private val lock = Mutex()
@@ -230,6 +238,11 @@ public class PayabliSession private constructor(
                     PayabliSession(
                         identity = identity,
                         machine = machine,
+                        // Null without host bindings, which is the SDK's own tests: there is no device to read.
+                        readDeviceId =
+                            host?.appContext?.applicationContext?.let { context ->
+                                { DeviceIdentifierFactory.of(context).ifBlank { null } }
+                            } ?: { null },
                         transport = buildTransport { machine.markReinitializeRequired() },
                         // Minted here rather than in the telemetry module, so every capability reporting for
                         // this session quotes the same lifetime even when they are wired independently.
