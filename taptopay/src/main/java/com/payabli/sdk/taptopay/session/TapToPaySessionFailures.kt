@@ -47,7 +47,8 @@ internal object TapToPaySessionFailures {
 
     /**
      * The failure a caller is given for [failure], so its code agrees with the state [landingFor] published.
-     * The original is the cause, which keeps any text the service sent.
+     * A registration that cannot be read raises its storage refusal. With none stored, the original is the
+     * cause, which keeps any text the service sent.
      */
     fun raisedFor(
         failure: Exception,
