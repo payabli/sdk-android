@@ -22,7 +22,7 @@ public enum class TapToPayFailureReason {
      * The paypoint, the device or its gateway is not set up for card-present work.
      *
      * Nothing in the SDK repairs this and repeating the call will not either. It is a change someone makes
-     * to the account.
+     * to the account, or to the device's own services, such as installing or updating Google Play.
      */
     CONFIGURATION_REJECTED,
 
@@ -36,7 +36,8 @@ public enum class TapToPayFailureReason {
      * change on the card reader vendor's side where the vendor is what refused it. The two arrive here
      * alike, so a host that offers only replacement hardware is wrong for the second.
      *
-     * Separate from [CONFIGURATION_REJECTED], which is a Payabli account someone can change, and from
+     * Separate from [CONFIGURATION_REJECTED], which is a change someone makes to the account or to the device's
+     * own services, and from
      * [SDK_INTERNAL_ERROR], which asks a host to report a defect.
      */
     DEVICE_INELIGIBLE,
@@ -53,8 +54,8 @@ public enum class TapToPayFailureReason {
     SDK_INTERNAL_ERROR,
 
     /**
-     * The phone's key facility failed, so the SDK cannot tell whether this device's key still works. Calling
-     * initialize again may succeed; a failure that persists is the device's.
+     * The phone's key facility or secure storage could not answer, so the SDK cannot tell whether this device's
+     * keys still work. Calling initialize again may succeed; a failure that persists is the device's.
      */
     DEVICE_KEY_UNAVAILABLE,
 }

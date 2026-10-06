@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.session
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
@@ -45,6 +46,7 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException -> landingForActivation(failure)
             is AttestationException -> landingForAttestation(failure)
             is DeviceKeyException -> landingForDeviceKey(failure)
+            is SecureStorageException -> landingForStorage(failure)
             is DeviceIneligibleException -> failed(DEVICE_INELIGIBLE)
             is CardReaderException -> landingForReader(failure)
             is PayabliException -> landingForTransport(failure)
@@ -114,17 +116,32 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * A platform verdict, which would be refused anyway.
-     *
      * The two the platform says to ask again about are service failures. Nothing about the device changed,
      * so a host is told to retry.
+     *
+     * Google Play missing, outdated or signed out is a change someone makes on the device, and attesting again
+     * cannot make it. A reused challenge is this SDK's defect.
      */
-    private fun landingForAttestation(failure: AttestationException): TapToPaySessionState? =
+    private fun landingForAttestation(failure: AttestationException): TapToPaySessionState =
         when (failure) {
             is AttestationException.Retryable -> failed(SERVICE_UNAVAILABLE)
             is AttestationException.Throttled -> failed(SERVICE_UNAVAILABLE)
             is AttestationException.Misconfigured -> failed(CONFIGURATION_REJECTED)
-            else -> failed(DEVICE_SETUP_REQUIRED)
+            is AttestationException.RemediationRequired -> failed(CONFIGURATION_REJECTED)
+            is AttestationException.IntegrityFailed -> failed(DEVICE_SETUP_REQUIRED)
+            is AttestationException.ChallengeReused -> failed(SDK_INTERNAL_ERROR)
+        }
+
+    /**
+     * Storage whose key facility cannot answer is the same cause as a key store that cannot confirm the key.
+     * The rest land where an unrecognised failure does.
+     */
+    private fun landingForStorage(failure: SecureStorageException): TapToPaySessionState =
+        when (failure) {
+            is SecureStorageException.CryptoUnavailable -> failed(DEVICE_KEY_UNAVAILABLE)
+            is SecureStorageException.KeyInvalidated -> failed(SDK_INTERNAL_ERROR)
+            is SecureStorageException.ValueUnreadable -> failed(SDK_INTERNAL_ERROR)
+            is SecureStorageException.StorageUnavailable -> failed(SDK_INTERNAL_ERROR)
         }
 
     /**

@@ -68,8 +68,10 @@ class TapToPayErrorCodesTest {
             DeviceActivationException.ServiceFailed(500, "refused") to PayabliErrorType.SERVER_ERROR,
             DeviceActivationException.NotEnrolled() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.Unclassified(400, "refused") to PayabliErrorType.UNKNOWN,
-            SecureStorageException.CryptoUnavailable() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            SecureStorageException.CryptoUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
             SecureStorageException.StorageUnavailable() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            SecureStorageException.KeyInvalidated() to PayabliErrorType.SDK_INTERNAL_ERROR,
+            SecureStorageException.ValueUnreadable() to PayabliErrorType.SDK_INTERNAL_ERROR,
             DeviceIneligibleException(PayabliErrorType.DEVICE_OS_UNSUPPORTED, "too old") to
                 PayabliErrorType.DEVICE_OS_UNSUPPORTED,
             DeviceIneligibleException(PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED, "no radio") to
