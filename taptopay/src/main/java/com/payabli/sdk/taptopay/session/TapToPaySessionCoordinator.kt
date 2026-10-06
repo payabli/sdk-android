@@ -60,6 +60,9 @@ internal class TapToPaySessionCoordinator(
     /** Guards [inFlight] alone. Nothing suspends while it is held. */
     private val claims = Mutex()
 
+    /** The failure this run last settled into. Read and written only with [region] held. */
+    private var settledFailure: Exception? = null
+
     /** One claim per kind, so a caller joins work of its own kind whatever else is queued. */
     private val inFlight = mutableMapOf<SessionWorkKind, Claim>()
 
@@ -145,6 +148,7 @@ internal class TapToPaySessionCoordinator(
         try {
             region.withLock {
                 entered = true
+                settledFailure = null
                 try {
                     work()
                 } catch (withdrawn: CancellationException) {
@@ -180,17 +184,23 @@ internal class TapToPaySessionCoordinator(
      * Publishes where [failure] leaves the session and returns the failure its caller is given.
      *
      * Called with [region] held, so a run waiting on it cannot change the stored registration or the state
-     * between this failure and its landing. A phase settles before the run enclosing it settles again, and a
-     * failure this already raised lands where it did the first time. The registration is read only where it
-     * decides the landing. Uncancellable, so a withdrawal cannot leave the failure unlanded.
+     * between this failure and its landing. A phase settles before the run enclosing it does, and the
+     * failure it raised comes back here unchanged, so the run keeps that first answer rather than reading
+     * the store again. The registration is read only where it decides the landing. Uncancellable, so a
+     * withdrawal cannot leave the failure unlanded.
      */
-    private suspend fun settled(failure: Exception): Exception =
-        withContext(NonCancellable) {
-            val owesActivation = TapToPaySessionFailures.owesActivation(failure)
-            val registration = if (owesActivation) enrollment.registration() else StoredRegistration.None
-            TapToPaySessionFailures.landingFor(failure, registration)?.let(manager::settle)
-            TapToPaySessionFailures.raisedFor(failure, registration)
-        }
+    private suspend fun settled(failure: Exception): Exception {
+        if (failure === settledFailure) return failure
+        val raised =
+            withContext(NonCancellable) {
+                val owesActivation = TapToPaySessionFailures.owesActivation(failure)
+                val registration = if (owesActivation) enrollment.registration() else StoredRegistration.None
+                TapToPaySessionFailures.landingFor(failure, registration)?.let(manager::settle)
+                TapToPaySessionFailures.raisedFor(failure, registration)
+            }
+        settledFailure = raised
+        return raised
+    }
 
     /**
      * Clears the slot and then answers everyone waiting on it, in that order, so a caller woken here never

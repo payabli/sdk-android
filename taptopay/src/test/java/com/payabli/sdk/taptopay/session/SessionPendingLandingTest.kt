@@ -114,6 +114,30 @@ class SessionPendingLandingTest {
         }
 
     @Test
+    fun `a failure keeps the landing it was first settled with`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The store answers the first read after the refusal and refuses every one after it, so a run
+            // that read the registration a second time would land the refusal instead.
+            var readsAfterRefusal = 0
+            lateinit var fixture: SessionFixture
+            fixture =
+                SessionFixture(
+                    RouteScript(RouteScript.CONFIG to listOf(decline(403, NOT_ACTIVE))),
+                    storeFailure = { operation, _ ->
+                        val refused =
+                            operation == "get" && RouteScript.CONFIG in fixture.routes && ++readsAfterRefusal > 1
+                        SecureStorageException.CryptoUnavailable().takeIf { refused }
+                    },
+                )
+            fixture.seedRecord()
+
+            val failure = failureOf { fixture.coordinator.initialize() }
+
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
+            assertEquals(PayabliErrorType.DEVICE_PENDING_ACTIVATION, TapToPayErrorCodes.typeFor(failure))
+        }
+
+    @Test
     fun `a failure that does not owe activation reads nothing from the store`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The store refuses every read once the service has answered, so a read here would be logged.
