@@ -129,17 +129,17 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.RETRY_LATER,
         "The device's key facility could not confirm this device's key.",
     ),
-    ATTESTATION_NOT_SUPPORTED(
+    DEVICE_SETUP_UNSUPPORTED(
         3002,
-        "ATTESTATION_NOT_SUPPORTED",
+        "DEVICE_SETUP_UNSUPPORTED",
         PayabliErrorCategory.DEVICE,
-        "This device does not support app attestation.",
+        "This device cannot be set up for card-present payments.",
     ),
-    ATTESTATION_SERVICES_OUTDATED(
+    DEVICE_SERVICES_OUTDATED(
         3003,
-        "ATTESTATION_SERVICES_OUTDATED",
+        "DEVICE_SERVICES_OUTDATED",
         PayabliErrorCategory.CONFIGURATION,
-        "This device's attestation services must be installed or updated.",
+        "Google Play on this device must be installed, updated or signed in.",
     ),
     DEVICE_PENDING_ACTIVATION(
         3004,
@@ -147,29 +147,29 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.CONFIGURATION,
         "This device is waiting for its activation code.",
     ),
-    ATTESTATION_REQUIRED(
+    DEVICE_SETUP_REQUIRED(
         3005,
-        "ATTESTATION_REQUIRED",
+        "DEVICE_SETUP_REQUIRED",
         PayabliErrorCategory.CREDENTIAL,
-        "This device must be attested again.",
+        "This device must be set up again.",
     ),
-    ATTESTATION_REFUSED(
+    DEVICE_SETUP_REFUSED(
         3006,
-        "ATTESTATION_REFUSED",
+        "DEVICE_SETUP_REFUSED",
         PayabliErrorCategory.DEVICE,
-        "This device's attestation was refused.",
+        "This device was refused during setup.",
     ),
-    ATTESTATION_UNAVAILABLE(
+    DEVICE_SETUP_UNAVAILABLE(
         3007,
-        "ATTESTATION_UNAVAILABLE",
+        "DEVICE_SETUP_UNAVAILABLE",
         PayabliErrorCategory.RETRY_LATER,
-        "Attestation is temporarily unavailable.",
+        "Device setup is temporarily unavailable.",
     ),
-    ATTESTATION_NOT_CONFIGURED(
+    DEVICE_SETUP_NOT_CONFIGURED(
         3008,
-        "ATTESTATION_NOT_CONFIGURED",
+        "DEVICE_SETUP_NOT_CONFIGURED",
         PayabliErrorCategory.CONFIGURATION,
-        "Attestation is not configured for this app or environment.",
+        "Device setup is not configured for this app or environment.",
     ),
     ENTRY_POINT_REFUSED(
         3009,
