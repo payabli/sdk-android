@@ -35,18 +35,19 @@ public interface PayabliSecureStorage {
      * value that was written and then removed reads as null, and so does one lost when an unparseable store was
      * reset. A caller cannot tell those apart and should not be written as though it can.
      *
-     * Every failure below is distinct from null, and all four subtypes can arrive here. They differ in what the
+     * Every failure below is distinct from null, and every subtype can arrive here. They differ in what the
      * caller should do:
      *
      * | Failure | Means | Caller |
      * |---|---|---|
      * | [SecureStorageException.KeyInvalidated] | the key is gone, so the store was cleared | re-authenticate |
      * | [SecureStorageException.ValueUnreadable] | this entry alone could not be authenticated or is malformed, and was discarded | re-obtain this value |
-     * | [SecureStorageException.CryptoUnavailable] | the platform key store or cipher failed | retry |
+     * | [SecureStorageException.CryptoUnavailable] | the platform key store or cipher did not answer | retry |
      * | [SecureStorageException.StorageUnavailable] | the file could not be read or written | retry |
+     * | [SecureStorageException.CipherFailed] | the platform refused an operation this SDK asked for | report a defect |
      *
-     * The first two are terminal for the data they describe; the last two are not, and the store is left
-     * intact for both of them.
+     * The first two are terminal for the data they describe; the rest are not, and the store is left intact for
+     * each of them.
      *
      * **Unparseable file *content* is not reported at all.** A store whose JSON cannot be parsed is reset and
      * reads as empty, because refusing to load would make one bad write permanent and everything in the file is

@@ -7,6 +7,9 @@ import android.security.keystore.KeyProperties
 import android.security.keystore.StrongBoxUnavailableException
 import android.util.Base64
 import androidx.annotation.RequiresApi
+import com.payabli.sdk.core.keystore.KeystoreFailures
+import com.payabli.sdk.core.keystore.KeystoreVerdict
+import com.payabli.sdk.core.keystore.platform.PlatformKeystoreReading
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
@@ -156,8 +159,9 @@ internal class KeystoreValueCipher(
      *
      * A tag failure means this one blob cannot be authenticated under a key that is otherwise fine, so it
      * must not delete the alias: every value shares one, and doing so made a single damaged entry destroy
-     * all the others. Only the two causes that prove the key itself is unusable discard the alias, and
-     * there it is required, because otherwise every later write fails the same way.
+     * all the others. Only causes that prove the key itself is unusable discard the alias, and there it is
+     * required, because otherwise every later write fails the same way. Anything else is classified by
+     * Keystore's own verdict, not by the exception that carries it.
      *
      * `KeyPermanentlyInvalidatedException` is matched by name rather than type: it extends
      * `InvalidKeyException`, so a reordered catch block would silently demote it to a generic failure.
@@ -165,27 +169,32 @@ internal class KeystoreValueCipher(
     private fun asFailure(cause: GeneralSecurityException): SecureStorageException =
         when {
             cause is AEADBadTagException -> SecureStorageException.ValueUnreadable(cause)
-
-            cause is UnrecoverableKeyException || cause::class.java.name == KEY_INVALIDATED -> {
-                logger.warn(LogField.safe("keyAlias", keyAlias)) { "storage key unusable, discarding alias" }
-                if (runCatching { keyStore().deleteEntry(keyAlias) }.isSuccess) {
-                    SecureStorageException.KeyInvalidated(cause)
-                } else {
-                    // The cleanup KeyInvalidated promises did not happen, so promising it would be false: every
-                    // later write would meet the same unusable alias. CryptoUnavailable is the honest answer, and
-                    // it also leaves the store intact rather than clearing blobs that may yet be readable.
-                    SecureStorageException.CryptoUnavailable(cause)
+            cause is UnrecoverableKeyException || cause::class.java.name == KEY_INVALIDATED -> discarding(cause)
+            else ->
+                when (KeystoreFailures.verdictFor(cause, PlatformKeystoreReading)) {
+                    KeystoreVerdict.UNAVAILABLE -> SecureStorageException.CryptoUnavailable(cause)
+                    KeystoreVerdict.KEY_GONE -> discarding(cause)
+                    KeystoreVerdict.DEFECT -> SecureStorageException.CipherFailed(cause)
                 }
-            }
-
-            else -> SecureStorageException.CryptoUnavailable(cause)
         }
+
+    private fun discarding(cause: Throwable): SecureStorageException {
+        logger.warn(LogField.safe("keyAlias", keyAlias)) { "storage key unusable, discarding alias" }
+        return if (runCatching { keyStore().deleteEntry(keyAlias) }.isSuccess) {
+            SecureStorageException.KeyInvalidated(cause)
+        } else {
+            // The cleanup KeyInvalidated promises did not happen, so promising it would be false: every
+            // later write would meet the same unusable alias. CryptoUnavailable is the honest answer, and
+            // it also leaves the store intact rather than clearing blobs that may yet be readable.
+            SecureStorageException.CryptoUnavailable(cause)
+        }
+    }
 
     private fun cipher(): Cipher =
         try {
             Cipher.getInstance(TRANSFORMATION)
         } catch (e: GeneralSecurityException) {
-            throw SecureStorageException.CryptoUnavailable(e)
+            throw asFailure(e)
         } catch (e: ProviderException) {
             throw asProviderFailure(e)
         }

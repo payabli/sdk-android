@@ -161,9 +161,10 @@ internal object TapToPayErrorCodes {
     private fun storageCode(failure: SecureStorageException): PayabliErrorType =
         when (failure) {
             is SecureStorageException.CryptoUnavailable -> PayabliErrorType.DEVICE_KEY_UNAVAILABLE
-            is SecureStorageException.KeyInvalidated -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is SecureStorageException.StorageUnavailable -> PayabliErrorType.DEVICE_KEY_UNAVAILABLE
+            is SecureStorageException.KeyInvalidated -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is SecureStorageException.ValueUnreadable -> PayabliErrorType.SDK_INTERNAL_ERROR
-            is SecureStorageException.StorageUnavailable -> PayabliErrorType.SDK_INTERNAL_ERROR
+            is SecureStorageException.CipherFailed -> PayabliErrorType.SDK_INTERNAL_ERROR
         }
 
     private fun readerCode(failure: CardReaderException): PayabliErrorType =

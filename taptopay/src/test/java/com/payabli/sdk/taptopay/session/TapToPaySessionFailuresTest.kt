@@ -97,11 +97,13 @@ class TapToPaySessionFailuresTest {
             // Setting up again cannot install or update Google Play; someone has to.
             AttestationException.RemediationRequired(-14) to failed(CONFIGURATION_REJECTED),
             AttestationException.ChallengeReused() to failed(SDK_INTERNAL_ERROR),
-            // The same cause as the key store's CryptoUnavailable, and the same landing.
+            // Storage lands by what repairs it: a retry, setting up again, or a defect report.
             SecureStorageException.CryptoUnavailable() to failed(DEVICE_KEY_UNAVAILABLE),
-            SecureStorageException.StorageUnavailable() to failed(SDK_INTERNAL_ERROR),
-            SecureStorageException.KeyInvalidated() to failed(SDK_INTERNAL_ERROR),
+            SecureStorageException.StorageUnavailable() to failed(DEVICE_KEY_UNAVAILABLE),
+            SecureStorageException.KeyInvalidated() to failed(DEVICE_SETUP_REQUIRED),
+            // Every read converts it to nothing held, so one arriving here is a read site that did not.
             SecureStorageException.ValueUnreadable() to failed(SDK_INTERNAL_ERROR),
+            SecureStorageException.CipherFailed() to failed(SDK_INTERNAL_ERROR),
             DeviceIneligibleException(
                 PayabliErrorType.DEVICE_HARDWARE_UNSUPPORTED,
                 "contactless payments are not supported",
@@ -157,6 +159,7 @@ class TapToPaySessionFailuresTest {
                 DeviceActivationException.RegistrationReplaced::class,
                 AttestationException.IntegrityFailed::class,
                 DeviceKeyException.KeyLost::class,
+                SecureStorageException.KeyInvalidated::class,
             ),
             discarding,
         )

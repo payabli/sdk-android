@@ -14,6 +14,9 @@ import com.payabli.sdk.core.devicekey.impl.DeviceKeyHandle
 import com.payabli.sdk.core.devicekey.impl.EcPointEncoding
 import com.payabli.sdk.core.devicekey.impl.EcdsaSigner
 import com.payabli.sdk.core.devicekey.impl.JwkThumbprint
+import com.payabli.sdk.core.keystore.KeystoreFailures
+import com.payabli.sdk.core.keystore.KeystoreVerdict
+import com.payabli.sdk.core.keystore.platform.PlatformKeystoreReading
 import com.payabli.sdk.core.logging.LogField
 import com.payabli.sdk.core.logging.SdkLogger
 import com.payabli.sdk.core.logging.debug
@@ -226,7 +229,8 @@ internal class KeystoreDeviceKey(
         DeviceKeyException.CryptoUnavailable(cause)
 
     /**
-     * Maps a platform failure by whether the key survives it.
+     * Maps a platform failure by whether the key survives it, and otherwise by Keystore's own verdict rather
+     * than the exception that carries it.
      *
      * `KeyPermanentlyInvalidatedException` is matched by name rather than type: it extends
      * `InvalidKeyException`, so a reordered catch block would silently demote it to a signing failure and the
@@ -235,7 +239,12 @@ internal class KeystoreDeviceKey(
     private fun asFailure(cause: GeneralSecurityException): DeviceKeyException =
         when {
             cause is UnrecoverableKeyException || cause::class.java.name == KEY_INVALIDATED -> discarding(cause)
-            else -> DeviceKeyException.SigningFailed(cause)
+            else ->
+                when (KeystoreFailures.verdictFor(cause, PlatformKeystoreReading)) {
+                    KeystoreVerdict.UNAVAILABLE -> DeviceKeyException.CryptoUnavailable(cause)
+                    KeystoreVerdict.KEY_GONE -> discarding(cause)
+                    KeystoreVerdict.DEFECT -> DeviceKeyException.SigningFailed(cause)
+                }
         }
 
     /**
