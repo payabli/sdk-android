@@ -135,6 +135,7 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException.AttestationRevoked -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.DeviceUnknown -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.NotEnrolled -> failed(DEVICE_SETUP_REQUIRED)
+            is DeviceActivationException.RegistrationReplaced -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.EntryNotAuthorized -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.PaypointUnknown -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)

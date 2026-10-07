@@ -69,6 +69,7 @@ class TapToPayErrorCodesTest {
             DeviceActivationException.DeviceUnknown(404, "refused") to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.ServiceFailed(500, "refused") to PayabliErrorType.SERVER_ERROR,
             DeviceActivationException.NotEnrolled() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
+            DeviceActivationException.RegistrationReplaced() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.Unclassified(400, "refused") to PayabliErrorType.UNKNOWN,
             SecureStorageException.CryptoUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
             SecureStorageException.StorageUnavailable() to PayabliErrorType.SDK_INTERNAL_ERROR,
@@ -190,6 +191,7 @@ class TapToPayErrorCodesTest {
         listOf(
             DeviceActivationException.CodeMalformed(),
             DeviceActivationException.NotEnrolled(),
+            DeviceActivationException.RegistrationReplaced(),
             DeviceServiceException.Forbidden(403, ""),
             DeviceServiceException.Undecodable(null),
         ).forEach { failure ->

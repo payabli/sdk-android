@@ -341,7 +341,9 @@ internal class TapToPaySessionCoordinator(
      * refused leaves the state alone, because the device still owes one.
      */
     private suspend fun runActivateDevice(activationCode: String) {
-        enrollment.activateDevice(activationCode)
+        // The id the host requested its code under, where the session handed one over.
+        val requestedUnder = (state.value as? TapToPaySessionState.PendingActivation)?.activationId
+        enrollment.activateDevice(activationCode, requestedUnder)
         manager.settle(TapToPaySessionState.Idle)
     }
 }

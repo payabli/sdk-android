@@ -238,14 +238,23 @@ internal class DeviceEnrollment(
      *
      * The code's shape is checked here, because a code that is sent counts against the attempt limit and a
      * typo should not spend one.
+     *
+     * When [activationId] is given, the stored registration has to still be that one, before the assertion and
+     * again after it, or nothing is sent and [DeviceActivationException.RegistrationReplaced] is raised.
      */
-    suspend fun activateDevice(activationCode: String) {
+    suspend fun activateDevice(
+        activationCode: String,
+        activationId: String? = null,
+    ) {
         inTurn {
             if (!SIX_DIGITS.matches(activationCode)) throw DeviceActivationException.CodeMalformed()
 
             // Scoped to this entry point. A binding held for another one names a device this entry point
             // does not have, so for this one the device is simply not enrolled.
             val known = store.read(entry) ?: throw DeviceActivationException.NotEnrolled()
+            if (activationId != null && known.deviceId != activationId) {
+                throw DeviceActivationException.RegistrationReplaced()
+            }
 
             val assertion =
                 try {
@@ -256,6 +265,12 @@ internal class DeviceEnrollment(
                     forget("key_lost")
                     throw lost
                 }
+
+            // Read again: the store answers every terminal for this paypoint, and the signature runs off this
+            // thread.
+            if (activationId != null && store.read(entry)?.deviceId != activationId) {
+                throw DeviceActivationException.RegistrationReplaced()
+            }
 
             try {
                 client.activate(

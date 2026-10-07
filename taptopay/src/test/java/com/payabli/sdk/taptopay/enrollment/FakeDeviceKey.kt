@@ -26,6 +26,8 @@ internal class FakeDeviceKey(
     private var lost: Boolean = false,
     private val provisionFailure: Throwable? = null,
     private val provisionLeavesNoKey: Boolean = false,
+    /** Run on every signature, before it is returned. */
+    private val onSign: (() -> Unit)? = null,
 ) : DeviceKey {
     var deletions: Int = 0
         private set
@@ -49,6 +51,7 @@ internal class FakeDeviceKey(
         signedPayloads += payload.copyOf()
         if (lost) throw DeviceKeyException.KeyLost()
         signFailure?.let { throw it }
+        onSign?.invoke()
         return DeviceSignature(signature = SIGNATURE.copyOf(), identity = identity)
     }
 

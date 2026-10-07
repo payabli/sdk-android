@@ -128,6 +128,7 @@ internal object TapToPayErrorCodes {
             is DeviceActivationException.DeviceUnknown -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.ServiceFailed -> PayabliErrorType.SERVER_ERROR
             is DeviceActivationException.NotEnrolled -> PayabliErrorType.DEVICE_SETUP_REQUIRED
+            is DeviceActivationException.RegistrationReplaced -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.Unclassified -> PayabliErrorType.UNKNOWN
         }
 

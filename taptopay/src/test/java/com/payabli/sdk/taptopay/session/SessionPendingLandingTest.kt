@@ -138,6 +138,22 @@ class SessionPendingLandingTest {
         }
 
     @Test
+    fun `an activation whose registration was replaced lands as setup required and sends nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = SessionFixture(RouteScript(RouteScript.CONFIG to listOf(decline(403, NOT_ACTIVE))))
+            fixture.seedRecord()
+            failureOf { fixture.coordinator.initialize() }
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
+            fixture.enrollment.seedRecord(deviceId = "replacing-device-id")
+
+            val failure = failureOf { fixture.coordinator.activateDevice("123456") }
+
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED), fixture.state)
+            assertEquals(PayabliErrorType.DEVICE_SETUP_REQUIRED, TapToPayErrorCodes.typeFor(failure))
+            assertEquals(listOf(RouteScript.CONFIG), fixture.routes)
+        }
+
+    @Test
     fun `a failure that does not owe activation reads nothing from the store`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The store refuses every read once the service has answered, so a read here would be logged.

@@ -667,6 +667,47 @@ class DeviceEnrollmentTest {
         }
 
     @Test
+    fun `an activation whose registration was replaced before the assertion is refused, signs nothing and sends nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
+            fixture.seedRecord(deviceId = REPLACING_ID)
+
+            val failure = runCatching { fixture.enrollment.activateDevice("123456", DEVICE_ID) }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceActivationException.RegistrationReplaced)
+            assertTrue("nothing was signed", fixture.deviceKey.signedPayloads.isEmpty())
+            assertTrue(fixture.transport.requests.toString(), fixture.transport.requests.isEmpty())
+        }
+
+    @Test
+    fun `an activation whose registration is replaced while the assertion is signed is refused, and sends nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            lateinit var fixture: EnrollmentFixture
+            fixture =
+                EnrollmentFixture(
+                    RouteScript(RouteScript.ACTIVATE to listOf(activateBody())),
+                    deviceKey = FakeDeviceKey(onSign = { fixture.seedRecord(deviceId = REPLACING_ID) }),
+                )
+            fixture.seedRecord()
+
+            val failure = runCatching { fixture.enrollment.activateDevice("123456", DEVICE_ID) }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceActivationException.RegistrationReplaced)
+            assertTrue(fixture.transport.requests.toString(), fixture.transport.requests.isEmpty())
+        }
+
+    @Test
+    fun `an activation whose registration is unchanged is sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
+            fixture.seedRecord()
+
+            fixture.enrollment.activateDevice("123456", DEVICE_ID)
+
+            assertEquals(listOf(RouteScript.ACTIVATE), fixture.routes)
+        }
+
+    @Test
     fun `reading a held registration writes no log line`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
@@ -772,3 +813,5 @@ class DeviceEnrollmentTest {
             assertEquals(listOf(RouteScript.CHALLENGE), fixture.routes)
         }
 }
+
+private const val REPLACING_ID = "replacing-device-id"
