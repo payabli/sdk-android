@@ -54,13 +54,8 @@ internal class TapToPaySessionCoordinator(
     /** Whether a payment can be taken right now. */
     val isReady: StateFlow<Boolean> get() = manager.isReady
 
-    /**
-     * Serialises the work. Held for a whole run, so no two runs are ever inside the reader together.
-     *
-     * One per paypoint in the process, shared by every coordinator for it, because they share the device's
-     * stored registration and a run lands its failure on what that registration holds.
-     */
-    private val region: Mutex = regionFor(entry)
+    /** Serialises the work. Held for a whole run, so no two runs are ever inside the reader together. */
+    private val region = Mutex()
 
     /** Guards [inFlight] alone. Nothing suspends while it is held. */
     private val claims = Mutex()
@@ -188,8 +183,8 @@ internal class TapToPaySessionCoordinator(
     /**
      * Publishes where [failure] leaves the session and returns the failure its caller is given.
      *
-     * Called with [region] held, so a run waiting on it cannot change the stored registration or the state
-     * between this failure and its landing. A phase settles before the run enclosing it does, and the
+     * Called with [region] held, so another run on this terminal cannot change the stored registration or
+     * the state between this failure and its landing. A phase settles before the run enclosing it does, and the
      * failure it raised comes back here unchanged, so the run keeps that first answer rather than reading
      * the store again. The registration is read only where it decides the landing. Uncancellable, so a
      * withdrawal cannot leave the failure unlanded.
@@ -348,13 +343,6 @@ internal class TapToPaySessionCoordinator(
     private suspend fun runActivateDevice(activationCode: String) {
         enrollment.activateDevice(activationCode)
         manager.settle(TapToPaySessionState.Idle)
-    }
-
-    private companion object {
-        /** One region per paypoint, shared by every coordinator over it. */
-        private val regions = HashMap<String, Mutex>()
-
-        private fun regionFor(entry: String): Mutex = synchronized(regions) { regions.getOrPut(entry) { Mutex() } }
     }
 }
 
