@@ -308,17 +308,6 @@ class TapToPaySessionManagerTest {
         }
 
     @Test
-    fun `a charge expiring the session expires it only while the charge holds it`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            driveTo(manager, TapToPaySessionState.Ready)
-            manager.expireCharge()
-            assertEquals(TapToPaySessionState.Ready, manager.state.value)
-
-            manager.charging({ NotReady() }) { manager.expireCharge() }
-            assertEquals(TapToPaySessionState.SessionExpired, manager.state.value)
-        }
-
-    @Test
     fun `an activity outside a charge is dropped`() {
         manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
 

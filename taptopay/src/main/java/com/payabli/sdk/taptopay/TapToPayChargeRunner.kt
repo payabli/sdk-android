@@ -171,7 +171,7 @@ internal class TapToPayChargeRunner(
                     // or `isReady` stays true and every retry reaches this same line.
                     val deviceId =
                         store.read(entry)?.deviceId ?: run {
-                            manager.expireCharge()
+                            manager.invalidate()
                             throw TapToPayCallException.NoDeviceToChargeAs()
                         }
                     // Reserved after the checks above, so a charge that never reaches the wire leaves no key
@@ -344,14 +344,15 @@ internal class TapToPayChargeRunner(
             closeAfterFailedRead(paymentTransId, withdrawn)
             throw withdrawn
         } catch (failure: Throwable) {
-            // A spent reader session is repaired by re-initializing. The move is dropped once another caller
-            // has moved the session, so a failure from the reader a rebuild replaced does not kill the new one.
+            // A spent reader session is repaired by re-initializing. `invalidate` drops the move unless the
+            // session is ready or charging, so a failure arriving while a replacement is being built does not
+            // kill it.
             //
             // A denial expires it too, and the repair that follows lands DEVICE_INELIGIBLE.
             if (failure is CardReaderException.SessionUnusable ||
                 failure is CardReaderException.DeviceDenied
             ) {
-                manager.expireCharge()
+                manager.invalidate()
             }
             closeAfterFailedRead(paymentTransId, failure)
             throw failure

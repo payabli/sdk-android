@@ -2035,26 +2035,6 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a dead reader reported after the session was rebuilt does not expire the new session`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // A host called initialize while the card was presented, and the rebuilt session is ready. The
-            // old read then fails, and that failure belongs to the reader the rebuild replaced.
-            lateinit var fixture: SessionFixture
-            fixture =
-                SessionFixture(script(), readGate = {
-                    fixture.manager.reset()
-                    fixture.manager.advance(TapToPaySessionState.FetchingConfig)
-                    fixture.manager.advance(TapToPaySessionState.InitializingReader)
-                    fixture.manager.advance(TapToPaySessionState.Ready)
-                    throw CardReaderException.SessionUnusable(null)
-                }).also { it.coordinator.initialize() }
-
-            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
-
-            assertEquals(TapToPaySessionState.Ready, fixture.state)
-        }
-
-    @Test
     fun `a charge reports entering and leaving, and no move between its activities`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture()

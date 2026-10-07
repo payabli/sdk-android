@@ -147,16 +147,6 @@ internal class TapToPaySessionManager(
         }
     }
 
-    /**
-     * Records that the reader session a running charge was using is spent.
-     *
-     * Dropped when no charge holds the session: another caller has moved it since, and the failure belongs to
-     * the reader that caller replaced.
-     */
-    fun expireCharge() {
-        write(TapToPaySessionState.SessionExpired) { it is TapToPaySessionState.Charging }
-    }
-
     /** Moves a running charge to [activity]. Dropped when no charge holds the session, since one moved it. */
     fun chargeActivity(activity: TapToPayChargeActivity) {
         write(TapToPaySessionState.Charging(activity)) { it is TapToPaySessionState.Charging }
