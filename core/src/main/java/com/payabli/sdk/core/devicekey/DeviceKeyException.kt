@@ -10,9 +10,9 @@ import androidx.annotation.RestrictTo
  *
  * **The distinction that matters is whether the key is gone.** [KeyLost] means the attested key no longer
  * exists, so nothing it signed can be proven again and the device has to be attested afresh; every later
- * call fails the same way until it is. [SigningFailed] means one signature attempt did not complete while
- * the key is still there, so a caller may try again. Collapsing the two leaves a caller retrying a device
- * that will never recover, or re-attesting one that only hit a transient failure.
+ * call fails the same way until it is. [CryptoUnavailable] means the key store did not answer, so a caller
+ * may try again. Collapsing the two leaves a caller retrying a device that will never recover, or
+ * re-attesting one that only hit a transient failure.
  *
  * No message here carries key material or a device identifier.
  */
@@ -36,13 +36,13 @@ public sealed class DeviceKeyException(
             cause,
         )
 
-    /** One signature did not complete while the key itself is still usable. */
+    /** The platform refused a signature this SDK asked for while the key is still usable, which is a defect. */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class SigningFailed(
         cause: Throwable? = null,
     ) : DeviceKeyException("the device key could not sign this payload", cause)
 
-    /** The platform key store is unavailable, which says nothing about whether the key survives. */
+    /** The platform key store did not answer, which says nothing about whether the key survives. */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class CryptoUnavailable(
         cause: Throwable? = null,

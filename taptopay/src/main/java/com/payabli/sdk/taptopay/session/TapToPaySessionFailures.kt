@@ -26,8 +26,9 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABL
  * [TapToPayFailureReason], and a failure whose remedy is unknown is [SDK_INTERNAL_ERROR]: a guess sends a host down a
  * repair that cannot work.
  *
- * **Discarding the device's identity requires a positive match.** Only a refusal that names the attestation
- * lands on [DEVICE_SETUP_REQUIRED]. Everything unrecognised lands where being wrong costs nothing.
+ * **Discarding the device's identity requires a positive match.** Only a failure showing the attestation or the
+ * key that holds it is gone lands on [DEVICE_SETUP_REQUIRED]. Everything unrecognised lands where being wrong
+ * costs nothing.
  *
  * **Pending activation needs a stored registration.** Its remedy is a code for this device, so it is landed
  * only when a registration holds the id that code is requested under.
@@ -184,15 +185,18 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * Storage whose key facility cannot answer is the same cause as a key store that cannot confirm the key.
-     * The rest land where an unrecognised failure does.
+     * Storage lands by what repairs it. A key facility or a file that did not answer is retried, and a storage key
+     * that is gone took the stored binding with it, so setting up again is the repair.
+     *
+     * An unreadable value reaching here is a read site that did not treat it as nothing held, which is a defect.
      */
     private fun landingForStorage(failure: SecureStorageException): TapToPaySessionState =
         when (failure) {
             is SecureStorageException.CryptoUnavailable -> failed(DEVICE_KEY_UNAVAILABLE)
-            is SecureStorageException.KeyInvalidated -> failed(SDK_INTERNAL_ERROR)
+            is SecureStorageException.StorageUnavailable -> failed(DEVICE_KEY_UNAVAILABLE)
+            is SecureStorageException.KeyInvalidated -> failed(DEVICE_SETUP_REQUIRED)
             is SecureStorageException.ValueUnreadable -> failed(SDK_INTERNAL_ERROR)
-            is SecureStorageException.StorageUnavailable -> failed(SDK_INTERNAL_ERROR)
+            is SecureStorageException.CipherFailed -> failed(SDK_INTERNAL_ERROR)
         }
 
     /**

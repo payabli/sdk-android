@@ -33,7 +33,7 @@ class SessionStorageFailureTest {
         }
 
     @Test
-    fun `storage that cannot be opened still lands as an internal error`() =
+    fun `storage that cannot be opened lands as the device key being unavailable`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 SessionFixture(
@@ -44,6 +44,6 @@ class SessionStorageFailureTest {
 
             failureOf { fixture.coordinator.initialize() }
 
-            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR), fixture.state)
+            assertEquals(TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE), fixture.state)
         }
 }

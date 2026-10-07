@@ -4,10 +4,12 @@ import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.FakeDeviceKey
+import com.payabli.sdk.taptopay.enrollment.FakeSecureStore
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.activateBody
 import com.payabli.sdk.taptopay.enrollment.attestBody
@@ -206,6 +208,39 @@ class PayabliTapToPayTest {
             assertEquals(Failed(TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE), terminal.sessionState.value)
             assertNotNull("the binding was discarded", fixture.enrollment.storedRecord())
             assertTrue("a request was sent", fixture.routes.isEmpty())
+        }
+
+    @Test
+    fun `storage that cannot be read lands and throws as the device key being unavailable`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    script(),
+                    storeFailure = FakeSecureStore.failing("get", SecureStorageException.StorageUnavailable()),
+                )
+            fixture.seedRecord()
+            val terminal = terminalOver(fixture)
+
+            val thrown = runCatching { terminal.initialize() }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.DEVICE_KEY_UNAVAILABLE, thrown.type)
+            assertEquals(Failed(TapToPayFailureReason.DEVICE_KEY_UNAVAILABLE), terminal.sessionState.value)
+        }
+
+    @Test
+    fun `a storage key lost while saving the binding lands and throws as setup required`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    script(),
+                    storeFailure = FakeSecureStore.failing("set", SecureStorageException.KeyInvalidated()),
+                )
+            val terminal = terminalOver(fixture)
+
+            val thrown = runCatching { terminal.initialize() }.exceptionOrNull() as TapToPayException
+
+            assertEquals(PayabliErrorType.DEVICE_SETUP_REQUIRED, thrown.type)
+            assertEquals(Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED), terminal.sessionState.value)
         }
 
     @Test

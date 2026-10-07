@@ -47,11 +47,17 @@ public sealed class SecureStorageException(
         cause: Throwable? = null,
     ) : SecureStorageException("the stored value could not be read and was discarded", cause)
 
-    /** The Keystore or the cipher failed for a reason that is neither key loss nor a bad value. */
+    /** The Keystore or the cipher did not answer, so a later attempt may succeed. The store is left intact. */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class CryptoUnavailable(
         cause: Throwable? = null,
     ) : SecureStorageException("the platform key store or cipher is unavailable", cause)
+
+    /** The platform refused an operation this SDK asked for while the key is still usable, which is a defect. */
+    @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+    public class CipherFailed(
+        cause: Throwable? = null,
+    ) : SecureStorageException("the platform refused the cipher operation", cause)
 
     /**
      * The backing file could not be read or written. The store is left intact.
