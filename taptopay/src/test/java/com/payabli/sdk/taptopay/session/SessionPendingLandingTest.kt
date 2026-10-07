@@ -154,6 +154,24 @@ class SessionPendingLandingTest {
         }
 
     @Test
+    fun `an activation outside pending activation is refused, sends nothing and leaves the session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val idle = SessionFixture(RouteScript())
+            val ready = SessionFixture(SessionFixture.coldScript())
+            ready.coordinator.initialize()
+
+            for ((fixture, state) in listOf(idle to TapToPaySessionState.Idle, ready to TapToPaySessionState.Ready)) {
+                val sentBefore = fixture.routes.size
+
+                val failure = failureOf { fixture.coordinator.activateDevice("123456") }
+
+                assertEquals("$state", PayabliErrorType.DEVICE_NOT_PENDING, TapToPayErrorCodes.typeFor(failure))
+                assertEquals("$state", state, fixture.state)
+                assertEquals("$state sent nothing", sentBefore, fixture.routes.size)
+            }
+        }
+
+    @Test
     fun `a failure that does not owe activation reads nothing from the store`() =
         runTest(timeout = TEST_TIMEOUT) {
             // The store refuses every read once the service has answered, so a read here would be logged.

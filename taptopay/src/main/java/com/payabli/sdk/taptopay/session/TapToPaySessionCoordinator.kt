@@ -9,6 +9,7 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
 import com.payabli.sdk.taptopay.enrollment.StoredRegistration
@@ -341,9 +342,12 @@ internal class TapToPaySessionCoordinator(
      * refused leaves the state alone, because the device still owes one.
      */
     private suspend fun runActivateDevice(activationCode: String) {
-        // The id the host requested its code under, where the session handed one over.
-        val requestedUnder = (state.value as? TapToPaySessionState.PendingActivation)?.activationId
-        enrollment.activateDevice(activationCode, requestedUnder)
+        // Read at this run's turn. Only a session waiting for a code is activated, against the id it waits under;
+        // any other state is refused with nothing sent and the session left where it is.
+        val pending =
+            state.value as? TapToPaySessionState.PendingActivation
+                ?: throw DeviceActivationException.DeviceNotPending(null, "")
+        enrollment.activateDevice(activationCode, pending.activationId)
         manager.settle(TapToPaySessionState.Idle)
     }
 }
