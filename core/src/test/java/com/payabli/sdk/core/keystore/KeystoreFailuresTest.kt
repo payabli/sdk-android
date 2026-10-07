@@ -1,12 +1,14 @@
 package com.payabli.sdk.core.keystore
 
+import android.security.KeyStoreException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.security.InvalidKeyException
 import java.security.NoSuchAlgorithmException
 import javax.crypto.IllegalBlockSizeException
 
-/** Stands in for the platform's own Keystore failure, which has no JVM implementation. */
+/** Stands in for a platform Keystore failure, which has no JVM implementation. */
 private class PlatformFailure(
     val reading: KeystoreReading,
 ) : Exception()
@@ -17,33 +19,53 @@ private val read: (Throwable) -> KeystoreReading? = { (it as? PlatformFailure)?.
 private fun wrapped(reading: KeystoreReading): Throwable =
     IllegalBlockSizeException().initCause(PlatformFailure(reading))
 
+private fun verdictOf(
+    systemError: Boolean = false,
+    transient: Boolean = false,
+    errorCode: Int = KeyStoreException.ERROR_INCORRECT_USAGE,
+): KeystoreVerdict =
+    KeystoreFailures.verdictFor(wrapped(KeystoreFailures.readingOf(systemError, transient, errorCode)), read)
+
+private const val KEYSTORE_EXCEPTION = "android.security.KeyStoreException"
+private const val USER_NOT_AUTHENTICATED = "android.security.keystore.UserNotAuthenticatedException"
+
 class KeystoreFailuresTest {
     @Test
     fun `a system error is the key facility not answering`() {
-        val cause = wrapped(KeystoreReading.Read(retryable = true, keyMissing = false))
-
-        assertEquals(KeystoreVerdict.UNAVAILABLE, KeystoreFailures.verdictFor(cause, read))
+        assertEquals(KeystoreVerdict.UNAVAILABLE, verdictOf(systemError = true))
     }
 
     @Test
-    fun `a retryable failure stays unavailable even when it also names a missing key`() {
-        val cause = wrapped(KeystoreReading.Read(retryable = true, keyMissing = true))
+    fun `a transient failure is the key facility not answering`() {
+        assertEquals(KeystoreVerdict.UNAVAILABLE, verdictOf(transient = true))
+    }
 
-        assertEquals(KeystoreVerdict.UNAVAILABLE, KeystoreFailures.verdictFor(cause, read))
+    @Test
+    fun `a system error stays unavailable even when its code names a missing key`() {
+        assertEquals(
+            KeystoreVerdict.UNAVAILABLE,
+            verdictOf(systemError = true, errorCode = KeyStoreException.ERROR_KEY_DOES_NOT_EXIST),
+        )
     }
 
     @Test
     fun `a key that does not exist is the key gone`() {
-        val cause = wrapped(KeystoreReading.Read(retryable = false, keyMissing = true))
-
-        assertEquals(KeystoreVerdict.KEY_GONE, KeystoreFailures.verdictFor(cause, read))
+        assertEquals(KeystoreVerdict.KEY_GONE, verdictOf(errorCode = KeyStoreException.ERROR_KEY_DOES_NOT_EXIST))
     }
 
     @Test
-    fun `any other permanent refusal is a defect`() {
-        val cause = wrapped(KeystoreReading.Read(retryable = false, keyMissing = false))
+    fun `a corrupted key is the key gone`() {
+        assertEquals(KeystoreVerdict.KEY_GONE, verdictOf(errorCode = KeyStoreException.ERROR_KEY_CORRUPTED))
+    }
 
-        assertEquals(KeystoreVerdict.DEFECT, KeystoreFailures.verdictFor(cause, read))
+    @Test
+    fun `a KeyMint failure that is not a system error is a defect`() {
+        assertEquals(KeystoreVerdict.DEFECT, verdictOf(errorCode = KeyStoreException.ERROR_KEYMINT_FAILURE))
+    }
+
+    @Test
+    fun `incorrect usage is a defect`() {
+        assertEquals(KeystoreVerdict.DEFECT, verdictOf(errorCode = KeyStoreException.ERROR_INCORRECT_USAGE))
     }
 
     @Test
@@ -54,6 +76,14 @@ class KeystoreFailuresTest {
     }
 
     @Test
+    fun `a locked Keystore is retried`() {
+        assertEquals(
+            KeystoreVerdict.UNAVAILABLE,
+            KeystoreFailures.verdictFor(PlatformFailure(KeystoreReading.Locked), read),
+        )
+    }
+
+    @Test
     fun `a failure with no Keystore cause is a defect`() {
         assertEquals(KeystoreVerdict.DEFECT, KeystoreFailures.verdictFor(NoSuchAlgorithmException(), read))
         assertEquals(KeystoreVerdict.DEFECT, KeystoreFailures.verdictFor(InvalidKeyException(), read))
@@ -61,11 +91,7 @@ class KeystoreFailuresTest {
 
     @Test
     fun `the Keystore cause is found below the first link`() {
-        val cause =
-            InvalidKeyException(
-                "outer",
-                IllegalStateException(PlatformFailure(KeystoreReading.Read(retryable = true, keyMissing = false))),
-            )
+        val cause = InvalidKeyException("outer", IllegalStateException(PlatformFailure(KeystoreReading.Unreadable)))
 
         assertEquals(KeystoreVerdict.UNAVAILABLE, KeystoreFailures.verdictFor(cause, read))
     }
@@ -77,5 +103,39 @@ class KeystoreFailuresTest {
         first.initCause(second)
 
         assertEquals(KeystoreVerdict.DEFECT, KeystoreFailures.verdictFor(first, read))
+    }
+
+    @Test
+    fun `a Keystore exception is read from what the platform says`() {
+        val platform = KeystoreReading.Read(retryable = false, keyGone = true)
+
+        assertEquals(platform, KeystoreFailures.readingFor(KEYSTORE_EXCEPTION) { platform })
+    }
+
+    @Test
+    fun `a Keystore exception the platform does not describe cannot be read`() {
+        assertEquals(
+            KeystoreReading.Unreadable,
+            KeystoreFailures.readingFor(KEYSTORE_EXCEPTION) { null },
+        )
+    }
+
+    @Test
+    fun `an unauthenticated user is a locked Keystore`() {
+        assertEquals(
+            KeystoreReading.Locked,
+            KeystoreFailures.readingFor(USER_NOT_AUTHENTICATED) { error("not a Keystore exception") },
+        )
+    }
+
+    @Test
+    fun `an expired key and a key not yet valid are not Keystore readings`() {
+        listOf(
+            "android.security.keystore.KeyExpiredException",
+            "android.security.keystore.KeyNotYetValidException",
+            "java.security.InvalidKeyException",
+        ).forEach { name ->
+            assertNull(name, KeystoreFailures.readingFor(name) { error("not a Keystore exception") })
+        }
     }
 }
