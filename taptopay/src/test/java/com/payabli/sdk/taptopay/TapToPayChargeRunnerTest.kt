@@ -34,6 +34,7 @@ import com.payabli.sdk.taptopay.provider.CardReadOutcome
 import com.payabli.sdk.taptopay.provider.cardRead
 import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
+import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -41,6 +42,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.KSerializer
 import org.junit.Assert.assertEquals
@@ -1843,6 +1846,226 @@ class TapToPayChargeRunnerTest {
                     listOf(TelemetryProperties.Origin.RETRY),
                     originsOf(recorded, TelemetryEvents.TTP_CLOSE_SUCCEEDED),
                 )
+            }
+        }
+
+    /**
+     * Every state [fixture] publishes from here on, in order.
+     *
+     * Unconfined, so the collector runs inside each write and a state that is written and then replaced is
+     * still seen.
+     */
+    private fun TestScope.statesOf(fixture: SessionFixture): List<TapToPaySessionState> {
+        val seen = mutableListOf<TapToPaySessionState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { fixture.manager.state.collect { seen += it } }
+        return seen
+    }
+
+    private val opening = TapToPaySessionState.Charging(TapToPayChargeActivity.OPENING)
+    private val waiting = TapToPaySessionState.Charging(TapToPayChargeActivity.WAITING_FOR_CARD)
+    private val closing = TapToPaySessionState.Charging(TapToPayChargeActivity.CLOSING)
+
+    @Test
+    fun `a charge reports opening, waiting for a card and closing, then ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            val seen = statesOf(fixture)
+
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.Ready),
+                seen,
+            )
+        }
+
+    @Test
+    fun `a refused card ends the charge on ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.DECLINED, providerState = "DECLINED"))
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.Ready),
+                seen,
+            )
+        }
+
+    @Test
+    fun `an outcome that is never definite ends the charge on ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = null))
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.Ready),
+                seen,
+            )
+        }
+
+    @Test
+    fun `a close that failed ends the charge on ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    scriptWithCloseControl(closes = 3) { true },
+                ).also { it.coordinator.initialize() }
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.Ready),
+                seen,
+            )
+        }
+
+    @Test
+    fun `an opening the service refused ends the charge on ready without asking for a card`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf(rejected()),
+                    ),
+                ).also { it.coordinator.initialize() }
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(listOf(TapToPaySessionState.Ready, opening, TapToPaySessionState.Ready), seen)
+        }
+
+    @Test
+    fun `a tap that failed closes and ends the charge on ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.Ready),
+                seen,
+            )
+        }
+
+    @Test
+    fun `a withdrawn charge ends on ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.failNextRead(CancellationException("the host withdrew"))
+            val seen = statesOf(fixture)
+
+            val outcome = runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertTrue(outcome.exceptionOrNull() is CancellationException)
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.Ready),
+                seen,
+            )
+        }
+
+    @Test
+    fun `a dead reader session ends the charge expired, not ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, TapToPaySessionState.SessionExpired),
+                seen,
+            )
+        }
+
+    @Test
+    fun `a lost device record ends the charge expired, not ready`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.enrollment.store.clear(ENTRY)
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(listOf(TapToPaySessionState.Ready, opening, TapToPaySessionState.SessionExpired), seen)
+        }
+
+    @Test
+    fun `a charge is not ready while it waits for a card`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            var during: Pair<TapToPaySessionState, Boolean>? = null
+            lateinit var fixture: SessionFixture
+            fixture =
+                SessionFixture(script(), readGate = { during = fixture.state to fixture.manager.isReady.value })
+                    .also { it.coordinator.initialize() }
+
+            runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals(waiting to false, during)
+            assertTrue(fixture.manager.isReady.value)
+        }
+
+    @Test
+    fun `a session started over during a read keeps its new state, and the charge keeps its outcome`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A host calling initialize while a card is presented resets the session under the charge. The
+            // charge's own writes after that are stale and must not throw over the payment's outcome.
+            lateinit var fixture: SessionFixture
+            fixture =
+                SessionFixture(script(), readGate = { fixture.manager.reset() }).also { it.coordinator.initialize() }
+
+            val receipt = runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+            assertEquals(TRANS_ID, receipt.paymentTransId)
+            assertEquals(TapToPaySessionState.Idle, fixture.state)
+        }
+
+    @Test
+    fun `a dead reader reported after the session was rebuilt does not expire the new session`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // A host called initialize while the card was presented, and the rebuilt session is ready. The
+            // old read then fails, and that failure belongs to the reader the rebuild replaced.
+            lateinit var fixture: SessionFixture
+            fixture =
+                SessionFixture(script(), readGate = {
+                    fixture.manager.reset()
+                    fixture.manager.advance(TapToPaySessionState.FetchingConfig)
+                    fixture.manager.advance(TapToPaySessionState.InitializingReader)
+                    fixture.manager.advance(TapToPaySessionState.Ready)
+                    throw CardReaderException.SessionUnusable(null)
+                }).also { it.coordinator.initialize() }
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(TapToPaySessionState.Ready, fixture.state)
+        }
+
+    @Test
+    fun `a charge reports entering and leaving, and no move between its activities`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            recording { recorded ->
+                runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null)
+
+                val moves =
+                    recorded
+                        .filter { it.first == TelemetryEvents.TTP_SESSION_STATE_CHANGED }
+                        .map { it.second[TelemetryProperty.FROM.key] to it.second[TelemetryProperty.TO.key] }
+                assertEquals(listOf("ready" to "charging", "charging" to "ready"), moves)
             }
         }
 

@@ -256,6 +256,7 @@ lookup.
 | `Idle` | Not started, or activated and waiting for `initialize()`. |
 | `AttestingDevice`, `FetchingConfig`, `InitializingReader` | `initialize()` is running. |
 | `Ready` | Ready to charge. |
+| `Charging(activity)` | `charge` is running, and `isReady` is `false` until it ends. `activity` is `OPENING`, `WAITING_FOR_CARD` or `CLOSING`; show a tap prompt on `WAITING_FOR_CARD`. The outcome is what `charge` returns or throws. |
 | `PendingActivation(activationId)` | The phone needs an activation code. `activationId` is what the activation route's `deviceId` field takes. |
 | `SessionExpired` | The session needs refreshing. The next `charge` refreshes it. |
 | `Reinitializing` | The session is being refreshed. |

@@ -13,6 +13,7 @@ import com.payabli.sdk.core.model.PayabliException
 import com.payabli.sdk.taptopay.PayabliTTP
 import com.payabli.sdk.taptopay.model.TapToPayCustomerData
 import com.payabli.sdk.taptopay.model.TapToPayPaymentDetails
+import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
@@ -142,9 +143,12 @@ class TapToPayTerminal(
 
     private suspend fun publish(state: TapToPaySessionState) {
         val shown = state.asTerminalState()
+        val wasCharging = _sessionState.value.isCharging
         _sessionState.value = shown
         _isReady.value = shown == TerminalSessionState.Ready
         _failureReason.value = (state as? TapToPaySessionState.Failed)?.reason?.asTerminalReason()
+        // A charge ending puts the session back to ready with the reader still up, so it is not news.
+        if (wasCharging && shown == TerminalSessionState.Ready) return
         state.asEventCode()?.let { emit(it) }
     }
 
@@ -165,7 +169,12 @@ class TapToPayTerminal(
             TapToPaySessionState.FetchingConfig -> TerminalSessionState.FetchingConfig
             TapToPaySessionState.InitializingReader -> TerminalSessionState.InitializingReader
             TapToPaySessionState.Ready -> TerminalSessionState.Ready
-            is TapToPaySessionState.Charging -> TerminalSessionState.Charging
+            is TapToPaySessionState.Charging ->
+                when (activity) {
+                    TapToPayChargeActivity.OPENING -> TerminalSessionState.OpeningPayment
+                    TapToPayChargeActivity.WAITING_FOR_CARD -> TerminalSessionState.WaitingForCard
+                    TapToPayChargeActivity.CLOSING -> TerminalSessionState.ClosingPayment
+                }
             TapToPaySessionState.SessionExpired -> TerminalSessionState.SessionExpired
             TapToPaySessionState.Reinitializing -> TerminalSessionState.Reinitializing
             is TapToPaySessionState.PendingActivation -> TerminalSessionState.PendingActivation

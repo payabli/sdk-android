@@ -43,7 +43,9 @@ fun chipSpecFor(state: TerminalSessionState): SessionChipSpec =
         TerminalSessionState.FetchingConfig -> SessionChipSpec("Configuring", ChipTone.Pending)
         TerminalSessionState.InitializingReader -> SessionChipSpec("Starting reader", ChipTone.Pending)
         TerminalSessionState.Ready -> SessionChipSpec("Ready", ChipTone.Ready)
-        TerminalSessionState.Charging -> SessionChipSpec("Charging", ChipTone.Pending)
+        TerminalSessionState.OpeningPayment -> SessionChipSpec("Opening payment", ChipTone.Pending)
+        TerminalSessionState.WaitingForCard -> SessionChipSpec("Tap a card", ChipTone.Pending)
+        TerminalSessionState.ClosingPayment -> SessionChipSpec("Closing payment", ChipTone.Pending)
         TerminalSessionState.SessionExpired -> SessionChipSpec("Expired", ChipTone.Alert)
         TerminalSessionState.Reinitializing -> SessionChipSpec("Restarting", ChipTone.Pending)
         // Pending: the device is fine and is waiting for someone to activate it. Nothing is broken.

@@ -127,6 +127,42 @@ internal class TapToPaySessionManager(
     }
 
     /**
+     * Runs [work] as a charge: the session is [TapToPaySessionState.Charging] while it runs and ready again
+     * after it, whatever it ended in.
+     *
+     * Throws [notReady] without running [work] unless the session is ready, deciding and entering in one step,
+     * so nothing can move the session between the two. A session another caller moves while [work] runs, by
+     * starting over or expiring it, is left where that caller put it.
+     */
+    suspend fun <T> charging(
+        notReady: () -> Exception,
+        work: suspend () -> T,
+    ): T {
+        val opening = TapToPaySessionState.Charging(TapToPayChargeActivity.OPENING)
+        if (!write(opening) { it == TapToPaySessionState.Ready }.published) throw notReady()
+        try {
+            return work()
+        } finally {
+            write(TapToPaySessionState.Ready) { it is TapToPaySessionState.Charging }
+        }
+    }
+
+    /**
+     * Records that the reader session a running charge was using is spent.
+     *
+     * Dropped when no charge holds the session: another caller has moved it since, and the failure belongs to
+     * the reader that caller replaced.
+     */
+    fun expireCharge() {
+        write(TapToPaySessionState.SessionExpired) { it is TapToPaySessionState.Charging }
+    }
+
+    /** Moves a running charge to [activity]. Dropped when no charge holds the session, since one moved it. */
+    fun chargeActivity(activity: TapToPayChargeActivity) {
+        write(TapToPaySessionState.Charging(activity)) { it is TapToPaySessionState.Charging }
+    }
+
+    /**
      * Decides, reports and writes under [guard].
      *
      * The report comes before the writes, so a collector that transitions from inside `sink.value = to`
@@ -135,13 +171,17 @@ internal class TapToPaySessionManager(
      *
      * The refusal record is outside, where it publishes nothing.
      */
-    private fun write(to: TapToPaySessionState): Written {
+    private fun write(
+        to: TapToPaySessionState,
+        onlyFrom: (TapToPaySessionState) -> Boolean = { true },
+    ): Written {
         val from: TapToPaySessionState
         val permitted: Boolean
         val published: Boolean
 
         synchronized(guard) {
             from = sink.value
+            if (!onlyFrom(from)) return Written(from, permitted = true, published = false)
             permitted = TapToPaySessionTransitions.permits(from, to)
             published = permitted && from != to
             if (published) {
@@ -154,9 +194,14 @@ internal class TapToPaySessionManager(
                 logger.info(
                     LogField.safe("event", "ttp_session_state"),
                     LogField.safe("state", to.diagnosticName),
+                    LogField.safe("activity", (to as? TapToPaySessionState.Charging)?.activity?.name),
                     LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
                 ) { "session state changed" }
-                TapToPayReports.sessionStateChanged(from, to)
+                // A move between two activities is not a change of state, and reporting it would read
+                // charging to charging.
+                if (from !is TapToPaySessionState.Charging || to !is TapToPaySessionState.Charging) {
+                    TapToPayReports.sessionStateChanged(from, to)
+                }
 
                 // Readiness first: `sink.value = to` resumes an unconfined collector, which reads
                 // [isReady] on the state it was just handed.
@@ -172,12 +217,13 @@ internal class TapToPaySessionManager(
                 LogField.safe("tostate", to.diagnosticName),
             ) { "refused a session state change" }
         }
-        return Written(from, permitted)
+        return Written(from, permitted, published)
     }
 
     /** What one write decided, so a caller naming the refusal does not read the state a second time. */
     private class Written(
         val from: TapToPaySessionState,
         val permitted: Boolean,
+        val published: Boolean,
     )
 }

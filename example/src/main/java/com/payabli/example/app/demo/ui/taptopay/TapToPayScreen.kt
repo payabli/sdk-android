@@ -245,7 +245,8 @@ private fun PaymentBlock(
             onClick = onCharge,
             enabled = !state.isWorking && state.isReady,
         )
-        if (!state.isReady) {
+        // A running charge is not ready either, and the stage it is at is the chip's to show.
+        if (!state.isReady && !state.session.isCharging) {
             Caption("Set up the terminal first. Charging needs a prepared reader.")
         }
     }

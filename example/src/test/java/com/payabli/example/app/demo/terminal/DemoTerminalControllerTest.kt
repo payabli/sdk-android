@@ -220,6 +220,27 @@ class DemoTerminalControllerTest {
             )
         }
 
+    @Test
+    fun `a charge moves through opening, waiting for a card and closing, then back to ready`() =
+        runTest {
+            val terminal = controller()
+            terminal.ready()
+            val seen = collectInBackground(terminal.sessionState)
+
+            terminal.charge(BigDecimal("1.00"))
+
+            assertEquals(
+                listOf(
+                    TerminalSessionState.Ready,
+                    TerminalSessionState.OpeningPayment,
+                    TerminalSessionState.WaitingForCard,
+                    TerminalSessionState.ClosingPayment,
+                    TerminalSessionState.Ready,
+                ),
+                seen,
+            )
+        }
+
     // --- activation ---
 
     @Test

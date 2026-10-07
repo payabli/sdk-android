@@ -20,9 +20,9 @@ object TerminalSteps {
      * @param chargeFailed the last charge attempt failed.
      * @param charged a charge succeeded.
      * @param working which action is in flight, or null. The session reports
-     *   [TerminalSessionState.Ready] throughout a charge and [TerminalSessionState.PendingActivation]
-     *   throughout an activation, so it cannot say on its own that either is running. Which one
-     *   matters as much as whether: the session reaches Ready before the call that took it there
+     *   [TerminalSessionState.PendingActivation] throughout an activation, so it cannot say on its own
+     *   that one is running, and a charge is in flight before its first stage is published. Which
+     *   action matters as much as whether: the session reaches Ready before the call that took it there
      *   returns, so a bare flag marks the charge step in progress while the terminal is still
      *   starting.
      */
@@ -51,7 +51,7 @@ object TerminalSteps {
                 // done and handed the sequence on while the work was still running.
                 working == TerminalAction.Initialize ||
                     working == TerminalAction.Reinitialize -> StepStatus.InProgress
-                session == TerminalSessionState.Ready -> StepStatus.Done
+                session == TerminalSessionState.Ready || session.isCharging -> StepStatus.Done
                 // Activation is a separate step, so reaching it means this one finished.
                 session == TerminalSessionState.PendingActivation -> StepStatus.Done
                 // Activating chains an initialize, which walks back through this step's own states.
@@ -77,7 +77,7 @@ object TerminalSteps {
                 // Done and NotNeeded both let the next step run. They say different things to a
                 // reader, and only the caller knows which happened.
                 activated -> StepStatus.Done
-                session == TerminalSessionState.Ready -> StepStatus.NotNeeded
+                session == TerminalSessionState.Ready || session.isCharging -> StepStatus.NotNeeded
                 // Before the recorded failure: activating chains an initialize, so a denied reader
                 // surfaces as this call throwing after the code was accepted.
                 readerDenied -> StepStatus.Done
@@ -95,6 +95,7 @@ object TerminalSteps {
                 !activation.isFinished -> StepStatus.Blocked
                 // The session never reached Ready, so nothing below would report this at all.
                 readerDenied -> StepStatus.Failed
+                session.isCharging -> StepStatus.InProgress
                 working == TerminalAction.Charge && session == TerminalSessionState.Ready -> StepStatus.InProgress
                 chargeFailed && session == TerminalSessionState.Ready -> StepStatus.Failed
                 charged && session == TerminalSessionState.Ready -> StepStatus.Done

@@ -238,6 +238,114 @@ class TapToPaySessionManagerTest {
             )
         }
 
+    private class NotReady : Exception()
+
+    @Test
+    fun `a charge is refused unless the session is ready, and moves nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            for (state in EVERY_SESSION_STATE.filter { it != TapToPaySessionState.Ready }) {
+                val fresh = TapToPaySessionManager(logger)
+                driveTo(fresh, state)
+                var ran = false
+
+                val failure = runCatching { fresh.charging({ NotReady() }) { ran = true } }.exceptionOrNull()
+
+                assertTrue(state.diagnosticName, failure is NotReady)
+                assertFalse(state.diagnosticName, ran)
+                assertEquals(state.diagnosticName, state, fresh.state.value)
+            }
+        }
+
+    @Test
+    fun `a charge holds the session while it runs and gives it back when it ends`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            driveTo(manager, TapToPaySessionState.Ready)
+            var during: Pair<TapToPaySessionState, Boolean>? = null
+
+            manager.charging({ NotReady() }) { during = manager.state.value to manager.isReady.value }
+
+            assertEquals(TapToPaySessionState.Charging(TapToPayChargeActivity.OPENING) to false, during)
+            assertEquals(TapToPaySessionState.Ready, manager.state.value)
+            assertTrue(manager.isReady.value)
+        }
+
+    @Test
+    fun `a charge that throws still gives the session back`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            driveTo(manager, TapToPaySessionState.Ready)
+
+            runCatching { manager.charging({ NotReady() }) { throw IllegalArgumentException("refused") } }
+
+            assertEquals(TapToPaySessionState.Ready, manager.state.value)
+        }
+
+    @Test
+    fun `a session moved away during a charge is left where it was moved`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            // The last is a setup that started over during the charge and is preparing the reader again, from
+            // where ready is one legal move away.
+            val moves =
+                mapOf<TapToPaySessionState, (TapToPaySessionManager) -> Unit>(
+                    TapToPaySessionState.Idle to { it.reset() },
+                    TapToPaySessionState.SessionExpired to { it.invalidate() },
+                    TapToPaySessionState.InitializingReader to {
+                        it.reset()
+                        it.advance(TapToPaySessionState.FetchingConfig)
+                        it.advance(TapToPaySessionState.InitializingReader)
+                    },
+                )
+            for ((moved, move) in moves) {
+                val fresh = TapToPaySessionManager(logger)
+                driveTo(fresh, TapToPaySessionState.Ready)
+
+                fresh.charging({ NotReady() }) {
+                    move(fresh)
+                    fresh.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
+                }
+
+                assertEquals(moved.diagnosticName, moved, fresh.state.value)
+            }
+        }
+
+    @Test
+    fun `a charge expiring the session expires it only while the charge holds it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            driveTo(manager, TapToPaySessionState.Ready)
+            manager.expireCharge()
+            assertEquals(TapToPaySessionState.Ready, manager.state.value)
+
+            manager.charging({ NotReady() }) { manager.expireCharge() }
+            assertEquals(TapToPaySessionState.SessionExpired, manager.state.value)
+        }
+
+    @Test
+    fun `an activity outside a charge is dropped`() {
+        manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
+
+        assertEquals(TapToPaySessionState.Idle, manager.state.value)
+    }
+
+    @Test
+    fun `a move between activities is published and not reported`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            driveTo(manager, TapToPaySessionState.Ready)
+            val reported = mutableListOf<String>()
+            TelemetryRecorders.install { _, properties -> reported += "${properties["from"]}->${properties["to"]}" }
+            try {
+                manager.charging({ NotReady() }) {
+                    manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
+                    assertEquals(
+                        TapToPaySessionState.Charging(TapToPayChargeActivity.WAITING_FOR_CARD),
+                        manager.state.value,
+                    )
+                }
+
+                assertEquals(listOf("ready->charging", "charging->ready"), reported)
+            } finally {
+                TelemetryRecorders.clear()
+            }
+        }
+
     /**
      * Walks a fresh machine to [target] through legal moves only.
      *
