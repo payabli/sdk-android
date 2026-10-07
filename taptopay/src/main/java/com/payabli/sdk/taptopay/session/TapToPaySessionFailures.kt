@@ -8,6 +8,7 @@ import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
+import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.CONFIGURATION_REJECTED
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason.DEVICE_INELIGIBLE
@@ -27,17 +28,66 @@ import com.payabli.sdk.taptopay.session.TapToPayFailureReason.SERVICE_UNAVAILABL
  *
  * **Discarding the device's identity requires a positive match.** Only a refusal that names the attestation
  * lands on [DEVICE_SETUP_REQUIRED]. Everything unrecognised lands where being wrong costs nothing.
+ *
+ * **Pending activation needs a stored registration.** Its remedy is a code for this device, so it is landed
+ * only when a registration holds the id that code is requested under.
  */
 internal object TapToPaySessionFailures {
     /**
-     * The state to publish for [failure], or null to leave the session where it is.
+     * The state to publish for [failure], or null to leave the session where it is. [registration] decides
+     * only a failure that says the device owes activation.
      *
      * A wrong activation code fails the call and changes nothing about the session: the device still owes a
      * code, which is what the state already says, and moving it takes away the state a host collects under.
      */
-    fun landingFor(failure: Throwable): TapToPaySessionState? =
+    fun landingFor(
+        failure: Throwable,
+        registration: StoredRegistration,
+    ): TapToPaySessionState? = if (owesActivation(failure)) pendingOn(registration) else landingFor(failure)
+
+    /**
+     * The failure a caller is given for [failure], so its code agrees with the state [landingFor] published.
+     * A registration that cannot be read raises its storage refusal. Otherwise the original is the cause,
+     * which keeps any text the service sent.
+     */
+    fun raisedFor(
+        failure: Exception,
+        registration: StoredRegistration,
+    ): Exception =
+        when {
+            !owesActivation(failure) -> failure
+            registration is StoredRegistration.Held ->
+                failure as? TapToPaySessionException.PendingActivation
+                    ?: TapToPaySessionException.PendingActivation(failure)
+            registration is StoredRegistration.Unreadable -> registration.refusal
+            // Already the code the configuration landing is reported under.
+            failure is PayabliException -> failure
+            else -> TapToPaySessionException.NotPermitted(failure)
+        }
+
+    /**
+     * The failures that say the device owes activation, and the only ones a registration decides. A device
+     * that owes it and an application this paypoint does not permit arrive as one refusal, so both are here,
+     * and the registration tells them apart.
+     */
+    fun owesActivation(failure: Throwable): Boolean =
+        failure is TapToPaySessionException.PendingActivation ||
+            failure is DeviceServiceException.Forbidden ||
+            (failure is PayabliException && failure.type == PayabliErrorType.PERMISSION_DENIED)
+
+    /** A registration that cannot be read lands where its storage refusal does. */
+    private fun pendingOn(registration: StoredRegistration): TapToPaySessionState =
+        when (registration) {
+            is StoredRegistration.Held -> TapToPaySessionState.PendingActivation(registration.activationId)
+            StoredRegistration.None -> failed(CONFIGURATION_REJECTED)
+            is StoredRegistration.Unreadable -> landingForStorage(registration.refusal)
+        }
+
+    private fun landingFor(failure: Throwable): TapToPaySessionState? =
         when (failure) {
-            is TapToPaySessionException.PendingActivation -> TapToPaySessionState.PendingActivation
+            // Decided by the registration, before this is reached.
+            is TapToPaySessionException.PendingActivation -> null
+            is TapToPaySessionException.NotPermitted -> failed(CONFIGURATION_REJECTED)
             is TapToPaySessionException.AttestationRequired -> failed(DEVICE_SETUP_REQUIRED)
             is TapToPaySessionException.NotRecoverable -> null
             is TapToPaySessionException.SetupAbandoned -> TapToPaySessionState.Idle
@@ -54,16 +104,16 @@ internal object TapToPaySessionFailures {
         }
 
     /**
-     * A device that owes activation and an application this paypoint does not permit arrive as one case, so
-     * both land on pending activation: the reader is unavailable either way, and the host's next move is the
-     * same. An unusable entry point is not among them; its next move is the opposite.
+     * An unusable entry point is refused under the same status as a device that owes activation, and its next
+     * move is the opposite, so it is classified apart from that refusal.
      *
      * Nothing found discards nothing. More than one thing can be the one that was not found, and only one of
      * them means the stored identity is stale, so the safe landing is the one that keeps it.
      */
     private fun landingForService(failure: DeviceServiceException): TapToPaySessionState? =
         when (failure) {
-            is DeviceServiceException.Forbidden -> TapToPaySessionState.PendingActivation
+            // Decided by the registration, before this is reached.
+            is DeviceServiceException.Forbidden -> null
             is DeviceServiceException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
             is DeviceServiceException.NotAttested -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceServiceException.NotFound -> failed(CONFIGURATION_REJECTED)
@@ -85,6 +135,7 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException.AttestationRevoked -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.DeviceUnknown -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.NotEnrolled -> failed(DEVICE_SETUP_REQUIRED)
+            is DeviceActivationException.RegistrationReplaced -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.EntryNotAuthorized -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.PaypointUnknown -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
@@ -161,7 +212,6 @@ internal object TapToPaySessionFailures {
 
     private fun landingForTransport(failure: PayabliException): TapToPaySessionState =
         when (failure.type) {
-            PayabliErrorType.PERMISSION_DENIED -> TapToPaySessionState.PendingActivation
             PayabliErrorType.INVALID_CONFIGURATION -> failed(CONFIGURATION_REJECTED)
             PayabliErrorType.DECODING_ERROR -> failed(SDK_INTERNAL_ERROR)
             else -> failed(SERVICE_UNAVAILABLE)

@@ -6,7 +6,7 @@ package com.payabli.sdk.taptopay.session
  * The same nine states the sibling SDK publishes, so an integrator moving between the platforms meets one
  * model. [Failed] carries a payload, which is why this is a sealed interface.
  *
- * **A failure names its reason.** Without one a consumer cannot tell an identity that was discarded from a
+ * **A failure names its reason.** Without one a consumer cannot tell a setup that was discarded from a
  * paypoint that was misconfigured, and has to assume the most expensive repair.
  *
  * [Failed], not `Error`: `kotlin.Error` is default-imported and is a `Throwable`, so a member of that name
@@ -17,7 +17,7 @@ public sealed interface TapToPaySessionState {
     data object Idle : TapToPaySessionState
 
     /**
-     * Where the device's identity is established with the service.
+     * Where the device is set up with the service.
      *
      * A repair never enters it. A warm start does, and leaves without a round trip: enrollment reads the
      * stored record and decides for itself whether the cold sequence is needed, so the state covers asking
@@ -47,8 +47,16 @@ public sealed interface TapToPaySessionState {
      *
      * The device owes a code the merchant issues out of band. Nothing the SDK can do advances this; a host
      * collects the code and confirms it.
+     *
+     * [activationId] is what the merchant's backend sends as `deviceId` to request that code. It is not the
+     * device's identity, which is `PayabliSession.deviceId`.
      */
-    data object PendingActivation : TapToPaySessionState
+    data class PendingActivation(
+        val activationId: String,
+    ) : TapToPaySessionState {
+        /** Without the id, which a host reads from [activationId] rather than from a log line. */
+        override fun toString(): String = "PendingActivation"
+    }
 
     /** The session cannot be used, and [reason] says what a host can do about it. */
     data class Failed(
@@ -73,6 +81,6 @@ internal val TapToPaySessionState.diagnosticName: String
             TapToPaySessionState.Ready -> "ready"
             TapToPaySessionState.SessionExpired -> "session_expired"
             TapToPaySessionState.Reinitializing -> "reinitializing"
-            TapToPaySessionState.PendingActivation -> "pending_activation"
+            is TapToPaySessionState.PendingActivation -> "pending_activation"
             is TapToPaySessionState.Failed -> "failed"
         }

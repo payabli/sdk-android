@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.session
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.ChargeKeyStore
+import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.ENTRY
 import com.payabli.sdk.taptopay.enrollment.EnrollmentFixture
 import com.payabli.sdk.taptopay.enrollment.FakeDeviceKey
@@ -37,7 +38,7 @@ internal val EVERY_SESSION_STATE: List<TapToPaySessionState> =
         TapToPaySessionState.Ready,
         TapToPaySessionState.SessionExpired,
         TapToPaySessionState.Reinitializing,
-        TapToPaySessionState.PendingActivation,
+        TapToPaySessionState.PendingActivation(DEVICE_ID),
         TapToPaySessionState.Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR),
     )
 

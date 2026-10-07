@@ -20,6 +20,16 @@ internal sealed class TapToPaySessionException(
     ) : TapToPaySessionException("the device is registered but has not been activated", cause)
 
     /**
+     * The service refused this device as not yet active, and no registration is stored for it.
+     *
+     * With nothing registered there is no device for a code to activate, so the remedy is the paypoint's
+     * permissions.
+     */
+    class NotPermitted(
+        cause: Throwable,
+    ) : TapToPaySessionException("the service refused this device and no registration is stored for it", cause)
+
+    /**
      * The device's proof of identity is gone, so nothing short of attesting again will do.
      *
      * Raised where the stored record is absent, and where the service refuses the one it was given. Both

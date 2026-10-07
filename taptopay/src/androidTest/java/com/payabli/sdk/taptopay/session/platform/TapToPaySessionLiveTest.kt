@@ -100,12 +100,17 @@ class TapToPaySessionLiveTest {
 
                 val owed = runCatching { coordinator.initialize() }.exceptionOrNull()
                 if (owed is TapToPaySessionException.PendingActivation) {
-                    // Playing the merchant's part. The SDK cannot mint its own code.
+                    // Playing the merchant's part with the id the state hands over. The SDK cannot mint its
+                    // own code.
+                    val pending =
+                        coordinator.state.value as? TapToPaySessionState.PendingActivation
+                            ?: error("the session asked for activation and published ${coordinator.state.value}")
                     val record =
                         AttestedDeviceStore(DeviceTrust.open(context).store).read(LiveRunSettings.entry)
                             ?: error("the session asked for activation and recorded nothing to activate")
+                    assertEquals(record.deviceId, pending.activationId)
                     Log.i(LiveTapToPay.LIVE_TAG, "device owes a code; minting one out of band")
-                    coordinator.activateDevice(LiveTapToPay.mintActivationCode(record.deviceId))
+                    coordinator.activateDevice(LiveTapToPay.mintActivationCode(pending.activationId))
                     coordinator.initialize()
                 } else if (owed != null) {
                     throw owed

@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay.session
 
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
+import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.RouteScript
 import com.payabli.sdk.taptopay.enrollment.configBody
 import com.payabli.sdk.taptopay.enrollment.decline
@@ -32,7 +33,7 @@ class SessionWarmStartTest {
             val failure = failureOf { fixture.coordinator.initialize() }
 
             assertTrue("$failure", failure is TapToPaySessionException.PendingActivation)
-            assertEquals(TapToPaySessionState.PendingActivation, fixture.state)
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
             assertEquals(listOf(RouteScript.CONFIG), fixture.routes)
             assertEquals("the platform was never asked for a verdict", 0, fixture.enrollment.attestor.challenges.size)
             assertEquals("the reader was never reached", 0, fixture.reader.configureCount)
@@ -107,7 +108,7 @@ class SessionWarmStartTest {
             val failure = failureOf { fixture.coordinator.reinitializeIfNeeded() }
 
             assertTrue("$failure", failure is TapToPaySessionException.PendingActivation)
-            assertEquals(TapToPaySessionState.PendingActivation, fixture.state)
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
             assertEquals(listOf(RouteScript.CONFIG), fixture.routes)
         }
 
@@ -170,18 +171,18 @@ class SessionWarmStartTest {
                 )
             fixture.seedRecord()
             failureOf { fixture.coordinator.initialize() }
-            assertEquals(TapToPaySessionState.PendingActivation, fixture.state)
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
 
             val failure = failureOf { fixture.coordinator.reinitializeIfNeeded() }
 
             assertTrue("$failure", failure is TapToPaySessionException.NotRecoverable)
             assertEquals(
-                TapToPaySessionState.PendingActivation,
+                TapToPaySessionState.PendingActivation(DEVICE_ID),
                 (failure as TapToPaySessionException.NotRecoverable).state,
             )
             assertEquals(
                 "a refused repair leaves the session alone",
-                TapToPaySessionState.PendingActivation,
+                TapToPaySessionState.PendingActivation(DEVICE_ID),
                 fixture.state,
             )
         }

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.security.MessageDigest
@@ -555,82 +556,67 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `a device that never enrolled reads no device id`() =
+    fun `a device that never enrolled holds no registration`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
 
-            assertEquals(null, fixture.enrollment.deviceId())
+            assertEquals(StoredRegistration.None, fixture.enrollment.registration())
             assertTrue(fixture.transport.requests.isEmpty())
         }
 
     @Test
-    fun `a device still owing activation reads the id registration assigned`() =
+    fun `a device still owing activation holds the id registration assigned`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(coldScript())
             assertTrue((fixture.enrollment.enroll() as EnrollmentOutcome.Attested).activationRequired)
 
-            assertEquals(DEVICE_ID, fixture.enrollment.deviceId())
+            assertEquals(StoredRegistration.Held(DEVICE_ID), fixture.enrollment.registration())
         }
 
     @Test
-    fun `another paypoint's device id is not read as this one's`() =
+    fun `another paypoint's registration is not read as this one's`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
             fixture.seedRecord(entry = OTHER_ENTRY, deviceId = "other-device-id")
 
-            assertEquals(null, fixture.enrollment.deviceId())
-            assertEquals("other-device-id", fixture.enrollmentFor(OTHER_ENTRY).deviceId())
+            assertEquals(StoredRegistration.None, fixture.enrollment.registration())
+            assertEquals(
+                StoredRegistration.Held("other-device-id"),
+                fixture.enrollmentFor(OTHER_ENTRY).registration(),
+            )
         }
 
     @Test
-    fun `a store that cannot be read reads as no device id, without throwing`() =
+    fun `a store that refuses the read is unreadable, never none`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            for (refusal in listOf(
+                SecureStorageException.CryptoUnavailable(),
+                SecureStorageException.StorageUnavailable(),
+            )) {
+                val fixture = EnrollmentFixture(RouteScript(), storeFailure = FakeSecureStore.failing("get", refusal))
+                fixture.seedRecord()
+
+                val read = fixture.enrollment.registration()
+                assertSame(refusal.javaClass.simpleName, refusal, (read as? StoredRegistration.Unreadable)?.refusal)
+
+                val written = fixture.logger.everythingWritten()
+                assertTrue(written, fixture.logger.records.any { it.message.contains("could not be read") })
+                assertFalse("the id was logged", written.contains(DEVICE_ID))
+                assertFalse("the entry point was logged", written.contains(ENTRY))
+            }
+        }
+
+    @Test
+    fun `a record that will not decode is discarded and holds no registration`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture =
                 EnrollmentFixture(
                     RouteScript(),
-                    storeFailure = FakeSecureStore.failing("get", SecureStorageException.CryptoUnavailable()),
+                    storeFailure = FakeSecureStore.failing("get", SecureStorageException.ValueUnreadable()),
                 )
             fixture.seedRecord()
 
-            assertEquals(null, fixture.enrollment.deviceId())
-        }
-
-    @Test
-    fun `a record naming a key this device no longer holds reads no device id`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            // The next enrollment discards this record and registers again, so its handle is not this
-            // device's to report.
-            val fixture = EnrollmentFixture(RouteScript())
-            fixture.seedRecord(keyId = "a-thumbprint-from-a-key-that-is-gone")
-
-            assertEquals(null, fixture.enrollment.deviceId())
-        }
-
-    @Test
-    fun `a device key that is gone reads no device id`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            val fixture =
-                EnrollmentFixture(
-                    RouteScript(),
-                    deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.KeyLost()),
-                )
-            fixture.seedRecord()
-
-            assertEquals(null, fixture.enrollment.deviceId())
-        }
-
-    @Test
-    fun `a key store that cannot confirm the key reads the stored id, without throwing`() =
-        runTest(timeout = TEST_TIMEOUT) {
-            val fixture =
-                EnrollmentFixture(
-                    RouteScript(),
-                    deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.CryptoUnavailable()),
-                )
-            fixture.seedRecord()
-
-            // The binding is kept and not known to be stale, so its id is still this device's.
-            assertEquals(DEVICE_ID, fixture.enrollment.deviceId())
+            assertEquals(StoredRegistration.None, fixture.enrollment.registration())
         }
 
     @Test
@@ -651,54 +637,83 @@ class DeviceEnrollmentTest {
 
             val enrolling = async { fixture.enrollment.enroll() }
             runCurrent()
-            val reading = async { fixture.enrollment.deviceId() }
+            val reading = async { fixture.enrollment.registration() }
             runCurrent()
             enrollmentRead.complete(Unit)
 
             enrolling.await()
-            assertEquals("new-device-id", reading.await())
+            assertEquals(StoredRegistration.Held("new-device-id"), reading.await())
         }
 
     @Test
-    fun `each unusable binding logs its kind, and neither the id nor the entry point`() =
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun `a second enrollment for the same paypoint waits for the first`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val cases =
-                listOf(
-                    "could not be read" to
-                        EnrollmentFixture(
-                            RouteScript(),
-                            storeFailure = FakeSecureStore.failing("get", SecureStorageException.StorageUnavailable()),
-                        ),
-                    "key is gone" to
-                        EnrollmentFixture(
-                            RouteScript(),
-                            deviceKey = FakeDeviceKey(publicKeyFailure = DeviceKeyException.KeyLost()),
-                        ),
-                    "no longer holds" to
-                        EnrollmentFixture(RouteScript(), deviceKey = FakeDeviceKey("a-replacement-key")),
-                )
-            for ((kind, fixture) in cases) {
-                fixture.seedRecord()
+            val gate = CompletableDeferred<Unit>()
+            // Held at attestation, which is inside the enrollment and outside any store read.
+            val first = EnrollmentFixture(coldScript(), attestor = FakeAppAttestor(gate = { gate.await() }))
+            val second = EnrollmentFixture(RouteScript())
 
-                assertEquals(kind, null, fixture.enrollment.deviceId())
+            val enrolling = async { first.enrollment.enroll() }
+            runCurrent()
+            val reading = async { second.enrollment.registration() }
+            runCurrent()
+            assertTrue("the read waits for the enrollment holding the paypoint", reading.isActive)
 
-                val written = fixture.logger.everythingWritten()
-                assertTrue(
-                    "\"$kind\" was not logged: $written",
-                    fixture.logger.records.any { it.message.contains(kind) },
-                )
-                assertFalse("\"$kind\" logged the id", written.contains(DEVICE_ID))
-                assertFalse("\"$kind\" logged the entry point", written.contains(ENTRY))
-            }
+            gate.complete(Unit)
+            enrolling.await()
+            reading.await()
+            assertEquals("a paypoint nobody holds is not kept", 0, EnrollmentTurns.trackedCount())
         }
 
     @Test
-    fun `reading the device id writes no log line`() =
+    fun `a registration replaced before the assertion is refused unsigned and unsent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
+            fixture.seedRecord(deviceId = REPLACING_ID)
+
+            val failure = runCatching { fixture.enrollment.activateDevice("123456", DEVICE_ID) }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceActivationException.RegistrationReplaced)
+            assertTrue("nothing was signed", fixture.deviceKey.signedPayloads.isEmpty())
+            assertTrue(fixture.transport.requests.toString(), fixture.transport.requests.isEmpty())
+        }
+
+    @Test
+    fun `an activation whose registration is replaced while the assertion is signed is refused, and sends nothing`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            lateinit var fixture: EnrollmentFixture
+            fixture =
+                EnrollmentFixture(
+                    RouteScript(RouteScript.ACTIVATE to listOf(activateBody())),
+                    deviceKey = FakeDeviceKey(onSign = { fixture.seedRecord(deviceId = REPLACING_ID) }),
+                )
+            fixture.seedRecord()
+
+            val failure = runCatching { fixture.enrollment.activateDevice("123456", DEVICE_ID) }.exceptionOrNull()
+
+            assertTrue("$failure", failure is DeviceActivationException.RegistrationReplaced)
+            assertTrue(fixture.transport.requests.toString(), fixture.transport.requests.isEmpty())
+        }
+
+    @Test
+    fun `an activation whose registration is unchanged is sent`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
+            fixture.seedRecord()
+
+            fixture.enrollment.activateDevice("123456", DEVICE_ID)
+
+            assertEquals(listOf(RouteScript.ACTIVATE), fixture.routes)
+        }
+
+    @Test
+    fun `reading a held registration writes no log line`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript())
             fixture.seedRecord()
 
-            fixture.enrollment.deviceId()
+            fixture.enrollment.registration()
 
             assertTrue(fixture.logger.records.toString(), fixture.logger.records.isEmpty())
         }
@@ -798,3 +813,5 @@ class DeviceEnrollmentTest {
             assertEquals(listOf(RouteScript.CHALLENGE), fixture.routes)
         }
 }
+
+private const val REPLACING_ID = "replacing-device-id"

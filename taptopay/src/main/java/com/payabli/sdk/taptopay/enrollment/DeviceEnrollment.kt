@@ -26,8 +26,6 @@ import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Base64
 
@@ -106,9 +104,10 @@ internal class DeviceEnrollment(
      * Serialises the two entry points against each other.
      *
      * Without it a concurrent [enroll] can re-register underneath a [activateDevice] and the code is then
-     * spent against a handle the service has just replaced.
+     * spent against a handle the service has just replaced. Taken per paypoint across every terminal in the
+     * process, through [EnrollmentTurns].
      */
-    private val lock = Mutex()
+    private suspend fun <T> inTurn(work: suspend () -> T): T = EnrollmentTurns.taking(entry, work)
 
     /**
      * Brings the device to attested.
@@ -118,7 +117,7 @@ internal class DeviceEnrollment(
      * [EnrollmentOutcome].
      */
     suspend fun enroll(): EnrollmentOutcome =
-        lock.withLock {
+        inTurn {
             val identity = withContext(dispatcher) { currentKey() }
 
             // Scoped to this entry point, so another one's binding is neither read nor disturbed here.
@@ -128,7 +127,7 @@ internal class DeviceEnrollment(
                 logger.debug(LogField.safe("event", "device_already_enrolled")) {
                     "device identity is current, skipping the cold sequence"
                 }
-                return@withLock EnrollmentOutcome.AlreadyAttested
+                return@inTurn EnrollmentOutcome.AlreadyAttested
             }
 
             if (known != null) {
@@ -239,14 +238,23 @@ internal class DeviceEnrollment(
      *
      * The code's shape is checked here, because a code that is sent counts against the attempt limit and a
      * typo should not spend one.
+     *
+     * When [activationId] is given, the stored registration has to still be that one, before the assertion and
+     * again after it, or nothing is sent and [DeviceActivationException.RegistrationReplaced] is raised.
      */
-    suspend fun activateDevice(activationCode: String) {
-        lock.withLock {
+    suspend fun activateDevice(
+        activationCode: String,
+        activationId: String? = null,
+    ) {
+        inTurn {
             if (!SIX_DIGITS.matches(activationCode)) throw DeviceActivationException.CodeMalformed()
 
             // Scoped to this entry point. A binding held for another one names a device this entry point
             // does not have, so for this one the device is simply not enrolled.
             val known = store.read(entry) ?: throw DeviceActivationException.NotEnrolled()
+            if (activationId != null && known.deviceId != activationId) {
+                throw DeviceActivationException.RegistrationReplaced()
+            }
 
             val assertion =
                 try {
@@ -257,6 +265,12 @@ internal class DeviceEnrollment(
                     forget("key_lost")
                     throw lost
                 }
+
+            // Read again: the store answers every terminal for this paypoint, and the signature runs off this
+            // thread.
+            if (activationId != null && store.read(entry)?.deviceId != activationId) {
+                throw DeviceActivationException.RegistrationReplaced()
+            }
 
             try {
                 client.activate(
@@ -297,8 +311,8 @@ internal class DeviceEnrollment(
      * handle it names.
      */
     suspend fun assertion(): DeviceAssertion? =
-        lock.withLock {
-            val known = store.read(entry) ?: return@withLock null
+        inTurn {
+            val known = store.read(entry) ?: return@inTurn null
             try {
                 withContext(dispatcher) { signer.sign(known.deviceId) }
             } catch (lost: DeviceKeyException.KeyLost) {
@@ -310,52 +324,25 @@ internal class DeviceEnrollment(
         }
 
     /**
-     * The handle this paypoint's device was registered under, or null when this device holds no usable one.
+     * What this device holds for this paypoint's registration.
      *
-     * Never raises. A record [enroll] would discard, a store that cannot be read, and a key that is gone all
-     * read as null, because the caller's one remedy for each is [enroll]. A key store that cannot confirm the
-     * key keeps the binding, as [enroll] does, so its handle is still answered. Each unusable case logs its
-     * kind and nothing it names. Takes the same lock as the rest, so it cannot read a handle a re-registration
-     * is replacing.
+     * A store that refuses the read is [StoredRegistration.Unreadable], logged by kind and never as the id or
+     * the entry point. Takes the same lock as the rest, so it cannot read a handle a re-registration is
+     * replacing.
      */
-    suspend fun deviceId(): String? =
-        lock.withLock {
-            // The store first, so an install holding nothing never reaches the key store.
-            val known =
-                try {
-                    store.read(entry)
-                } catch (unreadable: SecureStorageException) {
-                    reportUnusable(unreadable) { "the stored device binding could not be read" }
-                    null
-                } ?: return@withLock null
-            val identity =
-                try {
-                    withContext(dispatcher) { deviceKey.publicKey() }
-                } catch (lost: DeviceKeyException.KeyLost) {
-                    reportUnusable(lost) { "the device key is gone" }
-                    return@withLock null
-                } catch (unconfirmed: DeviceKeyException) {
-                    return@withLock known.deviceId
-                }
-            if (known.keyId != identity.identity) {
-                reportUnusable(null) { "the stored binding names a key this device no longer holds" }
-                return@withLock null
+    suspend fun registration(): StoredRegistration =
+        inTurn {
+            try {
+                store.read(entry)?.let { StoredRegistration.Held(it.deviceId) } ?: StoredRegistration.None
+            } catch (refused: SecureStorageException) {
+                logger.log(
+                    LogLevel.WARN,
+                    listOf(LogField.safe("event", "device_registration_unreadable")),
+                    RedactedCause(refused),
+                ) { "the stored device registration could not be read" }
+                StoredRegistration.Unreadable(refused)
             }
-            known.deviceId
         }
-
-    /** The kind alone: the cause is redacted, and neither the handle nor the entry point is a field. */
-    private fun reportUnusable(
-        cause: Throwable?,
-        message: () -> String,
-    ) {
-        logger.log(
-            LogLevel.WARN,
-            listOf(LogField.safe("event", "device_id_unusable")),
-            cause?.let(::RedactedCause),
-            message,
-        )
-    }
 
     /**
      * Forgets this entry point's device without touching its key, so the next [enroll] runs the cold
@@ -366,7 +353,7 @@ internal class DeviceEnrollment(
      * through a registration it does not need.
      */
     suspend fun reset() {
-        lock.withLock { forget("reset") }
+        inTurn { forget("reset") }
     }
 
     /**

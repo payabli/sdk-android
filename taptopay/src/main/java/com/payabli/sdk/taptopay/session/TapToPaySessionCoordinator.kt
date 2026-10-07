@@ -9,8 +9,10 @@ import com.payabli.sdk.taptopay.attestation.device.DeviceServiceClient
 import com.payabli.sdk.taptopay.attestation.device.DeviceServiceException
 import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import com.payabli.sdk.taptopay.attestation.device.ReaderCredentials
+import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import com.payabli.sdk.taptopay.enrollment.DeviceEnrollment
 import com.payabli.sdk.taptopay.enrollment.EnrollmentOutcome
+import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.CancellationException
@@ -58,6 +60,9 @@ internal class TapToPaySessionCoordinator(
 
     /** Guards [inFlight] alone. Nothing suspends while it is held. */
     private val claims = Mutex()
+
+    /** The failure this run last settled into. Read and written only with [region] held. */
+    private var settledFailure: Exception? = null
 
     /** One claim per kind, so a caller joins work of its own kind whatever else is queued. */
     private val inFlight = mutableMapOf<SessionWorkKind, Claim>()
@@ -109,12 +114,6 @@ internal class TapToPaySessionCoordinator(
     suspend fun activateDevice(activationCode: String) =
         runExclusively(SessionWorkKind.ACTIVATE) { runActivateDevice(activationCode) }
 
-    /**
-     * The device's registered handle for this paypoint, or null when none is held. Outside the region, so it
-     * does not wait on the reader; it does wait on an enrollment or activation in progress, by design.
-     */
-    suspend fun deviceId(): String? = enrollment.deviceId()
-
     /** Decides whether to join or to run, under [claims], and does neither while holding it. */
     private suspend fun runExclusively(
         kind: SessionWorkKind,
@@ -150,7 +149,14 @@ internal class TapToPaySessionCoordinator(
         try {
             region.withLock {
                 entered = true
-                work()
+                settledFailure = null
+                try {
+                    work()
+                } catch (withdrawn: CancellationException) {
+                    throw withdrawn
+                } catch (failure: Exception) {
+                    throw settled(failure)
+                }
             }
         } catch (withdrawn: CancellationException) {
             // **Only where this caller held the region.** A withdrawal reaching here without having entered
@@ -162,7 +168,6 @@ internal class TapToPaySessionCoordinator(
             release(claim, TapToPaySessionException.SetupAbandoned())
             throw withdrawn
         } catch (failure: Exception) {
-            TapToPaySessionFailures.landingFor(failure)?.let(manager::settle)
             release(claim, failure)
             throw failure
         } catch (fatal: Throwable) {
@@ -174,6 +179,28 @@ internal class TapToPaySessionCoordinator(
             throw fatal
         }
         release(claim, null)
+    }
+
+    /**
+     * Publishes where [failure] leaves the session and returns the failure its caller is given.
+     *
+     * Called with [region] held, so another run on this terminal cannot change the stored registration or
+     * the state between this failure and its landing. A phase settles before the run enclosing it does, and the
+     * failure it raised comes back here unchanged, so the run keeps that first answer rather than reading
+     * the store again. The registration is read only where it decides the landing. Uncancellable, so a
+     * withdrawal cannot leave the failure unlanded.
+     */
+    private suspend fun settled(failure: Exception): Exception {
+        if (failure === settledFailure) return failure
+        val raised =
+            withContext(NonCancellable) {
+                val owesActivation = TapToPaySessionFailures.owesActivation(failure)
+                val registration = if (owesActivation) enrollment.registration() else StoredRegistration.None
+                TapToPaySessionFailures.landingFor(failure, registration)?.let(manager::settle)
+                TapToPaySessionFailures.raisedFor(failure, registration)
+            }
+        settledFailure = raised
+        return raised
     }
 
     /**
@@ -220,9 +247,14 @@ internal class TapToPaySessionCoordinator(
             // Withdrawing is not an initialize result. `Throwable` covers CancellationException, so a
             // caller that cancelled was recorded as one whose setup failed.
             throw withdrawn
-        } catch (failure: Throwable) {
-            TapToPayReports.initializeFailed(failure, startedAt)
-            throw failure
+        } catch (failure: Exception) {
+            // Reported as the host is given it.
+            val raised = settled(failure)
+            TapToPayReports.initializeFailed(raised, startedAt)
+            throw raised
+        } catch (fatal: Throwable) {
+            TapToPayReports.initializeFailed(fatal, startedAt)
+            throw fatal
         }
         TapToPayReports.initializeSucceeded(startedAt)
     }
@@ -238,6 +270,10 @@ internal class TapToPaySessionCoordinator(
                 // A caller cancellation is not an attestation result, and this event is on the force-send
                 // list, so recording one flushed the batch over a withdrawal.
                 throw withdrawn
+            } catch (failure: Exception) {
+                val raised = settled(failure)
+                TapToPayReports.attestationFailed(raised, startedAt)
+                throw raised
             } catch (failure: Throwable) {
                 TapToPayReports.attestationFailed(failure, startedAt)
                 throw failure
@@ -306,7 +342,12 @@ internal class TapToPaySessionCoordinator(
      * refused leaves the state alone, because the device still owes one.
      */
     private suspend fun runActivateDevice(activationCode: String) {
-        enrollment.activateDevice(activationCode)
+        // Read at this run's turn. Only a session waiting for a code is activated, against the id it waits under;
+        // any other state is refused with nothing sent and the session left where it is.
+        val pending =
+            state.value as? TapToPaySessionState.PendingActivation
+                ?: throw DeviceActivationException.DeviceNotPending(null, "")
+        enrollment.activateDevice(activationCode, pending.activationId)
         manager.settle(TapToPaySessionState.Idle)
     }
 }

@@ -4,6 +4,7 @@ import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.taptopay.enrollment.DEVICE_ID
 import com.payabli.sdk.taptopay.enrollment.FakeDeviceKey
 import com.payabli.sdk.taptopay.enrollment.RouteScript
+import com.payabli.sdk.taptopay.enrollment.StoredRegistration
 import com.payabli.sdk.taptopay.enrollment.attestBody
 import com.payabli.sdk.taptopay.enrollment.challengeBody
 import com.payabli.sdk.taptopay.enrollment.registerBody
@@ -33,8 +34,7 @@ class SessionDeviceKeyTest {
             val failure = failureOf { fixture.coordinator.initialize() }
 
             assertTrue("$failure", failure is TapToPaySessionException.PendingActivation)
-            assertEquals(TapToPaySessionState.PendingActivation, fixture.state)
-            assertEquals(DEVICE_ID, fixture.coordinator.deviceId())
+            assertEquals(TapToPaySessionState.PendingActivation(DEVICE_ID), fixture.state)
         }
 
     @Test
@@ -53,6 +53,6 @@ class SessionDeviceKeyTest {
             )
             assertEquals(0, key.provisions)
             assertTrue(fixture.routes.toString(), fixture.routes.isEmpty())
-            assertEquals(DEVICE_ID, fixture.coordinator.deviceId())
+            assertEquals(StoredRegistration.Held(DEVICE_ID), fixture.enrollment.enrollment.registration())
         }
 }

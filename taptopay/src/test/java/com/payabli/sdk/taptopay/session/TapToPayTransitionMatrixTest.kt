@@ -5,7 +5,6 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState.Failed
 import com.payabli.sdk.taptopay.session.TapToPaySessionState.FetchingConfig
 import com.payabli.sdk.taptopay.session.TapToPaySessionState.Idle
 import com.payabli.sdk.taptopay.session.TapToPaySessionState.InitializingReader
-import com.payabli.sdk.taptopay.session.TapToPaySessionState.PendingActivation
 import com.payabli.sdk.taptopay.session.TapToPaySessionState.Ready
 import com.payabli.sdk.taptopay.session.TapToPaySessionState.Reinitializing
 import com.payabli.sdk.taptopay.session.TapToPaySessionState.SessionExpired
@@ -24,17 +23,19 @@ import org.junit.Test
 private fun legalTargetsFrom(from: TapToPaySessionState): Set<TapToPaySessionState> =
     when (from) {
         Idle -> setOf(Idle, AttestingDevice, FetchingConfig, FAILED_INTERNAL)
-        AttestingDevice -> setOf(Idle, AttestingDevice, FetchingConfig, PendingActivation, FAILED_INTERNAL)
-        FetchingConfig -> setOf(Idle, FetchingConfig, InitializingReader, PendingActivation, FAILED_INTERNAL)
+        AttestingDevice -> setOf(Idle, AttestingDevice, FetchingConfig, PENDING, FAILED_INTERNAL)
+        FetchingConfig -> setOf(Idle, FetchingConfig, InitializingReader, PENDING, FAILED_INTERNAL)
         InitializingReader -> setOf(Idle, InitializingReader, Ready, FAILED_INTERNAL)
         Ready -> setOf(Idle, Ready, SessionExpired, FAILED_INTERNAL)
         SessionExpired -> setOf(Idle, SessionExpired, Reinitializing, FAILED_INTERNAL)
         Reinitializing -> setOf(Idle, Reinitializing, FetchingConfig, FAILED_INTERNAL)
-        PendingActivation -> setOf(Idle, PendingActivation, AttestingDevice, FAILED_INTERNAL)
+        is TapToPaySessionState.PendingActivation -> setOf(Idle, PENDING, AttestingDevice, FAILED_INTERNAL)
         is Failed -> setOf(Idle, AttestingDevice, FetchingConfig, FAILED_INTERNAL)
     }
 
 private val FAILED_INTERNAL = Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR)
+
+private val PENDING = EVERY_SESSION_STATE.single { it is TapToPaySessionState.PendingActivation }
 
 class TapToPayTransitionMatrixTest {
     @Test

@@ -221,6 +221,17 @@ internal sealed class DeviceActivationException(
     class NotEnrolled : DeviceActivationException("this device is not enrolled; enroll before activating", null, "")
 
     /**
+     * The stored registration is no longer the one the code was requested under. Nothing was sent, since the
+     * service would refuse the code for the registration that replaced it.
+     */
+    class RegistrationReplaced :
+        DeviceActivationException(
+            "the registration the activation code was requested under was replaced; initialize again",
+            null,
+            "",
+        )
+
+    /**
      * The refusal carried something this mapper does not recognize.
      *
      * The destination for anything unmatched, and it discards nothing. Classification is built on wording, so

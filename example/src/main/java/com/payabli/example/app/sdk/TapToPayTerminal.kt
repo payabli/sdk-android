@@ -67,7 +67,7 @@ class TapToPayTerminal(
     override suspend fun initialize(): Result<Unit> =
         attempt { terminal().initialize() }
             .recoverCatching { failure ->
-                if (terminal?.sessionState?.value != TapToPaySessionState.PendingActivation) throw failure
+                if (terminal?.sessionState?.value !is TapToPaySessionState.PendingActivation) throw failure
             }
 
     override suspend fun charge(amount: BigDecimal): Result<ChargeReceipt> =
@@ -117,7 +117,8 @@ class TapToPayTerminal(
         return activated
     }
 
-    override suspend fun deviceId(): Result<String?> = attempt { terminal().deviceId() }
+    override fun activationId(): String? =
+        (terminal?.sessionState?.value as? TapToPaySessionState.PendingActivation)?.activationId
 
     /** The SDK, built once. The state collector starts with it, so the screen sees each phase. */
     private suspend fun terminal(): PayabliTTP =
@@ -166,7 +167,7 @@ class TapToPayTerminal(
             TapToPaySessionState.Ready -> TerminalSessionState.Ready
             TapToPaySessionState.SessionExpired -> TerminalSessionState.SessionExpired
             TapToPaySessionState.Reinitializing -> TerminalSessionState.Reinitializing
-            TapToPaySessionState.PendingActivation -> TerminalSessionState.PendingActivation
+            is TapToPaySessionState.PendingActivation -> TerminalSessionState.PendingActivation
             is TapToPaySessionState.Failed -> TerminalSessionState.Error
         }
 
@@ -179,7 +180,7 @@ class TapToPayTerminal(
             TapToPaySessionState.Ready -> TerminalEventCode.ReaderReady
             TapToPaySessionState.SessionExpired -> TerminalEventCode.SessionExpired
             TapToPaySessionState.Reinitializing -> TerminalEventCode.ReinitializeStarted
-            TapToPaySessionState.PendingActivation -> TerminalEventCode.DevicePendingActivation
+            is TapToPaySessionState.PendingActivation -> TerminalEventCode.DevicePendingActivation
             TapToPaySessionState.Idle, is TapToPaySessionState.Failed -> null
         }
 

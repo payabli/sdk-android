@@ -40,8 +40,10 @@ class TapToPayErrorCodesTest {
             AttestationException.Misconfigured(null) to PayabliErrorType.DEVICE_SETUP_NOT_CONFIGURED,
             AttestationException.ChallengeReused() to PayabliErrorType.SDK_INTERNAL_ERROR,
             TapToPaySessionException.PendingActivation() to PayabliErrorType.DEVICE_PENDING_ACTIVATION,
+            TapToPaySessionException.NotPermitted(DeviceServiceException.Forbidden(403, "refused")) to
+                PayabliErrorType.PERMISSION_DENIED,
             TapToPaySessionException.AttestationRequired() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
-            TapToPaySessionException.NotRecoverable(TapToPaySessionState.PendingActivation) to
+            TapToPaySessionException.NotRecoverable(TapToPaySessionState.PendingActivation("an-activation-id")) to
                 PayabliErrorType.TERMINAL_NOT_READY,
             TapToPaySessionException.SetupAbandoned() to PayabliErrorType.UNKNOWN,
             TapToPaySessionException.SetupFailed() to PayabliErrorType.SDK_INTERNAL_ERROR,
@@ -70,6 +72,7 @@ class TapToPayErrorCodesTest {
             DeviceActivationException.DeviceUnknown(404, "refused") to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.ServiceFailed(500, "refused") to PayabliErrorType.SERVER_ERROR,
             DeviceActivationException.NotEnrolled() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
+            DeviceActivationException.RegistrationReplaced() to PayabliErrorType.DEVICE_SETUP_REQUIRED,
             DeviceActivationException.Unclassified(400, "refused") to PayabliErrorType.UNKNOWN,
             SecureStorageException.CryptoUnavailable() to PayabliErrorType.DEVICE_KEY_UNAVAILABLE,
             SecureStorageException.StorageUnavailable() to PayabliErrorType.SDK_INTERNAL_ERROR,
@@ -191,6 +194,7 @@ class TapToPayErrorCodesTest {
         listOf(
             DeviceActivationException.CodeMalformed(),
             DeviceActivationException.NotEnrolled(),
+            DeviceActivationException.RegistrationReplaced(),
             DeviceServiceException.Forbidden(403, ""),
             DeviceServiceException.Undecodable(null),
         ).forEach { failure ->

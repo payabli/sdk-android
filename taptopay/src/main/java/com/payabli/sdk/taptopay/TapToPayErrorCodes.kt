@@ -99,6 +99,7 @@ internal object TapToPayErrorCodes {
     private fun sessionCode(failure: TapToPaySessionException): PayabliErrorType =
         when (failure) {
             is TapToPaySessionException.PendingActivation -> PayabliErrorType.DEVICE_PENDING_ACTIVATION
+            is TapToPaySessionException.NotPermitted -> PayabliErrorType.PERMISSION_DENIED
             is TapToPaySessionException.AttestationRequired -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is TapToPaySessionException.NotRecoverable -> PayabliErrorType.TERMINAL_NOT_READY
             // Nothing was sent for this caller, and this cause has no code of its own.
@@ -136,6 +137,7 @@ internal object TapToPayErrorCodes {
             is DeviceActivationException.DeviceUnknown -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.ServiceFailed -> PayabliErrorType.SERVER_ERROR
             is DeviceActivationException.NotEnrolled -> PayabliErrorType.DEVICE_SETUP_REQUIRED
+            is DeviceActivationException.RegistrationReplaced -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.Unclassified -> PayabliErrorType.UNKNOWN
         }
 

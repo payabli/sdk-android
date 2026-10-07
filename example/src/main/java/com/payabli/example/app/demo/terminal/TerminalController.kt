@@ -47,10 +47,10 @@ interface TerminalController {
     suspend fun activateDevice(activationCode: String): Result<Unit>
 
     /**
-     * The id Payabli registered this device under, which a merchant's backend needs to request its
-     * activation code. Null until setup has registered the device.
+     * The id a merchant's backend sends to request this device's activation code. Null unless the session
+     * is waiting for one.
      */
-    suspend fun deviceId(): Result<String?>
+    fun activationId(): String?
 }
 
 /** What a successful charge produced. Carries no card data of any kind. */

@@ -45,14 +45,16 @@ class DemoTerminalControllerTest {
         }
 
     @Test
-    fun `a device holds no id until setup registers it, then holds one`() =
+    fun `an activation id is handed over only while a code is owed`() =
         runTest {
             val terminal = controller()
-            assertEquals(null, terminal.deviceId().getOrThrow())
+            assertEquals(null, terminal.activationId())
 
             terminal.initialize()
+            assertEquals(DemoTerminalController.DEMO_ACTIVATION_ID, terminal.activationId())
 
-            assertEquals(DemoTerminalController.DEMO_DEVICE_ID, terminal.deviceId().getOrThrow())
+            terminal.activateDevice("123456")
+            assertEquals(null, terminal.activationId())
         }
 
     @Test
