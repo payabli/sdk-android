@@ -663,6 +663,7 @@ class DeviceEnrollmentTest {
             gate.complete(Unit)
             enrolling.await()
             reading.await()
+            assertEquals("a paypoint nobody holds is not kept", 0, EnrollmentTurns.trackedCount())
         }
 
     @Test

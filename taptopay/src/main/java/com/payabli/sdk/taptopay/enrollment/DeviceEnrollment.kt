@@ -26,8 +26,6 @@ import com.payabli.sdk.taptopay.attestation.device.RedactedCause
 import com.payabli.sdk.taptopay.provider.DeviceIneligibleException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Base64
 
@@ -106,10 +104,10 @@ internal class DeviceEnrollment(
      * Serialises the two entry points against each other.
      *
      * Without it a concurrent [enroll] can re-register underneath a [activateDevice] and the code is then
-     * spent against a handle the service has just replaced. One per paypoint in the process, shared by every
-     * enrollment for it, since they read and write the one stored registration.
+     * spent against a handle the service has just replaced. Taken per paypoint across every terminal in the
+     * process, through [EnrollmentTurns].
      */
-    private val lock: Mutex = lockFor(entry)
+    private suspend fun <T> inTurn(work: suspend () -> T): T = EnrollmentTurns.taking(entry, work)
 
     /**
      * Brings the device to attested.
@@ -119,7 +117,7 @@ internal class DeviceEnrollment(
      * [EnrollmentOutcome].
      */
     suspend fun enroll(): EnrollmentOutcome =
-        lock.withLock {
+        inTurn {
             val identity = withContext(dispatcher) { currentKey() }
 
             // Scoped to this entry point, so another one's binding is neither read nor disturbed here.
@@ -129,7 +127,7 @@ internal class DeviceEnrollment(
                 logger.debug(LogField.safe("event", "device_already_enrolled")) {
                     "device identity is current, skipping the cold sequence"
                 }
-                return@withLock EnrollmentOutcome.AlreadyAttested
+                return@inTurn EnrollmentOutcome.AlreadyAttested
             }
 
             if (known != null) {
@@ -242,7 +240,7 @@ internal class DeviceEnrollment(
      * typo should not spend one.
      */
     suspend fun activateDevice(activationCode: String) {
-        lock.withLock {
+        inTurn {
             if (!SIX_DIGITS.matches(activationCode)) throw DeviceActivationException.CodeMalformed()
 
             // Scoped to this entry point. A binding held for another one names a device this entry point
@@ -298,8 +296,8 @@ internal class DeviceEnrollment(
      * handle it names.
      */
     suspend fun assertion(): DeviceAssertion? =
-        lock.withLock {
-            val known = store.read(entry) ?: return@withLock null
+        inTurn {
+            val known = store.read(entry) ?: return@inTurn null
             try {
                 withContext(dispatcher) { signer.sign(known.deviceId) }
             } catch (lost: DeviceKeyException.KeyLost) {
@@ -318,7 +316,7 @@ internal class DeviceEnrollment(
      * replacing.
      */
     suspend fun registration(): StoredRegistration =
-        lock.withLock {
+        inTurn {
             try {
                 store.read(entry)?.let { StoredRegistration.Held(it.deviceId) } ?: StoredRegistration.None
             } catch (refused: SecureStorageException) {
@@ -340,7 +338,7 @@ internal class DeviceEnrollment(
      * through a registration it does not need.
      */
     suspend fun reset() {
-        lock.withLock { forget("reset") }
+        inTurn { forget("reset") }
     }
 
     /**
@@ -379,11 +377,6 @@ internal class DeviceEnrollment(
     }
 
     private companion object {
-        /** One lock per paypoint, shared by every enrollment over it. */
-        private val locks = HashMap<String, Mutex>()
-
-        private fun lockFor(entry: String): Mutex = synchronized(locks) { locks.getOrPut(entry) { Mutex() } }
-
         val SIX_DIGITS = Regex("^[0-9]{6}$")
         const val OUTCOME_REUSED = "reused"
         const val OUTCOME_UNCHANGED = "unchanged"
