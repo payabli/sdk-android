@@ -667,7 +667,7 @@ class DeviceEnrollmentTest {
         }
 
     @Test
-    fun `an activation whose registration was replaced before the assertion is refused, signs nothing and sends nothing`() =
+    fun `a registration replaced before the assertion is refused unsigned and unsent`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(activateBody())))
             fixture.seedRecord(deviceId = REPLACING_ID)
