@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliRetryAfter
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
@@ -60,7 +61,15 @@ internal object TapToPayErrorCodes {
             detail = serviceTextOf(failure),
             paymentTransId = paymentTransId,
             capture = capture,
+            retryAfterMillis = retryAfterOf(failure),
         )
+
+    /** The wait on the first failure in [failure]'s chain that can carry one, which a session refusal wraps. */
+    private fun retryAfterOf(failure: Throwable): Long? =
+        generateSequence(failure) { it.cause }
+            .take(MAX_CAUSES)
+            .firstOrNull { it is PayabliRetryAfter }
+            ?.let { (it as PayabliRetryAfter).retryAfterMillis }
 
     /**
      * The first text a service sent, anywhere in [failure]'s chain. A session refusal wraps the service's own

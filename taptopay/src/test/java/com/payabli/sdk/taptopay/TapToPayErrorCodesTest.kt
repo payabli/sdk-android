@@ -3,6 +3,9 @@ package com.payabli.sdk.taptopay
 import com.payabli.sdk.core.devicekey.DeviceKeyException
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliGenericException
+import com.payabli.sdk.core.model.PayabliRateLimitException
+import com.payabli.sdk.core.model.PayabliRetryAfter
+import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.core.storage.SecureStorageException
 import com.payabli.sdk.taptopay.adapters.CardReaderException
 import com.payabli.sdk.taptopay.attestation.AttestationException
@@ -233,4 +236,54 @@ class TapToPayErrorCodesTest {
 
         assertNull(thrown.detail)
     }
+
+    @Test
+    fun `the service's wait reaches the host on the thrown exception`() {
+        assertEquals(2_500L, retryAfterOn(PayabliRateLimitException(retryAfterMillis = 2_500)))
+    }
+
+    @Test
+    fun `the service's wait reaches the host when the session wrapped the failure`() {
+        val wrapped =
+            TapToPaySessionException.AttestationRequired(
+                PayabliServerException(httpStatus = 503, retryAfterMillis = 5_000),
+            )
+
+        assertEquals(5_000L, retryAfterOn(wrapped))
+    }
+
+    @Test
+    fun `a failure with no wait carries none`() {
+        assertNull(retryAfterOn(PayabliRateLimitException()))
+        assertNull(retryAfterOn(DeviceServiceException.ServerFailure(500, "refused")))
+    }
+
+    @Test
+    fun `the wait is the nearest failure's own, even when it has none`() {
+        val wrapped =
+            TapToPaySessionException.AttestationRequired(
+                NoWait(PayabliRateLimitException(retryAfterMillis = 2_500)),
+            )
+
+        assertNull(retryAfterOn(wrapped))
+    }
+
+    private fun retryAfterOn(failure: Throwable): Long? {
+        val thrown =
+            TapToPayErrorCodes.exceptionFor(
+                failure,
+                TapToPayErrorCodes.typeFor(failure),
+                null,
+                TapToPayCapture.NOT_CHARGED,
+            )
+        return (thrown as PayabliRetryAfter).retryAfterMillis
+    }
+}
+
+/** A failure that can carry a wait, has none, and wraps one that does. */
+private class NoWait(
+    cause: Throwable,
+) : Exception(cause),
+    PayabliRetryAfter {
+    override val retryAfterMillis: Long? = null
 }

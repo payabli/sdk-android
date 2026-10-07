@@ -92,6 +92,7 @@ internal class RouteScript(
     private vararg val answers: Pair<String, List<String>>,
     /** These routes answer a refusal inside a 200, so a real status is only for a route that skips them. */
     private val statusFor: (String) -> Int = { 200 },
+    private val headersFor: (String) -> Map<String, String> = { emptyMap() },
 ) {
     private val taken = mutableMapOf<String, Int>()
 
@@ -103,7 +104,7 @@ internal class RouteScript(
         val index = taken.getOrDefault(path, 0)
         if (index >= queued.size) error("$path was called ${index + 1} times, ${queued.size} answers scripted")
         taken[path] = index + 1
-        return PayabliResponse(statusFor(path), body = queued[index].toByteArray(Charsets.UTF_8))
+        return PayabliResponse(statusFor(path), headersFor(path), queued[index].toByteArray(Charsets.UTF_8))
     }
 
     companion object {

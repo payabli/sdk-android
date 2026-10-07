@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay
 import com.payabli.sdk.core.config.PayabliEnvironment
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliRetryAfter
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
 import com.payabli.sdk.core.network.PayabliTransport
@@ -530,6 +531,31 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals("a refused send released the attempt", "$MINTED_KEY-1", fixture.keySent(2))
+        }
+
+    @Test
+    fun `a rate-limited opening reaches the host with the service's wait`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture =
+                SessionFixture(
+                    RouteScript(
+                        RouteScript.CHALLENGE to listOf(challengeBody()),
+                        RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                        RouteScript.ATTEST to listOf(attestBody()),
+                        RouteScript.CONFIG to listOf(configBody()),
+                        INITIATE to listOf("{}"),
+                        statusFor = { path -> if (path == INITIATE) 429 else 200 },
+                        headersFor = { path -> if (path == INITIATE) mapOf("Retry-After" to "2") else emptyMap() },
+                    ),
+                ).also { it.coordinator.initialize() }
+
+            val thrown =
+                runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+                    .exceptionOrNull()
+
+            assertTrue("expected a TapToPayException, got $thrown", thrown is TapToPayException)
+            assertEquals(PayabliErrorType.RATE_LIMITED, (thrown as TapToPayException).type)
+            assertEquals(2_000L, (thrown as PayabliRetryAfter).retryAfterMillis)
         }
 
     /** The paypoint answering unequipped settles a first opening, and says nothing about an earlier one. */
