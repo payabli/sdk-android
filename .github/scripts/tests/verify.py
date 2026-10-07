@@ -2371,6 +2371,29 @@ def step_text(step: dict) -> str:
     return yaml.safe_dump(step, default_flow_style=False, sort_keys=False)
 
 
+def run_step(step: dict, env: dict[str, str]) -> tuple[int, str, str]:
+    """Runs a step's script the way the runner does, `bash -e -o pipefail` from the repository root, and returns
+    its exit status, what it wrote to the run's page and what it wrote to its outputs.
+
+    Run rather than read, because what a line prints is the shell's decision: a single-quoted or escaped
+    variable, or an echo redirected elsewhere inside a group appended to the page, names the variable and
+    prints none of it.
+    """
+    scratch = Path(tempfile.mkdtemp(dir=SCRATCH))
+    page, outputs = scratch / "summary", scratch / "outputs"
+    page.touch()
+    outputs.touch()
+    try:
+        status = subprocess.run(["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", str(step.get("run", ""))],
+                                cwd=SDK, capture_output=True, text=True, timeout=60,
+                                env={**os.environ, **env, "GITHUB_STEP_SUMMARY": str(page), "GITHUB_OUTPUT": str(outputs)}
+                                ).returncode
+    except subprocess.TimeoutExpired:
+        # A status rather than the exception, so a step that hangs fails its checks instead of ending the run.
+        status = 124
+    return status, page.read_text(), outputs.read_text()
+
+
 def script_lines(step: dict) -> list[str]:
     """The commands in a step's `script` input, which is what the emulator action is handed."""
     return meaningful_lines((step.get("with") or {}).get("script"))
@@ -3821,6 +3844,30 @@ def test_workflows():
         check("W16 and its base is the committed version",
               base[:3] == [["base=$"], ["grep", "^payabli.version=", "gradle.properties"], ["cut", "-d=", "-f2"]]
               and sum(word.startswith("base=") for command in base for word in command) == 1, f"{base[:3]}")
+        # The version is stamped at run time, so the run's title cannot carry it. The page is where the
+        # approver reads what the approval publishes, and where a tester finds the coordinate later. Run
+        # rather than read, so the version on the page is compared with the one the step hands on.
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=SDK, capture_output=True, text=True).stdout.strip()
+        status, page, outputs = run_step(naming, {"COMMIT": head, "GITHUB_REF_NAME": "a-branch"})
+        handed = re.findall(r"^version=(.*)$", outputs, re.M)
+        check("W16 and the naming step runs", status == 0 and len(handed) == 1, f"status={status} outputs={outputs!r}")
+        check("W16 and the run's page names the version it hands on, before the approval",
+              len(handed) == 1 and bool(re.fullmatch(r"\d+\.\d+\.\d+-QA\.\d{14}", handed[0]))
+              and f"`{handed[0]}`" in page, f"handed={handed} page={page!r}")
+        check("W16 and the commit it names there is the one dispatched",
+              env_of(naming, "COMMIT") == qa_named and bool(head) and f"`{head}`" in page,
+              f"COMMIT={env_of(naming, 'COMMIT')} page={page!r}")
+
+    # And says it was published, once the upload has finished: a run stopped part way through has named a
+    # version on its page that nothing completed. Only steps handed the stamp are run, and none of them
+    # holds a credential, which W16 checks above.
+    upload_at = next((i for i, step in enumerate(publishing_steps) if invocations(step, "publish_staging.py")), None)
+    after = publishing_steps[(upload_at + 1 if upload_at is not None else len(publishing_steps)):]
+    sentinel = "0.0.0-QA.20000101000000"
+    published = [step for step in after if env_of(step, "VERSION") == stamp_out and step.get("run")
+                 and run_step(step, {"VERSION": sentinel})[1].count(f"`{sentinel}`") == 1]
+    check("W16 and the publish names the published version on the run's page after the upload",
+          len(published) == 1, step_names(publishing_steps))
 
     # The setting that decides the subject lives in a different system from the trust policies that
     # grant it, and a mismatch fails at the assume with an error naming IAM. Checked afterwards it would

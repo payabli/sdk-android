@@ -87,28 +87,31 @@ jobs:
             echo "::error::$GITHUB_REF_NAME is at $GITHUB_SHA, not $COMMIT. Name its head, or dispatch again."
             exit 1
           fi
-          # On the run's page, so the approver sees what the approval publishes.
-          {
-            echo "Publishing a snapshot of \`$GITHUB_REF_NAME\` at \`$COMMIT\`, which is also the commit this workflow and its uploader run from:"
-            echo
-            echo "> $(git log -1 --format=%s "$COMMIT")"
-          } >> "$GITHUB_STEP_SUMMARY"
 
       # UTC and year-first: a pre-release identifier of only digits is compared numerically and must not
       # carry a leading zero. The group is held until the clock has passed this second, so the next run's
       # stamp is a later one. A re-run of a later job reuses this output, and with it the version.
       - name: Name this build
         id: name
+        env:
+          COMMIT: ${{ inputs.commit }}
         run: |
           base=$(grep '^payabli.version=' gradle.properties | cut -d= -f2)
           stamp=$(date -u +%Y%m%d%H%M%S)
-          echo "version=${base}-QA.${stamp}" >> "$GITHUB_OUTPUT"
+          version="${base}-QA.${stamp}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           for _ in 1 2 3 4 5 6 7 8 9 10; do
             if [ "$(date -u +%Y%m%d%H%M%S)" != "$stamp" ]; then
               break
             fi
             sleep 0.2
           done
+          # On the run's page, so the approver sees what the approval publishes.
+          {
+            echo "Publishing \`$version\` from \`$GITHUB_REF_NAME\` at \`$COMMIT\`, which is also the commit this workflow and its uploader run from:"
+            echo
+            echo "> $(git log -1 --format=%s "$COMMIT")"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The suites, on their own so a flaky one is re-run without rebuilding. A dispatch answers to no CI
   # run, so it runs the unit suites itself. It does not carry the instrumented suites, ktlint or lint.
@@ -259,3 +262,12 @@ jobs:
           AWS_SDK_CDN_ACCOUNT=$(echo "$ROLE_ARN" | cut -d: -f5)
           export AWS_SDK_CDN_ACCOUNT
           python3 .github/scripts/publish_staging.py --prefix maven-qa --version "$VERSION"
+
+      - name: Name the published version on the run's page
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          {
+            echo
+            echo "Published \`$VERSION\` to \`/maven-qa\`."
+          } >> "$GITHUB_STEP_SUMMARY"
