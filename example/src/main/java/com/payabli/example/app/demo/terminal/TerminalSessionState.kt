@@ -22,6 +22,9 @@ enum class TerminalSessionState {
     /** Able to take a payment. */
     Ready,
 
+    /** Taking a payment. Not able to take another until it ends. */
+    Charging,
+
     /** The session outlived its lifetime and needs starting again. */
     SessionExpired,
 

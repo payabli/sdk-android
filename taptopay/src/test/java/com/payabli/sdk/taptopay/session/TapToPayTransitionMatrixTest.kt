@@ -18,7 +18,7 @@ import org.junit.Test
  * rules the implementation states once — re-entering the current state, starting over, and failing — so
  * deleting one of those rules from the implementation fails a row here.
  *
- * An exhaustive `when`, so a tenth state fails to compile here.
+ * An exhaustive `when`, so a new state fails to compile here.
  */
 private fun legalTargetsFrom(from: TapToPaySessionState): Set<TapToPaySessionState> =
     when (from) {
@@ -26,7 +26,8 @@ private fun legalTargetsFrom(from: TapToPaySessionState): Set<TapToPaySessionSta
         AttestingDevice -> setOf(Idle, AttestingDevice, FetchingConfig, PENDING, FAILED_INTERNAL)
         FetchingConfig -> setOf(Idle, FetchingConfig, InitializingReader, PENDING, FAILED_INTERNAL)
         InitializingReader -> setOf(Idle, InitializingReader, Ready, FAILED_INTERNAL)
-        Ready -> setOf(Idle, Ready, SessionExpired, FAILED_INTERNAL)
+        Ready -> setOf(Idle, Ready, CHARGING, SessionExpired, FAILED_INTERNAL)
+        is TapToPaySessionState.Charging -> setOf(Idle, Ready, CHARGING, SessionExpired, FAILED_INTERNAL)
         SessionExpired -> setOf(Idle, SessionExpired, Reinitializing, FAILED_INTERNAL)
         Reinitializing -> setOf(Idle, Reinitializing, FetchingConfig, FAILED_INTERNAL)
         is TapToPaySessionState.PendingActivation -> setOf(Idle, PENDING, AttestingDevice, FAILED_INTERNAL)
@@ -37,11 +38,13 @@ private val FAILED_INTERNAL = Failed(TapToPayFailureReason.SDK_INTERNAL_ERROR)
 
 private val PENDING = EVERY_SESSION_STATE.single { it is TapToPaySessionState.PendingActivation }
 
+private val CHARGING = EVERY_SESSION_STATE.single { it is TapToPaySessionState.Charging }
+
 class TapToPayTransitionMatrixTest {
     @Test
     fun `the table names every state`() {
         assertEquals(EVERY_SESSION_STATE.size, EVERY_SESSION_STATE.distinct().size)
-        assertEquals(9, EVERY_SESSION_STATE.size)
+        assertEquals(10, EVERY_SESSION_STATE.size)
     }
 
     @Test
@@ -76,6 +79,47 @@ class TapToPayTransitionMatrixTest {
     fun `re-entering the current state is permitted from every state`() {
         for (from in EVERY_SESSION_STATE) {
             assertEquals(from.diagnosticName, true, TapToPaySessionTransitions.permits(from, from))
+        }
+    }
+
+    @Test
+    fun `a charge moves forward through its activities and never back`() {
+        val forward =
+            setOf(
+                TapToPayChargeActivity.OPENING to TapToPayChargeActivity.WAITING_FOR_CARD,
+                TapToPayChargeActivity.WAITING_FOR_CARD to TapToPayChargeActivity.CLOSING,
+            )
+        for (from in TapToPayChargeActivity.entries) {
+            for (to in TapToPayChargeActivity.entries) {
+                assertEquals(
+                    "$from -> $to",
+                    from == to || (from to to) in forward,
+                    TapToPaySessionTransitions.permits(
+                        TapToPaySessionState.Charging(from),
+                        TapToPaySessionState.Charging(to),
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `every activity can end the charge`() {
+        for (activity in TapToPayChargeActivity.entries) {
+            val charging = TapToPaySessionState.Charging(activity)
+            assertEquals("$activity -> ready", true, TapToPaySessionTransitions.permits(charging, Ready))
+            assertEquals("$activity -> expired", true, TapToPaySessionTransitions.permits(charging, SessionExpired))
+        }
+    }
+
+    @Test
+    fun `a charge starts by opening`() {
+        for (activity in TapToPayChargeActivity.entries) {
+            assertEquals(
+                "ready -> $activity",
+                activity == TapToPayChargeActivity.OPENING,
+                TapToPaySessionTransitions.permits(Ready, TapToPaySessionState.Charging(activity)),
+            )
         }
     }
 

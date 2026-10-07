@@ -31,7 +31,7 @@ import java.math.BigDecimal
 /**
  * The Tap to pay screen, driven by the card-present SDK.
  *
- * Translates the SDK's nine states into the screen's, and its phases into the event stream. Built on first
+ * Translates the SDK's states into the screen's, and its phases into the event stream. Built on first
  * use: building it needs a session, which needs the token server to have answered.
  */
 class TapToPayTerminal(
@@ -165,6 +165,7 @@ class TapToPayTerminal(
             TapToPaySessionState.FetchingConfig -> TerminalSessionState.FetchingConfig
             TapToPaySessionState.InitializingReader -> TerminalSessionState.InitializingReader
             TapToPaySessionState.Ready -> TerminalSessionState.Ready
+            is TapToPaySessionState.Charging -> TerminalSessionState.Charging
             TapToPaySessionState.SessionExpired -> TerminalSessionState.SessionExpired
             TapToPaySessionState.Reinitializing -> TerminalSessionState.Reinitializing
             is TapToPaySessionState.PendingActivation -> TerminalSessionState.PendingActivation
@@ -181,7 +182,7 @@ class TapToPayTerminal(
             TapToPaySessionState.SessionExpired -> TerminalEventCode.SessionExpired
             TapToPaySessionState.Reinitializing -> TerminalEventCode.ReinitializeStarted
             is TapToPaySessionState.PendingActivation -> TerminalEventCode.DevicePendingActivation
-            TapToPaySessionState.Idle, is TapToPaySessionState.Failed -> null
+            TapToPaySessionState.Idle, is TapToPaySessionState.Charging, is TapToPaySessionState.Failed -> null
         }
 
     /** A withdrawn caller unwinds. Turning it into a failed [Result] reports an error to a screen that left. */

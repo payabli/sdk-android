@@ -36,6 +36,7 @@ internal val EVERY_SESSION_STATE: List<TapToPaySessionState> =
         TapToPaySessionState.FetchingConfig,
         TapToPaySessionState.InitializingReader,
         TapToPaySessionState.Ready,
+        TapToPaySessionState.Charging(TapToPayChargeActivity.OPENING),
         TapToPaySessionState.SessionExpired,
         TapToPaySessionState.Reinitializing,
         TapToPaySessionState.PendingActivation(DEVICE_ID),
