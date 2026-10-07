@@ -2,6 +2,7 @@ package com.payabli.sdk.taptopay
 
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliRetryAfter
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 
@@ -40,6 +41,8 @@ import com.payabli.sdk.taptopay.session.TapToPaySessionState
  * **A terminal that is still up is not the same as a charge that can be repeated.** Where a failure left it
  * unknown whether the payment was opened, the next charge carries the same attempt, so a charge for a
  * different amount is not what to send next. There is no call that resolves such an attempt yet.
+ *
+ * [retryAfterMillis] is the wait the service asked for on the failure this wraps, or null when it asked for none.
  */
 public class TapToPayException private constructor(
     type: PayabliErrorType,
@@ -48,7 +51,9 @@ public class TapToPayException private constructor(
     cause: Throwable?,
     public val paymentTransId: String?,
     public val capture: TapToPayCapture,
-) : PayabliException(type, reason, detail, cause) {
+    override val retryAfterMillis: Long?,
+) : PayabliException(type, reason, detail, cause),
+    PayabliRetryAfter {
     internal companion object {
         /**
          * The only way this type is constructed.
@@ -64,6 +69,7 @@ public class TapToPayException private constructor(
             detail: String? = null,
             paymentTransId: String? = null,
             capture: TapToPayCapture = TapToPayCapture.NOT_CHARGED,
-        ): TapToPayException = TapToPayException(type, reason, detail, cause, paymentTransId, capture)
+            retryAfterMillis: Long? = null,
+        ): TapToPayException = TapToPayException(type, reason, detail, cause, paymentTransId, capture, retryAfterMillis)
     }
 }
