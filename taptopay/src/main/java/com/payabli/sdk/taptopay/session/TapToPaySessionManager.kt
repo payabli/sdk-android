@@ -127,9 +127,10 @@ internal class TapToPaySessionManager(
     }
 
     /**
-     * Runs [work] with the session [TapToPaySessionState.Charging], and ready again however it ends.
+     * Runs [work] with the session [TapToPaySessionState.Charging]. The ready check and the entry are one write.
      *
-     * The ready check and the entry are one write. A session another caller moves meanwhile stays where they put it.
+     * Leaving writes ready only while the session is still charging, so a move made during [work], by [work] or
+     * by another caller, is kept.
      */
     suspend fun <T> charging(
         notReady: () -> Exception,
