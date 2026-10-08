@@ -295,17 +295,14 @@ internal class TapToPayChargeRunner(
             closeAfterFailedRead(paymentTransId, withdrawn)
             throw withdrawn
         } catch (failure: Throwable) {
-            // A spent reader session is repaired by re-initializing. `invalidate` drops the move unless the
-            // session is ready or charging, so a failure arriving while a replacement is being built does not
-            // kill it.
-            //
-            // A denial expires it too, and the repair that follows lands DEVICE_INELIGIBLE.
+            closeAfterFailedRead(paymentTransId, failure)
+            // Expired after the close, which publishes CLOSING only while the charge holds the session. A denial
+            // expires it too, and the repair that follows lands DEVICE_INELIGIBLE.
             if (failure is CardReaderException.SessionUnusable ||
                 failure is CardReaderException.DeviceDenied
             ) {
                 manager.invalidate()
             }
-            closeAfterFailedRead(paymentTransId, failure)
             throw failure
         }
 

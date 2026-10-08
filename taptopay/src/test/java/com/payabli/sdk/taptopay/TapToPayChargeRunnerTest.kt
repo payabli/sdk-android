@@ -1978,7 +1978,7 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a dead reader session ends the charge expired, not ready`() =
+    fun `a dead reader session closes, then ends the charge expired, not ready`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture()
             fixture.reader.failNextRead(CardReaderException.SessionUnusable(null))
@@ -1987,7 +1987,22 @@ class TapToPayChargeRunnerTest {
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
             assertEquals(
-                listOf(TapToPaySessionState.Ready, opening, waiting, TapToPaySessionState.SessionExpired),
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.SessionExpired),
+                seen,
+            )
+        }
+
+    @Test
+    fun `a denial during the tap closes, then ends the charge expired`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = readyFixture()
+            fixture.reader.failNextRead(CardReaderException.DeviceDenied(null))
+            val seen = statesOf(fixture)
+
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals(
+                listOf(TapToPaySessionState.Ready, opening, waiting, closing, TapToPaySessionState.SessionExpired),
                 seen,
             )
         }
