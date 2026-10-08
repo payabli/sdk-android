@@ -278,8 +278,8 @@ internal class TapToPayChargeRunner(
      * than converted, so the facade's promise that one is not caught still holds for a caller: what the
      * branch exists for is the open payment it would otherwise leave standing.
      *
-     * The key is never settled here. The reader has been asked by this point, so the sale may be captured
-     * and nothing arriving afterwards says the money did not move.
+     * The key stays held here unless the failed-read close is refused because the processor has no record of
+     * the payment. The reader has been asked, so the sale may be captured, and only that answer says it was not.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -452,12 +452,14 @@ internal class TapToPayChargeRunner(
      * Uncancellable: a withdrawn caller is one of the ways a tap does not complete, and the transaction is
      * open either way.
      *
-     * **The key is never released here, and a recorded close is not a recorded failure.** The close makes
+     * **A recorded close is not a recorded failure, so a close that lands keeps the key.** The close makes
      * the service pull the processor for this transaction and write back what it finds, so a sale the
      * processor captured comes back captured rather than failed. This call sends the request and does not
      * decode the answer, so a close that landed says the service now knows the outcome and not what the
      * outcome was. Releasing on it would rotate the key after a capture and let the next charge take the
      * money again. Holding it keeps the repeat named as one attempt, which is the whole point of the key.
+     * The one release is a close refused because the processor has no record of the payment, and never for a
+     * resent key.
      */
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,
