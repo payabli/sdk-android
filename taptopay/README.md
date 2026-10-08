@@ -153,33 +153,47 @@ authorized app, or credentials without `tools_init` or `pos_create`, land on
 `Failed(CONFIGURATION_REJECTED)` on a phone that holds no registration for the paypoint. Credentials without
 `inboundpayments_create` reach `Ready`, and `charge` is then refused before the card is read.
 
-1. Issue a code for the phone, from your backend or from the Payabli portal. The code is valid for 30
-   minutes, and asking again before it expires returns the same code.
-
-   - **From your backend:** call
-     [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)
-     with the paypoint's entry point and the phone's activation ID in the request's `deviceId` field.
-     The activation ID is on the pending state, and only there:
-
-     ```kotlin
-     (ttp.sessionState.value as? TapToPaySessionState.PendingActivation)?.let { pending ->
-         // Send pending.activationId to your backend.
-     }
-     ```
-
-     An app that lost the ID initializes again and lands on the same one.
-
-   - **From the portal:** under **Pay In > Devices > Device management**, choose
-     **⋯ > Generate activation code**.
-
-   The code is six digits and can start with zero, so keep it as a string.
-2. Deliver the code to the person holding the phone, and have your app ask for it.
-3. Activate, then initialize again:
+The code is six digits and can start with zero, so keep it as a string. It's valid for 30 minutes, and
+asking for one again before it expires returns the same code. There are two ways to get it to the app, and
+both end the same way: activate, then initialize again.
 
 ```kotlin
 ttp.activateDevice(code)
 ttp.initialize()
 ```
+
+#### Option 1: Manual
+
+Someone issues the code and gives it to the person holding the phone, and your app asks for it.
+
+- **From the portal:** under **Pay In > Devices > Device management**, choose
+  **⋯ > Generate activation code**.
+- **From a backend tool:** call
+  [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)
+  with the paypoint's entry point and this phone's activation ID in the request's `deviceId` field. The app
+  reads the ID from the pending state, as in option 2, step 1, and shows it to whoever runs the tool.
+
+#### Option 2: Automated, in the app
+
+No person handles the code.
+
+1. Read the phone's activation ID. It's on the pending state, and only there:
+
+   ```kotlin
+   (ttp.sessionState.value as? TapToPaySessionState.PendingActivation)?.let { pending ->
+       // Send pending.activationId to your backend.
+   }
+   ```
+
+   An app that lost the ID initializes again and lands on the same one.
+2. Send the activation ID to your backend. Your backend calls
+   [Generate Tap to Pay activation code](https://docs.payabli.com/developers/api-reference/device/activation-challenge)
+   with the paypoint's entry point and the activation ID in the request's `deviceId` field, and returns the
+   code.
+3. Activate, then initialize again.
+
+The activation ID is read from this phone's own state, never looked up as the latest pending device on the
+paypoint, so another phone enrolling on the same paypoint can't change it.
 
 ### Charge
 
