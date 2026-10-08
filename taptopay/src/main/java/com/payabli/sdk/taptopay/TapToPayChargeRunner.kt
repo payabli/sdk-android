@@ -9,6 +9,7 @@ import com.payabli.sdk.core.logging.debug
 import com.payabli.sdk.core.logging.warn
 import com.payabli.sdk.core.model.PayabliErrorType
 import com.payabli.sdk.core.model.PayabliException
+import com.payabli.sdk.core.model.PayabliValidationException
 import com.payabli.sdk.core.model.leavesOutcomeUnknown
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.taptopay.adapters.CardReaderException
@@ -39,6 +40,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** Enough that unrelated paypoints rarely share one, small enough to be a fixed cost. */
 private const val REGION_STRIPES = 16
+
+/** The service's wording when a close names a transaction the processor has no record of. */
+private const val PROCESSOR_HAS_NO_RECORD = "Unable to locate the transaction with the payment processor"
 
 /**
  * The charge regions, striped rather than one per entry point.
@@ -188,7 +192,7 @@ internal class TapToPayChargeRunner(
                     askedForCard = true
                     capture = TapToPayCapture.UNKNOWN
                     manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
-                    val result = readCard(paymentTransId, sendable, invoice)
+                    val result = readCard(paymentTransId, sendable, invoice, idempotencyKey, resentKey)
 
                     capture = captureOf(result.outcome, resentKey)
                     HELD[scope] = PendingClose(paymentTransId, result, idempotencyKey, resentKey)
@@ -281,6 +285,8 @@ internal class TapToPayChargeRunner(
         paymentTransId: String,
         amount: BigDecimal,
         invoice: TapToPayInvoiceData,
+        idempotencyKey: String,
+        resentKey: Boolean,
     ): CardReadResult =
         try {
             reader.startReading(
@@ -292,10 +298,10 @@ internal class TapToPayChargeRunner(
                 ),
             )
         } catch (withdrawn: CancellationException) {
-            closeAfterFailedRead(paymentTransId, withdrawn)
+            closeAfterFailedRead(paymentTransId, withdrawn, idempotencyKey, resentKey)
             throw withdrawn
         } catch (failure: Throwable) {
-            closeAfterFailedRead(paymentTransId, failure)
+            closeAfterFailedRead(paymentTransId, failure, idempotencyKey, resentKey)
             // After the close, which publishes CLOSING only while the charge holds the session. Expires a dead or
             // denied reader's session unless another caller moved it meanwhile; a denial's repair lands
             // DEVICE_INELIGIBLE.
@@ -456,6 +462,8 @@ internal class TapToPayChargeRunner(
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,
         failure: Throwable,
+        idempotencyKey: String,
+        resentKey: Boolean,
     ) = withContext(NonCancellable) {
         manager.chargeActivity(TapToPayChargeActivity.CLOSING)
         val startedAt = System.nanoTime()
@@ -466,6 +474,11 @@ internal class TapToPayChargeRunner(
                 true
             } catch (failedClose: Throwable) {
                 TapToPayReports.closeFailed(failedClose, startedAt, TelemetryProperties.Origin.CHARGE)
+                // The processor holding no record of the payment means nothing was captured. A resent key names
+                // an earlier opening, so this answer never settles it.
+                if (!resentKey && failedClose.saysTheProcessorHasNoRecord()) {
+                    keys.settle(entry, environment, idempotencyKey)
+                }
                 // `Throwable`, which is wider than this file catches anywhere else and is the width the caller
                 // already uses. `readCard` catches `Throwable`, calls this, and rethrows what it caught, so a
                 // failure raised *here* would replace the one being reported. An `Error` from the close would
@@ -509,6 +522,9 @@ internal class TapToPayChargeRunner(
                 is PayabliException -> !failure.type.leavesOutcomeUnknown
                 else -> false
             }
+
+    private fun Throwable.saysTheProcessorHasNoRecord(): Boolean =
+        this is PayabliValidationException && detail == PROCESSOR_HAS_NO_RECORD
 
     /** Whether [failure] is the service refusing a key it already holds. */
     private fun isConflict(failure: Throwable): Boolean =

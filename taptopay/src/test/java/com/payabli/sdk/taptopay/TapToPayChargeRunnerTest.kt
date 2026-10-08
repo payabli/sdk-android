@@ -67,6 +67,9 @@ private val PAYER = TapToPayCustomerData(firstName = "Ada", lastName = "Payer", 
 
 private const val UPDATE = "/api/v2/MoneyIn/update/$TRANS_ID"
 
+/** The service's wording when a close names a transaction the processor has no record of. */
+private const val NOT_AT_PROCESSOR = "Unable to locate the transaction with the payment processor"
+
 /** The reader's mark in the shared trace, which is how a second tap is counted. */
 private const val READ = "reader:read"
 
@@ -904,6 +907,71 @@ class TapToPayChargeRunnerTest {
 
             assertEquals("$MINTED_KEY-1", fixture.keySent(0))
             assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
+    /** A failed tap whose close is answered [updateStatus] with [updateBody], on a ready session. */
+    private suspend fun failedTapClosedWith(
+        updateStatus: Int,
+        updateBody: String,
+        opens: Int = 2,
+    ): SessionFixture =
+        SessionFixture(
+            RouteScript(
+                RouteScript.CHALLENGE to listOf(challengeBody()),
+                RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                RouteScript.ATTEST to listOf(attestBody()),
+                RouteScript.CONFIG to listOf(configBody()),
+                INITIATE to List(opens) { approved("""{"paymentTransId":"$TRANS_ID"}""") },
+                UPDATE to List(9) { updateBody },
+                statusFor = { if (it == UPDATE) updateStatus else 200 },
+            ),
+        ).also { it.coordinator.initialize() }
+
+    private fun problemBody(detail: String) =
+        """{"type":"https://docs.payabli.com/","title":"Bad Request","status":400,"detail":"$detail","code":"400","errors":{}}"""
+
+    @Test
+    fun `a failed tap the processor never saw settles its attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(0))
+            assertEquals("the next charge resent a settled attempt", "$MINTED_KEY-2", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a failed tap whose close is refused for any other reason keeps its attempt`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody("The request was not valid"))
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("the retry named a second attempt", "$MINTED_KEY-1", fixture.keySent(1))
+        }
+
+    @Test
+    fun `a resent attempt the processor never saw stays unsettled, because it names an earlier opening`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = failedTapClosedWith(400, problemBody(NOT_AT_PROCESSOR), opens = 3)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            val runner = runnerOver(fixture)
+
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.failNextRead(CardReaderException.ReadFailed(null))
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+            fixture.reader.answerReadWith(cardRead())
+            runCatching { runner.charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(1))
+            assertEquals("the earlier opening's key was let go", "$MINTED_KEY-1", fixture.keySent(2))
         }
 
     @Test
