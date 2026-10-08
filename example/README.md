@@ -36,7 +36,7 @@ and only `payabli.demo.appId` prefills something other than its build default.
 
 | Setting | Default | Notes |
 |---|---|---|
-| `payabli.demo.entryPoint` | | Partner identifier. Exists in one environment, so set it with the row below. |
+| `payabli.demo.entryPoint` | | The entry point of the paypoint the sample app takes payments for, not the organization's. Exists in one environment, so set it with the row below. |
 | `payabli.demo.environment` | `sandbox` | Which environment this build talks to, from the row below. |
 | `payabli.demo.extraEnvironments` | | Environments the picker offers beyond sandbox and production. A name the SDK was not built with is dropped; adding one to the SDK is `payabli.sdk.extraEnvironments`. |
 | `payabli.demo.appId` | | `secrets.properties.example` prefills `com.payabli.example.app`; the build itself falls back to blank. Compared against the running package by the readiness check, so a `-P` run without the template fails that check. |
