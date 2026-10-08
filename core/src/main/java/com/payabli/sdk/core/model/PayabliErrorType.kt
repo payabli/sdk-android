@@ -323,6 +323,12 @@ public enum class PayabliErrorType(
         PayabliErrorCategory.DEVICE,
         "This device cannot be identified.",
     ),
+    CHARGE_NOT_FINISHED(
+        3034,
+        "CHARGE_NOT_FINISHED",
+        PayabliErrorCategory.OUTCOME_UNKNOWN,
+        "An earlier charge on this device hasn't finished. Check that payment before charging again, or wait three minutes.",
+    ),
 }
 
 /**
@@ -365,6 +371,7 @@ public val PayabliErrorType.leavesOutcomeUnknown: Boolean
             PayabliErrorType.TAP_NOT_COMPLETED,
             PayabliErrorType.PAYMENT_OUTCOME_UNKNOWN,
             PayabliErrorType.PAYMENT_NOT_CLOSED,
+            PayabliErrorType.CHARGE_NOT_FINISHED,
             -> true
 
             else -> false
