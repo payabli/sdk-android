@@ -269,8 +269,9 @@ internal class TapToPayChargeRunner(
         }
 
     /**
-     * Asks for one card, and on every other exit, cancellation and a JVM `Error` included, closes [paymentTransId]
-     * and rethrows unchanged. The key stays held unless that close finds the processor has no record of it.
+     * Asks for one card for [amount], at the scale the paypoint recorded. Every other exit, cancellation and a JVM
+     * `Error` included, closes [paymentTransId] and rethrows unchanged, and keeps the key unless that close finds
+     * the processor has no record of it.
      */
     private suspend fun readCard(
         paymentTransId: String,
