@@ -3,8 +3,7 @@ package com.payabli.sdk.taptopay.session
 /**
  * Where a card-present session has got to.
  *
- * The same nine states the sibling SDK publishes, so an integrator moving between the platforms meets one
- * model. [Failed] carries a payload, which is why this is a sealed interface.
+ * [Charging], [PendingActivation] and [Failed] carry a payload, which is why this is a sealed interface.
  *
  * **A failure names its reason.** Without one a consumer cannot tell a setup that was discarded from a
  * paypoint that was misconfigured, and has to assume the most expensive repair.
@@ -32,6 +31,16 @@ public sealed interface TapToPaySessionState {
 
     /** The reader can take a payment. */
     data object Ready : TapToPaySessionState
+
+    /**
+     * A charge holds the reader, and [activity] says what it is doing.
+     *
+     * Entered when a charge starts and left when it ends, whatever the outcome. The outcome itself is the
+     * charge's return value or its failure.
+     */
+    data class Charging(
+        val activity: TapToPayChargeActivity,
+    ) : TapToPaySessionState
 
     /**
      * The reader session died and the credentials behind it are spent.
@@ -79,6 +88,7 @@ internal val TapToPaySessionState.diagnosticName: String
             TapToPaySessionState.FetchingConfig -> "fetching_config"
             TapToPaySessionState.InitializingReader -> "initializing_reader"
             TapToPaySessionState.Ready -> "ready"
+            is TapToPaySessionState.Charging -> "charging"
             TapToPaySessionState.SessionExpired -> "session_expired"
             TapToPaySessionState.Reinitializing -> "reinitializing"
             is TapToPaySessionState.PendingActivation -> "pending_activation"

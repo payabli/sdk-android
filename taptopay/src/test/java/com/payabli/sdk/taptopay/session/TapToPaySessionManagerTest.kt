@@ -267,6 +267,11 @@ class TapToPaySessionManagerTest {
                 manager.advance(target)
             }
 
+            is TapToPaySessionState.Charging -> {
+                driveTo(manager, TapToPaySessionState.Ready)
+                manager.advance(target)
+            }
+
             TapToPaySessionState.SessionExpired -> {
                 driveTo(manager, TapToPaySessionState.Ready)
                 manager.invalidate()
