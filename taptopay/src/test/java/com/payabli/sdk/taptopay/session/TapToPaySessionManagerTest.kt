@@ -282,8 +282,7 @@ class TapToPaySessionManagerTest {
     @Test
     fun `a session moved away during a charge is left where it was moved`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // The last is a setup that started over during the charge and is preparing the reader again, from
-            // where ready is one legal move away.
+            // The last is one legal move from ready, so leaving must check the charge still holds it.
             val moves =
                 mapOf<TapToPaySessionState, (TapToPaySessionManager) -> Unit>(
                     TapToPaySessionState.Idle to { it.reset() },

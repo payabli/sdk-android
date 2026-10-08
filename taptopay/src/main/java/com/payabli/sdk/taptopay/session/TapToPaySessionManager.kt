@@ -127,12 +127,9 @@ internal class TapToPaySessionManager(
     }
 
     /**
-     * Runs [work] as a charge: the session is [TapToPaySessionState.Charging] while it runs and ready again
-     * after it, whatever it ended in.
+     * Runs [work] with the session [TapToPaySessionState.Charging], and ready again however it ends.
      *
-     * Throws [notReady] without running [work] unless the session is ready, deciding and entering in one step,
-     * so nothing can move the session between the two. A session another caller moves while [work] runs, by
-     * starting over or expiring it, is left where that caller put it.
+     * The ready check and the entry are one write. A session another caller moves meanwhile stays where they put it.
      */
     suspend fun <T> charging(
         notReady: () -> Exception,
@@ -147,7 +144,7 @@ internal class TapToPaySessionManager(
         }
     }
 
-    /** Moves a running charge to [activity]. Dropped when no charge holds the session, since one moved it. */
+    /** Dropped unless a charge holds the session. */
     fun chargeActivity(activity: TapToPayChargeActivity) {
         write(TapToPaySessionState.Charging(activity)) { it is TapToPaySessionState.Charging }
     }
@@ -187,8 +184,7 @@ internal class TapToPaySessionManager(
                     LogField.safe("activity", (to as? TapToPaySessionState.Charging)?.activity?.name),
                     LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
                 ) { "session state changed" }
-                // A move between two activities is not a change of state, and reporting it would read
-                // charging to charging.
+                // A move between two activities is not a change of state.
                 if (from !is TapToPaySessionState.Charging || to !is TapToPaySessionState.Charging) {
                     TapToPayReports.sessionStateChanged(from, to)
                 }

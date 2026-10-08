@@ -22,13 +22,10 @@ enum class TerminalSessionState {
     /** Able to take a payment. */
     Ready,
 
-    /** Opening the payment. The first of three stages of a charge, none able to take another payment. */
     OpeningPayment,
 
-    /** Waiting for the payer to tap a card. */
     WaitingForCard,
 
-    /** Telling the backend how the tap ended. */
     ClosingPayment,
 
     /** The session outlived its lifetime and needs starting again. */
@@ -44,6 +41,5 @@ enum class TerminalSessionState {
     Error,
     ;
 
-    /** A charge is running, at any of its three stages. */
     val isCharging: Boolean get() = this == OpeningPayment || this == WaitingForCard || this == ClosingPayment
 }

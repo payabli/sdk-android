@@ -147,7 +147,7 @@ class TapToPayTerminal(
         _sessionState.value = shown
         _isReady.value = shown == TerminalSessionState.Ready
         _failureReason.value = (state as? TapToPaySessionState.Failed)?.reason?.asTerminalReason()
-        // A charge ending puts the session back to ready with the reader still up, so it is not news.
+        // A charge ending is not the reader coming up.
         if (wasCharging && shown == TerminalSessionState.Ready) return
         state.asEventCode()?.let { emit(it) }
     }

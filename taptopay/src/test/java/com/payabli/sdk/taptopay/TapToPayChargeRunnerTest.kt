@@ -1854,12 +1854,7 @@ class TapToPayChargeRunnerTest {
             }
         }
 
-    /**
-     * Every state [fixture] publishes from here on, in order.
-     *
-     * Unconfined, so the collector runs inside each write and a state that is written and then replaced is
-     * still seen.
-     */
+    /** Every state [fixture] publishes from here on. Unconfined, so a state that is replaced is still seen. */
     private fun TestScope.statesOf(fixture: SessionFixture): List<TapToPaySessionState> {
         val seen = mutableListOf<TapToPaySessionState>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { fixture.manager.state.collect { seen += it } }
@@ -2034,8 +2029,7 @@ class TapToPayChargeRunnerTest {
     @Test
     fun `a session started over during a read keeps its new state, and the charge keeps its outcome`() =
         runTest(timeout = TEST_TIMEOUT) {
-            // A host calling initialize while a card is presented resets the session under the charge. The
-            // charge's own writes after that are stale and must not throw over the payment's outcome.
+            // A host's initialize resets the session under the charge.
             lateinit var fixture: SessionFixture
             fixture =
                 SessionFixture(script(), readGate = { fixture.manager.reset() }).also { it.coordinator.initialize() }
