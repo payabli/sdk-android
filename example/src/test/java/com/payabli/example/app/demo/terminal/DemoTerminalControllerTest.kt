@@ -258,6 +258,29 @@ class DemoTerminalControllerTest {
             assertTrue(terminal.isReady.value)
         }
 
+    @Test
+    fun `a charge cancelled while waiting for a card still closes before ready`() =
+        runTest {
+            val terminal = DemoTerminalController(stepDelayMillis = 1_000)
+            terminal.ready()
+            val seen = collectInBackground(terminal.sessionState)
+            val charge = launch { terminal.charge(BigDecimal("1.00")) }
+            advanceTimeBy(1_500)
+
+            charge.cancelAndJoin()
+
+            assertEquals(
+                listOf(
+                    TerminalSessionState.Ready,
+                    TerminalSessionState.OpeningPayment,
+                    TerminalSessionState.WaitingForCard,
+                    TerminalSessionState.ClosingPayment,
+                    TerminalSessionState.Ready,
+                ),
+                seen,
+            )
+        }
+
     // --- activation ---
 
     @Test
