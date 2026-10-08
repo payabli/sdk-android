@@ -1,11 +1,13 @@
 package com.payabli.example.app.demo.terminal
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -239,6 +241,21 @@ class DemoTerminalControllerTest {
                 ),
                 seen,
             )
+        }
+
+    @Test
+    fun `a charge cancelled mid-way leaves the terminal ready`() =
+        runTest {
+            val terminal = DemoTerminalController(stepDelayMillis = 1_000)
+            terminal.ready()
+            val charge = launch { terminal.charge(BigDecimal("1.00")) }
+            advanceTimeBy(1_500)
+            assertEquals(TerminalSessionState.WaitingForCard, terminal.sessionState.value)
+
+            charge.cancelAndJoin()
+
+            assertEquals(TerminalSessionState.Ready, terminal.sessionState.value)
+            assertTrue(terminal.isReady.value)
         }
 
     // --- activation ---

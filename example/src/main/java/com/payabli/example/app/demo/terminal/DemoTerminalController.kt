@@ -77,10 +77,13 @@ class DemoTerminalController(
         if (_sessionState.value != TerminalSessionState.Ready) {
             return Result.failure(IllegalStateException("The terminal is not ready"))
         }
-        step(TerminalSessionState.OpeningPayment, TerminalEventCode.ChargeInitiated, "amount=$amount")
-        step(TerminalSessionState.WaitingForCard, TerminalEventCode.NfcStarted)
-        step(TerminalSessionState.ClosingPayment, TerminalEventCode.NfcCompleted)
-        setState(TerminalSessionState.Ready)
+        try {
+            step(TerminalSessionState.OpeningPayment, TerminalEventCode.ChargeInitiated, "amount=$amount")
+            step(TerminalSessionState.WaitingForCard, TerminalEventCode.NfcStarted)
+            step(TerminalSessionState.ClosingPayment, TerminalEventCode.NfcCompleted)
+        } finally {
+            if (_sessionState.value.isCharging) setState(TerminalSessionState.Ready)
+        }
         chargeCounter += 1
         return Result.success(ChargeReceipt("demo-txn-%04d".format(chargeCounter)))
     }
