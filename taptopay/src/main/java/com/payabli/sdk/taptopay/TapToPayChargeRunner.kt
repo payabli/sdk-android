@@ -296,8 +296,9 @@ internal class TapToPayChargeRunner(
             throw withdrawn
         } catch (failure: Throwable) {
             closeAfterFailedRead(paymentTransId, failure)
-            // Expired after the close, which publishes CLOSING only while the charge holds the session. A denial
-            // expires it too, and the repair that follows lands DEVICE_INELIGIBLE.
+            // After the close, which publishes CLOSING only while the charge holds the session. Expires a dead or
+            // denied reader's session unless another caller moved it meanwhile; a denial's repair lands
+            // DEVICE_INELIGIBLE.
             if (failure is CardReaderException.SessionUnusable ||
                 failure is CardReaderException.DeviceDenied
             ) {
