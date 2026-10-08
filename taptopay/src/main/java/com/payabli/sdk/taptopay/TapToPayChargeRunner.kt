@@ -25,8 +25,10 @@ import com.payabli.sdk.taptopay.provider.CardReadRequest
 import com.payabli.sdk.taptopay.provider.CardReadResult
 import com.payabli.sdk.taptopay.provider.TapToPayProvider
 import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
+import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -167,11 +169,12 @@ internal class TapToPayChargeRunner(
                 // Holds the session as charging from here until the charge ends, however it ends.
                 manager.charging(notReady = { TapToPayCallException.TerminalNotReady() }) {
                     // A ready session with no stored device means the record was lost after it came up, which
-                    // `AttestedDeviceStore.read` reports by answering null. Expire the session before throwing,
-                    // or `isReady` stays true and every retry reaches this same line.
+                    // `AttestedDeviceStore.read` reports by answering null. Only setting the device up again
+                    // repairs that, so the session lands failed before this throws. Left charging, it would end
+                    // ready, and every retry reaches this same line.
                     val deviceId =
                         store.read(entry)?.deviceId ?: run {
-                            manager.invalidate()
+                            manager.settle(TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED))
                             throw TapToPayCallException.NoDeviceToChargeAs()
                         }
                     // Reserved after the checks above, so a charge that never reaches the wire leaves no key

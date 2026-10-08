@@ -35,6 +35,7 @@ import com.payabli.sdk.taptopay.provider.cardRead
 import com.payabli.sdk.taptopay.session.MINTED_KEY
 import com.payabli.sdk.taptopay.session.SessionFixture
 import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
+import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -1076,7 +1077,11 @@ class TapToPayChargeRunnerTest {
 
             assertTrue(failure.toString(), failure is TapToPayException)
             assertTrue(failure.toString(), failure?.cause is IllegalStateException)
-            assertEquals(TapToPaySessionState.SessionExpired, fixture.state)
+            assertEquals(PayabliErrorType.DEVICE_SETUP_REQUIRED, (failure as TapToPayException).type)
+            assertEquals(
+                TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED),
+                fixture.state,
+            )
             assertFalse(INITIATE in fixture.routes)
         }
 
@@ -1993,7 +1998,7 @@ class TapToPayChargeRunnerTest {
         }
 
     @Test
-    fun `a lost device record ends the charge expired, not ready`() =
+    fun `a lost device record ends the charge failed, needing the device set up again`() =
         runTest(timeout = TEST_TIMEOUT) {
             val fixture = readyFixture()
             fixture.enrollment.store.clear(ENTRY)
@@ -2001,7 +2006,14 @@ class TapToPayChargeRunnerTest {
 
             runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
 
-            assertEquals(listOf(TapToPaySessionState.Ready, opening, TapToPaySessionState.SessionExpired), seen)
+            assertEquals(
+                listOf(
+                    TapToPaySessionState.Ready,
+                    opening,
+                    TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED),
+                ),
+                seen,
+            )
         }
 
     @Test
