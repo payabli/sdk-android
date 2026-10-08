@@ -269,17 +269,8 @@ internal class TapToPayChargeRunner(
         }
 
     /**
-     * Asks the reader for one card, and closes [paymentTransId] if it does not deliver one.
-     *
-     * [amount] is the value at the scale the paypoint recorded, so the card is asked for what was opened.
-     *
-     * **Every exit but a card leaves a transaction open at the service**, cancellation and a JVM `Error`
-     * included, so every failure branch closes it on the way out. The `Error` is rethrown unchanged rather
-     * than converted, so the facade's promise that one is not caught still holds for a caller: what the
-     * branch exists for is the open payment it would otherwise leave standing.
-     *
-     * The key stays held here unless the failed-read close is refused because the processor has no record of
-     * the payment. The reader has been asked, so the sale may be captured, and only that answer says it was not.
+     * Asks for one card, and on every other exit, cancellation and a JVM `Error` included, closes [paymentTransId]
+     * and rethrows unchanged. The key stays held unless that close finds the processor has no record of it.
      */
     private suspend fun readCard(
         paymentTransId: String,
@@ -447,19 +438,8 @@ internal class TapToPayChargeRunner(
     ) = TapToPayErrorCodes.exceptionFor(failure, type, paymentTransId, capture)
 
     /**
-     * Closes a transaction whose tap did not complete, best effort. The attempt stays named either way.
-     *
-     * Uncancellable: a withdrawn caller is one of the ways a tap does not complete, and the transaction is
-     * open either way.
-     *
-     * **A recorded close is not a recorded failure, so a close that lands keeps the key.** The close makes
-     * the service pull the processor for this transaction and write back what it finds, so a sale the
-     * processor captured comes back captured rather than failed. This call sends the request and does not
-     * decode the answer, so a close that landed says the service now knows the outcome and not what the
-     * outcome was. Releasing on it would rotate the key after a capture and let the next charge take the
-     * money again. Holding it keeps the repeat named as one attempt, which is the whole point of the key.
-     * The one release is a close refused because the processor has no record of the payment, and never for a
-     * resent key.
+     * Closes an uncompleted tap, uncancellably. A close that lands keeps the key, because the answer is not decoded
+     * and a capture reads like a failure. The one release is a refusal saying the processor has no record of it.
      */
     private suspend fun closeAfterFailedRead(
         paymentTransId: String,

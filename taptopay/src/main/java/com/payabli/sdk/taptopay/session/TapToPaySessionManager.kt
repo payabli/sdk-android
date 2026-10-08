@@ -156,13 +156,8 @@ internal class TapToPaySessionManager(
     }
 
     /**
-     * Decides, reports and writes under [guard].
-     *
-     * The report comes before the writes, so a collector that transitions from inside `sink.value = to`
-     * cannot report its move before this one. Nothing foreign runs under the monitor at that point: the
-     * recorder returns immediately and never throws, and a collector resumes only on the write after it.
-     *
-     * The refusal record is outside, where it publishes nothing.
+     * Decides, reports and writes under [guard], reporting first so a collector that moves from inside the write
+     * cannot report ahead of this move. The refusal record is outside, where it publishes nothing.
      */
     private fun write(
         to: TapToPaySessionState,
