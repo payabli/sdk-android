@@ -307,6 +307,24 @@ class TapToPaySessionManagerTest {
         }
 
     @Test
+    fun `a charge fails the session only while it holds it`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failed = TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED)
+            driveTo(manager, TapToPaySessionState.Ready)
+            manager.charging({ NotReady() }) {
+                manager.reset()
+                manager.advance(TapToPaySessionState.FetchingConfig)
+                manager.failCharge(TapToPayFailureReason.DEVICE_SETUP_REQUIRED)
+            }
+            assertEquals(TapToPaySessionState.FetchingConfig, manager.state.value)
+
+            val fresh = TapToPaySessionManager(logger)
+            driveTo(fresh, TapToPaySessionState.Ready)
+            fresh.charging({ NotReady() }) { fresh.failCharge(TapToPayFailureReason.DEVICE_SETUP_REQUIRED) }
+            assertEquals(failed, fresh.state.value)
+        }
+
+    @Test
     fun `an activity outside a charge is dropped`() {
         manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
 

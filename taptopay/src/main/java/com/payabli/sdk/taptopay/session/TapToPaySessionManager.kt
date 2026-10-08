@@ -146,6 +146,11 @@ internal class TapToPaySessionManager(
     }
 
     /** Dropped unless a charge holds the session. */
+    fun failCharge(reason: TapToPayFailureReason) {
+        write(TapToPaySessionState.Failed(reason)) { it is TapToPaySessionState.Charging }
+    }
+
+    /** Dropped unless a charge holds the session. */
     fun chargeActivity(activity: TapToPayChargeActivity) {
         write(TapToPaySessionState.Charging(activity)) { it is TapToPaySessionState.Charging }
     }

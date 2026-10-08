@@ -28,7 +28,6 @@ import com.payabli.sdk.taptopay.session.TapToPayChargeActivity
 import com.payabli.sdk.taptopay.session.TapToPayFailureReason
 import com.payabli.sdk.taptopay.session.TapToPaySessionCoordinator
 import com.payabli.sdk.taptopay.session.TapToPaySessionManager
-import com.payabli.sdk.taptopay.session.TapToPaySessionState
 import com.payabli.sdk.taptopay.telemetry.TapToPayReports
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
@@ -159,7 +158,7 @@ internal class TapToPayChargeRunner(
                     // Lands failed: ending ready would send every retry back to this line.
                     val deviceId =
                         store.read(entry)?.deviceId ?: run {
-                            manager.settle(TapToPaySessionState.Failed(TapToPayFailureReason.DEVICE_SETUP_REQUIRED))
+                            manager.failCharge(TapToPayFailureReason.DEVICE_SETUP_REQUIRED)
                             throw TapToPayCallException.NoDeviceToChargeAs()
                         }
                     // After the checks, so a charge that never reaches the wire holds no key.
