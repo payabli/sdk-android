@@ -229,18 +229,9 @@ internal class DeviceEnrollment(
         }
 
     /**
-     * Spends the six-digit code the merchant issued out of band.
-     *
-     * **No challenge is requested first.** The sibling SDK does, and the call is dead: its result is
-     * discarded, the activation body carries nothing to correlate it with, and what is verified is the
-     * assertion, signed over its timestamp. It costs a round trip that can fail on its own and surface as an
-     * attestation error while someone is typing a perfectly good code.
-     *
-     * The code's shape is checked here, because a code that is sent counts against the attempt limit and a
-     * typo should not spend one.
-     *
-     * When [activationId] is given, the stored registration has to still be that one, before the assertion and
-     * again after it, or nothing is sent and [DeviceActivationException.RegistrationReplaced] is raised.
+     * Spends the merchant's six-digit code with no challenge first: the activation body has nothing to pair one with.
+     * A malformed code is refused before it is sent, so a typo spends no attempt.
+     * Raises [DeviceActivationException.RegistrationReplaced] if [activationId] isn't the stored registration.
      */
     suspend fun activateDevice(
         activationCode: String,
