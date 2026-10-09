@@ -3,9 +3,9 @@ package com.payabli.sdk.taptopay.enrollment
 import kotlinx.serialization.Serializable
 
 /**
- * This device's attestation binding for one entry point: paypoint, handle, and a [keyId] derived from the key itself.
- * Identity, never secret; holds no key name, alias or activation status, so losing it costs one re-attestation.
- * Not a data class: a generated `toString` would print all three, and [entry] names a merchant.
+ * One entry point's binding: paypoint, handle, and a [keyId] derived from the key. Identity, never secret.
+ * A copy from another device names a key this one doesn't hold; [DeviceEnrollment] must reject it before sending.
+ * No key name, alias or activation status. Not a data class: `toString` would print [entry], a merchant.
  */
 @Serializable
 internal class AttestedDevice(
