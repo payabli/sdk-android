@@ -127,21 +127,49 @@ internal class TapToPaySessionManager(
     }
 
     /**
-     * Decides, reports and writes under [guard].
+     * Runs [work] with the session [TapToPaySessionState.Charging]. The ready check and the entry are one write.
      *
-     * The report comes before the writes, so a collector that transitions from inside `sink.value = to`
-     * cannot report its move before this one. Nothing foreign runs under the monitor at that point: the
-     * recorder returns immediately and never throws, and a collector resumes only on the write after it.
-     *
-     * The refusal record is outside, where it publishes nothing.
+     * Leaving writes ready only while the session is still charging, so a move made during [work], by [work] or
+     * by another caller, is kept.
      */
-    private fun write(to: TapToPaySessionState): Written {
+    suspend fun <T> charging(
+        notReady: () -> Exception,
+        work: suspend () -> T,
+    ): T {
+        val opening = TapToPaySessionState.Charging(TapToPayChargeActivity.OPENING)
+        if (!write(opening) { it == TapToPaySessionState.Ready }.published) throw notReady()
+        try {
+            return work()
+        } finally {
+            write(TapToPaySessionState.Ready) { it is TapToPaySessionState.Charging }
+        }
+    }
+
+    /** Dropped unless a charge holds the session. */
+    fun failCharge(reason: TapToPayFailureReason) {
+        write(TapToPaySessionState.Failed(reason)) { it is TapToPaySessionState.Charging }
+    }
+
+    /** Dropped unless a charge holds the session. */
+    fun chargeActivity(activity: TapToPayChargeActivity) {
+        write(TapToPaySessionState.Charging(activity)) { it is TapToPaySessionState.Charging }
+    }
+
+    /**
+     * Decides, reports and writes under [guard], reporting first so a collector that moves from inside the write
+     * cannot report ahead of this move. The refusal record is outside, where it publishes nothing.
+     */
+    private fun write(
+        to: TapToPaySessionState,
+        onlyFrom: (TapToPaySessionState) -> Boolean = { true },
+    ): Written {
         val from: TapToPaySessionState
         val permitted: Boolean
         val published: Boolean
 
         synchronized(guard) {
             from = sink.value
+            if (!onlyFrom(from)) return Written(from, permitted = true, published = false)
             permitted = TapToPaySessionTransitions.permits(from, to)
             published = permitted && from != to
             if (published) {
@@ -154,9 +182,13 @@ internal class TapToPaySessionManager(
                 logger.info(
                     LogField.safe("event", "ttp_session_state"),
                     LogField.safe("state", to.diagnosticName),
+                    LogField.safe("phase", (to as? TapToPaySessionState.Charging)?.activity?.name),
                     LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
                 ) { "session state changed" }
-                TapToPayReports.sessionStateChanged(from, to)
+                // A move between two activities is not a change of state.
+                if (from !is TapToPaySessionState.Charging || to !is TapToPaySessionState.Charging) {
+                    TapToPayReports.sessionStateChanged(from, to)
+                }
 
                 // Readiness first: `sink.value = to` resumes an unconfined collector, which reads
                 // [isReady] on the state it was just handed.
@@ -172,12 +204,13 @@ internal class TapToPaySessionManager(
                 LogField.safe("tostate", to.diagnosticName),
             ) { "refused a session state change" }
         }
-        return Written(from, permitted)
+        return Written(from, permitted, published)
     }
 
     /** What one write decided, so a caller naming the refusal does not read the state a second time. */
     private class Written(
         val from: TapToPaySessionState,
         val permitted: Boolean,
+        val published: Boolean,
     )
 }

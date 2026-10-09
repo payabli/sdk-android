@@ -164,9 +164,23 @@ class TerminalStepsTest {
     }
 
     @Test
+    fun `a charge under way is the charge step in progress, with the steps before it finished`() {
+        listOf(
+            TerminalSessionState.OpeningPayment,
+            TerminalSessionState.WaitingForCard,
+            TerminalSessionState.ClosingPayment,
+        ).forEach { session ->
+            val sequence = TerminalSteps.forCharging(Readiness.Ready, session, false, false, TerminalAction.Charge)
+            assertEquals(session.toString(), StepStatus.Done, sequence[1].status)
+            assertEquals(session.toString(), StepStatus.NotNeeded, sequence[2].status)
+            assertEquals(session.toString(), StepStatus.InProgress, sequence[3].status)
+        }
+    }
+
+    @Test
     fun `an action in flight is the app working, not the reader`() {
-        // The session reports Ready throughout a charge and PendingActivation throughout an
-        // activation, so neither step can tell from it that it is running.
+        // A charge is in flight before its first stage is published, and the session reports
+        // PendingActivation throughout an activation, so neither step can tell from it alone.
         val charging =
             TerminalSteps.forCharging(
                 Readiness.Ready,
@@ -198,8 +212,8 @@ class TerminalStepsTest {
 
     @Test
     fun `a captured payment finishes the step that took it`() {
-        // The session reports Ready before, during and after a charge, so without the recorded outcome
-        // this step reads Current and a merchant who has just been paid is told to take a payment.
+        // The session reports Ready before and after a charge, so without the recorded outcome this
+        // step reads Current and a merchant who has just been paid is told to take a payment.
         val sequence =
             TerminalSteps.forCharging(
                 readiness = Readiness.Ready,

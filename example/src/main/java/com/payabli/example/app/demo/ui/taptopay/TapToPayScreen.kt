@@ -245,7 +245,7 @@ private fun PaymentBlock(
             onClick = onCharge,
             enabled = !state.isWorking && state.isReady,
         )
-        if (!state.isReady) {
+        if (!state.isReady && !state.session.isCharging) {
             Caption("Set up the terminal first. Charging needs a prepared reader.")
         }
     }

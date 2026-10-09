@@ -11,20 +11,8 @@ import com.payabli.example.app.demo.terminal.TerminalSessionState
  */
 object TerminalSteps {
     /**
-     * @param readiness what the device checks concluded.
-     * @param session where the terminal session has got to.
-     * @param activationFailed the last activation attempt was refused.
-     * @param activated an activation succeeded. The session cannot say so: it reports
-     *   [TerminalSessionState.Ready] both for a device that was activated and for one that never
-     *   had to be, and those are a finished step and a skipped one.
-     * @param chargeFailed the last charge attempt failed.
-     * @param charged a charge succeeded.
-     * @param working which action is in flight, or null. The session reports
-     *   [TerminalSessionState.Ready] throughout a charge and [TerminalSessionState.PendingActivation]
-     *   throughout an activation, so it cannot say on its own that either is running. Which one
-     *   matters as much as whether: the session reaches Ready before the call that took it there
-     *   returns, so a bare flag marks the charge step in progress while the terminal is still
-     *   starting.
+     * The session cannot say that an activation succeeded or that an action is running: it reports Ready for
+     * an activated device and one that never needed it, and reaches Ready before the call that took it there.
      */
     fun forCharging(
         readiness: Readiness,
@@ -51,7 +39,7 @@ object TerminalSteps {
                 // done and handed the sequence on while the work was still running.
                 working == TerminalAction.Initialize ||
                     working == TerminalAction.Reinitialize -> StepStatus.InProgress
-                session == TerminalSessionState.Ready -> StepStatus.Done
+                session == TerminalSessionState.Ready || session.isCharging -> StepStatus.Done
                 // Activation is a separate step, so reaching it means this one finished.
                 session == TerminalSessionState.PendingActivation -> StepStatus.Done
                 // Activating chains an initialize, which walks back through this step's own states.
@@ -77,7 +65,7 @@ object TerminalSteps {
                 // Done and NotNeeded both let the next step run. They say different things to a
                 // reader, and only the caller knows which happened.
                 activated -> StepStatus.Done
-                session == TerminalSessionState.Ready -> StepStatus.NotNeeded
+                session == TerminalSessionState.Ready || session.isCharging -> StepStatus.NotNeeded
                 // Before the recorded failure: activating chains an initialize, so a denied reader
                 // surfaces as this call throwing after the code was accepted.
                 readerDenied -> StepStatus.Done
@@ -95,6 +83,7 @@ object TerminalSteps {
                 !activation.isFinished -> StepStatus.Blocked
                 // The session never reached Ready, so nothing below would report this at all.
                 readerDenied -> StepStatus.Failed
+                session.isCharging -> StepStatus.InProgress
                 working == TerminalAction.Charge && session == TerminalSessionState.Ready -> StepStatus.InProgress
                 chargeFailed && session == TerminalSessionState.Ready -> StepStatus.Failed
                 charged && session == TerminalSessionState.Ready -> StepStatus.Done

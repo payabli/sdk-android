@@ -188,3 +188,9 @@ full NFC settings screen. No app can switch NFC on, and even the adb shell uid i
 **Card-present needs the reader.** Everything past step 1 on Tap to pay needs a phone, a paypoint and a
 build that meet the [Tap to Pay guide](../taptopay/README.md#requirements)'s requirements, including the
 card reader repository's credentials.
+
+**A charge walks its states.** With the terminal ready, take a payment. The chip reads `Opening payment`,
+then `Tap a card` while the reader waits, then `Closing payment` after the tap, and returns to `Ready`
+when the charge ends. The setup hint stays hidden throughout. Repeat with the charge cancelled at
+`Tap a card`: the chip still passes through `Closing payment`, because the opened payment is closed,
+and returns to `Ready`.

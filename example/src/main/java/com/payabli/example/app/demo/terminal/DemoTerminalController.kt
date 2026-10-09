@@ -1,6 +1,8 @@
 package com.payabli.example.app.demo.terminal
 
 import com.payabli.example.app.demo.flow.StepStatus
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -8,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import java.math.BigDecimal
 
 /**
@@ -77,10 +80,22 @@ class DemoTerminalController(
         if (_sessionState.value != TerminalSessionState.Ready) {
             return Result.failure(IllegalStateException("The terminal is not ready"))
         }
-        emit(TerminalEventCode.ChargeInitiated, "amount=$amount")
-        emit(TerminalEventCode.NfcStarted)
-        delay(stepDelayMillis)
-        emit(TerminalEventCode.NfcCompleted)
+        try {
+            step(TerminalSessionState.OpeningPayment, TerminalEventCode.ChargeInitiated, "amount=$amount")
+            step(TerminalSessionState.WaitingForCard, TerminalEventCode.NfcStarted)
+            step(TerminalSessionState.ClosingPayment, TerminalEventCode.NfcCompleted)
+        } catch (withdrawn: CancellationException) {
+            // Once the card was asked for, the opened payment is closed even when the caller leaves.
+            if (_sessionState.value == TerminalSessionState.WaitingForCard) {
+                withContext(NonCancellable) {
+                    setState(TerminalSessionState.ClosingPayment)
+                    delay(stepDelayMillis)
+                }
+            }
+            throw withdrawn
+        } finally {
+            if (_sessionState.value.isCharging) setState(TerminalSessionState.Ready)
+        }
         chargeCounter += 1
         return Result.success(ChargeReceipt("demo-txn-%04d".format(chargeCounter)))
     }

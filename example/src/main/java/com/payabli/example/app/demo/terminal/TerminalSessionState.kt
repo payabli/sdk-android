@@ -22,8 +22,11 @@ enum class TerminalSessionState {
     /** Able to take a payment. */
     Ready,
 
-    /** Taking a payment. Not able to take another until it ends. */
-    Charging,
+    OpeningPayment,
+
+    WaitingForCard,
+
+    ClosingPayment,
 
     /** The session outlived its lifetime and needs starting again. */
     SessionExpired,
@@ -36,4 +39,7 @@ enum class TerminalSessionState {
 
     /** Something failed. The last result line says what. */
     Error,
+    ;
+
+    val isCharging: Boolean get() = this == OpeningPayment || this == WaitingForCard || this == ClosingPayment
 }
