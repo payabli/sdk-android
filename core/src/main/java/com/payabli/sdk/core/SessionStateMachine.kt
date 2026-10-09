@@ -9,25 +9,9 @@ import com.payabli.sdk.core.logging.warn
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
- * The only writer of the one [SdkState] the SDK publishes.
- *
- * The sink is handed in rather than owned here, because the state outlives any one session: it is readable
- * before the first [PayabliSession.initialize] and it stays readable across a replacement. One session has
- * one machine, every machine writes that same sink, and nothing else writes it at all, so there is one source
- * of truth rather than a machine plus a copy kept in step by hand. iOS mirrors its internal state onto its
- * facade through a `syncPublished()` call every transition has to remember, and one forgotten call
- * desynchronizes the two.
- *
- * **A machine that has been finished never writes again**, and that is what makes a shared sink safe. The
- * rule is per machine rather than per published value: a successor has to be able to publish [SdkState.Ready]
- * over the terminal value its predecessor left, while the predecessor must not be able to publish over the
- * successor. A request already past the point where it decides the session is finished can suspend, and by
- * the time it resumes the host may have re-initialized; it then calls the listener it was built with, which
- * belongs to the machine it started under.
- *
- * Both transitions are reachable and tested, which is the bar: iOS documents a terminal state whose only
- * trigger has no call site, and a state nothing can reach is worse than no state, because a host writes a
- * recovery branch that never runs.
+ * The only writer of the one [SdkState] the SDK publishes, into a sink handed in because it outlives any session.
+ * **A finished machine never writes again**: a successor may publish [SdkState.Ready] over its predecessor's
+ * terminal value, and a request that resumes under the predecessor cannot publish over the successor.
  */
 internal class SessionStateMachine(
     private val sink: MutableStateFlow<SdkState> = MutableStateFlow(SdkState.Uninitialized),
@@ -70,7 +54,7 @@ internal class SessionStateMachine(
     /**
      * Auth is terminally unrecoverable, so the host has to re-initialize.
      *
-     * Idempotent, and deliberately so: several in-flight requests can each discover the same dead session,
+     * Idempotent: several in-flight requests can each discover the same dead session,
      * and the second one to notice is reporting the same fact rather than a new one.
      */
     fun markReinitializeRequired() {

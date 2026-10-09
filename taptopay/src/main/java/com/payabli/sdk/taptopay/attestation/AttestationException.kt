@@ -68,9 +68,7 @@ public sealed class AttestationException(
      * platform's own rule is to retry transient conditions and not to retry conditions that are not
      * transient, and one of these two branches is each. A caller that reaches this stops.
      *
-     * Card-present callers halt the flow. There is no counterpart on the sibling platform, whose
-     * attestation service imposes no vendor-side budget, so this case is asymmetric by construction rather
-     * than by omission.
+     * Card-present callers halt the flow.
      */
     @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public class Throttled(
