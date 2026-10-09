@@ -415,7 +415,7 @@ When `sdk-android-telemetry` is in your app, which `sdk-android` includes, the S
 events to Payabli. Set `telemetryEnabled = false` in `PayabliConfig` to turn it off; the SDK then queues
 and sends nothing.
 
-Every request the SDK sends carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
+Every request the SDK sends to Payabli carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
 version, the device model, the locale and, when there is one, the device ID described under
 [Device identity](#device-identity). It can't be turned off.
 
