@@ -270,7 +270,8 @@ val session: PayabliSession = PayabliSession.initialize(config, HostBindings(app
 - There is one session per app process.
 - Calling `initialize` again with the same entry point, environment and `telemetryEnabled` returns the same
   session, which keeps its original token provider. A different one throws a `PayabliException` whose `type` is
-  `INVALID_CONFIGURATION`, and the session already running stays in place.
+  `INVALID_CONFIGURATION`, and the session already running stays in place. After authentication has failed for
+  good, it builds a fresh session instead.
 
 The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
 your token endpoint:
@@ -414,8 +415,8 @@ events to Payabli. Set `telemetryEnabled = false` in `PayabliConfig` to turn it 
 and sends nothing.
 
 Every request the SDK sends to Payabli carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
-version, the device model, the locale and, when there is one, the device ID described under
-[Device identity](#device-identity). It can't be turned off.
+version, the device model, the locale and the device ID described under [Device identity](#device-identity).
+A value that's blank or isn't printable ASCII is left out. The header can't be turned off.
 
 ## Versioning and support
 
