@@ -273,8 +273,8 @@ different configuration throws a `PayabliException` whose `type` is `INVALID_CON
   point, environment and `telemetryEnabled` returns the same session, which keeps its original token
   provider. Calling it with a different entry point, environment or `telemetryEnabled` while the session is
   live fails.
-- `session.deviceId` is this device's identity. It is the same for every capability and stable for the install,
-  and `null` while the device gives no identifier to read.
+- `session.deviceId` is this device's identity. It is the same for every capability, survives an uninstall and
+  reinstall, and changes with a factory reset. It is `null` while the device gives no identifier to read.
 
 The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
 your token endpoint:
@@ -287,8 +287,8 @@ your token endpoint:
 
 ### Device identity
 
-`PayabliSession.deviceId` is this device's identity, the same for every capability and stable for the
-install. It is `null` when the platform gives no device identifier.
+`PayabliSession.deviceId` is this device's identity, the same for every capability. It survives an uninstall
+and reinstall, and changes with a factory reset. It is `null` when the platform gives no device identifier.
 
 ## Take a payment
 
