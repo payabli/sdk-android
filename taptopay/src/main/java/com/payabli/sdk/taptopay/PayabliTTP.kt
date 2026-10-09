@@ -40,7 +40,7 @@ public class PayabliTTP private constructor(
     /** Whether a payment can be taken right now. */
     public val isReady: StateFlow<Boolean> get() = coordinator.isReady
 
-    /** Brings the terminal up from wherever it stands. Safe to call again at any time. */
+    /** Brings the terminal up from wherever it stands. Safe to call again while no charge is running. */
     public suspend fun initialize(): Unit = wrapping { coordinator.initialize() }
 
     /**
