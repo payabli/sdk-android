@@ -139,7 +139,7 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 
 - Activation is **per phone and per paypoint**. It isn't per user.
 - A reinstall, a restore to a new phone, or a new phone needs a new code.
-- One install can hold activations for up to four paypoints. Activating a fifth drops the one used least
+- One install can hold activations for up to four paypoints. Setting up a fifth drops the one used least
   recently, which then needs to be set up again the next time it's used.
 
 Until the phone is activated, `initialize()` throws a `TapToPayException` whose `type` is
@@ -231,8 +231,9 @@ mean nothing was charged: find the transaction before charging again.
 
 A `TapToPayException` carries the catalog entry for its cause:
 
-- `category` says what to do, such as `CREDENTIAL` (call `initialize()` again) or `OUTCOME_UNKNOWN` (find
-  the transaction before repeating the call). Choose your remedy from `category`.
+- `category` says what to do, such as `CREDENTIAL` (your token provider is asked again on the next call; when
+  the state shows the session or the device setup has ended, initialize again) or `OUTCOME_UNKNOWN` (the call
+  may have taken effect: check before repeating it). Choose your remedy from `category`.
 - `type` names the cause, for a case your app handles on its own, such as `DEVICE_PENDING_ACTIVATION`.
 - `code` is the catalog number Payabli support reads. Give it to them with the failure.
 - `message` is fixed text, safe to show and to log. `reason` is a short summary and `detail` a longer
