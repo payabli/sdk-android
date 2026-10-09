@@ -230,7 +230,7 @@ internal class DeviceEnrollment(
 
     /**
      * Spends the merchant's six-digit code with no challenge first: the activation body has nothing to pair one with.
-     * A malformed code is refused unsent, so a typo spends no attempt. Given [activationId], the stored registration
+     * A code that isn't six digits is refused unsent and spends no attempt. Given [activationId], the registration
      * must still be it before and after signing, or [DeviceActivationException.RegistrationReplaced] is raised.
      */
     suspend fun activateDevice(
