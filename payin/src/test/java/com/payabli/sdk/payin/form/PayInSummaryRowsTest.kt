@@ -134,6 +134,28 @@ class PayInSummaryRowsTest {
     }
 
     @Test
+    fun `a negative service fee empties every figure`() {
+        assertNoFigures(PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("-0.5")))
+    }
+
+    @Test
+    fun `a total that is not more than zero empties every figure`() {
+        assertNoFigures(PayInPaymentDetails(BigDecimal("-5"), surchargeFee = BigDecimal("1")))
+    }
+
+    @Test
+    fun `a total sent as zero empties every figure`() {
+        assertNoFigures(PayInPaymentDetails(BigDecimal("0.001"), serviceFee = BigDecimal("0.5")))
+    }
+
+    private fun assertNoFigures(refused: PayInPaymentDetails) {
+        assertNull(PayInSummaryRows.rowAmount(PayInField.Amount, refused))
+        assertNull(PayInSummaryRows.rowAmount(PayInField.ServiceFee, refused))
+        assertNull(PayInSummaryRows.rowAmount(PayInField.SurchargeFee, refused))
+        assertNull(PayInSummaryRows.totalRowAmount(refused))
+    }
+
+    @Test
     fun `a field that is not money has no figure`() {
         assertNull(PayInSummaryRows.rowAmount(PayInField.CardholderName, details))
     }

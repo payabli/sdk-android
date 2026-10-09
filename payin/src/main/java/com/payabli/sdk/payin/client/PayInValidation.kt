@@ -1,8 +1,10 @@
 package com.payabli.sdk.payin.client
 
+import com.payabli.sdk.payin.form.PayInAmountRefusal
 import com.payabli.sdk.payin.form.PayInField
 import com.payabli.sdk.payin.form.PayInFieldError
 import com.payabli.sdk.payin.form.PayInFieldRules
+import com.payabli.sdk.payin.form.amountRefusal
 import com.payabli.sdk.payin.model.ExpiryValue
 import com.payabli.sdk.payin.model.PayInBankAccountData
 import com.payabli.sdk.payin.model.PayInCardData
@@ -11,20 +13,11 @@ import com.payabli.sdk.payin.model.PayInInstrument
 import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInPaymentMethod
 import com.payabli.sdk.payin.model.PayInValidationOptions
-import com.payabli.sdk.payin.util.extensions.sendableOrNull
-import java.math.BigDecimal
 
 /**
- * What this module refuses before it builds a request.
- *
- * **The numeric bounds are not restated here.** [PayInFieldRules] already carries the card length, the
- * security-code range, the routing length, the account range, the postal-code limit and both checksums, and it
- * is what the form validates against. Two copies of a bound is how the form and the client come to disagree
- * about the same field, so this reads the rules and adds only what they do not cover: the two name lengths,
- * the holder-name character set, the amount, and the fields that must not be blank.
- *
- * Every refusal names the field in its wire spelling, so a caller can mark it without a second mapping, and
- * carries a message with no submitted value in it.
+ * What this module refuses before it builds a request. A bound [PayInFieldRules] or [amountRefusal] carries is read
+ * from there and never restated, since two copies of a bound is how the form and the client disagree about one
+ * field. Every refusal names the field in its wire spelling and carries no submitted value.
  */
 internal object PayInValidation {
     /** The wire limit, and the one bound not expressible as a field rule. */
@@ -67,36 +60,18 @@ internal object PayInValidation {
         }
     }
 
-    /**
-     * The amounts, checked at the scale they will be sent at.
-     *
-     * `0.001` is more than zero and reaches the wire as `0.00`, so checking the value as supplied would pass a
-     * total the service is asked to take as nothing. Each is rounded here exactly as [PayInAmountSerializer]
-     * rounds it.
-     */
+    /** The amounts, refused as [amountRefusal] decides, which is also what empties the form's summary. */
     fun paymentDetails(details: PayInPaymentDetails) {
-        // Range before rounding. `BigDecimal` is unbounded and `setScale` throws on a value whose scale
-        // cannot be shifted, measured at both extremes: 1E+2147483647 and 1E-2147483647 each raise
-        // ArithmeticException. Rounding first would hand a caller that instead of a refusal, and a merely
-        // large exponent would expand into a request body megabytes long.
-        val total =
-            details.totalAmount.sendableOrNull()
-                ?: throw PayInException.InvalidInput(FIELD_TOTAL_AMOUNT, "The total amount is out of range")
-        if (total <= BigDecimal.ZERO) {
-            throw PayInException.InvalidInput(FIELD_TOTAL_AMOUNT, "The total amount must be more than zero")
-        }
-        val fee =
-            details.serviceFee?.let {
-                it.sendableOrNull()
-                    ?: throw PayInException.InvalidInput(FIELD_SERVICE_FEE, "The service fee is out of range")
+        val (field, message) =
+            when (details.amountRefusal() ?: return) {
+                PayInAmountRefusal.TotalOutOfRange -> FIELD_TOTAL_AMOUNT to "The total amount is out of range"
+                PayInAmountRefusal.TotalNotMoreThanZero ->
+                    FIELD_TOTAL_AMOUNT to "The total amount must be more than zero"
+                PayInAmountRefusal.ServiceFeeOutOfRange -> FIELD_SERVICE_FEE to "The service fee is out of range"
+                PayInAmountRefusal.ServiceFeeNegative -> FIELD_SERVICE_FEE to "A service fee cannot be negative"
+                PayInAmountRefusal.SurchargeOutOfRange -> FIELD_SURCHARGE_FEE to "The surcharge is out of range"
             }
-        if (fee != null && fee < BigDecimal.ZERO) {
-            throw PayInException.InvalidInput(FIELD_SERVICE_FEE, "A service fee cannot be negative")
-        }
-        details.surchargeFee?.let {
-            it.sendableOrNull()
-                ?: throw PayInException.InvalidInput(FIELD_SURCHARGE_FEE, "The surcharge is out of range")
-        }
+        throw PayInException.InvalidInput(field, message)
     }
 
     fun transId(value: String) {

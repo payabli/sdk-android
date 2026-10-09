@@ -181,6 +181,24 @@ class PayInAmountTextTest {
         assertEquals(listOf(card), placeAmounts(listOf(card), unsendableFee).map { it.section })
     }
 
+    @Test
+    fun `a payment submit refuses draws no summary, with a host summary or without one`() {
+        val refused =
+            listOf(
+                PayInPaymentDetails(BigDecimal("12.34"), serviceFee = BigDecimal("-0.5")),
+                PayInPaymentDetails(BigDecimal("-5"), surchargeFee = BigDecimal("1")),
+                PayInPaymentDetails(BigDecimal("0.001"), serviceFee = BigDecimal("0.5")),
+            )
+
+        refused.forEach { details ->
+            assertEquals(listOf(card), placeAmounts(listOf(card), details).map { it.section })
+            assertEquals(
+                listOf(card),
+                placeAmounts(listOf(card, summary(PayInField.Amount)), details).map { it.section },
+            )
+        }
+    }
+
     private fun summaryOf(
         details: PayInPaymentDetails,
         showsBaseAmount: Boolean,
