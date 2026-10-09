@@ -131,7 +131,7 @@ try {
 ```
 
 `initialize()` attests the device, fetches its configuration and prepares the reader. It is safe to call
-again at any time. The first run on a phone takes longer than later ones.
+again while no charge is running. The first run on a phone takes longer than later ones.
 
 ### Activate a phone
 
