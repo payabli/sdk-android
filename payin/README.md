@@ -174,7 +174,7 @@ When a form submission fails, `PayInSubmissionState.Failed` carries:
 - `cause`, which says whether a payment may be outstanding. Read it before anything else.
 - `retryKey`, the key available to send again, for `PayInTransactionOptions.idempotencyKey`. Find the
   transaction before resending it. It's `null` where the outcome is known, where nothing was sent, when storing a
-  payment method, and after a conflict the service refused the key under. When it's `null` and `cause` says a
+  payment method, and after a conflict refuses a key you supplied yourself. When it's `null` and `cause` says a
   payment may be outstanding, find the transaction before charging again.
 - `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
 
