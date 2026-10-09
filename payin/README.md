@@ -127,7 +127,8 @@ In sandbox, use Payabli's [test cards](https://docs.payabli.com/guides/test-acco
 
 ### Authorize, then capture
 
-`authorize` holds an amount on a card without charging it. `captureAuthorizedTransaction` captures that
+`authorize` holds an amount on a card, a stored card or a cloud device without charging it. The form authorizes
+a card only. `captureAuthorizedTransaction` captures that
 authorization later, and `voidTransaction` releases it or voids a transaction that hasn't settled.
 
 ### Retry safely
@@ -135,21 +136,6 @@ authorization later, and `voidTransaction` releases it or voids a transaction th
 A charge always sends an idempotency key. The SDK mints one per call when you don't set
 `PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
 retry. Don't resend a charge whose outcome is unknown. Find the transaction first.
-
-When the form's charge fails, `PayInSubmissionState.Failed` carries:
-
-- `cause`, which says whether a payment may be outstanding. Read it before anything else.
-- `retryKey`, the key this attempt sent, for `PayInTransactionOptions.idempotencyKey`. Sending it again is
-  recognised as a repeat only while the service still holds it; past that, it is carried out as a new payment.
-  Find the transaction before resending. It's `null` where the outcome is known, where nothing was sent, and when
-  storing a payment method. When it's `null` and `cause` says a payment may be outstanding, find the transaction before
-  charging again.
-- `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
-
-`PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
-`code`, `reason`, `explanation` and `action`, and `paymentTransId`, the transaction it belongs to when the
-service named one. Reconcile from either. Show `reason`, `explanation` and `action`, but don't log them: they
-can repeat what was submitted.
 
 ## Outcomes and errors
 
@@ -160,13 +146,13 @@ methods back before storing again. A form reports through `onCompleted` and `onF
 
 A success means what the call did, which depends on the call:
 
-| Call | A success means | A failure means |
-|---|---|---|
-| `capture` | The payment was charged. With `isAsync = true`, only that the service accepted it: look the transaction up before you fulfill the order | See the table below |
-| `authorize` | An amount is held on the card. Nothing is charged until you capture it | See the table below |
-| `captureAuthorizedTransaction` | The held amount was charged | See the table below |
-| `voidTransaction` | The transaction was voided | See the table below. A refused void doesn't mean the original payment wasn't charged |
-| `storeMethod` | The method was saved | See the table below |
+| Call | A success means |
+|---|---|
+| `capture` | The payment was charged. With `isAsync = true`, only that the service accepted it: look the transaction up before you fulfill the order |
+| `authorize` | An amount is held on the card. Nothing is charged until you capture it |
+| `captureAuthorizedTransaction` | The held amount was charged |
+| `voidTransaction` | The transaction was voided. A refused void doesn't mean the original payment wasn't charged |
+| `storeMethod` | The method was saved |
 
 The outcomes are the ones in the root README's [Handle the outcome](../README.md#handle-the-outcome). For
 `authorize`, `captureAuthorizedTransaction` and `voidTransaction`, read "charged" as "held", "captured"
@@ -177,11 +163,25 @@ or "voided":
 | `Result.success` | Charged, except an `isAsync` capture, which is accepted and not yet known | Store the transaction ID; look an async capture up before fulfilling |
 | `PayInException.Refused`, for example a decline | Not charged | You can retry |
 | `PayInException.InvalidInput` | Not charged; the request was refused before it was sent | Fix the named field |
-| `PayInException.Unsettled`, or a cancellation of any call but `storeMethod` after it was called | Unknown | Look the transaction up before charging again. `Unsettled.paymentTransId` names it when there is one |
+| `PayInException.Unsettled`, or a cancellation of any call but `storeMethod` after it was called | Unknown | Look the transaction up before charging again: by `Unsettled.paymentTransId` when there is one, otherwise by `orderId` in the Payabli portal. |
 | `PayInException.AlreadySubmitting` | Not charged; a submission is already running | Wait for it |
 | `PayInException.ServiceError`, `PayInException.Undecodable`, on `storeMethod` | The service answered with an error, or its answer couldn't be read | Read the stored methods back before storing again. On a charge, these arrive as `Unsettled` |
 | A core `PayabliException`, such as a refused credential, a rate limit or `TOKEN_PROVIDER_FAILED` | On a charge, not charged: an unknown outcome arrives as `Unsettled` instead. On `storeMethod`, a network failure may have saved the method | Branch on its `type`, or its `category` for the remedy. After a network failure on `storeMethod`, read the stored methods back before storing again |
 | `PayInException.Interrupted` (form only) | On a charge, cancelled before anything was sent. On `StoreMethod`, the method may have been saved | Retry a charge. Read the stored methods back before storing again |
+
+When the form's charge fails, `PayInSubmissionState.Failed` carries:
+
+- `cause`, which says whether a payment may be outstanding. Read it before anything else.
+- `retryKey`, the key this attempt sent, for `PayInTransactionOptions.idempotencyKey`. Find the transaction
+  before resending it. It's `null` where the outcome is known, where nothing was sent, and when storing a payment
+  method. When it's `null` and `cause` says a payment may be outstanding, find the transaction before charging
+  again.
+- `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
+
+`PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
+`code`, `reason`, `explanation` and `action`, and `paymentTransId`, the transaction it belongs to when the
+service named one. Reconcile from either. Show `reason`, `explanation` and `action`, but don't log them: they
+can repeat what was submitted.
 
 ## Reference
 
@@ -198,7 +198,7 @@ or "voided":
 | Method | What it does |
 |---|---|
 | `capture(request)` | Charges a card, bank account, stored payment method, cloud device, check or cash |
-| `authorize(request)` | Authorizes a card |
+| `authorize(request)` | Authorizes a card, a stored card or a cloud device |
 | `captureAuthorizedTransaction(request)` | Captures an earlier authorization |
 | `voidTransaction(transId)` | Voids a transaction that hasn't settled |
 | `storeMethod(request)` | Saves a payment method and returns its stored ID |
@@ -236,6 +236,17 @@ The form takes its colors, type and shapes from your app's `MaterialTheme`, so l
 color apply with nothing passed. `PayabliPayInFormDefaults.style(PayInFormStyleOverrides(...))` changes
 single values, and `style` on the form or `LocalPayInFormStyle` applies a `PayInFormStyle` to one form or
 to every form in a tree.
+
+### Accessibility
+
+- Each field is named for a screen reader when its visible label is hidden or drawn above it.
+- A field's error is reported on the control itself.
+- The reveal and hide control, the expiry picker and the card-brand mark carry labels.
+- The security code is masked, and so is the account number while `masksAccountNumber` is on, which is the
+  default.
+- Secret fields open a number-password keyboard.
+- The summary rows are read as one item.
+- Expiry picker rows are at least 48dp, with radio roles.
 
 ## Go live
 

@@ -47,8 +47,6 @@ the card reader's own checks.
 
 ## Before you start
 
-Tap to Pay on Android has no platform terms for the merchant to accept.
-
 ### Unpack the card reader's native library
 
 Add this to your **application** module's `build.gradle.kts`. The library module can't set it for you:
@@ -63,7 +61,7 @@ android {
 }
 ```
 
-An app built without it installs and runs, and is refused when it is submitted for enrolment.
+An app built without it installs and runs, and is refused when it is submitted for enrollment.
 
 ### Have your app enrolled
 
@@ -89,7 +87,7 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
 - The call needs the `pos_create` permission. An API token in the `requestToken` header works in place of
   the bearer token.
 - `friendlyName` is optional. Calling it again with the same values is safe.
-- Register each package name you ship, including a debug suffix or a flavour. The entry must match the
+- Register each package name you ship, including a debug suffix or a flavor. The entry must match the
   package name of the installed app.
 
 An app that isn't an authorized app is refused when the device attests, with an HTTP 403. `initialize()`
@@ -112,9 +110,6 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
   to drive your UI.
 - `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions; call
   them from a coroutine.
-- **One paypoint per session.** There is one session per app process, and it has one entry point.
-  `PayabliSession.initialize` with a different entry point throws a `PayabliException` whose `type` is
-  `INVALID_CONFIGURATION` while the session is live.
 
 ## Take a payment
 
@@ -152,7 +147,8 @@ Until the phone is activated, `initialize()` throws a `TapToPayException` whose 
 authorized app, or credentials without `tools_init` or `pos_create`, land on
 `Failed(CONFIGURATION_REJECTED)` on a phone with no setup stored for the paypoint from an earlier run.
 Credentials without
-`inboundpayments_create` reach `Ready`, and `charge` is then refused before the card is read.
+`inboundpayments_create` reach `Ready`, and `charge` throws a `TapToPayException` whose `type` is
+`PERMISSION_DENIED`, before the card is read.
 
 The code is six digits and can start with zero, so keep it as a string. It's valid for 30 minutes, and
 asking for one again before it expires returns the same code. There are two ways to get it to the app, and
@@ -299,11 +295,11 @@ lookup.
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
-| `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Call `initialize()` again; if it keeps failing, the phone is at fault. |
+| `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Initialize again. If it keeps failing, the phone is the cause. |
 
-### Events
+### Watching the session
 
-The Android SDK has no event stream. Collect `sessionState` to follow progress.
+Collect `sessionState`, a `StateFlow<TapToPaySessionState>`, to follow progress.
 
 ## Go live
 
