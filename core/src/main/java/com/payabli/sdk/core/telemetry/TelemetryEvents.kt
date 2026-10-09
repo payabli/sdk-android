@@ -5,9 +5,7 @@ import androidx.annotation.RestrictTo
 /**
  * Every event name the SDK may report.
  *
- * The names are shared with the other platform and are not this module's to invent: both SDKs bind their
- * constants to one catalog, so an event added on one side has a counterpart or a stated reason it does not.
- * Adding a name here without adding it there is how the two drift.
+ * The names are fixed by the event catalog and are not this module's to invent.
  *
  * They live in `:core` rather than in the telemetry module because the emitting sites do: a capability
  * artifact never depends on a sibling, so the vocabulary has to sit where every emitter can already reach it.
@@ -21,9 +19,8 @@ import androidx.annotation.RestrictTo
 public object TelemetryEvents {
     // Instrument storage.
 
-    // Storing an instrument is reported by the money path, under `payin.storeMethod.completed`. The four
-    // `tokenization.*` names the sibling SDK ships were retired on 2026-08-26: one name carrying an outcome
-    // and a duration says what a started-and-succeeded pair says, and two vocabularies for one act is drift.
+    // Storing an instrument is reported by the money path, under `payin.storeMethod.completed`: one name carrying
+    // an outcome and a duration, with no separate `tokenization.*` names for the same act.
 
     // Payment form.
 

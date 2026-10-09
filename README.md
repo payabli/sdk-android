@@ -22,8 +22,8 @@ token in memory while the session runs.
 
 1. **Your backend** exchanges your Payabli client ID and client secret for a short-lived access token,
    through a token endpoint you build.
-2. **Your app** creates one `PayabliSession` with your entry point, the environment and a token provider
-   that calls that endpoint.
+2. **Your app** starts one session with your entry point, the environment and a token provider that calls
+   that endpoint.
 3. **On that session**, your app takes a payment card-not-present with `PayabliPayIn`, or card-present
    with `PayabliTTP`.
 4. **Every charge ends in an outcome** your app acts on: charged, not charged, or unknown and to be
@@ -45,6 +45,7 @@ token in memory while the session runs.
 | `minSdk` | 23. Tap to Pay needs 30, and so does `com.payabli:sdk-android`, which includes it |
 | `compileSdk` | 31 or higher. The card-not-present form's Compose dependencies require a higher `compileSdk` of their own, and Gradle names it if yours is lower |
 | Tap to Pay | Android 12 on a 64-bit phone with NFC. See the [Tap to Pay guide](taptopay/README.md#requirements) |
+| Building from source | JDK 17 or newer to run Gradle. The build runs on JDK 21 and downloads it when it isn't installed. Dependencies are checked against `gradle/verification-metadata.xml`, so a dependency change regenerates it with `./gradlew --write-verification-metadata sha256` and the tasks that resolve that dependency |
 
 ## Installation
 
@@ -121,7 +122,7 @@ android {
 }
 ```
 
-An app built without it installs and runs, and is refused when it is submitted for enrolment.
+An app built without it installs and runs, and is refused when it is submitted for enrollment.
 
 The card reader library brings its own permissions, which Gradle merges into your app's manifest: `NFC`,
 `INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, `HIDE_OVERLAY_WINDOWS` and `ACCELEROMETER`. Your app
@@ -131,7 +132,7 @@ setup.
 ### Card reader repository
 
 Tap to Pay depends on a card reader library served from Payabli's own repository, which needs
-credentials that Payabli issues. Declare it scoped to the two groups it serves, so Gradle asks it for
+credentials that Payabli issues. Declare it scoped to the groups it serves, so Gradle asks it for
 nothing else:
 
 ```kotlin
@@ -241,8 +242,9 @@ machine.
 
 ### Configure the SDK
 
-Create the session once. `initialize` is a `suspend` function, as are the SDK's other calls, so call them
-from a coroutine, for example in `viewModelScope.launch { }`:
+Start the session once, before you build either way to pay. It takes your entry point, the environment and a
+token provider, and both ways to pay run on it. `initialize` is a `suspend` function, as are the SDK's other
+calls, so call them from a coroutine, for example in `viewModelScope.launch { }`:
 
 ```kotlin
 import com.payabli.sdk.core.HostBindings
@@ -259,36 +261,39 @@ val config = PayabliConfig(
 val session: PayabliSession = PayabliSession.initialize(config, HostBindings(applicationContext))
 ```
 
-While a session is live, calling `initialize` again with the same configuration returns that session, and a
-different configuration throws a `PayabliException` whose `type` is `INVALID_CONFIGURATION`.
-
 | Environment | API host |
 |---|---|
 | `PayabliEnvironment.SANDBOX` | `https://api-sandbox.payabli.com` |
 | `PayabliEnvironment.PRODUCTION` | `https://api.payabli.com` |
 
 - `PayabliConfig` throws when the entry point is blank.
-- There is one session per app process, for one paypoint. Calling `initialize` again with the same entry
-  point, environment and `telemetryEnabled` returns the same session, which keeps its original token
-  provider. Calling it with a different entry point, environment or `telemetryEnabled` while the session is
-  live fails.
-- `session.deviceId` is this device's identity. It is the same for every capability and stable for the install,
-  and `null` while the device gives no identifier to read.
+- There is one session per app process.
+- Calling `initialize` again with the same entry point, environment and `telemetryEnabled` returns the same
+  session, which keeps its original token provider. A different one throws a `PayabliException` whose `type` is
+  `INVALID_CONFIGURATION`, and the session already running stays in place. After authentication has failed for
+  good, it builds a fresh session instead.
 
 The token provider is a `PayabliTokenProvider`, a `suspend` function that returns a new access token from
 your token endpoint:
 
-- The SDK calls it before its first request, and again when a token is rejected. Return a newly minted
-  token each time, not a cached one.
-- Each call has 30 seconds to return a token that isn't blank. A call that takes longer or throws fails
-  with `PayabliErrorType.TOKEN_PROVIDER_FAILED`.
+- The SDK calls the provider before its first request, and again when a token is rejected. Return a newly
+  minted token each time, not a cached one.
+- Concurrent callers share one call.
+- Each call has 30 seconds to return. A call that takes longer, throws, or returns a token the SDK can't use
+  fails with `PayabliErrorType.TOKEN_PROVIDER_FAILED`.
 - Let cancellation through. Don't catch `CancellationException`.
+
+### Device identity
+
+`PayabliSession.deviceId` is this device's identity, the same for every capability. It is stable across
+reinstalls; a factory reset gives it a new one, and on Android 8.0 and later so does a new app signing key. It
+is `null` when the platform gives no device identifier.
 
 ## Take a payment
 
 ### Card-not-present
 
-`PayabliPayIn` runs on the session. Show its form, or call it from your own UI:
+`PayabliPayIn` runs on the session `initialize` returned. Show its form, or call it from your own UI:
 
 ```kotlin
 import com.payabli.sdk.payin.PayabliPayIn
@@ -326,7 +331,7 @@ authorizing and capturing, voiding, and the form's configuration and styling.
 ### Tap to Pay
 
 `PayabliTTP` runs on the same session. After the one-time setup in the
-[Tap to Pay guide](taptopay/README.md), a payment takes three calls:
+[Tap to Pay guide](taptopay/README.md), a payment takes these calls:
 
 ```kotlin
 import com.payabli.sdk.taptopay.PayabliTTP
@@ -343,7 +348,7 @@ val result = ttp.charge(
 order.paymentTransId = result.paymentTransId // store it; don't log it
 ```
 
-The guide covers the phone and build requirements, enrolment, authorized apps, activating a phone, and the
+The guide covers the phone and build requirements, enrollment, authorized apps, activating a phone, and the
 session states.
 
 ## Handle the outcome
@@ -387,7 +392,7 @@ Each guide lists its errors in full: [card-not-present](payin/README.md#outcomes
 | Guide | Covers |
 |---|---|
 | [Card-not-present](payin/README.md) | The form, the direct API, stored methods, authorize and capture, void, configuration and styling |
-| [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrolment, authorized apps, activation, states and errors |
+| [Tap to Pay](taptopay/README.md) | Phone and build requirements, enrollment, authorized apps, activation, states and errors |
 | [Sample app](example/README.md) and [token server](example-server/README.md) | Running both ways to pay against your sandbox paypoint |
 | [Payabli developer documentation](https://docs.payabli.com) | The API, OAuth, test accounts and the portal |
 
@@ -408,6 +413,10 @@ Their READMEs say how to configure and run both. In sandbox, use Payabli's
 When `sdk-android-telemetry` is in your app, which `sdk-android` includes, the SDK sends error and usage
 events to Payabli. Set `telemetryEnabled = false` in `PayabliConfig` to turn it off; the SDK then queues
 and sends nothing.
+
+Every request the SDK sends to Payabli carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
+version, the device model, the locale and the device ID described under [Device identity](#device-identity).
+A value that's missing, blank or isn't printable ASCII is left out. The header can't be turned off.
 
 ## Versioning and support
 

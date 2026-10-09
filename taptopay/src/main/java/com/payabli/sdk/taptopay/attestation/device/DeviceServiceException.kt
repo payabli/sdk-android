@@ -208,18 +208,9 @@ internal class RedactedCause(
 }
 
 /**
- * Turns an envelope decline into something more specific than [DeviceServiceException.of] can produce.
- *
- * The extension point for the failures that cannot be told apart by `resultCode`. A mapper returning null
- * defers to the default classification, so one that only cares about a single case handles that case and
- * says nothing about the rest.
- *
- * Passed per call rather than held on the client, because the same client serves routes whose refusals mean
- * unrelated things under one code: the mapper that classifies an activation failure has no business
- * inspecting a registration failure. This mirrors the shape the iOS client already uses for the same reason.
- *
- * A mapper is the one place in this package that may read `reason`, and it is the only thing here that breaks
- * when the wording changes.
+ * Turns an envelope decline that `resultCode` cannot classify into something more specific, or null to defer to
+ * [DeviceServiceException.of]. Passed per call, because one code means unrelated things on different routes.
+ * The one place in this package that may read `reason`, so the only thing here that breaks when its wording changes.
  */
 internal fun interface DeviceFailureMapper {
     /** The failure to raise, or null to accept [DeviceServiceException.of]'s classification. */

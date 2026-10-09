@@ -153,17 +153,9 @@ internal object TTPAmountSerializer : KSerializer<BigDecimal> {
 }
 
 /**
- * The request and response shapes of the two MoneyIn routes.
- *
- * **Every key here is lower-camelCase and none of these types needs a `@SerialName`.** These are the same
- * controller and the same envelope the card-not-present module talks to, and the shipping sibling encodes
- * them with default keys.
- *
- * **A request property that must always be present carries no Kotlin default.**
- * [com.payabli.sdk.core.network.PayabliJson] encodes with `encodeDefaults = false`, so a defaulted property
- * is dropped from the body, and `explicitNulls = false` drops a null one. Those two settings are what make
- * "nullable with no default" mean *omitted when unset*, and they are also why the three fields the service
- * wants present-but-empty are non-nullable [String]s that a caller has to supply.
+ * The request and response shapes of the two MoneyIn routes. Every key is lower-camelCase, so none needs `@SerialName`.
+ * A property that must always be present carries no default: [com.payabli.sdk.core.network.PayabliJson] drops
+ * defaulted and null ones, so the three fields wanted present-but-empty are non-nullable [String]s.
  */
 @Serializable
 internal class InitiateBody(
@@ -293,7 +285,7 @@ internal fun updateSuccessBody(result: CardReadResult): JsonObject {
 /** The wire shape of [TapToPayPaymentDetails]. */
 internal fun TapToPayPaymentDetails.toBody(): InitiatePaymentDetailsBody =
     InitiatePaymentDetailsBody(
-        // The wire keeps the service's own key; the surface uses the name both platforms publish.
+        // The wire keeps the service's own key; the public surface calls it `amount`.
         totalAmount = amount,
         serviceFee = serviceFee,
         currency = currency.trimOrNull()?.uppercase(),

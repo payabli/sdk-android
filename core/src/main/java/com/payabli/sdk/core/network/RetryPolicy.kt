@@ -14,8 +14,7 @@ import kotlin.random.Random
  * tuning, so the defaults below are a starting point rather than a contract.
  *
  * **No per-attempt timeout here**, meaning no attempt gets a budget of its own. Bounding one call is the
- * transport's job, mirroring iOS's `timeoutIntervalForResource`, because only it knows where a call begins
- * and ends; this layer holds an opaque operation.
+ * transport's job, because only it knows where a call begins and ends; this layer holds an opaque operation.
  *
  * That is not the same as leaving an attempt unbounded. When [totalTimeoutMillis] is set it is **one deadline
  * for the whole operation**, attempt execution and backoff waits together, and each attempt starts with

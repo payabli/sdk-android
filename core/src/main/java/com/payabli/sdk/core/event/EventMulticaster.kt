@@ -23,10 +23,9 @@ internal const val BUFFER = 64
  * flow needs a transition stream is not which acceptance channel it is, it is who draws the UI. Card-present
  * leaves the surrounding screens to the host across a multi-second physical interaction, so the host needs
  * to be told where it is. Card-not-present ships its own forms and completes in one call, so a result and a
- * submitting flag say everything there is to say, which is what the sibling platform exposes there and what
- * every comparable product surveyed exposes there.
+ * submitting flag say everything there is to say.
  *
- * So this deliberately does **not** try to be one stream for every flow. Where that shape has been tried
+ * So this does **not** try to be one stream for every flow. Where that shape has been tried
  * elsewhere it works by giving up typing, and an untyped channel carrying every flow's traffic is a
  * redaction problem before it is an ergonomics one. If card-present stays the only consumer, this belongs
  * in that module rather than here, which is a decision for whoever lands the first emitter.

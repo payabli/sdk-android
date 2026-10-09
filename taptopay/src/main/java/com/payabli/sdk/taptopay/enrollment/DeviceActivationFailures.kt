@@ -10,28 +10,9 @@ import com.payabli.sdk.taptopay.attestation.device.EntryPointFailures
 import java.net.HttpURLConnection
 
 /**
- * Turns `/activate`'s refusals into [DeviceActivationException], by reading the service's own wording.
- *
- * The only place in this module that reads a decline's text, which is the role the mapper interface was
- * given. Every literal is here, in one file, so the day the service stops distinguishing its failures by
- * text there is one file to rewrite. The entry-point literal is the one exception and lives on
- * [EntryPointFailures], because four other routes compare it too.
- *
- * **A result code alone cannot say whether the stored identity goes.** Some refusals mean the record names
- * something that is gone, and others mean the host configured a credential or an entry point wrong.
- * Discarding on the second would destroy a working enrolment over a token that was simply scoped wrong.
- *
- * So **the destructive classifications require a positive match and everything else falls to
- * [DeviceActivationException.Unclassified]**, which discards nothing. A service that rewords its messages
- * then stops discarding, and never starts discarding the wrong ones.
- *
- * Exact comparison against ASCII literals the service emits, and two prefix matches where it appends detail.
- * Never case-insensitive, never locale-sensitive, never a pattern — each of those would widen a match that
- * is load-bearing precisely because it is narrow.
- *
- * **Pure.** The sibling SDK discards the identity from inside its equivalent of this function; this one
- * classifies and nothing else, so it can be tested for classification alone. [DeviceEnrollment] acts on the
- * result.
+ * Turns `/activate`'s refusals into [DeviceActivationException] by exact or prefix match on the service's literals.
+ * A destructive classification needs a positive match; anything else is [DeviceActivationException.Unclassified],
+ * which discards nothing. Pure: [DeviceEnrollment] acts on it. The entry-point literal lives on [EntryPointFailures].
  */
 internal class DeviceActivationFailures(
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.TAP_TO_PAY),

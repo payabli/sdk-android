@@ -29,7 +29,7 @@ public object DeviceProfileFactory {
      */
     internal const val TYPE: String = "Softpos"
 
-    /** The platform. Fixed here and different on the sibling SDK, which is what makes it worth sending. */
+    /** The platform, fixed for this SDK. */
     internal const val OS: String = "Android"
 
     private val profile = UsableValueCache<TelemetryDeviceContext> { it.idHash.isNotBlank() }

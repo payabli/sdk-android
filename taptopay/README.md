@@ -47,8 +47,6 @@ the card reader's own checks.
 
 ## Before you start
 
-Tap to Pay on Android has no platform terms for the merchant to accept.
-
 ### Unpack the card reader's native library
 
 Add this to your **application** module's `build.gradle.kts`. The library module can't set it for you:
@@ -63,7 +61,7 @@ android {
 }
 ```
 
-An app built without it installs and runs, and is refused when it is submitted for enrolment.
+An app built without it installs and runs, and is refused when it is submitted for enrollment.
 
 ### Have your app enrolled
 
@@ -89,7 +87,7 @@ curl -X POST "https://api-sandbox.payabli.com/api/v2/paypoint/{entryPoint}/apps"
 - The call needs the `pos_create` permission. An API token in the `requestToken` header works in place of
   the bearer token.
 - `friendlyName` is optional. Calling it again with the same values is safe.
-- Register each package name you ship, including a debug suffix or a flavour. The entry must match the
+- Register each package name you ship, including a debug suffix or a flavor. The entry must match the
   package name of the installed app.
 
 An app that isn't an authorized app is refused when the device attests, with an HTTP 403. `initialize()`
@@ -112,9 +110,6 @@ val ttp: PayabliTTP = PayabliTTP.create(session, applicationContext)
   to drive your UI.
 - `create`, `initialize`, `activateDevice`, `charge` and `closeCapturedCharge` are `suspend` functions; call
   them from a coroutine.
-- **One paypoint per session.** There is one session per app process, and it has one entry point.
-  `PayabliSession.initialize` with a different entry point throws a `PayabliException` whose `type` is
-  `INVALID_CONFIGURATION` while the session is live.
 
 ## Take a payment
 
@@ -136,7 +131,7 @@ try {
 ```
 
 `initialize()` attests the device, fetches its configuration and prepares the reader. It is safe to call
-again at any time. The first run on a phone takes longer than later ones.
+again while no charge is running. The first run on a phone takes longer than later ones.
 
 ### Activate a phone
 
@@ -144,14 +139,16 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 
 - Activation is **per phone and per paypoint**. It isn't per user.
 - A reinstall, a restore to a new phone, or a new phone needs a new code.
-- One install can hold activations for up to four paypoints. Activating a fifth drops the one used least
+- One install can hold activations for up to four paypoints. Setting up a fifth drops the one used least
   recently, which then needs to be set up again the next time it's used.
 
 Until the phone is activated, `initialize()` throws a `TapToPayException` whose `type` is
 `DEVICE_PENDING_ACTIVATION`, and `sessionState` is `PendingActivation(activationId)`. An app that isn't an
 authorized app, or credentials without `tools_init` or `pos_create`, land on
-`Failed(CONFIGURATION_REJECTED)` on a phone that holds no registration for the paypoint. Credentials without
-`inboundpayments_create` reach `Ready`, and `charge` is then refused before the card is read.
+`Failed(CONFIGURATION_REJECTED)` on a phone with no setup stored for the paypoint from an earlier run.
+Credentials without
+`inboundpayments_create` reach `Ready`, and `charge` throws a `TapToPayException` whose `type` is
+`PERMISSION_DENIED`, before the card is read.
 
 The code is six digits and can start with zero, so keep it as a string. It's valid for 30 minutes, and
 asking for one again before it expires returns the same code. There are two ways to get it to the app, and
@@ -232,7 +229,35 @@ Every failure is a `TapToPayException`, apart from a coroutine cancellation. A c
 as `CancellationException` and carries no transaction ID. Cancelling after the card was presented doesn't
 mean nothing was charged: find the transaction before charging again.
 
-A `TapToPayException` carries `capture` and `paymentTransId`:
+A `TapToPayException` carries the catalog entry for its cause:
+
+- `category` says what to do, such as `CREDENTIAL` (your token provider is asked again on the next call; when
+  the state shows the session or the device setup has ended, initialize again) or `OUTCOME_UNKNOWN` (the call
+  may have taken effect: check before repeating it). Choose your remedy from `category`.
+- `type` names the cause, for a case your app handles on its own, such as `DEVICE_PENDING_ACTIVATION`.
+- `code` is the catalog number Payabli support reads. Give it to them with the failure.
+- `message` is fixed text, safe to show and to log. `reason` is a short summary and `detail` a longer
+  explanation, from the service or the SDK, when there is one. Show them, but don't log them: the service's
+  text can repeat what the request carried.
+- `retryAfterMillis` is the wait the service asked for before trying again, in milliseconds, when it asked
+  for one and the failure carries it.
+
+These Tap to Pay causes are ones your app handles, with their codes:
+
+| `type` | `code` | `category` | `message` |
+|---|---|---|---|
+| `ACTIVATION_CODE_MALFORMED` | 3023 | `INVALID_REQUEST` | The activation code must be six digits. |
+| `ACTIVATION_CODE_INCORRECT` | 3024 | `INVALID_REQUEST` | The activation code is incorrect. |
+| `ACTIVATION_CODE_EXPIRED` | 3025 | `CONFIGURATION` | The activation code has expired. |
+| `ACTIVATION_ATTEMPTS_EXHAUSTED` | 3026 | `CONFIGURATION` | Too many incorrect activation codes were entered. |
+| `ACTIVATION_CODE_NOT_ISSUED` | 3027 | `CONFIGURATION` | No activation code has been issued for this device. |
+| `DEVICE_NOT_PENDING` | 3028 | `INVALID_REQUEST` | This device is not waiting for activation. |
+| `TERMINAL_NOT_READY` | 3029 | `INVALID_REQUEST` | The terminal is not ready for this call. |
+| `TOO_MANY_OPEN_CHARGES` | 3030 | `INVALID_REQUEST` | Too many charges are waiting to be resolved. |
+| `PAYMENT_NOT_HELD` | 3031 | `INVALID_REQUEST` | No captured payment is held under that identifier. |
+| `CHARGE_NOT_FINISHED` | 3034 | `OUTCOME_UNKNOWN` | An earlier charge on this device hasn't finished. Check that payment before charging again, or wait three minutes. |
+
+It also carries `capture` and `paymentTransId`:
 
 | `capture` | Meaning | What to do |
 |---|---|---|
@@ -267,15 +292,15 @@ lookup.
 | `TapToPayFailureReason` | What to do |
 |---|---|
 | `CONFIGURATION_REJECTED` | The paypoint, the device or its setup is missing something. Retrying won't help. If Google Play on the phone is missing, out of date or signed out, fix that on the phone; otherwise contact Payabli. |
-| `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Check that the app came from Google Play, then initialize again. |
+| `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Call `initialize()`, which sets the device up again. If it lands here again, check that the app came from Google Play. |
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |
-| `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Call `initialize()` again; if it keeps failing, the phone is at fault. |
+| `DEVICE_KEY_UNAVAILABLE` | The phone's key facility or secure storage failed, so the SDK can't tell whether the device's keys still work. Initialize again. If it keeps failing, the phone is the cause. |
 
-### Events
+### Watching the session
 
-The Android SDK has no event stream. Collect `sessionState` to follow progress.
+Collect `sessionState`, a `StateFlow<TapToPaySessionState>`, to follow progress.
 
 ## Go live
 

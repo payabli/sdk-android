@@ -251,19 +251,9 @@ internal class ConfigResponse(
 }
 
 /**
- * What the card reader is configured with, for one paypoint.
- *
- * **Typed, and that is a redaction decision.** A `Map`'s `toString` prints every value it holds, and two
- * of these are the reader vendor's API credentials, so a map puts them into any message built from one that
- * reached an exception. Naming the fields also states which two the reader cannot start without here.
- *
- * Every field is required. The service sends all of them, possibly empty, and a missing one means the
- * response is not this route's. That is what makes [platform] self-enforcing: the sibling platform's
- * variant omits [ppId] and [hostPort], so it fails to decode here.
- *
- * `pageIdentifier` sits beside these on the wire and is not modelled. It is a fresh token per call, so it is
- * not the credential the attestation is bound to, and sending it as the bearer fails every request on this
- * route.
+ * What the card reader is configured with, for one paypoint; typed so no `toString` prints the vendor credentials.
+ * Every field is required: the service sends all of them, possibly empty, and a response missing one is not this
+ * route's. `pageIdentifier` is not modelled: it is a fresh token per call, and as the bearer it fails every request.
  */
 @Serializable
 internal class ReaderCredentials(
@@ -281,7 +271,7 @@ internal class ReaderCredentials(
     /** ISO 18245. */
     val merchantCategoryCode: String,
     val terminalId: String,
-    /** Required by the reader on this platform, and absent from the sibling platform's variant. */
+    /** Required by the reader on this platform. */
     val ppId: String,
     /** `host:port`, on the same terms as [ppId]. */
     val hostPort: String,

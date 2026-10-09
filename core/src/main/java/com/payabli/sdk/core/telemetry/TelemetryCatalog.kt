@@ -12,9 +12,6 @@ import androidx.annotation.RestrictTo
  *
  * That order matters more than the contents: a scrub that ran on the way out would leave the unscrubbed value
  * sitting in memory, and on disk if the queue ever spills, for as long as the batch waited.
- *
- * The table is the same one the other platform holds. Both bind to one catalog, so a row added here without a
- * counterpart there is drift.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public object TelemetryCatalog {

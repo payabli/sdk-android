@@ -166,9 +166,8 @@ internal class DeviceServiceClient(
             bodySerializer = AttestRequest.serializer(),
             payloadSerializer = AttestResponse.serializer(),
             failureMapper = failureMapper,
-            // An absent payload is tolerated rather than undecodable: the shipping sibling client discards
-            // this body, so a service answering with nothing but `isSuccess: true` is a shape a client has
-            // already accepted in production. Demanding fields would refuse a success over a diagnostic.
+            // An absent payload is tolerated rather than undecodable: a service answering with nothing but
+            // `isSuccess: true` has succeeded, and demanding fields would refuse a success over a diagnostic.
             emptyPayload = AttestResponse(registered = null, isSandbox = null),
         )
 
@@ -200,7 +199,7 @@ internal class DeviceServiceClient(
             payloadSerializer = ActivateResponse.serializer(),
             failureMapper = failureMapper,
             headers = assertion.asHeaders(),
-            // Tolerated for the reason given on attest: the sibling client discards this one too.
+            // Tolerated for the reason given on attest.
             emptyPayload = ActivateResponse(deviceId = null, status = null),
         )
 
