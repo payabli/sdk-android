@@ -352,6 +352,23 @@ class TapToPaySessionManagerTest {
             }
         }
 
+    @Test
+    fun `the state log names a charge's activity under a field the log allowlist prints`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            driveTo(manager, TapToPaySessionState.Ready)
+
+            manager.charging({ NotReady() }) {
+                manager.chargeActivity(TapToPayChargeActivity.WAITING_FOR_CARD)
+            }
+
+            val stateLines = logger.records.filter { it.message == "session state changed" }
+            assertTrue(stateLines.toString(), stateLines.isNotEmpty())
+            stateLines.forEach {
+                assertTrue(it.fieldNames.toString(), "phase" in it.fieldNames)
+                assertFalse(it.fieldNames.toString(), "activity" in it.fieldNames)
+            }
+        }
+
     /**
      * Walks a fresh machine to [target] through legal moves only.
      *

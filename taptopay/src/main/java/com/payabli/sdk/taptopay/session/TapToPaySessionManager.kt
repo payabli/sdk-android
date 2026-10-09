@@ -182,7 +182,7 @@ internal class TapToPaySessionManager(
                 logger.info(
                     LogField.safe("event", "ttp_session_state"),
                     LogField.safe("state", to.diagnosticName),
-                    LogField.safe("activity", (to as? TapToPaySessionState.Charging)?.activity?.name),
+                    LogField.safe("phase", (to as? TapToPaySessionState.Charging)?.activity?.name),
                     LogField.safe("errorkind", (to as? TapToPaySessionState.Failed)?.reason?.name),
                 ) { "session state changed" }
                 // A move between two activities is not a change of state.
