@@ -6,7 +6,7 @@ What integrating the Payabli Android SDK looks like.
 |---|---|
 | **Payment method** | Store a card or bank account and get a reusable token back, inline and in a bottom sheet. |
 | **Capture** | Charge a card or bank account, and read the whole transaction response. |
-| **Tap to pay** | See whether this device can take a contactless payment and why not. Turn the terminal on, restart the session, charge, activate the device, and watch the session state. |
+| **Tap to pay** | See whether this device can take a contactless payment and why not. Turn the terminal on, restart the session, charge, activate the device, and watch the session state and the sample's own log of what it did. |
 | **Setup** | Read back every value the SDK was configured with, and check the token endpoint is reachable. |
 
 ## Running it
