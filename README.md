@@ -416,8 +416,8 @@ events to Payabli. Set `telemetryEnabled = false` in `PayabliConfig` to turn it 
 and sends nothing.
 
 Every request the SDK sends carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
-version, the device model, the locale and the device ID described under [Device identity](#device-identity).
-It can't be turned off.
+version, the device model, the locale and, when there is one, the device ID described under
+[Device identity](#device-identity). It can't be turned off.
 
 ## Versioning and support
 
