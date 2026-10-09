@@ -134,14 +134,15 @@ authorization later, and `voidTransaction` releases it or voids a transaction th
 
 A charge always sends an idempotency key. The SDK mints one per call when you don't set
 `PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
-retry. Don't resend a charge whose outcome is unknown. Find the transaction first.
+retry. Resend a charge whose outcome is unknown only with the same key. Without it, find the transaction first.
 
 When the form's charge fails, `PayInSubmissionState.Failed` carries:
 
 - `cause`, which says whether a payment may be outstanding. Read it before anything else.
-- `retryKey`, the key to send again when the outcome is unknown and the key can still be resent. A retry
-  carrying it is recognized as the repeat. It's `null` where the outcome is known, where nothing was sent,
-  and for a stored method.
+- `retryKey`, the key to send again in `PayInTransactionOptions.idempotencyKey` when the outcome is unknown. A
+  retry carrying it is recognized as the repeat. It's `null` where the outcome is known, where nothing was sent,
+  and for a stored method. When it's `null` and `cause` says a payment may be outstanding, find the transaction
+  before charging again.
 - `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
