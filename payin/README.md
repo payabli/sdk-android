@@ -136,12 +136,24 @@ A charge always sends an idempotency key. The SDK mints one per call when you do
 `PayInTransactionOptions.idempotencyKey`, so calling again without your own key is a second payment, not a
 retry. Don't resend a charge whose outcome is unknown. Find the transaction first.
 
+When the form's charge fails, `PayInSubmissionState.Failed` carries:
+
+- `cause`, which says whether a payment may be outstanding. Read it before anything else.
+- `retryKey`, the key to send again when the outcome is unknown and the key can still be resent. A retry
+  carrying it is recognized as the repeat. It's `null` where the outcome is known, where nothing was sent,
+  and for a stored method.
+- `fieldErrors`, what the refusal blamed, per field. It's empty when it blamed none.
+
+`PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
+`code`, `reason`, `explanation` and `action`, and `paymentTransId`, the transaction it belongs to when the
+service named one. Reconcile from either.
+
 ## Outcomes and errors
 
 Every call returns a `Result`, except when it is cancelled: cancellation is rethrown as
 `CancellationException`. A cancelled `storeMethod` may already have saved the method, so read the stored
-methods back before storing again. A form reports through `onCompleted` and `onFailed`, whose argument's `cause` is
-the exception.
+methods back before storing again. A form reports through `onCompleted` and `onFailed`. Only `onFailed`'s argument, a
+`PayInSubmissionState.Failed`, has a `cause`, which is the exception.
 
 A success means what the call did, which depends on the call:
 
@@ -205,9 +217,15 @@ or "voided":
 section of the amounts, titled "Payment". An inputs section with no title draws no heading. A summary section lists only `Amount`, `ServiceFee` and
 `SurchargeFee`. Any other field there is refused when the configuration is built.
 
-`labels` takes a `PayInFormLabels` for the title, subtitle, submit button, field labels and placeholders.
+`PayabliPayInForm` takes `labels`, a `PayInFormLabels` for the title, subtitle, submit button, the total row's
+label (`total`), field labels and placeholders.
 With no `submitButton`, the button names the operation: "Pay" for a capture, "Authorize" for an
 authorization and "Save" for a stored method, with "Paying…", "Authorizing…" and "Saving…" while it runs.
+
+`PayInSummaryRows` gives each summary row as the form draws it, for an app that draws its own:
+`labelText` and `totalLabelText` for the labels, `rowAmount` and `totalRowAmount` for the figures, and
+`formattedAmount` for a figure as text. A `null` figure means the row isn't drawn. `rowAmount` returns the
+Amount figure whatever `showsBaseAmount` is set to, so check that setting before drawing the Amount row.
 
 ### Styling
 

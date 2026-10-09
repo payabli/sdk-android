@@ -232,7 +232,32 @@ Every failure is a `TapToPayException`, apart from a coroutine cancellation. A c
 as `CancellationException` and carries no transaction ID. Cancelling after the card was presented doesn't
 mean nothing was charged: find the transaction before charging again.
 
-A `TapToPayException` carries `capture` and `paymentTransId`:
+A `TapToPayException` carries the catalog entry for its cause:
+
+- `category` says what to do, such as `CREDENTIAL` (call `initialize()` again) or `OUTCOME_UNKNOWN` (find
+  the transaction before repeating the call). Choose your remedy from `category`.
+- `type` names the cause, for a case your app handles on its own, such as `DEVICE_PENDING_ACTIVATION`.
+- `code` is the catalog number Payabli support reads. Give it to them with the failure.
+- `message` is fixed text. `detail` holds the service's own words, when there are any.
+- `retryAfterMillis` is the wait the service asked for before trying again, in milliseconds, when it asked
+  for one and the failure carries it.
+
+These Tap to Pay causes are ones your app handles, with their codes:
+
+| `type` | `code` | `category` | `message` |
+|---|---|---|---|
+| `ACTIVATION_CODE_MALFORMED` | 3023 | `INVALID_REQUEST` | The activation code must be six digits. |
+| `ACTIVATION_CODE_INCORRECT` | 3024 | `INVALID_REQUEST` | The activation code is incorrect. |
+| `ACTIVATION_CODE_EXPIRED` | 3025 | `CONFIGURATION` | The activation code has expired. |
+| `ACTIVATION_ATTEMPTS_EXHAUSTED` | 3026 | `CONFIGURATION` | Too many incorrect activation codes were entered. |
+| `ACTIVATION_CODE_NOT_ISSUED` | 3027 | `CONFIGURATION` | No activation code has been issued for this device. |
+| `DEVICE_NOT_PENDING` | 3028 | `INVALID_REQUEST` | This device is not waiting for activation. |
+| `TERMINAL_NOT_READY` | 3029 | `INVALID_REQUEST` | The terminal is not ready for this call. |
+| `TOO_MANY_OPEN_CHARGES` | 3030 | `INVALID_REQUEST` | Too many charges are waiting to be resolved. |
+| `PAYMENT_NOT_HELD` | 3031 | `INVALID_REQUEST` | No captured payment is held under that identifier. |
+| `CHARGE_NOT_FINISHED` | 3034 | `OUTCOME_UNKNOWN` | An earlier charge on this device hasn't finished. Check that payment before charging again, or wait three minutes. |
+
+It also carries `capture` and `paymentTransId`:
 
 | `capture` | Meaning | What to do |
 |---|---|---|
@@ -267,7 +292,7 @@ lookup.
 | `TapToPayFailureReason` | What to do |
 |---|---|
 | `CONFIGURATION_REJECTED` | The paypoint, the device or its setup is missing something. Retrying won't help. If Google Play on the phone is missing, out of date or signed out, fix that on the phone; otherwise contact Payabli. |
-| `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Check that the app came from Google Play, then initialize again. |
+| `DEVICE_SETUP_REQUIRED` | This device's setup was refused or revoked. Call `initialize()`, which sets the device up again. If it lands here again, check that the app came from Google Play. |
 | `SERVICE_UNAVAILABLE` | The service or the reader wasn't available. Try again later. |
 | `DEVICE_INELIGIBLE` | This phone can't take Tap to Pay payments: the hardware or Android version is missing something, or the card reader refused the phone. Check developer options and restart the phone. If a phone that meets the requirements still lands here, contact Payabli before replacing it. |
 | `SDK_INTERNAL_ERROR` | Report it to Payabli. |

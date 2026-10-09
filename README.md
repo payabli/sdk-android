@@ -45,6 +45,7 @@ token in memory while the session runs.
 | `minSdk` | 23. Tap to Pay needs 30, and so does `com.payabli:sdk-android`, which includes it |
 | `compileSdk` | 31 or higher. The card-not-present form's Compose dependencies require a higher `compileSdk` of their own, and Gradle names it if yours is lower |
 | Tap to Pay | Android 12 on a 64-bit phone with NFC. See the [Tap to Pay guide](taptopay/README.md#requirements) |
+| Building from source | JDK 17 or newer to run Gradle. The build runs on JDK 21 and downloads it when it isn't installed |
 
 ## Installation
 
@@ -284,6 +285,11 @@ your token endpoint:
   with `PayabliErrorType.TOKEN_PROVIDER_FAILED`.
 - Let cancellation through. Don't catch `CancellationException`.
 
+### Device identity
+
+`PayabliSession.deviceId` is this device's identity, the same for every capability and stable for the
+install. It is `null` when the platform gives no device identifier.
+
 ## Take a payment
 
 ### Card-not-present
@@ -408,6 +414,10 @@ Their READMEs say how to configure and run both. In sandbox, use Payabli's
 When `sdk-android-telemetry` is in your app, which `sdk-android` includes, the SDK sends error and usage
 events to Payabli. Set `telemetryEnabled = false` in `PayabliConfig` to turn it off; the SDK then queues
 and sends nothing.
+
+Every request the SDK sends carries an `X-Pyb-Client` header with the SDK version, the platform, the OS
+version, the device model, the locale and the device ID described under [Device identity](#device-identity).
+It can't be turned off.
 
 ## Versioning and support
 
