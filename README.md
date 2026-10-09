@@ -45,7 +45,7 @@ token in memory while the session runs.
 | `minSdk` | 23. Tap to Pay needs 30, and so does `com.payabli:sdk-android`, which includes it |
 | `compileSdk` | 31 or higher. The card-not-present form's Compose dependencies require a higher `compileSdk` of their own, and Gradle names it if yours is lower |
 | Tap to Pay | Android 12 on a 64-bit phone with NFC. See the [Tap to Pay guide](taptopay/README.md#requirements) |
-| Building from source | JDK 17 or newer to run Gradle. The build runs on JDK 21 and downloads it when it isn't installed |
+| Building from source | JDK 17 or newer to run Gradle. The build runs on JDK 21 and downloads it when it isn't installed. Dependencies are checked against `gradle/verification-metadata.xml`, so a dependency change regenerates it with `./gradlew --write-verification-metadata sha256` and the tasks that resolve that dependency |
 
 ## Installation
 
