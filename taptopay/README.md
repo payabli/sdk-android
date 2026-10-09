@@ -150,7 +150,8 @@ A phone takes Tap to Pay payments for a paypoint only after it is activated with
 Until the phone is activated, `initialize()` throws a `TapToPayException` whose `type` is
 `DEVICE_PENDING_ACTIVATION`, and `sessionState` is `PendingActivation(activationId)`. An app that isn't an
 authorized app, or credentials without `tools_init` or `pos_create`, land on
-`Failed(CONFIGURATION_REJECTED)` on a phone that holds no registration for the paypoint. Credentials without
+`Failed(CONFIGURATION_REJECTED)` on a phone with no setup stored for the paypoint from an earlier run.
+Credentials without
 `inboundpayments_create` reach `Ready`, and `charge` is then refused before the card is read.
 
 The code is six digits and can start with zero, so keep it as a string. It's valid for 30 minutes, and
