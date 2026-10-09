@@ -169,7 +169,7 @@ or "voided":
 | A core `PayabliException`, such as a refused credential, a rate limit or `TOKEN_PROVIDER_FAILED` | On a charge, not charged: an unknown outcome arrives as `Unsettled` instead. On `storeMethod`, a network failure may have saved the method | Branch on its `type`, or its `category` for the remedy. After a network failure on `storeMethod`, read the stored methods back before storing again |
 | `PayInException.Interrupted` (form only) | On a charge, cancelled before anything was sent. On `StoreMethod`, the method may have been saved | Retry a charge. Read the stored methods back before storing again |
 
-When the form's charge fails, `PayInSubmissionState.Failed` carries:
+When a form submission fails, `PayInSubmissionState.Failed` carries:
 
 - `cause`, which says whether a payment may be outstanding. Read it before anything else.
 - `retryKey`, the key this attempt sent, for `PayInTransactionOptions.idempotencyKey`. Find the transaction
