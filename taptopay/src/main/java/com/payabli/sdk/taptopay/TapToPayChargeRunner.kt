@@ -260,7 +260,7 @@ internal class TapToPayChargeRunner(
                         }
                     }
                 }
-                val type = hostTypeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard)
+                val type = hostTypeFor(failure, unclosed = failure === unclosed, cardWasAsked = askedForCard, resentKey)
                 // Before wrapping: the report classifies by the failure's own type.
                 TapToPayReports.chargeFailed(failure, startedAt, cardWasAsked = askedForCard, type = type)
                 // A JVM Error passes through unwrapped, as the facade promises.
@@ -422,8 +422,11 @@ internal class TapToPayChargeRunner(
         failure: Throwable,
         unclosed: Boolean,
         cardWasAsked: Boolean,
+        resentKey: Boolean,
     ): PayabliErrorType {
         if (unclosed) return PayabliErrorType.PAYMENT_NOT_CLOSED
+        // An opening refused as a repeat of this SDK's own resent key: an earlier charge has not finished.
+        if (!cardWasAsked && resentKey && isConflict(failure)) return PayabliErrorType.CHARGE_NOT_FINISHED
         val type = TapToPayErrorCodes.typeFor(failure)
         val claimsNothingWasSent =
             type == PayabliErrorType.SDK_INTERNAL_ERROR || type == PayabliErrorType.VALIDATION_ERROR

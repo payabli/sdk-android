@@ -466,6 +466,55 @@ class TapToPayChargeRunnerTest {
             )
         }
 
+    /** A ready session whose [opening]-th charge opening, counting from 1, is answered 409. */
+    private suspend fun conflictOnOpening(opening: Int): SessionFixture {
+        var openings = 0
+        return SessionFixture(
+            RouteScript(
+                RouteScript.CHALLENGE to listOf(challengeBody()),
+                RouteScript.REGISTER to listOf(registerBody(status = "active")),
+                RouteScript.ATTEST to listOf(attestBody()),
+                RouteScript.CONFIG to listOf(configBody()),
+                INITIATE to List(2) { approved("{\"paymentTransId\":\"$TRANS_ID\"}") },
+                UPDATE to List(2) { "{}" },
+                statusFor = { path -> if (path == INITIATE && ++openings == opening) 409 else 200 },
+            ),
+        ).also { it.coordinator.initialize() }
+    }
+
+    @Test
+    fun `a charge refused as a repeat of an earlier one says the earlier charge has not finished`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = conflictOnOpening(2)
+            fixture.reader.answerReadWith(cardRead(outcome = CardReadOutcome.INDETERMINATE, providerState = "WAITING"))
+            runCatching { runnerOver(fixture).charge(details(), PAYER, TapToPayInvoiceData(), null) }
+
+            val failure =
+                runCatching {
+                    runnerOver(
+                        fixture,
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertEquals("$MINTED_KEY-1", fixture.keySent(1))
+            assertEquals(PayabliErrorType.CHARGE_NOT_FINISHED, (failure as? TapToPayException)?.type)
+        }
+
+    @Test
+    fun `a 409 on a key this SDK has not resent stays a conflict`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val fixture = conflictOnOpening(1)
+
+            val failure =
+                runCatching {
+                    runnerOver(
+                        fixture,
+                    ).charge(details(), PAYER, TapToPayInvoiceData(), null)
+                }.exceptionOrNull()
+
+            assertEquals(PayabliErrorType.CONFLICT, (failure as? TapToPayException)?.type)
+        }
+
     @Test
     fun `a card decline after a resent opening still reports unknown`() =
         runTest(timeout = TEST_TIMEOUT) {
