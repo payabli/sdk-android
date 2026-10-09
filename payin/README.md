@@ -148,7 +148,8 @@ When the form's charge fails, `PayInSubmissionState.Failed` carries:
 
 `PayInException.Refused` and `PayInException.ServiceError` carry `failure`, a `PayInFailure` with the service's
 `code`, `reason`, `explanation` and `action`, and `paymentTransId`, the transaction it belongs to when the
-service named one. Reconcile from either.
+service named one. Reconcile from either. Show `reason`, `explanation` and `action`, but don't log them: they
+can repeat what was submitted.
 
 ## Outcomes and errors
 
