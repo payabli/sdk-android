@@ -382,13 +382,17 @@ RELEASE_UPLOAD_THEN_NOTES = (
     '        env:\n'
     '          GH_TOKEN: ${{ github.token }}\n'
     '          TAG: ${{ needs.check.outputs.version }}\n'
+    '          # Through the environment, so the text is never parsed as shell.\n'
+    '          RELEASE_NOTES: ${{ inputs.release_notes }}\n'
     '        run: |\n'
     '          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \\\n'
     '            --jq ".[] | select(.tagName == \\"$TAG\\") | .tagName")\n'
     '          if [ -n "$existing" ]; then\n'
     '            echo "release $TAG already exists"\n'
     '          else\n'
-    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes\n'
+    '            printf \'%s\\n\' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"\n'
+    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \\\n'
+    '              --notes-file "$RUNNER_TEMP/release-notes.md"\n'
     '          fi\n'
 )
 RELEASE_NOTES_THEN_UPLOAD = (
@@ -398,13 +402,17 @@ RELEASE_NOTES_THEN_UPLOAD = (
     '        env:\n'
     '          GH_TOKEN: ${{ github.token }}\n'
     '          TAG: ${{ needs.check.outputs.version }}\n'
+    '          # Through the environment, so the text is never parsed as shell.\n'
+    '          RELEASE_NOTES: ${{ inputs.release_notes }}\n'
     '        run: |\n'
     '          existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \\\n'
     '            --jq ".[] | select(.tagName == \\"$TAG\\") | .tagName")\n'
     '          if [ -n "$existing" ]; then\n'
     '            echo "release $TAG already exists"\n'
     '          else\n'
-    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes\n'
+    '            printf \'%s\\n\' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"\n'
+    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \\\n'
+    '              --notes-file "$RUNNER_TEMP/release-notes.md"\n'
     '          fi\n'
     '      # The account comes off the role ARN, so there is one copy of it. Re-running this job against the\n'
     '      # same build reports every key already written as present. A rebuild does not: its bytes differ,\n'
@@ -1716,8 +1724,23 @@ MUTATIONS = [
      '      - name: Check the commit is on main\n        env:\n          COMMIT: ${{ github.sha }}\n'),
 
     ("Release takes main's head when no commit is named", RELEASE, "workflows",
-     '        required: true\n        type: string\n',
-     '        required: false\n        type: string\n'),
+     '        description: "Full 40-character SHA of the commit on main to release"\n        required: true\n',
+     '        description: "Full 40-character SHA of the commit on main to release"\n        required: false\n'),
+
+    ("Release can be dispatched with no notes", RELEASE, "workflows",
+     '        description: "Release notes (markdown), published as the release body"\n        required: true\n',
+     '        description: "Release notes (markdown), published as the release body"\n        required: false\n'),
+
+    ("Release tags a run whose notes are blank", RELEASE, "workflows",
+     '          if [ -z "${RELEASE_NOTES//[[:space:]]/}" ]; then\n',
+     '          if [ -n "${RELEASE_NOTES//[[:space:]]/}" ]; then\n'),
+
+    ("Release publishes notes the dispatch did not carry", RELEASE, "workflows",
+     '          # Through the environment, so the text is never parsed as shell.\n          RELEASE_NOTES: ${{ inputs.release_notes }}\n',
+     '          # Through the environment, so the text is never parsed as shell.\n          RELEASE_NOTES: ${{ github.event.head_commit.message }}\n'),
+
+    ("Release generates its notes from pull request titles", RELEASE, "workflows",
+     '--notes-file "$RUNNER_TEMP/release-notes.md"\n', '--generate-notes\n'),
 
     ('Release accepts a short SHA, which can resolve to another commit', RELEASE, "workflows",
      '^[0-9a-f]{40}$',
@@ -1832,7 +1855,8 @@ MUTATIONS = [
      'actions/download-artifact@v8'),
 
     ("Release attaches the staging tree to the GitHub Release", RELEASE, "workflows",
-     "--generate-notes\n", "--generate-notes build/staging-repo/com/payabli/*/*/*.aar\n"),
+     '--notes-file "$RUNNER_TEMP/release-notes.md"\n',
+     '--notes-file "$RUNNER_TEMP/release-notes.md" build/staging-repo/com/payabli/*/*/*.aar\n'),
 
     # Without it `gh` creates the tag itself, from main's head, when the push above did not land.
     ("Release lets gh create a missing tag", RELEASE, "workflows",
