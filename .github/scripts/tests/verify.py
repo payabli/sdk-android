@@ -3898,6 +3898,11 @@ def test_workflows():
     named_commit = (((rel_on.get("workflow_dispatch") or {}).get("inputs") or {}).get("commit")) or {}
     check("W17 and the dispatch names the commit to release",
           named_commit.get("required") is True, f"{named_commit}")
+    # The notes are written for the release. Generated ones list pull request titles, which carry tracker
+    # references a public release page must not name.
+    named_notes = (((rel_on.get("workflow_dispatch") or {}).get("inputs") or {}).get("release_notes")) or {}
+    check("W17 and the dispatch carries the release notes",
+          named_notes.get("required") is True and named_notes.get("type") == "string", f"{named_notes}")
 
     # One run: the release environment's job tags, uploads and writes the notes. The environment is who
     # may release, the only place the deploy key can be read, and the only subject the release role
@@ -4144,9 +4149,21 @@ def test_workflows():
     created = [command for i in notes for command in full_commands(gate_steps[i]) if command[:3] == ["gh", "release", "create"]]
     check("W17 it creates the release once, with notes, at the tag it checked, and attaches nothing",
           created == [["gh", "release", "create", "$TAG", "--repo", "$GITHUB_REPOSITORY", "--verify-tag",
-                       "--title", "$TAG", "--generate-notes"]]
+                       "--title", "Payabli Android SDK $TAG", "--notes-file", "$RUNNER_TEMP/release-notes.md"]]
           and len(notes) == 1 and env_of(gate_steps[notes[0]], "TAG") == approved_version,
           f"{created}")
+    written = [command for i in notes for command in commands_of(gate_steps[i]) if command[:1] == ["printf"]]
+    check("W17 and the notes it publishes are the ones the dispatch carried",
+          written == [["printf", "%s\\n", "$RELEASE_NOTES", ">", "$RUNNER_TEMP/release-notes.md"]]
+          and env_of(gate_steps[notes[0]], "RELEASE_NOTES") == "${{ inputs.release_notes }}",
+          f"{written} {env_of(gate_steps[notes[0]], 'RELEASE_NOTES') if notes else ''}")
+    # Before anything is tagged, so a blank body costs a re-dispatch rather than a spent number.
+    checker_steps_all = job_steps(rel_jobs.get("check", {}))
+    blank = next((i for i, step in enumerate(checker_steps_all)
+                  if refuses(step, '[ -z ${RELEASE_NOTES//[[:space:]]/} ]')), None)
+    check("W17 and the check refuses blank notes",
+          blank is not None and env_of(checker_steps_all[blank], "RELEASE_NOTES") == "${{ inputs.release_notes }}",
+          f"{blank}")
     if notes and uploader is not None:
         check("W17 and after the upload", uploader < notes[0], f"{uploader} vs {notes[0]}")
     check("W17 and nothing uploads a release asset", "gh release upload" not in " ".join(run_commands(s) for s in rel_steps))

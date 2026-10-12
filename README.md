@@ -51,54 +51,76 @@ token in memory while the session runs.
 
 ### Add the SDK
 
-Build the SDK from source into your local Maven repository:
-
-```bash
-git clone https://github.com/payabli/sdk-android.git
-cd sdk-android
-./gradlew publishToMavenLocal                                                            # everything
-./gradlew :core:publishToMavenLocal :payin:publishToMavenLocal :payabli-bom:publishToMavenLocal  # card-not-present only
-```
-
-The build needs the Android SDK, through `ANDROID_HOME` or `sdk.dir` in `local.properties`. Building Tap
-to Pay also needs the [card reader repository](#card-reader-repository) credentials.
-
-Then add `mavenLocal()` to the repositories in `settings.gradle.kts`:
+The SDK, and the card reader library Tap to Pay depends on, are served from Payabli's own repository,
+which needs credentials that Payabli issues. Declare it in `settings.gradle.kts`, scoped to the groups it
+serves, so Gradle asks it for nothing else:
 
 ```kotlin
 // settings.gradle.kts
 dependencyResolutionManagement {
     repositories {
-        mavenLocal()
         google()
         mavenCentral()
+        maven {
+            url = uri("https://sdk.payabli.com/maven")
+            content {
+                includeGroup("com.payabli")
+                includeGroup("com.fiserv.ch") // Tap to Pay
+                includeGroup("com")           // Tap to Pay
+            }
+            credentials {
+                username = providers.gradleProperty("payabli.maven.user").orNull
+                password = providers.gradleProperty("payabli.maven.password").orNull
+            }
+            authentication { create<BasicAuthentication>("basic") }
+        }
     }
 }
 ```
 
-Depend on the SDK through its bill of materials, which is the recommended setup. The BOM pins every
-artifact to one version, the one the build published, which `payabli.version` in the clone's
-[`gradle.properties`](gradle.properties) sets. The libraries then take no version of their own:
+Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store, never in the repository.
+
+Then depend on the SDK at the latest version from the
+[Releases](https://github.com/payabli/sdk-android/releases) page:
 
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation(platform("com.payabli:sdk-android-bom:<payabli.version>"))
-    implementation("com.payabli:sdk-android-payin")    // card-not-present
-    implementation("com.payabli:sdk-android-taptopay") // Tap to Pay
+    implementation("com.payabli:sdk-android:<latest version>")
 }
 ```
 
+`sdk-android` includes card-not-present, Tap to Pay, and error and usage reporting, and needs `minSdk` 30.
+
+To build changes that aren't released yet, build `main` from source with `./gradlew publishToMavenLocal`
+and add `mavenLocal()` to your repositories.
+
+#### Alternative declaration for solo features
+
+To take one feature without the other, depend on its artifact instead of `sdk-android`:
+
 | Artifact | Adds |
 |---|---|
-| `com.payabli:sdk-android-bom` | The versions of the artifacts below. No code |
 | `com.payabli:sdk-android-payin` | Card-not-present |
 | `com.payabli:sdk-android-taptopay` | Tap to Pay |
-| `com.payabli:sdk-android` | Both, with error and usage reporting |
 
-Take `sdk-android-payin` or `sdk-android-taptopay` alone, or both. Each includes
-`com.payabli:sdk-android-core`, which holds the session and the configuration. Without the BOM, give each
-library the version yourself, for example `implementation("com.payabli:sdk-android-payin:<payabli.version>")`.
+```kotlin
+dependencies {
+    implementation("com.payabli:sdk-android-payin:<latest version>")
+}
+```
+
+Each includes `com.payabli:sdk-android-core`, which holds the session and the configuration. To take both
+at one version, use the bill of materials, `com.payabli:sdk-android-bom`, which sets the version and adds
+no code:
+
+```kotlin
+dependencies {
+    implementation(platform("com.payabli:sdk-android-bom:<latest version>"))
+    implementation("com.payabli:sdk-android-payin")
+    implementation("com.payabli:sdk-android-taptopay")
+}
+```
 
 ### Configure your app
 
@@ -128,36 +150,6 @@ The card reader library brings its own permissions, which Gradle merges into you
 `INTERNET`, `ACCESS_NETWORK_STATE`, `CAMERA`, `HIDE_OVERLAY_WINDOWS` and `ACCELEROMETER`. Your app
 doesn't declare them. The [Tap to Pay guide](taptopay/README.md#before-you-start) covers the rest of its
 setup.
-
-### Card reader repository
-
-Tap to Pay depends on a card reader library served from Payabli's own repository, which needs
-credentials that Payabli issues. Declare it scoped to the groups it serves, so Gradle asks it for
-nothing else:
-
-```kotlin
-// settings.gradle.kts
-dependencyResolutionManagement {
-    repositories {
-        google()
-        mavenCentral()
-        maven {
-            url = uri("https://sdk.payabli.com/maven")
-            content {
-                includeGroup("com.fiserv.ch")
-                includeGroup("com")
-            }
-            credentials {
-                username = providers.gradleProperty("payabli.maven.user").orNull
-                password = providers.gradleProperty("payabli.maven.password").orNull
-            }
-            authentication { create<BasicAuthentication>("basic") }
-        }
-    }
-}
-```
-
-Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store, never in the repository.
 
 ## Set up the SDK
 
@@ -422,12 +414,13 @@ A value that's missing, blank or isn't printable ASCII is left out. The header c
 
 > [!IMPORTANT]
 > **Notice:** The Payabli Android SDK is in beta. Until a stable version is released, expect changes to the public
-> interface that aren't backward compatible, and read the changes on `main` before you update.
+> interface that aren't backward compatible, and read the release notes before you update.
 
-- **No version has been released.** Build from `main` as [Installation](#installation) describes.
-- **`main` changes without notice.** Record the commit you built, and build the same commit to reproduce a
-  build.
-- **When a stable version is released,** this section gives the version to depend on.
+- **Depend on the latest version** as [Installation](#installation) describes. Each version and its notes are
+  on the [Releases](https://github.com/payabli/sdk-android/releases) page.
+- **`main` holds changes that aren't released yet, and changes without notice.** A build from `main` takes
+  whatever is there when it's built.
+- **When a stable version is released,** this section says so.
 
 ## Support
 

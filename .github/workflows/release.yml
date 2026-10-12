@@ -20,6 +20,10 @@ on:
         description: "Full 40-character SHA of the commit on main to release"
         required: true
         type: string
+      release_notes:
+        description: "Release notes (markdown), published as the release body"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -44,6 +48,17 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       commit: ${{ inputs.commit }}
     steps:
+      # Notes are written for the release, because pull request titles carry tracker references no release
+      # page should name. Checked here, so a blank body stops the run before anything is tagged.
+      - name: Check the release notes are written
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [ -z "${RELEASE_NOTES//[[:space:]]/}" ]; then
+            echo "::error::release_notes is blank, and a release is published with notes written for it."
+            exit 1
+          fi
+
       # A full SHA and nothing shorter, so the commit approved is not a prefix that resolves to another.
       - name: Check the commit is named in full
         env:
@@ -323,11 +338,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.check.outputs.version }}
+          # Through the environment, so the text is never parsed as shell.
+          RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           existing=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
             --jq ".[] | select(.tagName == \"$TAG\") | .tagName")
           if [ -n "$existing" ]; then
             echo "release $TAG already exists"
           else
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+            printf '%s\n' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Payabli Android SDK $TAG" \
+              --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
