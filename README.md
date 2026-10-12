@@ -80,7 +80,7 @@ dependencyResolutionManagement {
 
 Keep the credentials in `~/.gradle/gradle.properties` or your CI's secret store, never in the repository.
 
-Then depend on what you use, at the latest version from the
+Then depend on the SDK at the latest version from the
 [Releases](https://github.com/payabli/sdk-android/releases) page:
 
 ```kotlin
@@ -90,15 +90,29 @@ dependencies {
 }
 ```
 
+`sdk-android` includes card-not-present, Tap to Pay, and error and usage reporting, and needs `minSdk` 30.
+
+To build changes that aren't released yet, build `main` from source with `./gradlew publishToMavenLocal`
+and add `mavenLocal()` to your repositories.
+
+#### Alternative declaration for solo features
+
+To take one feature without the other, depend on its artifact instead of `sdk-android`:
+
 | Artifact | Adds |
 |---|---|
-| `com.payabli:sdk-android` | Both, with error and usage reporting |
 | `com.payabli:sdk-android-payin` | Card-not-present |
 | `com.payabli:sdk-android-taptopay` | Tap to Pay |
 
-Take `sdk-android` alone, or one or both of the others. Each includes `com.payabli:sdk-android-core`, which
-holds the session and the configuration. To take both of the others at one version, use the bill of
-materials, `com.payabli:sdk-android-bom`, which sets the version and adds no code:
+```kotlin
+dependencies {
+    implementation("com.payabli:sdk-android-payin:<latest version>")
+}
+```
+
+Each includes `com.payabli:sdk-android-core`, which holds the session and the configuration. To take both
+at one version, use the bill of materials, `com.payabli:sdk-android-bom`, which sets the version and adds
+no code:
 
 ```kotlin
 dependencies {
@@ -107,9 +121,6 @@ dependencies {
     implementation("com.payabli:sdk-android-taptopay")
 }
 ```
-
-To build changes that aren't released yet, build `main` from source with `./gradlew publishToMavenLocal`
-and add `mavenLocal()` to your repositories.
 
 ### Configure your app
 
