@@ -3901,7 +3901,8 @@ def test_workflows():
     # The notes are written for the release. Generated ones list pull request titles, which carry tracker
     # references a public release page must not name.
     named_notes = (((rel_on.get("workflow_dispatch") or {}).get("inputs") or {}).get("release_notes")) or {}
-    check("W17 and the dispatch carries the release notes", named_notes.get("required") is True, f"{named_notes}")
+    check("W17 and the dispatch carries the release notes",
+          named_notes.get("required") is True and named_notes.get("type") == "string", f"{named_notes}")
 
     # One run: the release environment's job tags, uploads and writes the notes. The environment is who
     # may release, the only place the deploy key can be read, and the only subject the release role

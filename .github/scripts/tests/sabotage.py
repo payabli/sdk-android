@@ -1731,6 +1731,10 @@ MUTATIONS = [
      '        description: "Release notes (markdown), published as the release body"\n        required: true\n',
      '        description: "Release notes (markdown), published as the release body"\n        required: false\n'),
 
+    ("Release notes are dispatched as a switch rather than text", RELEASE, "workflows",
+     '        required: true\n        type: string\n\n',
+     '        required: true\n        type: boolean\n\n'),
+
     ("Release tags a run whose notes are blank", RELEASE, "workflows",
      '          if [ -z "${RELEASE_NOTES//[[:space:]]/}" ]; then\n',
      '          if [ -n "${RELEASE_NOTES//[[:space:]]/}" ]; then\n'),
