@@ -391,7 +391,7 @@ RELEASE_UPLOAD_THEN_NOTES = (
     '            echo "release $TAG already exists"\n'
     '          else\n'
     '            printf \'%s\\n\' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"\n'
-    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \\\n'
+    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Payabli Android SDK $TAG" \\\n'
     '              --notes-file "$RUNNER_TEMP/release-notes.md"\n'
     '          fi\n'
 )
@@ -411,7 +411,7 @@ RELEASE_NOTES_THEN_UPLOAD = (
     '            echo "release $TAG already exists"\n'
     '          else\n'
     '            printf \'%s\\n\' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"\n'
-    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \\\n'
+    '            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Payabli Android SDK $TAG" \\\n'
     '              --notes-file "$RUNNER_TEMP/release-notes.md"\n'
     '          fi\n'
     '      # The account comes off the role ARN, so there is one copy of it. Re-running this job against the\n'

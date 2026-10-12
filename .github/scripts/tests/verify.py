@@ -4148,7 +4148,7 @@ def test_workflows():
     created = [command for i in notes for command in full_commands(gate_steps[i]) if command[:3] == ["gh", "release", "create"]]
     check("W17 it creates the release once, with notes, at the tag it checked, and attaches nothing",
           created == [["gh", "release", "create", "$TAG", "--repo", "$GITHUB_REPOSITORY", "--verify-tag",
-                       "--title", "$TAG", "--notes-file", "$RUNNER_TEMP/release-notes.md"]]
+                       "--title", "Payabli Android SDK $TAG", "--notes-file", "$RUNNER_TEMP/release-notes.md"]]
           and len(notes) == 1 and env_of(gate_steps[notes[0]], "TAG") == approved_version,
           f"{created}")
     written = [command for i in notes for command in commands_of(gate_steps[i]) if command[:1] == ["printf"]]

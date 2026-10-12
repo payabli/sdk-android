@@ -347,6 +347,6 @@ jobs:
             echo "release $TAG already exists"
           else
             printf '%s\n' "$RELEASE_NOTES" > "$RUNNER_TEMP/release-notes.md"
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Payabli Android SDK $TAG" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
