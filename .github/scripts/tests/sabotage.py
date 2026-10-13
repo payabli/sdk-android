@@ -578,6 +578,29 @@ MUTATIONS = [
     ("CI drops the diff, so the regenerated signature is never compared", CI, "workflows",
      "          git diff --exit-code -- core/api/release.txt\n", ""),
 
+    # Every command word survives in an echo, so a flattened read of the step passes while the shell
+    # runs no command of the gate at all.
+    ("CI echoes the gate's commands, so every word is present and nothing runs", CI, "workflows",
+     "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt\n",
+     "          echo rm core/api/release.txt\n"
+     "          echo ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          echo git ls-files --error-unmatch core/api/release.txt\n"
+     "          echo git diff --exit-code -- core/api/release.txt\n"),
+
+    # Every command runs, each intact, but the diff is first: it compares the checkout's committed
+    # record against itself, and the regeneration's drift lands after nothing compares it again.
+    ("CI diffs the record before regenerating it, so the comparison reads the checkout", CI,
+     "workflows",
+     "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt\n",
+     "          git diff --exit-code -- core/api/release.txt\n"
+     "          rm core/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"),
+
     ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
 
