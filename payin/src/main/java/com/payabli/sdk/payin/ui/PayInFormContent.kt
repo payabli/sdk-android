@@ -402,12 +402,13 @@ private fun List<PayInField>.intoRows(fitsTwo: Boolean): List<List<PayInField>> 
 /** Narrower than this a field's own label starts to wrap, so it takes the row to itself. */
 private val PAIRED_FIELD_MIN_WIDTH = 148.dp
 
-/** The host's title, else the summary's default. An inputs section with no title has no heading. */
 @Composable
 private fun sectionTitle(section: PayInFormSection): String? =
-    section.title ?: stringResource(R.string.payabli_payin_section_summary).takeIf {
-        section.style == PayInSectionStyle.Summary
-    }
+    section.heading(stringResource(R.string.payabli_payin_section_summary))
+
+/** The host's title unless blank, else [summaryDefault] on a summary. An inputs section without one has no heading. */
+internal fun PayInFormSection.heading(summaryDefault: String): String? =
+    title?.takeIf { it.isNotBlank() } ?: summaryDefault.takeIf { style == PayInSectionStyle.Summary }
 
 @PreviewLightDark
 @Composable
