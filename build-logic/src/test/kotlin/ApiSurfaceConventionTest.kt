@@ -34,19 +34,38 @@ class ApiSurfaceConventionTest {
     @Test
     fun `an annotated public declaration stays in the signature`() {
         writeProject()
+        // A stub carrying the sibling-module marker's own fully qualified name, so a signature
+        // that hides that annotation hides this one too.
         writeSource(
-            "ForSiblingModules.java",
-            "public @interface ForSiblingModules {\n}\n",
+            "androidx/annotation/RestrictTo.java",
+            """
+            package androidx.annotation;
+
+            public @interface RestrictTo {
+                Scope[] value();
+
+                enum Scope {
+                    LIBRARY_GROUP
+                }
+            }
+            """.trimIndent(),
         )
         writeSource(
             "Annotated.java",
-            "@ForSiblingModules\npublic class Annotated {\n}\n",
+            """
+            import androidx.annotation.RestrictTo;
+
+            @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
+            public class Annotated {
+            }
+            """.trimIndent(),
         )
 
         runner("metalavaGenerateSignature").build()
 
-        // No annotation-based hiding is configured, so an annotated declaration is recorded like
-        // any other. This is what keeps declarations annotated for sibling modules on the record.
+        // No annotation-based hiding is configured, so a declaration carrying the sibling-module
+        // marker is recorded like any other. This is what keeps declarations annotated for
+        // sibling modules on the record.
         assertTrue(signature().readText().contains("public class Annotated"))
     }
 
@@ -81,8 +100,11 @@ class ApiSurfaceConventionTest {
         )
     }
 
-    private fun writeSource(name: String, body: String) =
-        projectDir.root.resolve("src/main/java").apply { mkdirs() }.resolve(name).writeText(body)
+    private fun writeSource(name: String, body: String) {
+        val file = projectDir.root.resolve("src/main/java").resolve(name)
+        file.parentFile.mkdirs()
+        file.writeText(body)
+    }
 
     private fun signature() = projectDir.root.resolve("api/release.txt")
 
