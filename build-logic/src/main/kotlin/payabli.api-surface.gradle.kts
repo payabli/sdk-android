@@ -2,7 +2,8 @@ import org.cyclonedx.gradle.CyclonedxDirectTask
 
 // Convention plugin: the checked-in API signature over a module's public surface, applied via
 // `id("payabli.api-surface")`. The file `api/release.txt` under the module records the release
-// variant's public declarations, unfiltered, so declarations annotated for sibling modules stay.
+// variant's public declarations with no annotation-based hiding, so declarations annotated for
+// sibling modules stay on the record.
 
 plugins {
     id("me.tylerbwong.gradle.metalava")
