@@ -23,7 +23,9 @@ import com.payabli.sdk.taptopay.attestation.AttestationToken
 import com.payabli.sdk.taptopay.enrollment.DeviceActivationException
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import java.net.HttpURLConnection.HTTP_BAD_REQUEST
 import java.net.HttpURLConnection.HTTP_FORBIDDEN
+import java.net.HttpURLConnection.HTTP_INTERNAL_ERROR
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -31,42 +33,9 @@ import kotlin.coroutines.cancellation.CancellationException
 private val PATH_SEGMENT = Regex("^[A-Za-z0-9._~-]+$")
 
 /**
- * The five device-lifecycle calls of `/api/v2/device/taptopay`.
- *
- * **Stateless and orchestration-free by design.** It holds no device identity, persists nothing, keeps no
- * state machine, and does not know that `/challenge` precedes `/attest`. Every value a call needs is a
- * parameter, including the ones that come from a Keystore key this phase does not yet own. That is what makes
- * the sequencing rules — which call follows which, what is cached, what happens when one fails halfway —
- * reviewable in one place, and this is not that place.
- *
- * The call that issues an activation code is absent and stays absent. It is a merchant-side call, the code
- * reaches the device out of band, and an SDK that could issue its own would be an SDK that could activate
- * itself.
- *
- * **Nothing here is wrapped in `Retry`, and that is per route rather than an oversight.** Each of the four
- * POSTs leaves something changed behind it, so a second attempt runs against what the first one already
- * spent. `:core`'s `Retry` is documented as a per-call-site primitive precisely so a call site like this one
- * can decline it. The duplicate-safe unit here is the whole cold sequence, not any single call in it, so
- * retrying belongs to whoever owns the sequence.
- *
- * `/config` is the first route here that would qualify, since it reads and changes nothing, and it is still
- * unwrapped: the assertion it carries is short-lived, so a policy for it is a policy about minting a fresh
- * one, which belongs to the same owner.
- *
- * **Every request here refuses credential recovery, because an attestation is valid only for the credential
- * that obtained it.** A refresh between attesting and using the attestation fails as
- * [DeviceServiceException.NotAttested]. Requests are sent with `isCredentialPinned`, which costs a 401 on
- * these routes its refresh and its replay both: the refresh would rotate the pinned credential out of the
- * binding, and the replay would spend a single-use value a second time.
- *
- * A 2xx envelope decline is not a credential rejection, so the ordinary device failures never reached recovery
- * and are unaffected. Nor does the refusal depend on what these routes answer with today: they report their
- * status inside the envelope, and it holds for the day they stop.
- *
- * **A rotation started by some other capability still breaks the binding**, because one session serves them
- * all. Nothing this client does can prevent that. It costs more than enrollment now that `/config` is here:
- * a rotation between attesting and fetching the credentials leaves a reader that cannot be prepared, and the
- * remedy is to attest again, which the sequence owner drives.
+ * The device-lifecycle calls. Stateless: which call follows which, and any retry, belong to the caller, since each
+ * POST spends something. Every request is credential-pinned, because an attestation holds only for the credential
+ * that obtained it, so a 401 is never refreshed or replayed.
  */
 internal class DeviceServiceClient(
     private val transport: PayabliTransport,
@@ -177,8 +146,8 @@ internal class DeviceServiceClient(
      * [assertion] is short-lived, so it is minted for this call and never reused. How long a code stays good
      * and how many attempts it survives are not enforced or tracked here.
      *
-     * Several unrelated refusals arrive as [DeviceServiceException.BadRequest]. Telling them apart needs the
-     * refusal's text, which is what [failureMapper] is for.
+     * Several unrelated refusals share a status. Telling them apart needs the refusal's text, which is what
+     * [failureMapper] is for.
      */
     suspend fun activate(
         entry: String,
@@ -291,6 +260,7 @@ internal class DeviceServiceClient(
                 payloadSerializer = payloadSerializer,
                 failureMapper = failureMapper,
                 emptyPayload = emptyPayload,
+                refusesAtStatus = true,
             )
         }
     }
@@ -359,7 +329,7 @@ internal class DeviceServiceClient(
             // `/activate` is the one route whose caller maps refusals to its own type, which extends neither
             // of the two below. Without this the only route that can refuse a payer's code reported nothing
             // when it did.
-            report(route, outcomeOf(refusal), refusal.resultCode, startedAt)
+            report(route, TelemetryProperties.Outcome.REFUSED, refusal.resultCode, startedAt)
             throw refusal
         } catch (failure: PayabliException) {
             report(route, TelemetryProperties.Outcome.FAILED, null, startedAt)
@@ -367,23 +337,11 @@ internal class DeviceServiceClient(
         }
     }
 
-    /**
-     * Refused means the far side answered and said no; failed means no usable answer arrived.
-     *
-     * The distinction is the one an incident asks first, and it is not the same as the status: a refusal
-     * arrives inside a 200 on these routes.
-     */
+    /** Refused means the far side answered and said no; failed means no usable answer arrived. */
     private fun outcomeOf(refusal: DeviceServiceException): String =
         when (refusal) {
             is DeviceServiceException.Undecodable, is DeviceServiceException.ServerFailure ->
                 TelemetryProperties.Outcome.FAILED
-            else -> TelemetryProperties.Outcome.REFUSED
-        }
-
-    /** The same division for the route with its own refusal type: `ServiceFailed` is a 500, so it failed. */
-    private fun outcomeOf(refusal: DeviceActivationException): String =
-        when (refusal) {
-            is DeviceActivationException.ServiceFailed -> TelemetryProperties.Outcome.FAILED
             else -> TelemetryProperties.Outcome.REFUSED
         }
 
@@ -406,28 +364,9 @@ internal class DeviceServiceClient(
     private fun elapsedMillis(startedAt: Long): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
 
     /**
-     * The whole of this class's care, once a response exists.
-     *
-     * The order of the checks is the contract, not a style:
-     *
-     * 0. [statusOverride] first, so a route can name what a status means to it before the shared table does.
-     *    It answers only for statuses the route already treats as failures.
-     * 1. `PayabliHttpErrors` next, because a transport failure means the envelope below is not this service
-     *    speaking. It is called without a `statusOverride`: these routes put their meaning in the envelope, so
-     *    there is no shared status here to give a component reading. It also catches a request refused before
-     *    it is read, which answers with a real status and carries no envelope at all.
-     * 2. Then the envelope decline, because these routes report a refusal inside a 200 and skipping this step
-     *    is exactly how a refusal reads as a success.
-     * 3. Only then the payload.
-     *
-     * Whether an absent `responseData` is usable is the route's business, and it is settled **here** rather
-     * than by the caller: [emptyPayload] is what a route substitutes when reaching the response at all is the
-     * answer, and a route that leaves it null is saying it cannot proceed without fields. `/attest` and
-     * `/activate` supply one; `/challenge`, `/register` and `/config` do not.
-     *
-     * That policy has to live inside this function, not above it, because the success record is written here.
-     * A caller rejecting a null payload afterwards would throw with `device_call_succeeded` already in the log
-     * and no failure record beside it, and an incident would read as a success the caller never received.
+     * Order is the contract. With [refusesAtStatus], a 4xx declining under its own code is the service refusing and
+     * an unenveloped 400 is a request this SDK built wrong; otherwise the status decides. Then the decline, then the
+     * payload. [emptyPayload] is settled here, where the success record is written, never by the caller.
      */
     private fun <T> read(
         route: String,
@@ -435,17 +374,29 @@ internal class DeviceServiceClient(
         payloadSerializer: KSerializer<T>,
         failureMapper: DeviceFailureMapper,
         emptyPayload: T? = null,
+        refusesAtStatus: Boolean = false,
         statusOverride: (Int) -> Throwable? = { null },
     ): T {
-        (statusOverride(response.statusCode) ?: PayabliHttpErrors.from(response))?.let { transportFailure ->
+        val declineOutcome = PayabliEnvelope.declineOutcome(response.body)
+        val status = response.statusCode
+        val serviceRefused =
+            refusesAtStatus && status in HTTP_BAD_REQUEST until HTTP_INTERNAL_ERROR && declineOutcome?.code == status
+        val transportFailure =
+            when {
+                serviceRefused -> null
+                refusesAtStatus && status == HTTP_BAD_REQUEST ->
+                    DeviceServiceException.BadRequest(status, PayabliHttpErrors.from(response)?.reason.orEmpty())
+                else -> statusOverride(status) ?: PayabliHttpErrors.from(response)
+            }
+        transportFailure?.let {
             logger.warn(
                 LogField.safe("event", "device_call_failed"),
                 LogField.safe("route", route),
                 LogField.safe("statusCode", response.statusCode),
             ) { "the device service call failed at the transport" }
-            throw transportFailure
+            throw it
         }
-        PayabliEnvelope.declineOutcome(response.body)?.let { declined ->
+        declineOutcome?.let { declined ->
             logger.warn(
                 LogField.safe("event", "device_call_declined"),
                 LogField.safe("route", route),

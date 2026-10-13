@@ -1,5 +1,6 @@
 package com.payabli.sdk.taptopay.attestation.device
 
+import com.payabli.sdk.core.model.PayabliServerException
 import com.payabli.sdk.core.telemetry.TelemetryEvents
 import com.payabli.sdk.core.telemetry.TelemetryProperties
 import com.payabli.sdk.core.telemetry.TelemetryProperty
@@ -98,7 +99,7 @@ class DeviceRouteTelemetryTest {
             assertEquals(TelemetryEvents.TTP_DEVICE_CONFIG_COMPLETED, recorded.single().first)
         }
 
-    /** Refused means the far side answered and said no, which on these routes arrives inside a 200. */
+    /** Refused means the far side answered and said no. */
     @Test
     fun `a declined envelope is reported as refused, carrying the code and not the text`() =
         runTest(timeout = TEST_TIMEOUT) {
@@ -172,17 +173,15 @@ class DeviceRouteTelemetryTest {
             assertEquals("400", properties[TelemetryProperty.CODE.key])
         }
 
-    /**
-     * A 500 out of that route is the service breaking, not the payer being refused.
-     *
-     * The caller's mapper turns any code at or above 500 into `ServiceFailed`, and the other four routes call
-     * the equivalent `failed`. Reporting activation's as `refused` put a service outage into the decline rate
-     * of the one route whose decline rate is read.
-     */
+    /** A 500 out of that route is the service breaking, and a decline rate that counted it would read an outage. */
     @Test
     fun `an activation that the service failed to answer is reported as failed`() =
         runTest(timeout = TEST_TIMEOUT) {
-            val transport = FakeDeviceTransport.answering(declineEnvelope(500, "Internal error"))
+            val transport =
+                FakeDeviceTransport.answering(
+                    declineEnvelope(500, "Internal server error."),
+                    statusCode = 500,
+                )
 
             val raised =
                 runCatching {
@@ -201,7 +200,7 @@ class DeviceRouteTelemetryTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue("the mapper did not classify it: $raised", raised is DeviceActivationException.ServiceFailed)
+            assertTrue("$raised", raised is PayabliServerException)
             val properties = recorded.single().second
             assertEquals(TelemetryProperties.Outcome.FAILED, properties[TelemetryProperty.OUTCOME.key])
         }

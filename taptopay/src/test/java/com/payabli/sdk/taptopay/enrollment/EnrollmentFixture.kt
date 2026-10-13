@@ -1,6 +1,7 @@
 package com.payabli.sdk.taptopay.enrollment
 
 import com.payabli.sdk.core.config.PayabliEnvironment
+import com.payabli.sdk.core.network.PayabliEnvelope
 import com.payabli.sdk.core.network.PayabliJson
 import com.payabli.sdk.core.network.PayabliRequest
 import com.payabli.sdk.core.network.PayabliResponse
@@ -14,6 +15,7 @@ import com.payabli.sdk.taptopay.attestation.device.declineEnvelope
 import com.payabli.sdk.taptopay.attestation.device.successEnvelope
 import com.payabli.sdk.testutils.logging.RecordingSdkLogger
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import java.net.HttpURLConnection.HTTP_OK
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -90,8 +92,12 @@ internal fun configBody(): String =
  */
 internal class RouteScript(
     private vararg val answers: Pair<String, List<String>>,
-    /** These routes answer a refusal inside a 200, so a real status is only for a route that skips them. */
-    private val statusFor: (String) -> Int = { 200 },
+    /**
+     * The status for a path, or null for the default: the four POST device routes answer a refusal with its
+     * `resultCode` as the HTTP status, as the service does, and everything else answers 200. `/config` is fed
+     * its refusals inside a 200 because the client still reads that route's status before its envelope.
+     */
+    private val statusFor: (String) -> Int? = { null },
     private val headersFor: (String) -> Map<String, String> = { emptyMap() },
 ) {
     private val taken = mutableMapOf<String, Int>()
@@ -104,8 +110,20 @@ internal class RouteScript(
         val index = taken.getOrDefault(path, 0)
         if (index >= queued.size) error("$path was called ${index + 1} times, ${queued.size} answers scripted")
         taken[path] = index + 1
-        return PayabliResponse(statusFor(path), headersFor(path), queued[index].toByteArray(Charsets.UTF_8))
+        val body = queued[index]
+        val status = statusFor(path) ?: defaultStatus(path, body)
+        return PayabliResponse(status, headersFor(path), body.toByteArray(Charsets.UTF_8))
     }
+
+    private fun defaultStatus(
+        path: String,
+        body: String,
+    ): Int =
+        if (path in REFUSING_AT_STATUS) {
+            PayabliEnvelope.declineOutcome(body)?.code ?: HTTP_OK
+        } else {
+            HTTP_OK
+        }
 
     companion object {
         const val CHALLENGE = "/api/v2/device/taptopay/challenge"
@@ -115,6 +133,8 @@ internal class RouteScript(
 
         /** Resolved, since that is what the client sends. The four above resolve to themselves. */
         const val CONFIG = "/api/v2/device/taptopay/config/$ENTRY"
+
+        private val REFUSING_AT_STATUS = setOf(CHALLENGE, REGISTER, ATTEST, ACTIVATE)
     }
 }
 

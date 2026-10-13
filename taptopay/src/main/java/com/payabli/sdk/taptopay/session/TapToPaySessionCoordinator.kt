@@ -155,7 +155,7 @@ internal class TapToPaySessionCoordinator(
                 } catch (withdrawn: CancellationException) {
                     throw withdrawn
                 } catch (failure: Exception) {
-                    throw settled(failure)
+                    throw if (claim.kind == SessionWorkKind.ACTIVATE) settledActivation(failure) else settled(failure)
                 }
             }
         } catch (withdrawn: CancellationException) {
@@ -164,7 +164,9 @@ internal class TapToPaySessionCoordinator(
             // settle belongs to whatever is running inside. Idle is the one target never refused, so the
             // reset lands, and the run holding the region is then somewhere it cannot move on from: a build
             // parked at the reader comes back to find it cannot reach ready from idle.
-            if (entered) withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
+            if (entered && claim.kind.resetsOnWithdrawal) {
+                withContext(NonCancellable) { manager.settle(TapToPaySessionState.Idle) }
+            }
             release(claim, TapToPaySessionException.SetupAbandoned())
             throw withdrawn
         } catch (failure: Exception) {
@@ -201,6 +203,13 @@ internal class TapToPaySessionCoordinator(
             }
         settledFailure = raised
         return raised
+    }
+
+    /** An activation's failure reaches its caller as raised, and does not read the registration to land it. */
+    private fun settledActivation(failure: Exception): Exception {
+        TapToPaySessionFailures.landingForActivationRun(failure)?.let(manager::settle)
+        settledFailure = failure
+        return failure
     }
 
     /**
@@ -351,6 +360,9 @@ internal class TapToPaySessionCoordinator(
         manager.settle(TapToPaySessionState.Idle)
     }
 }
+
+/** An activation moves nothing before its answer, so withdrawing one leaves the code still owed. */
+private val SessionWorkKind.resetsOnWithdrawal: Boolean get() = this != SessionWorkKind.ACTIVATE
 
 /** Which of the three entry points is running, so two of the same kind can share one run. */
 internal enum class SessionWorkKind {

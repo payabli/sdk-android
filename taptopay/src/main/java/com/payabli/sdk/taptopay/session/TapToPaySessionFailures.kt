@@ -47,6 +47,17 @@ internal object TapToPaySessionFailures {
     ): TapToPaySessionState? = if (owesActivation(failure)) pendingOn(registration) else landingFor(failure)
 
     /**
+     * Where a failed activation leaves the session: moved only by an activation refusal that says so, or by the
+     * stored identity being lost. A transport failure or an unread request leaves it waiting for the code.
+     */
+    fun landingForActivationRun(failure: Throwable): TapToPaySessionState? =
+        when (failure) {
+            is DeviceActivationException -> landingForActivation(failure)
+            is DeviceServiceException, is PayabliException -> null
+            else -> landingFor(failure)
+        }
+
+    /**
      * The failure a caller is given for [failure], so its code agrees with the state [landingFor] published.
      * A registration that cannot be read raises its storage refusal. Otherwise the original is the cause,
      * which keeps any text the service sent.
@@ -116,6 +127,10 @@ internal object TapToPaySessionFailures {
             // Decided by the registration, before this is reached.
             is DeviceServiceException.Forbidden -> null
             is DeviceServiceException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
+            is DeviceServiceException.IntegrityRefused -> failed(DEVICE_SETUP_REQUIRED)
+            is DeviceServiceException.VerificationUnavailable -> failed(SERVICE_UNAVAILABLE)
+            is DeviceServiceException.AppNotAccepted -> failed(CONFIGURATION_REJECTED)
+            is DeviceServiceException.RegistrationGone -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceServiceException.NotAttested -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceServiceException.NotFound -> failed(CONFIGURATION_REJECTED)
             // The request this SDK built was refused, which makes it this SDK's defect.
@@ -137,10 +152,7 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException.DeviceUnknown -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.NotEnrolled -> failed(DEVICE_SETUP_REQUIRED)
             is DeviceActivationException.RegistrationReplaced -> failed(DEVICE_SETUP_REQUIRED)
-            is DeviceActivationException.EntryNotAuthorized -> failed(CONFIGURATION_REJECTED)
-            is DeviceActivationException.PaypointUnknown -> failed(CONFIGURATION_REJECTED)
             is DeviceActivationException.EntryPointUnusable -> failed(CONFIGURATION_REJECTED)
-            is DeviceActivationException.ServiceFailed -> failed(SERVICE_UNAVAILABLE)
             // Each error is listed and not collapsed into one `else`, so a new classification fails to
             // compile here.
             is DeviceActivationException.CodeMalformed -> null

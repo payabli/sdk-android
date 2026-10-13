@@ -7,32 +7,8 @@ import java.net.HttpURLConnection.HTTP_NOT_FOUND
 import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
- * A refusal from one of the device routes.
- *
- * **The transport status is not the verdict.** A refusal arrives inside a successful response, as an envelope
- * carrying `isSuccess: false` and a `resultCode` that reuses HTTP's numbering without being an HTTP status, so
- * a caller that checks the status and stops sees every one of these as a success. `PayabliHttpErrors` still
- * runs first at the call site and raises `PayabliException` for a failure the transport itself reports. The
- * two are disjoint: which one a caller catches says which layer failed.
- *
- * **A request refused before it is read carries no envelope at all**, and this type never describes one.
- * `PayabliHttpErrors` takes that shape and is never consulted on a 2xx, so nothing dispatches between the two;
- * the trap is looking for an envelope in a body that has none.
- *
- * Which field a refusal names does not currently reach the caller: `:core` decodes that part of a 400 into a
- * shape these routes do not send, so it arrives empty. The fix belongs in `:core`, where every 400 in the SDK
- * shares one decode.
- *
- * Device-local, because each subtype is what this SDK does about a refusal. Each cause has its own `PayabliErrorType`,
- * which is the classification a host reads.
- *
- * **The subtypes are keyed on [resultCode] alone, and no subtype is chosen by matching message text.** A
- * taxonomy built on wording breaks the moment the wording changes. So one result code is one case here, and a
- * caller that needs one split further supplies a [DeviceFailureMapper]: the text-matching lives in the one
- * place that has a reason to accept the risk, and it changes without touching the client.
- *
- * [reason] is server text. It is displayable and **never loggable**, matching how `PayabliException` treats
- * the same field: a message can quote what was sent, so it is kept off `toString` and out of every log field.
+ * A refusal the device service spoke, in its envelope. Keyed on [resultCode]; a [DeviceFailureMapper] splits one by
+ * text. [reason] is server text: displayable, never logged, and kept off `toString`.
  */
 internal sealed class DeviceServiceException(
     message: String,
@@ -100,6 +76,30 @@ internal sealed class DeviceServiceException(
         reason: String,
     ) : DeviceServiceException("the device service refused the entry point", resultCode, reason)
 
+    /** The service judged the attestation and refused this device. Attesting again is the remedy. */
+    class IntegrityRefused(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceServiceException("the device service refused this device's attestation", resultCode, reason)
+
+    /** The attestation could not be judged this time. Nothing was decided about the device, so asking again works. */
+    class VerificationUnavailable(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceServiceException("the device service could not verify the attestation", resultCode, reason)
+
+    /** This build of the app is not one the environment accepts. Installing the right build is the remedy. */
+    class AppNotAccepted(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceServiceException("the device service does not accept this build of the app", resultCode, reason)
+
+    /** The registration this attestation was for is gone or no longer takes this key. Registering again repairs it. */
+    class RegistrationGone(
+        resultCode: Int?,
+        reason: String,
+    ) : DeviceServiceException("the registration this attestation was for is no longer usable", resultCode, reason)
+
     /** The entity, paypoint or device named in the request does not exist. */
     class NotFound(
         resultCode: Int?,
@@ -163,16 +163,8 @@ internal sealed class DeviceServiceException(
         const val REASON_UNDECODABLE: String = "The response from the device service could not be read."
 
         /**
-         * The disposition for an envelope decline.
-         *
-         * The constants are `HttpURLConnection`'s, as `PayabliHttpErrors` uses for real statuses: the
-         * envelope's codes name the same integers with the same meanings, and declaring a second set here
-         * would be two names per number and one more place to get one wrong. That these arrive inside a 200
-         * does not change what the numbers mean.
-         *
-         * `>=` on the server bucket rather than an equality, for the reason `PayabliHttpErrors` gives: an
-         * unforeseen code in that range is still a failure on the far side, and narrowing it would classify a
-         * 503-shaped result as unrecognised.
+         * The disposition for an envelope decline. Its codes are HTTP's numbers with HTTP's meanings, so the constants
+         * are `HttpURLConnection`'s; `>=` on the server bucket so an unforeseen 5xx still reads as a failure.
          */
         fun of(
             resultCode: Int?,
