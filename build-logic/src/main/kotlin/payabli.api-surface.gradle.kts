@@ -1,3 +1,5 @@
+import org.cyclonedx.gradle.CyclonedxDirectTask
+
 // Convention plugin: the checked-in API signature over a module's public surface, applied via
 // `id("payabli.api-surface")`. The file `api/release.txt` under the module records the release
 // variant's public declarations, unfiltered: annotation-based hiding is deliberately not
@@ -5,6 +7,15 @@
 
 plugins {
     id("me.tylerbwong.gradle.metalava")
+}
+
+// The metalava plugin resolves its tool through a project configuration, and a CycloneDX scan
+// covers every resolvable configuration on the project, so the signature tooling would otherwise
+// appear in a published module's bill of materials as though the artifact depended on it.
+plugins.withId("org.cyclonedx.bom") {
+    tasks.named("cyclonedxDirectBom", CyclonedxDirectTask::class.java) {
+        skipConfigs = listOf("metalava")
+    }
 }
 
 metalava {
