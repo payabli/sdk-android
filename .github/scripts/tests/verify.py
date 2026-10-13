@@ -4288,6 +4288,23 @@ def test_workflows():
     ci_exits = early_exits([step for job in ci_jobs.values() for step in job_steps(job)])
     check("W17 and no ci.yml step exits except to refuse", not ci_exits, " | ".join(ci_exits))
 
+    # The signature gate is this workflow's own guarantee: the convention tests read the plugin, not
+    # the step, so deleting the step would leave every suite green with the guarantee gone. The step
+    # deletes the record before regenerating it, so a generation that skips or writes anywhere else
+    # fails the diff against the committed record, and the tracked-path guard catches the record
+    # being deleted from the repository, which a diff over untracked paths cannot see.
+    build_steps = job_steps(ci_jobs.get("build") or {})
+    gate = [step for step in build_steps if step.get("name") == "Public surface"]
+    gate_commands = run_commands(gate[0]) if len(gate) == 1 else ""
+    check("W17 the public-surface gate is the build job's one step", len(gate) == 1,
+          f"{[step.get('name') for step in build_steps]}")
+    check("W17 and it regenerates the record from a deleted file",
+          "rm core/api/release.txt" in gate_commands
+          and ":core:metalavaGenerateSignatureRelease" in gate_commands, gate_commands[:120])
+    check("W17 and it holds the committed record",
+          "git ls-files --error-unmatch core/api/release.txt" in gate_commands
+          and "git diff --exit-code -- core/api/release.txt" in gate_commands, gate_commands[:120])
+
 
 
 def load_publisher():

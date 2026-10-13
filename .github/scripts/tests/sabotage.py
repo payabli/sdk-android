@@ -558,6 +558,26 @@ MUTATIONS = [
      "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test\n",
      "        run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test || echo ignored\n"),
 
+    # The signature gate's four lines, each removed on its own: the step itself, the delete that
+    # makes a skipped generation fail, the tracked-path guard, and the diff. Deleting the step
+    # removes the guarantee while every suite stays green; removing any one command leaves the step
+    # named and the rest of its lines where a reader sees them.
+    ("CI drops the public-surface gate, so the committed signature goes unchecked", CI, "workflows",
+     "      - name: Public surface\n        run: |\n          rm core/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt\n",
+     ""),
+
+    ("CI regenerates the signature without deleting it, so a skipped generation passes", CI,
+     "workflows", "          rm core/api/release.txt\n", ""),
+
+    ("CI drops the tracked-path guard, so a signature nothing commits reads as clean", CI,
+     "workflows", "          git ls-files --error-unmatch core/api/release.txt\n", ""),
+
+    ("CI drops the diff, so the regenerated signature is never compared", CI, "workflows",
+     "          git diff --exit-code -- core/api/release.txt\n", ""),
+
     ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
 
