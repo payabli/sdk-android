@@ -25,8 +25,8 @@ class ApiSurfaceConventionTest {
         runner("metalavaGenerateSignature").build()
         val surfaceAfter = signature().readText()
 
-        // The pair is the assertion: the recorded surface moved with the declaration, so a
-        // generated file that matched the previous one would fail rather than pass.
+        // The pair is the assertion: an unchanged signature fails the last line, so a generation
+        // that ignores the widening cannot pass.
         assertTrue(surfaceAfter, surfaceAfter.contains("public class Greeter"))
         assertFalse(surfaceAfter, surfaceAfter == surfaceBefore)
     }
@@ -60,10 +60,9 @@ class ApiSurfaceConventionTest {
         assertFalse(result.output, result.output.contains("metalava"))
     }
 
-    // java-library rather than an Android library, so the probe needs no Android SDK: the
+    // java-library rather than an Android library, so the probe needs no Android SDK; the
     // convention plugin configures the same extension whichever module shape applies it. The
-    // configuration cache is on, as the real build has it, so a plugin that cannot serialize
-    // under it fails here rather than on every contributor's machine.
+    // configuration cache is on, matching the real build, so an unserializable plugin fails here.
     private fun writeProject() {
         projectDir.newFile("settings.gradle.kts").writeText("""rootProject.name = "api-surface-probe"""")
         projectDir.newFile("gradle.properties").writeText("org.gradle.configuration-cache=true\n")
