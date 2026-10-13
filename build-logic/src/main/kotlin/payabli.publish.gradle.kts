@@ -2,6 +2,7 @@ import com.android.build.api.dsl.LibraryExtension
 import com.payabli.buildlogic.extraEnvironmentsSetting
 import com.payabli.buildlogic.refusePublishingToARemoteRepository
 import com.payabli.buildlogic.refusePublishingWithExtraEnvironments
+import org.cyclonedx.gradle.CyclonedxDirectTask
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
 
@@ -64,6 +65,16 @@ publishing {
 // At task time, not configuration time: a configuration-time check passes and a later afterEvaluate can
 // still turn the repository remote. The guard and its message are in PublishRepositories.kt.
 tasks.refusePublishingToARemoteRepository()
+
+// A published module's bill of materials lists its dependency graph and nothing else. A CycloneDX
+// Direct SBOM scans every resolvable configuration on the project by default, which records build
+// tooling as though the artifact depended on it, so the scan takes the published variant's runtime
+// classpath alone. A module with no such configuration, the version BOM, publishes an empty graph.
+plugins.withId("org.cyclonedx.bom") {
+    tasks.named("cyclonedxDirectBom", CyclonedxDirectTask::class.java) {
+        includeConfigs = listOf("releaseRuntimeClasspath")
+    }
+}
 
 // A published artifact carries only the environments committed in PayabliEnvironment; the guard and its
 // reasoning are in ExtraEnvironments.kt.
