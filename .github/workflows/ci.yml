@@ -67,6 +67,17 @@ jobs:
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
           :testutils:assembleDebug
 
+      # The generated signature must match the checked-in file exactly: a declaration that became
+      # public, or stopped being public, without core/api/release.txt being regenerated in the same
+      # change fails the diff, naming the declaration. The ls-files guard catches the record being
+      # deleted from the repository, which the diff cannot see: a regenerated file nothing commits
+      # reads as clean to a diff that ignores untracked paths.
+      - name: Public surface
+        run: |
+          ./gradlew :core:metalavaGenerateSignatureRelease
+          git ls-files --error-unmatch core/api/release.txt
+          git diff --exit-code -- core/api/release.txt
+
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test
 
