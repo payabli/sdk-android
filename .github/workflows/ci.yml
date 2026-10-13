@@ -67,19 +67,9 @@ jobs:
         run: ./gradlew :core:assembleDebug :payin:assembleDebug :telemetry:assembleDebug
           :testutils:assembleDebug
 
-      # The generated signature must match the checked-in file exactly: a declaration that became
-      # public, or stopped being public, without core/api/release.txt being regenerated in the same
-      # change fails the diff, naming the declaration. The record is deleted before regeneration, so
-      # a generation that skips or writes anywhere else fails against the committed record rather
-      # than passing on stale content. The ls-files guard catches the record being deleted from the
-      # repository, which the diff cannot see. The dump records the SDK version constant, so a
-      # version bump regenerates the file in the same change.
-      - name: Public surface
-        run: |
-          rm core/api/release.txt
-          ./gradlew :core:metalavaGenerateSignatureRelease
-          git ls-files --error-unmatch core/api/release.txt
-          git diff --exit-code -- core/api/release.txt
+      # The public-surface gate runs in its own workflow, on the pull request: a release names a
+      # commit that passed this workflow on main, so a gate inside it is one a release depends on
+      # through CI.
 
       - name: Unit tests
         run: ./gradlew :core:test :payin:test :telemetry:test :testutils:test

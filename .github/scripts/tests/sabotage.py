@@ -86,6 +86,11 @@ PUBLISHER = WORK / "publish_staging.py"
 # action runs in. The mutations below put it back, each as something that reads like a convenience.
 CI = WORKFLOW_DIR / "ci.yml"
 
+# The signature gate, in a workflow of its own on the pull request: the mutations below remove its
+# step and each of its commands, echo them, and reorder them, each into a gate that reports green
+# while the record goes unchecked.
+PUBLIC_SURFACE = WORKFLOW_DIR / "public-surface.yml"
+
 # The sample app's invocation, quoted in two mutations below. One spelling, because a mutation whose anchor
 # no longer matches the file reports itself invalid rather than caught, and two copies drift apart silently.
 WALKTHROUGH_COMMAND = (
@@ -448,6 +453,7 @@ SOURCE = {
     RELEASE: SDK / ".github/workflows/release.yml",
     PUBLISHER: SDK / ".github/scripts/publish_staging.py",
     CI: SDK / ".github/workflows/ci.yml",
+    PUBLIC_SURFACE: SDK / ".github/workflows/public-surface.yml",
 }
 
 # (description, target file, half to run, anchor, replacement)
@@ -562,25 +568,28 @@ MUTATIONS = [
     # makes a skipped generation fail, the tracked-path guard, and the diff. Deleting the step
     # removes the guarantee while every suite stays green; removing any one command leaves the step
     # named and the rest of its lines where a reader sees them.
-    ("CI drops the public-surface gate, so the committed signature goes unchecked", CI, "workflows",
+    ("The pull-request gate drops its step, so the committed signature goes unchecked",
+     PUBLIC_SURFACE, "workflows",
      "      - name: Public surface\n        run: |\n          rm core/api/release.txt\n"
      "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
      "          git ls-files --error-unmatch core/api/release.txt\n"
      "          git diff --exit-code -- core/api/release.txt\n",
      ""),
 
-    ("CI regenerates the signature without deleting it, so a skipped generation passes", CI,
-     "workflows", "          rm core/api/release.txt\n", ""),
+    ("The pull-request gate regenerates the signature without deleting it, so a skipped generation"
+     " passes", PUBLIC_SURFACE, "workflows", "          rm core/api/release.txt\n", ""),
 
-    ("CI drops the tracked-path guard, so a signature nothing commits reads as clean", CI,
-     "workflows", "          git ls-files --error-unmatch core/api/release.txt\n", ""),
+    ("The pull-request gate drops the tracked-path guard, so a signature nothing commits reads as"
+     " clean", PUBLIC_SURFACE, "workflows",
+     "          git ls-files --error-unmatch core/api/release.txt\n", ""),
 
-    ("CI drops the diff, so the regenerated signature is never compared", CI, "workflows",
-     "          git diff --exit-code -- core/api/release.txt\n", ""),
+    ("The pull-request gate drops the diff, so the regenerated signature is never compared",
+     PUBLIC_SURFACE, "workflows", "          git diff --exit-code -- core/api/release.txt\n", ""),
 
     # Every command word survives in an echo, so a flattened read of the step passes while the shell
     # runs no command of the gate at all.
-    ("CI echoes the gate's commands, so every word is present and nothing runs", CI, "workflows",
+    ("The pull-request gate echoes its commands, so every word is present and nothing runs",
+     PUBLIC_SURFACE, "workflows",
      "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
      "          git ls-files --error-unmatch core/api/release.txt\n"
      "          git diff --exit-code -- core/api/release.txt\n",
@@ -591,8 +600,8 @@ MUTATIONS = [
 
     # Every command runs, each intact, but the diff is first: it compares the checkout's committed
     # record against itself, and the regeneration's drift lands after nothing compares it again.
-    ("CI diffs the record before regenerating it, so the comparison reads the checkout", CI,
-     "workflows",
+    ("The pull-request gate diffs the record before regenerating it, so the comparison reads the"
+     " checkout", PUBLIC_SURFACE, "workflows",
      "          rm core/api/release.txt\n          ./gradlew :core:metalavaGenerateSignatureRelease\n"
      "          git ls-files --error-unmatch core/api/release.txt\n"
      "          git diff --exit-code -- core/api/release.txt\n",
@@ -600,6 +609,62 @@ MUTATIONS = [
      "          rm core/api/release.txt\n"
      "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
      "          git ls-files --error-unmatch core/api/release.txt\n"),
+
+    # A release names a commit that passed CI on main, so a gate inside CI is one a release depends
+    # on through CI: this puts it back, rebuilding the coupling the separate workflow removed.
+    ("CI carries the gate again, so a release depends on it through CI", CI, "workflows",
+     "      # The public-surface gate runs in its own workflow, on the pull request: a release names a\n"
+     "      # commit that passed this workflow on main, so a gate inside it is one a release depends on\n"
+     "      # through CI.\n\n"
+     "      - name: Unit tests\n",
+     "      # The public-surface gate runs in its own workflow, on the pull request: a release names a\n"
+     "      # commit that passed this workflow on main, so a gate inside it is one a release depends on\n"
+     "      # through CI.\n\n"
+     "      - name: Public surface\n"
+     "        run: |\n"
+     "          rm core/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt\n\n"
+     "      - name: Unit tests\n"),
+
+    # A mismatch past the publish step publishes anyway: the upload job needs the build job, and a
+    # green build is all it sees.
+    ("The release drops its gate, so a corrupted record publishes", RELEASE, "workflows",
+     "      - name: Public surface\n"
+     "        run: |\n"
+     "          rm core/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt\n\n"
+     "      - name: Publish to the staging directory\n",
+     "      - name: Publish to the staging directory\n"),
+
+    # The gate runs, each command intact, but the publish has already spent the version's staging
+    # tree: a red gate cancels the upload of a tree the run already built.
+    ("The release checks the record after publishing it", RELEASE, "workflows",
+     "      - name: Public surface\n"
+     "        run: |\n"
+     "          rm core/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt\n\n"
+     "      - name: Publish to the staging directory\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
+     "        run: ./gradlew publish\n",
+     "      - name: Publish to the staging directory\n"
+     "        env:\n"
+     "          PAYABLI_MAVEN_USER: ${{ secrets.PAYABLI_MAVEN_US_PROD }}\n"
+     "          PAYABLI_MAVEN_PASSWORD: ${{ secrets.PAYABLI_MAVEN_PW_PROD }}\n"
+     "        run: ./gradlew publish\n\n"
+     "      - name: Public surface\n"
+     "        run: |\n"
+     "          rm core/api/release.txt\n"
+     "          ./gradlew :core:metalavaGenerateSignatureRelease\n"
+     "          git ls-files --error-unmatch core/api/release.txt\n"
+     "          git diff --exit-code -- core/api/release.txt\n"),
 
     ("A QA snapshot runs the suites under a shell without -e", QA, "workflows",
      "      - name: Unit tests\n        env:\n", "      - name: Unit tests\n        shell: bash {0}\n        env:\n"),
