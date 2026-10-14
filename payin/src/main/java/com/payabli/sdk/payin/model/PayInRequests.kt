@@ -84,7 +84,7 @@ public class PayInVendorData(
  * @property achValidation validates a bank account before storing it.
  * @property createAnonymous stores the method against a new anonymous customer when no customer is identified.
  * @property temporary stores it for a single use rather than permanently.
- * @property validation skips the card's Luhn check and the bank routing checksum, for a caller that has its own.
+ * @property validation which structural checks run; both run by default, and each flag skips its own.
  */
 public class PayInStoreOptions(
     public val customerData: PayInCustomerData? = null,
