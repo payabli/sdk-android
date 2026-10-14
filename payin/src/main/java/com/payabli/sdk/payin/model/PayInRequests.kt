@@ -19,7 +19,11 @@ public class PayInPaymentDetails(
     public val checkNumber: String? = null,
     public val checkUniqueId: String? = null,
 ) {
-    /** An amount is not a secret, and it is also not something a log needs from a `toString`. */
+    /**
+     * An amount is not a secret, and it is also not something a log needs from a `toString`.
+     *
+     * @return whether a service fee was supplied, never the amount.
+     */
     override fun toString(): String = "PayInPaymentDetails(hasServiceFee=${serviceFee != null})"
 }
 
@@ -56,6 +60,8 @@ public class PayInCustomerData(
      *
      * The one flag says whether the paypoint's own extra fields were supplied, which is a question about
      * configuration rather than about the payer. It reports nothing about whether any customer data was sent.
+     *
+     * @return whether the paypoint's own extra fields were supplied, never a field of the payer.
      */
     override fun toString(): String = "PayInCustomerData(hasAdditionalData=${additionalData != null})"
 }
@@ -74,6 +80,11 @@ public class PayInVendorData(
  *
  * No `idempotencyKey`: a repeat is not recognizable on the store route, so a key sent there is read by
  * nobody.
+ *
+ * @property achValidation validates a bank account before storing it.
+ * @property createAnonymous stores the method against a new anonymous customer when no customer is identified.
+ * @property temporary stores it for a single use rather than permanently.
+ * @property validation which structural checks run; both run by default, and a flag set false skips its own.
  */
 public class PayInStoreOptions(
     public val customerData: PayInCustomerData? = null,
@@ -81,16 +92,12 @@ public class PayInStoreOptions(
     public val methodDescription: String? = null,
     public val source: String? = null,
     public val subdomain: String? = null,
-    /** Validates a bank account before storing it. */
     public val achValidation: Boolean? = null,
-    /** Stores the method against a new anonymous customer when no customer is identified. */
     public val createAnonymous: Boolean? = null,
     public val forceCustomerCreation: Boolean? = null,
-    /** Stores it for a single use rather than permanently. */
     public val temporary: Boolean? = null,
     public val fallbackAuth: Boolean? = null,
     public val fallbackAuthAmount: Int? = null,
-    /** Skips the card's Luhn check and the bank routing checksum, for a caller that has its own. */
     public val validation: PayInValidationOptions = PayInValidationOptions(),
 )
 
@@ -113,6 +120,14 @@ public class PayInValidationOptions(
  * configuring a screen ahead of time holds no card number.
  *
  * The flags and headers below are wire parameters, and this type only carries them.
+ *
+ * @property idempotencyKey identifies this attempt, so a retry sending the same key is the same request
+ *   rather than a second one. Sent as the `idempotencyKey` header; one is minted per attempt when it is
+ *   absent, and a minted one is not held for a later call on these routes, so a retry that has to be
+ *   recognized as one sets this itself — [PayabliPayIn.capture] says why.
+ * @property sameDayAch settles a bank debit the same day where the paypoint is configured for it.
+ * @property isAsync returns before the processor answers, leaving the result to be read later.
+ * @property validationCode sent as the `validationCode` header, for a paypoint that requires one.
  */
 public class PayInTransactionOptions(
     public val paymentDetails: PayInPaymentDetails,
@@ -124,22 +139,12 @@ public class PayInTransactionOptions(
     public val source: String? = null,
     public val subdomain: String? = null,
     public val subscriptionId: Long? = null,
-    /**
-     * Identifies this attempt, so a retry sending the same key is the same request rather than a second one.
-     *
-     * Sent as the `idempotencyKey` header. Optional: one is minted per attempt when it is absent, by a form
-     * submission and by a direct call alike. A minted one is not held for a later call on these routes, so a
-     * retry that has to be recognized as one sets this itself — [PayabliPayIn.capture] says why.
-     */
     public val idempotencyKey: String? = null,
     public val achValidation: Boolean? = null,
     public val forceCustomerCreation: Boolean? = null,
-    /** Settles a bank debit the same day where the paypoint is configured for it. */
     public val sameDayAch: Boolean? = null,
-    /** Returns before the processor answers, leaving the result to be read later. */
     public val isAsync: Boolean? = null,
     public val useCaching: Boolean? = null,
-    /** Sent as the `validationCode` header, for a paypoint that requires one. */
     public val validationCode: String? = null,
     public val validation: PayInValidationOptions = PayInValidationOptions(),
 )

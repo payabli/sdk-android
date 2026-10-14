@@ -28,41 +28,15 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * AES-256-GCM under a key held in the Android Keystore. Only ciphertext leaves this class.
+ * AES-256-GCM under a key held in the Android Keystore. Only ciphertext leaves this class. In `platform`
+ * because Keystore and `android.util.Base64` have no JVM implementation. The per-write IV comes from
+ * Keystore: randomized encryption is required on the key, so IV freshness holds by construction.
  *
- * In `platform` because Keystore and `android.util.Base64` have no JVM implementation, so no unit test can
- * reach a line of this file and the instrumented suite is what covers it.
- *
- * `androidx.security:security-crypto` is not used: it was deprecated in 2025 in favour of the
- * platform APIs used here.
- *
- * The per-write IV comes from Keystore, not from this class. Randomized encryption is required on the key,
- * which makes supplying an IV an error and has the platform generate a fresh one per operation, so IV
- * freshness holds by construction.
+ * @property beforeKeyGeneration a test seam, no-op in production: a rendezvous opening the generation race for the test that asserts it.
  */
 internal class KeystoreValueCipher(
     private val keyAlias: String,
     private val logger: SdkLogger,
-    /**
-     * Runs after the unsynchronized presence check and before the guarded generation. **A test seam, no-op in
-     * production**, and it exists because the race it opens cannot be reached from outside this class.
-     *
-     * The hazard is two ciphers over one alias both finding no key and both generating, where the second
-     * generation replaces the first key and strands whatever was sealed under it. Reaching it needs both callers
-     * past the check before either creates, and from outside [ensureKey] that check and the creation are atomic,
-     * so no decorator on [ValueCipher] can interleave them. Two coroutines racing cannot either: a plain
-     * `Dispatchers.IO` race detected the missing monitor in 3 of 3 whole-suite runs but only about half of the
-     * time in isolation, and a start barrier did not improve it, because the test was observing a *consequence*.
-     * A blob is only lost if one store finishes encrypting between the two generations, so tighter overlap puts
-     * both generations before either encrypt and loses nothing.
-     *
-     * With a rendezvous here, the test stops asking whether data was lost and asserts the invariant instead: the
-     * key is generated exactly once, counted from the log line [createKey] already emits. That is deterministic.
-     *
-     * The default makes this dead in production, and the parameter is not a `@VisibleForTesting`
-     * member or a mutable static: it is per-instance and injected, the same shape as `FileSecureStorage`'s
-     * `dispatcher`.
-     */
     private val beforeKeyGeneration: () -> Unit = {},
 ) : ValueCipher {
     override fun encrypt(
@@ -114,18 +88,11 @@ internal class KeystoreValueCipher(
     }
 
     /**
-     * Provisions the alias, and is the only place a key is ever created.
+     * Provisions the alias, and is the only place a key is ever created, double-checked under the
+     * per-alias monitor. With [mayCreate] false it proves a key is *present*, not that it is the one
+     * that sealed the store: continuity comes from alias ownership, which `SecureStorageFactory.create` holds.
      *
-     * Double-checked under the per-alias monitor, so concurrent first writes generate once rather than racing
-     * to replace each other's key. A separate `hasKey()` followed by a creating `encrypt` would split the decision
-     * across two calls with a window between them.
-     *
-     * **What this guarantees, and what it does not.** With [mayCreate] false it proves a key is *present*, not
-     * that the present key is the one that sealed the store. Continuity comes from alias ownership instead:
-     * `SecureStorageFactory.create` derives one alias per backing file, so nothing else can delete and
-     * recreate this one. Two ciphers constructed directly over a single alias, which only internal code can do,
-     * are outside that guarantee. Proving continuity rather than owning it would need a canary blob decrypted
-     * on every write, which is not built.
+     * @param mayCreate whether a missing key is created; false only proves one is present.
      */
     override fun ensureKey(mayCreate: Boolean) {
         if (existingKey() != null) return
@@ -138,33 +105,23 @@ internal class KeystoreValueCipher(
     }
 
     /**
-     * A Keystore backend failure, which arrives outside the checked hierarchy everything else here maps.
+     * A Keystore backend failure, outside the checked hierarchy everything else here maps: without this,
+     * a keystore daemon that is unreachable escapes the [SecureStorageException] surface as a raw
+     * runtime failure. Always CryptoUnavailable, and not mapped inside [generate].
      *
-     * `ProviderException` extends `RuntimeException`, not `GeneralSecurityException`, so without this a
-     * keystore daemon that is unreachable, `KeyStoreConnectException` among others, escapes the
-     * [SecureStorageException] surface as a raw runtime failure and the caller loses the one distinction the
-     * surface exists to make. Always `CryptoUnavailable`: a provider that is broken says nothing about this
-     * blob or about the key, so it is neither a tag failure nor key loss.
-     *
-     * **Not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
-     * `ProviderException`, so a catch there swallows it, [strongBoxKey] never sees the signal it falls back on,
-     * and key creation fails outright on every device without StrongBox. [createKey] maps it one level up,
-     * after the fallback has resolved.
+     * @param cause the backend failure the platform raised.
+     * @return a CryptoUnavailable carrying the cause.
      */
     private fun asProviderFailure(cause: ProviderException): SecureStorageException =
         SecureStorageException.CryptoUnavailable(cause)
 
     /**
-     * Maps a platform failure by **blast radius**, which is the whole point of the split.
+     * Maps a platform failure by **blast radius**: a tag failure means this one blob cannot be
+     * authenticated under a key that is otherwise fine, so it must not delete the alias; only causes
+     * that prove the key itself is unusable discard it. Key-invalidated is matched by name, not type.
      *
-     * A tag failure means this one blob cannot be authenticated under a key that is otherwise fine, so it
-     * must not delete the alias: every value shares one, and doing so made a single damaged entry destroy
-     * all the others. Only causes that prove the key itself is unusable discard the alias, and there it is
-     * required, because otherwise every later write fails the same way. Anything else is classified by
-     * Keystore's own verdict, not by the exception that carries it.
-     *
-     * `KeyPermanentlyInvalidatedException` is matched by name rather than type: it extends
-     * `InvalidKeyException`, so a reordered catch block would silently demote it to a generic failure.
+     * @param cause the platform failure the cipher path raised.
+     * @return the exception that says what the failure costs.
      */
     private fun asFailure(cause: GeneralSecurityException): SecureStorageException =
         when {
@@ -213,6 +170,8 @@ internal class KeystoreValueCipher(
     /**
      * Reading may not create one, and that is the correctness of the invalidation path: a key minted here
      * turns a lost key into a tag failure, which reports a bad value instead of a lost store.
+     *
+     * @return the existing key, or KeyInvalidated when the alias holds none.
      */
     private fun keyForReading(): SecretKey = existingKey() ?: throw SecureStorageException.KeyInvalidated()
 
@@ -228,11 +187,11 @@ internal class KeystoreValueCipher(
         }
 
     /**
-     * StrongBox where the platform has it, otherwise whatever the platform gives.
+     * StrongBox where the platform has it, otherwise whatever the platform gives. The level obtained is
+     * logged rather than enforced: requiring hardware would fail on emulators, and the manual device
+     * tier is where hardware backing is actually asserted.
      *
-     * The level obtained is logged rather than enforced. Requiring hardware would fail on emulators and on
-     * devices without a TEE, so production accepts what it gets and the manual device tier is where
-     * hardware backing is actually asserted.
+     * @return the generated secret key.
      */
     private fun createKey(): SecretKey {
         // StrongBox is API 28 while this module's floor is 23: unguarded, this is a NoSuchMethodError on
@@ -264,6 +223,8 @@ internal class KeystoreValueCipher(
     /**
      * No `setUserAuthenticationRequired`: the first consumer is a secret read during background token
      * refresh with nobody present, and binding the key to user presence would make that impossible.
+     *
+     * @return the generator's base spec, at this store's alias.
      */
     private fun baseSpec(): KeyGenParameterSpec.Builder =
         KeyGenParameterSpec
@@ -272,7 +233,12 @@ internal class KeystoreValueCipher(
             .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
             .setKeySize(KEY_BITS)
 
-    /** Best effort, for the log line only. `getSecurityLevel` is API 31; below that the answer is coarser. */
+    /**
+     * Best effort, for the log line only. `getSecurityLevel` is API 31; below that the answer is coarser.
+     *
+     * @param key the key whose backing is reported.
+     * @return the level by name, or "unknown" when the platform cannot say.
+     */
     private fun securityLevelOf(key: SecretKey): String =
         runCatching {
             val info =

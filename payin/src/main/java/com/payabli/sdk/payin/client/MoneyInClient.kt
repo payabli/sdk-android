@@ -51,7 +51,15 @@ internal class MoneyInClient(
     private val transport: PayabliTransport,
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
 ) {
-    /** Takes a payment. */
+    /**
+     * Takes a payment.
+     *
+     * @param entryPoint the partner integration point the payment is attributed to.
+     * @param request the payment to take.
+     * @param entered what the payer typed, for the customer data.
+     * @param idempotencyKey the attempt's key, or null to send none.
+     * @return the outcome the service reported.
+     */
     suspend fun capture(
         entryPoint: String,
         request: PayInRequest,
@@ -74,6 +82,12 @@ internal class MoneyInClient(
      * Authorizes a payment without taking it.
      *
      * Refused here for a method the route does not take, so a caller learns it without a round trip.
+     *
+     * @param entryPoint the partner integration point the payment is attributed to.
+     * @param request the payment to authorize.
+     * @param entered what the payer typed, for the customer data.
+     * @param idempotencyKey the attempt's key, or null to send none.
+     * @return the outcome the service reported.
      */
     suspend fun authorize(
         entryPoint: String,
@@ -102,6 +116,10 @@ internal class MoneyInClient(
      *
      * One of the two whose path differs from its route, [void] being the other: the identifier is in the
      * path, so the template is what a log may carry.
+     *
+     * @param request the authorization to capture, in full or in part.
+     * @param idempotencyKey the attempt's key, or null to send none.
+     * @return the outcome the service reported.
      */
     suspend fun captureAuthorized(
         request: PayInAuthorizedRequest,
@@ -130,6 +148,10 @@ internal class MoneyInClient(
      * No body: the route carries the identifier in its path and takes nothing else, so there is no partial
      * void. Which states can be reversed is the service's to decide and is not mirrored here; a state it
      * refuses arrives as the refusal it sent.
+     *
+     * @param transId the transaction to reverse.
+     * @param idempotencyKey the attempt's key, or null to send none.
+     * @return the outcome the service reported.
      */
     suspend fun void(
         transId: String,
@@ -157,10 +179,18 @@ internal class MoneyInClient(
     }
 
     /**
-     * Builds the body, sends it, and overwrites the bytes afterwards.
+     * Builds the body, sends it, and overwrites the bytes afterwards. The wipe is in a `finally`
+     * **after** the call, because credential recovery may replay the request inside the transport
+     * and needs the bytes intact to do it.
      *
-     * The wipe is in a `finally` **after** the call rather than before it, because credential recovery may
-     * replay the request inside the transport and needs the bytes intact to do it.
+     * @param route the route template a log may carry.
+     * @param path the resolved path, carrying the request's identifiers.
+     * @param request the payment to send.
+     * @param entryPoint the partner integration point the payment is attributed to.
+     * @param entered what the payer typed, for the customer data.
+     * @param allowsAchValidation whether the route takes the achValidation flag.
+     * @param idempotencyKey the attempt's key, or null to send none.
+     * @return the outcome the service reported.
      */
     private suspend fun send(
         route: String,
@@ -196,12 +226,13 @@ internal class MoneyInClient(
     }
 
     /**
-     * Reads the outcome, in the order the classification depends on.
+     * Reads the outcome, in the order the classification depends on: the status first, then the
+     * envelope — a refusal arrives as a `D`-prefixed code behind a 2xx, and skipping this is how a
+     * decline reads as an approval — then the payload. A success is a 201 as often as a 200.
      *
-     * 1. The status first.
-     * 2. Then the envelope, because a refusal arrives as a `D`-prefixed code behind a 2xx and skipping this
-     *    is how a decline reads as an approval. A success is a 201 as often as a 200, so neither is asserted.
-     * 3. Only then the payload.
+     * @param route the route template a log may carry.
+     * @param response the answered request.
+     * @return the outcome the service reported.
      */
     private fun read(
         route: String,
@@ -278,7 +309,13 @@ internal class MoneyInClient(
     }
 }
 
-/** The wire body for a transaction, without `paymentMethod`, which the writer adds. */
+/**
+ * The wire body for a transaction, without `paymentMethod`, which the writer adds.
+ *
+ * @param entryPoint the partner integration point, trimmed as the request writers send it.
+ * @param entered what the payer typed, for the customer data.
+ * @return the wire body for the transaction.
+ */
 private fun PayInTransactionOptions.toBody(
     entryPoint: String,
     entered: PayInEnteredDetails,
@@ -312,7 +349,12 @@ private fun TransactionPayload.toTransaction(): PayInTransaction =
         customerId = payorId,
     )
 
-/** Only the flags that were set: an absent flag and a false one are different statements to the service. */
+/**
+ * Only the flags that were set: an absent flag and a false one are different statements to the service.
+ *
+ * @param allowsAchValidation whether the route takes the achValidation flag.
+ * @return the query pairs the route takes.
+ */
 private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pair<String, String>> =
     buildList {
         if (allowsAchValidation) achValidation?.let { add(PayInRoutes.QUERY_ACH_VALIDATION to it.wire()) }
@@ -323,10 +365,12 @@ private fun PayInTransactionOptions.query(allowsAchValidation: Boolean): List<Pa
     }
 
 /**
- * [key] rather than this object's own, because the flow mints one when the caller set none.
+ * [key] rather than this object's own, because the flow mints one when the caller set none. Passed in
+ * rather than read here so there is one answer per attempt and one place that decides it: a caller that
+ * set a key still sends exactly that key, and the flow only fills a gap.
  *
- * Passed in rather than read here so there is one answer per attempt and one place that decides it. A caller
- * that set a key still sends exactly that key: the flow only fills a gap.
+ * @param key the attempt's key, or null to send none.
+ * @return the headers the request carries.
  */
 private fun PayInTransactionOptions.headers(key: String?): Map<String, String> =
     payInHeaders {

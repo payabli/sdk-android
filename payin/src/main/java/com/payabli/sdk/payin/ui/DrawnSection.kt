@@ -17,14 +17,14 @@ internal class DrawnSection(
 )
 
 /**
- * [sections] with every amount other than zero placed in one summary.
+ * [sections] with every displayed amount other than zero placed in one summary; the Amount row
+ * needs [showsBaseAmount]. A host's summary section decides where the figures go and what it
+ * is called, never which figures appear; with no figure to show, none is drawn.
  *
- * A host's summary section decides where the figures go and what the section is called, never which figures
- * appear: they are in the order it lists them, then any it left out. Of several, the last listed is the one drawn.
- * With no summary section one is appended after the rest. With no figure to show, no summary is drawn.
- *
- * The figures are [PayInSummaryRows]'s, so a host reading them gets what the form draws. The Amount row is drawn
- * only with [showsBaseAmount].
+ * @param sections the form's sections.
+ * @param amounts what is being charged, or null for none.
+ * @param showsBaseAmount whether the Amount row is drawn.
+ * @return the sections as drawn, the figures placed in one summary.
  */
 internal fun placeAmounts(
     sections: List<PayInFormSection>,

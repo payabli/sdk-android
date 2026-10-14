@@ -30,16 +30,11 @@ internal object TransportFactory {
      * Builds one auth domain. Called once per session; see the class note for why nothing outside `:core`
      * calls it directly any more.
      *
-     * [dispatcher] has no default. `PayabliSession` is the layer an integrating app calls, so it is the one
-     * place that picks a dispatcher; every layer under it is handed one. A default here would mean a caller
-     * that narrowed parallelism, or a test that substituted a dispatcher, silently did not get it, and nothing
-     * would report that.
-     *
-     * [client] has no default either, for the same reason: it is what every request reports about this device,
-     * and only the session can read it.
-     *
-     * [assembly] is the rest, and its default is the shipped behaviour. Nothing outside `:core` can set it, so
-     * do not describe it as configuration.
+     * @param config the configuration the holder and the transport are built from.
+     * @param dispatcher where the transport's blocking work runs, no default: `PayabliSession` is the one place that picks one.
+     * @param client what every request reports about this device; no default, since only the session can read it.
+     * @param assembly the rest, whose default is the shipped behaviour. Nothing outside `:core` can set it.
+     * @return the transport with the bearer and the recovery wrapper already around it.
      */
     internal fun authenticated(
         config: PayabliConfig,
@@ -49,13 +44,16 @@ internal object TransportFactory {
     ): PayabliTransport = authenticated(config.environment.baseUrl, config, dispatcher, client, assembly)
 
     /**
-     * Same, against an explicit [baseUrl], for `:core`'s own tests.
+     * Same, against an explicit [baseUrl], for `:core`'s own tests. Kept narrow: `@VisibleForTesting`
+     * leaves a member public in bytecode, so this would be an origin override — a caller able to send
+     * the session's token to any origin, which [PayabliEnvironment] promises shipped configuration cannot do.
      *
-     * Kept narrow rather than promoted now that this object is `internal`. `@VisibleForTesting` is a Lint hint
-     * and leaves a member public in bytecode, so as published API this would be an origin override: a caller
-     * could send the session's token to any origin it liked, which is exactly what [PayabliEnvironment]
-     * promises shipped configuration cannot do, "not even behind a debug flag". A capability that needs a
-     * live-server test wants a fixtures artifact, not a hole here.
+     * @param baseUrl the origin every request goes to, overriding the environment's.
+     * @param config the configuration the holder and the transport are built from.
+     * @param dispatcher where the transport's blocking work runs; no default, for the reason [authenticated] gives.
+     * @param assembly the rest, whose default is the shipped behaviour.
+     * @param client what every request reports about this device. The default reports nothing, the SDK's own tests on a JVM.
+     * @return the transport with the bearer and the recovery wrapper already around it.
      */
     internal fun authenticatedAgainst(
         baseUrl: String,

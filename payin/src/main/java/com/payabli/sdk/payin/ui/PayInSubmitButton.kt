@@ -23,8 +23,14 @@ import com.payabli.sdk.payin.payment.PayabliPayInOperation
 
 /**
  * Submits the form. Material's own button, so it carries the host's color and shape.
- *
  * `heightIn` sets a minimum, so the label keeps its room at a large font scale.
+ *
+ * @param text what the button reads.
+ * @param busyText what it reads while a submission runs.
+ * @param enabled whether the payer may tap it.
+ * @param isSubmitting whether a submission is running.
+ * @param style the form's style.
+ * @param onClick what a tap does.
  */
 @Composable
 internal fun PayInSubmitButton(

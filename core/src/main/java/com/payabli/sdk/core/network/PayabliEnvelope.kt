@@ -62,7 +62,11 @@ public object PayabliEnvelope {
         public val code: Int?,
         public val reason: String,
     ) {
-        /** [reason] is server text and may echo request data, so it is not in [toString]. */
+        /**
+         * [reason] is server text and may echo request data, so it is not in [toString].
+         *
+         * @return the code alone.
+         */
         override fun toString(): String = "DeclineOutcome(code=$code)"
     }
 
@@ -71,10 +75,18 @@ public object PayabliEnvelope {
      *
      * Malformed input returns null rather than throwing: the caller's subsequent [Success] decode is
      * what produces the canonical decode error, so failures surface in one place.
+     *
+     * @param body the raw response body to peek at.
+     * @return the decoded decline, or null when the body is a success or malformed.
      */
     public fun declineOutcome(body: ByteArray): DeclineOutcome? = declineOutcome(body.toString(Charsets.UTF_8))
 
-    /** String overload of [declineOutcome]. */
+    /**
+     * String overload of [declineOutcome].
+     *
+     * @param body the response body as text.
+     * @return the decoded decline, or null when the body is a success or malformed.
+     */
     public fun declineOutcome(body: String): DeclineOutcome? {
         val status = PayabliJson.decodeOrNull(Status.serializer(), body)
         if (status?.isSuccess != false) return null

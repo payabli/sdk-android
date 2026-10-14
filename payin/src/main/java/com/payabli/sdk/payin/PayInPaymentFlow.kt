@@ -34,25 +34,16 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * The one implementation of [PayabliPayIn], and the only type in this module that knows both a session and a
- * form exist: the form knows this and nothing under it, and the layers under it know nothing about a screen.
+ * The one implementation of [PayabliPayIn], and the only type in this module that knows both a
+ * session and a form exist. `internal`, so what a host can call is [PayabliPayIn]'s members and
+ * nothing else; it sits here because [PayabliPayIn] is sealed. **[scope] is the host's.**
  *
- * `internal`, so what a host can call is [PayabliPayIn]'s members and nothing else. It sits in this
- * package rather than beside the submission machinery because [PayabliPayIn] is sealed, and Kotlin
- * requires a sealed type's implementations to share its package. The four members below
- * that the form reaches are the reason this type exists separately: they are how a composition drives a
- * submission, and none of them is an operation a host performs.
- *
- * **[scope] is the host's**, and cancelling it cancels a submission in flight. Canceling does not un-charge a
- * card, so whether a payment dies with a screen is the host's decision rather than this SDK's.
- *
- * The constructor parameters are documented on [PayabliPayIn.invoke], which is how a host reaches this.
+ * @property reports built once here, from the session that created this flow, and handed to the form.
  */
 internal class PayInPaymentFlow private constructor(
     private val entryPoint: String,
     private val scope: CoroutineScope,
     private val submission: PayInSubmission,
-    /** Built once here, from the session that created this flow, and handed to the form. */
     @get:JvmSynthetic
     internal val reports: PayInFormReports,
 ) : PayabliPayIn() {
@@ -117,24 +108,23 @@ internal class PayInPaymentFlow private constructor(
     override val state: StateFlow<PayInSubmissionState> get() = submission.state
 
     /**
-     * Consumes a terminal state, returning to [PayInSubmissionState.Idle].
+     * Consumes a terminal state, returning to [PayInSubmissionState.Idle]. Called by `PayabliPayInForm`
+     * once an outcome has reached the functions the caller supplied: a retained outcome is delivered
+     * again after the next configuration change, and a navigation then fires twice.
      *
-     * Called by `PayabliPayInForm` once an outcome has reached the functions the caller supplied. A retained
-     * outcome is delivered again after the next configuration change, and a navigation then fires twice for one
-     * payment.
-     *
-     * Returns false while a submission is in flight, so nothing can clear the state out from under one.
+     * @return true once the state is [PayInSubmissionState.Idle]; false while a submission is in flight.
      */
     @JvmSynthetic
     internal fun consume(): Boolean = submission.reset()
 
     /**
-     * Runs [operation] on [scope], for a caller with no coroutine at the call site.
+     * Runs [operation] on [scope], for a caller with no coroutine at the call site. What the SDK's
+     * own form calls: the outcome is readable through [state] alone, and the suspending members
+     * below return it instead.
      *
-     * What the SDK's own form calls. The outcome is readable through [state] alone, which is what a
-     * fire-and-forget start can offer; the suspending members below return it instead.
-     *
-     * Returns false when a submission is already in flight, having sent nothing.
+     * @param operation what the submission does.
+     * @param values what the payer entered, and the instrument they entered it for.
+     * @return true when the submission started; false when one was already in flight, having sent nothing.
      */
     @JvmSynthetic
     internal fun start(
@@ -155,25 +145,38 @@ internal class PayInPaymentFlow private constructor(
     }
 
     /**
-     * Takes the payment, returning what the service said.
+     * Takes the payment, returning what the service said. `internal` with the shape it will keep: the
+     * caller is a host that draws its own form, and that integration mode is not exposed yet. `Result`
+     * rather than a thrown exception, because a decline is an outcome rather than a defect.
      *
-     * `internal` with the shape it will keep. The caller for these three is a host that draws its own form,
-     * and that integration mode is not exposed yet. `Result` rather than a thrown exception, because a
-     * decline is an outcome a caller acts on rather than a defect, and suspend-returning-`Result` is the
-     * shape the SDK blueprint fixes for a one-shot call.
+     * @param options what to charge and how the request should be treated.
+     * @param values what the payer entered, and the instrument they entered it for.
+     * @return the outcome, or the failure.
      */
     internal suspend fun capture(
         options: PayInTransactionOptions,
         values: PayInFormValues,
     ): Result<PayInResult> = payment(PayabliPayInOperation.Capture(options), values)
 
-    /** Places a hold without taking it, which the service does for entered card data only. */
+    /**
+     * Places a hold without taking it, which the service does for entered card data only.
+     *
+     * @param options what to hold and how the request should be treated.
+     * @param values what the payer entered, and the instrument they entered it for.
+     * @return the outcome, or the failure.
+     */
     internal suspend fun authorize(
         options: PayInTransactionOptions,
         values: PayInFormValues,
     ): Result<PayInResult> = payment(PayabliPayInOperation.Authorize(options), values)
 
-    /** Stores the instrument, so a later transaction charges it without the details again. */
+    /**
+     * Stores the instrument, so a later transaction charges it without the details again.
+     *
+     * @param values what the payer entered, and the instrument they entered it for.
+     * @param options everything about storing a method other than the instrument.
+     * @return the stored method, or the failure.
+     */
     internal suspend fun storeMethod(
         values: PayInFormValues,
         options: PayInStoreOptions = PayInStoreOptions(),
@@ -224,21 +227,11 @@ internal class PayInPaymentFlow private constructor(
         }
 
     /**
-     * The failure behind a state that is not the success the caller asked for.
+     * The failure behind a state that is not the success the caller asked for: the cause already
+     * says whether the request may have been carried out, so this reads it rather than deciding it
+     * again. A null state is a submission refused because one was already in flight.
      *
-     * The cause already says whether the request may have been carried out, being
-     * [PayInException.Unsettled] where it was, so this reads it rather than deciding it a second time. One
-     * definition, at the submission that knows which key went out, so a caller holding a `Result` and a form
-     * reading the state are told the same thing.
-     *
-     * The key itself stays inside, and what that buys differs by route. Where the call named a transaction
-     * it is kept against that transaction, so the next call naming it sends the same key without the caller
-     * doing anything. Where it did not, nothing is kept, and a repeat is recognized only under a key the
-     * caller supplied.
-     *
-     * A null state is a submission refused because one was already in flight. Idle and Submitting cannot
-     * arise for a call that has returned, and reporting them as a defect is what keeps this exhaustive
-     * without inventing a plausible-looking failure for a state that cannot occur.
+     * @return the failure behind the state, or the refusal for a submission already in flight.
      */
     private fun PayInSubmissionState?.asFailure(): Throwable =
         when (this) {
@@ -259,12 +252,14 @@ internal class PayInPaymentFlow private constructor(
         private val IO_DISPATCHER: CoroutineDispatcher = Dispatchers.IO
 
         /**
-         * Builds one, and is the only way to.
+         * Builds one, and is the only way to: a factory rather than a constructor because `internal` is
+         * a Kotlin boundary and not a JVM one, and a function can be `@JvmSynthetic` where a constructor
+         * cannot, so construction goes through here and the constructors are private.
          *
-         * A factory rather than a constructor because `internal` is a Kotlin boundary and not a JVM one: an
-         * internal constructor compiles to a public one, so Java could build this type directly and reach the
-         * form-only members below it. A constructor cannot be marked `@JvmSynthetic` and a function can, so
-         * construction goes through here and the constructors are private.
+         * @param session an initialized session.
+         * @param entryPoint the partner integration point every request is sent to.
+         * @param scope where a submission started by the form runs.
+         * @return the flow, as a [PayabliPayIn].
          */
         @JvmSynthetic
         internal fun over(
@@ -275,10 +270,17 @@ internal class PayInPaymentFlow private constructor(
 
         /**
          * The seam a test builds over, which takes a transport rather than a session.
+         * [elapsedRealtimeNanos] defaults to the production clock; a JVM test has to pass one, because
+         * `SystemClock` does not exist there and the default throws rather than measuring anything.
          *
-         * [elapsedRealtimeNanos] defaults to the production clock, which is what an instrumented test wants.
-         * A JVM test has to pass one: `SystemClock` does not exist there, so the default throws rather than
-         * measuring anything.
+         * @param transport the transport every request goes through.
+         * @param entryPoint the partner integration point every request is sent to.
+         * @param scope where a submission started by the form runs.
+         * @param dispatcher where the blocking work runs.
+         * @param elapsedRealtimeNanos the clock a retry key's window is measured on.
+         * @param logger where the submissions are logged, or null for none.
+         * @param telemetry the session the reports are attributed to, or null for none.
+         * @return the flow, as a [PayabliPayIn].
          */
         @JvmSynthetic
         internal fun over(

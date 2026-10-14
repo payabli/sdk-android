@@ -53,9 +53,12 @@ internal object KeystoreFailures {
 
     /**
      * The reading for an exception named [className], or null when it carries no Keystore verdict.
+     * Matched by name, because `KeyStoreException` is public only from API 33 and neither class can be
+     * built off a device.
      *
-     * Matched by name, because `KeyStoreException` is public only from API 33 and neither class can be built off a
-     * device. [platform] reads a `KeyStoreException`, and answers null on a platform version that does not say.
+     * @param className the exception class's binary name.
+     * @param platform reads the platform's own flags, on the API level that has them.
+     * @return the reading, or null when the exception carries no Keystore verdict.
      */
     fun readingFor(
         className: String,
@@ -67,7 +70,14 @@ internal object KeystoreFailures {
             else -> null
         }
 
-    /** What a `KeyStoreException`'s own flags and code say. */
+    /**
+     * What a `KeyStoreException`'s own flags and code say.
+     *
+     * @param systemError whether the platform calls it a system error.
+     * @param transient whether the platform calls it transient.
+     * @param errorCode the platform's own numeric code.
+     * @return the reading: retryable when either flag is set, key gone on the two codes that mean it.
+     */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     fun readingOf(
         systemError: Boolean,

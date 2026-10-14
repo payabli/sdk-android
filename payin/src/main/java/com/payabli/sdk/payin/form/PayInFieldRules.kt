@@ -67,9 +67,11 @@ public object PayInFieldRules {
 
     /**
      * The fields the other instrument carries, which this method's request has nowhere to put.
+     * A box for one of these is collected from the payer and then dropped, and a routing number is
+     * not something to collect and drop.
      *
-     * A box for one of these is collected from the payer and then dropped, and a routing number is not
-     * something to collect and drop.
+     * @param method the method whose request has nowhere to put them.
+     * @return the fields the other instrument carries.
      */
     internal fun fieldsNotCarriedBy(method: PayInMethodType): Set<PayInField> =
         when (method) {
@@ -86,6 +88,9 @@ public object PayInFieldRules {
      *
      * A copy per call. Kotlin's read-only `Set` is a `LinkedHashSet` at runtime, so the set behind this is one
      * a Java caller can clear, and the configuration check reads it on every construction.
+     *
+     * @param method the method the form offers.
+     * @return the fields an instrument of this method cannot be built without, a copy per call.
      */
     public fun instrumentFields(method: PayInMethodType): Set<PayInField> =
         when (method) {
@@ -93,7 +98,12 @@ public object PayInFieldRules {
             PayInMethodType.BankAccount -> BANK_INSTRUMENT
         }.toSet()
 
-    /** How many characters a field will accept, after formatting is stripped. */
+    /**
+     * How many characters a field will accept, after formatting is stripped.
+     *
+     * @param field the field asked about.
+     * @return how many characters the field accepts, or null when it has no bound.
+     */
     public fun maxLength(field: PayInField): Int? =
         when (field) {
             PayInField.CardNumber -> CARD_NUMBER_MAX
@@ -104,7 +114,12 @@ public object PayInFieldRules {
             else -> null
         }
 
-    /** True when the field takes digits and nothing else. */
+    /**
+     * True when the field takes digits and nothing else.
+     *
+     * @param field the field asked about.
+     * @return true when the field takes digits and nothing else; false otherwise.
+     */
     public fun isDigitsOnly(field: PayInField): Boolean =
         when (field) {
             PayInField.CardNumber,
@@ -117,10 +132,12 @@ public object PayInFieldRules {
         }
 
     /**
-     * Drops anything the field will not take, then truncates.
+     * Drops anything the field will not take, then truncates. Applied to the value, because a keyboard
+     * type is only a hint: a paste, an autofill entry and a hardware keyboard all ignore it.
      *
-     * Applied to the value, because a keyboard type is only a hint: a paste, an autofill entry and a
-     * hardware keyboard all ignore it.
+     * @param field the field the value belongs to.
+     * @param raw the value as typed, pasted or filled.
+     * @return what the field will take, truncated.
      */
     public fun filter(
         field: PayInField,
@@ -139,6 +156,9 @@ public object PayInFieldRules {
      * A blank value returns null. [missing] answers whether a required field is still empty.
      *
      * @param today when given, the expiry is also checked against it.
+     * @param field the field the value belongs to.
+     * @param value the value as it stands.
+     * @return what is wrong with the value, or null when nothing is.
      */
     public fun error(
         field: PayInField,
@@ -166,11 +186,14 @@ public object PayInFieldRules {
     }
 
     /**
-     * The same answer for a value held in a buffer rather than a `String`.
+     * The same answer for a value held in a buffer rather than a `String`, here so a card number or an
+     * account number can be checked without being turned into a `String` that cannot afterwards be
+     * erased. An expiry and an email address build one, because their validators are text-based.
      *
-     * Here so a card number or an account number can be checked without being turned into a `String` that
-     * cannot afterwards be erased. An expiry and an email address are the two this overload cannot answer
-     * without one, and they build it because their validators are text-based.
+     * @param field the field the digits belong to.
+     * @param value the digits as held.
+     * @param today when given, the expiry is also checked against it.
+     * @return what is wrong with the value, or null when nothing is.
      */
     public fun error(
         field: PayInField,
@@ -191,20 +214,33 @@ public object PayInFieldRules {
         }
     }
 
-    /** True when the field must be filled in and is not. */
+    /**
+     * True when the field must be filled in and is not.
+     *
+     * @param field the field asked about.
+     * @param value the value as it stands.
+     * @return true when the field must be filled in and is not; false otherwise.
+     */
     public fun missing(
         field: PayInField,
         value: String,
     ): Boolean = field !in OPTIONAL && value.isBlank()
 
     /**
-     * The Luhn check digit, which every card scheme's numbers satisfy.
+     * The Luhn check digit, which every card scheme's numbers satisfy. Says a number is well
+     * formed, never that an account exists.
      *
-     * Says a number is well formed, never that an account exists.
+     * @param digits the number as a `String`.
+     * @return true when the check digit holds; false otherwise.
      */
     public fun passesLuhn(digits: String): Boolean = digits.toCharArray().useAndWipe { passesLuhn(it) }
 
-    /** As [passesLuhn], for a number held in a buffer rather than a `String`. */
+    /**
+     * As [passesLuhn], for a number held in a buffer rather than a `String`.
+     *
+     * @param digits the number as held.
+     * @return true when the check digit holds; false otherwise.
+     */
     public fun passesLuhn(digits: CharArray): Boolean {
         if (digits.isEmpty() || !isAllDigits(digits)) return false
         var sum = 0
@@ -221,10 +257,20 @@ public object PayInFieldRules {
         return sum % 10 == 0
     }
 
-    /** The ABA routing checksum: weights 3, 7, 1 repeating, and the total is a multiple of ten. */
+    /**
+     * The ABA routing checksum: weights 3, 7, 1 repeating, and the total is a multiple of ten.
+     *
+     * @param digits the routing number as a `String`.
+     * @return true when the checksum holds; false otherwise.
+     */
     public fun passesAbaChecksum(digits: String): Boolean = digits.toCharArray().useAndWipe { passesAbaChecksum(it) }
 
-    /** As [passesAbaChecksum], for a number held in a buffer rather than a `String`. */
+    /**
+     * As [passesAbaChecksum], for a number held in a buffer rather than a `String`.
+     *
+     * @param digits the routing number as held.
+     * @return true when the checksum holds; false otherwise.
+     */
     public fun passesAbaChecksum(digits: CharArray): Boolean {
         if (digits.size != ROUTING_NUMBER_LENGTH || !isAllDigits(digits)) return false
         val weights = intArrayOf(3, 7, 1, 3, 7, 1, 3, 7, 1)
@@ -233,10 +279,11 @@ public object PayInFieldRules {
     }
 
     /**
-     * Runs [block] over the copy and overwrites it, whichever way [block] ends.
+     * Runs [block] over the copy and overwrites it, whichever way [block] ends. Every `String`
+     * overload here makes one of these, and a card number in it is as erasable as any other buffer.
      *
-     * Every `String` overload here makes one of these, and a card number in it is as erasable as any other
-     * buffer even though the `String` it came from is not.
+     * @param block the check to run over the copy.
+     * @return what [block] returned.
      */
     private inline fun <T> CharArray.useAndWipe(block: (CharArray) -> T): T {
         try {
@@ -246,7 +293,12 @@ public object PayInFieldRules {
         }
     }
 
-    /** ASCII digits, matching [DIGITS], which the `String` overloads used before the buffer ones existed. */
+    /**
+     * ASCII digits, matching [DIGITS], which the `String` overloads used before the buffer ones existed.
+     *
+     * @param value the characters to check.
+     * @return true when every character is an ASCII digit; false otherwise.
+     */
     internal fun isAllDigits(value: CharArray): Boolean = value.all { it in '0'..'9' }
 
     private fun cardNumberError(value: CharArray): PayInFieldError? {
@@ -284,9 +336,11 @@ public object PayInFieldRules {
     }
 
     /**
-     * One at-sign, something before it, and a dot in what follows.
+     * One at-sign, something before it, and a dot in what follows. Whether the address exists is the
+     * mail server's answer.
      *
-     * Whether the address exists is the mail server's answer.
+     * @param value the address as typed.
+     * @return null when the address looks like one; the error when it does not.
      */
     private fun emailError(value: String): PayInFieldError? {
         if (value.any { it.isWhitespace() }) return PayInFieldError.EmailNotValid
@@ -301,7 +355,13 @@ public object PayInFieldRules {
         return if (looksLikeAnAddress) null else PayInFieldError.EmailNotValid
     }
 
-    /** Expects `MM/YY` as [ExpiryValue.format] writes it. */
+    /**
+     * Expects `MM/YY` as [ExpiryValue.format] writes it.
+     *
+     * @param value the expiry as typed.
+     * @param today when given, the expiry is also checked against it.
+     * @return null when the expiry parses and is not past; the error when it is not.
+     */
     private fun expiryError(
         value: String,
         today: ExpiryValue?,

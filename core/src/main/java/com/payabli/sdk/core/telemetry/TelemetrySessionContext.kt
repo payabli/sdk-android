@@ -12,23 +12,20 @@ import com.payabli.sdk.core.config.PayabliEnvironment
  * [sessionId] is minted once per installed session and identifies one SDK lifetime, so events from a single
  * run read as one sequence. It is a fresh value on every install rather than a device or install identifier:
  * it correlates a run and grants nothing, which is the same bar `LoggableFieldNames` holds `sid` to.
+ *
+ * @property environment selects the base URL, and is reported alongside every event.
+ * @property telemetryEnabled the host's opt-out. False means no recorder is installed at all.
+ * @property sessionId identifies this SDK lifetime. Fresh per install.
+ * @property device what this is running on, for every event to carry: which device the run happened on,
+ *   what kind of device it is, and which platform release — the difference between one handset retrying
+ *   and a fleet failing once, and between a fault everywhere and a fault on one OS version.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class TelemetrySessionContext(
     entryPoint: String,
-    /** Selects the base URL, and is reported alongside every event. */
     public val environment: PayabliEnvironment,
-    /** The host's opt-out. False means no recorder is installed at all. */
     public val telemetryEnabled: Boolean,
-    /** Identifies this SDK lifetime. Fresh per install. */
     public val sessionId: String,
-    /**
-     * What this is running on, for every event to carry.
-     *
-     * [sessionId] says which run an event came from; this says which device the run happened on, what kind
-     * of device it is, and which platform release — the difference between one handset retrying and a fleet
-     * failing once, and between a fault everywhere and a fault on one OS version.
-     */
     public val device: TelemetryDeviceContext,
 ) {
     /**
@@ -46,6 +43,9 @@ public class TelemetrySessionContext(
      * A capability can be pointed at an entry point other than the one the session was configured with, and
      * the report has to name the one the request was sent to. Everything else is the session's: the run is
      * the same run and the device is the same device.
+     *
+     * @param entryPoint the integration point the report names, trimmed as the request writers send it.
+     * @return this session attributed to [entryPoint], or this same object when it already matches.
      */
     public fun forEntryPoint(entryPoint: String): TelemetrySessionContext =
         if (entryPoint.trim() == this.entryPoint) {
@@ -57,6 +57,8 @@ public class TelemetrySessionContext(
     /**
      * Withholds the entry point, matching `PayabliConfig.toString`. It names a specific merchant, and this
      * string reaches exception messages and crash reports.
+     *
+     * @return the environment, the opt-out and the device, withholding the entry point.
      */
     override fun toString(): String =
         "TelemetrySessionContext(environment=$environment, telemetryEnabled=$telemetryEnabled, " +

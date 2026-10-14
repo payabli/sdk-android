@@ -124,6 +124,11 @@ public object PayabliHttpErrors {
      * 2xx, so it cannot manufacture an error out of a success.
      *
      * Never throws: a body that will not decode degrades to fewer fields.
+     *
+     * @param response the answered request whose status classifies the failure.
+     * @param statusOverride consulted first for any non-2xx, and wins when it returns non-null, which is
+     *   how a capability attaches meaning to a shared status. Not consulted for a 2xx.
+     * @return the typed error for [response], or null when it is 2xx.
      */
     public fun from(
         response: PayabliResponse,
@@ -255,6 +260,10 @@ public object PayabliHttpErrors {
      *
      * `SimpleDateFormat` rather than `java.time`: the API 23 floor has no desugaring. `Locale.US` is
      * mandatory, or a Turkish default locale fails on the month names.
+     *
+     * @param response the answered request whose `Retry-After` header is read.
+     * @param nowMillis the clock the date forms are measured against; injected so a test can pin it.
+     * @return the wait in milliseconds, or null when the header is absent or unparseable.
      */
     internal fun retryAfterMillis(
         response: PayabliResponse,

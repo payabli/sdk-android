@@ -18,7 +18,12 @@ internal object ThrowableRenderer {
     private const val MAX_FRAMES_PER_THROWABLE = 12
     private const val CAUSE_PREFIX = "Caused by: "
 
-    /** Returns already-scrubbed text; callers must not scrub it a second time. */
+    /**
+     * Returns already-scrubbed text; callers must not scrub it a second time.
+     *
+     * @param throwable the failure to render.
+     * @return the rendered trace, already scrubbed.
+     */
     fun render(throwable: Throwable): String =
         buildString {
             var current: Throwable? = throwable

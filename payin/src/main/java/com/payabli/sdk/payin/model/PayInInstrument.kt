@@ -75,7 +75,11 @@ public class PayInCardData(
     public val holderName: String,
     public val postalCode: String,
 ) {
-    /** No field of a card belongs in a message, the expiry included. */
+    /**
+     * No field of a card belongs in a message, the expiry included.
+     *
+     * @return the type name alone.
+     */
     override fun toString(): String = "PayInCardData"
 }
 

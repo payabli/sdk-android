@@ -29,6 +29,9 @@ public interface TelemetryBootstrap {
      * otherwise happen as the app goes to the background.
      *
      * Called while the session install holds its lock, so it enqueues and returns rather than doing work.
+     *
+     * @param session the session reporting starts for.
+     * @param host the host bindings, or null where the SDK started without them.
      */
     public fun start(
         session: PayabliSession,
@@ -86,6 +89,8 @@ internal object TelemetryBootstraps {
      *
      * The negative answer is cached too. Absent is the common case, and a class lookup that misses is the
      * expensive one.
+     *
+     * @return the module, or null when the app did not link one.
      */
     @Synchronized
     fun installed(): TelemetryBootstrap? {
@@ -96,16 +101,12 @@ internal object TelemetryBootstraps {
     }
 
     /**
-     * Starts the module if there is one, and absorbs whatever it does.
+     * Starts the module if there is one, absorbing a `RuntimeException` or `LinkageError` — a module
+     * that fails to start is stopped and forgotten, so nothing is left half-registered and the next
+     * `initialize` does not walk into the same failure. Any other `Error` propagates.
      *
-     * **Finding the module was already non-fatal; running it was not.** A `RuntimeException` out of `start`,
-     * or a `LinkageError` from a symbol resolved only once that method runs, propagated out of the call that
-     * installs a session — after the session was published and marked ready. The first `initialize` threw and
-     * the next returned the session the first one had installed, which is the opposite of what an optional
-     * module is for.
-     *
-     * A module that fails to start is stopped and forgotten, so nothing is left half-registered and the next
-     * `initialize` does not walk into the same failure.
+     * @param session the session reporting starts for.
+     * @param host the host bindings, or null where the SDK started without them.
      */
     @Synchronized
     fun startInstalled(
@@ -125,11 +126,8 @@ internal object TelemetryBootstraps {
     }
 
     /**
-     * Stops the module if there is one, and absorbs whatever it does.
-     *
-     * The same code `start` is, and the caller is tearing a session down: a throw here left the teardown
-     * half done, with the module still registered and the session neither retired nor cleared. A module that
-     * cannot stop is forgotten, as one that cannot start is.
+     * Stops the module if there is one, absorbing a `RuntimeException` or `LinkageError`; a module
+     * that cannot stop is forgotten, as one that cannot start is. Any other `Error` propagates.
      */
     @Synchronized
     fun stopInstalled() {
@@ -150,6 +148,8 @@ internal object TelemetryBootstraps {
      *
      * `stop` is the same untrusted code, so it is absorbed the same way. Forgetting it is what keeps the
      * failure to one initialize instead of one per initialize.
+     *
+     * @param module the module that threw while starting.
      */
     private fun discard(module: TelemetryBootstrap) {
         try {

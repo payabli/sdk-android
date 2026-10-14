@@ -35,7 +35,7 @@ public enum class PayInFieldInput {
 /**
  * Every field the form can render. Labels come from string resources or [PayInFormLabels].
  *
- * @param isNarrow two of these fit side by side on one row.
+ * @property isNarrow two of these fit side by side on one row.
  */
 public enum class PayInField(
     public val input: PayInFieldInput,

@@ -21,7 +21,12 @@ internal class JsonBodyDecoration : PayabliRequestDecoration {
         )
     }
 
-    /** RFC 9110 header names are case-insensitive, so `content-type` counts as naming one. */
+    /**
+     * RFC 9110 header names are case-insensitive, so `content-type` counts as naming one.
+     *
+     * @receiver the request whose headers are read.
+     * @return true when any header names the content type, in any case; false otherwise.
+     */
     private fun PayabliRequest.namesContentType(): Boolean =
         headers.keys.any { it.equals(PayabliRequest.CONTENT_TYPE_HEADER, ignoreCase = true) }
 }

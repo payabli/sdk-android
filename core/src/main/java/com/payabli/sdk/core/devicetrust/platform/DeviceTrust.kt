@@ -47,17 +47,22 @@ import kotlinx.coroutines.withContext
  * directory, and any way to clear the store wholesale. A capability gets encryption at rest, never the path
  * it rests at, and never a call that would take another consumer's entries with it. Removal is per entry, by
  * the consumer that wrote it.
+ *
+ * @property key this device's signing key, already provisioned.
+ * @property store the shared encrypted store. Prefix entry names reverse-DNS; the file is not yours alone.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class DeviceTrust private constructor(
-    /** This device's signing key, already provisioned. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val key: DeviceKey,
-    /** The shared encrypted store. Prefix entry names reverse-DNS; the file is not yours alone. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val store: PayabliSecureStorage,
 ) {
-    /** Never a value: one half is key material and the other is where identity is kept. */
+    /**
+     * Never a value: one half is key material and the other is where identity is kept.
+     *
+     * @return the type name alone.
+     */
     override fun toString(): String = "DeviceTrust()"
 
     public companion object {
@@ -66,16 +71,22 @@ public class DeviceTrust private constructor(
          *
          * No dispatcher parameter, because that would move the choice into the calling capability and there
          * would then be two places in the SDK that name one.
+         *
+         * @param context the host context, normalised to the application context and dropped.
+         * @return the key and the store, provisioned.
          */
         @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
         public suspend fun open(context: Context): DeviceTrust = openWith(context, PayabliSession.IO_DISPATCHER)
 
         /**
-         * [open] with the dispatcher stated, so a test can hand in one it can recognise.
+         * [open] with the dispatcher stated, so a test can hand in one it can recognise. Required and
+         * undefaulted because a default would be invisible at the call site, and a test that substituted a
+         * dispatcher would measure a thread the code never used.
          *
-         * Required and undefaulted for the reason every layer below the session is: a default here would be
-         * invisible at the call site, and a test that substituted a dispatcher would be measuring a thread
-         * the code never used.
+         * @param context the host context, normalised to the application context and dropped.
+         * @param dispatcher where the provisioning runs.
+         * @param logger where provisioning is logged.
+         * @return the key and the store, provisioned.
          */
         @VisibleForTesting
         internal suspend fun openWith(

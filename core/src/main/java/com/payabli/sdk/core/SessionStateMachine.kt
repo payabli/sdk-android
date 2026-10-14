@@ -62,14 +62,11 @@ internal class SessionStateMachine(
     }
 
     /**
-     * Decides and writes under [guard], so a refused transition is never briefly published and no caller can
-     * read the value without the flag that explains it.
+     * Decides and writes under [guard], so a refused transition is never briefly published. Both
+     * records are emitted after the monitor is released: a collector on an immediate dispatcher
+     * resumes inside the write, so whatever is held here is held while foreign code runs.
      *
-     * Writing first and reverting afterwards would be simpler and wrong: a `StateFlow` collector is woken by
-     * the write, so the reverted value can still be observed.
-     *
-     * Both records are emitted after the monitor is released. A collector on an immediate dispatcher resumes
-     * inside the write, so whatever is held here is held while foreign code runs.
+     * @param target the state to write.
      */
     private fun transition(target: SdkState) {
         var refused = false

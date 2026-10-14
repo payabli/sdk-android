@@ -37,7 +37,7 @@ public enum class PayInLabelLayout {
  *
  * [fields] is copied at construction, for the reason given on [PayInFormConfiguration].
  *
- * @param title null or blank draws no heading, except on a summary, which takes its default from string resources.
+ * @property title null or blank draws no heading, except on a summary, which takes its default from string resources.
  */
 @Immutable
 public class PayInFormSection(
@@ -47,7 +47,14 @@ public class PayInFormSection(
 ) {
     public val fields: List<PayInField> = Collections.unmodifiableList(fields.toList())
 
-    /** As a `data class` would, over the copy rather than over what was handed in. */
+    /**
+     * As a `data class` would, over the copy rather than over what was handed in.
+     *
+     * @param fields the section's fields.
+     * @param title the section's heading, or null for none.
+     * @param style whether the section is typed into or read from.
+     * @return the section rebuilt from the named parts.
+     */
     public fun copy(
         fields: List<PayInField> = this.fields,
         title: String? = this.title,
@@ -66,9 +73,9 @@ public class PayInFormSection(
 /**
  * How a value is written on screen.
  *
- * @param groupsCardNumber card numbers display in fours. The value behind the field stays digits.
- * @param expirySeparator what sits between month and year in the expiry field.
- * @param masksAccountNumber a bank account number is obscured as it is typed, with a reveal control.
+ * @property groupsCardNumber card numbers display in fours. The value behind the field stays digits.
+ * @property expirySeparator what sits between month and year in the expiry field.
+ * @property masksAccountNumber a bank account number is obscured as it is typed, with a reveal control.
  */
 @Immutable
 public data class PayInFormatting(
@@ -170,6 +177,9 @@ public class PayInFormConfiguration(
      *
      * An input section left with no fields is dropped. Every summary section is kept, and only the last one listed
      * keeps its fields and places the amounts.
+     *
+     * @param method the instrument the sections are for.
+     * @return the sections, a twice-listed field dropped after its first use, an emptied input section dropped.
      */
     public fun sectionsFor(method: PayInMethodType): List<PayInFormSection> {
         val sections = if (method == PayInMethodType.Card) cardSections else bankSections
@@ -185,6 +195,10 @@ public class PayInFormConfiguration(
     /**
      * Every field listed in sections of [style] for one instrument, as written. Read before [sectionsFor] drops a
      * field already used, which would hide a field from a check because an earlier section listed it.
+     *
+     * @param method the instrument the sections are for.
+     * @param style the section style to list.
+     * @return every field listed in sections of [style], as written.
      */
     private fun listedIn(
         method: PayInMethodType,
@@ -194,20 +208,40 @@ public class PayInFormConfiguration(
             .filter { it.style == style }
             .flatMap { it.fields }
 
-    /** Every field a payer types into for one instrument, in the order they are rendered. */
+    /**
+     * Every field a payer types into for one instrument, in the order they are rendered.
+     *
+     * @param method the instrument the fields are for.
+     * @return every field a payer types into, in the order rendered.
+     */
     public fun inputFieldsFor(method: PayInMethodType): List<PayInField> =
         sectionsFor(method)
             .filter { it.style == PayInSectionStyle.Inputs }
             .flatMap { it.fields }
 
-    /** True when the field must be filled before the form will submit. */
+    /**
+     * True when the field must be filled before the form will submit.
+     *
+     * @param field the field asked about.
+     * @return true when the field must be filled before the form will submit; false otherwise.
+     */
     public fun isRequired(field: PayInField): Boolean = field in requiredFields || PayInFieldRules.missing(field, "")
 
-    /** True when this field's label sits on its own line above the box. */
+    /**
+     * True when this field's label sits on its own line above the box.
+     *
+     * @param field the field asked about.
+     * @return true when the field's label sits on its own line above the box; false otherwise.
+     */
     public fun showsLabelFor(field: PayInField): Boolean =
         labelLayout == PayInLabelLayout.External && field !in hiddenFieldLabels
 
-    /** True when this field's label sits inside the box, as Material's floating label. */
+    /**
+     * True when this field's label sits inside the box, as Material's floating label.
+     *
+     * @param field the field asked about.
+     * @return true when the field's label sits inside the box; false otherwise.
+     */
     public fun showsFloatingLabelFor(field: PayInField): Boolean =
         labelLayout == PayInLabelLayout.Placeholder && field !in hiddenFieldLabels
 
@@ -216,6 +250,9 @@ public class PayInFormConfiguration(
      *
      * A secret field is, except an account number under [PayInFormatting.masksAccountNumber] off.
      * Public because a host that describes its own form has no other way to know.
+     *
+     * @param field the field asked about.
+     * @return true when the field is obscured as it is typed; false otherwise.
      */
     public fun masks(field: PayInField): Boolean =
         field.input == PayInFieldInput.Secret &&
@@ -226,6 +263,17 @@ public class PayInFormConfiguration(
      *
      * One parameter per property, which is what makes it a copy. The parameter-count rule is turned
      * off for this file in the root `build.gradle.kts`, which says why.
+     *
+     * @param allowedMethods the methods the form offers.
+     * @param defaultMethod the method the form starts on.
+     * @param cardSections the card form's sections.
+     * @param bankSections the bank form's sections.
+     * @param requiredFields the fields that must be filled.
+     * @param labelLayout where a field's label sits.
+     * @param hiddenFieldLabels the fields whose labels the form hides.
+     * @param formatting how the fields format what is typed.
+     * @param showsBaseAmount whether the summary shows the base amount.
+     * @return the configuration rebuilt from the named parts.
      */
     public fun copy(
         allowedMethods: List<PayInMethodType> = this.allowedMethods,
@@ -298,11 +346,20 @@ public class PayInFormConfiguration(
         internal val DEFAULT_SUMMARY: PayInFormSection =
             PayInFormSection(fields = AMOUNT_FIELDS, style = PayInSectionStyle.Summary)
 
-        /** The index of the summary the form draws, the last one listed, or -1 with none. */
+        /**
+         * The index of the summary the form draws, the last one listed, or -1 with none.
+         *
+         * @param sections the form's sections.
+         * @return the index of the last summary section, or -1 with none.
+         */
         internal fun drawnSummaryAt(sections: List<PayInFormSection>): Int =
             sections.indexOfLast { it.style == PayInSectionStyle.Summary }
 
-        /** Card details, as a payer is asked for them, then the amounts. */
+        /**
+         * Card details, as a payer is asked for them, then the amounts.
+         *
+         * @return the default card sections.
+         */
         public fun defaultCardSections(): List<PayInFormSection> =
             listOf(
                 PayInFormSection(
@@ -318,7 +375,11 @@ public class PayInFormConfiguration(
                 DEFAULT_SUMMARY,
             )
 
-        /** Bank account details, then the amounts. */
+        /**
+         * Bank account details, then the amounts.
+         *
+         * @return the default bank sections.
+         */
         public fun defaultBankSections(): List<PayInFormSection> =
             listOf(
                 PayInFormSection(

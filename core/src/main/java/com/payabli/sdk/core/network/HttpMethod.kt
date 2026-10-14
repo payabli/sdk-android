@@ -4,10 +4,11 @@ import androidx.annotation.RestrictTo
 
 /**
  * HTTP verbs the SDK issues.
+ *
+ * @property wireName the verb as it goes on the wire. RFC 9110 method names are case-sensitive.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public enum class HttpMethod(
-    /** The verb as it goes on the wire. RFC 9110 method names are case-sensitive. */
     public val wireName: String,
 ) {
     GET("GET"),

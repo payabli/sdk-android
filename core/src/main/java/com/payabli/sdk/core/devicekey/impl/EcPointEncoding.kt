@@ -38,6 +38,10 @@ internal object EcPointEncoding {
     }
 
     /**
+     * Encodes the key's point, per the object's own contract above.
+     *
+     * @param key the public key whose point is encoded.
+     * @return the 65-byte uncompressed point, `0x04 || X || Y`.
      * @throws IllegalArgumentException if [key] is not a P-256 key, or a coordinate does not fit.
      */
     fun uncompressed(key: ECPublicKey): ByteArray {
@@ -60,9 +64,10 @@ internal object EcPointEncoding {
 
     /**
      * Whether [spec] is P-256 in every respect that decides what a point means.
+     * `ECParameterSpec` declares no `equals`, so the members are compared one at a time.
      *
-     * `ECParameterSpec` declares no `equals`, so the members are compared one at a time. The curve carries
-     * the field and both coefficients and does declare one.
+     * @param spec the parameters the key store reported for the key.
+     * @return true when every member matches P-256; false otherwise.
      */
     private fun isP256(spec: ECParameterSpec): Boolean =
         spec.curve == p256.curve &&
@@ -71,12 +76,12 @@ internal object EcPointEncoding {
             spec.cofactor == p256.cofactor
 
     /**
-     * One coordinate as exactly [COORDINATE_BYTES], big-endian.
+     * One coordinate as exactly [COORDINATE_BYTES], big-endian. `BigInteger.toByteArray` is two's-complement
+     * and variable length, so copying it in as-is would shift the value or overrun the field.
      *
-     * `BigInteger.toByteArray` is two's-complement and variable length, so it gives 33 bytes when the high
-     * bit is set (a leading zero for the sign) and fewer than 32 whenever the leading bytes are zero. Both
-     * are ordinary for a valid coordinate, and copying the result in as-is would shift the value or overrun
-     * the field.
+     * @param value the coordinate's magnitude.
+     * @param name the coordinate's name, for the failure text.
+     * @return exactly [COORDINATE_BYTES], big-endian.
      */
     private fun coordinate(
         value: BigInteger,

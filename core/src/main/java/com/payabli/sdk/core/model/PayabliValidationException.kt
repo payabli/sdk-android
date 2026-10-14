@@ -7,24 +7,22 @@ import java.util.Collections
  *
  * [httpStatus] comes from the response, not from the body's own `status` field. The body's `token` field
  * is not decoded: it is a temporary page identifier, and this `Throwable` may reach a crash reporter.
+ *
+ * @property problemType the error's `type` field, a documentation URI naming the kind of problem.
+ * @property instance the error `instance`, the request path. A resolved path, so never logged.
+ * @property rawCode Payabli's own wire code, for example `E1001`. Absent when the body carried none.
+ * @property fieldErrors parameter name to its failures, empty when the body carried none or used an
+ *   unexpected shape. The platform sends each failure as a bare string, which arrives as
+ *   [PayabliFieldError.message] with a null [PayabliFieldError.suggestion]. A key of `$` is the request
+ *   body as a whole rather than a field in it, which is how a missing required property reports itself.
  */
 public class PayabliValidationException(
     public val httpStatus: Int,
     reason: String = DEFAULT_REASON,
     detail: String? = null,
-    /** The error's `type` field, a documentation URI naming the kind of problem. */
     public val problemType: String? = null,
-    /** The error `instance`, the request path. A resolved path, so never logged. */
     public val instance: String? = null,
-    /** Payabli's own wire code, for example `E1001`. Absent when the body carried none. */
     public val rawCode: String? = null,
-    /**
-     * Parameter name to its failures. Empty when the body carried none or used an unexpected shape.
-     *
-     * The platform sends each failure as a bare string, which arrives as [PayabliFieldError.message] with
-     * a null [PayabliFieldError.suggestion]. A key of `$` is the request body as a whole rather than a
-     * field in it, which is how a missing required property reports itself.
-     */
     fieldErrors: Map<String, List<PayabliFieldError>> = emptyMap(),
 ) : PayabliException(PayabliErrorType.VALIDATION_ERROR, reason, detail) {
     /** Copied and wrapped at both levels: the lists arrive from the decoder as `ArrayList`. */

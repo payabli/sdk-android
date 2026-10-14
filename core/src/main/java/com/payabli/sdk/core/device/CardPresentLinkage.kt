@@ -32,7 +32,11 @@ public object CardPresentLinkage {
     @Volatile
     private var linked: Boolean? = null
 
-    /** Answers once. The classpath cannot change while the process lives. */
+    /**
+     * Answers once. The classpath cannot change while the process lives.
+     *
+     * @return true when this app linked the card-present artifact; false otherwise.
+     */
     public fun isLinked(): Boolean =
         linked ?: synchronized(this) {
             linked ?: resolves(MODULE).also { linked = it }
@@ -43,6 +47,9 @@ public object CardPresentLinkage {
      *
      * Takes the name so a test can ask about a class it controls: the answer for [MODULE] is decided by which
      * module's tests are running, which makes it exactly the thing a single test cannot vary.
+     *
+     * @param name the class's binary name.
+     * @return true when the class is on this classpath and loadable; false otherwise.
      */
     public fun resolves(name: String): Boolean =
         try {

@@ -23,7 +23,12 @@ import androidx.annotation.RestrictTo
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun interface TelemetryRecorder {
-    /** Records [event] with [properties]. Returns without blocking; throws nothing. */
+    /**
+     * Records [event] with [properties]. Returns without blocking; throws nothing.
+     *
+     * @param event the catalog name of the event.
+     * @param properties the declared properties, scrubbed by the implementation before anything is retained.
+     */
     public fun record(
         event: String,
         properties: Map<String, String>,
@@ -39,7 +44,13 @@ public fun interface TelemetryRecorder {
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface SessionScopedRecorder {
-    /** Records [event] as belonging to [session], whichever session this recorder itself serves. */
+    /**
+     * Records [event] as belonging to [session], whichever session this recorder itself serves.
+     *
+     * @param event the catalog name of the event.
+     * @param properties the declared properties.
+     * @param session the session the event belongs to, whichever this recorder itself serves.
+     */
     public fun record(
         event: String,
         properties: Map<String, String>,

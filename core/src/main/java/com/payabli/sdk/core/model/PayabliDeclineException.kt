@@ -9,14 +9,15 @@ package com.payabli.sdk.core.model
  *
  * [rawCode] is nullable so that a proxy-generated 402 with no body is still classified as a decline
  * rather than falling back to an unclassifiable error.
+ *
+ * @property rawCode the processor decline code, for example `D0329`. Null when the body carried none.
+ * @property explanation longer server explanation. Also surfaced as [detail].
+ * @property action the remediation the server suggests.
  */
 public class PayabliDeclineException(
-    /** The processor decline code, for example `D0329`. Null when the body carried none. */
     public val rawCode: String? = null,
     reason: String = DEFAULT_REASON,
-    /** Longer server explanation. Also surfaced as [detail]. */
     public val explanation: String? = null,
-    /** The remediation the server suggests. */
     public val action: String? = null,
 ) : PayabliException(PayabliErrorType.PAYMENT_DECLINED, reason, detail = explanation) {
     public companion object {

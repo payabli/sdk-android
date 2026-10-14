@@ -16,7 +16,12 @@ import com.payabli.sdk.payin.model.PayInException
  * A decline, a network failure and a service error name no field and produce nothing.
  */
 internal object PayInRejectedFields {
-    /** What the failure blamed, per field, or empty when it blamed nothing this form draws. */
+    /**
+     * What the failure blamed, per field, or empty when it blamed nothing this form draws.
+     *
+     * @param failure the refusal the submission ended in.
+     * @return the fields the failure blamed, per field, or empty when it blamed nothing drawn.
+     */
     fun of(failure: Throwable): Map<PayInField, PayInFieldError> =
         when (failure) {
             is PayInException.InvalidInput ->
@@ -33,9 +38,11 @@ internal object PayInRejectedFields {
     /**
      * The field a wire name refers to, or null when the form has no box for it.
      *
-     * The last segment, because the same field arrives named both bare and under its parent object: this
-     * module refuses `paymentMethod.cardnumber` where a refusal from the wire can name the property alone.
+     * The last segment, because the same field arrives named both bare and under its parent object.
      * Lower cased, because a request field and an error naming it are not cased the same.
+     *
+     * @param name the field's wire name, bare or under its parent object.
+     * @return the field the name refers to, or null when the form has no box for it.
      */
     private fun fieldFor(name: String): PayInField? = FIELDS[name.substringAfterLast('.').lowercase()]
 

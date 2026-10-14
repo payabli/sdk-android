@@ -60,7 +60,11 @@ internal object PayInValidation {
         }
     }
 
-    /** The amounts, refused as [amountRefusal] decides, which is also what empties the form's summary. */
+    /**
+     * The amounts, refused as [amountRefusal] decides, which is also what empties the form's summary.
+     *
+     * @param details what is being charged.
+     */
     fun paymentDetails(details: PayInPaymentDetails) {
         val (field, message) =
             when (details.amountRefusal() ?: return) {
@@ -88,6 +92,9 @@ internal object PayInValidation {
      *
      * Every check below can throw, which is why the scoped read is the one used here: a copy handed out by
      * `read` and abandoned mid-validation is a card number left in a buffer nothing can reach.
+     *
+     * @param data the card to check.
+     * @param options which structural checks run.
      */
     private fun card(
         data: PayInCardData,
@@ -161,12 +168,11 @@ internal object PayInValidation {
     }
 
     /**
-     * Blank counts as absent, which the field rules cannot say for a buffer.
+     * Blank counts as absent, which the field rules cannot say for a buffer: `PayInFieldRules.error`
+     * answers null for a blank value, so a buffer holding only spaces passes every rule and reaches the
+     * body writer, whose digit check raises an internal defect instead of the typed missing-field error.
      *
-     * `PayInFieldRules.error` answers null for a blank value, because the form asks about requiredness
-     * separately. A buffer holding only spaces is therefore not empty, passes every rule, and reaches the body
-     * writer, whose digit check raises an internal defect instead of the typed missing-field error a caller is
-     * owed.
+     * @return true when the buffer holds nothing but whitespace; false otherwise.
      */
     private fun CharArray.isMissing(): Boolean = isEmpty() || all { it.isWhitespace() }
 
@@ -194,6 +200,9 @@ internal object PayInValidation {
      *
      * A refusal from this module and one from the wire then name the same field, and the spelling has one
      * home. `paymentMethod.` is the path a nested field is reported under.
+     *
+     * @param field the field's wire spelling.
+     * @return the name a refusal carries, under `paymentMethod.`.
      */
     private fun inPaymentMethod(field: String): String = "${PayInRoutes.FIELD_PAYMENT_METHOD}.$field"
 

@@ -42,44 +42,32 @@ public data class PayInFormSpacing(
 
 /**
  * How the form looks. Every value comes from the host's `MaterialTheme` unless overridden.
- *
  * Built by [resolvePayInFormStyle]; `PayabliPayInFormDefaults.style` reads the theme.
  *
- * @param fieldColors null uses Material's own, which already follow the host theme.
+ * @property fieldColors null uses Material's own, which already follow the host theme.
+ * @property label the label the form draws above a field, under [PayInLabelLayout.External]; under
+ *   [PayInLabelLayout.Placeholder] the label is Material's own, which interpolates its size between
+ *   resting and floating and follows the host's `MaterialTheme` typography.
+ * @property selectedContainer behind the chosen month and year in the expiry picker.
+ * @property selectedContent on top of [selectedContainer].
+ * @property brandMark the box a card scheme's mark is drawn into, at the end of the card number field.
+ *   One box for all six marks, so Visa and Amex carry the same visual weight whatever it is set to.
+ *   Last, because a parameter added anywhere else moves the ones after it and silently rebinds a
+ *   positional argument; new ones go here.
  */
 @Immutable
 public data class PayInFormStyle(
     public val title: TextStyle,
     public val subtitle: TextStyle,
     public val sectionTitle: TextStyle,
-    /**
-     * The label the form draws above a field, under [PayInLabelLayout.External].
-     *
-     * Under [PayInLabelLayout.Placeholder] the label is Material's own, and Material interpolates
-     * its size between resting and floating. Measured on a device: passing this style there pins
-     * both states to one size, so the label stops shrinking as it floats and the resting one no
-     * longer matches the text typed under it. That layout follows the host's `MaterialTheme`
-     * typography, which is where its size comes from.
-     */
     public val label: TextStyle,
     public val supporting: TextStyle,
     public val error: TextStyle,
     public val fieldShape: Shape,
     public val spacing: PayInFormSpacing,
-    /** Behind the chosen month and year in the expiry picker. */
     public val selectedContainer: Color,
-    /** On top of [selectedContainer]. */
     public val selectedContent: Color,
     public val fieldColors: TextFieldColors? = null,
-    /**
-     * The box a card scheme's mark is drawn into, at the end of the card number field.
-     *
-     * One box for all six marks, so Visa and Amex carry the same visual weight whatever it is set to: the
-     * artwork is fitted inside it and keeps its own proportions.
-     *
-     * Last, because a parameter added anywhere else moves the ones after it and silently rebinds a positional
-     * argument. New ones go here.
-     */
     public val brandMark: DpSize = DEFAULT_BRAND_MARK,
 ) {
     init {
@@ -115,6 +103,8 @@ public data class PayInThemeRoles(
 
 /**
  * What a caller wants different. Each null keeps the theme-derived value.
+ *
+ * @property brandMark last, for the reason [PayInFormStyle.brandMark] gives.
  */
 @Immutable
 public data class PayInFormStyleOverrides(
@@ -129,12 +119,15 @@ public data class PayInFormStyleOverrides(
     public val selectedContainer: Color? = null,
     public val selectedContent: Color? = null,
     public val fieldColors: TextFieldColors? = null,
-    /** Last, for the reason [PayInFormStyle.brandMark] gives. */
     public val brandMark: DpSize? = null,
 )
 
 /**
  * Turns the host's theme into the form's style, with the caller's overrides on top.
+ *
+ * @param roles what the form reads out of the host's theme.
+ * @param overrides what a caller wants different; each null keeps the theme-derived value.
+ * @return the form's style, the caller's overrides on top of the theme's values.
  */
 public fun resolvePayInFormStyle(
     roles: PayInThemeRoles,

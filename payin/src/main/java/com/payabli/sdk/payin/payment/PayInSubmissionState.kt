@@ -90,7 +90,11 @@ public sealed class PayInSubmissionState {
         public val fieldErrors: Map<PayInField, PayInFieldError> =
             Collections.unmodifiableMap(fieldErrors.toMap())
 
-        /** The cause renders as its own classification, which carries no server text. */
+        /**
+         * The cause renders as its own classification, which carries no server text.
+         *
+         * @return the cause's classification, the rejected field names, and whether a retry key is held.
+         */
         override fun toString(): String =
             "PayInSubmissionState.Failed(cause=$cause, fields=${fieldErrors.keys}, hasRetryKey=${retryKey != null})"
     }

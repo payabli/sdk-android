@@ -30,6 +30,9 @@ public enum class CardBrand {
          * One pair of these can match the same number, so its order decides the answer: Discover's
          * 622126-622925 is inside UnionPay's 62. Every other pair is disjoint, checked over every six-digit
          * prefix, so nothing else here depends on where it sits.
+         *
+         * @param digits the card number as typed, digits only.
+         * @return the brand the digits name so far, or Unknown.
          */
         public fun of(digits: String): CardBrand {
             // ASCII, as PayInFieldRules filters to. Char.isDigit keeps Arabic-Indic digits, which
@@ -59,15 +62,20 @@ public enum class CardBrand {
             }
         }
 
-        /** The first [length] digits as a number, or -1 when there are not that many yet. */
+        /**
+         * The first [length] digits as a number, or -1 when there are not that many yet.
+         *
+         * @param length how many digits to compare.
+         * @return the first [length] digits as a number, or -1 when there are not that many yet.
+         */
         private fun String.prefix(length: Int): Int = if (this.length < length) -1 else take(length).toInt()
 
         /**
-         * Whether these digits could still turn out to be Discover's `622126-622925`.
+         * Whether these digits could still turn out to be Discover's `622126-622925`: the check above
+         * needs six digits, and answering UnionPay before then puts the wrong mark beside a Discover
+         * number for four keystrokes.
          *
-         * The check above needs six digits, and answering UnionPay before then puts the wrong mark beside a
-         * Discover number for four keystrokes. Compared at the length typed so far, so a 62 number that has
-         * already left the range is marked at once, without waiting for a sixth digit it does not need.
+         * @return true when these digits could still turn out to be Discover's range; false otherwise.
          */
         private fun String.mayReachDiscoversRange(): Boolean {
             if (length >= DISCOVER_RANGE_DIGITS) return false
@@ -86,6 +94,8 @@ public enum class CardBrand {
  *
  * Brand names, so they are not translated resources. The enum spells three of them as one word, and a screen
  * reader reads this value aloud.
+ *
+ * @return the scheme's name, spelled as a screen reader reads it.
  */
 internal fun CardBrand.schemeName(): String =
     when (this) {

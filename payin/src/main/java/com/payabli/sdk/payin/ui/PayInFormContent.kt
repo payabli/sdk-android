@@ -43,17 +43,22 @@ import com.payabli.sdk.payin.telemetry.PayInFormReports
 import java.math.BigDecimal
 
 /**
- * The form itself, which knows a submission state and nothing about where one comes from.
- *
- * Split from `PayabliPayInForm` so rendering does not depend on the flow: a preview and every on-device test
- * drive this with a state they own, and neither can build a session. [onSubmit] answers whether the submission
- * was accepted, because a refused one leaves nothing pending.
- *
- * [draft] has no default: where it is held decides whether the payer keeps what they typed across a rotation.
- * One draft draws one form, so two forms sharing it fill each other's boxes.
- *
- * Everything that draws is here rather than beside the public entry, which is what keeps it under
- * `NoHardCodedAppearanceTest`'s reading of this package.
+ * The form itself, which knows a submission state and nothing about where one comes from, split
+ * from `PayabliPayInForm` so rendering does not depend on the flow. [draft] has no default:
+ * where it is held decides what the payer keeps across a rotation.
+ * @param submission the submission state this composition draws.
+ * @param draft the payer's values; one draft draws one form.
+ * @param configuration the form's configuration.
+ * @param reports where the form's telemetry goes.
+ * @param submitText the button's wording.
+ * @param modifier the layout modifier.
+ * @param amounts what the summary shows, or null for none.
+ * @param labels the caller's wording, or the resources.
+ * @param style the form's style, or the theme's.
+ * @param onSubmit starts a submission; true once one is accepted.
+ * @param onCompleted the service accepted it.
+ * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
+ * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change.
  */
 @Composable
 internal fun PayInFormContent(
@@ -120,6 +125,9 @@ internal fun PayInFormContent(
      *
      * Only fields this instrument draws: a rejection naming one that is not on screen would leave a form nobody
      * can complete.
+     *
+     * @param chosen the instrument on screen.
+     * @return true when a box still holds a rejected value; false otherwise.
      */
     fun anyRejectedFieldStands(chosen: PayInMethodType): Boolean =
         draft.rejectedFields.keys.any { it in configuration.inputFieldsFor(chosen) }
@@ -196,10 +204,14 @@ internal fun PayInFormContent(
 }
 
 /**
- * Hands a terminal outcome to the caller, and answers whether a submission is still this form's to wait for.
+ * Hands a terminal outcome to the caller, and answers whether a submission is still this form's to
+ * wait for. Idle says the flow holds nothing of this form's, so the flag goes: a form keeping it
+ * would take the next outcome on that flow as its own.
  *
- * Idle says the flow holds nothing of this form's, so the flag goes: a form keeping it would take the next
- * outcome on that flow as its own.
+ * @param clearInstrument clears the instrument's buffers.
+ * @param onCompleted the service accepted it.
+ * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
+ * @return true when a submission is still this form's to wait for; false otherwise.
  */
 private fun PayInSubmissionState.deliver(
     clearInstrument: () -> Unit,
@@ -224,17 +236,27 @@ private fun PayInSubmissionState.deliver(
     }
 
 /**
- * What the payer has typed for one instrument.
+ * What the payer has typed for one instrument. Reads the live map rather than a captured list:
+ * a click or an edit lands before the next composition, and the method is state while a field
+ * list taken earlier is not, so the two could describe different tabs.
  *
- * Reads the live map rather than a captured list: a click or an edit lands before the next composition, and the
- * method is state while a field list taken earlier is not, so the two could describe different tabs.
+ * @param method the instrument on screen.
+ * @param typed what the payer has typed, live.
+ * @return the payer's values for one instrument.
  */
 private fun PayInFormConfiguration.valuesFor(
     method: PayInMethodType,
     typed: Map<PayInField, String>,
 ): PayInFormValues = PayInFormValues(method, inputFieldsFor(method).associateWith { typed[it].orEmpty() })
 
-/** Whether every field this instrument asks for is filled in and none of them is wrong. */
+/**
+ * Whether every field this instrument asks for is filled in and none of them is wrong.
+ *
+ * @param typed what the payer has typed.
+ * @param method the instrument on screen.
+ * @param at the date the expiry is checked against.
+ * @return true when every field is filled and none is wrong; false otherwise.
+ */
 private fun PayInFormConfiguration.isComplete(
     typed: Map<PayInField, String>,
     method: PayInMethodType,
@@ -245,7 +267,12 @@ private fun PayInFormConfiguration.isComplete(
         fields.none { PayInFieldRules.error(it, typed[it].orEmpty(), at) != null }
 }
 
-/** The caller's heading and standfirst, each shown only when they gave one. */
+/**
+ * The caller's heading and standfirst, each shown only when they gave one.
+ *
+ * @param labels the caller's wording.
+ * @param style the form's style.
+ */
 @Composable
 private fun FormHeader(
     labels: PayInFormLabels,
@@ -304,11 +331,14 @@ private fun FormSection(
 }
 
 /**
- * Lays out a section's fields, pairing two short ones onto a row.
+ * Lays out a section's fields, pairing two short ones onto a row. Two share a row only where each
+ * would still be at least [PAIRED_FIELD_MIN_WIDTH] grown by the font scale, so a form in a narrow
+ * container un-pairs for the same reason a large font scale does.
  *
- * Two share a row only where each would still be at least [PAIRED_FIELD_MIN_WIDTH], grown by the
- * font scale. That reads the width the form was actually given as well as the type size, so a form
- * in a narrow container un-pairs for the same reason a large font scale does.
+ * @param fields the section's fields.
+ * @param typed what the payer has typed.
+ * @param context the form's drawing context.
+ * @param onValueChange where an edit goes.
  */
 @Composable
 private fun InputRows(
@@ -379,7 +409,12 @@ private fun SummaryRow(
     }
 }
 
-/** Two narrow fields share a row while there is room for both. */
+/**
+ * Two narrow fields share a row while there is room for both.
+ *
+ * @param fitsTwo whether two narrow fields fit on one row.
+ * @return the fields as rows, narrow ones paired while there is room.
+ */
 private fun List<PayInField>.intoRows(fitsTwo: Boolean): List<List<PayInField>> {
     if (!fitsTwo) return map { listOf(it) }
 
@@ -406,7 +441,12 @@ private val PAIRED_FIELD_MIN_WIDTH = 148.dp
 private fun sectionTitle(section: PayInFormSection): String? =
     section.heading(stringResource(R.string.payabli_payin_section_summary))
 
-/** The host's title unless blank, else [summaryDefault] on a summary. An inputs section without one has no heading. */
+/**
+ * The host's title unless blank, else [summaryDefault] on a summary. An inputs section without one has no heading.
+ *
+ * @param summaryDefault what a summary draws when the host gave no title.
+ * @return the section's heading, or null when it draws none.
+ */
 internal fun PayInFormSection.heading(summaryDefault: String): String? =
     title?.takeIf { it.isNotBlank() } ?: summaryDefault.takeIf { style == PayInSectionStyle.Summary }
 

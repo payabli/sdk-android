@@ -31,10 +31,19 @@ private const val REASON_REFRESH_REJECTED = "the refreshed token was rejected as
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public open class AuthRecoveryPolicy {
-    /** Only a 401. A 410 is a burned session and a 402 is a decline; no refresh fixes either. */
+    /**
+     * Only a 401. A 410 is a burned session and a 402 is a decline; no refresh fixes either.
+     *
+     * @param response the answered request whose status classifies the failure.
+     * @return true only for the one status a refresh can answer; false otherwise.
+     */
     public open fun isCredentialRejection(response: PayabliResponse): Boolean = response.statusCode == HTTP_UNAUTHORIZED
 
-    /** Carries no server text: a 401 body belongs to the service. Final, for the reason in the class note. */
+    /**
+     * Carries no server text: a 401 body belongs to the service. Final, for the reason in the class note.
+     *
+     * @return the TOKEN_EXPIRED failure a surviving caller is told.
+     */
     public fun exhausted(): PayabliGenericException =
         PayabliGenericException(PayabliErrorType.TOKEN_EXPIRED, REASON_REFRESH_REJECTED)
 }

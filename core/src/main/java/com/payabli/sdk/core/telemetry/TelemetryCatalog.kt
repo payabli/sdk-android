@@ -163,6 +163,10 @@ public object TelemetryCatalog {
      * Whether [event] should leave now rather than wait for a full batch or the next tick.
      *
      * A name in [IMMEDIATE], or an outcome that is not successful. Call it on **scrubbed** properties.
+     *
+     * @param event the catalog name of the event.
+     * @param properties the scrubbed properties, whose outcome is read.
+     * @return true when the event should leave now; false otherwise.
      */
     public fun forcesSend(
         event: String,
@@ -173,7 +177,12 @@ public object TelemetryCatalog {
         return outcome !in TelemetryProperties.Outcome.SUCCESSFUL
     }
 
-    /** The keys [event] may carry, empty when the event is not one this catalog reports. */
+    /**
+     * The keys [event] may carry, empty when the event is not one this catalog reports.
+     *
+     * @param event the catalog name of the event.
+     * @return the keys the event may carry, empty when the catalog does not report it.
+     */
     internal fun allowedKeys(event: String): Set<String> = ALLOWED[event].orEmpty()
 
     /**
@@ -182,6 +191,11 @@ public object TelemetryCatalog {
      * A pair is dropped rather than corrected: a value too long or carrying anything outside printable ASCII
      * is one this SDK did not mean to send, and truncating it would keep a record that no longer says what
      * the call site meant.
+     *
+     * @param event the catalog name of the event.
+     * @param properties the properties as the call site assembled them.
+     * @return the properties reduced to what the event may report, or null when the event may not be
+     *   reported at all.
      */
     public fun scrub(
         event: String,

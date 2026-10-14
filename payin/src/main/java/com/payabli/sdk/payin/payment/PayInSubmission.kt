@@ -87,14 +87,13 @@ internal class PayInSubmission(
     /**
      * A key held for a payment, and when it was reserved. Not a `data class`: the synthesized `toString`
      * would put the key into any assertion failure or crash report that renders one.
+     *
+     * @property arrived whether the service has been seen to hold this key. A repeat it refused is proof
+     *   the attempt arrived, so the entry never ages out.
      */
     private class HeldKey(
         val key: String,
         val reservedAt: Long,
-        /**
-         * Whether the service has been seen to hold this key. A repeat it refused is proof the attempt
-         * arrived, so the entry never ages out.
-         */
         val arrived: Boolean = false,
     )
 
@@ -107,6 +106,12 @@ internal class PayInSubmission(
      *
      * Returns the terminal state, or null when a submission was already in flight — in which case nothing was
      * sent and the state is left as it stands.
+     *
+     * @param entryPoint the partner integration point the submission is attributed to.
+     * @param operation what the submission does: store the method, capture, or authorize.
+     * @param values what the payer entered, and the instrument they entered it for.
+     * @param onReserved told whether this submission took the single flight.
+     * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun submit(
         entryPoint: String,
@@ -156,6 +161,10 @@ internal class PayInSubmission(
      *
      * The buffers inside [request] belong to whoever built them and are not closed here, which is the
      * opposite of the form's path: there the instrument is built per submission and closed with it.
+     *
+     * @param entryPoint the partner integration point the payment is attributed to.
+     * @param request the payment to take, its buffers the caller's.
+     * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun capture(
         entryPoint: String,
@@ -170,7 +179,13 @@ internal class PayInSubmission(
             )
         }
 
-    /** Places a hold from a request a caller built, on the same terms as [capture]. Reads no form. */
+    /**
+     * Places a hold from a request a caller built, on the same terms as [capture]. Reads no form.
+     *
+     * @param entryPoint the partner integration point the payment is attributed to.
+     * @param request the payment to place a hold on, its buffers the caller's.
+     * @return the terminal state, or null when a submission was already in flight.
+     */
     suspend fun authorize(
         entryPoint: String,
         request: PayInRequest,
@@ -185,6 +200,10 @@ internal class PayInSubmission(
     /**
      * Stores the instrument in a request a caller built, on the same terms as [capture] for the buffers.
      * Reads no form, and sends no idempotency key: the store route has none to read.
+     *
+     * @param entryPoint the partner integration point the method is stored against.
+     * @param request the method to store, its buffers the caller's.
+     * @return the terminal state, or null when a submission was already in flight.
      */
     suspend fun storeMethod(
         entryPoint: String,
@@ -200,7 +219,13 @@ internal class PayInSubmission(
             PayInSubmissionState.Succeeded.Method(storage.storeMethod(entryPoint, request.instrument, request.options))
         }
 
-    /** Captures a transaction authorized earlier, in full or in part. Reads no form. */
+    /**
+     * Captures a transaction authorized earlier, in full or in part. Reads no form.
+     *
+     * @param entryPoint the partner integration point the payment is attributed to.
+     * @param request the authorization to capture, carrying the attempt's key or one to mint.
+     * @return the terminal state, or null when a submission was already in flight.
+     */
     suspend fun captureAuthorized(
         entryPoint: String,
         request: PayInAuthorizedRequest,
@@ -215,7 +240,14 @@ internal class PayInSubmission(
             PayInSubmissionState.Succeeded.Payment(moneyIn.captureAuthorized(request, key))
         }
 
-    /** Reverses a transaction. Reads no form, and takes only what identifies the transaction. */
+    /**
+     * Reverses a transaction. Reads no form, and takes only what identifies the transaction.
+     *
+     * @param entryPoint the partner integration point the reversal is attributed to.
+     * @param transId the transaction to reverse.
+     * @param idempotencyKey the attempt's key, or null for the held one to be resent, or one minted.
+     * @return the terminal state, or null when a submission was already in flight.
+     */
     suspend fun void(
         entryPoint: String,
         transId: String,
@@ -235,6 +267,8 @@ internal class PayInSubmission(
      * Back to [PayInSubmissionState.Idle], for a screen taking a second payment.
      *
      * Refused while a submission is in flight, so a caller cannot clear the state out from under one.
+     *
+     * @return true when the state is [PayInSubmissionState.Idle] again; false when a submission is in flight.
      */
     fun reset(): Boolean {
         val current = sink.value
@@ -246,15 +280,18 @@ internal class PayInSubmission(
     }
 
     /**
-     * The state machine, which every operation runs through.
+     * The state machine, which every operation runs through, on [dispatcher] because the body is
+     * built here and the caller's scope on a payment screen is the main thread. [publishes] is
+     * false for an operation nothing is drawing, which has the return value instead.
      *
-     * On [dispatcher], because building the body encodes JSON and walks buffers before the transport is reached,
-     * and the caller's scope on a payment screen is the main thread.
-     *
-     * [publishes] is false for an operation nothing is drawing. [state] belongs to the form: it holds a terminal
-     * outcome until the form has delivered it, and an operation the form did not start has no one to deliver to,
-     * so publishing there would strand an outcome that only `consume` clears. Such a caller has the return value
-     * instead. The single flight is still shared, so a void cannot run beside a submission in either order.
+     * @param event the telemetry event naming the operation.
+     * @param entryPoint the partner integration point, for the report.
+     * @param onReserved told whether this submission took the single flight.
+     * @param publishes whether the outcome is published to [state] as the form's.
+     * @param movesMoney whether the operation can take a payment, which decides an interruption's class.
+     * @param payment what names the payment a retry key is held against, or null for none.
+     * @param call the operation itself, handed its retry key.
+     * @return the terminal state, or null when a submission was already in flight.
      */
     private suspend fun perform(
         event: String,
@@ -330,13 +367,13 @@ internal class PayInSubmission(
 
     /**
      * Keeps [payment]'s key where the outcome is unknown, forgets it where the service answered, and
-     * answers with the outcome to report.
+     * answers with the outcome to report. An answer of any kind ends the attempt, so carrying this key
+     * into the next request would claim a repeat that it is not.
      *
-     * An answer of any kind ends the attempt, so carrying this key into the next request would claim a
-     * repeat that it is not.
-     *
-     * A minted key there was no room to keep is reported as none, not being sent again. A key the caller
-     * chose is reported whatever the map did, the caller's own next request carrying it.
+     * @param payment what names the payment.
+     * @param outcome the state the call ended in.
+     * @param retry the key this attempt carried.
+     * @return the outcome to report, its retryKey named only where the request may have been carried out.
      */
     private fun settle(
         payment: String,
@@ -363,11 +400,12 @@ internal class PayInSubmission(
     }
 
     /**
-     * Keeps [held] for [payment], without displacing a record that is protecting something else.
+     * Keeps [held] for [payment], without displacing a record that is protecting something else: a
+     * different key is not written, and the same key merges, so the earliest reservation stands and a
+     * conflict already seen is not forgotten.
      *
-     * A different key is not written: the held one is the only copy of an attempt nobody has an answer
-     * for, and the next keyless call would send the wrong one. The same key merges, so the earliest
-     * reservation stands and a conflict already seen is not forgotten.
+     * @param payment what names the payment.
+     * @param held the key and its reservation to keep.
      */
     private fun hold(
         payment: String,
@@ -403,6 +441,9 @@ internal class PayInSubmission(
      *
      * A caller answering under its own key while a held key is in flight would otherwise drop the attempt
      * nobody has an answer for.
+     *
+     * @param payment what names the payment.
+     * @param key the key an answer arrived under.
      */
     private fun forget(
         payment: String,
@@ -412,12 +453,12 @@ internal class PayInSubmission(
     }
 
     /**
-     * Whether this failure answers the payment rather than the attempt that carried it.
+     * Whether this failure answers the payment rather than the attempt that carried it. A decline and a
+     * refusal the service made about the request are answers; a rejected credential, a refusal to act at
+     * all and anything that never left the device are not. A conflict answers only a key the caller named.
      *
-     * A decline and a refusal the service made about the request are answers. A rejected credential, a
-     * refusal to act at all and anything that never left the device leave the earlier attempt exactly as
-     * unresolved. A conflict answers only a key the caller named; on one this SDK resent, the repeat is
-     * what was refused.
+     * @param reused whether the key sent was the one held for this payment.
+     * @return true when the failure answers the payment; false otherwise.
      */
     private fun PayabliException.answersThePayment(reused: Boolean): Boolean =
         when (type) {
@@ -428,14 +469,13 @@ internal class PayInSubmission(
         }
 
     /**
-     * The key held for [payment], or null once it is too old to send.
+     * The key held for [payment], or null once it is too old to send: a key the service no longer
+     * recognizes is executed as a new payment, so sending one reads as protection and takes the money
+     * twice. An entry the service was seen to hold is exempt.
      *
-     * A key the service no longer recognizes is executed as a new payment, so sending one reads as
-     * protection and takes the money twice. The clock starts at reservation, which is before the request
-     * leaves the device, so what can be relied on is shorter than what the service honours.
-     *
-     * An entry the service was seen to hold is exempt, dropping it being the only one of the two that can
-     * charge twice.
+     * @param payment what names the payment.
+     * @param now the clock, read as the key is chosen.
+     * @return the key held for [payment], or null once it is too old to send.
      */
     private fun stillWorthSending(
         payment: String,
@@ -449,20 +489,13 @@ internal class PayInSubmission(
     }
 
     /**
-     * The failure, with the field it blamed.
+     * The failure, with the field it blamed: anything not a [PayabliException] is a defect in this
+     * SDK, arriving as [PayabliErrorType.UNKNOWN] with its type and frames but not its message.
+     * Whether the outcome is unknown rides the cause; whether a key is worth sending rides `retryKey`.
      *
-     * Anything that is not a [PayabliException] is a defect in this SDK, and arrives as
-     * [PayabliErrorType.UNKNOWN] carrying its type and its frames but not its message: a message from inside a
-     * body writer or a serializer can quote what it was given.
-     *
-     * **Two facts, and each has its own place.** Whether the payment's outcome is unknown is carried by the
-     * cause, wrapped as [PayInException.Unsettled]; whether there is a key worth sending again is carried by
-     * `retryKey`. They agree everywhere but one case, and that case is the reason they are separate: a
-     * conflict this holder did not resend leaves the outcome unknown and names no key, the service having
-     * just refused the only value there would be to send.
-     *
-     * A resent key is named for anything short of an answer, this holder keeping it. Any other is named
-     * only where the request may have been carried out, since the host would have to carry it itself.
+     * @param retry the key this attempt carried.
+     * @param movesMoney whether the operation can take a payment.
+     * @return the failed state, with the field it blamed.
      */
     private fun Exception.asFailed(
         retry: RetryKey,
@@ -487,16 +520,12 @@ internal class PayInSubmission(
     }
 
     /**
-     * Whether the payment's outcome is unknown once this failure has arrived.
+     * Whether the payment's outcome is unknown once this failure has arrived. A key this holder resent
+     * names an attempt nobody has an answer for, so anything short of an answer leaves it unresolved.
+     * A conflict is decided here, not on the property, which decides which attempt is kept alive.
      *
-     * A key this holder resent names an attempt nobody has an answer for, so anything short of an answer
-     * about the payment leaves it exactly as unresolved. Otherwise the code decides, and it decides for one
-     * more case than [leavesOutcomeUnknown] carries: a conflict establishes that a request under that key
-     * got past the service's check, and never whether the payment was taken.
-     *
-     * **A conflict is not added to [leavesOutcomeUnknown] itself**, which decides which attempt is kept
-     * alive rather than what a caller is told. Adding it there would report a key that was just refused,
-     * and card-present reads the same property for a question this answer is not about.
+     * @param reused whether the key sent was the one held for this payment.
+     * @return true when the failure leaves the payment's outcome unknown; false otherwise.
      */
     private fun PayabliException.leavesTheOutcomeUnknown(reused: Boolean): Boolean =
         if (reused) {
@@ -506,13 +535,16 @@ internal class PayInSubmission(
         }
 
     /**
-     * Reports how one submission ended.
+     * Reports how one submission ended, over the span a payment incident asks about and no per-request
+     * record can answer. Carries no instrument, no payer and no amount. [code] is the classification
+     * the failure already published to the caller, which is a fixed set.
      *
-     * The boundary is form to transport, which is the span a payment incident asks about and the one no
-     * per-request record can answer: a log line names one outcome, and the questions here are rates.
-     *
-     * Carries no instrument, no payer and no amount. [code] is the classification the failure already
-     * published to the caller, which is a fixed set.
+     * @param event the telemetry event naming the operation.
+     * @param outcome how the submission ended.
+     * @param code the failure's classification, or null when it succeeded.
+     * @param startedAt when the submission began, or null when it never started.
+     * @param entryPoint the integration point the request was sent to, or null for the session's.
+     * @param fromForm whether a form started the submission.
      */
     private fun report(
         event: String,
@@ -558,12 +590,12 @@ internal class PayInSubmission(
         }
 
     /**
-     * The six things that can happen to a payment, told apart.
+     * The six things that can happen to a payment, told apart. Keyed on the code the caller was told,
+     * so a record cannot disagree with the screen the payer saw. One exception, and it is the type
+     * check below: a rejected field arrives as `VALIDATION_ERROR` whichever side refused it.
      *
-     * Keyed on the code the caller was told, so a record cannot disagree with the screen the payer saw. One
-     * exception, and it is the type check below: a rejected field arrives as `VALIDATION_ERROR` whether this
-     * module refused it or the service answered 400 with it, and those are the two halves of the one number
-     * this value exists to give.
+     * @param state the state the submission ended in.
+     * @return the outcome, in the report's vocabulary.
      */
     private fun outcomeOf(state: PayInSubmissionState): String =
         when (state) {
@@ -618,16 +650,13 @@ internal class PayInSubmission(
             private set
 
         /**
-         * The key this attempt sends.
+         * The key this attempt sends: [supplied] first, then the key held for this payment, otherwise
+         * a new one. The held key's age is read here, where the key is sent, not where the call began:
+         * this clock counts device sleep, so a check taken earlier can be arbitrarily stale by the
+         * time the request leaves.
          *
-         * [supplied] first, a caller that set a key naming the attempt itself. Then the key held for this
-         * payment, so a resend is the same request. Otherwise a new one.
-         *
-         * **The held key's age is read here, where the key is sent, and not where the call began.** What
-         * sits between the two is a dispatch and whatever the host does with the thread, and this clock
-         * counts device sleep, so a check taken earlier can be arbitrarily stale by the time the request
-         * leaves. That is a separate moment from the reservation being stamped when a key is chosen: this
-         * decides whether a held key may still be sent, that decides what its window is measured from.
+         * @param supplied the caller's own key, or null for one to be chosen.
+         * @return the key this attempt sends.
          */
         fun reserve(supplied: String?): String {
             val now = elapsedRealtimeNanos()

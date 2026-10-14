@@ -8,34 +8,31 @@ import kotlinx.serialization.KSerializer
  *
  * Resolved against the environment base URL by the transport, which also attaches auth headers.
  * [query] is an ordered list rather than a map because query strings may repeat a key.
+ *
+ * @property route the route *template* for logs and telemetry, for example
+ *   `/api/v2/MoneyIn/capture/{id}`. [path] is resolved and may embed an identifier, so it is never
+ *   loggable. Supplying a template here is what lets the transport record which endpoint was called.
+ * @property isCredentialPinned whether this request is bound to the exact credential it carries, so
+ *   replacing that credential breaks the binding. Credential recovery is skipped: no refresh, no
+ *   replay, and the rejection reaches the caller as it arrived. It is a property of the route rather
+ *   than of a response. A route that answers something other than a 401 today is still pinned, and its
+ *   rejection becomes one the day that changes.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class PayabliRequest(
     public val method: HttpMethod,
     public val path: String,
-    /**
-     * The route *template* for logs and telemetry, for example `/api/v2/MoneyIn/capture/{id}`.
-     *
-     * [path] is resolved and may embed an identifier, so it is never loggable. Supplying a template
-     * here is what lets the transport record which endpoint was called.
-     */
     public val route: String? = null,
     public val query: List<Pair<String, String>> = emptyList(),
     public val headers: Map<String, String> = emptyMap(),
     public val body: ByteArray? = null,
-    /**
-     * This request is bound to the exact credential it carries, so replacing that credential breaks the
-     * binding. Credential recovery is skipped: no refresh, no replay, and the rejection reaches the caller
-     * as it arrived.
-     *
-     * It is a property of the route rather than of a response. A route that answers something other than a
-     * 401 today is still pinned, and its rejection becomes one the day that changes.
-     */
     public val isCredentialPinned: Boolean = false,
 ) {
     /**
      * Never includes headers, body, or the resolved [path] — a path may embed an identifier, which is why
      * [route] exists. `toString` reaches exception messages and diagnostics, which the logger cannot redact.
+     *
+     * @return the method and the route template, or `[REDACTED]` when no template was supplied.
      */
     override fun toString(): String = "PayabliRequest(${method.wireName} ${route ?: "[REDACTED]"})"
 
@@ -60,6 +57,16 @@ public class PayabliRequest(
          *
          * There is no [query] here. A route needing one alongside a JSON body uses the constructor, which
          * is also what a route whose body must be zeroized has to do, since this encodes to a `String`.
+         *
+         * @param method the verb the request carries.
+         * @param path the resolved path, identifiers embedded. Never logged, which is what [route] is for.
+         * @param body the value serialized as the request's JSON body.
+         * @param bodySerializer the generated serializer that encodes [body].
+         * @param route the template a log may carry, or null for none.
+         * @param headers extra headers sent with the request.
+         * @param isCredentialPinned whether the request is bound to the credential it carries, skipping
+         *   credential recovery on a refusal.
+         * @return the request carrying [body] encoded as JSON, with the content type set.
          */
         public fun <T> json(
             method: HttpMethod,

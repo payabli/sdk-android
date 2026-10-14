@@ -12,11 +12,12 @@ import kotlinx.serialization.SerializationException
 internal const val REASON_DECODE_FAILED: String = "Failed to decode response envelope"
 
 /**
- * Maps the status, then decodes the v2 envelope. Status first, so a proxy's HTML error page becomes a typed
- * error rather than a decode failure.
+ * Maps the status, then decodes the v2 envelope — status first, so a proxy's HTML error page becomes a
+ * typed error rather than a decode failure. Shared because `AuthenticatedTransport` cannot delegate to
+ * the base's overload, which maps a 401 before the wrapper could recover it.
  *
- * Shared because `AuthenticatedTransport` cannot delegate to the base's overload: that one maps a 401 before
- * the wrapper could recover it.
+ * @param payloadSerializer the generated serializer the envelope's payload decodes through.
+ * @return the decoded v2 envelope.
  */
 internal fun <T> PayabliResponse.asV2Envelope(payloadSerializer: KSerializer<T>): PayabliV2Envelope<T> {
     PayabliHttpErrors.from(this)?.let { throw it }

@@ -24,12 +24,13 @@ public object PayabliJson {
         }
 
     /**
-     * Decodes [body], or returns null if it will not decode.
+     * Decodes [body], or returns null if it will not decode, for the envelopes whose callers treat an
+     * undecodable body as absent fields rather than a failure. Not `runCatching`: it catches `Throwable`,
+     * so an OutOfMemoryError would read as a decline.
      *
-     * For the envelopes whose callers treat an undecodable body as absent fields rather than as a
-     * failure. One copy so the two cannot draw the boundary differently.
-     *
-     * Not `runCatching`: it catches `Throwable`, so an OutOfMemoryError would read as a decline.
+     * @param serializer the generated serializer for [T].
+     * @param body the wire text to decode.
+     * @return the decoded value, or null when the body will not decode as [T].
      */
     internal fun <T> decodeOrNull(
         serializer: KSerializer<T>,

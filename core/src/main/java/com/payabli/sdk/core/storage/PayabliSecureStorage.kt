@@ -53,6 +53,9 @@ public interface PayabliSecureStorage {
      * reads as empty, because refusing to load would make one bad write permanent and everything in the file is
      * ciphertext the caller can obtain again. `StorageUnavailable` covers the file being unreachable; a blob that
      * is too short or not decodable is `ValueUnreadable`, and a whole-store parse failure is neither.
+     *
+     * @param key the name the value is stored under.
+     * @return the stored value as a fresh array, or null when no value is stored under [key].
      */
     public suspend fun get(key: String): ByteArray?
 
@@ -60,12 +63,19 @@ public interface PayabliSecureStorage {
      * Stores [value] under [key], replacing any previous value. [value] is not cleared by this call.
      *
      * Any byte sequence is storable. There is no encoding requirement, because there is no encoding step.
+     *
+     * @param key the name to store under.
+     * @param value the bytes to store; not cleared by this call.
      */
     public suspend fun set(
         key: String,
         value: ByteArray,
     )
 
-    /** Removes [key]. Succeeds whether or not anything was stored. */
+    /**
+     * Removes [key]. Succeeds whether or not anything was stored.
+     *
+     * @param key the name to remove.
+     */
     public suspend fun remove(key: String)
 }
