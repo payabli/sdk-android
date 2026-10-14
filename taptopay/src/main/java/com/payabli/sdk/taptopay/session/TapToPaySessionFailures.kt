@@ -47,8 +47,8 @@ internal object TapToPaySessionFailures {
     ): TapToPaySessionState? = if (owesActivation(failure)) pendingOn(registration) else landingFor(failure)
 
     /**
-     * Where a failed activation leaves the session: moved only by an activation refusal that says so, or by the
-     * stored identity being lost. A transport failure or an unread request leaves it waiting for the code.
+     * Where a failed activation leaves the session. A transport failure, or a refusal that does not say the device
+     * is gone, leaves it waiting for the code; a local storage or key failure lands as it does for any other run.
      */
     fun landingForActivationRun(failure: Throwable): TapToPaySessionState? =
         when (failure) {

@@ -384,7 +384,7 @@ internal class DeviceServiceClient(
         val transportFailure =
             when {
                 serviceRefused -> null
-                refusesAtStatus && status == HTTP_BAD_REQUEST ->
+                refusesAtStatus && status == HTTP_BAD_REQUEST && declineOutcome == null ->
                     DeviceServiceException.BadRequest(status, PayabliHttpErrors.from(response)?.reason.orEmpty())
                 else -> statusOverride(status) ?: PayabliHttpErrors.from(response)
             }

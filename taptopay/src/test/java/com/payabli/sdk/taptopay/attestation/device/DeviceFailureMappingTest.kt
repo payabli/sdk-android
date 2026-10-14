@@ -235,6 +235,15 @@ class DeviceFailureMappingTest {
         }
 
     @Test
+    fun `a 400 whose envelope names another code is left to the transport`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            val failure =
+                challengeAgainst(declineEnvelope(403, EntryPointFailures.ENTRY_POINT_UNUSABLE), statusCode = 400)
+
+            assertEquals(PayabliErrorType.VALIDATION_ERROR, (failure as PayabliException).type)
+        }
+
+    @Test
     fun `a service failure stays a core failure, envelope or not`() =
         runTest(timeout = TEST_TIMEOUT) {
             val failure = challengeAgainst(declineEnvelope(500, "Internal server error"), statusCode = 500)
