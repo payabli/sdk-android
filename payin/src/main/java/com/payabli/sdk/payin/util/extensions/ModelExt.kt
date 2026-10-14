@@ -41,7 +41,7 @@ internal fun BigDecimal.atWireScale(): BigDecimal = setScale(AMOUNT_SCALE, Round
 /**
  * The value as it will be sent, or null when the wire type could not hold it — a `decimal`
  * mantissa of 96 bits, so at two decimal places the largest it holds is
- * `792281625142643375935439503.35`. The bound is on the **rounded** value, the one sent.
+ * `792281625142643375935439503.35` — or when its scale is too extreme to round.
  *
  * @return the value at the wire's scale, or null when the wire type could not hold it.
  */
