@@ -37,8 +37,9 @@ public object ExpiryChoices {
      * Returns [month] if [available] contains it, otherwise the first month it does contain.
      *
      * @param month the month the picker held.
-     * @param available the months the picker may offer.
+     * @param available the months the picker may offer, which must not be empty.
      * @return [month] when it is offered, otherwise the first month that is.
+     * @throws NoSuchElementException when [available] is empty.
      */
     public fun coerceMonth(
         month: Int,
