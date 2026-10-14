@@ -208,9 +208,9 @@ internal fun PayInFormContent(
  * wait for. Idle says the flow holds nothing of this form's, so the flag goes: a form keeping it
  * would take the next outcome on that flow as its own.
  *
-     * @param clearInstrument clears the instrument's buffers.
-     * @param onCompleted the service accepted it.
-     * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
+ * @param clearInstrument clears the instrument's buffers.
+ * @param onCompleted the service accepted it.
+ * @param onFailed it did not complete; where the outcome is unknown the cause is `Unsettled`.
  * @return true when a submission is still this form's to wait for; false otherwise.
  */
 private fun PayInSubmissionState.deliver(
