@@ -39,16 +39,21 @@ internal object UuidV7 {
         return UUID(high, low)
     }
 
-    /** The millisecond a value was minted at, for a test that has to read the field back. */
+    /**
+     * The millisecond a value was minted at, for a test that has to read the field back.
+     *
+     * @param uuid the value whose timestamp field is read.
+     * @return the millisecond [next] minted the value at.
+     */
     fun timestampMillisOf(uuid: UUID): Long = uuid.mostSignificantBits ushr TIMESTAMP_SHIFT
 
     /**
      * The two random fields, for a test that has to tell values apart without depending on their
-     * timestamps.
+     * timestamps. Read back rather than injected: comparing them directly proves they vary whatever the
+     * clock did.
      *
-     * Read back rather than injected. What has to be proven is that these fields vary, and comparing them
-     * directly proves it whatever the clock did, where forcing two values into one millisecond would need a
-     * clock seam on this object and would still be proving the same thing.
+     * @param uuid the value whose random fields are read.
+     * @return the rand_a field and the rand_b field of the value.
      */
     fun randomFieldsOf(uuid: UUID): Pair<Long, Long> =
         (uuid.mostSignificantBits and RAND_A_MASK) to (uuid.leastSignificantBits and RAND_B_MASK)

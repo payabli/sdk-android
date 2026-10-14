@@ -28,35 +28,29 @@ import kotlin.random.Random
  * ```
  * Service  ->  Retry  ->  AuthRecovery  ->  Transport
  * ```
+ *
+ * @property maxAttempts total attempts, not retries: 1 means no retry at all.
+ * @property totalTimeoutMillis one deadline for the whole operation: every attempt and every backoff wait
+ *   between them. An attempt that would outlive it is cut short and the operation ends, rather than a
+ *   further attempt starting. Null means unbounded, which is the default because a total budget is a
+ *   caller-flow concern and a wrong default would truncate a legitimate call.
+ * @property maxRetryAfterMillis a server asking for longer than this stops the retry rather than
+ *   shortening the wait. Under-sleeping would violate the limit the server just declared, and honouring
+ *   an hours-long hint by sleeping is not something an SDK should do either.
+ * @property jitter injected so a test can pin it. Production never passes this.
+ * @property isRetryable takes the whole exception rather than its code, so a caller can discriminate on a
+ *   subtype's fields — for instance a server error's `rawCode` — without this signature changing.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class RetryPolicy(
-    /** Total attempts, not retries: 1 means no retry at all. */
     public val maxAttempts: Int = DEFAULT_MAX_ATTEMPTS,
     public val baseDelayMillis: Long = DEFAULT_BASE_DELAY_MILLIS,
     public val maxDelayMillis: Long = DEFAULT_MAX_DELAY_MILLIS,
     public val multiplier: Double = DEFAULT_MULTIPLIER,
     public val maxJitterMillis: Long = DEFAULT_MAX_JITTER_MILLIS,
-    /**
-     * One deadline for the whole operation: every attempt and every backoff wait between them. An attempt
-     * that would outlive it is cut short and the operation ends, rather than a further attempt starting.
-     *
-     * Null means unbounded, which is the default because a total budget is a caller-flow concern and a wrong
-     * default would truncate a legitimate call.
-     */
     public val totalTimeoutMillis: Long? = null,
-    /**
-     * A server asking for longer than this stops the retry rather than shortening the wait. Under-sleeping
-     * would violate the limit the server just declared, and honouring an hours-long hint by sleeping is not
-     * something an SDK should do either.
-     */
     public val maxRetryAfterMillis: Long = DEFAULT_MAX_RETRY_AFTER_MILLIS,
-    /** Injected so a test can pin it. Production never passes this. */
     public val jitter: Jitter = Jitter.Random,
-    /**
-     * Takes the whole exception rather than its code, so a caller can discriminate on a subtype's fields —
-     * for instance a server error's `rawCode` — without this signature changing.
-     */
     public val isRetryable: (PayabliException) -> Boolean = RETRYABLE_BY_CODE,
 ) {
     init {
@@ -72,7 +66,13 @@ public class RetryPolicy(
         require(maxRetryAfterMillis >= 0) { "maxRetryAfterMillis must not be negative" }
     }
 
-    /** Backoff before [attempt], 1-indexed. Attempt 1 does not wait. */
+    /**
+     * Backoff before [attempt], 1-indexed. Attempt 1 does not wait.
+     *
+     * @param attempt the one-based number of the attempt the wait precedes.
+     * @return the wait in milliseconds: the backoff capped at [maxDelayMillis], plus jitter up to
+     *   [maxJitterMillis].
+     */
     public fun delayMillisFor(attempt: Int): Long {
         if (attempt <= 1) return 0
         var backoff = baseDelayMillis.toDouble()

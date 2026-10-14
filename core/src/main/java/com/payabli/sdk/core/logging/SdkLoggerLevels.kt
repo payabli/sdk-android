@@ -8,14 +8,25 @@ import androidx.annotation.RestrictTo
  * SdkLogger.log applies. Runtime values go in `fields`, never interpolated into `message`.
  */
 
-/** Detail useful while diagnosing. Off by default on a device; raise with `setprop log.tag.<TAG>`. */
+/**
+ * Detail useful while diagnosing. Off by default on a device; raise with `setprop log.tag.<TAG>`.
+ *
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.debug(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.DEBUG, fields.asList(), throwable = null, message = message)
 
-/** [debug] with exception context. */
+/**
+ * [debug] with exception context.
+ *
+ * @param throwable the failure context, rendered with its chain scrubbed.
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.debug(
     throwable: Throwable,
@@ -23,14 +34,25 @@ public fun SdkLogger.debug(
     message: () -> String,
 ): Unit = log(LogLevel.DEBUG, fields.asList(), throwable, message)
 
-/** A normal lifecycle milestone. Always emitted, so it may carry allowlisted fields only. */
+/**
+ * A normal lifecycle milestone. Always emitted, so it may carry allowlisted fields only.
+ *
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.info(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.INFO, fields.asList(), throwable = null, message = message)
 
-/** [info] with exception context. */
+/**
+ * [info] with exception context.
+ *
+ * @param throwable the failure context, rendered with its chain scrubbed.
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.info(
     throwable: Throwable,
@@ -38,14 +60,25 @@ public fun SdkLogger.info(
     message: () -> String,
 ): Unit = log(LogLevel.INFO, fields.asList(), throwable, message)
 
-/** Recoverable, but worth a maintainer's attention. */
+/**
+ * Recoverable, but worth a maintainer's attention.
+ *
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.warn(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.WARN, fields.asList(), throwable = null, message = message)
 
-/** [warn] with exception context. */
+/**
+ * [warn] with exception context.
+ *
+ * @param throwable the failure context, rendered with its chain scrubbed.
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.warn(
     throwable: Throwable,
@@ -53,14 +86,25 @@ public fun SdkLogger.warn(
     message: () -> String,
 ): Unit = log(LogLevel.WARN, fields.asList(), throwable, message)
 
-/** An operation failed. */
+/**
+ * An operation failed.
+ *
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.error(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.ERROR, fields.asList(), throwable = null, message = message)
 
-/** [error] with exception context. */
+/**
+ * [error] with exception context.
+ *
+ * @param throwable the failure context, rendered with its chain scrubbed.
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.error(
     throwable: Throwable,
@@ -68,14 +112,25 @@ public fun SdkLogger.error(
     message: () -> String,
 ): Unit = log(LogLevel.ERROR, fields.asList(), throwable, message)
 
-/** An invariant this SDK guarantees was violated. */
+/**
+ * An invariant this SDK guarantees was violated.
+ *
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.fault(
     vararg fields: LogField,
     message: () -> String,
 ): Unit = log(LogLevel.FAULT, fields.asList(), throwable = null, message = message)
 
-/** [fault] with exception context. */
+/**
+ * [fault] with exception context.
+ *
+ * @param throwable the failure context, rendered with its chain scrubbed.
+ * @param fields the named values for the record.
+ * @param message the fixed text, built only when emitted.
+ */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun SdkLogger.fault(
     throwable: Throwable,

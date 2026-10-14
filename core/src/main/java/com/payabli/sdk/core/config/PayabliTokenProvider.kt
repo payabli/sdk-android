@@ -33,6 +33,10 @@ package com.payabli.sdk.core.config
  * implementable from Java.
  */
 public fun interface PayabliTokenProvider {
-    /** Returns a freshly minted access token. Suspends; expected to make a network call. */
+    /**
+     * Returns a freshly minted access token. Suspends; expected to make a network call.
+     *
+     * @return a fresh access token, within thirty seconds.
+     */
     public suspend fun freshToken(): String
 }

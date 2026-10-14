@@ -20,10 +20,11 @@ public data class ExpiryValue(
     }
 
     /**
-     * `MM/YY`, in [Locale.ROOT], with [separator] between the two.
+     * `MM/YY`, in [Locale.ROOT], with [separator] between the two. The default locale renders
+     * non-ASCII digits under `ar-EG` and `hi-IN`, which [parse] cannot read back.
      *
-     * The default locale renders non-ASCII digits under `ar-EG` and `hi-IN`, which [parse] cannot
-     * read back.
+     * @param separator what sits between the month and the year.
+     * @return the month and the two-digit year, with [separator] between.
      */
     public fun format(separator: String = "/"): String =
         // A "%" in a caller's separator is an argument reference to String.format.
@@ -31,6 +32,10 @@ public data class ExpiryValue(
 
     /**
      * A card is good through the last day of its expiry month, so that month is not yet expired.
+     *
+     * @param currentYear the year now.
+     * @param currentMonth the month now.
+     * @return true when the card's last good day has passed; false otherwise.
      */
     public fun isExpired(
         currentYear: Int,
@@ -42,10 +47,11 @@ public data class ExpiryValue(
         public val SUPPORTED_YEARS: IntRange = 2000..2099
 
         /**
-         * The current month, in the device's time zone. The only clock read in this file.
+         * The current month, in the device's time zone. The only clock read in this file. `Calendar`
+         * because the module's floor is API 23 with no core library desugaring, so `LocalDate` is not
+         * on the device.
          *
-         * `Calendar` because the module's floor is API 23 with no core library desugaring, so
-         * `LocalDate` is not on the device.
+         * @return the current month and year.
          */
         public fun today(): ExpiryValue {
             val now = Calendar.getInstance()
@@ -56,10 +62,11 @@ public data class ExpiryValue(
         }
 
         /**
-         * Parses month, any run of non-digits, then a two-digit year in this century.
+         * Parses month, any run of non-digits, then a two-digit year in this century. Any separator
+         * `PayInFormatting` can produce reads back, so validation needs no configuration.
          *
-         * Any separator `PayInFormatting` can produce reads back, so validation needs no
-         * configuration.
+         * @param text the expiry as typed.
+         * @return the expiry, or null when the text is not one.
          */
         public fun parse(text: String): ExpiryValue? {
             val digits = Regex("^\\s*(\\d{1,2})\\D+(\\d{2})\\s*$").find(text) ?: return null

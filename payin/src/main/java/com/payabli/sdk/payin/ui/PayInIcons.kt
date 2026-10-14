@@ -117,7 +117,13 @@ internal object PayInIcons {
     }
 }
 
-/** Material's own icon geometry: a 24dp square on a 24-unit viewport. */
+/**
+ * Material's own icon geometry: a 24dp square on a 24-unit viewport.
+ *
+ * @param name the icon's name, for tooling.
+ * @param block the icon's paths.
+ * @return the built icon.
+ */
 private fun materialIcon(
     name: String,
     block: ImageVector.Builder.() -> ImageVector.Builder,
@@ -132,7 +138,12 @@ private fun materialIcon(
         ).block()
         .build()
 
-/** Filled with the tint the caller sets, so an icon follows the theme like the text beside it. */
+/**
+ * Filled with the tint the caller sets, so an icon follows the theme like the text beside it.
+ *
+ * @param pathBuilder the path's geometry.
+ * @return the builder, with the path added.
+ */
 private inline fun ImageVector.Builder.materialPath(
     pathBuilder: androidx.compose.ui.graphics.vector.PathBuilder.() -> Unit,
 ): ImageVector.Builder =

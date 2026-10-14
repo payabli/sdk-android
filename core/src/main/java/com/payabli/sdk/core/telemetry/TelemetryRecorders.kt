@@ -34,6 +34,8 @@ public object TelemetryRecorders {
      *
      * Replacing rather than refusing: a session re-initialized after a terminal failure installs again, and
      * refusing the second install would leave the new session reporting through the dead one's queue.
+     *
+     * @param recorder the recorder to install, replacing whatever was there.
      */
     public fun install(recorder: TelemetryRecorder) {
         installed = recorder
@@ -50,6 +52,10 @@ public object TelemetryRecorders {
      * For an operation reported when it finishes, which can be after a re-initialize has replaced the session
      * it began under. A recorder that is not [SessionScopedRecorder] still receives the event and its
      * properties; only the session is dropped.
+     *
+     * @param session the session the event belongs to, and whose opt-out is read.
+     * @param event the catalog name of the event.
+     * @param properties the declared properties, built only if a recorder is installed.
      */
     public inline fun recordFor(
         session: TelemetrySessionContext,
@@ -78,11 +84,17 @@ public object TelemetryRecorders {
      *
      * Reachable because [record] is inlined into other modules. Nothing else should call it: a caller that
      * held the recorder itself would keep a dead one alive across a re-initialize.
+     *
+     * @return the installed recorder, or null when none is.
      */
     @PublishedApi
     internal fun current(): TelemetryRecorder? = installed
 
-    /** Records that a recorder threw. Reachable for the reason [current] is. */
+    /**
+     * Records that a recorder threw. Reachable for the reason [current] is.
+     *
+     * @param failure what the recorder threw.
+     */
     @PublishedApi
     internal fun refused(failure: RuntimeException) {
         logger.warn(
@@ -101,6 +113,9 @@ public object TelemetryRecorders {
      * **Failure is swallowed here**, which is the guarantee that lets a payment path call this on its
      * critical line. A reporting channel that can fail a charge is worse than no reporting channel.
      * An `Error` is not caught: an exhausted heap is not this layer's to absorb.
+     *
+     * @param event the catalog name of the event.
+     * @param properties the declared properties, built only when something is listening.
      */
     public inline fun record(
         event: String,

@@ -19,6 +19,8 @@ import androidx.annotation.RestrictTo
  * `require`, not a [SecureStorageException]: a key is a plaintext name chosen by calling code, so one that is not
  * representable is a caller bug rather than a storage outcome. The check asserts the property directly, that the
  * name means the same thing after being written and read back, rather than configuring an encoder to report.
+ *
+ * @param key the name to check.
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public fun requireRepresentableKey(key: String) {

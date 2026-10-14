@@ -69,6 +69,9 @@ public sealed class PayabliPayIn {
      * payment of equal value — unlike [captureAuthorizedTransaction], which has a transaction to name — so a
      * key this SDK minted is not held for a later call, and calling again without your own is a second payment
      * rather than a retry.
+     *
+     * @param request the payment to take, its buffers the caller's to close.
+     * @return the outcome, or the failure.
      */
     public abstract suspend fun capture(request: PayInRequest): Result<PayInResult>
 
@@ -78,6 +81,9 @@ public sealed class PayabliPayIn {
      * The failure is a `PayabliException` and never [PayInException.Unsettled], because storing moves no money.
      * The buffers are the caller's to close, as on [capture]. No idempotency key is sent, so calling again after
      * a failure can store a second copy.
+     *
+     * @param request the method to store, its buffers the caller's to close.
+     * @return the stored method, or the failure.
      */
     public abstract suspend fun storeMethod(request: PayInStoreRequest): Result<PayInStoredMethod>
 
@@ -89,6 +95,9 @@ public sealed class PayabliPayIn {
      * request.
      *
      * Everything [capture] says about the failure, the buffers and the idempotency key holds here too.
+     *
+     * @param request the payment to hold, its buffers the caller's to close.
+     * @return the outcome, or the failure.
      */
     public abstract suspend fun authorize(request: PayInRequest): Result<PayInResult>
 
@@ -125,6 +134,9 @@ public sealed class PayabliPayIn {
      * **Whether a repeat is recognised at all is the service's.** Persisting a key lets you send it again;
      * it does not make the service remember it. Past the point where it has stopped, the same key is
      * carried out as a new request.
+     *
+     * @param request the authorization to capture, in full or in part.
+     * @return the outcome, or the failure.
      */
     public abstract suspend fun captureAuthorizedTransaction(request: PayInAuthorizedRequest): Result<PayInResult>
 
@@ -137,6 +149,10 @@ public sealed class PayabliPayIn {
      * [transId] is the transaction to reverse, as [PayInTransaction.paymentTransId] reported it. This route
      * holds and resends an idempotency key exactly as [captureAuthorizedTransaction] does, so the paragraph
      * there is the contract for both.
+     *
+     * @param transId the transaction to reverse.
+     * @param idempotencyKey the attempt's key, or null for the held one to be resent, or one minted.
+     * @return the outcome, or the failure.
      */
     public abstract suspend fun voidTransaction(
         transId: String,
@@ -155,6 +171,7 @@ public sealed class PayabliPayIn {
          *   cancelled when the screen goes for good. A scope tied to the composition —
          *   `rememberCoroutineScope` — cancels on rotation and loses the outcome of a request that has
          *   already reached the service.
+         * @return the card-not-present capability, over the session.
          */
         public operator fun invoke(
             session: PayabliSession,

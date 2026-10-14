@@ -16,17 +16,22 @@ internal fun interface PayabliRequestDecoration {
     suspend fun decorate(request: PayabliRequest): PayabliRequest
 }
 
-/** Left to right: index 0 runs first, and a later step sees an earlier one's output. */
+/**
+ * Left to right: index 0 runs first, and a later step sees an earlier one's output.
+ *
+ * @param request the request the chain starts from.
+ * @return the request the last step returned.
+ */
 internal suspend fun List<PayabliRequestDecoration>.applyTo(request: PayabliRequest): PayabliRequest =
     fold(request) { acc, decoration -> decoration.decorate(acc) }
 
 /**
- * Merges [extra] over the request's own headers, with [extra] winning.
+ * Merges [extra] over the request's own headers, with [extra] winning. Case-insensitive, and the
+ * caller's key is removed rather than shadowed: leaving a differently-cased duplicate would let
+ * iteration order decide which value reaches the wire.
  *
- * Case-insensitive, and the caller's key is **removed** rather than shadowed. Both halves matter: RFC 9110
- * header names are case-insensitive and `setRequestProperty` replaces case-insensitively, so leaving a
- * differently-cased duplicate in the map would let iteration order decide which value reaches the wire.
- * A decoration losing to a caller's header would be a bypass by another name.
+ * @param extra the headers that win, their names in any case.
+ * @return the request carrying the merged headers.
  */
 internal fun PayabliRequest.withHeaders(extra: Map<String, String>): PayabliRequest {
     if (extra.isEmpty()) return this
@@ -37,12 +42,21 @@ internal fun PayabliRequest.withHeaders(extra: Map<String, String>): PayabliRequ
     return copyWith(headers = merged)
 }
 
-/** Replaces the body, for a step that contributes a body field rather than a header. */
+/**
+ * Replaces the body, for a step that contributes a body field rather than a header.
+ *
+ * @param body the body the returned request carries, or null to send none.
+ * @return the request carrying [body].
+ */
 internal fun PayabliRequest.withBody(body: ByteArray?): PayabliRequest = copyWith(body = body)
 
 /**
  * The one place a decorated request is rebuilt. Centralised so a new [PayabliRequest] property cannot be
  * silently dropped by a decoration that hand-rolled the copy.
+ *
+ * @param headers the headers the rebuilt request carries.
+ * @param body the body the rebuilt request carries.
+ * @return the request rebuilt with the named parts replaced.
  */
 private fun PayabliRequest.copyWith(
     headers: Map<String, String> = this.headers,

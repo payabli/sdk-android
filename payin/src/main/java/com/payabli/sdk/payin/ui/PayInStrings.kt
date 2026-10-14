@@ -48,7 +48,12 @@ internal object PayInStrings {
             },
         )
 
-    /** The message for a rule's finding, with the numbers that rule decided. */
+    /**
+     * The message for a rule's finding, with the numbers that rule decided.
+     *
+     * @param error the rule's finding.
+     * @return the message for it.
+     */
     @Composable
     @ReadOnlyComposable
     fun error(error: PayInFieldError): String =
@@ -86,7 +91,11 @@ internal object PayInStrings {
             PayInFieldError.NotAccepted -> stringResource(R.string.payabli_payin_error_not_accepted)
         }
 
-    /** A context whose strings come from [LocalResources], the resources every `stringResource` here reads. */
+    /**
+     * A context whose strings come from [LocalResources], the resources every `stringResource` here reads.
+     *
+     * @return the context the string resources are read from.
+     */
     @Composable
     @ReadOnlyComposable
     private fun resources(): Context {
@@ -97,7 +106,12 @@ internal object PayInStrings {
         }
     }
 
-    /** The options a choice field offers, as the API's values paired with what a payer reads. */
+    /**
+     * The options a choice field offers, as the API's values paired with what a payer reads.
+     *
+     * @param field the choice field asked about.
+     * @return the options, the API's value paired with its wording.
+     */
     @Composable
     @ReadOnlyComposable
     fun choices(field: PayInField): List<Pair<String, String>> =

@@ -61,14 +61,11 @@ internal class PayInFormDraft {
     var submissionPending: Boolean by mutableStateOf(false)
 
     /**
-     * Starts the form the first time, and applies a different configuration without starting it again.
+     * Starts the form the first time, and applies a different configuration without starting it
+     * again, keeping the values, the marks and the method the new one still offers, dropping what has no box. The comparison
+     * stays here: a `remember` key is gone with its composition, and a write the same composition reads never settles.
      *
-     * A new configuration keeps the method, the values the payer entered and the service's marks on them,
-     * dropping only what it no longer offers a box for.
-     *
-     * Called on every composition. The comparison has to be here rather than at the call site: a `remember` key
-     * belongs to a composition and is gone with it, and writing on every composition writes state that the same
-     * composition then reads, so the form recomposes without ever settling.
+     * @param configuration the configuration this composition draws the form from.
      */
     fun seed(configuration: PayInFormConfiguration) {
         val previous = seededFrom.getAndSet(configuration)
@@ -86,7 +83,12 @@ internal class PayInFormDraft {
         }
     }
 
-    /** A keystroke. The box no longer holds what the service rejected, so its mark goes. */
+    /**
+     * A keystroke. The box no longer holds what the service rejected, so its mark goes.
+     *
+     * @param field the field typed into.
+     * @param value what the payer typed.
+     */
     fun enter(
         field: PayInField,
         value: String,
@@ -95,7 +97,12 @@ internal class PayInFormDraft {
         rejectedFields = rejectedFields - field
     }
 
-    /** The payer switched instrument, dropping what the new one has no box for. */
+    /**
+     * The payer switched instrument, dropping what the new one has no box for.
+     *
+     * @param method the instrument switched to.
+     * @param configuration the configuration the new instrument's form comes from.
+     */
     fun switchTo(
         method: PayInMethodType,
         configuration: PayInFormConfiguration,
@@ -115,12 +122,10 @@ internal class PayInFormDraft {
     fun clearInstrument() = PayInSensitiveFields.CLEARED_ON_OUTCOME.forEach { entered.remove(it) }
 
     /**
-     * Everything the payer entered goes, and the next composition starts the form again.
+     * Everything the payer entered goes, and the next composition starts the form again. [chosen] is
+     * left alone: a reader that has already passed [seed]'s check goes on to read [method], and
+     * clearing the instrument under it fails that read.
      *
-     * Called when the host's scope is cancelled, which runs on whatever thread completed it while a composition
-     * may be reading. [chosen] is left alone for that reason: a reader that has already passed [seed]'s check
-     * goes on to read [method], and clearing the instrument under it fails that read. Which tab was on screen
-     * is not the payer's data, and the next [seed] sets it before anything reads it.
      */
     fun clear() {
         seededFrom.set(null)

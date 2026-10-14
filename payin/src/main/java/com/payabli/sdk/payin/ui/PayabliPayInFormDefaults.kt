@@ -29,8 +29,10 @@ public val LocalPayInFormStyle: ProvidableCompositionLocal<PayInFormStyle?> =
 public object PayabliPayInFormDefaults {
     /**
      * The host's `MaterialTheme`, as the form's style. The only place this module reads the theme.
-     *
      * An override replaces one value and leaves the rest following the theme.
+     *
+     * @param overrides what a caller wants different.
+     * @return the form's style, the overrides over the theme's values.
      */
     @Composable
     @ReadOnlyComposable
@@ -57,8 +59,10 @@ public object PayabliPayInFormDefaults {
 
 /**
  * The style this form will use: the one passed in, then the ambient one, then the host's theme.
- *
  * The first found wins whole. Per-property merging happens inside [PayabliPayInFormDefaults.style].
+ *
+ * @param explicit the style the caller passed, or null to fall back.
+ * @return the style this form will use.
  */
 @Composable
 internal fun rememberResolvedStyle(explicit: PayInFormStyle?): PayInFormStyle =

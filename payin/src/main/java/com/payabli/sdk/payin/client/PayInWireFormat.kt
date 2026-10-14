@@ -39,11 +39,19 @@ internal object PayInRoutes {
      *
      * The identifier is encoded as one path segment, so a `?`, `#` or `/` in it stays part of the
      * identifier instead of becoming a query, a fragment or another route.
+     *
+     * @param transId the transaction to capture.
+     * @return the resolved path for [CAPTURE_AUTHORIZED].
      */
     fun captureAuthorized(transId: String): String =
         PercentEncoding.pathFrom(CAPTURE_AUTHORIZED, PercentEncoding.segment(transId))
 
-    /** The resolved path for [VOID], built and encoded as [captureAuthorized] is, for the same reasons. */
+    /**
+     * The resolved path for [VOID], built and encoded as [captureAuthorized] is, for the same reasons.
+     *
+     * @param transId the transaction to reverse.
+     * @return the resolved path for [VOID].
+     */
     fun void(transId: String): String = PercentEncoding.pathFrom(VOID, PercentEncoding.segment(transId))
 
     /** Spelled once in `:core`, since card-present sends the same header. Read on the transaction routes only. */

@@ -46,34 +46,62 @@ public sealed class LogField {
          * otherwise emit `[REDACTED]`. The value is additionally passed through the free-text
          * scrubber, so a mislabelled secret is still caught.
          *
-         * The overloads accept only primitives, enums and `String` on purpose: an `Any?` parameter
+         * The overloads accept only primitives, enums and `String`: an `Any?` parameter
          * would let a data class's `toString()` dump every field it holds and defeat the allowlist
          * in one call. There is no `Any?` overload and there must never be one.
+         *
+         * @param name the field name as it appears in the emitted record, checked against the allowlist.
+         * @param value the value to emit verbatim if the name survives.
+         * @return the field, redacted when the value is null.
          */
         public fun safe(
             name: String,
             value: String?,
         ): LogField = if (value == null) Redacted(name, wasNull = true) else Safe(name, value)
 
-        /** See the [String] overload. */
+        /**
+         * See the [String] overload.
+         *
+         * @param name the field name as it appears in the emitted record.
+         * @param value the value to emit if the name survives the allowlist.
+         * @return the field.
+         */
         public fun safe(
             name: String,
             value: Int,
         ): LogField = Safe(name, value.toString())
 
-        /** See the [String] overload. */
+        /**
+         * See the [String] overload.
+         *
+         * @param name the field name as it appears in the emitted record.
+         * @param value the value to emit if the name survives the allowlist.
+         * @return the field.
+         */
         public fun safe(
             name: String,
             value: Long,
         ): LogField = Safe(name, value.toString())
 
-        /** See the [String] overload. */
+        /**
+         * See the [String] overload.
+         *
+         * @param name the field name as it appears in the emitted record.
+         * @param value the value to emit if the name survives the allowlist.
+         * @return the field.
+         */
         public fun safe(
             name: String,
             value: Boolean,
         ): LogField = Safe(name, value.toString())
 
-        /** See the [String] overload. The enum's declared name is emitted, not its `toString()`. */
+        /**
+         * See the [String] overload. The enum's declared name is emitted, not its `toString()`.
+         *
+         * @param name the field name as it appears in the emitted record.
+         * @param value the enum whose declared name is emitted.
+         * @return the field.
+         */
         public fun safe(
             name: String,
             value: Enum<*>?,
@@ -82,6 +110,10 @@ public sealed class LogField {
         /**
          * Always `[REDACTED]`, or `[null]` when [value] is null. Accepts `Any?` because the value
          * is discarded unread: only its nullity is observed.
+         *
+         * @param name the field name as it appears in the emitted record.
+         * @param value discarded unread; only its nullity is observed.
+         * @return the field, `[null]` when the value is null, `[REDACTED]` otherwise.
          */
         public fun redacted(
             name: String,
@@ -96,6 +128,10 @@ public sealed class LogField {
          * aid; a four-digit tail of a PAN is cardholder data.
          *
          * A value of four characters or fewer, or null, renders as bare `[REDACTED]`.
+         *
+         * @param name the field name as it appears in the emitted record.
+         * @param value the identifier whose trailing four characters are kept.
+         * @return the field, bare `[REDACTED]` for a short or null value.
          */
         public fun lastFour(
             name: String,

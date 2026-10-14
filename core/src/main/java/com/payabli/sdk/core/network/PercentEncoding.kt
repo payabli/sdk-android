@@ -37,6 +37,9 @@ public object PercentEncoding {
      * **Whether a value is allowed at all is the caller's question, not this one.** An empty [value]
      * encodes to an empty string, which is a different route rather than a refusal, so a caller that
      * cannot accept that checks before calling.
+     *
+     * @param value the identifier the caller wants carried as one segment.
+     * @return the UTF-8 percent-encoding of [value] over the unreserved set, upper-case hex.
      */
     public fun segment(value: String): String =
         buildString(value.length) {
@@ -65,6 +68,11 @@ public object PercentEncoding {
      *
      * Refuses a template carrying no placeholder. That is a route wired to the wrong helper, not a value
      * a caller could correct.
+     *
+     * @param template the route literal with its `{placeholder}`, the only form a log may carry.
+     * @param segment the already-encoded value placed into the placeholder. Callers keep their own rule
+     *   for what makes one.
+     * @return the resolved path: the template with its placeholder replaced by [segment].
      */
     public fun pathFrom(
         template: String,

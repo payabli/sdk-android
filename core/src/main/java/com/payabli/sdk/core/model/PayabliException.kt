@@ -19,13 +19,14 @@ package com.payabli.sdk.core.model
  * `LogField.safe` and never interpolate either into a log message. `Throwable.message` is the catalog's fixed
  * text and never either of them, so a stack trace or a crash report carries the classification rather than the
  * prose. Log `LogField.safe("errorCode", type)` instead; `errorCode` is allowlisted.
+ *
+ * @property type the catalog entry. Switch on this, or on [category], not on the concrete subclass.
+ * @property reason short human-readable summary. Displayable; never loggable.
+ * @property detail longer explanation when the server or the SDK has one. Displayable; never loggable.
  */
 public abstract class PayabliException protected constructor(
-    /** The catalog entry. Switch on this, or on [category], not on the concrete subclass. */
     public val type: PayabliErrorType,
-    /** Short human-readable summary. Displayable; never loggable. */
     public val reason: String,
-    /** Longer explanation when the server or the SDK has one. Displayable; never loggable. */
     public val detail: String? = null,
     cause: Throwable? = null,
 ) : Exception(type.message, cause) {
@@ -35,6 +36,10 @@ public abstract class PayabliException protected constructor(
     /** What a host does about this failure. */
     public val category: PayabliErrorCategory get() = type.category
 
-    /** Never includes [reason] or [detail]: either may echo request data. */
+    /**
+     * Never includes [reason] or [detail]: either may echo request data.
+     *
+     * @return the class name, the code and the type's wire name.
+     */
     override fun toString(): String = "${javaClass.simpleName}(code=$code, type=${type.wireName})"
 }

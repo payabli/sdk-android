@@ -34,61 +34,17 @@ import java.security.spec.ECGenParameterSpec
 
 /**
  * An EC P-256 keypair in the Android Keystore, signing on request and never yielding the private half.
+ * In `platform` because the Keystore has no JVM implementation. Reading never creates: only [ensureKey]
+ * provisions. Neither half is cached. `MONITOR` is process-local, so two processes can race and the loser enrols again.
  *
- * In `platform` because the Keystore has no JVM implementation, so no unit test can reach a line of this file
- * and the instrumented suite is what covers it. The two things that decide correctness, the point encoding and
- * the signature format, are not here: they are plain platform code and are unit-tested.
- *
- * **Reading never creates.** An absent alias reports the key gone; only [ensureKey] provisions. A key minted
- * on a read path would sign with material the service has never seen, under an identifier it already holds a
- * different point for, and every assertion would then fail verification with nothing pointing at the cause.
- * The storage cipher makes the same rule for a different reason: there, a key minted on read turns a lost key
- * into a tag failure. Here there is no tag to fail, which makes the rule matter more rather than less.
- *
- * Neither half of the key is cached. A handle held across a delete keeps working against a key the store no
- * longer has, and it is a live reference to material whose lifetime this class does not own.
- *
- * **Synchronisation here is process-local, and the boundary is worth naming because a Keystore entry is not.**
- * The alias belongs to the app UID, so every process of the app addresses the same entry, while `MONITOR` is
- * companion state that each process gets its own copy of. Two processes can therefore both find the alias
- * empty and both generate, or one can replace the key while the other is signing. This is the scope the SDK
- * synchronises at everywhere: the session is one per process, and the storage lock is not an OS file lock.
- *
- * What that costs is bounded and already has a route back. One key exists at the alias afterwards rather than
- * two, which is what the design requires; the process whose key was replaced signs with material the service
- * did not attest, is refused, and enrols again. Under a generated alias the same collision left two keys and
- * stranded one of them, which is the failure the fixed alias exists to remove.
+ * @property beforeKeyGeneration a test seam, no-op in production: a rendezvous opening the generation race, so a test asserts one generation rather than a consequence.
+ * @property betweenSignAndIdentity a test seam, no-op in production: opens the window inside [sign] that the monitor both [sign] and [delete] takes closes.
+ * @property readPrivateKey a test seam; production reads the key store, and this is how a test reaches the discard-and-create path.
  */
 internal class KeystoreDeviceKey(
     private val logger: SdkLogger,
-    /**
-     * Runs after the unsynchronized presence check and before the guarded generation. **A test seam, no-op in
-     * production**, and it exists because the race it opens cannot be reached from outside this class.
-     *
-     * Two instances both finding no key and both generating would leave the second key in place and the first
-     * attested key gone. From outside [ensureKey] the check and the creation are atomic, so nothing can
-     * interleave them, and a test that races two callers observes a consequence rather than the invariant.
-     * With a rendezvous here the test asserts the invariant instead: one generation, counted from the log line
-     * [createKey] emits.
-     */
     private val beforeKeyGeneration: () -> Unit = {},
-    /**
-     * Runs inside [sign], between producing the signature and deriving the identity that labels it. **A test
-     * seam, no-op in production.**
-     *
-     * The window it opens is closed by the monitor both [sign] and [delete] take, so nothing outside this
-     * class can observe it: a replacement attempted here blocks until the signature and its identity have
-     * been read from one key. Without a seam a test could only assert that the pair happens to agree, which
-     * it does whether or not the monitor is there.
-     */
     private val betweenSignAndIdentity: () -> Unit = {},
-    /**
-     * Reads the private half of the entry at the alias. **A test seam; production reads the key store.**
-     *
-     * The platform raises `UnrecoverableKeyException` here for an entry it cannot load, such as one whose
-     * certificate is missing, and no public API can create such an entry. The seam is how a test reaches the
-     * discard-and-create path against the real key store.
-     */
     private val readPrivateKey: (KeyStore, String) -> Key? = { store, alias -> store.getKey(alias, null) },
 ) : DeviceKey {
     /**
@@ -101,15 +57,11 @@ internal class KeystoreDeviceKey(
     private val alias: String get() = DeviceKeyHandle.ALIAS
 
     /**
-     * The point and its identifier from one read, under the monitor replacement also takes.
+     * The point and its identifier from one read, under the monitor replacement also takes: the identifier
+     * is derived from the point just read, and [uncompressedPoint] discards rather than reads, so the lock
+     * belongs here.
      *
-     * Two things make the pair sound, and only one of them is the monitor. The identifier is derived from the
-     * point this just read rather than from a second read, so the two cannot describe different keys.
-     *
-     * **The monitor is here because this is not a read.** [uncompressedPoint] discards the entry when the
-     * certificate is not a P-256 point, so a caller without the lock could observe a stale certificate, be
-     * overtaken by a replacement, and then delete the key that replaced it. Read, validate and discard belong
-     * in one section for that reason.
+     * @return the point and the thumbprint naming it, from one read.
      */
     override fun publicKey(): DevicePublicKey =
         synchronized(MONITOR) {
@@ -154,14 +106,12 @@ internal class KeystoreDeviceKey(
     }
 
     /**
-     * Both values from one key, under the monitor that replacement also takes.
+     * Both values from one key, under the monitor that replacement also takes: between the private half's
+     * read and the public half's, a replacement would leave the signature made by one key and the identity
+     * naming another. The monitor is process-local, as the class says.
      *
-     * The private half and the public half are two reads of the key store. Between them a replacement would
-     * otherwise leave the signature made by one key and the identity naming another, which the service
-     * rejects because it verifies against the public key it holds for the identity it was sent.
-     *
-     * The monitor is process-local, so this closes the window against every caller inside this process and
-     * none outside it. See the class.
+     * @param payload the bytes to sign.
+     * @return the signature with the identity of the key that made it.
      */
     override fun sign(payload: ByteArray): DeviceSignature =
         synchronized(MONITOR) {
@@ -179,23 +129,11 @@ internal class KeystoreDeviceKey(
         }
 
     /**
-     * Provisions the alias, and is the only place a key is ever created.
+     * Provisions the alias, and is the only place a key is ever created. Guarded by the shared monitor, and
+     * the presence check is inside it: the check discards an unloadable entry, so an unsynchronized probe
+     * could delete a key another caller had just generated. With [mayCreate] false it proves a key is present.
      *
-     * Guarded by the shared monitor, so two callers arriving together generate once rather than racing to
-     * replace each other's key. Two *processes* can still both find the alias empty and both generate, and
-     * the later generation replaces the earlier: see the class for why that is stated rather than prevented.
-     *
-     * **The presence check is inside the monitor, not before it.** It reads the private half, which discards
-     * the entry when the platform reports it unrecoverable, so an unsynchronized probe could delete a key
-     * another caller had just generated. That is a mutation, and it does not belong outside the lock however
-     * cheap the fast path it bought was.
-     *
-     * With [mayCreate] false it proves a key is present, which is what a caller resolving a key the service has
-     * already accepted wants: the answer to a missing key there is enrolling again, not a fresh key under the
-     * same alias.
-     *
-     * An entry the platform cannot load, such as one whose certificate is missing, is discarded by the
-     * presence check. With [mayCreate] true the key is then created in the same call.
+     * @param mayCreate whether a missing key is created; false only proves one is present.
      */
     fun ensureKey(mayCreate: Boolean) {
         beforeKeyGeneration()
@@ -214,27 +152,23 @@ internal class KeystoreDeviceKey(
     }
 
     /**
-     * A Keystore backend failure, which arrives outside the checked hierarchy everything else here maps.
+     * A Keystore backend failure, outside the checked hierarchy everything else here maps: without this,
+     * a keystore daemon that is unreachable escapes the [DeviceKeyException] surface as a raw runtime
+     * failure. Not mapped inside [generate], which would swallow [strongBoxKey]'s fallback signal.
      *
-     * `ProviderException` extends `RuntimeException`, so without this a keystore daemon that is unreachable
-     * escapes the [DeviceKeyException] surface as a raw runtime failure and the caller loses the one
-     * distinction the surface exists to make. Always the platform case: a broken provider says nothing about
-     * whether this key survives.
-     *
-     * **Not** mapped inside [generate]. `StrongBoxUnavailableException` is itself a
-     * `ProviderException`, so a catch there swallows it, [strongBoxKey] never sees the signal it falls back
-     * on, and key creation fails outright on every device without a secure element.
+     * @param cause the backend failure the platform raised.
+     * @return a CryptoUnavailable carrying the cause.
      */
     private fun asProviderFailure(cause: ProviderException): DeviceKeyException =
         DeviceKeyException.CryptoUnavailable(cause)
 
     /**
-     * Maps a platform failure by whether the key survives it, and otherwise by Keystore's own verdict rather
-     * than the exception that carries it.
+     * Maps a platform failure by whether the key survives it, and otherwise by Keystore's own verdict.
+     * `KeyPermanentlyInvalidatedException` is matched by name rather than type, so a reordered catch
+     * block cannot silently demote it to a signing failure the caller would retry.
      *
-     * `KeyPermanentlyInvalidatedException` is matched by name rather than type: it extends
-     * `InvalidKeyException`, so a reordered catch block would silently demote it to a signing failure and the
-     * caller would retry a device that can never recover.
+     * @param cause the platform failure the signing path raised.
+     * @return the exception that says whether the key survives it.
      */
     private fun asFailure(cause: GeneralSecurityException): DeviceKeyException =
         when {
@@ -248,10 +182,11 @@ internal class KeystoreDeviceKey(
         }
 
     /**
-     * Reports the key gone, having removed the alias that named it.
+     * Reports the key gone, having removed the alias that named it. A failed removal is reported as the
+     * platform being unavailable instead: the cleanup did not happen, so claiming it would be false.
      *
-     * A failed removal is reported as the platform being unavailable instead: the cleanup [KeyLost] documents
-     * did not happen, so claiming it would be false, and every later call would meet the same unusable alias.
+     * @param cause the failure that proved the key unusable.
+     * @return KeyLost when the alias was removed, CryptoUnavailable when the removal failed.
      */
     private fun discarding(cause: Throwable): DeviceKeyException {
         logger.warn(LogField.safe("event", "device_key_discarded")) { "device key unusable, discarding alias" }
@@ -287,10 +222,10 @@ internal class KeystoreDeviceKey(
         }
 
     /**
-     * The public half, read from the entry's self-signed certificate.
+     * The public half, read from the entry's self-signed certificate — the only way to reach it, because
+     * `getKey` answers with the private half alone.
      *
-     * A Keystore keypair entry carries one, and it is the only way to reach the public key: `getKey` answers
-     * with the private half alone.
+     * @return the public half, or null when the alias holds no entry.
      */
     private fun existingPublicKey(): ECPublicKey? =
         try {
@@ -302,11 +237,11 @@ internal class KeystoreDeviceKey(
         }
 
     /**
-     * StrongBox where the platform has it, otherwise whatever the platform gives.
+     * StrongBox where the platform has it, otherwise whatever the platform gives. The level obtained is
+     * logged rather than enforced: production accepts what it gets, and the manual device tier is where
+     * hardware backing is asserted.
      *
-     * The level obtained is logged rather than enforced. Requiring a secure element would fail on emulators and
-     * on devices without one, so production accepts what it gets and the manual device tier is where hardware
-     * backing is asserted.
+     * @return the private half of the generated keypair.
      */
     private fun createKey(): PrivateKey {
         // StrongBox is API 28 while this module's floor is 23: unguarded, this is a NoSuchMethodError on
@@ -336,11 +271,11 @@ internal class KeystoreDeviceKey(
         }
 
     /**
-     * No `setUserAuthenticationRequired`: this key signs during background work with nobody present, and
-     * binding it to user presence would make that impossible. The storage key omits it for the same reason.
+     * No `setUserAuthenticationRequired`: this key signs during background work with nobody present. The
+     * storage key omits it for the same reason. `setDigests(DIGEST_SHA256)` is not decoration: a key
+     * generated without it is refused at `initSign`, a signing error on a never-usable key.
      *
-     * `setDigests(DIGEST_SHA256)` is not decoration. A key generated without it is refused at `initSign` with
-     * an incompatible-digest failure, which surfaces as a signing error on a key that was never usable.
+     * @return the generator's base spec, at the fixed alias.
      */
     private fun baseSpec(): KeyGenParameterSpec.Builder =
         KeyGenParameterSpec
@@ -348,7 +283,12 @@ internal class KeystoreDeviceKey(
             .setAlgorithmParameterSpec(ECGenParameterSpec(CURVE))
             .setDigests(KeyProperties.DIGEST_SHA256)
 
-    /** Best effort, for the log line only. `getSecurityLevel` is API 31; below that the answer is coarser. */
+    /**
+     * Best effort, for the log line only. `getSecurityLevel` is API 31; below that the answer is coarser.
+     *
+     * @param key the key whose backing is reported.
+     * @return the level by name, or "unknown" when the platform cannot say.
+     */
     private fun securityLevelOf(key: PrivateKey): String =
         runCatching {
             // KeyFactory, not SecretKeyFactory: this is an asymmetric key, and the symmetric factory the

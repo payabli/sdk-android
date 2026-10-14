@@ -55,7 +55,12 @@ internal object SensitiveDataScrubber {
             EMAIL to REDACTED,
         )
 
-    /** Applies every rule in order and returns text safe to emit. */
+    /**
+     * Applies every rule in order and returns text safe to emit.
+     *
+     * @param text the free text to scrub.
+     * @return the text with every rule applied, safe to emit.
+     */
     fun scrub(text: String): String {
         var scrubbed = redactLongDigitRuns(text)
         for ((pattern, replacement) in rules) {

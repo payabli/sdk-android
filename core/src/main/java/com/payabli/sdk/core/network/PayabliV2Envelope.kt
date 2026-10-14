@@ -26,11 +26,12 @@ private const val DECLINED_PREFIX = "D"
  *
  * The SDK ignores any envelope-level `token` field: every authenticated request reuses the access
  * token the session already holds.
+ *
+ * @property code the only field the server always sends. A body without it is a decode failure.
  */
 @Serializable
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class PayabliV2Envelope<T>(
-    /** The only field the server always sends. A body without it is a decode failure. */
     public val code: String,
     public val reason: String? = null,
     public val explanation: String? = null,
@@ -44,6 +45,10 @@ public class PayabliV2Envelope<T>(
     /** Declined family. */
     public val isDeclined: Boolean get() = code.startsWith(DECLINED_PREFIX)
 
-    /** Never includes [payload] or [reason]: both may echo request data. */
+    /**
+     * Never includes [payload] or [reason]: both may echo request data.
+     *
+     * @return the envelope named by its code alone.
+     */
     override fun toString(): String = "PayabliV2Envelope(code=$code)"
 }

@@ -17,13 +17,25 @@ package com.payabli.sdk.core.storage.impl
  * Plaintext is `ByteArray` so it can be overwritten. Implementations must not retain it.
  */
 internal interface ValueCipher {
-    /** An opaque blob binding [plaintext] to [aad], different on every call for equal input. */
+    /**
+     * An opaque blob binding [plaintext] to [aad], different on every call for equal input.
+     *
+     * @param aad the name binding the blob to its entry.
+     * @param plaintext the bytes to seal, which an implementation must not retain.
+     * @return the opaque blob.
+     */
     fun encrypt(
         aad: String,
         plaintext: ByteArray,
     ): String
 
-    /** Reverses [encrypt], and fails if [aad] is not the value it was sealed with. */
+    /**
+     * Reverses [encrypt], and fails if [aad] is not the value it was sealed with.
+     *
+     * @param aad the name the blob was sealed under.
+     * @param blob the opaque blob to open.
+     * @return the sealed bytes.
+     */
     fun decrypt(
         aad: String,
         blob: String,

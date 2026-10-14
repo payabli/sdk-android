@@ -7,20 +7,14 @@ import com.payabli.sdk.core.logging.SdkLogger
 
 /**
  * The redaction pipeline. Every collaborator is a stateless `object` whose regexes are compiled at
- * class initialisation, so this class holds no mutable state and needs no synchronisation. Do not add
- * a lock, and do not add a cache.
+ * class initialisation, so this class holds no mutable state and needs no synchronisation. Scrub
+ * before truncate, so truncation only ever shortens text that is already safe.
  *
- * Step order is load-bearing: scrub before truncate, so truncation only ever shortens text that is
- * already safe.
+ * @property logLevel the SDK's own cutoff, read on every call so lowering it later reaches loggers already handed out; [LogLevel.NONE] silences the SDK entirely.
  */
 internal class DefaultSdkLogger(
     private val category: LogCategory,
     private val sink: LogSink,
-    /**
-     * The SDK's own cutoff, read on every call so lowering it later affects loggers already handed
-     * out. [LogLevel.NONE] silences the SDK entirely. Defaults to fully verbose, which is what a test
-     * wants; `LoggerRegistry` supplies the configured gate in production.
-     */
     private val logLevel: () -> LogLevel = { LogLevel.DEBUG },
 ) : SdkLogger {
     override fun isLoggable(level: LogLevel): Boolean =

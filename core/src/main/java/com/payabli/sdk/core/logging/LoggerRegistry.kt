@@ -28,25 +28,20 @@ public object LoggerRegistry {
     private val loggers: Map<LogCategory, SdkLogger> =
         LogCategory.entries.associateWith { DefaultSdkLogger(it, AndroidLogSink, logLevel::effective) }
 
-    /** The shared, stateless logger for [category]. Reads the current cutoff on every call. */
+    /**
+     * The shared, stateless logger for [category]. Reads the current cutoff on every call.
+     *
+     * @param category the category the logger reports under.
+     * @return the shared, stateless logger for [category].
+     */
     public fun of(category: LogCategory): SdkLogger = loggers.getValue(category)
 
     /**
-     * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK, which is the default.
+     * Emits [level] and everything more severe; [LogLevel.NONE] silences the SDK, which is the default.
+     * Silent by default because a shipped payments SDK should not write to logcat. An explicit setting
+     * always wins over the automatic one from [setHostDebuggable], in either call order.
      *
-     * Silent by default because a shipped payments SDK should not write to logcat: the log is readable
-     * over adb, lands in bug reports, and is reachable by any preinstalled app holding `READ_LOGS`.
-     *
-     * **An explicit setting always wins over the automatic one from [setHostDebuggable]**, in either
-     * call order, so a caller that deliberately silenced the SDK is not overridden. [clearLogLevel]
-     * is the way back.
-     *
-     * `internal`: `PayabliSession.setLogLevel` is the app-facing control and delegates here, so this stays
-     * the SDK's own entry point rather than a second public one. What is exposed is the level; the sink is
-     * not, which is what keeps records out of an app's own logging systems.
-     *
-     * The platform's per-tag level still applies on top, so `debug` additionally needs
-     * `adb shell setprop log.tag.<TAG> DEBUG`. Lowering this cutoff alone emits nothing at `debug`.
+     * @param level the cutoff to emit at and above.
      */
     internal fun setLogLevel(level: LogLevel) {
         logLevel.setExplicit(level)
@@ -59,10 +54,10 @@ public object LoggerRegistry {
 
     /**
      * The automatic cutoff: [LogLevel.DEBUG] when the host app is debuggable, [LogLevel.NONE] otherwise.
-     *
      * `DEBUG` rather than `INFO` so the SDK's own cutoff stops filtering entirely and the platform's
-     * per-tag level is the only control left. Internal because only the SDK's own entry point should
-     * decide it; `logging/platform/HostLogLevel.kt` reads the flag it takes.
+     * per-tag level is the only control left.
+     *
+     * @param debuggable whether the host app's build is debuggable.
      */
     internal fun setHostDebuggable(debuggable: Boolean) {
         logLevel.setHostDebuggable(debuggable)
@@ -71,6 +66,8 @@ public object LoggerRegistry {
     /**
      * The cutoff in effect. Internal so the precedence wiring is provable on the JVM, where the real
      * sink cannot run.
+     *
+     * @return the cutoff in effect, the explicit setting over the automatic one.
      */
     internal fun effectiveLogLevel(): LogLevel = logLevel.effective()
 }

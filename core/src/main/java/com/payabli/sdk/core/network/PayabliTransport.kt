@@ -12,7 +12,7 @@ import kotlinx.serialization.KSerializer
  * **`PayabliService` is the only implementation that reaches the network.** A second one would bypass the
  * choke-point. Test fakes are fine; a second real transport is not.
  *
- * Retry is deliberately *not* here. A decoration is a function over a request; retry is control flow
+ * Retry is not here. A decoration is a function over a request; retry is control flow
  * that decides whether the whole operation runs again, so it wraps a call to this seam rather than
  * living inside it. See `RetryPolicy`.
  *
@@ -40,7 +40,12 @@ import kotlinx.serialization.KSerializer
  */
 @RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public interface PayabliTransport {
-    /** Executes [request] and returns the raw response. Throws on transport failure. */
+    /**
+     * Executes [request] and returns the raw response. Throws on transport failure.
+     *
+     * @param request the request to send through the single choke-point.
+     * @return the raw response, a non-2xx included, for the caller to classify.
+     */
     public suspend fun execute(request: PayabliRequest): PayabliResponse
 
     /**
@@ -55,6 +60,12 @@ public interface PayabliTransport {
      *
      * Legacy-envelope routes use [execute] and decode via [PayabliEnvelope] themselves; there is no
      * runtime dispatch between the two envelope shapes, the call site chooses.
+     *
+     * @param request the request to send; the overload the call site chooses is what selects the
+     *   envelope shape the answer is decoded into.
+     * @param payloadSerializer the generated serializer for [T], passed explicitly because a reified
+     *   variant could only obtain one reflectively.
+     * @return the decoded [PayabliV2Envelope] around [T].
      */
     public suspend fun <T> execute(
         request: PayabliRequest,

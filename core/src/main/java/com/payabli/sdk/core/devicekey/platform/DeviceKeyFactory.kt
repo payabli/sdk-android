@@ -22,14 +22,13 @@ import kotlinx.coroutines.withContext
  */
 internal object DeviceKeyFactory {
     /**
-     * The key at the alias, generating one if there is none.
+     * The key at the alias, generating one if there is none. Reuse falls out of the alias being fixed, so a
+     * caller interrupted between generating a key and the service accepting it presents the same key again.
+     * Whether the service accepted it is not answered here: nothing in the key store distinguishes the two.
      *
-     * Reuse falls out of the alias being fixed. A caller that is interrupted between generating a key and the
-     * service accepting it gets the same key back on the next call, so the retry presents the key it already
-     * generated instead of leaving that one behind and minting another.
-     *
-     * Whether the service has accepted the key is not answered here. Nothing in the key store distinguishes an
-     * accepted key from a refused one, so that fact belongs to whatever records what the service said.
+     * @param dispatcher where the key store calls run.
+     * @param logger where the key's lifecycle is logged.
+     * @return the key at the alias, created if there was none.
      */
     suspend fun deviceKey(
         dispatcher: CoroutineDispatcher,

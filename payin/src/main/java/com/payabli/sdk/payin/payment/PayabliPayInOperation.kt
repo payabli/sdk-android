@@ -106,12 +106,12 @@ internal val PayabliPayInOperation.narrowingKey: List<Any>
     get() = listOf(instruments, this is PayabliPayInOperation.StoreMethod)
 
 /**
- * [configuration] with any instrument this operation cannot carry left out.
+ * [configuration] with any instrument this operation cannot carry left out. A pairing that
+ * leaves nothing is refused rather than drawn: an authorization with a bank-only form is a
+ * form every tap refuses locally, and each refusal empties the account the payer entered.
  *
- * A pairing that leaves nothing is refused rather than drawn. An authorization with a bank-only form is a form
- * every tap refuses locally, and each refusal now empties the account the payer entered, so it is a form nobody
- * can submit and everybody can fill in. `PayInFormConfiguration` refuses an unsubmittable form where its
- * sections are written; this is the same refusal one layer later, where the operation joins them.
+ * @param configuration the form's configuration.
+ * @return the configuration with any instrument this operation cannot carry left out.
  */
 internal fun PayabliPayInOperation.offering(configuration: PayInFormConfiguration): PayInFormConfiguration {
     val offered = configuration.methodsOffered.filter { it in instruments }

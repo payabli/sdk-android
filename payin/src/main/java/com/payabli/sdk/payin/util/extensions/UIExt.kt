@@ -7,11 +7,14 @@ import java.util.Currency
 import java.util.Locale
 
 /**
- * [amount] in [locale]'s grouping and decimal separator, with [currency]'s symbol.
+ * [amount] in [locale]'s grouping and decimal separator, with [currency]'s symbol. A currency that is
+ * absent or not an ISO 4217 code draws the number with no symbol: the charge is then made in a
+ * currency the request does not name. A value too extreme to round is written as its [BigDecimal.toString].
  *
- * A currency that is absent or not an ISO 4217 code draws the number with no symbol: the charge is then made
- * in a currency the request does not name, so any symbol here would be a guess. A value too extreme to round
- * is written as its [BigDecimal.toString].
+ * @param amount the figure on the row.
+ * @param currency the currency's ISO 4217 code, or null for none.
+ * @param locale whose grouping and decimal separators are drawn.
+ * @return the figure as the form writes it.
  */
 internal fun formatAmount(
     amount: BigDecimal,

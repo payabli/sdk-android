@@ -6,14 +6,11 @@ import com.payabli.sdk.payin.model.PayInPaymentDetails
 import com.payabli.sdk.payin.model.PayInVendorData
 
 /**
- * Model to wire, for the parts both clients send.
+ * Model to wire, for the parts both clients send, blank strings absent throughout: a field the payer
+ * left empty and one the caller never set are the same statement, and sending `""` states something
+ * else. A second copy of either mapping is a second place for a field to be forgotten.
  *
- * Separate from either client because storing a method and taking a payment send the same customer and the
- * same amounts, and a second copy of either mapping is a second place for a field to be forgotten.
- *
- * Blank strings become absent throughout. A field the payer left empty and a field the caller never set are
- * the same statement, and sending `""` states something else: an empty value can be refused where an absent
- * one would have been defaulted.
+ * @return the wire body for the payment details.
  */
 internal fun PayInPaymentDetails.toBody(): PaymentDetailsBody =
     PaymentDetailsBody(
@@ -58,21 +55,27 @@ internal fun PayInVendorData.toBody(): VendorDataBody =
         email = email?.trimOrNull(),
     )
 
-/** The service reads these as text, so a flag is `true` or `false` rather than `1` or `0`. */
+/**
+ * The service reads these as text, so a flag is `true` or `false` rather than `1` or `0`.
+ *
+ * @return `true` or `false`, as the service reads a flag.
+ */
 internal fun Boolean.wire(): String = if (this) "true" else "false"
 
-/** Trimmed, or absent when nothing is left. */
+/**
+ * Trimmed, or absent when nothing is left.
+ *
+ * @return the trimmed value, or null when nothing is left.
+ */
 internal fun String.trimOrNull(): String? = trim().takeIf { it.isNotEmpty() }
 
 /**
- * The headers a caller contributes, which are the only ones a client here sets.
+ * The headers a caller contributes, which are the only ones a client here sets: `Authorization` and
+ * the JSON content type are chain steps in `:core`. A value blank once trimmed is refused rather than
+ * dropped, because setting an idempotency key is what makes a caller's retry safe.
  *
- * `Authorization` and the JSON content type are chain steps in `:core`, applied to every request, so a
- * client that added either would be duplicating a decision made once for the whole SDK.
- *
- * `null` means the caller did not set one, and is the only way to say that. A value that is blank once trimmed
- * is refused rather than dropped: setting an idempotency key is what makes a caller's retry safe, so silently
- * omitting `" "` would send an unprotected money-moving request to a caller who believes it is protected.
+ * @param build the headers to set.
+ * @return the headers the caller contributed.
  */
 internal fun payInHeaders(build: PayInHeaders.() -> Unit): Map<String, String> = PayInHeaders().apply(build).headers
 
@@ -84,17 +87,12 @@ internal class PayInHeaders {
     fun validationCode(value: String?) = put(PayInRoutes.HEADER_VALIDATION_CODE, value)
 
     /**
-     * Refuses a value that cannot be a header, before the transport is asked to send it.
+     * Refuses a value that cannot be a header, before the transport is asked to send it: printable
+     * ASCII, space and tab, stricter than the platform's check, so the answer does not depend on
+     * which `HttpURLConnection` is underneath.
      *
-     * Both of these come from public request fields, so a caller supplies them. `setRequestProperty` throws
-     * `IllegalArgumentException` on an embedded CR or LF, measured on the JVM these tests run on, so
-     * `"key\r\nX-Test: v"` would reach a caller as an unchecked exception from inside the transport instead of
-     * the typed refusal naming the field that every other bad value produces.
-     *
-     * The rule is narrower than the platform's: printable ASCII, space and tab. Trimming has already removed
-     * the ends, so what is left is interior. Being stricter than the check that provoked this means the answer
-     * does not depend on which `HttpURLConnection` is underneath, and a header value outside that range has no
-     * use here.
+     * @param name the header's name, for the typed refusal.
+     * @param value the header's value, or null to set none.
      */
     private fun put(
         name: String,

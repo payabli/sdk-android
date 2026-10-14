@@ -55,19 +55,18 @@ private const val REASON_ALREADY_INITIALIZED = "a session is already initialized
  * and [setLogLevel], and hands the result to a capability. The transport and [state] are
  * `@RestrictTo(LIBRARY_GROUP)`, so a capability shipped as its own artifact can reach them and a host app
  * cannot. Nothing reaches the token at any visibility.
+ *
+ * @property transport the authenticated transport for this session: bearer injected, one 401 recovered, one replay.
+ * @property telemetry what a reporting channel is allowed to know about this session, including the id
+ *   that identifies this SDK lifetime. Published because the configuration itself is not: a sibling
+ *   artifact has no other way to learn which entry point and environment it is reporting for.
  */
 public class PayabliSession private constructor(
     private val identity: ConfigIdentity,
     private val machine: SessionStateMachine,
     private val readDeviceId: () -> String?,
-    /** The authenticated transport for this session: bearer injected, one 401 recovered, one replay. */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val transport: PayabliTransport,
-    /**
-     * What a reporting channel is allowed to know about this session, including the id that identifies this
-     * SDK lifetime. Published because the configuration itself is not: a sibling artifact has no other way to
-     * learn which entry point and environment it is reporting for.
-     */
     @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
     public val telemetry: TelemetrySessionContext,
 ) {
@@ -100,7 +99,11 @@ public class PayabliSession private constructor(
         @get:RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
         public val state: StateFlow<SdkState> = sink.asStateFlow()
 
-        /** Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK. */
+        /**
+         * Emits [level] and everything more severe. [LogLevel.NONE] silences the SDK.
+         *
+         * @param level the cutoff to emit at and above.
+         */
         public fun setLogLevel(level: LogLevel) {
             LoggerRegistry.setLogLevel(level)
         }
@@ -128,6 +131,10 @@ public class PayabliSession private constructor(
          * **It sets the diagnostic log level as a side effect**, once, from the host build. [setLogLevel] wins
          * whether it is called before or after this. Records go to the platform log, never to a callback, and
          * every one is redacted before it is written.
+         *
+         * @param config the configuration to install; two configurations built separately count as the same one.
+         * @param host the host application's bindings, whose context derives the diagnostic log level once.
+         * @return the started session, or the one already started under the same configuration.
          */
         public suspend fun initialize(
             config: PayabliConfig,
@@ -146,13 +153,15 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests.
+         * Same, against an explicit [baseUrl] and with no host bindings, for `:core`'s own JVM tests, which
+         * skip the host-log-level derivation. `internal` because a member left public in bytecode for
+         * testing is an origin override in a shipped artifact.
          *
-         * It skips the host-log-level derivation, which needs a real `Context`; that line is covered on a
-         * device instead. `internal` for the reason `TransportFactory.authenticatedAgainst` is: a member
-         * left public in bytecode for testing is an origin override in a shipped artifact.
-         *
-         * [identifierOf] stands in for the platform identifier, so a test can give a real device none.
+         * @param baseUrl the origin every request goes to.
+         * @param config the configuration to install.
+         * @param host the host bindings, or null for none.
+         * @param identifierOf stands in for the platform identifier, so a test can give a real device none.
+         * @return the installed session.
          */
         @VisibleForTesting
         internal suspend fun initializeAgainst(
@@ -192,11 +201,13 @@ public class PayabliSession private constructor(
         }
 
         /**
-         * Same, with the transport supplied, so a test can hold the critical section open.
+         * Same, with the transport supplied, so a test can hold the critical section open: without it the
+         * mutex cannot be shown to do anything, since the section is a few microseconds of object
+         * construction.
          *
-         * Without it the mutex cannot be shown to do anything: the section is a few microseconds of
-         * object construction, so two racing callers almost never collide and a concurrency test passes
-         * just as happily with the lock removed.
+         * @param config the configuration to install.
+         * @param buildTransport builds the transport, so a test can hold the critical section open.
+         * @return the installed session.
          */
         @VisibleForTesting
         internal suspend fun initializeWith(
@@ -295,7 +306,11 @@ public class PayabliSession private constructor(
             }
         }
 
-        /** The published state as a fixed word, so what is reported comes from a closed set. */
+        /**
+         * The published state as a fixed word, so what is reported comes from a closed set.
+         *
+         * @return the published state as a fixed word.
+         */
         private fun reportedState(): String =
             when (state.value) {
                 SdkState.Uninitialized -> "uninitialized"
@@ -304,12 +319,12 @@ public class PayabliSession private constructor(
             }
 
         /**
-         * Reports a refused initialization.
+         * Reports a refused initialization. [PayabliException.reason] is carried here and nowhere else in
+         * this file: the only refusal this throws is the SDK's own words, and a reason from a server
+         * would not be reportable.
          *
-         * [PayabliException.reason] is carried here and nowhere else in this file: the only refusal this
-         * throws is built two lines above from a constant in this file, so it is the SDK's own words. A
-         * reason that came from a server would not be reportable, and a second failure mode added here has
-         * to be checked against that before it joins this call.
+         * @param failure the refusal to report, built in this file from this file's constants.
+         * @param startedAt when the initialize began, for the duration.
          */
         private fun reportFailure(
             failure: PayabliGenericException,
@@ -369,6 +384,8 @@ public class PayabliSession private constructor(
          *
          * The entry point is withheld: it names a specific merchant, and this string reaches exception
          * messages and crash reports. It is the same rule and the same reason as `PayabliConfig`'s.
+         *
+         * @return the environment and the telemetry flag, carrying no credential and no identifier.
          */
         override fun toString(): String = "ConfigIdentity(environment=$environment, telemetryEnabled=$telemetryEnabled)"
     }

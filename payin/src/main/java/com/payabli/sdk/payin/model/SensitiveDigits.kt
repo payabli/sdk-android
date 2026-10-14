@@ -45,23 +45,29 @@ public class SensitiveDigits private constructor(
         wiped = true
     }
 
-    /** Length only. The digits are what this type exists to keep out of a message. */
+    /**
+     * Length only. The digits are what this type exists to keep out of a message.
+     *
+     * @return the length only, never the digits.
+     */
     override fun toString(): String = "SensitiveDigits(length=$length)"
 
     /**
      * The digits, for a rule that reads them. Internal, so no caller can turn this back into a `String`.
+     * Returns a copy, which the reader is responsible for: every use inside this module is a validator
+     * that reads the copy and drops it.
      *
-     * Returns a copy, which the reader is responsible for. Every use inside this module is a validator that
-     * reads the copy and drops it, and validators are pure functions over characters.
+     * @return a copy of the digits, empty once wiped.
      */
     @JvmSynthetic
     internal fun read(): CharArray = if (wiped) CharArray(0) else digits.copyOf()
 
     /**
-     * Runs [block] over the digits and overwrites the copy before returning, including when [block] throws.
+     * Runs [block] over the digits and overwrites the copy before returning, including when [block]
+     * throws — the only way to read these that leaves nothing behind.
      *
-     * The only way to read these that leaves nothing behind. [read] hands out a copy the caller then owns, and
-     * a caller that throws mid-validation never gets to wipe it.
+     * @param block the rule to run over the digits.
+     * @return what [block] returned, the copy overwritten first.
      */
     @JvmSynthetic
     internal fun <T> useDigits(block: (CharArray) -> T): T {
@@ -78,10 +84,11 @@ public class SensitiveDigits private constructor(
     internal val isWiped: Boolean get() = wiped
 
     /**
-     * The backing array as it stands, wiped or not, so a test can assert the overwrite actually happened.
+     * The backing array as it stands, wiped or not, so a test can assert the overwrite actually happened:
+     * [read] answers empty once wiped, which is right for a reader and useless for proving the digits
+     * are gone.
      *
-     * [read] answers empty once wiped, which is right for a reader and useless for proving the digits are
-     * gone.
+     * @return the backing array as it stands, wiped or not.
      */
     @JvmSynthetic
     internal fun rawCopy(): CharArray = digits.copyOf()
@@ -98,19 +105,21 @@ public class SensitiveDigits private constructor(
         internal val WIPED: Char = Char(0)
 
         /**
-         * Takes a copy of [source], which the caller still owns and should overwrite in turn.
+         * Takes a copy of [source], which the caller still owns and should overwrite in turn. A copy, so
+         * a caller reusing its buffer for the next field cannot change a body being built.
          *
-         * A copy, so a caller reusing its buffer for the next field cannot change a body being built.
+         * @param source the digits to hold a copy of.
+         * @return the value holding a copy of [source].
          */
         public fun of(source: CharArray): SensitiveDigits = SensitiveDigits(source.copyOf())
 
         /**
-         * For a value that is already a `String`, typically from a text field.
+         * For a value that is already a `String`, typically from a text field. **This cannot unmake the
+         * `String` it is given**, and no overload can: it is here because the form layer holds its values
+         * that way. Where the digits are assembled by the caller, prefer [of] with a [CharArray].
          *
-         * **This cannot unmake the `String` it is given**, and no overload can. It is here because the form
-         * layer holds its values that way and the alternative is every caller writing the same conversion.
-         * Where the digits are assembled by the caller, prefer [of] with a [CharArray] and never build the
-         * `String` at all.
+         * @param source the digits as a `String`, which this cannot unmake.
+         * @return the value holding the digits.
          */
         public fun ofString(source: String): SensitiveDigits = SensitiveDigits(source.toCharArray())
     }

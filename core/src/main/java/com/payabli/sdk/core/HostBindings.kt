@@ -9,14 +9,11 @@ import android.content.Context
  * merchant and which environment, a binding says which app process. The split
  * keeps a configuration a value that can be built, compared and logged without holding a framework
  * reference.
+ *
+ * @property appContext the host application's context, read for whether the build is debuggable.
+ *   `initialize` takes `applicationContext` from whatever is passed, so an Activity is corrected; a
+ *   `createPackageContext` context is not, and would describe another package's build.
  */
 public class HostBindings(
-    /**
-     * The host application's context, read for whether the build is debuggable, which derives the automatic
-     * diagnostic log level.
-     *
-     * `initialize` takes `applicationContext` from whatever is passed, so an Activity is corrected. A context
-     * from `createPackageContext` is not, and would describe another package's build.
-     */
     public val appContext: Context,
 )

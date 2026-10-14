@@ -16,6 +16,9 @@ public interface SdkLogger {
      * Whether [level] would be emitted. Two gates, both of which must allow it: the SDK's own cutoff,
      * which is [LogLevel.NONE] by default and is set inside `:core` rather than by a host app, and the
      * platform's per-tag level. So `adb shell setprop log.tag.<TAG> DEBUG` alone emits nothing.
+     *
+     * @param level the level the caller would emit at.
+     * @return true when both gates allow it; false otherwise.
      */
     public fun isLoggable(level: LogLevel): Boolean
 
@@ -29,6 +32,11 @@ public interface SdkLogger {
      *
      * [throwable] is rendered by the SDK, not by `Log.getStackTraceString`: frames are kept, every
      * `Throwable.message` in the cause chain is scrubbed, and the chain is depth-capped.
+     *
+     * @param level the severity to emit at.
+     * @param fields the named values; runtime values belong here, never interpolated into [message].
+     * @param throwable the failure context, rendered with every message in its chain scrubbed.
+     * @param message the fixed text, built only when the level is emitted.
      */
     public fun log(
         level: LogLevel,

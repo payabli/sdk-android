@@ -19,36 +19,18 @@ import kotlinx.serialization.KSerializer
 import java.net.HttpURLConnection.HTTP_UNAUTHORIZED
 
 /**
- * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. Mechanism only, so what
- * counts as a rejection and what a surviving one becomes are the policy's.
+ * Runs [AuthRecoveryPolicy]: one 401, one refresh, one replay, second 401 terminal. Mechanism only, so
+ * what counts as a rejection is the policy's and what may be replayed is this class's, because the policy
+ * is `open`. The bearer is `BearerDecoration`'s inside [base]'s chain; a pinned request is read here.
  *
- * It does not inject the bearer; `BearerDecoration` does, inside [base]'s chain. So a forgotten wrapper costs
- * a recovery, never authentication.
- *
- * **What may be replayed is this class's decision, not the policy's**, because the policy is `open` and a
- * subclass could otherwise widen its way into a double charge. A replay needs one of two arguments:
- *
- * - the response was **401**, refused before processing, so replaying even a POST cannot double-charge; or
- * - the method is **idempotent** (RFC 9110 Section 9.2.2: `PUT`, `DELETE` and the safe methods), so a second
- *   identical request has the effect of one.
- *
- * A widened policy on a `POST` or `PATCH` satisfies neither, so the refresh still happens and the original
- * response is returned unreplayed. That keeps [AuthRecoveryPolicy] useful for a capability's own routes
- * without letting it authorize a replay the status does not justify.
- *
- * **A request may also refuse recovery outright**, through [PayabliRequest.isCredentialPinned], and that is
- * read here rather than in the policy: a subclass widening [AuthRecoveryPolicy.isCredentialRejection] must not
- * be able to widen its way past a route's refusal, which is the same reason [mayReplay] is not the policy's
- * either. A refusal costs the request its recovery and nothing else; the rejection reaches the caller as it
- * arrived.
+ * @property logger where the replay and pin decisions are logged, [LogCategory.NETWORK] because they are this layer's.
+ * @property onAuthFailure told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred.
  */
 internal class AuthenticatedTransport(
     private val base: PayabliTransport,
     private val auth: PayabliAuth,
     private val recovery: AuthRecoveryPolicy = AuthRecoveryPolicy(),
-    /** [LogCategory.NETWORK], not `AUTH`: declining a replay is this layer's decision, not the holder's. */
     private val logger: SdkLogger = LoggerRegistry.of(LogCategory.NETWORK),
-    /** Told only when auth is finished for good. See [AuthFailureListener] for why it is told rather than inferred. */
     private val onAuthFailure: AuthFailureListener = AuthFailureListener { },
 ) : PayabliTransport {
     override suspend fun execute(request: PayabliRequest): PayabliResponse {
@@ -119,33 +101,46 @@ internal class AuthenticatedTransport(
     }
 
     /**
-     * Refreshes, and never finishes the session on the outcome.
+     * Refreshes, and never finishes the session on the outcome: a provider that timed out or threw is a
+     * transient blip, and finishing here would teach hosts to ignore [SdkState.ReinitializeRequired]. What
+     * finishes a session is a refreshed token refused in turn, which [PayabliAuth.finishIfSettledOn] decides.
      *
-     * A provider that timed out or threw is a bad minute for the host's backend and the next request may
-     * well succeed, so finishing here would make [SdkState.ReinitializeRequired] fire on a transient blip
-     * and teach hosts to ignore it. What finishes a session is a refreshed token being refused in turn,
-     * which [PayabliAuth.finishIfSettledOn] decides from the token rather than from this failure.
+     * @param rejected the token the chain stamped and the service refused.
      */
     private suspend fun refresh(rejected: String) {
         auth.invalidateAndRefresh(rejected)
     }
 
     /**
-     * Whether sending [request] a second time is defensible after [rejected].
+     * Whether sending [request] a second time is defensible after [rejected]: the status was 401, refused
+     * before processing, or the method is idempotent (RFC 9110 Section 9.2.2). This is this class's, not
+     * the `open` policy's, so a subclass cannot widen the replay with the rejection.
      *
-     * It lives here and not on [AuthRecoveryPolicy], which is `open`: a hook there would let the subclass
-     * that widened the rejection widen the replay with it.
+     * @param request the refused request, whose method decides alongside the status.
+     * @param rejected the refusal the replay would answer.
+     * @return true only when the status was 401 or the method is idempotent; false otherwise.
      */
     private fun mayReplay(
         request: PayabliRequest,
         rejected: PayabliResponse,
     ): Boolean = rejected.statusCode == HTTP_UNAUTHORIZED || request.method.isIdempotent
 
-    /** The template only. [PayabliRequest.path] is resolved and may embed an identifier. */
+    /**
+     * The template only. [PayabliRequest.path] is resolved and may embed an identifier.
+     *
+     * @param request the request whose route template is logged.
+     * @return a safe field carrying the template, or a redacted one when the request carried none.
+     */
     private fun routeField(request: PayabliRequest): LogField =
         request.route?.let { LogField.safe("route", it) } ?: LogField.redacted("route", null)
 
-    /** Not delegated: [base]'s overload maps a 401 to a typed error before this could recover it. */
+    /**
+     * Not delegated: [base]'s overload maps a 401 to a typed error before this could recover it.
+     *
+     * @param request the request sent through the wrapped transport.
+     * @param payloadSerializer the generated serializer the answer's payload decodes through.
+     * @return the wrapped transport's answer, decoded into the v2 envelope.
+     */
     override suspend fun <T> execute(
         request: PayabliRequest,
         payloadSerializer: KSerializer<T>,

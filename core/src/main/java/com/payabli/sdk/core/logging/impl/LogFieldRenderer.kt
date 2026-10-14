@@ -15,16 +15,21 @@ internal object LogFieldRenderer {
     /** U+2026 horizontal ellipsis. */
     private const val ELLIPSIS = "…"
 
-    /** Renders [fields] space-separated, or an empty string when there are none. */
+    /**
+     * Renders [fields] space-separated, or an empty string when there are none.
+     *
+     * @param fields the fields to render.
+     * @return the fields rendered space-separated, or an empty string when there are none.
+     */
     fun render(fields: List<LogField>): String = fields.joinToString(separator = " ") { renderField(it) }
 
     /**
-     * Lowercase and strip non-alphanumerics, so `card-number`, `Card_Number`, `cardNumber` and
-     * `card number` all collapse to `cardnumber`.
+     * Lowercase and strip non-alphanumerics, so `card-number`, `Card_Number` and `cardNumber` all
+     * collapse to `cardnumber`. `lowercase()` is locale-independent; `toLowerCase()` maps `I` to `ı`
+     * on a Turkish device, and an allowlist fails safe.
      *
-     * `lowercase()` is locale-independent by design; the deprecated `toLowerCase()` used the default
-     * locale, which maps `I` to `ı` under a Turkish locale and would silently break name matching on
-     * a Turkish device. Because the check is an allowlist, any normalisation gap fails safe.
+     * @param name the field name as the caller wrote it.
+     * @return the name lowercased, non-alphanumerics stripped.
      */
     fun normalize(name: String): String = name.lowercase().filter { it.isLetterOrDigit() }
 
@@ -42,10 +47,12 @@ internal object LogFieldRenderer {
     }
 
     /**
-     * A tail is emitted only for an allowlisted name. `LastFour` never holds more than four characters,
-     * so this is not about how much is held; it is that a fragment of an unlisted field is still a
-     * fragment of a value nobody reviewed. A name whose whole value may be emitted can certainly show
-     * four characters of it, so reusing the same set is strictly the safer direction.
+     * A tail is emitted only for an allowlisted name: `LastFour` never holds more than four characters,
+     * so it is not about how much is held — a fragment of an unlisted field is still a fragment of a
+     * value nobody reviewed.
+     *
+     * @param field the field whose tail is rendered.
+     * @return the redacted marker with the tail, or the bare marker.
      */
     private fun renderLastFour(field: LogField.LastFour): String =
         if (field.tail == null || normalize(field.name) !in LoggableFieldNames.ALLOWED) {

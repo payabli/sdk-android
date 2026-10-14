@@ -23,7 +23,15 @@ internal object LogRecordFormatter {
     private const val UTF8_CONTINUATION_MASK = 0xC0
     private const val UTF8_CONTINUATION_BITS = 0x80
 
-    /** [fields] and [throwable] are already rendered and already scrubbed. */
+    /**
+     * [fields] and [throwable] are already rendered and already scrubbed.
+     *
+     * @param message the fixed text, already scrubbed.
+     * @param fields the rendered fields, already scrubbed.
+     * @param throwable the rendered trace, already scrubbed, or null for none.
+     * @param tag the tag the line is written under.
+     * @return the composed line, truncated to fit one logcat entry.
+     */
     fun format(
         message: String,
         fields: String,
@@ -52,7 +60,7 @@ internal object LogRecordFormatter {
         val bytes = line.toByteArray()
         if (bytes.size <= budget) return line
         var end = budget - TRUNCATION_MARKER.toByteArray().size
-        // Step back off a UTF-8 continuation byte so the cut is ours and lands on a code point.
+        // Step back off a UTF-8 continuation byte so the cut lands on a code point.
         while (end > 0 && (bytes[end].toInt() and UTF8_CONTINUATION_MASK) == UTF8_CONTINUATION_BITS) {
             end--
         }
