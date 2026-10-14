@@ -19,12 +19,12 @@ import java.io.FileOutputStream
 import java.io.IOException
 
 /**
- * [PayabliSecureStorage] over a single file, with each value encrypted by a [ValueCipher]. A plain
- * [File] rather than DataStore, which is what lets the persistence layer be unit-tested on the JVM
- * against a fake cipher. `SecureStorageFactory.create` is how production builds one.
+ * [PayabliSecureStorage] over a single file, with each value encrypted by a [ValueCipher] — a
+ * plain [File] so the persistence layer is unit-tested on the JVM against a fake cipher.
  *
  * @property dispatcher where the blocking file and cipher work runs. No default: every call site states it.
- * @property identity the store's resolved identity, injected so one composition resolves it; the alias, the lock and the temp prefix all read it.
+ * @property identity the store's resolved identity; the lock and the temp prefix read it. `SecureStorageFactory`
+ *   injects it, resolving a single time and wiring the cipher's alias to agree; the default resolves in this constructor.
  */
 internal class FileSecureStorage(
     private val file: File,
