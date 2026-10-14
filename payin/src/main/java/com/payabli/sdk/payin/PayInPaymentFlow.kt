@@ -3,8 +3,6 @@ package com.payabli.sdk.payin
 import android.os.SystemClock
 import com.payabli.sdk.core.PayabliSession
 import com.payabli.sdk.core.logging.SdkLogger
-import com.payabli.sdk.core.model.PayabliErrorType
-import com.payabli.sdk.core.model.PayabliGenericException
 import com.payabli.sdk.core.network.PayabliTransport
 import com.payabli.sdk.core.telemetry.TelemetrySessionContext
 import com.payabli.sdk.payin.client.MoneyInClient
@@ -200,19 +198,8 @@ internal class PayInPaymentFlow private constructor(
         idempotencyKey: String?,
     ): Result<PayInResult> = submission.void(entryPoint, transId, idempotencyKey).asPayment()
 
-    /**
-     * Refuses before anything is sent.
-     *
-     * @param transId the transaction to read.
-     * @return a failure of type [PayabliErrorType.SDK_INTERNAL_ERROR].
-     */
     override suspend fun readTransaction(transId: String): Result<PayInTransaction> =
-        Result.failure(
-            PayabliGenericException(
-                PayabliErrorType.SDK_INTERNAL_ERROR,
-                "Reading a transaction back is not available yet.",
-            ),
-        )
+        submission.readTransaction(entryPoint, transId)
 
     private suspend fun payment(
         operation: PayabliPayInOperation,
