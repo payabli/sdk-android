@@ -101,9 +101,9 @@ internal object TelemetryBootstraps {
     }
 
     /**
-     * Starts the module if there is one, and absorbs whatever it does: a module that fails to start is
-     * stopped and forgotten, so nothing is left half-registered and the next `initialize` does not walk
-     * into the same failure.
+     * Starts the module if there is one, absorbing a `RuntimeException` or `LinkageError` — a module
+     * that fails to start is stopped and forgotten, so nothing is left half-registered and the next
+     * `initialize` does not walk into the same failure. Any other `Error` propagates.
      *
      * @param session the session reporting starts for.
      * @param host the host bindings, or null where the SDK started without them.
@@ -126,8 +126,8 @@ internal object TelemetryBootstraps {
     }
 
     /**
-     * Stops the module if there is one, and absorbs whatever it does: a module that cannot stop is
-     * forgotten, as one that cannot start is, so a teardown is never left half done.
+     * Stops the module if there is one, absorbing a `RuntimeException` or `LinkageError`; a module
+     * that cannot stop is forgotten, as one that cannot start is. Any other `Error` propagates.
      */
     @Synchronized
     fun stopInstalled() {
