@@ -58,7 +58,7 @@ import java.math.BigDecimal
  * @param onSubmit starts a submission; true once one is accepted.
  * @param onCompleted the service accepted it.
  * @param onFailed it did not go through.
- * @param onMethodChanged the payer switched instrument.
+ * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change.
  */
 @Composable
 internal fun PayInFormContent(

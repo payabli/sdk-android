@@ -64,7 +64,7 @@ import com.payabli.sdk.payin.ui.PayInSubmitText
  * @param style null takes `LocalPayInFormStyle`, then the host's theme.
  * @param onCompleted the service accepted it.
  * @param onFailed it did not go through, with the typed cause and the fields the service rejected.
- * @param onMethodChanged the payer switched instrument; the values do not cross into the callback.
+ * @param onMethodChanged the displayed method moved, by a payer switch or a configuration change; the values do not cross into the callback.
  */
 @Composable
 public fun PayabliPayInForm(
