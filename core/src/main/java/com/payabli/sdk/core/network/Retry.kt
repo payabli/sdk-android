@@ -51,7 +51,7 @@ public object Retry {
      *
      * @param route the route template for logs. Never a resolved path, which may embed an identifier.
      * @param policy the bounds, the backoff and the optional total budget the retries run under.
-     * @param logger where each retry decision is logged: debug per attempt, warn per stop.
+     * @param logger where each retrying attempt is logged; the attempt bound and an unretryable failure stop without one.
      * @param timeSource the clock the total budget is measured on. Injected, exactly as [RetryPolicy.jitter]
      *   is, because a test's virtual scheduler advances `delay` while [TimeSource.Monotonic] reads real
      *   time; production never passes this.
@@ -134,7 +134,7 @@ public object Retry {
      * @param failure the error the attempt that just failed raised.
      * @param attempt the one-based number of the attempt that just failed.
      * @param policy the retry bounds, the backoff and the retry-after ceiling the decision reads.
-     * @param logger where each decision is logged.
+     * @param logger where each retrying attempt is logged; the attempt bound and an unretryable failure throw without one.
      * @param route the route template for the log line, or null for none.
      * @param startedAt the mark the total budget is measured from.
      * @return the next attempt's number, waited for first.
