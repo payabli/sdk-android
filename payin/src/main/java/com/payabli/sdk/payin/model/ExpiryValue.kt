@@ -24,7 +24,7 @@ public data class ExpiryValue(
      * non-ASCII digits under `ar-EG` and `hi-IN`, which [parse] cannot read back.
      *
      * @param separator what sits between the month and the year.
-     * @return the expiry as `MM/YY`.
+     * @return the month and the two-digit year, with [separator] between.
      */
     public fun format(separator: String = "/"): String =
         // A "%" in a caller's separator is an argument reference to String.format.
