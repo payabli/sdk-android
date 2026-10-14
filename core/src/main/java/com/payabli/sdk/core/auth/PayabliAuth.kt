@@ -122,8 +122,8 @@ internal class PayabliAuth(
 
     /**
      * Marks this instance finished when [token] is still the credential it would send **and** no
-     * refresh is in flight, and reports whether it did — currency alone is not enough, the token
-     * being replaced staying current until the refresh commits. Deciding and recording are one.
+     * refresh is in flight, and reports whether it did: the credential's being current is not
+     * enough, the token being replaced staying current until the refresh commits — deciding and recording are one lock acquisition.
      *
      * @param token the credential the rejection arrived on.
      * @param failure the failure that finished the instance.
@@ -358,7 +358,7 @@ internal class PayabliAuth(
      *
      * @param shared the claim to release.
      * @param outcome what the waiters are handed.
-     * @return true when the completers were told, for the caller that held the lock.
+     * @return true when this call completed the claim; false when it was already completed.
      */
     private suspend fun finish(
         shared: CompletableDeferred<String>,
