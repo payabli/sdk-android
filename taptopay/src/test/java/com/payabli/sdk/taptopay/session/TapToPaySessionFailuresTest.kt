@@ -82,6 +82,7 @@ class TapToPaySessionFailuresTest {
             DeviceActivationException.DeviceNotPending(400, REASON) to null,
             DeviceActivationException.AssertionRejected(400, REASON) to null,
             DeviceActivationException.RequestRejected(400, REASON) to null,
+            DeviceActivationException.CredentialMismatch(409, REASON) to null,
             DeviceActivationException.Unclassified(418, REASON) to null,
             // The key is gone, so the identity is: enrollment discards the record before raising it.
             DeviceKeyException.KeyLost() to failed(DEVICE_SETUP_REQUIRED),
@@ -182,6 +183,7 @@ class TapToPaySessionFailuresTest {
                 DeviceActivationException.DeviceNotPending::class,
                 DeviceActivationException.AssertionRejected::class,
                 DeviceActivationException.RequestRejected::class,
+                DeviceActivationException.CredentialMismatch::class,
                 DeviceActivationException.Unclassified::class,
                 CardReaderException.ReadFailed::class,
             ),

@@ -164,6 +164,7 @@ internal object TapToPaySessionFailures {
             is DeviceActivationException.DeviceNotPending -> null
             is DeviceActivationException.AssertionRejected -> null
             is DeviceActivationException.RequestRejected -> null
+            is DeviceActivationException.CredentialMismatch -> null
             is DeviceActivationException.Unclassified -> null
         }
 

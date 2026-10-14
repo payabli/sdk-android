@@ -136,6 +136,7 @@ internal object TapToPayErrorCodes {
             is DeviceActivationException.RequestRejected -> PayabliErrorType.SDK_INTERNAL_ERROR
             is DeviceActivationException.AttestationRevoked -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.EntryPointUnusable -> PayabliErrorType.ENTRY_POINT_REFUSED
+            is DeviceActivationException.CredentialMismatch -> PayabliErrorType.CONFLICT
             is DeviceActivationException.DeviceUnknown -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.NotEnrolled -> PayabliErrorType.DEVICE_SETUP_REQUIRED
             is DeviceActivationException.RegistrationReplaced -> PayabliErrorType.DEVICE_SETUP_REQUIRED

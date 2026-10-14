@@ -3,6 +3,7 @@ package com.payabli.sdk.taptopay.enrollment
 import com.payabli.sdk.core.model.PayabliServerException
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -100,6 +101,18 @@ class ActivationFailurePolicyTest {
                 DeviceActivationException.Unclassified::class.java,
                 false,
             ),
+            Case(
+                409,
+                "Attestation credential mismatch",
+                DeviceActivationException.CredentialMismatch::class.java,
+                false,
+            ),
+            Case(
+                409,
+                "Attestation credential mismatch.",
+                DeviceActivationException.Unclassified::class.java,
+                false,
+            ),
             Case(418, "something nobody has written down", DeviceActivationException.Unclassified::class.java, false),
         )
 
@@ -149,6 +162,20 @@ class ActivationFailurePolicyTest {
             reworded.seedRecord()
             runCatching { reworded.enrollment.activateDevice(ACTIVATION_CODE) }
             assertNotNull("a reworded refusal discards nothing", reworded.storedRecord())
+        }
+
+    @Test
+    fun `a credential mismatch is a known refusal, and only its reworded form is logged as unrecognized`() =
+        runTest(timeout = TEST_TIMEOUT) {
+            suspend fun loggedUnrecognized(reason: String): Boolean {
+                val fixture = EnrollmentFixture(RouteScript(RouteScript.ACTIVATE to listOf(decline(409, reason))))
+                fixture.seedRecord()
+                runCatching { fixture.enrollment.activateDevice(ACTIVATION_CODE) }
+                return fixture.logger.records.any { it.message.contains("unrecognized reason") }
+            }
+
+            assertFalse(loggedUnrecognized("Attestation credential mismatch"))
+            assertTrue(loggedUnrecognized("Attestation credential mismatch."))
         }
 
     @Test
